@@ -102,7 +102,7 @@ public class Files extends FilenameUtils {
         FileUtils.copyFile(src, dest);
     }
 
-    //慎用File.renameTo
+    //Don't use File.renameTo()
     @SneakyThrows
     public static void move(String srcPath, String destPath) {
         File src = new File(srcPath), dest = new File(destPath);

@@ -1,12 +1,12 @@
 package org.rx.net.http.cookie;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import okhttp3.Cookie;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * This class decorates a Cookie to re-implements equals() and hashcode() methods in order to identify

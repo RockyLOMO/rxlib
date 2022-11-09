@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import com.alibaba.fastjson2.JSONFactory;
 import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -17,27 +18,27 @@ import static org.rx.core.Extends.newConcurrentList;
 @Data
 public final class RxConfig {
     public interface ConfigNames {
+        String THREAD_POOL_CPU_LOAD_WARNING = "app.threadPool.cpuLoadWarningThreshold";
         String THREAD_POOL_INIT_SIZE = "app.threadPool.initSize";
         String THREAD_POOL_KEEP_ALIVE_SECONDS = "app.threadPool.keepAliveSeconds";
         String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";
         String THREAD_POOL_LOW_CPU_WATER_MARK = "app.threadPool.lowCpuWaterMark";
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
-        String THREAD_POOL_MIN_CORE_SIZE = "app.threadPool.minCoreSize";
-        String THREAD_POOL_MAX_CORE_SIZE = "app.threadPool.maxCoreSize";
-        String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
-        String THREAD_POOL_SCHEDULE_INIT_SIZE = "app.threadPool.scheduleInitSize";
-        String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
+        String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
+        String THREAD_POOL_CPU_LOAD_WARNING_THRESHOLD = "app.threadPool.cpuLoadWarningThreshold";
+        String THREAD_POOL_SAMPLING_PERIOD = "app.threadPool.samplingPeriod";
+        String THREAD_POOL_SAMPLING_TIMES = "app.threadPool.samplingTimes";
+        String THREAD_POOL_MIN_DYNAMIC_SIZE = "app.threadPool.minDynamicSize";
+        String THREAD_POOL_MAX_DYNAMIC_SIZE = "app.threadPool.maxDynamicSize";
+        String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
 
-        String NTP_ENABLE_FLAGS = "app.ntp.enableFlags";
-        String NTP_SYNC_PERIOD = "app.ntp.syncPeriod";
-        String NTP_SERVERS = "app.ntp.servers";
-
+        String PHYSICAL_MEMORY_USAGE_WARNING = "app.cache.physicalMemoryUsageWarningThreshold";
         String CACHE_MAIN_INSTANCE = "app.cache.mainInstance";
         String CACHE_SLIDING_SECONDS = "app.cache.slidingSeconds";
         String CACHE_MAX_ITEM_SIZE = "app.cache.maxItemSize";
 
-        String DISK_MONITOR_PERIOD = "app.disk.monitorPeriod";
+        String DISK_USAGE_WARNING = "app.disk.diskUsageWarningThreshold";
         String DISK_ENTITY_DATABASE_ROLL_PERIOD = "app.disk.entityDatabaseRollPeriod";
 
         String NET_REACTOR_THREAD_AMOUNT = "app.net.reactorThreadAmount";
@@ -46,8 +47,14 @@ public final class RxConfig {
         String NET_POOL_MAX_SIZE = "app.net.poolMaxSize";
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_USER_AGENT = "app.net.userAgent";
+        String NET_LAN_IPS = "app.net.lanIps";
+        String NTP_ENABLE_FLAGS = "app.net.ntp.enableFlags";
+        String NTP_SYNC_PERIOD = "app.net.ntp.syncPeriod";
+        String NTP_TIMEOUT_MILLIS = "app.net.ntp.timeoutMillis";
+        String NTP_SERVERS = "app.net.ntp.servers";
 
         String APP_ID = "app.id";
+        String MX_SAMPLING_PERIOD = "app.mxSamplingPeriod";
         String TRACE_KEEP_DAYS = "app.traceKeepDays";
         String TRACE_ERROR_MESSAGE_SIZE = "app.traceErrorMessageSize";
         String TRACE_SLOW_ELAPSED_MICROS = "app.traceSlowElapsedMicros";
@@ -65,25 +72,21 @@ public final class RxConfig {
         int queueCapacity;
         int lowCpuWaterMark;
         int highCpuWaterMark;
-
-        int minCoreSize;
-        int maxCoreSize;
-        int resizeQuantity;
-        int scheduleInitSize;
-        String traceName;
         int replicas;
-    }
+        String traceName;
 
-    @Data
-    public static class NtpConfig {
-        //1 syncTask, 2 injectJdkTime
-        int enableFlags;
-        long syncPeriod;
-        final List<String> servers = newConcurrentList(true);
+        int cpuLoadWarningThreshold;
+        long samplingPeriod;
+        int samplingTimes;
+        int minDynamicSize;
+        int maxDynamicSize;
+        int resizeQuantity;
     }
 
     @Data
     public static class CacheConfig {
+        int physicalMemoryUsageWarningThreshold;
+
         Class mainInstance;
         int slidingSeconds;
         int maxItemSize;
@@ -91,7 +94,7 @@ public final class RxConfig {
 
     @Data
     public static class DiskConfig {
-        int monitorPeriod;
+        int diskUsageWarningThreshold;
         int entityDatabaseRollPeriod;
     }
 
@@ -103,11 +106,23 @@ public final class RxConfig {
         int poolMaxSize;
         int poolKeepAliveSeconds;
         String userAgent;
+        final List<String> lanIps = newConcurrentList(true);
+        NtpConfig ntp = new NtpConfig();
+    }
+
+    @Data
+    public static class NtpConfig {
+        //1 syncTask, 2 injectJdkTime
+        int enableFlags;
+        long syncPeriod;
+        long timeoutMillis;
+        final List<String> servers = newConcurrentList(true);
     }
 
     public static final RxConfig INSTANCE;
 
     static {
+        JSONFactory.getDefaultObjectReaderProvider().addAutoTypeAccept("org.springframework");
         RxConfig temp;
         try {
             temp = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);
@@ -119,11 +134,11 @@ public final class RxConfig {
     }
 
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
-    NtpConfig ntp = new NtpConfig();
     CacheConfig cache = new CacheConfig();
     DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
     String id;
+    long mxSamplingPeriod;
     int traceKeepDays;
     int traceErrorMessageSize;
     long traceSlowElapsedMicros;
@@ -153,21 +168,16 @@ public final class RxConfig {
         threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, 0);
         threadPool.lowCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_LOW_CPU_WATER_MARK, 40);
         threadPool.highCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_HIGH_CPU_WATER_MARK, 70);
-        threadPool.minCoreSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MIN_CORE_SIZE, 2);
-        threadPool.maxCoreSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_CORE_SIZE, 1000);
-        threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, 2);
-        threadPool.scheduleInitSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SCHEDULE_INIT_SIZE, 1);
-        threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2));
+        threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
+        threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, 80);
+        threadPool.samplingPeriod = SystemPropertyUtil.getLong(ConfigNames.THREAD_POOL_SAMPLING_PERIOD, 3000);
+        threadPool.samplingTimes = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SAMPLING_TIMES, 2);
+        threadPool.minDynamicSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MIN_DYNAMIC_SIZE, 2);
+        threadPool.maxDynamicSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_DYNAMIC_SIZE, 1000);
+        threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, 2);
 
-        ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, 0);
-        ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, 128000);
-        ntp.servers.clear();
-        String v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
-        if (v != null) {
-            ntp.servers.addAll(Linq.from(Strings.split(v, ",")).toSet());
-        }
-
+        cache.physicalMemoryUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.PHYSICAL_MEMORY_USAGE_WARNING, 95);
         String mc = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
         if (mc != null) {
             cache.mainInstance = Class.forName(mc);
@@ -177,7 +187,7 @@ public final class RxConfig {
         cache.slidingSeconds = SystemPropertyUtil.getInt(ConfigNames.CACHE_SLIDING_SECONDS, 60);
         cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, 5000);
 
-        disk.monitorPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_MONITOR_PERIOD, 60000);
+        disk.diskUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.DISK_USAGE_WARNING, 90);
         disk.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_ENTITY_DATABASE_ROLL_PERIOD, 10000);
 
         net.reactorThreadAmount = SystemPropertyUtil.getInt(ConfigNames.NET_REACTOR_THREAD_AMOUNT, 0);
@@ -189,11 +199,26 @@ public final class RxConfig {
         }
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, 120);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat");
+        net.lanIps.clear();
+        String v = SystemPropertyUtil.get(ConfigNames.NET_LAN_IPS);
+        if (v != null) {
+            net.lanIps.addAll(Linq.from(Strings.split(v, ",")).toSet());
+        }
+
+        net.ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, 0);
+        net.ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, 128000);
+        net.ntp.timeoutMillis = SystemPropertyUtil.getLong(ConfigNames.NTP_TIMEOUT_MILLIS, 2048);
+        net.ntp.servers.clear();
+        v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
+        if (v != null) {
+            net.ntp.servers.addAll(Linq.from(Strings.split(v, ",")).toSet());
+        }
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID);
         if (id == null) {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
+        mxSamplingPeriod = SystemPropertyUtil.getInt(ConfigNames.MX_SAMPLING_PERIOD, 60000);
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
         traceErrorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, 10);
         traceSlowElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_ELAPSED_MICROS, 50000);

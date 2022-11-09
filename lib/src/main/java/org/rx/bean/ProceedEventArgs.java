@@ -19,7 +19,7 @@ public class ProceedEventArgs extends EventArgs {
     private final boolean isVoid;
 
     private Object returnValue;
-    private long elapsedMicros = -1;
+    private long elapsedNanos = -1;
     @Setter
     private Throwable error;
     @Setter
@@ -34,7 +34,7 @@ public class ProceedEventArgs extends EventArgs {
             returnValue = retVal;
             return retVal;
         } finally {
-            elapsedMicros = (System.nanoTime() - start) / 1000L;
+            elapsedNanos = System.nanoTime() - start;
         }
     }
 }

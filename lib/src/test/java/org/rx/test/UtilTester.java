@@ -14,6 +14,7 @@ import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.util.*;
+import org.rx.util.thrid.CaseFormat;
 import org.springframework.validation.annotation.Validated;
 
 import javax.validation.Valid;
@@ -21,7 +22,7 @@ import javax.validation.constraints.NotNull;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class UtilTester extends AbstractTester {
@@ -125,7 +126,7 @@ public class UtilTester extends AbstractTester {
         System.out.println(toJsonString(target));
         assert source.getIndex2() == target.getIndex();
         assert source.getIndex2() == target.getLuckyNum();
-        assert source.getMoney().eq(target.getMoney().doubleValue());
+        assert source.getCash().eq(target.getCash().doubleValue());
 
         target = new GirlBean();
         PersonMapper.INSTANCE.toTargetWith(source, target);
@@ -141,7 +142,7 @@ public class UtilTester extends AbstractTester {
         f.setAge(6);
         f.setBirth(new DateTime(2020, 2, 20));
         f.setGender(PersonGender.BOY);
-        f.setMoneyCent(200L);
+        f.setCashCent(200L);
         GirlBean t = new GirlBean();
         t.setKids(10L);
 
@@ -193,12 +194,18 @@ public class UtilTester extends AbstractTester {
 
     @Test
     public void version() {
-//        System.out.println(FilenameUtils.getFullPath("b.txt"));
-//        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
-//        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
-
         assert Strings.compareVersion("1.01", "1.001") == 0;
         assert Strings.compareVersion("1.0", "1.0.0") == 0;
         assert Strings.compareVersion("0.1", "1.1") == -1;
+    }
+
+    @Test
+    public void third() {
+        System.out.println(FilenameUtils.getFullPath("a.txt"));
+        System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
+        System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
+
+        assert "ROW_ID".equals(CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, "rowId"));
+        assert "ROW_ID".equals(CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, "RowId"));
     }
 }

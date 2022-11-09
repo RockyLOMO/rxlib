@@ -1,21 +1,17 @@
 package org.rx.util.function;
 
-import org.rx.exception.InvalidException;
+import lombok.SneakyThrows;
 
 import java.io.Serializable;
 import java.util.function.Function;
 
 @FunctionalInterface
-public interface BiFunc<TP, TR> extends Serializable {
-    TR invoke(TP param) throws Throwable;
+public interface BiFunc<T, R> extends Function<T, R>, Serializable {
+    R invoke(T t) throws Throwable;
 
-    default Function<TP, TR> toFunction() {
-        return p -> {
-            try {
-                return invoke(p);
-            } catch (Throwable e) {
-                throw InvalidException.sneaky(e);
-            }
-        };
+    @SneakyThrows
+    @Override
+    default R apply(T t) {
+        return invoke(t);
     }
 }

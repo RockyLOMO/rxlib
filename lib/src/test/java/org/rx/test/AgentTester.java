@@ -6,8 +6,6 @@ import org.rx.bean.DateTime;
 import org.rx.core.NtpClock;
 import org.rx.core.TimeAdvice;
 
-import java.util.Date;
-
 public class AgentTester extends AbstractTester {
     int total = 10000;
     int time = 5;

@@ -1,6 +1,5 @@
 package org.rx.util;
 
-import com.google.common.net.HttpHeaders;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.SneakyThrows;
@@ -13,6 +12,7 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.IOStream;
 import org.rx.net.http.HttpClient;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.ServletRequestUtils;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -28,14 +28,14 @@ import java.util.Date;
 import static org.rx.core.Extends.quietly;
 
 public class Servlets extends ServletRequestUtils {
-    static final FastThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> holder = new FastThreadLocal<>();
+    static final FastThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> CTX = new FastThreadLocal<>();
 
     public static void setRequest(HttpServletRequest request, HttpServletResponse response) {
-        holder.set(Tuple.of(request, response));
+        CTX.set(Tuple.of(request, response));
     }
 
     public static Tuple<HttpServletRequest, HttpServletResponse> currentRequest() {
-        Tuple<HttpServletRequest, HttpServletResponse> tuple = holder.getIfExists();
+        Tuple<HttpServletRequest, HttpServletResponse> tuple = CTX.getIfExists();
         if (tuple == null) {
             ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
             //response 注入有问题
@@ -47,7 +47,7 @@ public class Servlets extends ServletRequestUtils {
     public static String requestIp() {
         HttpServletRequest request = currentRequest().left;
 
-        String ip = request.getHeader(HttpHeaders.X_FORWARDED_FOR);
+        String ip = request.getHeader("X-Forwarded-For");
         if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("Proxy-Client-IP");
         }
@@ -76,7 +76,7 @@ public class Servlets extends ServletRequestUtils {
     public static String requestIp(boolean throwOnEmpty) {
         try {
             return requestIp();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             if (throwOnEmpty) {
                 throw InvalidException.sneaky(e);
             } else {
@@ -122,7 +122,7 @@ public class Servlets extends ServletRequestUtils {
     }
 
     public static void setCookie(String name, String value) {
-        setCookie(name, value);
+        setCookie(name, value, null);
     }
 
     public static void setCookie(@NonNull String name, String value, Date expire) {

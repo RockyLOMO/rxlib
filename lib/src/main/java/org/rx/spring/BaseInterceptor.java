@@ -13,8 +13,8 @@ import org.rx.exception.TraceHandler;
 
 import java.util.List;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.as;
+import static org.rx.core.Sys.*;
 
 public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
     static final int MAX_FIELD_SIZE = 1024 * 4;
@@ -65,7 +65,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
             eventArgs.setLogTypeWhitelist(conf.getLogTypeWhitelist());
             try {
                 eventArgs.proceed(() -> joinPoint.proceed(eventArgs.getParameters()));
-                TraceHandler.INSTANCE.saveTrace(eventArgs.getDeclaringType(), signature.getName(), eventArgs.getParameters(), eventArgs.getElapsedMicros());
+                TraceHandler.INSTANCE.saveTrace(eventArgs.getDeclaringType(), signature.getName(), eventArgs.getParameters(), eventArgs.getElapsedNanos() / 1000L);
             } catch (Throwable e) {
                 eventArgs.setError(e);
                 raiseEvent(onError, eventArgs);
@@ -78,7 +78,7 @@ public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
                 log(eventArgs, msg -> {
                     msg.appendLine("Call:\t%s", signature.getName());
                     msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()))
-                            .appendLine("ReturnValue:\t%s\tElapsed=%s", jsonString(signature, eventArgs.getReturnValue()), App.formatElapsed(eventArgs.getElapsedMicros()));
+                            .appendLine("ReturnValue:\t%s\tElapsed=%s", jsonString(signature, eventArgs.getReturnValue()), Sys.formatNanosElapsed(eventArgs.getElapsedNanos()));
                     if (eventArgs.getError() != null) {
                         msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
                     }

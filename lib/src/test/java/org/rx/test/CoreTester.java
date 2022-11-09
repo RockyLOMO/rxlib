@@ -1,6 +1,6 @@
 package org.rx.test;
 
-import com.alibaba.fastjson.TypeReference;
+import com.alibaba.fastjson2.TypeReference;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -9,18 +9,20 @@ import okhttp3.ResponseBody;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
+import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.codec.CrcModel;
 import org.rx.codec.RSAUtil;
-import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.*;
 import org.rx.core.cache.DiskCache;
-import org.rx.core.YamlConfiguration;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionLevel;
-import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
-import org.rx.io.*;
+import org.rx.exception.TraceHandler;
+import org.rx.io.EntityDatabase;
+import org.rx.io.EntityQueryLambda;
+import org.rx.io.MemoryStream;
 import org.rx.test.bean.*;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
@@ -37,8 +39,8 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.*;
 
 @Slf4j
 public class CoreTester extends AbstractTester {
@@ -358,13 +360,13 @@ public class CoreTester extends AbstractTester {
             log.info("exec PERIOD");
             int i = c.incrementAndGet();
             if (i > 10) {
-                asyncContinue(false);
+                circuitContinue(false);
                 return null;
             }
             if (i == 4) {
                 throw new InvalidException("Will exec next");
             }
-            asyncContinue(true);
+            circuitContinue(true);
             return i;
         }, oneSecond, c, TimeoutFlag.PERIOD.flags());
         sleep(8000);
@@ -376,7 +378,7 @@ public class CoreTester extends AbstractTester {
         timer.setTimeout(() -> {
             log.info("exec nextDelayFn");
             c.incrementAndGet();
-            asyncContinue(true);
+            circuitContinue(true);
         }, d -> d > 1000 ? -1 : Math.max(d, 100) * 2);
         sleep(5000);
         log.info("exec nextDelayFn ok");
@@ -399,46 +401,22 @@ public class CoreTester extends AbstractTester {
 
     @SneakyThrows
     @Test
-    public synchronized void MXBean() {
-        int productCount = 10;
-        ExecutorService fix = Executors.newFixedThreadPool(productCount);
-        ThreadPool pool = new ThreadPool(1, 4, "rx");
+    public void mx() {
+        assert Sys.formatNanosElapsed(985).equals("985ns");
+        assert Sys.formatNanosElapsed(211985).equals("211µs");
+        assert Sys.formatNanosElapsed(2211985).equals("2ms");
+        assert Sys.formatNanosElapsed(2211985, 1).equals("2s");
+        assert Sys.formatNanosElapsed(2048211985).equals("2s");
 
-        for (int i = 0; i < productCount; i++) {
-            int finalI = i;
-            fix.execute(() -> {
-//                while (true) {
-                pool.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        System.out.println("i-" + finalI + ": " + System.currentTimeMillis());
-                        sleep(5000);
-                    }
+        Sys.mxScheduleTask(p -> {
+            log.info("Disk={} <- {}", p.getDisks().where(DiskInfo::isBootstrapDisk).first().getUsedPercent(),
+                    toJsonString(p));
+        });
 
-                    @Override
-                    public String toString() {
-                        return "-[" + finalI;
-                    }
-                });
-//                }
-            });
-        }
-
-//        for (int i = 0; i < 10; i++) {
-//            Tasks.schedule(() -> {
-//                sleep(2000);
-//            }, 1000);
-//        }
-//
-//        Tasks.schedule(() -> {
-//            List<ManagementMonitor.ThreadMonitorInfo> threads = ManagementMonitor.getInstance().findTopCpuTimeThreads(10);
-//            for (ManagementMonitor.ThreadMonitorInfo thread : threads) {
-//                log.info("{}", thread.toString());
-//            }
-//        }, 2000);
-//        System.out.println("main thread done");
-
-        wait();
+        System.out.println("main thread done");
+        sleep(12000);
+        log.info("dlt: {}", Sys.findDeadlockedThreads());
+        log.info("at: {}", Sys.getAllThreads().toJoinString("\n", ThreadInfo::toString));
     }
     //endregion
 
@@ -448,7 +426,7 @@ public class CoreTester extends AbstractTester {
         log.info("local ts {}", clock.millis());
 //        NtpClock.sync();
 //        log.info("ntp ts {}", clock.millis());
-        RxConfig.INSTANCE.getNtp().setSyncPeriod(2000);
+        RxConfig.INSTANCE.getNet().getNtp().setSyncPeriod(2000);
         NtpClock.scheduleTask();
         for (int i = 0; i < 10; i++) {
             sleep(2500);
@@ -489,6 +467,26 @@ public class CoreTester extends AbstractTester {
         pool.setLeakDetectionThreshold(1);
         pool.setRetireLeak(true);
         sleep(15000);
+    }
+
+    @Test
+    public void eventBus() {
+        EventBus bus = EventBus.DEFAULT;
+        bus.onDeadEvent.combine((s, e) -> log.error("DeadEvent {}", e.getValue()));
+        bus.register(this);
+        bus.register(this);
+        for (int i = 0; i < 5; i++) {
+            bus.post(PersonBean.YouFan);
+        }
+        bus.unregister(this);
+        for (int i = 0; i < 5; i++) {
+            bus.post(PersonBean.YouFan);
+        }
+    }
+
+    @Subscribe
+    void OnUserCreate(PersonBean personBean) {
+        log.info("OnUserCreate: {}", personBean);
     }
 
     @SneakyThrows
@@ -568,16 +566,16 @@ public class CoreTester extends AbstractTester {
             personSet.add(p);
         }
 
-        showResult("leftJoin", Linq.from(new PersonBean(27, 27, "jack", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                new PersonBean(28, 28, "tom", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                new PersonBean(29, 29, "lily", PersonGender.GIRL, 8, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                new PersonBean(30, 30, "cookie", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array)).leftJoin(
-                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.BOY, 5, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(28, 28, "tom", PersonGender.BOY, 10, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(29, 29, "jack", PersonGender.BOY, 1, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(30, 30, "session", PersonGender.BOY, 25, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(31, 31, "trump", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array),
-                        new PersonBean(32, 32, "jack", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.Flags, PersonBean.Array)), (p, x) -> p.name.equals(x.name), Tuple::of
+        showResult("leftJoin", Linq.from(new PersonBean(27, 27, "jack", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                new PersonBean(28, 28, "tom", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                new PersonBean(29, 29, "lily", PersonGender.GIRL, 8, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                new PersonBean(30, 30, "cookie", PersonGender.BOY, 6, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA)).leftJoin(
+                Arrays.toList(new PersonBean(27, 27, "cookie", PersonGender.BOY, 5, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(28, 28, "tom", PersonGender.BOY, 10, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(29, 29, "jack", PersonGender.BOY, 1, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(30, 30, "session", PersonGender.BOY, 25, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(31, 31, "trump", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA),
+                        new PersonBean(32, 32, "jack", PersonGender.BOY, 55, DateTime.now(), 1L, Decimal.valueOf(1d), PersonBean.PROP_Flags, PersonBean.PROP_EXTRA)), (p, x) -> p.name.equals(x.name), Tuple::of
         ));
 
         showResult("groupBy(p -> p.index2...", Linq.from(personSet).groupBy(p -> p.index2, (p, x) -> {
@@ -809,10 +807,10 @@ public class CoreTester extends AbstractTester {
         PersonBean leZhi = PersonBean.LeZhi;
 
         IPerson proxy = proxy(PersonBean.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
-        assert rawObject(proxy) == leZhi;
+        assert targetObject(proxy) == leZhi;
 
         IPerson iproxy = proxy(IPerson.class, (m, p) -> p.fastInvoke(leZhi), leZhi, false);
-        assert rawObject(iproxy) == leZhi;
+        assert targetObject(iproxy) == leZhi;
     }
 
     @SneakyThrows
@@ -822,15 +820,14 @@ public class CoreTester extends AbstractTester {
             System.out.println(resource);
             assert resource != null;
         }
-
-        Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
-        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
-        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
-
         assert Reflects.stackClass(0) == this.getClass();
 //        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
 //            System.out.println(traceElement);
 //        }
+
+        Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
+        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
+        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
 
         Method defMethod = IPerson.class.getMethod("enableCompress");
         assert (Boolean) Reflects.invokeDefaultMethod(defMethod, PersonBean.YouFan);
@@ -844,7 +841,7 @@ public class CoreTester extends AbstractTester {
         assert eq("I-" + r, Reflects.invokeMethod(bean, "instanceCall", code, msg));
         assert eq("D-" + r, Reflects.invokeMethod(bean, "defCall", code, msg));
         assert eq("N-" + r, Reflects.invokeMethod(bean, "nestedDefCall", code, msg));
-
+        Method genericCall = Reflects.getMethodMap(bean.getClass()).get("genericCall").first();
 
         //convert
         assert Reflects.changeType(1, boolean.class);

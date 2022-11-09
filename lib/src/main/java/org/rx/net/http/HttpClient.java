@@ -1,26 +1,29 @@
 package org.rx.net.http;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.annotation.JSONField;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.annotation.JSONField;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpMethod;
 import kotlin.Pair;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
-import okhttp3.Authenticator;
 import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.core.*;
+import org.rx.core.Linq;
+import org.rx.core.Reflects;
+import org.rx.core.RxConfig;
+import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
-import org.rx.util.Lazy;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
+import org.rx.util.Lazy;
 import org.rx.util.function.BiAction;
-import org.springframework.http.HttpMethod;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -31,8 +34,9 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.InputStream;
-import java.lang.StringBuilder;
-import java.net.*;
+import java.net.Proxy;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -41,7 +45,8 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-import static org.rx.core.App.*;
+import static org.rx.core.Sys.logHttp;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class HttpClient {
@@ -204,7 +209,7 @@ public class HttpClient {
             return string;
         }
 
-        public <T extends JSON> T toJson() {
+        public <T> T toJson() {
             return (T) JSON.parse(toString());
         }
     }
@@ -228,11 +233,6 @@ public class HttpClient {
             return empty;
         }
     };
-
-//    static {
-//        System.setProperty("https.protocols", "TLSv1.2,TLSv1.1,TLSv1,SSLv3,SSLv2Hello");
-//        System.setProperty("jsse.enableSNIExtension", "false");
-//    }
 
     //region StaticMembers
     public static String encodeCookie(List<Cookie> cookies) {
@@ -417,25 +417,20 @@ public class HttpClient {
         try {
             Request.Builder request = createRequest(url);
             RequestBody requestBody = content.toBody();
-            switch (method) {
-                case POST:
-                    request.post(requestBody);
-                    break;
-                case HEAD:
-                    request.head();
-                    break;
-                case PUT:
-                    request.put(requestBody);
-                    break;
-                case PATCH:
-                    request.patch(requestBody);
-                    break;
-                case DELETE:
-                    request.delete(requestBody);
-                    break;
-                default:
-                    request.get();
-                    break;
+            if (HttpMethod.GET.equals(method)) {
+                request.get();
+            } else if (HttpMethod.POST.equals(method)) {
+                request.post(requestBody);
+            } else if (HttpMethod.HEAD.equals(method)) {
+                request.head();
+            } else if (HttpMethod.PUT.equals(method)) {
+                request.put(requestBody);
+            } else if (HttpMethod.PATCH.equals(method)) {
+                request.patch(requestBody);
+            } else if (HttpMethod.DELETE.equals(method)) {
+                request.delete(requestBody);
+            } else {
+                throw new UnsupportedOperationException();
             }
             if (responseContent != null) {
                 responseContent.response.close();

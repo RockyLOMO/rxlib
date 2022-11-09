@@ -1,7 +1,9 @@
 package org.rx.util.function;
 
+import lombok.SneakyThrows;
+
 @FunctionalInterface
-public interface Action {
+public interface Action extends Runnable {
     void invoke() throws Throwable;
 
     default <T> Func<T> toFunc() {
@@ -9,5 +11,11 @@ public interface Action {
             invoke();
             return null;
         };
+    }
+
+    @SneakyThrows
+    @Override
+    default void run() {
+        invoke();
     }
 }

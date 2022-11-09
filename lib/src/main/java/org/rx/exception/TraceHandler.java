@@ -20,8 +20,8 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
 
-import static org.rx.core.App.toJsonString;
 import static org.rx.core.Extends.as;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class TraceHandler implements Thread.UncaughtExceptionHandler {
@@ -58,11 +58,12 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     @Data
     public static class MetricsEntity implements Serializable {
         private static final long serialVersionUID = 2049476730423563051L;
-        @DbColumn(primaryKey = true, autoIncrement = true)
-        long id;
+        @DbColumn(primaryKey = true)
         String name;
         String message;
-        Date createTime;
+        String stackTrace;
+        int occurCount;
+        Date modifyTime;
     }
 
     public static final TraceHandler INSTANCE = new TraceHandler();
@@ -171,13 +172,14 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                     entity.setMessages(new ConcurrentLinkedQueue<>());
                     entity.setStackTrace(stackTrace);
                 }
+                RxConfig conf = RxConfig.INSTANCE;
                 Queue<String> queue = entity.getMessages();
-                if (queue.size() > RxConfig.INSTANCE.getTraceErrorMessageSize()) {
+                if (queue.size() > conf.getTraceErrorMessageSize()) {
                     queue.poll();
                 }
                 queue.offer(String.format("%s\t%s", DateTime.now().toDateTimeString(), msg));
                 entity.occurCount++;
-                entity.setAppName(RxConfig.INSTANCE.getId());
+                entity.setAppName(conf.getId());
                 entity.setThreadName(t.getName());
                 entity.setModifyTime(DateTime.now());
                 db.save(entity, doInsert);
@@ -212,7 +214,8 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Class<?> declaringType, String methodName, Object[] parameters, long elapsedMicros) {
-        if (getKeepDays() <= 0 || elapsedMicros < RxConfig.INSTANCE.getTraceSlowElapsedMicros()) {
+        RxConfig conf = RxConfig.INSTANCE;
+        if (getKeepDays() <= 0 || elapsedMicros < conf.getTraceSlowElapsedMicros()) {
             return;
         }
 
@@ -234,7 +237,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 }
                 entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
                 entity.occurCount++;
-                entity.setAppName(RxConfig.INSTANCE.getId());
+                entity.setAppName(conf.getId());
                 entity.setThreadName(Thread.currentThread().getName());
                 entity.setModifyTime(DateTime.now());
                 db.save(entity, doInsert);
@@ -268,14 +271,31 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         return db.findBy(q);
     }
 
-    public void saveMetrics(String name, String message) {
-        log.info("saveMetrics {} {}", name, message);
-        MetricsEntity entity = new MetricsEntity();
-        entity.setName(name);
-        entity.setMessage(message);
-        entity.setCreateTime(DateTime.now());
-        EntityDatabase db = EntityDatabase.DEFAULT;
-        db.save(entity, true);
+    public void saveMetric(String name, String message) {
+        log.info("saveMetric {} {}", name, message);
+        String stackTrace = Reflects.getStackTrace(Thread.currentThread());
+        Tasks.nextPool().runSerial(() -> {
+            EntityDatabase db = EntityDatabase.DEFAULT;
+            db.begin();
+            try {
+                MetricsEntity entity = db.findById(MetricsEntity.class, name);
+                boolean doInsert = entity == null;
+                if (doInsert) {
+                    entity = new MetricsEntity();
+                    entity.setName(name);
+                }
+                entity.setMessage(message);
+                entity.setStackTrace(stackTrace);
+                entity.occurCount++;
+                entity.setModifyTime(DateTime.now());
+                db.save(entity, doInsert);
+                db.commit();
+            } catch (Throwable e) {
+                log.error("dbTrace", e);
+                db.rollback();
+            }
+            return null;
+        }, name);
     }
 
     public List<MetricsEntity> queryMetrics(String name, Integer limit) {
@@ -288,6 +308,6 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             q.eq(MetricsEntity::getName, name);
         }
         EntityDatabase db = EntityDatabase.DEFAULT;
-        return db.findBy(q.orderByDescending(MetricsEntity::getCreateTime).limit(limit));
+        return db.findBy(q.orderByDescending(MetricsEntity::getOccurCount).limit(limit));
     }
 }

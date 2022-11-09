@@ -25,10 +25,10 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 @RequiredArgsConstructor
 public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
-    private static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
-    private static final AttributeKey<SocksContext> CTX = AttributeKey.valueOf("PROXY_CTX");
+    static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
+    static final AttributeKey<SocksContext> CTX = AttributeKey.valueOf("PROXY_CTX");
     //ss
-    private static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
+    static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
 
     /**
      * call this method before bind & connect

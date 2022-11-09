@@ -1,6 +1,6 @@
 package org.rx.bean;
 
-import com.alibaba.fastjson.annotation.JSONField;
+import com.alibaba.fastjson2.annotation.JSONField;
 import lombok.Getter;
 import lombok.NonNull;
 import org.rx.core.Constants;

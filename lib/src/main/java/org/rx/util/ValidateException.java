@@ -6,8 +6,8 @@ import org.rx.exception.InvalidException;
 
 @Getter
 public class ValidateException extends InvalidException {
-    private String propertyName;
-    private String violationMessage;
+    final String propertyName;
+    final String violationMessage;
 
     public ValidateException(String propertyName, String violationMessage, String message) {
         super(message);

@@ -1,10 +1,9 @@
 package org.rx.test;
 
-import com.google.common.base.Stopwatch;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.App;
 import org.rx.core.ResetEventWait;
+import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.io.Files;
 import org.rx.net.Sockets;
@@ -12,7 +11,6 @@ import org.rx.util.function.BiAction;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class AbstractTester {
@@ -36,8 +34,8 @@ public class AbstractTester {
                 action.invoke(i);
             }
         } finally {
-            long elapsed = (System.nanoTime() - start) / 1000L;
-            log.info("Invoke {} times={} elapsed={} avg={}", name, count, App.formatElapsed(elapsed), App.formatElapsed(elapsed / count));
+            long elapsed = System.nanoTime() - start;
+            log.info("Invoke {} times={} elapsed={} avg={}", name, count, Sys.formatNanosElapsed(elapsed), Sys.formatNanosElapsed(elapsed / count));
         }
     }
 
@@ -47,7 +45,7 @@ public class AbstractTester {
 
     @SneakyThrows
     public static void invokeAsync(String name, BiAction<Integer> action, int count) {
-        Stopwatch stopwatch = Stopwatch.createStarted();
+        long start = System.nanoTime();
         try {
             CountDownLatch latch = new CountDownLatch(count);
             for (int i = 0; i < count; i++) {
@@ -62,7 +60,8 @@ public class AbstractTester {
             }
             latch.await();
         } finally {
-            log.info("Invoke {} times={} elapsed={}ms", name, count, stopwatch.elapsed(TimeUnit.MILLISECONDS));
+            long elapsed = System.nanoTime() - start;
+            log.info("Invoke {} times={} elapsed={}", name, count, Sys.formatNanosElapsed(elapsed));
         }
     }
 

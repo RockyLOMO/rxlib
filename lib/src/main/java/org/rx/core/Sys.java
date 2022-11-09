@@ -1,46 +1,142 @@
 package org.rx.core;
 
 import ch.qos.logback.classic.util.LogbackMDCAdapter;
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.parser.Feature;
-import com.alibaba.fastjson.serializer.SerializerFeature;
-import com.alibaba.fastjson.serializer.ValueFilter;
+import com.alibaba.fastjson2.*;
+import com.alibaba.fastjson2.filter.ValueFilter;
+import com.sun.management.HotSpotDiagnosticMXBean;
+import com.sun.management.OperatingSystemMXBean;
+import com.sun.management.ThreadMXBean;
+import io.netty.util.Timeout;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.SystemUtils;
-import org.rx.bean.*;
-import org.rx.codec.CodecUtil;
-import org.rx.exception.TraceHandler;
-import org.rx.exception.InvalidException;
-import org.rx.net.Sockets;
+import org.rx.bean.DynamicProxy;
+import org.rx.bean.LogStrategy;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.util.function.*;
+import org.rx.codec.CodecUtil;
+import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
+import org.rx.net.Sockets;
+import org.rx.util.function.BiAction;
+import org.rx.util.function.TripleFunc;
 import org.slf4j.MDC;
 import org.slf4j.spi.MDCAdapter;
 import org.springframework.cglib.proxy.Enhancer;
 
-import java.io.*;
+import java.io.File;
+import java.io.Serializable;
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
 import java.net.URI;
 import java.util.*;
-
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.alibaba.fastjson2.JSONReader.Feature.AllowUnQuotedFieldNames;
+import static com.alibaba.fastjson2.JSONReader.Feature.SupportClassForName;
+import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
+import static org.rx.core.Constants.PERCENT;
 import static org.rx.core.Extends.as;
 
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
-public final class App extends SystemUtils {
-    static final String DPR = "_DPR";
+public final class Sys extends SystemUtils {
+    @Getter
+    @RequiredArgsConstructor
+    public static class Info implements Serializable {
+        private static final long serialVersionUID = -1263477025428108392L;
+        private final int cpuThreads;
+        private final double cpuLoad;
+        private final int liveThreadCount;
+        private final long freePhysicalMemory;
+        private final long totalPhysicalMemory;
+        private final Linq<DiskInfo> disks;
+
+        public int getCpuLoadPercent() {
+            return Numbers.toPercent(cpuLoad);
+        }
+
+        public long getUsedPhysicalMemory() {
+            return totalPhysicalMemory - freePhysicalMemory;
+        }
+
+        public int getUsedPhysicalMemoryPercent() {
+            return Numbers.toPercent((double) getUsedPhysicalMemory() / totalPhysicalMemory);
+        }
+
+        public boolean hasCpuLoadWarning() {
+            return getCpuLoadPercent() > RxConfig.INSTANCE.threadPool.cpuLoadWarningThreshold;
+        }
+
+        public boolean hasPhysicalMemoryUsageWarning() {
+            return getUsedPhysicalMemoryPercent() > RxConfig.INSTANCE.cache.physicalMemoryUsageWarningThreshold;
+        }
+
+        public boolean hasDiskUsageWarning() {
+            return disks.any(DiskInfo::hasDiskUsageWarning);
+        }
+
+        public DiskInfo getSummedDisk() {
+            return disks.groupBy(p -> true, (p, x) -> new DiskInfo("SummedDisk", "/", (long) x.sum(y -> y.freeSpace), (long) x.sum(y -> y.totalSpace), false)).first();
+        }
+    }
+
+    @Getter
+    @RequiredArgsConstructor
+    public static class DiskInfo implements Serializable {
+        private static final long serialVersionUID = -9137708658583628112L;
+        private final String name;
+        private final String path;
+        private final long freeSpace;
+        private final long totalSpace;
+        private final boolean bootstrapDisk;
+
+        public long getUsedSpace() {
+            return totalSpace - freeSpace;
+        }
+
+        public int getUsedPercent() {
+            return Numbers.toPercent((double) getUsedSpace() / totalSpace);
+        }
+
+        public boolean hasDiskUsageWarning() {
+            return getUsedPercent() > RxConfig.INSTANCE.disk.diskUsageWarningThreshold;
+        }
+    }
+
+    @Getter
+    @RequiredArgsConstructor
+    public static class ThreadInfo {
+        private final java.lang.management.ThreadInfo thread;
+        private final long userNanos;
+        private final long cpuNanos;
+
+        @Override
+        public String toString() {
+            StringBuilder buf = new StringBuilder(thread.toString());
+            int i = buf.indexOf("\n");
+            buf.insert(i, String.format(" BlockedTime=%s WaitedTime=%s UserTime=%s CpuTime=%s",
+                    formatNanosElapsed(thread.getBlockedTime(), 2), formatNanosElapsed(thread.getWaitedTime(), 2),
+                    formatNanosElapsed(userNanos), formatNanosElapsed(cpuNanos)));
+            return buf.toString();
+        }
+    }
+
+    public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
+    public static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+    static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+    static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
-    static final ValueFilter SKIP_TYPES_FILTER = (o, k, v) -> {
+    static final JSONReader.Feature[] JSON_READ_FLAGS = new JSONReader.Feature[]{SupportClassForName, AllowUnQuotedFieldNames};
+    static final JSONWriter.Feature[] JSON_WRITE_FLAGS = new JSONWriter.Feature[]{NotWriteDefaultValue};
+    static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
         if (v != null) {
             Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
             if (Linq.canBeCollection(v.getClass())) {
@@ -54,7 +150,8 @@ public final class App extends SystemUtils {
         }
         return v;
     };
-    static final Feature[] PARSE_FLAGS = new Feature[]{Feature.OrderedField};
+    static final String[] seconds = {"ns", "µs", "ms", "s"};
+    static Timeout samplingTimeout;
 
     static {
         RxConfig conf = RxConfig.INSTANCE;
@@ -62,10 +159,10 @@ public final class App extends SystemUtils {
 
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
-        if ((conf.ntp.enableFlags & 1) == 1) {
+        if ((conf.net.ntp.enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
         }
-        if ((conf.ntp.enableFlags & 2) == 2) {
+        if ((conf.net.ntp.enableFlags & 2) == 2) {
             Tasks.setTimeout(() -> {
                 log.info("TimeAdvice inject..");
                 TimeAdvice.transform();
@@ -127,8 +224,8 @@ public final class App extends SystemUtils {
         return new File(path);
     }
 
-    public static <T> T rawObject(Object proxyObject) {
-        return Extends.<String, T>weakMap(proxyObject).get(DPR);
+    public static <T> T targetObject(Object proxyObject) {
+        return Extends.<String, T>weakMap(proxyObject).get(DPT);
     }
 
     public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
@@ -147,7 +244,7 @@ public final class App extends SystemUtils {
             proxyObj = (T) Enhancer.create(type, new DynamicProxy(func));
         }
         if (rawObject != null) {
-            Extends.weakMap(proxyObj).put(DPR, rawObject);
+            Extends.weakMap(proxyObj).put(DPT, rawObject);
         }
         return proxyObj;
     }
@@ -276,12 +373,78 @@ public final class App extends SystemUtils {
             }
         }
     }
+    //endregion
 
-    public static String formatElapsed(long microSeconds) {
-        long d = 1000;
-        return microSeconds > d ? String.format("%sms", microSeconds / d) : String.format("%sµs", microSeconds);
+    //region mx
+    public synchronized static void mxScheduleTask(BiAction<Info> mxHandler) {
+        if (samplingTimeout != null) {
+            samplingTimeout.cancel();
+        }
+        samplingTimeout = ThreadPool.timer.newTimeout(t -> {
+            try {
+                mxHandler.invoke(mxInfo());
+            } catch (Throwable e) {
+                TraceHandler.INSTANCE.log(e);
+            } finally {
+                t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getMxSamplingPeriod(), TimeUnit.MILLISECONDS);
+            }
+        }, RxConfig.INSTANCE.getMxSamplingPeriod(), TimeUnit.MILLISECONDS);
     }
 
+    public static Info mxInfo() {
+        File bd = new File("/");
+        return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), threadMx.getThreadCount(),
+                osMx.getFreePhysicalMemorySize(), osMx.getTotalPhysicalMemorySize(),
+                Linq.from(File.listRoots()).select(p -> new DiskInfo(p.getName(), p.getAbsolutePath(), p.getFreeSpace(), p.getTotalSpace(), bd.getAbsolutePath().equals(p.getAbsolutePath()))));
+    }
+
+    public static List<ThreadInfo> findDeadlockedThreads() {
+        long[] deadlockedTids = Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads());
+        if (Arrays.isEmpty(deadlockedTids)) {
+            return Collections.emptyList();
+        }
+        return Linq.from(threadMx.getThreadInfo(deadlockedTids)).select((p, i) -> new ThreadInfo(p, -1, -1)).toList();
+    }
+
+    public static Linq<ThreadInfo> getAllThreads() {
+        if (!threadMx.isThreadContentionMonitoringEnabled()) {
+            threadMx.setThreadContentionMonitoringEnabled(true);
+        }
+        if (!threadMx.isThreadCpuTimeEnabled()) {
+            threadMx.setThreadCpuTimeEnabled(true);
+        }
+        boolean includeLock = false;
+        Linq<java.lang.management.ThreadInfo> allThreads = Linq.from(threadMx.dumpAllThreads(includeLock, includeLock));
+        long[] tids = Arrays.toPrimitive(allThreads.select(java.lang.management.ThreadInfo::getThreadId).toArray());
+        long[] threadUserTime = threadMx.getThreadUserTime(tids);
+        long[] threadCpuTime = threadMx.getThreadCpuTime(tids);
+        return allThreads.select((p, i) -> new ThreadInfo(p, threadUserTime[i], threadCpuTime[i]));
+    }
+
+    public static String formatCpuLoad(double val) {
+        String p = String.valueOf(val * PERCENT);
+        int ix = p.indexOf(".") + 1;
+        String percent = p.substring(0, ix) + p.charAt(ix);
+        return percent + "%";
+    }
+
+    public static String formatNanosElapsed(long nanoseconds) {
+        return formatNanosElapsed(nanoseconds, 0);
+    }
+
+    public static String formatNanosElapsed(long nanoseconds, int i) {
+        long d = 1000L, v = nanoseconds;
+        while (v >= d) {
+            v /= d;
+            if (++i >= 3) {
+                break;
+            }
+        }
+        return v + seconds[i];
+    }
+    //endregion
+
+    //region common
     public static String fastCacheKey(String method, Object... args) {
         if (method == null) {
             method = Reflects.stackClass(1).getSimpleName();
@@ -313,14 +476,13 @@ public final class App extends SystemUtils {
         }
         return buf.toString();
     }
-    //endregion
 
     //region json
     //final 字段不会覆盖, TypeReference
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);
         try {
-            return JSON.parseObject(js, type, PARSE_FLAGS);
+            return JSON.parseObject(js, type, JSON_READ_FLAGS);
         } catch (Exception e) {
             throw new InvalidException("Invalid json {}", js, e);
         }
@@ -368,8 +530,7 @@ public final class App extends SystemUtils {
         }
 
         try {
-//            return JSON.toJSONString(src, skipTypesFilter, SerializerFeature.DisableCircularReferenceDetect);
-            return JSON.toJSONString(SKIP_TYPES_FILTER.process(src, null, src), SerializerFeature.DisableCircularReferenceDetect);
+            return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(src, null, src), JSON_WRITE_FLAGS);
         } catch (Throwable e) {
             Linq<Object> q;
             if (Linq.canBeCollection(src.getClass())) {
@@ -387,5 +548,6 @@ public final class App extends SystemUtils {
             return json.toString();
         }
     }
+    //endregion
     //endregion
 }

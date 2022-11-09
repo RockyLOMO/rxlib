@@ -7,7 +7,6 @@ import io.netty.util.TimerTask;
 import lombok.*;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
-import org.rx.exception.InvalidException;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -19,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongUnaryOperator;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.proxy;
+import static org.rx.core.Sys.proxy;
 
 @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer extends AbstractExecutorService implements ScheduledExecutorService {
@@ -79,9 +78,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 future = executor.submit(() -> {
                     boolean doContinue = flags.has(TimeoutFlag.PERIOD);
                     try {
-                        return fn.invoke();
-                    } catch (Throwable e) {
-                        throw InvalidException.sneaky(e);
+                        return fn.get();
                     } finally {
                         if (ThreadPool.asyncContinueFlag(doContinue)) {
                             newTimeout(this, delay, timeout.timer());

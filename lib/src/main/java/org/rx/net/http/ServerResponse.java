@@ -1,7 +1,6 @@
 package org.rx.net.http;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
@@ -14,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.rx.io.Bytes;
 
-import static org.rx.core.App.toJsonString;
+import static org.rx.core.Sys.toJsonString;
 
 @RequiredArgsConstructor
 @Getter

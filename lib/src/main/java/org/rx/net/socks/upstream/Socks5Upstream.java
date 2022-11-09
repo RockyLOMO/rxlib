@@ -4,7 +4,9 @@ import io.netty.channel.Channel;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.codec.CodecUtil;
-import org.rx.core.*;
+import org.rx.core.Arrays;
+import org.rx.core.Cache;
+import org.rx.core.Sys;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
@@ -48,7 +50,7 @@ public class Socks5Upstream extends Upstream {
             //先变更
             destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
             Cache.getOrSet(hash, k -> awaitQuietly(() -> {
-                App.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
+                Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
                 support.fakeEndpoint(hash, dstEpStr);
                 return true;
             }, SocksSupport.ASYNC_TIMEOUT));

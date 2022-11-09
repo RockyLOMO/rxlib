@@ -1,10 +1,9 @@
 package org.rx.core;
 
+import io.netty.util.internal.ThreadLocalRandom;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
-
-import io.netty.util.internal.ThreadLocalRandom;
 import org.rx.exception.InvalidException;
 
 import java.util.ArrayList;

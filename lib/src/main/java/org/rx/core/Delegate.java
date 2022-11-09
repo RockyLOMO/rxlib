@@ -1,13 +1,15 @@
 package org.rx.core;
 
-import com.google.common.eventbus.EventBus;
-import lombok.*;
-import org.rx.exception.TraceHandler;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
+import lombok.NonNull;
+import lombok.SneakyThrows;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.rx.util.function.TripleAction;
 
 import java.lang.reflect.Field;
-import java.util.*;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
@@ -16,16 +18,12 @@ import static org.rx.core.Extends.tryClose;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventArgs> implements TripleAction<TSender, TArgs> {
-    static {
-        Container.register(EventBus.class, new EventBus());
-    }
-
     public static void register(Object eventListener) {
-        Container.get(EventBus.class).register(eventListener);
+        EventBus.DEFAULT.register(eventListener);
     }
 
     public static void post(Object eventObject) {
-        Container.get(EventBus.class).post(eventObject);
+        EventBus.DEFAULT.post(eventObject);
     }
 
     public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> create() {

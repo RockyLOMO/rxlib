@@ -10,6 +10,7 @@ import java.io.Serializable;
 
 @Getter
 public final class StringBuilder implements Appendable, CharSequence, Serializable {
+    private static final long serialVersionUID = -5807000410250350182L;
     final java.lang.StringBuilder buffer;
     @Setter
     TripleAction<StringBuilder, Object> preAppend;

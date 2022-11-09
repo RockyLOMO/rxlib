@@ -6,8 +6,8 @@ import lombok.SneakyThrows;
 import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
 import org.rx.core.Constants;
-import org.rx.util.Lazy;
 import org.rx.core.Linq;
+import org.rx.util.Lazy;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -151,7 +151,7 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
 
     @Override
     protected void freeObjects() {
-        // java.io.IOException: 请求的操作无法在使用用户映射区域打开的文件上执行 (Windows需要先执行unmap())
+        // java.io.IOException: 请求的操作无法在使用用户映射区域打开的文件上执行 (Windows need to run unmap() first)
         // A mapping, once established, is not dependent upon the file channel that was used to create it. Closing the channel, in particular, has no effect upon the validity of the mapping.
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             release(tuple.left);

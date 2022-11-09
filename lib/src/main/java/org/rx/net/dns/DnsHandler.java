@@ -1,7 +1,10 @@
 package org.rx.net.dns;
 
 import io.netty.buffer.Unpooled;
-import io.netty.channel.*;
+import io.netty.channel.AddressedEnvelope;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -19,7 +22,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.quietly;
 import static org.rx.net.dns.DnsServer.DOMAIN_PREFIX;
 
 @Slf4j
@@ -57,7 +60,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             List<InetAddress> sIps = server.shadowCache.get(k);
             if (sIps == null) {
                 //未命中也缓存
-                server.shadowCache.put(k, sIps = quietly(() -> sneakyInvoke(() -> shadowServers.next().getSupport().resolveHost(domain), 2), Collections::emptyList),
+                server.shadowCache.put(k, sIps = quietly(() -> shadowServers.next().getSupport().resolveHost(domain), 2, Collections::emptyList),
                         CachePolicy.absolute(sIps.isEmpty() ? 5 : server.ttl));//缓存必须有值
             }
             if (CollectionUtils.isEmpty(sIps)) {

@@ -8,14 +8,18 @@ import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.rpc.*;
+import org.rx.net.rpc.Remoting;
+import org.rx.net.rpc.RemotingContext;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.UdpClient;
 
 import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.*;
@@ -119,12 +123,12 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public int register(@NonNull String appName, int weight, Set<InetSocketAddress> serverEndpoints) {
-        App.logCtx("clientSize", rs.getClients().size());
+        Sys.logCtx("clientSize", rs.getClients().size());
 
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().attr(APP_NAME_KEY, appName);
         InetAddress addr = ctx.getClient().getRemoteEndpoint().getAddress();
-        App.logCtx("remoteAddr", addr);
+        Sys.logCtx("remoteAddr", addr);
         doRegister(appName, weight, addr);
 
         syncRegister(serverEndpoints);
@@ -149,7 +153,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     void doDeregister(String appName, InetAddress addr, boolean isDisconnected, boolean shouldSync) {
-        //同app同ip多实例，比如k8s滚动更新
+        //Multiple instances of same app and same ip, such as k8s rolling updates.
         int c = Linq.from(rs.getClients().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.getRemoteEndpoint().getAddress().equals(addr));
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);

@@ -1,22 +1,30 @@
 package org.rx.util;
 
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Mapping;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.Tuple;
-import org.rx.core.*;
+import org.rx.core.Linq;
+import org.rx.core.Reflects;
+import org.rx.core.Strings;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 import org.springframework.cglib.beans.BeanCopier;
 
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.proxy;
 
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
@@ -29,7 +37,7 @@ public class BeanMapper {
     }
 
     public static final BeanMapper DEFAULT = new BeanMapper();
-    private static final Mapping[] empty = new Mapping[0];
+    static final Mapping[] empty = new Mapping[0];
 
     public static Map<String, Object> convertFromObjectString(String str, boolean root) {
         String startFlag = root ? "(" : "{", endFlag = root ? ")" : "}";

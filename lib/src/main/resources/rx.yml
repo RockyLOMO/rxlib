@@ -5,20 +5,15 @@ app:
     queueCapacity: 0
     lowCpuWaterMark: 40
     highCpuWaterMark: 70
-    minCoreSize: 2
-    maxCoreSize: 1000
-    resizeQuantity: 2
-    scheduleInitSize: 1
     replicas: 2
-  ntp:
-    enableFlags: 0
-    syncPeriod: 128000
-    servers:
-      - ntp.aliyun.com
-      - ntp.tencent.com
-      - cn.pool.ntp.org
+    cpuLoadWarningThreshold: 80
+    samplingPeriod: 3000
+    samplingTimes: 2
+    minDynamicSize: 2
+    maxDynamicSize: 1000
+    resizeQuantity: 2
   disk:
-    monitorPeriod: 60000
+    diskUsageWarningThreshold: 90
     entityDatabaseRollPeriod: 10000
   net:
     reactorThreadAmount: 0
@@ -27,6 +22,20 @@ app:
     poolMaxSize: 0
     poolKeepAliveSeconds: 120
     userAgent: Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat
+    lanIps:
+      - 127.0.0.1
+      - "[::1]"
+      - localhost
+      - 192.168.*
+    ntp:
+      enableFlags: 0
+      syncPeriod: 128000
+      timeoutMillis: 2048
+      servers:
+        - ntp.aliyun.com
+        - ntp.tencent.com
+        - cn.pool.ntp.org
+  mxSamplingPeriod: 60000
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse

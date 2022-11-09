@@ -10,7 +10,6 @@ import org.rx.bean.Tuple;
 import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.exception.TraceHandler;
-import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.nameserver.NameserverClient;
 import org.rx.net.rpc.Remoting;
@@ -29,7 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.circuitContinue;
+import static org.rx.core.Extends.eachQuietly;
 
 @Slf4j
 public class ShardingEntityDatabase implements EntityDatabase {
@@ -132,7 +132,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             invokeAll(p -> {
                 if (p.deleteById(entityType, id)) {
                     rf.set(true);
-                    asyncContinue(false);
+                    circuitContinue(false);
                 }
             });
             return rf.get();
@@ -160,7 +160,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         invokeAll(p -> {
             if (p.exists(query)) {
                 rf.set(true);
-                asyncContinue(false);
+                circuitContinue(false);
             }
         });
         return rf.get();
@@ -173,7 +173,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             invokeAll(p -> {
                 if (p.existsById(entityType, id)) {
                     rf.set(true);
-                    asyncContinue(false);
+                    circuitContinue(false);
                 }
             });
             return rf.get();
@@ -188,7 +188,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             invokeAll(p -> {
                 rf.v = p.findById(entityType, id);
                 if (rf.v != null) {
-                    asyncContinue(false);
+                    circuitContinue(false);
                 }
             });
             return rf.v;
@@ -202,7 +202,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
         invokeAll(p -> {
             rf.v = p.findOne(query);
             if (rf.v != null) {
-                asyncContinue(false);
+                circuitContinue(false);
             }
         });
         return rf.v;
@@ -290,13 +290,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
     @SneakyThrows
     void invokeAll(BiAction<EntityDatabase> fn) {
         if (enableAsync) {
-            Linq.from(nodes, true).forEach(tuple -> {
-                try {
-                    fn.invoke(tuple.right);
-                } catch (Throwable e) {
-                    throw InvalidException.sneaky(e);
-                }
-            });
+            Linq.from(nodes, true).forEach(tuple -> fn.accept(tuple.right));
             return;
         }
 

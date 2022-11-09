@@ -11,12 +11,14 @@ import org.rx.io.Bytes;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.sleep;
+import static org.rx.core.Sys.fromJson;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class BeanTester extends AbstractTester {

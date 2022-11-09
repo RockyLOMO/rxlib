@@ -1,9 +1,5 @@
 package org.rx.net;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Proxy;
-import java.net.*;
-
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.bootstrap.ServerBootstrapConfig;
@@ -11,7 +7,10 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
-import io.netty.channel.epoll.*;
+import io.netty.channel.epoll.Epoll;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.epoll.EpollServerSocketChannel;
+import io.netty.channel.epoll.EpollSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.ServerSocketChannel;
@@ -23,35 +22,38 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.util.NetUtil;
-import lombok.*;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.core.*;
-import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
+import java.net.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import java.util.regex.Pattern;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
-import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.quietly;
+import static org.rx.core.Sys.fastCacheKey;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class Sockets {
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
-    public static final List<String> DEFAULT_NAT_IPS = Arrays.toList("127.0.0.1", "[::1]", "localhost", "192.168.*");
     static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final String SHARED_TCP_REACTOR = "_TCP", SHARED_UDP_REACTOR = "_UDP", SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
+    static String loopbackAddr;
     static volatile BiFunc<String, List<InetAddress>> nsInterceptor;
 
     public static void injectNameService(List<InetSocketAddress> nameServerList) {
@@ -88,7 +90,7 @@ public final class Sockets {
         return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
             if (Strings.hashEquals(method.getName(), M_0)) {
                 String host = (String) args[0];
-                //处理不了会交给源对象处理
+                //If all interceptors can't handle it, the source object will process it.
                 try {
                     List<InetAddress> addresses = nsInterceptor.invoke(host);
                     if (!CollectionUtils.isEmpty(addresses)) {
@@ -117,7 +119,7 @@ public final class Sockets {
         return reactors.computeIfAbsent(reactorName, k -> new NioEventLoopGroup(RxConfig.INSTANCE.getNet().getReactorThreadAmount()));
     }
 
-    // not executor
+    //not executor
     private static EventLoopGroup newEventLoop(int threadAmount) {
         return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
     }
@@ -142,7 +144,7 @@ public final class Sockets {
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
         boolean highNetwork = connectTimeoutMillis <= SocketConfig.DELAY_TIMEOUT_MILLIS;
 
-        int bossThreadAmount = 1; //等于bind的次数，默认1
+        int bossThreadAmount = 1; //Equal to the number of bind(), default 1
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
         WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         ServerBootstrap b = new ServerBootstrap()
@@ -162,7 +164,7 @@ public final class Sockets {
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
                 .childHandler(WaterMarkHandler.DEFAULT);
         if (config.isEnableLog()) {
-            //netty日志
+            //netty log
             b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
@@ -363,6 +365,13 @@ public final class Sockets {
     }
 
     //region Address
+    public static String loopbackHostAddress() {
+        if (loopbackAddr == null) {
+            loopbackAddr = loopbackAddress().getHostAddress();
+        }
+        return loopbackAddr;
+    }
+
     public static InetAddress loopbackAddress() {
         return InetAddress.getLoopbackAddress();
     }
@@ -373,13 +382,12 @@ public final class Sockets {
     }
 
     @SneakyThrows
-    public static boolean isNatIp(InetAddress ip) {
-        if (eq(loopbackAddress(), ip)) {
+    public static boolean isLanIp(InetAddress ip) {
+        String hostAddress = ip.getHostAddress();
+        if (Strings.hashEquals(loopbackHostAddress(), hostAddress)) {
             return true;
         }
-
-        String hostAddress = ip.getHostAddress();
-        for (String regex : DEFAULT_NAT_IPS) {
+        for (String regex : RxConfig.INSTANCE.getNet().getLanIps()) {
             if (Pattern.matches(regex, hostAddress)) {
                 return true;
             }
@@ -543,7 +551,7 @@ public final class Sockets {
     //#endregion
 
     //region httpProxy
-    public static <T> T httpProxyInvoke(String proxyAddr, Function<String, T> func) {
+    public static <T> T httpProxyInvoke(String proxyAddr, BiFunc<String, T> func) {
         setHttpProxy(proxyAddr);
         try {
             return func.apply(proxyAddr);

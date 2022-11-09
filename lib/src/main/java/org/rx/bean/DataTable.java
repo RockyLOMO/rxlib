@@ -1,6 +1,6 @@
 package org.rx.bean;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -26,8 +26,8 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import static org.rx.core.App.fromJson;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.fromJson;
 
 @Slf4j
 @SuppressWarnings(Constants.NON_RAW_TYPES)

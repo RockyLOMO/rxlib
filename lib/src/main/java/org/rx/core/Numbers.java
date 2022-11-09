@@ -2,6 +2,8 @@ package org.rx.core;
 
 import org.apache.commons.lang3.math.NumberUtils;
 
+import static org.rx.core.Constants.PERCENT;
+
 public class Numbers extends NumberUtils {
     public static boolean isEmpty(Number num) {
         return num == null || num.intValue() == INTEGER_ZERO;
@@ -17,6 +19,10 @@ public class Numbers extends NumberUtils {
 
     public static double doubleValue(Number num) {
         return isEmpty(num) ? DOUBLE_ZERO : num.doubleValue();
+    }
+
+    public static int toPercent(double val) {
+        return (int) Math.ceil(val * PERCENT);
     }
 
     //是否包含小数

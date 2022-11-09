@@ -9,10 +9,9 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Constants;
 import org.rx.core.*;
-import org.rx.exception.TraceHandler;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
 import org.rx.net.transport.protocol.ErrorPacket;
@@ -246,7 +245,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                 if (isShouldReconnect()) {
                     Tasks.timer().setTimeout(() -> {
                         doConnect(true, syncRoot);
-                        asyncContinue(isShouldReconnect());
+                        circuitContinue(isShouldReconnect());
                     }, d -> {
                         long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
                         log.warn("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);

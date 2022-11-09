@@ -1,6 +1,5 @@
 package org.rx.io;
 
-import com.google.common.base.CaseFormat;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -13,16 +12,16 @@ import org.h2.api.H2Type;
 import org.h2.jdbc.JdbcResultSet;
 import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
+import org.rx.annotation.DbColumn;
 import org.rx.bean.*;
 import org.rx.core.Arrays;
-import org.rx.core.Constants;
-import org.rx.annotation.DbColumn;
-import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.exception.TraceHandler;
+import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
+import org.rx.util.thrid.CaseFormat;
 
 import java.io.InputStream;
 import java.io.Reader;
@@ -31,14 +30,14 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.sql.*;
-import java.util.*;
 import java.util.AbstractMap;
 import java.util.Date;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.App.toJsonString;
 import static org.rx.core.Extends.eq;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
@@ -171,7 +170,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         this.maxConnections = maxConnections;
 
         if (timeRollingPattern != null) {
-            Tasks.setTimeout(() -> {
+            Tasks.timer().setTimeout(() -> {
                 if (connPool == null || Strings.hashEquals(curFilePath, getFilePath())) {
                     return;
                 }
@@ -183,7 +182,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 }
 
                 connPool = null;
-            }, RxConfig.INSTANCE.getDisk().getEntityDatabaseRollPeriod(), null, TimeoutFlag.PERIOD.flags());
+            }, d -> RxConfig.INSTANCE.getDisk().getEntityDatabaseRollPeriod(), null, TimeoutFlag.PERIOD.flags());
         }
     }
 
@@ -201,7 +200,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
         String p = filePath;
         if (p.startsWith("~/")) {
-            p = App.USER_HOME + p.substring(1);
+            p = Sys.USER_HOME + p.substring(1);
         }
         Files.deleteBefore(Files.getFullPath(p), DateTime.now(timeRollingPattern).addHours(-rollingHours), "*.mv.db");
     }
@@ -576,7 +575,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 : entityType.getSimpleName();
     }
 
-    //count 需alias
+    //count - Columns require alias
     @SneakyThrows
     public static DataTable sharding(List<DataTable> queryResults, String querySql) {
         DataTable template = queryResults.get(0);
@@ -787,8 +786,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 while (rs.next()) {
                     T t = entityType.newInstance();
                     for (int i = 1; i <= metaData.getColumnCount(); i++) {
-                        //metaData.getColumnName是大写
-//                        Tuple<Field, DbColumn> bi = meta.columns.get(metaData.getColumnName(i));
+                        //metaData.getColumnName is capitalized
                         Tuple<Field, DbColumn> bi = meta.upperColumns.get(metaData.getColumnName(i)).right;
                         if (bi == null) {
                             throw new InvalidException("Mapping {} not found", metaData.getColumnName(i));
@@ -910,16 +908,20 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
-            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
-            if (!isInTx) {
-                conn.close();
-            }
-            if (elapsed > slowSqlElapsed) {
-                log.warn("slowSql: {} -> {}ms", sql, elapsed);
-            } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("executeQuery {}\n{}", sql, toJsonString(params));
-                }
+            postInvoke(sql, params, conn, isInTx, startTime);
+        }
+    }
+
+    private void postInvoke(String sql, List<Object> params, Connection conn, boolean isInTx, long startTime) throws SQLException {
+        long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
+        if (!isInTx) {
+            conn.close();
+        }
+        if (elapsed > slowSqlElapsed) {
+            log.warn("slowSql: {} -> {}ms", sql, elapsed);
+        } else {
+            if (log.isDebugEnabled()) {
+                log.debug("executeQuery {}\n{}", sql, toJsonString(params));
             }
         }
     }
@@ -940,17 +942,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             throw e;
         } finally {
-            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
-            if (!isInTx) {
-                conn.close();
-            }
-            if (elapsed > slowSqlElapsed) {
-                log.warn("slowSql: {} -> {}ms", sql, elapsed);
-            } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("executeQuery {}\n{}", sql, toJsonString(params));
-                }
-            }
+            postInvoke(sql, params, conn, isInTx, startTime);
         }
     }
     //endregion

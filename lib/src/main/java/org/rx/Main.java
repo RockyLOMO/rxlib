@@ -8,7 +8,10 @@ import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
-import org.rx.net.*;
+import org.rx.net.AuthenticEndpoint;
+import org.rx.net.MemoryMode;
+import org.rx.net.Sockets;
+import org.rx.net.TransportFlags;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.Remoting;
@@ -19,9 +22,9 @@ import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Socks5UdpUpstream;
+import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
-import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.Action;
 import org.rx.util.function.TripleAction;
@@ -33,8 +36,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.toJsonString;
 import static org.rx.core.Tasks.awaitQuietly;
 
 @Slf4j
@@ -42,7 +45,7 @@ import static org.rx.core.Tasks.awaitQuietly;
 public final class Main implements SocksSupport {
     @SneakyThrows
     public static void main(String[] args) {
-        Map<String, String> options = App.mainOptions(args);
+        Map<String, String> options = Sys.mainOptions(args);
         Integer port = Reflects.tryConvert(options.get("port"), Integer.class);
         if (port == null) {
             log.info("Invalid port arg");

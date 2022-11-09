@@ -4,7 +4,6 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Constants;
 import org.rx.bean.RandomList;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -19,8 +18,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class NameserverClient extends Disposable {
@@ -35,12 +34,12 @@ public final class NameserverClient extends Disposable {
     static final int DEFAULT_RETRY_PERIOD = 1000;
     static final int DEFAULT_RETRY = 2;
     static final int DEFAULT_HEALTH_PERIOD = 120 * 1000;
-    static final List<RandomList<NsInfo>> GROUP = new CopyOnWriteArrayList<>();
+    static final List<RandomList<NsInfo>> group = new CopyOnWriteArrayList<>();
     static final ResetEventWait syncRoot = new ResetEventWait();
 
     static void reInject() {
         Tasks.setTimeout(() -> {
-            Linq<NsInfo> q = Linq.from(GROUP).selectMany(RandomList::aliveList).where(p -> p.dnsPort != null);
+            Linq<NsInfo> q = Linq.from(group).selectMany(RandomList::aliveList).where(p -> p.dnsPort != null);
             if (!q.any()) {
                 log.warn("At least one dns server that required");
                 return;
@@ -69,12 +68,12 @@ public final class NameserverClient extends Disposable {
 
     public NameserverClient(String appName) {
         this.appName = appName;
-        GROUP.add(hold);
+        group.add(hold);
     }
 
     @Override
     protected void freeObjects() {
-        GROUP.remove(hold);
+        group.remove(hold);
         for (NsInfo tuple : hold) {
             tryClose(tuple.ns);
         }
@@ -103,82 +102,76 @@ public final class NameserverClient extends Disposable {
         }
         svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::allEndpoints).toSet());
 
-        return Tasks.runAsync(() -> {
-            for (InetSocketAddress regEp : svrEps) {
-                synchronized (hold) {
-                    if (Linq.from(hold).any(p -> eq(p.registerEndpoint, regEp))) {
-                        continue;
-                    }
+        return Tasks.runAsync(() -> each(svrEps, regEp -> {
+            synchronized (hold) {
+                if (Linq.from(hold).any(p -> eq(p.registerEndpoint, regEp))) {
+                    return;
+                }
 
-                    NsInfo tuple = new NsInfo(regEp);
-                    hold.add(tuple);
-                    Action handshake = () -> {
-                        try {
-                            Integer lastDp = tuple.dnsPort;
-                            if (eq(tuple.dnsPort = tuple.ns.register(appName, svrEps), lastDp)) {
-                                log.debug("login ns ok {} -> {}", regEp, tuple.dnsPort);
-                                return;
-                            }
-                            log.info("login ns {} -> {} PREV={}", regEp, tuple.dnsPort, lastDp);
+                NsInfo tuple = new NsInfo(regEp);
+                hold.add(tuple);
+                Action handshake = () -> {
+                    try {
+                        Integer lastDp = tuple.dnsPort;
+                        if (eq(tuple.dnsPort = tuple.ns.register(appName, svrEps), lastDp)) {
+                            log.debug("login ns ok {} -> {}", regEp, tuple.dnsPort);
+                            return;
+                        }
+                        log.info("login ns {} -> {} PREV={}", regEp, tuple.dnsPort, lastDp);
+                        tuple.ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
+                        reInject();
+                    } catch (Throwable e) {
+                        log.debug("login error", e);
+                        Tasks.setTimeout(() -> {
+                            tuple.dnsPort = tuple.ns.register(appName, svrEps);
                             tuple.ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
                             reInject();
-                        } catch (Throwable e) {
-                            log.debug("login error", e);
-                            Tasks.setTimeout(() -> {
-                                tuple.dnsPort = tuple.ns.register(appName, svrEps);
-                                tuple.ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
-                                reInject();
-                                asyncContinue(false);
-                            }, DEFAULT_RETRY_PERIOD, appName, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
-                        }
-                    };
-                    RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(regEp, 0);
-                    config.setInitHandler((ns, rc) -> {
-                        rc.onConnected.combine((s, e) -> {
-                            hold.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
-                            reInject();
-                        });
-                        rc.onDisconnected.combine((s, e) -> {
-                            hold.setWeight(tuple, 0);
-                            reInject();
-                        });
-                        rc.onReconnecting.combine((s, e) -> {
-                            if (svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::allEndpoints).toSet())) {
-                                registerAsync(svrEps);
-                            }
-                        });
-                        rc.onReconnected.combine((s, e) -> {
-                            tuple.dnsPort = null;
-                            handshake.invoke();
-                        });
-                        ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
-                            log.info("sync server endpoints: {}", toJsonString(e.getValue()));
-                            if (e.getValue().isEmpty()) {
-                                return;
-                            }
-
-                            registerAsync(e.getValue());
-                        }, false);
-                        //onAppAddressChanged for arg#1 not work
-                        ns.<Nameserver.AppChangedEventArgs>attachEvent(Nameserver.EVENT_APP_ADDRESS_CHANGED, (s, e) -> {
-                            log.info("app address changed: {} -> {}", e.getAppName(), e.getAddress());
-                            onAppAddressChanged.invoke(s, e);
-                        }, false);
+                            circuitContinue(false);
+                        }, DEFAULT_RETRY_PERIOD, appName, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
+                    }
+                };
+                RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(regEp, 0);
+                config.setInitHandler((ns, rc) -> {
+                    rc.onConnected.combine((s, e) -> {
+                        hold.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
+                        reInject();
                     });
-                    tuple.ns = Remoting.createFacade(Nameserver.class, config);
-                    tuple.healthTask = Tasks.schedulePeriod(handshake, DEFAULT_HEALTH_PERIOD);
-                    handshake.invoke();
-                }
+                    rc.onDisconnected.combine((s, e) -> {
+                        hold.setWeight(tuple, 0);
+                        reInject();
+                    });
+                    rc.onReconnecting.combine((s, e) -> {
+                        if (svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::allEndpoints).toSet())) {
+                            registerAsync(svrEps);
+                        }
+                    });
+                    rc.onReconnected.combine((s, e) -> {
+                        tuple.dnsPort = null;
+                        handshake.invoke();
+                    });
+                    ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
+                        log.info("sync server endpoints: {}", toJsonString(e.getValue()));
+                        if (e.getValue().isEmpty()) {
+                            return;
+                        }
+
+                        registerAsync(e.getValue());
+                    }, false);
+                    //onAppAddressChanged for arg#1 not work
+                    ns.<Nameserver.AppChangedEventArgs>attachEvent(Nameserver.EVENT_APP_ADDRESS_CHANGED, (s, e) -> {
+                        log.info("app address changed: {} -> {}", e.getAppName(), e.getAddress());
+                        onAppAddressChanged.invoke(s, e);
+                    }, false);
+                });
+                tuple.ns = Remoting.createFacade(Nameserver.class, config);
+                tuple.healthTask = Tasks.schedulePeriod(handshake, DEFAULT_HEALTH_PERIOD);
+                handshake.invoke();
             }
-        });
+        }));
     }
 
     public CompletableFuture<?> deregisterAsync() {
-        return Tasks.runAsync(() -> {
-            for (NsInfo tuple : hold) {
-                sneakyInvoke(() -> tuple.ns.deregister(), DEFAULT_RETRY);
-            }
-        });
+        return Tasks.runAsync(() -> each(hold, p -> quietly(() -> p.ns.deregister(), DEFAULT_RETRY)));
     }
 
     public List<InetAddress> discover(@NonNull String appName) {

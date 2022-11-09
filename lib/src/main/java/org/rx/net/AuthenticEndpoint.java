@@ -13,7 +13,6 @@ import org.rx.net.http.HttpClient;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -21,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Data
 public class AuthenticEndpoint implements Serializable {
     private static final long serialVersionUID = -8777400710799771803L;
-    private static final String AT_FLAG = "@", AUTH_FLAG = ":", PARAM_FLAG = "?";
+    static final String AT_FLAG = "@", AUTH_FLAG = ":", PARAM_FLAG = "?";
 
     public static AuthenticEndpoint valueOf(String authenticEndpoint) {
         int i = Strings.lastIndexOf(authenticEndpoint, AT_FLAG);

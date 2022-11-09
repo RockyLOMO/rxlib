@@ -1,7 +1,10 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
@@ -64,7 +67,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         Channel inbound = ctx.channel();
         SocksProxyServer server = SocksContext.server(inbound);
         final InetSocketAddress srcEp = in.sender();
-        if (!Sockets.isNatIp(srcEp.getAddress()) && !server.config.getWhiteList().contains(srcEp.getAddress())) {
+        if (!Sockets.isLanIp(srcEp.getAddress()) && !server.config.getWhiteList().contains(srcEp.getAddress())) {
             log.warn("security error, package from {}", srcEp);
             return;
         }

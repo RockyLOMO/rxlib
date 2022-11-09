@@ -1,31 +1,33 @@
 package org.rx.spring;
 
-import com.alibaba.fastjson.TypeReference;
-import com.sun.management.HotSpotDiagnosticMXBean;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.exception.TraceHandler;
+import org.rx.core.*;
 import org.rx.exception.ExceptionLevel;
+import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
 import org.rx.net.http.tunnel.Server;
 import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapper;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
-import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static org.rx.core.App.fromJson;
 import static org.rx.core.Extends.eq;
+import static org.rx.core.Sys.fromJson;
+import static org.rx.core.Sys.toJsonObject;
 
 @RequiredArgsConstructor
 @RestController
@@ -51,9 +53,9 @@ public class MxController {
 
         result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take))
                 .select(p -> {
-                    Map<String, Object> t = App.toJsonObject(p);
+                    Map<String, Object> t = Sys.toJsonObject(p);
                     t.remove("elapsedMicros");
-                    t.put("elapsed", App.formatElapsed(p.getElapsedMicros()));
+                    t.put("elapsed", Sys.formatNanosElapsed(p.getElapsedMicros(), 1));
                     return t;
                 }));
 
@@ -75,20 +77,24 @@ public class MxController {
                 case 2:
                     String k = request.getParameter("k"),
                             v = request.getParameter("v");
-                    HotSpotDiagnosticMXBean bean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
-                    bean.setVMOption(k, v);
+                    Sys.diagnosticMx.setVMOption(k, v);
                     return "ok";
                 case 3:
-                    String host = request.getParameter("host");
-                    return Linq.from(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
+                    boolean enable = Boolean.parseBoolean(request.getParameter("v"));
+                    Sys.threadMx.setThreadContentionMonitoringEnabled(enable);
+                    Sys.threadMx.setThreadCpuTimeEnabled(enable);
+                    return "ok";
                 case 4:
                     String a1 = request.getParameter("cmd"),
                             a2 = request.getParameter("workspace");
                     StringBuilder echo = new StringBuilder();
-                    ShellCommander cmd = new ShellCommander(a1, a2);
+                    ShellCommander cmd = new ShellCommander(a1, a2).setReadFullyThenExit();
                     cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
                     cmd.start().waitFor(60);
                     return echo.toString();
+                case 5:
+                    String host = request.getParameter("host");
+                    return Linq.from(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
             }
             return svrState(request);
         } catch (Throwable e) {
@@ -115,23 +121,49 @@ public class MxController {
 
     Map<String, Object> svrState(HttpServletRequest request) {
         Map<String, Object> j = new LinkedHashMap<>();
-        j.put("jarFile", App.getJarFile(this));
+        j.put("jarFile", Sys.getJarFile(this));
         j.put("inputArguments", ManagementFactory.getRuntimeMXBean().getInputArguments());
-        HotSpotDiagnosticMXBean bean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
         try {
-            bean.setVMOption("UnlockCommercialFeatures", Boolean.TRUE.toString());
+            Sys.diagnosticMx.setVMOption("UnlockCommercialFeatures", Boolean.TRUE.toString());
         } catch (Exception e) {
             j.put("UnlockCommercialFeatures", e.toString());
         }
-        j.put("vmOptions", bean.getDiagnosticOptions());
-        j.put("systemProperties", System.getProperties());
-        j.put("cpuThreads", Constants.CPU_THREADS);
-        File root = new File("/");
-        j.put("diskUsableSpace", Bytes.readableByteSize(root.getUsableSpace()));
-        j.put("diskTotalSpace", Bytes.readableByteSize(root.getTotalSpace()));
+        j.put("vmOptions", Sys.diagnosticMx.getDiagnosticOptions());
+        j.put("sysProperties", System.getProperties());
+        j.put("sysEnv", System.getenv());
+        Sys.Info info = Sys.mxInfo();
+        JSONObject infoJson = toJsonObject(info);
+        infoJson.put("usedPhysicalMemory", Bytes.readableByteSize(info.getUsedPhysicalMemory()));
+        infoJson.put("freePhysicalMemory", Bytes.readableByteSize(info.getFreePhysicalMemory()));
+        infoJson.put("totalPhysicalMemory", Bytes.readableByteSize(info.getTotalPhysicalMemory()));
+        JSONObject summedDisk = infoJson.getJSONObject("summedDisk");
+        summedDisk.put("usedSpace", Bytes.readableByteSize(info.getSummedDisk().getUsedSpace()));
+        summedDisk.put("freeSpace", Bytes.readableByteSize(info.getSummedDisk().getFreeSpace()));
+        summedDisk.put("totalSpace", Bytes.readableByteSize(info.getSummedDisk().getTotalSpace()));
+        JSONArray disks = infoJson.getJSONArray("disks");
+        int i = 0;
+        for (Sys.DiskInfo disk : info.getDisks()) {
+            JSONObject diskJson = disks.getJSONObject(i);
+            diskJson.put("usedSpace", Bytes.readableByteSize(disk.getUsedSpace()));
+            diskJson.put("freeSpace", Bytes.readableByteSize(disk.getFreeSpace()));
+            diskJson.put("totalSpace", Bytes.readableByteSize(disk.getTotalSpace()));
+            i++;
+        }
+        j.put("sysInfo", infoJson);
+        j.put("deadlockedThreads", Sys.findDeadlockedThreads());
+        Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
+        int take = 10;
+        j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos)
+                .take(take).select(Sys.ThreadInfo::toString));
+        j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos)
+                .take(take).select(Sys.ThreadInfo::toString));
+        j.put("topBlockedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getBlockedTime())
+                .take(take).select(Sys.ThreadInfo::toString));
+        j.put("topWaitedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getWaitedTime())
+                .take(take).select(Sys.ThreadInfo::toString));
         j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
-//        j.put("conf", conf);
+        j.put("rxConfig", RxConfig.INSTANCE);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
         j.putAll(queryTraces(null, null, null, null, null, 10, request));
@@ -145,7 +177,7 @@ public class MxController {
     @SneakyThrows
     @PostConstruct
     public void init() {
-        Class.forName(App.class.getName());
+        Class.forName(Sys.class.getName());
         Tasks.setTimeout(() -> {
             String omega = RxConfig.INSTANCE.getOmega();
             if (omega != null) {

@@ -1,6 +1,8 @@
 package org.rx.core;
 
-import lombok.*;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.ConstructorUtils;
@@ -14,6 +16,7 @@ import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 import org.rx.util.Lazy;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.TripleFunc;
 import org.springframework.core.io.InputStreamSource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
@@ -27,14 +30,12 @@ import java.math.BigDecimal;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.BiFunction;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.fastCacheKey;
 
 @SuppressWarnings(NON_UNCHECKED)
 @Slf4j
@@ -52,7 +53,7 @@ public class Reflects extends ClassUtils {
     static class ConvertBean<TS, TT> {
         final Class<TS> baseFromType;
         final Class<TT> toType;
-        final BiFunction<TS, Class<TT>, TT> converter;
+        final TripleFunc<TS, Class<TT>, TT> converter;
     }
 
     static class SecurityManagerEx extends SecurityManager {
@@ -66,25 +67,21 @@ public class Reflects extends ClassUtils {
 
     public static final Linq<String> COLLECTION_WRITE_METHOD_NAMES = Linq.from("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
             List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
-    public static final Set<Method> OBJECT_METHODS = ConcurrentHashMap.newKeySet();
+    public static final Set<Method> OBJECT_METHODS = Collections.unmodifiableSet(new HashSet<>(Arrays.toList(Object.class.getMethods())));
     static final String M_0 = "close", CHANGE_TYPE_METHOD = "valueOf";
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
-    //must lazy before thread pool init.
-    static final Lazy<Cache<String, Object>> LAZY_CACHE = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
-    static final Lazy<Cache<Class<?>, Map<String, Linq<Method>>>> METHOD_CACHE = new Lazy<>(MemoryCache::new);
-    static final Lazy<Cache<Class<?>, Map<String, Field>>> FIELD_CACHE = new Lazy<>(MemoryCache::new);
-    static final Constructor<MethodHandles.Lookup> LOOKUP_CONSTRUCTOR;
     static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PACKAGE | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE;
-    static final List<ConvertBean<?, ?>> CONVERT_BEANS = new CopyOnWriteArrayList<>();
+    //must lazy before thread pool init.
+    static final Lazy<Cache<String, Object>> lazyCache = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
+    static final Lazy<Cache<Class<?>, Map<String, Linq<Method>>>> methodCache = new Lazy<>(MemoryCache::new);
+    static final Lazy<Cache<Class<?>, Map<String, Field>>> fieldCache = new Lazy<>(MemoryCache::new);
+    static final Constructor<MethodHandles.Lookup> lookupConstructor;
+    static final List<ConvertBean<?, ?>> convertBeans = new CopyOnWriteArrayList<>();
 
     static {
-        for (Method method : Object.class.getMethods()) {
-            OBJECT_METHODS.add(method);
-        }
-
         try {
-            LOOKUP_CONSTRUCTOR = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
-            setAccess(LOOKUP_CONSTRUCTOR);
+            lookupConstructor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
+            setAccess(lookupConstructor);
         } catch (NoSuchMethodException e) {
             throw InvalidException.sneaky(e);
         }
@@ -276,7 +273,7 @@ public class Reflects extends ClassUtils {
 //                            method.getDeclaringClass()
 //                    );
 //        } else {
-        methodHandle = LOOKUP_CONSTRUCTOR.newInstance(declaringClass, LOOKUP_FLAGS)
+        methodHandle = lookupConstructor.newInstance(declaringClass, LOOKUP_FLAGS)
                 .unreflectSpecial(method, declaringClass);
 //        }
         return (T) methodHandle.bindTo(instance)
@@ -332,7 +329,7 @@ public class Reflects extends ClassUtils {
     }
 
     public static Map<String, Linq<Method>> getMethodMap(@NonNull Class<?> type) {
-        return METHOD_CACHE.getValue().get(type, k -> {
+        return methodCache.getValue().get(type, k -> {
             List<Method> all = new ArrayList<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
                 Method[] declared = type.getDeclaredMethods(); //can't get kotlin private methods
@@ -357,7 +354,7 @@ public class Reflects extends ClassUtils {
 
     //region fields
     public static Linq<PropertyNode> getProperties(Class<?> to) {
-        return (Linq<PropertyNode>) LAZY_CACHE.getValue().get(fastCacheKey("properties", to), k -> {
+        return (Linq<PropertyNode>) lazyCache.getValue().get(fastCacheKey("properties", to), k -> {
             Method getClass = Object.class.getDeclaredMethod("getClass");
             Linq<Method> q = Linq.from(to.getMethods());
             Linq<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));
@@ -433,7 +430,7 @@ public class Reflects extends ClassUtils {
     }
 
     public static Map<String, Field> getFieldMap(@NonNull Class<?> type) {
-        return FIELD_CACHE.getValue().get(type, k -> {
+        return fieldCache.getValue().get(type, k -> {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);
@@ -472,8 +469,8 @@ public class Reflects extends ClassUtils {
         }
     }
 
-    public static <TS, TT> void registerConvert(@NonNull Class<TS> baseFromType, @NonNull Class<TT> toType, @NonNull BiFunction<TS, Class<TT>, TT> converter) {
-        CONVERT_BEANS.add(0, new ConvertBean<>(baseFromType, toType, converter));
+    public static <TS, TT> void registerConvert(@NonNull Class<TS> baseFromType, @NonNull Class<TT> toType, @NonNull TripleFunc<TS, Class<TT>, TT> converter) {
+        convertBeans.add(0, new ConvertBean<>(baseFromType, toType, converter));
     }
 
     public static <T> T defaultValue(Class<T> type) {
@@ -552,7 +549,7 @@ public class Reflects extends ClassUtils {
                     Linq<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
                     if (methods == null || fromType.isEnum()) {
                         Class<T> fType = toType;
-                        ConvertBean convertBean = Linq.from(CONVERT_BEANS).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
+                        ConvertBean convertBean = Linq.from(convertBeans).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
                         if (convertBean != null) {
                             return (T) convertBean.converter.apply(value, convertBean.toType);
                         }

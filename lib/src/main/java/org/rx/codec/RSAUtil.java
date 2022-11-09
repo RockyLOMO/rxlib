@@ -13,9 +13,9 @@ import java.util.TreeMap;
 
 //非对称加密
 public final class RSAUtil {
-    private static final String SIGN_ALGORITHMS = "MD5withRSA";
-    private static final String SIGN_ALGORITHMS2 = "SHA1WithRSA";
-    private static final String RSA_ALGORITHM = "RSA/ECB/PKCS1Padding";
+    static final String SIGN_ALGORITHMS = "MD5withRSA";
+    static final String SIGN_ALGORITHMS2 = "SHA1WithRSA";
+    static final String RSA_ALGORITHM = "RSA/ECB/PKCS1Padding";
 
     @SneakyThrows
     public static String[] generateKeyPair() {

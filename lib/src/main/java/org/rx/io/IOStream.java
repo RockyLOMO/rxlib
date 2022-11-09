@@ -1,11 +1,12 @@
 package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
-import lombok.*;
+import lombok.NonNull;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.*;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.StringBuilder;
+import org.rx.core.*;
 import org.rx.exception.ApplicationException;
 
 import java.io.*;
@@ -110,7 +111,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
-    public static void release(@NonNull ByteBuffer buffer) {
+    public static void release(ByteBuffer buffer) {
         if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {
             return;
         }
@@ -261,12 +262,12 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
     }
 
     public int read(ByteBuf dst) {
+        //available() may be not right
         int total = 0, read;
         while ((read = read(dst, Constants.HEAP_BUF_SIZE)) > 0) {
             total += read;
         }
         return total;
-//        return read(dst, (int)available());
     }
 
     @SneakyThrows

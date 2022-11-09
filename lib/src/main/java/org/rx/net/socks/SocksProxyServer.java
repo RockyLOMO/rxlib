@@ -7,7 +7,6 @@ import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5ServerEncoder;
-import io.netty.handler.timeout.IdleStateHandler;
 import lombok.*;
 import org.rx.core.Delegate;
 import org.rx.core.Disposable;
@@ -15,9 +14,9 @@ import org.rx.core.EventTarget;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.TransportUtil;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 

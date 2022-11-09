@@ -19,7 +19,7 @@ public enum TransportFlags implements NEnum<TransportFlags> {
     BOTH_AES_COMBO(FRONTEND_AES_COMBO.value | BACKEND_AES_COMBO.value),
     FRONTEND_SSL_COMBO(FRONTEND_SSL.value | FRONTEND_COMPRESS.value),
     BACKEND_SSL_COMBO(BACKEND_SSL.value | BACKEND_COMPRESS.value),
-    BOTH_SSL_COMBO(FRONTEND_SSL_COMBO.value | BACKEND_SSL_COMBO.value);;
+    BOTH_SSL_COMBO(FRONTEND_SSL_COMBO.value | BACKEND_SSL_COMBO.value);
 
     final int value;
 }

@@ -1,18 +1,16 @@
 package org.rx.bean;
 
-import com.alibaba.fastjson.annotation.JSONType;
-import com.alibaba.fastjson.parser.DefaultJSONParser;
-import com.alibaba.fastjson.parser.deserializer.ObjectDeserializer;
-import com.alibaba.fastjson.serializer.JSONSerializer;
-import com.alibaba.fastjson.serializer.ObjectSerializer;
+import com.alibaba.fastjson2.JSONReader;
+import com.alibaba.fastjson2.JSONWriter;
+import com.alibaba.fastjson2.annotation.JSONType;
+import com.alibaba.fastjson2.reader.ObjectReader;
+import com.alibaba.fastjson2.writer.ObjectWriter;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
-import org.rx.core.Extends;
 import org.rx.core.StringBuilder;
 
-import java.io.IOException;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -22,24 +20,27 @@ import java.util.Locale;
 
 import static org.rx.core.Extends.ifNull;
 
-@JSONType(serializer = Decimal.Serializer.class, deserializer = Decimal.Serializer.class)
+@JSONType(serializer = Decimal.JsonWriter.class, deserializer = Decimal.JsonReader.class)
 @EqualsAndHashCode(callSuper = false)
 public class Decimal extends Number implements Comparable<Decimal> {
-    public static class Serializer implements ObjectSerializer, ObjectDeserializer {
+    public static class JsonReader implements ObjectReader<Decimal> {
         @Override
-        public <T> T deserialze(DefaultJSONParser parser, Type fieldType, Object fieldName) {
-            BigDecimal val = parser.parseObject(BigDecimal.class);
-            return (T) Decimal.valueOf(val);
+        public Decimal readObject(JSONReader jsonReader, Type fieldType, Object fieldName, long features) {
+            if (jsonReader.nextIfNull()) {
+                return null;
+            }
+            return Decimal.valueOf(jsonReader.readBigDecimal());
         }
+    }
 
+    public static class JsonWriter implements ObjectWriter<Decimal> {
         @Override
-        public int getFastMatchToken() {
-            return 0;
-        }
-
-        @Override
-        public void write(JSONSerializer serializer, Object object, Object fieldName, Type fieldType, int features) throws IOException {
-            serializer.write(((Decimal) object).getValue());
+        public void write(JSONWriter jsonWriter, Object object, Object fieldName, Type fieldType, long features) {
+            if (object == null) {
+                jsonWriter.writeNull();
+                return;
+            }
+            jsonWriter.writeDecimal(((Decimal) object).getValue());
         }
     }
 

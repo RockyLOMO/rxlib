@@ -1,9 +1,8 @@
 package org.rx.net.socks;
 
-import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.annotation.JSONType;
-import com.alibaba.fastjson.parser.DefaultJSONParser;
-import com.alibaba.fastjson.parser.deserializer.ObjectDeserializer;
+import com.alibaba.fastjson2.JSONReader;
+import com.alibaba.fastjson2.annotation.JSONType;
+import com.alibaba.fastjson2.reader.ObjectReader;
 import lombok.Data;
 import org.rx.bean.DateTime;
 import org.rx.core.Strings;
@@ -18,21 +17,19 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-@JSONType(deserializer = SocksUser.Serializer.class)
+@JSONType(deserializer = SocksUser.JsonReader.class)
 @Data
 public class SocksUser implements Serializable {
-    public static class Serializer implements ObjectDeserializer {
+    public static class JsonReader implements ObjectReader<SocksUser> {
         @Override
-        public <T> T deserialze(DefaultJSONParser parser, Type fieldType, Object fieldName) {
-            JSONObject map = parser.parseObject();
-            SocksUser user = new SocksUser(map.getString("username"));
+        public SocksUser readObject(JSONReader jsonReader, Type fieldType, Object fieldName, long features) {
+            if (jsonReader.nextIfNull()) {
+                return null;
+            }
+            Map<String, Object> map = jsonReader.readObject();
+            SocksUser user = new SocksUser((String) map.get("username"));
             BeanMapper.DEFAULT.map(map, user);
-            return (T) user;
-        }
-
-        @Override
-        public int getFastMatchToken() {
-            return 0;
+            return user;
         }
     }
 

@@ -6,7 +6,9 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.bean.Tuple;
-import org.rx.core.*;
+import org.rx.core.Arrays;
+import org.rx.core.RxConfig;
+import org.rx.core.Sys;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.Servlets;
@@ -15,7 +17,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
@@ -24,7 +29,6 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.rx.core.Extends.as;
-import static org.rx.core.Extends.quietly;
 
 //@Aspect
 @Component
@@ -72,7 +76,7 @@ public class ControllerInterceptor extends BaseInterceptor {
         if (requireSignIn != null && !requireSignIn.isSignIn(methodSignature.getMethod(), joinPoint.getArgs())) {
             throw new NotSignInException();
         }
-        App.logCtx("url", httpEnv.left.getRequestURL().toString());
+        Sys.logCtx("url", httpEnv.left.getRequestURL().toString());
         return super.doAround(joinPoint);
     }
 

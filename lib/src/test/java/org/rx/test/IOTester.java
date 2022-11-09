@@ -8,8 +8,11 @@ import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
+import org.rx.bean.ULID;
 import org.rx.core.Arrays;
 import org.rx.core.Linq;
+import org.rx.core.Tasks;
+import org.rx.core.TimeoutFlag;
 import org.rx.io.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
@@ -17,16 +20,21 @@ import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 
-import java.io.*;
+import java.io.File;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.sleep;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class IOTester extends AbstractTester {
@@ -55,8 +63,8 @@ public class IOTester extends AbstractTester {
             personBean.setName("老王" + i);
             if (i % 2 == 0) {
                 personBean.setGender(PersonGender.GIRL);
-                personBean.setFlags(PersonBean.Flags);
-                personBean.setArray(PersonBean.Array);
+                personBean.setFlags(PersonBean.PROP_Flags);
+                personBean.setExtra(PersonBean.PROP_EXTRA);
             } else {
                 personBean.setGender(PersonGender.BOY);
             }
@@ -80,8 +88,8 @@ public class IOTester extends AbstractTester {
                 personBean.setName("老王" + i);
                 if (i % 2 == 0) {
                     personBean.setGender(PersonGender.GIRL);
-                    personBean.setFlags(PersonBean.Flags);
-                    personBean.setArray(PersonBean.Array);
+                    personBean.setFlags(PersonBean.PROP_Flags);
+                    personBean.setExtra(PersonBean.PROP_EXTRA);
                 } else {
                     personBean.setGender(PersonGender.BOY);
                 }
@@ -127,17 +135,11 @@ public class IOTester extends AbstractTester {
             db.save(new PersonBean());
         }
         db.compact();
-//        db.clearTimeRollingFiles();
-//        Tasks.setTimeout(() -> {
-//            db.save(new PersonBean());
-//            return true;
-//        }, 2000);
-//        db.dropMapping(PersonBean.class);
-
-        DiskMonitor.INSTANCE.register(1, () -> System.out.println(1));
-        DiskMonitor.INSTANCE.register(1, () -> System.out.println(11));
-        DiskMonitor.INSTANCE.register(20, () -> System.out.println(20));
-        DiskMonitor.INSTANCE.register(99, () -> System.out.println(99));
+        db.clearTimeRollingFiles();
+        Tasks.setTimeout(() -> {
+            db.save(new PersonBean());
+        }, 2000, null, TimeoutFlag.PERIOD.flags());
+        db.dropMapping(PersonBean.class);
 
         wait();
     }
@@ -181,7 +183,7 @@ public class IOTester extends AbstractTester {
         System.out.println(db.count(queryLambda));
         List<PersonBean> list = db.findBy(queryLambda);
         assert list.isEmpty();
-        UUID pk = entity.getId();
+        ULID pk = entity.getId();
         assert db.existsById(PersonBean.class, pk);
         PersonBean byId = db.findById(PersonBean.class, pk);
         System.out.println(byId);
@@ -199,7 +201,7 @@ public class IOTester extends AbstractTester {
                         .ne(PersonBean::getAge, 11))
                 .or(q.newClause()
                         .ne(PersonBean::getAge, 12)
-                        .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getMoney)).orderBy(PersonBean::getAge)
+                        .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getCash)).orderBy(PersonBean::getAge)
                 .limit(100);
         System.out.println(q);
         List<Object> params = new ArrayList<>();
@@ -500,7 +502,7 @@ public class IOTester extends AbstractTester {
         PersonBean bean = new PersonBean();
         bean.setName("hello");
         bean.setAge(12);
-        bean.setMoneyCent(250L);
+        bean.setCashCent(250L);
         stream.setPosition(0);
         stream.writeObject(bean);
 

@@ -1,6 +1,6 @@
 package org.rx.net.socks.upstream;
 
-import io.netty.channel.*;
+import io.netty.channel.Channel;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.exception.InvalidException;

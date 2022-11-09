@@ -1,12 +1,12 @@
 package org.rx.net.support;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
-import org.rx.core.App;
 import org.rx.core.Strings;
+import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.io.KeyValueStore;
@@ -14,17 +14,16 @@ import org.rx.io.KeyValueStoreConfig;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.PredicateFunc;
 
 import java.net.InetAddress;
-import java.util.function.Predicate;
 
 import static org.rx.core.Extends.eq;
-import static org.rx.core.Extends.sneakyInvoke;
+import static org.rx.core.Extends.quietly;
 
 @Slf4j
 class ComboIPSearcher implements IPSearcher {
-    final static int TIMEOUT_SECONDS = 10000;
-    final static String LOOPBACK_ADDR = Sockets.loopbackAddress().getHostAddress();
+    static final int TIMEOUT_SECONDS = 10000;
     final RandomList<BiFunc<String, IPAddress>> apis = new RandomList<>(),
             dApis = new RandomList<>();
     final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig("./data/host"));
@@ -51,13 +50,13 @@ class ComboIPSearcher implements IPSearcher {
 
     @Override
     public IPAddress searchCurrent() {
-        return search(LOOPBACK_ADDR);
+        return search(Sockets.loopbackHostAddress());
     }
 
     @SneakyThrows
     @Override
     public IPAddress search(@NonNull String host, boolean resolveHostRemotely) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, host)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), host)) {
             return rndRetry(host, resolveHostRemotely);
         }
 
@@ -77,16 +76,14 @@ class ComboIPSearcher implements IPSearcher {
         if (!resolveHostRemotely) {
             host = InetAddress.getByName(host).getHostAddress();
         }
-//        return Tasks.randomRetry(() -> ip_Api(host), () -> ipGeo(host),
-//                () -> ipData(host), () -> ipWho(host));
         RandomList<BiFunc<String, IPAddress>> fns = resolveHostRemotely ? dApis : apis;
         String finalHost = host;
-        return sneakyInvoke(() -> fns.next().invoke(finalHost), 3);
+        return quietly(() -> fns.next().invoke(finalHost), 3);
     }
 
     //6k/d
     IPAddress ip_Api(String host) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, host)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), host)) {
             host = Strings.EMPTY;
         }
         String url = String.format("http://ip-api.com/json/%s", host);
@@ -99,7 +96,7 @@ class ComboIPSearcher implements IPSearcher {
 
     //1k/m
     IPAddress ipApi(String host) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, host)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), host)) {
             host = "check";
         }
         String url = String.format("http://api.ipapi.com/%s?access_key=8da5fe816dba52150d4c40ba72705954", host);
@@ -112,7 +109,7 @@ class ComboIPSearcher implements IPSearcher {
     //1k/d
     @SneakyThrows
     IPAddress ipGeo(String ip) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, ip)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), ip)) {
             ip = Strings.EMPTY;
         } else if (!Sockets.isValidIp(ip)) {
             ip = InetAddress.getByName(ip).getHostAddress();
@@ -127,7 +124,7 @@ class ComboIPSearcher implements IPSearcher {
     //1.5k/d
     @SneakyThrows
     IPAddress ipData(String ip) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, ip)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), ip)) {
             ip = Strings.EMPTY;
         } else if (!Sockets.isValidIp(ip)) {
             ip = InetAddress.getByName(ip).getHostAddress();
@@ -147,7 +144,7 @@ class ComboIPSearcher implements IPSearcher {
     //10k/m
     @SneakyThrows
     IPAddress ipWho(String ip) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, ip)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), ip)) {
             ip = Strings.EMPTY;
         } else if (!Sockets.isValidIp(ip)) {
             ip = InetAddress.getByName(ip).getHostAddress();
@@ -168,7 +165,7 @@ class ComboIPSearcher implements IPSearcher {
     //50k/m
     @SneakyThrows
     IPAddress ipInfo(String ip) {
-        if (Strings.hashEquals(LOOPBACK_ADDR, ip)) {
+        if (Strings.hashEquals(Sockets.loopbackHostAddress(), ip)) {
             ip = Strings.EMPTY;
         } else if (!Sockets.isValidIp(ip)) {
             ip = InetAddress.getByName(ip).getHostAddress();
@@ -180,14 +177,14 @@ class ComboIPSearcher implements IPSearcher {
                 json.getString("org"), null);
     }
 
-    private JSONObject getJson(String url, Predicate<JSONObject> check) {
+    private JSONObject getJson(String url, PredicateFunc<JSONObject> check) {
         HttpClient client = new HttpClient(TIMEOUT_SECONDS);
         client.setEnableLog(true);
         String text = client.get(url).toString();
         if (Strings.isEmpty(text)) {
             throw new InvalidException("Empty response from {}", url);
         }
-        JSONObject json = App.toJsonObject(text);
+        JSONObject json = Sys.toJsonObject(text);
         if (!check.test(json)) {
             throw new InvalidException("Request:\t{}\n" + "Response:\t{}", url, text);
         }

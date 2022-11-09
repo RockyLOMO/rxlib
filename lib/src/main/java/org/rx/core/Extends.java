@@ -2,11 +2,11 @@ package org.rx.core;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.rx.annotation.Description;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
+import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Serializer;
 import org.rx.util.function.Action;
@@ -45,65 +45,85 @@ public interface Extends extends Serializable {
         }
     }
 
-    static String description(@NonNull AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
-            return null;
-        }
-        return desc.value();
+    static boolean quietly(Action fn) {
+        return quietly(fn, 1, false);
     }
 
-    static boolean sneakyInvoke(Action action) {
-        return sneakyInvoke(action, 1);
+    static boolean quietly(Action fn, int retryCount) {
+        return quietly(fn, retryCount, false);
     }
 
-    static boolean sneakyInvoke(@NonNull Action action, int retryCount) {
+    static boolean quietly(@NonNull Action fn, int retryCount, boolean throwOnLast) {
         Throwable last = null;
         for (int i = 0; i < retryCount; i++) {
             try {
-                action.invoke();
+                fn.invoke();
                 return true;
             } catch (Throwable e) {
-                if (last != null) {
-                    TraceHandler.INSTANCE.log("sneakyInvoke retry={}", i, e);
-                }
+                TraceHandler.INSTANCE.log("quietly retry={}/{}", i, retryCount, e);
                 last = e;
             }
         }
-        if (last != null) {
-            ExceptionUtils.rethrow(last);
+        if (last != null && throwOnLast) {
+            throw InvalidException.sneaky(last);
         }
         return false;
     }
 
-    static <T> T sneakyInvoke(Func<T> action) {
-        return sneakyInvoke(action, 1);
+    static <T> T quietly(Func<T> fn) {
+        return quietly(fn, 1, null);
     }
 
-    static <T> T sneakyInvoke(@NonNull Func<T> action, int retryCount) {
+    static <T> T quietly(Func<T> fn, int retryCount) {
+        return quietly(fn, retryCount, null);
+    }
+
+    static <T> T quietly(Func<T> fn, Func<T> defaultValue) {
+        return quietly(fn, 1, defaultValue);
+    }
+
+    static <T> T quietly(@NonNull Func<T> fn, int retryCount, Func<T> defaultValue) {
         Throwable last = null;
         for (int i = 0; i < retryCount; i++) {
             try {
-                return action.invoke();
+                return fn.invoke();
             } catch (Throwable e) {
-                if (last != null) {
-                    TraceHandler.INSTANCE.log("sneakyInvoke retry={}/{}", i, retryCount, e);
-                }
+                TraceHandler.INSTANCE.log("quietly retry={}/{}", i, retryCount, e);
                 last = e;
             }
         }
-        if (last != null) {
-            ExceptionUtils.rethrow(last);
+        if (last != null && defaultValue == null) {
+            throw InvalidException.sneaky(last);
+        }
+        if (defaultValue != null) {
+            return defaultValue.get();
         }
         return null;
     }
 
+    //region each
     static <T> void eachQuietly(Object array, BiAction<T> fn) {
         eachQuietly(Linq.asList(array, true), fn);
     }
 
     static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
-        if (iterable == null) {
+        each(iterable, fn, false, Constants.TIMEOUT_INFINITE);
+    }
+
+    static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn, long interruptedFlag) {
+        each(iterable, fn, false, interruptedFlag);
+    }
+
+    static <T> void each(Object array, BiAction<T> fn) {
+        each(Linq.asList(array, true), fn);
+    }
+
+    static <T> void each(Iterable<T> iterable, BiAction<T> fn) {
+        each(iterable, fn, true, Constants.TIMEOUT_INFINITE);
+    }
+
+    static <T> void each(Iterable<T> iterable, BiAction<T> fn, boolean throwOnNext, long interruptedFlag) {
+        if (iterable == null || fn == null) {
             return;
         }
 
@@ -111,43 +131,38 @@ public interface Extends extends Serializable {
             try {
                 fn.invoke(t);
             } catch (Throwable e) {
-                TraceHandler.INSTANCE.log("eachQuietly", e);
+                if (throwOnNext) {
+                    throw InvalidException.sneaky(e);
+                }
+                TraceHandler.INSTANCE.log("each", e);
             }
             if (!ThreadPool.asyncContinueFlag(true)) {
                 break;
             }
-        }
-    }
-
-    static boolean quietly(@NonNull Action action) {
-        try {
-            action.invoke();
-            return true;
-        } catch (Throwable e) {
-            TraceHandler.INSTANCE.log("quietly", e);
-        }
-        return false;
-    }
-
-    static <T> T quietly(Func<T> action) {
-        return quietly(action, null);
-    }
-
-    static <T> T quietly(@NonNull Func<T> action, Func<T> defaultValue) {
-        try {
-            return action.invoke();
-        } catch (Throwable e) {
-            TraceHandler.INSTANCE.log("quietly", e);
-        }
-        if (defaultValue != null) {
-            try {
-                return defaultValue.invoke();
-            } catch (Throwable e) {
-                ExceptionUtils.rethrow(e);
+            if (interruptedFlag < 0) {
+                if (Thread.interrupted()) {
+                    break;
+                }
+            } else {
+                try {
+                    Thread.sleep(interruptedFlag);
+                } catch (InterruptedException e) {
+                    break;
+                }
             }
         }
-        return null;
     }
+
+    //CircuitBreakingException
+    static void circuitContinue(boolean flag) {
+        ThreadPool.ASYNC_CONTINUE.set(flag);
+    }
+
+    @SneakyThrows
+    static void sleep(long millis) {
+        Thread.sleep(millis);
+    }
+    //endregion
 
     static boolean tryClose(Object obj) {
         return tryAs(obj, AutoCloseable.class, p -> quietly(p::close));
@@ -166,20 +181,41 @@ public interface Extends extends Serializable {
     }
 
     @SneakyThrows
-    static <T> boolean tryAs(Object obj, Class<T> type, BiAction<T> action) {
+    static <T> boolean tryAs(Object obj, Class<T> type, BiAction<T> fn) {
         T t = as(obj, type);
         if (t == null) {
             return false;
         }
-        if (action != null) {
-            action.invoke(t);
+        if (fn != null) {
+            fn.invoke(t);
         }
         return true;
     }
 
-    //CircuitBreakingException
-    static void asyncContinue(boolean flag) {
-        ThreadPool.ASYNC_CONTINUE.set(flag);
+    static String description(@NonNull AnnotatedElement annotatedElement) {
+        Description desc = annotatedElement.getAnnotation(Description.class);
+        if (desc == null) {
+            return null;
+        }
+        return desc.value();
+    }
+
+    static Object[] values(Object... args) {
+        return args;
+    }
+
+    static <T> T ifNull(T value, T defaultVal) {
+        return value != null ? value : defaultVal;
+    }
+
+    @SneakyThrows
+    static <T> T ifNull(T value, Func<T> fn) {
+        if (value == null) {
+            if (fn != null) {
+                value = fn.invoke();
+            }
+        }
+        return value;
     }
 
     static <T> T as(Object obj, Class<T> type) {
@@ -189,32 +225,9 @@ public interface Extends extends Serializable {
         return (T) obj;
     }
 
-    static <T> T ifNull(T value, T defaultVal) {
-        return value != null ? value : defaultVal;
-    }
-
-    @SneakyThrows
-    static <T> T ifNull(T value, Func<T> supplier) {
-        if (value == null) {
-            if (supplier != null) {
-                value = supplier.invoke();
-            }
-        }
-        return value;
-    }
-
     static <T> boolean eq(T a, T b) {
         //Objects.equals() 有坑
         return a == b || (a != null && a.equals(b));
-    }
-
-    static Object[] values(Object... args) {
-        return args;
-    }
-
-    @SneakyThrows
-    static void sleep(long millis) {
-        Thread.sleep(millis);
     }
     //endregion
 

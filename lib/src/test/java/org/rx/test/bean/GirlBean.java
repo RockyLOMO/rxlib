@@ -1,22 +1,22 @@
 package org.rx.test.bean;
 
 import lombok.Data;
+import org.rx.bean.ULID;
 
 import javax.validation.constraints.NotNull;
 import java.math.BigDecimal;
-import java.util.UUID;
 
 @Data
 public class GirlBean {
     public int index;
     @NotNull
-    private UUID id;
+    private ULID id;
     @NotNull
     private String name;
     private String gender;
     private Integer age;
     private int birth;
-    private BigDecimal money;
+    private BigDecimal cash;
 
     private String info;
     private Long kids;

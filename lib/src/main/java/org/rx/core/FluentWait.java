@@ -1,7 +1,9 @@
 package org.rx.core;
 
-import com.google.common.base.Throwables;
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.BiFunc;
@@ -77,8 +79,7 @@ public class FluentWait {
             try {
                 Thread.sleep(interval);
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw InvalidException.wrap(e);
+                throw InvalidException.sneaky(e);
             }
         }
         return this;
@@ -118,11 +119,7 @@ public class FluentWait {
             int retryCount = TIMEOUT_INFINITE;
             if (retryCondition != null) {
                 if (doRetryFirst) {
-                    try {
-                        retryCondition.invoke(this);
-                    } catch (Throwable e) {
-                        throw InvalidException.sneaky(e);
-                    }
+                    retryCondition.test(this);
                 }
                 if (retryMillis > TIMEOUT_INFINITE) {
                     retryCount = (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
@@ -147,12 +144,8 @@ public class FluentWait {
                 sleep();
 
                 if (retryCount > TIMEOUT_INFINITE && (retryCount == 0 || evaluatedCount % retryCount == 0)) {
-                    try {
-                        if (!retryCondition.invoke(this)) {
-                            break;
-                        }
-                    } catch (Throwable e) {
-                        throw InvalidException.sneaky(e);
+                    if (!retryCondition.test(this)) {
+                        break;
                     }
                 }
             }
@@ -178,7 +171,12 @@ public class FluentWait {
                 }
             }
         }
-        Throwables.throwIfUnchecked(e);
+        if (e instanceof RuntimeException) {
+            throw (RuntimeException) e;
+        }
+        if (e instanceof Error) {
+            throw (Error) e;
+        }
         throw new RuntimeException(e);
     }
 }

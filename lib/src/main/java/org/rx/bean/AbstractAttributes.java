@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public class AbstractAttributes implements Extends {
+    private static final long serialVersionUID = -800222176830684588L;
     private Map attrs;
 
     protected <TK, TV> Map<TK, TV> initialAttrs() {

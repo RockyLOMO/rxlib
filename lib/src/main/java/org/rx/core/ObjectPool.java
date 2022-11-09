@@ -1,11 +1,15 @@
 package org.rx.core;
 
-import lombok.*;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.Setter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
+import org.rx.util.function.PredicateFunc;
 
 import java.util.Deque;
 import java.util.Map;
@@ -13,7 +17,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Predicate;
 
 import static org.rx.core.Extends.*;
 
@@ -48,7 +51,7 @@ public class ObjectPool<T> extends Disposable {
     }
 
     final Func<T> createHandler;
-    final Predicate<T> validateHandler;
+    final PredicateFunc<T> validateHandler;
     final BiAction<T> passivateHandler;
     final Deque<T> stack = new ConcurrentLinkedDeque<>();
     final Map<T, ObjectConf> conf = new ConcurrentHashMap<>();
@@ -91,12 +94,12 @@ public class ObjectPool<T> extends Disposable {
         this.leakDetectionThreshold = Math.max(2000, leakDetectionThreshold);
     }
 
-    public ObjectPool(int minSize, Func<T> createHandler, Predicate<T> validateHandler) {
+    public ObjectPool(int minSize, Func<T> createHandler, PredicateFunc<T> validateHandler) {
         this(minSize, minSize, createHandler, validateHandler, null);
     }
 
     public ObjectPool(int minSize, int maxSize,
-                      @NonNull Func<T> createHandler, @NonNull Predicate<T> validateHandler,
+                      @NonNull Func<T> createHandler, @NonNull PredicateFunc<T> validateHandler,
                       BiAction<T> passivateHandler) {
         if (minSize < 0) {
             throw new InvalidException("MinSize '{}' must greater than or equal to 0", minSize);
@@ -134,7 +137,7 @@ public class ObjectPool<T> extends Disposable {
                 return;
             }
             if (c.isLeaked(leakDetectionThreshold)) {
-                TraceHandler.INSTANCE.saveMetrics(Constants.MetricName.OBJECT_POOL_LEAK.name(),
+                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
                         String.format("Object '%s' leaked.\n%s", obj, Reflects.getStackTrace(c.t)));
                 if (retireLeak) {
                     doRetire(obj);

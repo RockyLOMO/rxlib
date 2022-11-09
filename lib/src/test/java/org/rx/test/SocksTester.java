@@ -1,6 +1,6 @@
 package org.rx.test;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.http.multipart.FileUpload;
 import lombok.SneakyThrows;
@@ -12,29 +12,39 @@ import org.rx.bean.LogStrategy;
 import org.rx.bean.MultiValueMap;
 import org.rx.bean.RandomList;
 import org.rx.bean.ULID;
-import org.rx.core.*;
+import org.rx.codec.AESUtil;
 import org.rx.core.Arrays;
+import org.rx.core.EventArgs;
+import org.rx.core.RxConfig;
+import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.http.*;
+import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpServer;
+import org.rx.net.http.RestClient;
 import org.rx.net.nameserver.NameserverClient;
 import org.rx.net.nameserver.NameserverConfig;
 import org.rx.net.nameserver.NameserverImpl;
 import org.rx.net.ntp.*;
-import org.rx.net.rpc.*;
+import org.rx.net.rpc.Remoting;
+import org.rx.net.rpc.RemotingException;
+import org.rx.net.rpc.RpcClientConfig;
+import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Socks5UdpUpstream;
-import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.*;
 import org.rx.net.socks.upstream.Socks5Upstream;
-import org.rx.codec.AESUtil;
+import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.IPSearcher;
+import org.rx.net.support.SocksSupport;
+import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.*;
 import org.rx.test.bean.*;
 import org.rx.util.function.TripleAction;
@@ -42,19 +52,20 @@ import org.rx.util.function.TripleAction;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.sleep;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class SocksTester extends AbstractTester {
@@ -337,7 +348,7 @@ public class SocksTester extends AbstractTester {
         for (int i = 0; i < tcount; i++) {
             int finalI = i;
             Tasks.run(() -> {
-                facade.computeInt(1, finalI);
+                facade.computeLevel(1, finalI);
                 sleep(1000);
                 latch.countDown();
             });
@@ -717,7 +728,7 @@ public class SocksTester extends AbstractTester {
 
     @Test
     public void ipUtil() {
-        String expr = Sockets.DEFAULT_NAT_IPS.get(3);
+        String expr = RxConfig.INSTANCE.getNet().getLanIps().get(3);
         assert Pattern.matches(expr, "192.168.31.7");
 
         String h = "google.com";

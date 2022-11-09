@@ -1,11 +1,9 @@
 package org.rx.net.http;
 
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
-import org.rx.util.Snowflake;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,17 +12,14 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.lang.reflect.Parameter;
-import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.ifNull;
+import static org.rx.core.Sys.*;
 
 @Slf4j
 public final class RestClient {
-    static final FastThreadLocal<Type> RESULT_TYPE = new FastThreadLocal<>();
-
     public static <T> T facade(Class<T> contract, String serverPrefixUrl, BiFunc<String, Boolean> checkResponse) {
         RequestMapping baseMapping = contract.getAnnotation(RequestMapping.class);
         String prefix = serverPrefixUrl + getFirstPath(baseMapping);
@@ -79,7 +74,7 @@ public final class RestClient {
                 args.setError(e);
                 throw e;
             } finally {
-                App.log(args, msg -> {
+                Sys.log(args, msg -> {
                     if (doPost) {
                         msg.appendLine("POST:\t%s", reqUrl);
                     } else {
@@ -92,7 +87,7 @@ public final class RestClient {
             if (m.getReturnType().equals(Void.class)) {
                 return null;
             }
-            return fromJson(responseText, ifNull(RESULT_TYPE.get(), m.getReturnType()));
+            return fromJson(responseText, ifNull(JsonTypeInvoker.JSON_TYPE.get(), m.getReturnType()));
         });
     }
 

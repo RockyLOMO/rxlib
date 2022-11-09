@@ -1,18 +1,25 @@
 package org.rx.net.rpc;
 
 import io.netty.util.concurrent.FastThreadLocal;
-import lombok.*;
+import io.netty.util.internal.ThreadLocalRandom;
+import lombok.AllArgsConstructor;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
-import org.rx.bean.*;
+import org.rx.bean.$;
+import org.rx.bean.DynamicProxy;
+import org.rx.bean.IdGenerator;
+import org.rx.bean.ProceedEventArgs;
+import org.rx.core.*;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
-import org.rx.net.rpc.protocol.MetadataMessage;
-import org.rx.net.transport.*;
 import org.rx.net.rpc.protocol.EventFlag;
 import org.rx.net.rpc.protocol.EventMessage;
+import org.rx.net.rpc.protocol.MetadataMessage;
 import org.rx.net.rpc.protocol.MethodMessage;
-import org.rx.core.*;
+import org.rx.net.transport.*;
 import org.rx.net.transport.protocol.ErrorPacket;
 import org.rx.util.BeanMapper;
 import org.rx.util.Snowflake;
@@ -20,17 +27,16 @@ import org.rx.util.function.TripleAction;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
-import java.util.*;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
-import io.netty.util.internal.ThreadLocalRandom;
-
 import java.util.concurrent.TimeoutException;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.App.*;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.*;
 
 //snappy + protobuf
 @Slf4j
@@ -157,15 +163,15 @@ public final class Remoting {
                         sync.v.onReconnected.combine((s, e) -> {
                             initFn.invoke((T) p.getProxyObject(), (StatefulTcpClient) s);
                             s.asyncScheduler().runAsync(() -> {
-                                for (ClientBean value : getClientBeans((StatefulTcpClient) s).values()) {
-                                    if (value.syncRoot.getHoldCount() == 0) {
-                                        continue;
+                                for (ClientBean val : getClientBeans((StatefulTcpClient) s).values()) {
+                                    if (val.syncRoot.getHoldCount() == 0) {
+                                        return;
                                     }
-                                    log.info("clientSide resent pack[{}] {}", value.pack.id, value.pack.methodName);
+                                    log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
                                     try {
-                                        s.send(value.pack);
+                                        s.send(val.pack);
                                     } catch (ClientDisconnectedException ex) {
-                                        log.warn("clientSide resent pack[{}] fail", value.pack.id);
+                                        log.warn("clientSide resent pack[{}] fail", val.pack.id);
                                     }
                                 }
                             });
