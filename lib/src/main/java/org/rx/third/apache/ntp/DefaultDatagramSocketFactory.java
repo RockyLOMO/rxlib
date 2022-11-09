@@ -24,10 +24,7 @@ import java.net.SocketException;
 /**
  * DefaultDatagramSocketFactory implements the DatagramSocketFactory
  * interface by simply wrapping the java.net.DatagramSocket
- * constructors.  It is the default DatagramSocketFactory used by
- * {@link org.apache.commons.net.DatagramSocketClient}
- *  implementations.
- *
+ * constructors.
  *
  * @see DatagramSocketFactory
  * @see DatagramSocketClient
