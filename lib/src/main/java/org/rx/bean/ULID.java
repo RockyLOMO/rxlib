@@ -1,10 +1,10 @@
 package org.rx.bean;
 
-import com.alibaba.fastjson.annotation.JSONType;
-import com.alibaba.fastjson.parser.DefaultJSONParser;
-import com.alibaba.fastjson.parser.deserializer.ObjectDeserializer;
-import com.alibaba.fastjson.serializer.JSONSerializer;
-import com.alibaba.fastjson.serializer.ObjectSerializer;
+import com.alibaba.fastjson2.JSONReader;
+import com.alibaba.fastjson2.JSONWriter;
+import com.alibaba.fastjson2.annotation.JSONType;
+import com.alibaba.fastjson2.reader.ObjectReader;
+import com.alibaba.fastjson2.writer.ObjectWriter;
 import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +12,6 @@ import org.rx.codec.CodecUtil;
 import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 
-import java.io.IOException;
 import java.io.Serializable;
 import java.lang.reflect.Type;
 import java.util.Arrays;
@@ -23,23 +22,27 @@ import java.util.UUID;
  * |---------|--------------|
  * 48bit time  80bit random
  */
-@JSONType(serializer = ULID.Serializer.class, deserializer = ULID.Serializer.class)
+@JSONType(serializer = ULID.JsonWriter.class, deserializer = ULID.JsonReader.class)
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ULID implements Serializable, Comparable<ULID> {
-    public static class Serializer implements ObjectSerializer, ObjectDeserializer {
+    public static class JsonReader implements ObjectReader<ULID> {
         @Override
-        public <T> T deserialze(DefaultJSONParser parser, Type fieldType, Object fieldName) {
-            return (T) ULID.valueOf(parser.parse().toString());
+        public ULID readObject(JSONReader jsonReader, Type fieldType, Object fieldName, long features) {
+            if (jsonReader.nextIfNull()) {
+                return null;
+            }
+            return ULID.valueOf(jsonReader.readString());
         }
+    }
 
+    public static class JsonWriter implements ObjectWriter<ULID> {
         @Override
-        public int getFastMatchToken() {
-            return 0;
-        }
-
-        @Override
-        public void write(JSONSerializer serializer, Object object, Object fieldName, Type fieldType, int features) throws IOException {
-            serializer.write(object.toString());
+        public void write(JSONWriter jsonWriter, Object object, Object fieldName, Type fieldType, long features) {
+            if (object == null) {
+                jsonWriter.writeNull();
+                return;
+            }
+            jsonWriter.writeString(object.toString());
         }
     }
 

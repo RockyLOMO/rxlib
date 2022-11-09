@@ -5,6 +5,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.rx.exception.InvalidException;
 
+import java.util.List;
+import java.util.Map;
+
 @NoArgsConstructor
 @Getter
 @Setter
@@ -26,6 +29,10 @@ public class ErrorBean implements NestedDefMethod {
 
     private String instanceCall(int code, String msg) {
         return "I-" + code + msg;
+    }
+
+    public List<Integer> genericCall(int kind, List<Byte> data, Map<String, Long> data2) {
+        return null;
     }
 }
 

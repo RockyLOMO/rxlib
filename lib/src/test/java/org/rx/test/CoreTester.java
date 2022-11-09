@@ -1,6 +1,6 @@
 package org.rx.test;
 
-import com.alibaba.fastjson.TypeReference;
+import com.alibaba.fastjson2.TypeReference;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -820,15 +820,14 @@ public class CoreTester extends AbstractTester {
             System.out.println(resource);
             assert resource != null;
         }
-
-        Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
-        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
-        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
-
         assert Reflects.stackClass(0) == this.getClass();
 //        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
 //            System.out.println(traceElement);
 //        }
+
+        Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
+        assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
+        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
 
         Method defMethod = IPerson.class.getMethod("enableCompress");
         assert (Boolean) Reflects.invokeDefaultMethod(defMethod, PersonBean.YouFan);
@@ -842,7 +841,7 @@ public class CoreTester extends AbstractTester {
         assert eq("I-" + r, Reflects.invokeMethod(bean, "instanceCall", code, msg));
         assert eq("D-" + r, Reflects.invokeMethod(bean, "defCall", code, msg));
         assert eq("N-" + r, Reflects.invokeMethod(bean, "nestedDefCall", code, msg));
-
+        Method genericCall = Reflects.getMethodMap(bean.getClass()).get("genericCall").first();
 
         //convert
         assert Reflects.changeType(1, boolean.class);

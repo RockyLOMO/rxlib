@@ -1,6 +1,8 @@
 package org.rx.core;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONReader;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -215,7 +217,8 @@ public class YamlConfiguration implements EventTarget<YamlConfiguration> {
                 return (T) map;
             }
 //            new Yaml().loadAs()
-            return new JSONObject(map).toJavaObject(type);
+//            return new JSONObject(map).to(type, JSONReader.Feature.SupportClassForName);
+            return JSON.parseObject(JSON.toJSONString(map), type, JSONReader.Feature.SupportClassForName);
         }
         return Reflects.changeType(p, type);
     }

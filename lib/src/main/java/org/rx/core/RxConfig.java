@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import com.alibaba.fastjson2.JSONFactory;
 import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -121,6 +122,7 @@ public final class RxConfig {
     public static final RxConfig INSTANCE;
 
     static {
+        JSONFactory.getDefaultObjectReaderProvider().addAutoTypeAccept("org.springframework");
         RxConfig temp;
         try {
             temp = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);

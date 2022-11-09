@@ -1,6 +1,5 @@
 package org.rx.io;
 
-import com.alibaba.fastjson.JSON;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -16,6 +15,7 @@ import java.lang.reflect.Type;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Sys.fromJson;
+import static org.rx.core.Sys.toJsonString;
 
 //https://github.com/RuedigerMoeller/fast-serialization
 public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
@@ -35,7 +35,7 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
     @SneakyThrows
     @Override
     public <T> void serialize(@NonNull T obj, @NonNull IOStream<?, ?> stream) {
-        Object obj0 = obj instanceof Serializable ? obj : new JsonWrapper(obj.getClass(), JSON.toJSONString(obj));
+        Object obj0 = obj instanceof Serializable ? obj : new JsonWrapper(obj.getClass(), toJsonString(obj));
 
         Compressible c0 = as(obj0, Compressible.class);
         if (c0 != null && c0.enableCompress()) {
