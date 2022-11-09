@@ -12,7 +12,7 @@
  * the License.
  */
 
-package org.rx.util.thrid;
+package org.rx.third.guava;
 
 import java.io.Serializable;
 import java.util.Iterator;

@@ -21,7 +21,7 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
-import org.rx.util.thrid.CaseFormat;
+import org.rx.third.guava.CaseFormat;
 
 import java.io.InputStream;
 import java.io.Reader;

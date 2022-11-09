@@ -8,6 +8,7 @@ import org.rx.io.Bytes;
 import org.rx.io.FileStream;
 import org.rx.io.MemoryStream;
 import org.rx.io.Serializer;
+import org.rx.third.open.CrcModel;
 
 import java.io.File;
 import java.io.Serializable;

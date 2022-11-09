@@ -29,7 +29,6 @@ import org.rx.net.http.RestClient;
 import org.rx.net.nameserver.NameserverClient;
 import org.rx.net.nameserver.NameserverConfig;
 import org.rx.net.nameserver.NameserverImpl;
-import org.rx.net.ntp.*;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
@@ -47,6 +46,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.*;
 import org.rx.test.bean.*;
+import org.rx.third.apache.ntp.*;
 import org.rx.util.function.TripleAction;
 
 import java.io.IOException;

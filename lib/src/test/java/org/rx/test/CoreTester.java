@@ -11,7 +11,7 @@ import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
-import org.rx.codec.CrcModel;
+import org.rx.third.open.CrcModel;
 import org.rx.codec.RSAUtil;
 import org.rx.core.Arrays;
 import org.rx.core.*;

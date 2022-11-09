@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.rx.net.ntp;
+package org.rx.third.apache.ntp;
 
 import java.net.DatagramSocket;
 import java.net.InetAddress;

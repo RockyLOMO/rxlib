@@ -14,7 +14,7 @@ import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.util.*;
-import org.rx.util.thrid.CaseFormat;
+import org.rx.third.guava.CaseFormat;
 import org.springframework.validation.annotation.Validated;
 
 import javax.validation.Valid;
