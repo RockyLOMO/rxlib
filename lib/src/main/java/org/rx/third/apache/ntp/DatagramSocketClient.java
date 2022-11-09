@@ -31,11 +31,7 @@ import java.nio.charset.Charset;
  * method, which allows you to control the type of DatagramSocket the
  * DatagramSocketClient creates for network communications.  This is
  * especially useful for adding things like proxy support as well as better
- * support for applets.  For
- * example, you could create a
- * {@link org.apache.commons.net.DatagramSocketFactory}
- *  that
- * requests browser security capabilities before creating a socket.
+ * support for applets.
  * All classes derived from DatagramSocketClient should use the
  * {@link #_socketFactory_  _socketFactory_ } member variable to
  * create DatagramSocket instances rather than instantiating
