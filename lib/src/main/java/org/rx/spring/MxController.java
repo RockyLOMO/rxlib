@@ -152,7 +152,7 @@ public class MxController {
         j.put("sysInfo", infoJson);
         j.put("deadlockedThreads", Sys.findDeadlockedThreads());
         Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
-        int take = 20;
+        int take = 10;
         j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos)
                 .take(take).select(Sys.ThreadInfo::toString));
         j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos)
