@@ -1,6 +1,7 @@
 package org.rx.net.http;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.annotation.JSONField;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -33,6 +34,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.net.Proxy;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -208,7 +210,7 @@ public class HttpClient {
             return string;
         }
 
-        public <T> T toJson() {
+        public <T extends Serializable> T toJson() {
             return (T) JSON.parse(toString());
         }
     }

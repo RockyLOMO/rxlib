@@ -40,6 +40,7 @@ import static org.rx.core.Extends.*;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public final class Linq<T> implements Iterable<T>, Serializable {
     private static final long serialVersionUID = -7167070585936243198L;
+    static final Linq EMPTY = new Linq<>(Collections.emptyList(), false);
 
     //region staticMembers
     public static boolean canBeCollection(Class<?> type) {
@@ -84,6 +85,9 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public static <T> Linq<T> from(T one) {
+        if (one == null) {
+            return EMPTY;
+        }
         return from(Arrays.toList(one));
     }
 
@@ -92,7 +96,10 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return from(Arrays.toList(array));
     }
 
-    public static <T> Linq<T> from(@NonNull Stream<T> stream) {
+    public static <T> Linq<T> from(Stream<T> stream) {
+        if (stream == null) {
+            return EMPTY;
+        }
         return from(stream::iterator, stream.isParallel());
     }
 
@@ -101,10 +108,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public static <T> Linq<T> from(Iterable<T> iterable, boolean isParallel) {
-        if (iterable == null) {
-            iterable = Collections.emptyList();
-        }
-        return new Linq<>(iterable, isParallel);
+        return iterable == null ? EMPTY : new Linq<>(iterable, isParallel);
     }
     //endregion
 

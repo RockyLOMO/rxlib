@@ -228,15 +228,15 @@ public final class Sys extends SystemUtils {
         return Extends.<String, T>weakMap(proxyObject).get(DPT);
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxyBean, Object> func) {
+    public static <T> T proxy(Class<?> type, TripleFunc<Method, DynamicProxyBean, Object> func) {
         return proxy(type, func, false);
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxyBean, Object> func, boolean jdkProxy) {
+    public static <T> T proxy(Class<?> type, TripleFunc<Method, DynamicProxyBean, Object> func, boolean jdkProxy) {
         return proxy(type, func, null, jdkProxy);
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxyBean, Object> func, T rawObject, boolean jdkProxy) {
+    public static <T> T proxy(Class<?> type, TripleFunc<Method, DynamicProxyBean, Object> func, T rawObject, boolean jdkProxy) {
         T proxyObj;
         if (jdkProxy) {
             proxyObj = (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxyBean(func));
@@ -478,6 +478,18 @@ public final class Sys extends SystemUtils {
     }
 
     //region json
+    public static <T> T readValue(@NonNull Map<String, Object> json, String path) {
+        String[] paths = Strings.split(path, ".");
+        int last = paths.length - 1;
+        Map<String, Object> tmp = json;
+        for (int i = 0; i < last; i++) {
+            if ((tmp = as(tmp.get(paths[i]), Map.class)) == null) {
+                throw new InvalidException("Get empty sub object by path {}", paths[i]);
+            }
+        }
+        return (T) tmp.get(paths[last]);
+    }
+
     //TypeReference
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);

@@ -111,11 +111,11 @@ public class Reflects extends ClassUtils {
     }
 
     public static InputStream getResource(String namePattern) {
-        InputStream stream = getClassLoader().getResourceAsStream(namePattern);
-        if (stream != null) {
-            return stream;
+        InputStream in = getClassLoader().getResourceAsStream(namePattern);
+        if (in != null) {
+            return in;
         }
-        InputStream in = getResources(namePattern).firstOrDefault();
+        in = getResources(namePattern).firstOrDefault();
         if (in == null) {
             throw new InvalidException("Resource {} not found", namePattern);
         }
@@ -192,7 +192,7 @@ public class Reflects extends ClassUtils {
 
     @ErrorCode
     @SneakyThrows
-    public static <T> T newInstance(@NonNull Class<?> type, Object... args) {
+    public static <T> T newInstance(Class<?> type, Object... args) {
         if (args == null) {
             args = Arrays.EMPTY_OBJECT_ARRAY;
         }
@@ -327,7 +327,7 @@ public class Reflects extends ClassUtils {
         return (T) method.invoke(instance, args);
     }
 
-    public static Map<String, Linq<Method>> getMethodMap(@NonNull Class<?> type) {
+    public static Map<String, Linq<Method>> getMethodMap(Class<?> type) {
         return methodCache.getValue().get(type, k -> {
             List<Method> all = new ArrayList<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
@@ -427,7 +427,7 @@ public class Reflects extends ClassUtils {
         field.set(instance, changeType(value, field.getType()));
     }
 
-    public static Map<String, Field> getFieldMap(@NonNull Class<?> type) {
+    public static Map<String, Field> getFieldMap(Class<?> type) {
         return fieldCache.getValue().get(type, k -> {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
@@ -455,14 +455,14 @@ public class Reflects extends ClassUtils {
         }
     }
 
-    public static <T> T tryConvert(Object val, Class<T> toType) {
-        return tryConvert(val, toType, null);
+    public static <T> T convertQuietly(Object val, Class<T> toType) {
+        return convertQuietly(val, toType, null);
     }
 
-    public static <T> T tryConvert(Object val, @NonNull Class<T> toType, T defaultVal) {
+    public static <T> T convertQuietly(Object val, @NonNull Class<T> toType, T defaultVal) {
         try {
             return ifNull(changeType(val, toType), defaultVal);
-        } catch (Exception ex) {
+        } catch (Throwable e) {
             return defaultVal;
         }
     }
@@ -471,7 +471,7 @@ public class Reflects extends ClassUtils {
         convertBeans.add(0, new ConvertBean<>(baseFromType, toType, converter));
     }
 
-    public static <T> T defaultValue(Class<T> type) {
+    public static <T> T defaultValue(@NonNull Class<T> type) {
         return changeType(null, type);
     }
 
@@ -479,7 +479,7 @@ public class Reflects extends ClassUtils {
     @ErrorCode("enumError")
     @ErrorCode(cause = NoSuchMethodException.class)
     @ErrorCode(cause = ReflectiveOperationException.class)
-    public static <T> T changeType(Object value, @NonNull Class<T> toType) {
+    public static <T> T changeType(Object value, Class<T> toType) {
         if (value == null) {
             if (!toType.isPrimitive()) {
                 if (toType == List.class) {
