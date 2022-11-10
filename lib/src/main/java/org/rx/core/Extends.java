@@ -71,7 +71,7 @@ public interface Extends extends Serializable {
     }
 
     static <T> T quietly(Func<T> fn) {
-        return quietly(fn, 1, null);
+        return quietly(fn, 1, (Func<T>) Func.EMPTY);
     }
 
     static <T> T quietly(Func<T> fn, int retryCount) {
