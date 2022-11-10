@@ -10,8 +10,7 @@ public class ValidateException extends InvalidException {
     final String violationMessage;
 
     public ValidateException(String propertyName, String violationMessage, String message) {
-        super(message);
-        super.level(ExceptionLevel.USER_OPERATION);
+        super(ExceptionLevel.USER_OPERATION, message);
         this.propertyName = propertyName;
         this.violationMessage = violationMessage;
     }

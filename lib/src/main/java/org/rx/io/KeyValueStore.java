@@ -249,7 +249,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             return;
         }
         if (!eq(config.getApiPassword(), req.getHeaders().get("apiPassword"))) {
-            throw new InvalidException("{} auth fail", req.getRemoteEndpoint()).level(ExceptionLevel.USER_OPERATION);
+            throw new InvalidException(ExceptionLevel.USER_OPERATION, "{} auth fail", req.getRemoteEndpoint());
         }
     }
 
