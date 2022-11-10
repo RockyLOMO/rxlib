@@ -14,7 +14,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.SystemUtils;
-import org.rx.bean.DynamicProxy;
+import org.rx.bean.DynamicProxyBean;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
@@ -228,20 +228,20 @@ public final class Sys extends SystemUtils {
         return Extends.<String, T>weakMap(proxyObject).get(DPT);
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
+    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxyBean, Object> func) {
         return proxy(type, func, false);
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, boolean jdkProxy) {
+    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxyBean, Object> func, boolean jdkProxy) {
         return proxy(type, func, null, jdkProxy);
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, T rawObject, boolean jdkProxy) {
+    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxyBean, Object> func, T rawObject, boolean jdkProxy) {
         T proxyObj;
         if (jdkProxy) {
-            proxyObj = (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func));
+            proxyObj = (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxyBean(func));
         } else {
-            proxyObj = (T) Enhancer.create(type, new DynamicProxy(func));
+            proxyObj = (T) Enhancer.create(type, new DynamicProxyBean(func));
         }
         if (rawObject != null) {
             Extends.weakMap(proxyObj).put(DPT, rawObject);
@@ -478,7 +478,7 @@ public final class Sys extends SystemUtils {
     }
 
     //region json
-    //final 字段不会覆盖, TypeReference
+    //TypeReference
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);
         try {

@@ -10,7 +10,6 @@ import java.net.InetSocketAddress;
 import java.util.Objects;
 
 @RequiredArgsConstructor
-//@EqualsAndHashCode fail
 public class UnresolvedEndpoint implements Serializable {
     private static final long serialVersionUID = -1870762625355971485L;
 

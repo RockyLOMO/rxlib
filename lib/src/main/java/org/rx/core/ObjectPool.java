@@ -225,7 +225,7 @@ public class ObjectPool<T> extends Disposable {
         }
         c.setBorrowed(false);
         if (
-//                size() > maxSize ||  //不需要
+//                size() > maxSize ||  //Not required
                 !stack.offer(obj)) {
             doRetire(obj);
             return;

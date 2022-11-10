@@ -11,7 +11,7 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.Map;
 import java.util.TreeMap;
 
-//非对称加密
+//asymmetric encryption
 public final class RSAUtil {
     static final String SIGN_ALGORITHMS = "MD5withRSA";
     static final String SIGN_ALGORITHMS2 = "SHA1WithRSA";
@@ -30,7 +30,7 @@ public final class RSAUtil {
         return new String[]{pubKeyStr, priKeyStr};
     }
 
-    public static String sign(@NonNull TreeMap<String, Object> map, @NonNull String privateKey) {
+    public static String sign(@NonNull TreeMap<String, Object> map, String privateKey) {
         StringBuilder content = new StringBuilder();
         for (Map.Entry<String, Object> entry : map.entrySet()) {
             if (entry.getValue() == null) {
@@ -65,7 +65,7 @@ public final class RSAUtil {
         return CodecUtil.convertToBase64(signature.sign());
     }
 
-    public static boolean verify(@NonNull TreeMap<String, Object> map, @NonNull String sign, @NonNull String publicKey) {
+    public static boolean verify(@NonNull TreeMap<String, Object> map, String sign, String publicKey) {
         StringBuilder content = new StringBuilder();
         for (Map.Entry<String, Object> entry : map.entrySet()) {
             if (entry.getValue() == null) {
@@ -118,15 +118,15 @@ public final class RSAUtil {
     /**
      * 解密算法
      *
-     * @param cryptograph 密文
+     * @param cryptoGraph 密文
      */
     @SneakyThrows
-    public static String decrypt(@NonNull String cryptograph, @NonNull String privateKey) {
+    public static String decrypt(@NonNull String cryptoGraph, @NonNull String privateKey) {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(CodecUtil.convertFromBase64(privateKey)));
         Cipher cipher = Cipher.getInstance(RSA_ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, key);
-        byte[] b = CodecUtil.convertFromBase64(cryptograph);
+        byte[] b = CodecUtil.convertFromBase64(cryptoGraph);
         return new String(cipher.doFinal(b));
     }
 }

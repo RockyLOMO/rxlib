@@ -20,7 +20,7 @@ import java.util.Base64;
 public class CodecUtil {
     public static final HexTranslator HEX = new HexTranslator();
 
-    //org.apache.commons.codec.binary.Base64.isBase64(base64String) 不准
+    //org.apache.commons.codec.binary.Base64.isBase64(base64String) may not right
     public static String convertToBase64(byte[] data) {
         byte[] ret = Base64.getEncoder().encode(data);
         return new String(ret, StandardCharsets.UTF_8);
@@ -96,7 +96,7 @@ public class CodecUtil {
     }
 
     @SneakyThrows
-    public static byte[] md5(File file) {
+    public static byte[] md5(@NonNull File file) {
         try (FileStream fs = new FileStream(file)) {
             MessageDigest md = MessageDigest.getInstance("MD5");
             byte[] buf = Bytes.arrayBuffer();

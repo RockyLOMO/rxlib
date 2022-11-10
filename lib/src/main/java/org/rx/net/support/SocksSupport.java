@@ -10,7 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public interface SocksSupport extends AutoCloseable {
     String FAKE_HOST_SUFFIX = "x.f-li.cn";
     int[] FAKE_PORT_OBFS = new int[]{443, 3306};
-    List<String> FAKE_IPS = new CopyOnWriteArrayList<>();  //8.8.8.8 不需要设置了
+    List<String> FAKE_IPS = new CopyOnWriteArrayList<>();  //There is no need to set up '8.8.8.8'
     List<Integer> FAKE_PORTS = new CopyOnWriteArrayList<>(Arrays.toList(80));
     int DNS_PORT = 53;
     long ASYNC_TIMEOUT = 5 * 1000;

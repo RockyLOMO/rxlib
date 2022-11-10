@@ -16,7 +16,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 
-//对称加密
+//symmetrical encryption
 @Slf4j
 public class AESUtil {
     static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
@@ -37,7 +37,7 @@ public class AESUtil {
         return String.format("℞%s", date).getBytes(StandardCharsets.UTF_8);
     }
 
-    public static String encryptToBase64(@NonNull String data) {
+    public static String encryptToBase64(String data) {
         return encryptToBase64(data, null);
     }
 
@@ -47,7 +47,7 @@ public class AESUtil {
         return CodecUtil.convertToBase64(valueByte);
     }
 
-    public static String decryptFromBase64(@NonNull String data) {
+    public static String decryptFromBase64(String data) {
         return decryptFromBase64(data, null);
     }
 
@@ -62,7 +62,6 @@ public class AESUtil {
             DateTime utcNow;
             if (dk && e instanceof BadPaddingException
                     && (utcNow = DateTime.utcNow()).getHours() == 0
-//                    && (utcNow = DateTime.utcNow().addDays(1).getDateComponent()).getHours() == 0 //4 test
                     && utcNow.getMinutes() == 0) {
                 log.warn("redo decrypt");
                 valueByte = decrypt(rawBytes, dateKey(utcNow.addDays(-1).toDateString()));
@@ -83,7 +82,7 @@ public class AESUtil {
     }
 
     @SneakyThrows
-    public static ByteBuf encrypt(@NonNull ByteBuf buf, @NonNull byte[] key) {
+    public static ByteBuf encrypt(@NonNull ByteBuf buf, byte[] key) {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
         cipher.init(Cipher.ENCRYPT_MODE, generateKey(key));
         ByteBuffer in = buf.nioBuffer();
@@ -94,7 +93,7 @@ public class AESUtil {
     }
 
     @SneakyThrows
-    public static ByteBuf decrypt(@NonNull ByteBuf buf, @NonNull byte[] key) {
+    public static ByteBuf decrypt(@NonNull ByteBuf buf, byte[] key) {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, generateKey(key));
         ByteBuffer in = buf.nioBuffer();
@@ -105,14 +104,14 @@ public class AESUtil {
     }
 
     @SneakyThrows
-    public static byte[] encrypt(@NonNull byte[] data, @NonNull byte[] key) {
+    public static byte[] encrypt(byte[] data, byte[] key) {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
         cipher.init(Cipher.ENCRYPT_MODE, generateKey(key));
         return cipher.doFinal(data);
     }
 
     @SneakyThrows
-    public static byte[] decrypt(@NonNull byte[] data, @NonNull byte[] key) {
+    public static byte[] decrypt(byte[] data, byte[] key) {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, generateKey(key));
         return cipher.doFinal(data);

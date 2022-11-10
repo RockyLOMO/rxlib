@@ -1,7 +1,6 @@
 package org.rx.net.http;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.annotation.JSONField;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -214,7 +213,7 @@ public class HttpClient {
         }
     }
 
-    public static final CookieContainer COOKIE_CONTAINER = new CookieContainer();
+    public static final CookieContainer COOKIES = new CookieContainer();
     static final ConnectionPool POOL = new ConnectionPool(RxConfig.INSTANCE.getNet().getPoolMaxSize(), RxConfig.INSTANCE.getNet().getPoolKeepAliveSeconds(), TimeUnit.SECONDS);
     static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
     static final X509TrustManager TRUST_MANAGER = new X509TrustManager() {
@@ -348,7 +347,7 @@ public class HttpClient {
 
     public static void saveRawCookie(@NonNull String url, @NonNull String cookie) {
         HttpUrl httpUrl = HttpUrl.get(url);
-        COOKIE_CONTAINER.saveFromResponse(httpUrl, decodeCookie(httpUrl, cookie));
+        COOKIES.saveFromResponse(httpUrl, decodeCookie(httpUrl, cookie));
     }
 
     @SneakyThrows
@@ -365,7 +364,7 @@ public class HttpClient {
                 .proxy(proxy)
                 .proxyAuthenticator(authenticator);
         if (enableCookie) {
-            builder = builder.cookieJar(COOKIE_CONTAINER);
+            builder = builder.cookieJar(COOKIES);
         }
         return builder.build();
     }

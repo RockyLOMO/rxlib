@@ -102,12 +102,11 @@ public class Reflects extends ClassUtils {
     }
 
     public static Linq<StackTraceElement> stackTrace(int takeCount) {
-        //Thread.currentThread().getStackTrace()性能略差
         return Linq.from(new Throwable().getStackTrace()).skip(2).take(takeCount);
     }
 
     public static Class<?> stackClass(int depth) {
-        //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 获取不到
+        //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 not exist
         return SecurityManagerEx.INSTANCE.stackClass(2 + depth);
     }
 
@@ -311,7 +310,7 @@ public class Reflects extends ClassUtils {
 
         try {
             if (isStatic) {
-                Class<?>[] parameterTypes = toClass(args);  //null 不准
+                Class<?>[] parameterTypes = toClass(args);  //May not right match if args have null value
                 method = MethodUtils.getMatchingMethod(searchType, name, parameterTypes);
                 return invokeMethod(method, args);
             } else {
@@ -378,7 +377,6 @@ public class Reflects extends ClassUtils {
             throw new InvalidException("Invalid name {}", getterOrSetter);
         }
 
-//        Introspector.decapitalize
         if (Character.isLowerCase(name.charAt(0))) {
             return name;
         }

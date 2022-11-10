@@ -59,9 +59,9 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             String k = DOMAIN_PREFIX + domain;
             List<InetAddress> sIps = server.shadowCache.get(k);
             if (sIps == null) {
-                //未命中也缓存
+                //cache value can't be null
                 server.shadowCache.put(k, sIps = quietly(() -> shadowServers.next().getSupport().resolveHost(domain), 2, Collections::emptyList),
-                        CachePolicy.absolute(sIps.isEmpty() ? 5 : server.ttl));//缓存必须有值
+                        CachePolicy.absolute(sIps.isEmpty() ? 5 : server.ttl));
             }
             if (CollectionUtils.isEmpty(sIps)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
@@ -92,7 +92,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         });
     }
 
-    //ttl 秒
+    //ttl seconds
     private DefaultDnsResponse newResponse(DefaultDnsQuery query, DefaultDnsQuestion question, long ttl, Iterable<byte[]> addresses) {
         DefaultDnsResponse response = DnsMessageUtil.newResponse(query, isTcp);
         response.addRecord(DnsSection.QUESTION, question);

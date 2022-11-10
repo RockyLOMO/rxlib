@@ -33,13 +33,18 @@ public interface Extends extends Serializable {
     }
 
     static <T> List<T> newConcurrentList(int initialCapacity, boolean readMore) {
-        //CopyOnWriteArrayList 写性能差
         return readMore ? new CopyOnWriteArrayList<>() : new Vector<>(initialCapacity);
     }
 
-    //todo checkerframework
+    static <T> void require(T arg) {
+        if (arg == null) {
+            throw new IllegalArgumentException("The arg requires non null");
+        }
+    }
+
     @ErrorCode("test")
-    static void require(Object arg, boolean testResult) {
+    static <T> void require(T arg, boolean testResult) {
+        require(arg);
         if (!testResult) {
             throw new ApplicationException("test", values(arg));
         }
@@ -226,7 +231,7 @@ public interface Extends extends Serializable {
     }
 
     static <T> boolean eq(T a, T b) {
-        //Objects.equals() 有坑
+        //Objects.equals() poisonous
         return a == b || (a != null && a.equals(b));
     }
     //endregion

@@ -123,7 +123,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
     private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType,
                        SocksContext e, StringBuilder extMsg) {
-        //initChannel 可能会变dstEp
+        //initChannel may change dstEp
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
         outbound.pipeline().addLast(BackendRelayHandler.DEFAULT);
 

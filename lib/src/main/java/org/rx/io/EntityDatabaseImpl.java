@@ -527,7 +527,6 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 throw new InvalidException("Require a primaryKey mapping");
             }
 
-//            createCols.setLength(createCols.length() - 3);
             insert.setLength(insert.length() - 1).append(")");
 
             String sql = new StringBuilder(SQL_CREATE).replace($TABLE, tableName)

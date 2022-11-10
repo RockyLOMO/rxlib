@@ -34,7 +34,6 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             Channel channel = ctx.channel();
             log.debug("clientActive {}", channel.remoteAddress());
 
-            //握手需要异步
             raiseEventAsync(onConnected, EventArgs.EMPTY);
         }
 

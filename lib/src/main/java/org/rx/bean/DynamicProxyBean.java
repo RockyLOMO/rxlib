@@ -10,8 +10,8 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 
 @RequiredArgsConstructor
-public class DynamicProxy implements MethodInterceptor, InvocationHandler {
-    final TripleFunc<Method, DynamicProxy, Object> fn;
+public class DynamicProxyBean implements MethodInterceptor, InvocationHandler {
+    final TripleFunc<Method, DynamicProxyBean, Object> fn;
     @Getter
     Object proxyObject;
     MethodProxy method;

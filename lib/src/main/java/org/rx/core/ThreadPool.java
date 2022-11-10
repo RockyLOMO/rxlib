@@ -670,7 +670,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static ThreadFactory newThreadFactory(String name) {
-        //可用全局setUncaughtExceptionHandler
         return new DefaultThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true
 //                , Thread.NORM_PRIORITY + 1
         );
@@ -939,7 +938,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public <T> MultiTaskFuture<Void, T> runAllAsync(Collection<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
             Task<T> t = new Task<>(task, null, null);
-            //allOfFuture.join()会hang住
+            //allOfFuture.join() will hang
 //            return wrap(CompletableFuture.supplyAsync(t, this), t.traceId);
             return CompletableFuture.supplyAsync(t, asyncExecutor);
         }).toArray();

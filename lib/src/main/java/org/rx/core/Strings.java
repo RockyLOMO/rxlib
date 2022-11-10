@@ -385,7 +385,7 @@ public class Strings extends StringUtils {
          */
         String PWD_STRENGTH = "^(?=.*\\d)(?=.*[a-z])(?=.*[A-Z]).{8,40}$";
     }
-    //#endregion
+    //endregion
 
     public static boolean isMatch(CharSequence input, String regularExp) {
         return input != null && regularExp != null && Pattern.matches(regularExp, input);

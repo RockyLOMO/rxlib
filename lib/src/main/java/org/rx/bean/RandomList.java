@@ -90,11 +90,8 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
                 maxRandomValue = hold.threshold.end;
             }
 
-//            if (maxRandomValue <= 0) {
-//                throw new NoSuchElementException();
-//            }
             int v = ThreadLocalRandom.current().nextInt(maxRandomValue);
-            //二分法查找
+            //binary search
             int low = 0;
             int high = elements.size() - 1;
             while (low <= high) {

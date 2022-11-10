@@ -19,7 +19,7 @@ public class EventBus implements EventTarget<EventBus> {
     public final Delegate<EventBus, NEventArgs<?>> onDeadEvent = Delegate.create();
     final Map<Class<?>, Set<Tuple<Object, Method>>> subscribers = new ConcurrentHashMap<>();
 
-    public <T> void register(T subscriber) {
+    public <T> void register(@NonNull T subscriber) {
         for (Map.Entry<Class<?>, Set<Tuple<Object, Method>>> entry : findAllSubscribers(subscriber).entrySet()) {
             Class<?> eventType = entry.getKey();
             Set<Tuple<Object, Method>> eventMethodsInListener = entry.getValue();
@@ -27,7 +27,7 @@ public class EventBus implements EventTarget<EventBus> {
         }
     }
 
-    public <T> void unregister(T subscriber) {
+    public <T> void unregister(@NonNull T subscriber) {
         for (Map.Entry<Class<?>, Set<Tuple<Object, Method>>> entry : findAllSubscribers(subscriber).entrySet()) {
             Class<?> eventType = entry.getKey();
             Collection<Tuple<Object, Method>> listenerMethodsForType = entry.getValue();

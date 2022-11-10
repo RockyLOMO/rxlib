@@ -238,11 +238,10 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
             throw new InvalidException("Already started");
         }
 
-//        Runtime.getRuntime().exec(shell, null, workspace)
         log.debug("start {}", shell);
         Process tmp = process = new ProcessBuilder(translateCommandline(shell))
                 .directory(workspace)
-                .redirectErrorStream(true)  //合并getInputStream和getErrorStream
+                .redirectErrorStream(true)  //combine inputStream and errorStream
                 .start();
 
         if (daemonFuture != null) {

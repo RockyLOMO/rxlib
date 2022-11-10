@@ -22,21 +22,6 @@ public interface AbstractMap<K, V> extends Map<K, V> {
         return values().contains(value);
     }
 
-//    @Override
-//    public V get(Object key) {
-//        return null;
-//    }
-//
-//    @Override
-//    public V put(K key, V value) {
-//        return null;
-//    }
-
-//    @Override
-//    public V remove(Object key) {
-//        return null;
-//    }
-
     @Override
     default void putAll(Map<? extends K, ? extends V> m) {
         for (Entry<? extends K, ? extends V> entry : m.entrySet()) {

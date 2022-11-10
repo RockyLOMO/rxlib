@@ -11,7 +11,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.IdGenerator;
+import org.rx.util.IdGenerator;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -221,7 +221,7 @@ public class TcpServer extends Disposable implements EventTarget<TcpServer> {
             Sockets.closeBootstrap(bootstrap);
         }
         bootstrap = Sockets.serverBootstrap(config, channel -> {
-            //tcp keepalive OS层面，IdleStateHandler应用层面
+            //tcp keepalive OS level，IdleStateHandler APP level
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), 0, 0));
             TransportUtil.addFrontendHandler(channel, config);
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,

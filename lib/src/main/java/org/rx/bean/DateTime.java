@@ -168,7 +168,7 @@ public final class DateTime extends Date {
         super.setTime(c.getTimeInMillis());
     }
 
-    public DateTime(Date date) {
+    public DateTime(@NonNull Date date) {
         super(date.getTime());
     }
 

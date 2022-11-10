@@ -31,7 +31,6 @@ public class SpringContext implements ApplicationContextAware {
         return applicationContext;
     }
 
-    //类名(首字母小写)
     public static <T> T getBean(String name) {
         return (T) getApplicationContext().getBean(name);
     }

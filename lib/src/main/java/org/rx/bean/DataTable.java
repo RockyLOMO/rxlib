@@ -1,10 +1,7 @@
 package org.rx.bean;
 
 import com.alibaba.fastjson2.JSONObject;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.h2.expression.Alias;
 import org.h2.expression.Expression;
@@ -69,7 +66,7 @@ public class DataTable implements Extends {
         DataTable dt = new DataTable();
         try (JdbcResultSet rs = resultSet) {
             LocalResult result = (LocalResult) rs.getResult();
-            //包含orderby的
+            //include orderby expr
             Expression[] exprs = Reflects.readField(result, "expressions");
             if (exprs.length > 0) {
                 dt.setTableName(exprs[0].getTableName());
@@ -85,7 +82,6 @@ public class DataTable implements Extends {
                 buf.clear();
                 for (int i = 1; i <= columnCount; i++) {
                     buf.add(ValueToObjectConverter.valueToDefaultObject(rs.getInternal(i), conn, true));
-//                    buf.add(rs.getObject(i));
                 }
                 dt.addRow(buf.toArray());
             }
@@ -168,7 +164,7 @@ public class DataTable implements Extends {
         this.tableName = tableName;
     }
 
-    public <T> List<T> toList(Class<T> type) {
+    public <T> List<T> toList(@NonNull Class<T> type) {
         List<T> list = new ArrayList<>();
         Iterator<DataRow> rows = getRows();
         while (rows.hasNext()) {

@@ -20,7 +20,7 @@ import org.rx.util.function.Func;
 import static org.rx.core.Tasks.awaitQuietly;
 
 public class Socks5Upstream extends Upstream {
-    final SocksConfig config; //可能 frontend 和 backend 不同配置
+    final SocksConfig config; //Maybe frontend have a different configuration from backend
     final Func<UpstreamSupport> router;
 
     public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull Func<UpstreamSupport> router) {
@@ -47,7 +47,7 @@ public class Socks5Upstream extends Upstream {
                 || !Sockets.isValidIp(destination.getHost()))) {
             String dstEpStr = destination.toString();
             long hash = CodecUtil.hash64(dstEpStr);
-            //先变更
+            //change dest first
             destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
             Cache.getOrSet(hash, k -> awaitQuietly(() -> {
                 Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);

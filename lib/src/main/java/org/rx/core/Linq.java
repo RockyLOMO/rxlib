@@ -638,7 +638,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return toMap(keySelector, p -> p);
     }
 
-    //Collectors.toMap 会校验value为null的情况
+    //Collectors.toMap() will throw exception if value is null
     @SneakyThrows
     public <TK, TR> Map<TK, TR> toMap(BiFunc<T, TK> keySelector, BiFunc<T, TR> resultSelector) {
         Map<TK, TR> result = newMap();

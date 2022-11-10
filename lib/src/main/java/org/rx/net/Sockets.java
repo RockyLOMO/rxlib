@@ -405,7 +405,7 @@ public final class Sockets {
         if (first != null) {
             return first;
         }
-        return InetAddress.getLocalHost(); //可能返回127.0.0.1
+        return InetAddress.getLocalHost(); //may return 127.0.0.1
     }
 
     @SneakyThrows
@@ -443,7 +443,6 @@ public final class Sockets {
         return new InetSocketAddress(anyLocalAddress(), port);
     }
 
-    //check jdk11 unknown host
     public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
         int i = endpoint.lastIndexOf(":");
         if (i == -1) {
@@ -453,7 +452,7 @@ public final class Sockets {
         String ip = endpoint.substring(0, i);
         int port = Integer.parseInt(endpoint.substring(i + 1));
         return new InetSocketAddress(ip, port);
-//        return InetSocketAddress.createUnresolved(ip, port);  //DNS解析有问题
+//        return InetSocketAddress.createUnresolved(ip, port);  //DNS issues
     }
 
     public static InetSocketAddress newEndpoint(String endpoint, int port) {
@@ -572,7 +571,7 @@ public final class Sockets {
         prop.setProperty("https.proxyHost", ipe.getAddress().getHostAddress());
         prop.setProperty("https.proxyPort", String.valueOf(ipe.getPort()));
         if (!CollectionUtils.isEmpty(nonProxyHosts)) {
-            //如"localhost|192.168.0.*"
+            //"localhost|192.168.1.*"
             prop.setProperty("http.nonProxyHosts", String.join("|", nonProxyHosts));
         }
         if (userName != null && password != null) {

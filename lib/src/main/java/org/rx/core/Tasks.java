@@ -16,10 +16,10 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
 
-//Java 11 and ForkJoinPool.commonPool() class loading issue
+//Java 11 ForkJoinPool.commonPool() has class loading issue
 public final class Tasks {
     static final int POOL_COUNT = RxConfig.INSTANCE.threadPool.replicas;
-    //随机负载，如果methodA wait methodA，methodA在执行等待，methodB在threadPoolQueue，那么会出现假死现象。
+    //Random load balance, if methodA wait methodA, methodA is executing wait and methodB is in ThreadPoolQueue, then there will be a false death.
     static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
     static final ExecutorService executor;
     static final WheelTimer timer;
