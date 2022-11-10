@@ -13,7 +13,6 @@ import org.rx.core.Disposable;
 import org.rx.core.EventTarget;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
-import org.rx.net.TransportUtil;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -57,7 +56,7 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             }
             pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
 //            SocksPortUnificationServerHandler
-            TransportUtil.addFrontendHandler(channel, config);
+            Sockets.addFrontendHandler(channel, config);
             pipeline.addLast(Socks5ServerEncoder.DEFAULT)
                     .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
                     .addLast(Socks5InitialRequestHandler.class.getSimpleName(), Socks5InitialRequestHandler.DEFAULT);
@@ -78,10 +77,10 @@ public class SocksProxyServer extends Disposable implements EventTarget<SocksPro
             if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
             } else {
-                TransportUtil.addFrontendHandler(channel, config);
+                Sockets.addFrontendHandler(channel, config);
                 pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
             }
-        }).bind(Sockets.anyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
+        }).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
     }
 
     @Override

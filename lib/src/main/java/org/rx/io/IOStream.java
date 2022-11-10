@@ -159,14 +159,14 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
 
     public TI getReader() {
         if (reader == null) {
-            reader = Objects.requireNonNull(initReader());
+            reader = require(initReader());
         }
         return reader;
     }
 
     public TO getWriter() {
         if (writer == null) {
-            writer = Objects.requireNonNull(initWriter());
+            writer = require(initWriter());
         }
         return writer;
     }

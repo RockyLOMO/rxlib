@@ -17,7 +17,6 @@ import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
-import org.rx.net.TransportUtil;
 import org.rx.net.transport.protocol.PingPacket;
 
 import java.io.Serializable;
@@ -223,7 +222,7 @@ public class TcpServer extends Disposable implements EventTarget<TcpServer> {
         bootstrap = Sockets.serverBootstrap(config, channel -> {
             //tcp keepalive OS level，IdleStateHandler APP level
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), 0, 0));
-            TransportUtil.addFrontendHandler(channel, config);
+            Sockets.addFrontendHandler(channel, config);
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientImpl());

@@ -13,7 +13,6 @@ import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
-import org.rx.net.TransportUtil;
 import org.rx.net.transport.protocol.ErrorPacket;
 import org.rx.net.transport.protocol.PingPacket;
 
@@ -162,7 +161,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         config.setServerEndpoint(remoteEp);
         bootstrap = Sockets.bootstrap(TcpServerConfig.REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
-            TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
+            Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
@@ -189,7 +188,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         config.setServerEndpoint(remoteEp);
         bootstrap = Sockets.bootstrap(TcpServerConfig.REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
-            TransportUtil.addBackendHandler(channel, config, config.getServerEndpoint());
+            Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());

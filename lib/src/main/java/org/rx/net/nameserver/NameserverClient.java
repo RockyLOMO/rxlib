@@ -100,7 +100,7 @@ public final class NameserverClient extends Disposable {
         if (registerEndpoints.isEmpty()) {
             throw new InvalidException("At least one server that required");
         }
-        svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::allEndpoints).toSet());
+        svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::newAllEndpoints).toSet());
 
         return Tasks.runAsync(() -> each(svrEps, regEp -> {
             synchronized (hold) {
@@ -141,7 +141,7 @@ public final class NameserverClient extends Disposable {
                         reInject();
                     });
                     rc.onReconnecting.combine((s, e) -> {
-                        if (svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::allEndpoints).toSet())) {
+                        if (svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::newAllEndpoints).toSet())) {
                             registerAsync(svrEps);
                         }
                     });

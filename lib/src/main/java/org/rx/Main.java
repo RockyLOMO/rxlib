@@ -124,7 +124,7 @@ public final class Main implements SocksSupport {
             watcher.raiseChange();
             Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(arg1).select(shadowUser -> {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
-                ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),
+                ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(Integer.parseInt(sArgs[0])),
                         CipherKind.AES_256_GCM.getCipherName(), sArgs[1]);
                 config.setTcpTimeoutSeconds(conf.tcpTimeoutSeconds);
                 config.setUdpTimeoutSeconds(conf.udpTimeoutSeconds);
@@ -139,7 +139,7 @@ public final class Main implements SocksSupport {
             dnsSvr.setTtl(60 * 60 * 10); //12 hour
             dnsSvr.setShadowServers(shadowServers);
             dnsSvr.addHostsFile("hosts.txt");
-            InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+            InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
             Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
@@ -210,7 +210,7 @@ public final class Main implements SocksSupport {
             fn.invoke();
             Tasks.schedulePeriod(fn, conf.autoWhiteListSeconds * 1000L);
 
-            InetSocketAddress frontSvrEp = Sockets.localEndpoint(port);
+            InetSocketAddress frontSvrEp = Sockets.newLoopbackEndpoint(port);
             for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
                 ShadowsocksConfig ssConfig = tuple.left;
                 SocksUser user = tuple.right;

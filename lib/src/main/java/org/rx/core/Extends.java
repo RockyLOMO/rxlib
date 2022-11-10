@@ -36,10 +36,11 @@ public interface Extends extends Serializable {
         return readMore ? new CopyOnWriteArrayList<>() : new Vector<>(initialCapacity);
     }
 
-    static <T> void require(T arg) {
+    static <T> T require(T arg) {
         if (arg == null) {
-            throw new IllegalArgumentException("The arg requires non null");
+            throw new IllegalArgumentException("The object requires non null");
         }
+        return arg;
     }
 
     @ErrorCode("test")

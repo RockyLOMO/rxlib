@@ -63,7 +63,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             if (e != null) {
                 return;
             }
-            nodes.add(Tuple.of(new InetSocketAddress(Sockets.loopbackAddress(), rpcPort), local));
+            nodes.add(Tuple.of(new InetSocketAddress(Sockets.getLoopbackAddress(), rpcPort), local));
             nodes.addAll(Linq.from(nsClient.discoverAll(APP_NAME, true)).select(p -> {
                 InetSocketAddress ep = new InetSocketAddress(p, rpcPort);
                 return Tuple.of(ep, Remoting.createFacade(EntityDatabase.class, RpcClientConfig.poolMode(ep, 2, local.maxConnections)));

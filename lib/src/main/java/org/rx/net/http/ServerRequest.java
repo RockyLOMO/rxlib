@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import static org.rx.core.Extends.ifNull;
+import static org.rx.core.Extends.require;
 
 @Getter
 public final class ServerRequest {
@@ -59,7 +60,7 @@ public final class ServerRequest {
     }
 
     public String jsonBody() {
-        Objects.requireNonNull(content);
+        require(content);
         return content.toString(CharsetUtil.UTF_8);
     }
 }

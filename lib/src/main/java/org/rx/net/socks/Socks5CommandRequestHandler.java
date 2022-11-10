@@ -10,7 +10,6 @@ import org.rx.exception.TraceHandler;
 import org.rx.net.AESCodec;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
-import org.rx.net.TransportUtil;
 import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -107,7 +106,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();
                         for (int i = handlers.length - 1; i > -1; i--) {
                             ChannelHandler handler = handlers[i];
-                            outbound.pipeline().addAfter(TransportUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+                            outbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
                         }
 //                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
                         aesMsg.append("[BACKEND_AES]");
@@ -139,7 +138,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();
                 for (int i = handlers.length - 1; i > -1; i--) {
                     ChannelHandler handler = handlers[i];
-                    inbound.pipeline().addAfter(TransportUtil.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+                    inbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
                 }
 //                extMsg.append("[FRONTEND_AES] %s", Strings.join(inbound.channel().pipeline().names()));
                 extMsg.append("[FRONTEND_AES]");

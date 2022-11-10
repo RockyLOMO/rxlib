@@ -51,7 +51,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         }
 
         if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
-            ctx.writeAndFlush(newResponse(query, question, Short.MAX_VALUE, Collections.singletonList(Sockets.loopbackAddress().getAddress())));
+            ctx.writeAndFlush(newResponse(query, question, Short.MAX_VALUE, Collections.singletonList(Sockets.getLoopbackAddress().getAddress())));
             return;
         }
         RandomList<UpstreamSupport> shadowServers = server.shadowServers;
