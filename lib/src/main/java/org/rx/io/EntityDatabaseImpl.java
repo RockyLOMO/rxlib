@@ -699,9 +699,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     static String toH2Type(Class<?> fieldType) {
         String h2Type;
-        if (Reflects.isAssignable(fieldType, NEnum.class)) {
+        if (Reflects.isAssignable(fieldType, NEnum.class, false)) {
             h2Type = H2Type.INTEGER.getName();
-        } else if (Reflects.isAssignable(fieldType, Decimal.class) || fieldType == BigDecimal.class) {
+        } else if (Reflects.isAssignable(fieldType, Decimal.class, false) || fieldType == BigDecimal.class) {
 //            h2Type = H2Type.NUMERIC.getName();
             h2Type = "NUMERIC(56, 6)";
         } else if (fieldType.isArray()) {

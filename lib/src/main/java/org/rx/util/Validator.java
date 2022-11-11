@@ -13,9 +13,12 @@ import javax.validation.Validation;
 import javax.validation.executable.ExecutableValidator;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+
+import static org.rx.core.Extends.ifNull;
 
 /**
  * http://www.cnblogs.com/pixy/p/5306567.html
@@ -50,7 +53,7 @@ public class Validator {
      * @param bean
      */
     public static void validateBean(Object bean) {
-        List<Object> list = Linq.asList(bean, false);
+        Iterable<Object> list = ifNull(Linq.asIterable(bean, false), Collections.singletonList(bean));
         javax.validation.Validator validator = getValidator();
         for (Object b : list) {
             for (ConstraintViolation<Object> violation : validator.validate(b)) {

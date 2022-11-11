@@ -139,10 +139,8 @@ public final class Sys extends SystemUtils {
     static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
         if (v != null) {
             Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
-            if (Linq.canBeCollection(v.getClass())) {
-                List<Object> list = Linq.asList(v, true);
-                list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
-                return list;
+            if (Linq.tryAsIterableType(v.getClass())) {
+                return Linq.fromIterable(v).select(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
             }
             if (q.any(t -> Reflects.isInstance(v, t))) {
                 return v.getClass().getName();
@@ -545,8 +543,8 @@ public final class Sys extends SystemUtils {
             return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(src, null, src), JSON_WRITE_FLAGS);
         } catch (Throwable e) {
             Linq<Object> q;
-            if (Linq.canBeCollection(src.getClass())) {
-                q = Linq.fromCollection(src);
+            if (Linq.tryAsIterableType(src.getClass())) {
+                q = Linq.fromIterable(src);
             } else {
                 q = Linq.from(src);
             }

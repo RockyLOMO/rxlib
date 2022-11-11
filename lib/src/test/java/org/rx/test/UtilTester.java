@@ -6,8 +6,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
+import org.rx.bean.BiTuple;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
+import org.rx.bean.Tuple;
 import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.test.bean.GirlBean;
@@ -26,63 +28,6 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class UtilTester extends AbstractTester {
-    List<Integer> queue = new ArrayList<>();
-
-    @SneakyThrows
-    @Test
-    public void productAndConsume() {
-        final boolean[] run = {true};
-        Object lock = new Object();
-        int bufSize = 5, max = bufSize * 10;
-        AtomicInteger c = new AtomicInteger();
-        Tasks.run(() -> {
-            while (run[0]) {
-                synchronized (lock) {
-                    if (queue.size() < bufSize) {
-                        int v = c.incrementAndGet();
-                        queue.add(v);
-                        log.info("product {}", v);
-                        if (v == max) {
-                            run[0] = false;
-                        }
-                        continue;
-                    }
-                    lock.notifyAll();
-                    lock.wait();
-                }
-            }
-        });
-        Tasks.run(() -> {
-            while (run[0]) {
-                synchronized (lock) {
-                    if (queue.size() < bufSize) {
-                        lock.wait();
-                        continue;
-                    }
-                    for (Integer v : queue) {
-                        log.info("consume {}", v);
-                    }
-                    queue.clear();
-                    lock.notifyAll();
-                }
-            }
-        });
-        System.in.read();
-    }
-
-    @Test
-    public void snowflake() {
-        Set<Long> set = new HashSet<>();
-        int len = 1 << 12;
-        System.out.println(len);
-        Snowflake snowflake = Snowflake.DEFAULT;
-        for (int i = 0; i < len; i++) {
-            Tasks.run(() -> {
-                assert set.add(snowflake.nextId());
-            });
-        }
-    }
-
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
         PersonMapper INSTANCE = BeanMapper.DEFAULT.define(PersonMapper.class);
@@ -193,7 +138,37 @@ public class UtilTester extends AbstractTester {
     }
 
     @Test
-    public void version() {
+    public void objectChangeTracker() {
+        ObjectChangeTracker tracker = new ObjectChangeTracker();
+        Map<String, Object> map1 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.LeZhi,
+                Arrays.asList(PersonBean.YouFan, PersonBean.LeZhi),
+                Collections.singletonMap("one", PersonBean.LeZhi)), false);
+        System.out.println(map1);
+        System.out.println(toJsonString(map1));
+
+        Map<String, Object> map2 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.LeZhi,
+                Arrays.asList(PersonBean.YouFan, PersonBean.LeZhi),
+                Collections.singletonMap("one", PersonBean.LeZhi)), false);
+        System.out.println(toJsonString(map2));
+
+        Map<String, Tuple<Object, Object>> changedMap = ObjectChangeTracker.getChangedMap(map1, map2);
+        log.info("changedMap\n{}", toJsonString(changedMap));
+    }
+
+    @Test
+    public void other() {
+        //snowflake
+        Set<Long> set = new HashSet<>();
+        int len = 1 << 12;
+        System.out.println(len);
+        Snowflake snowflake = Snowflake.DEFAULT;
+        for (int i = 0; i < len; i++) {
+            Tasks.run(() -> {
+                assert set.add(snowflake.nextId());
+            });
+        }
+
+        //compareVersion
         assert Strings.compareVersion("1.01", "1.001") == 0;
         assert Strings.compareVersion("1.0", "1.0.0") == 0;
         assert Strings.compareVersion("0.1", "1.1") == -1;

@@ -109,7 +109,7 @@ public interface Extends extends Serializable {
 
     //region each
     static <T> void eachQuietly(Object array, BiAction<T> fn) {
-        eachQuietly(Linq.asList(array, true), fn);
+        eachQuietly(Linq.fromIterable(array), fn);
     }
 
     static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
@@ -121,7 +121,7 @@ public interface Extends extends Serializable {
     }
 
     static <T> void each(Object array, BiAction<T> fn) {
-        each(Linq.asList(array, true), fn);
+        each(Linq.fromIterable(array), fn);
     }
 
     static <T> void each(Iterable<T> iterable, BiAction<T> fn) {

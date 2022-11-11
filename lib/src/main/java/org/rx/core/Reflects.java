@@ -88,8 +88,12 @@ public class Reflects extends ClassUtils {
 
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
+        registerConvert(Long.class, Date.class, (sv, tt) -> new Date(sv));
+        registerConvert(Long.class, DateTime.class, (sv, tt) -> new DateTime(sv));
+        registerConvert(Date.class, Long.class, (sv, tt) -> sv.getTime());
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
-        registerConvert(String.class, ULID.class, (sv, tt) -> ULID.valueOf(sv));
+        registerConvert(String.class, BigDecimal.class, (sv, tt) -> new BigDecimal(sv));
+        registerConvert(String.class, UUID.class, (sv, tt) -> UUID.fromString(sv));
     }
 
     //region class
@@ -500,10 +504,6 @@ public class Reflects extends ClassUtils {
         Object fValue = value;
         if (toType == String.class) {
             value = value.toString();
-        } else if (toType == UUID.class) {
-            value = UUID.fromString(value.toString());
-        } else if (toType == BigDecimal.class) {
-            value = new BigDecimal(value.toString());
         } else if (toType.isEnum()) {
             boolean failBack = true;
             if (NEnum.class.isAssignableFrom(toType)) {
@@ -535,7 +535,7 @@ public class Reflects extends ClassUtils {
             try {
                 toType = (Class) primitiveToWrapper(toType);
                 if (toType == Boolean.class && value instanceof Number) {
-                    int val = ((Number) value).intValue();
+                    byte val = ((Number) value).byteValue();
                     if (val == 0) {
                         value = Boolean.FALSE;
                     } else if (val == 1) {
@@ -554,7 +554,7 @@ public class Reflects extends ClassUtils {
                         throw new NoSuchMethodException(CHANGE_TYPE_METHOD);
                     }
 
-                    if (isAssignable(toType, Number.class)) {
+                    if (Number.class.isAssignableFrom(toType)) {
                         if (value instanceof Boolean) {
                             if (!(Boolean) value) {
                                 value = "0";
@@ -578,7 +578,7 @@ public class Reflects extends ClassUtils {
 
                     Method m = null;
                     for (Method p : methods) {
-                        if (!(p.getParameterCount() == 1 && p.getParameterTypes()[0].equals(String.class))) {
+                        if (!(p.getParameterCount() == 1 && p.getParameterTypes()[0] == String.class)) {
                             continue;
                         }
                         m = p;
@@ -596,6 +596,14 @@ public class Reflects extends ClassUtils {
             }
         }
         return (T) value;
+    }
+
+    public static boolean isBasicType(@NonNull Class<?> type) {
+        return type == String.class || Number.class.isAssignableFrom(primitiveToWrapper(type))
+                || type.isEnum()
+                || Date.class.isAssignableFrom(type)
+                || type == ULID.class
+                || type == UUID.class;
     }
     //endregion
 }

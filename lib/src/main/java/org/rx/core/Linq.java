@@ -7,7 +7,6 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
@@ -43,7 +42,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     static final Linq EMPTY = new Linq<>(Collections.emptyList(), false);
 
     //region staticMembers
-    public static boolean canBeCollection(Class<?> type) {
+    public static boolean tryAsIterableType(Class<?> type) {
         return Iterable.class.isAssignableFrom(type)
                 || type.isArray()
                 || Iterator.class.isAssignableFrom(type);
@@ -51,10 +50,9 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     @SuppressWarnings(NON_UNCHECKED)
     @ErrorCode
-    public static <T> List<T> asList(@NonNull Object collection, boolean throwOnFail) {
-        Iterable<T> iterable;
-        if ((iterable = as(collection, Iterable.class)) != null) {
-            return IterableUtils.toList(iterable);
+    public static <T> Iterable<T> asIterable(@NonNull Object collection, boolean throwOnFail) {
+        if (collection instanceof Iterable) {
+            return (Iterable<T>) collection;
         }
 
         Class<?> type = collection.getClass();
@@ -67,21 +65,18 @@ public final class Linq<T> implements Iterable<T>, Serializable {
             return list;
         }
 
-        Iterator<T> iterator;
-        if ((iterator = as(collection, Iterator.class)) != null) {
-            return IteratorUtils.toList(iterator);
+        if (collection instanceof Iterator) {
+            return IteratorUtils.asIterable((Iterator<T>) collection);
         }
 
         if (throwOnFail) {
             throw new ApplicationException(values(type.getSimpleName()));
         }
-        ArrayList<T> list = new ArrayList<>();
-        list.add((T) collection);
-        return list;
+        return null;
     }
 
-    public static <T> Linq<T> fromCollection(Object collection) {
-        return new Linq<>(asList(collection, true), false);
+    public static <T> Linq<T> fromIterable(Object iterable) {
+        return from(asIterable(iterable, true));
     }
 
     public static <T> Linq<T> from(T one) {
@@ -121,18 +116,25 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     private <TR> List<TR> newList() {
-        int count = count();
+        Collection<T> ts = asCollection();
+        int count = ts != null ? ts.size() : 0;
         return parallel ? newConcurrentList(count, false) : new ArrayList<>(count);
     }
 
     private <TR> Set<TR> newSet() {
-        int count = count();
+        Collection<T> ts = asCollection();
+        int count = ts != null ? ts.size() : 16;
         return parallel ? Collections.synchronizedSet(new LinkedHashSet<>(count)) : new LinkedHashSet<>(count);
     }
 
     private <TK, TR> Map<TK, TR> newMap() {
-        int count = count();
+        Collection<T> ts = asCollection();
+        int count = ts != null ? ts.size() : 16;
         return parallel ? Collections.synchronizedMap(new LinkedHashMap<>(count)) : new LinkedHashMap<>(count);
+    }
+
+    private Collection<T> asCollection() {
+        return data instanceof Collection ? (Collection<T>) data : null;
     }
 
     private <TR> Stream<TR> newStream(Iterable<TR> iterable) {
@@ -392,10 +394,8 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public int count() {
-        if (data instanceof Collection) {
-            return ((Collection<T>) data).size();
-        }
-        return (int) stream().count();
+        Collection<T> ts = asCollection();
+        return ts != null ? ts.size() : (int) stream().count();
     }
 
     public int count(PredicateFunc<T> predicate) {
@@ -616,24 +616,24 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     public List<T> toList() {
         List<T> result = newList();
-        if (data instanceof Collection) {
-            result.addAll((Collection<T>) data);
-        } else {
-            for (T item : data) {
-                result.add(item);
-            }
+        for (T item : data) {
+            result.add(item);
         }
         return result;
     }
 
     public Set<T> toSet() {
         Set<T> result = newSet();
-        if (data instanceof Collection) {
-            result.addAll((Collection<T>) data);
-        } else {
-            for (T item : data) {
-                result.add(item);
-            }
+        for (T item : data) {
+            result.add(item);
+        }
+        return result;
+    }
+
+    public <TK, TR> Map<TK, TR> toMap() {
+        Map<TK, TR> result = newMap();
+        for (Map.Entry<TK, TR> entry : this.<Map.Entry<TK, TR>>cast()) {
+            result.put(entry.getKey(), entry.getValue());
         }
         return result;
     }
@@ -648,5 +648,18 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         Map<TK, TR> result = newMap();
         stream().forEach(item -> result.put(keySelector.apply(item), resultSelector.apply(item)));
         return result;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Linq<?> linq = (Linq<?>) o;
+        return parallel == linq.parallel && Objects.equals(data, linq.data);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(data, parallel);
     }
 }
