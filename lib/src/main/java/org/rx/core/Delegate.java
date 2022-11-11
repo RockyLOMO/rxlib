@@ -8,7 +8,9 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.TripleAction;
 
+import java.io.Serializable;
 import java.lang.reflect.Field;
+import java.util.EventObject;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
@@ -115,6 +117,10 @@ public class Delegate<TSender extends EventPublisher<TSender>, TArgs extends Eve
         invocations.clear();
         firstInvocation = lastInvocation = null;
         return this;
+    }
+
+    public <T extends EventObject & Serializable> void invoke(T event) throws Throwable {
+        invoke((TSender) event.getSource(), (TArgs) event);
     }
 
     @Override

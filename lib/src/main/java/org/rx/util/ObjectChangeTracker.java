@@ -27,25 +27,37 @@ public class ObjectChangeTracker {
     }
 
     @Getter
+    public static class ObjectChangedEvent extends EventObject {
+        private static final long serialVersionUID = -2993269004798534124L;
+        final Map<String, ChangedValue> changedValues;
+
+        public ObjectChangedEvent(Object source, Map<String, ChangedValue> changedValues) {
+            super(source);
+            this.changedValues = changedValues;
+        }
+    }
+
+    @Getter
     @RequiredArgsConstructor
     public static class ChangedValue {
         final Object oldValue;
         final Object newValue;
     }
 
-    public static TreeMap<String, ChangedValue> compareValueMap(@NonNull Map<String, Object> oldValueMap, @NonNull Map<String, Object> newValueMap) {
+    //region snapshotMap
+    public static TreeMap<String, ChangedValue> compareSnapshotMap(@NonNull Map<String, Object> oldValueMap, @NonNull Map<String, Object> newValueMap) {
         TreeMap<String, ChangedValue> root = new TreeMap<>();
         Set<String> allKeys = new HashSet<>(oldValueMap.keySet());
         allKeys.addAll(newValueMap.keySet());
         for (String name : allKeys) {
             Object oldVal = oldValueMap.get(name);
             Object newVal = newValueMap.get(name);
-            check(root, null, name, oldVal, newVal);
+            compareObj(root, null, name, oldVal, newVal);
         }
         return root;
     }
 
-    static void check(Map<String, ChangedValue> root, String parentName, String name, Object oldObj, Object newObj) {
+    static void compareObj(Map<String, ChangedValue> root, String parentName, String name, Object oldObj, Object newObj) {
         String n = concatName(parentName, true, name);
         if (oldObj == null || newObj == null) {
             //判断为null或相同引用
@@ -68,7 +80,7 @@ public class ObjectChangeTracker {
             for (int i = 0; i < allSize; i++) {
                 Object oldVal = i < oldSize ? olds.get(i) : null;
                 Object newVal = i < newSize ? news.get(i) : null;
-                check(root, n, String.format("[%s]", i), oldVal, newVal);
+                compareObj(root, n, String.format("[%s]", i), oldVal, newVal);
             }
             return;
         }
@@ -81,24 +93,20 @@ public class ObjectChangeTracker {
             for (String k : allKeys) {
                 Object oldVal = olds.get(k);
                 Object newVal = news.get(k);
-                check(root, n, k, oldVal, newVal);
+                compareObj(root, n, k, oldVal, newVal);
             }
             return;
         }
-//        if (!Reflects.isBasicType(oldType) && !Reflects.isBasicType(newType)) {
-//
-//        }
 
         if (!eq(oldObj, newObj)) {
             root.put(n, new ChangedValue(oldObj, newObj));
         }
     }
 
-    //region getValueMap
     public static <T> Map<String, Object> getSnapshotMap(@NonNull T subscriber, boolean concatName) {
         Object target = getTarget(subscriber);
         if (target == null) {
-            return null;
+            return Collections.emptyMap();
         }
 
         Map<String, Object> root = new HashMap<>();
@@ -155,7 +163,6 @@ public class ObjectChangeTracker {
     static Linq<Field> getFieldMap(Class<?> type) {
         return Linq.from(Reflects.getFieldMap(type).values()).where(p -> !Modifier.isStatic(p.getModifiers()));
     }
-    //endregion
 
     static Object getTarget(Object subscriber) {
         Class<?> type = subscriber.getClass();
@@ -164,43 +171,60 @@ public class ObjectChangeTracker {
         }
         return subscriber;
     }
+    //endregion
 
+    final Map<Object, Map<String, Object>> sources = Collections.synchronizedMap(new WeakHashMap<>());
     final EventBus bus = EventBus.DEFAULT;
-    final Map<Object, Map<String, Object>> subscribers = Collections.synchronizedMap(new WeakHashMap<>());
 
     public ObjectChangeTracker() {
         this(30000);
     }
 
     public ObjectChangeTracker(long checkPeriod) {
-        Tasks.schedulePeriod(this::checkChange, checkPeriod);
+        Tasks.schedulePeriod(this::publishChange, checkPeriod);
     }
 
-    public void checkChange() {
-//        eachQuietly(Linq.from(subscribers.entrySet()).toList(), p -> {
-//            Map<String, Object> oldVals = p.getValue(), newVals = getValueMap(p.getKey());
-//
-//        });
+    public void publishChange() {
+        eachQuietly(Linq.from(sources.entrySet()).toList(), p -> {
+            Object obj = p.getKey();
+            Map<String, Object> oldMap = p.getValue();
+            Map<String, Object> newMap = getSnapshotMap(p, false);
+            if (oldMap.isEmpty()) {
+                if (!newMap.isEmpty()) {
+                    sources.put(obj, newMap);
+                }
+                return;
+            }
+            TreeMap<String, ChangedValue> changedValues = compareSnapshotMap(oldMap, newMap);
+            if (changedValues.isEmpty()) {
+                return;
+            }
+            bus.publish(new ObjectChangedEvent(obj, changedValues));
+        });
     }
 
-    public <T> void register(@NonNull T subscriber) {
-        Object target = getTarget(subscriber);
+    public <T> void watch(@NonNull T source) {
+        Object target = getTarget(source);
         if (target == null) {
             throw new InvalidException("Proxy object can not be tracked, plz use source object instead");
         }
-        subscribers.put(target, getSnapshotMap(target, false));
+        sources.put(target, getSnapshotMap(target, false));
     }
 
-    public <T> void unregister(@NonNull T subscriber) {
-        Object target = getTarget(subscriber);
+    public <T> void unwatch(@NonNull T source) {
+        Object target = getTarget(source);
         if (target == null) {
 //            throw new InvalidException("Proxy object can not be tracked, plz use source object instead");
             return;
         }
-        subscribers.remove(target);
+        sources.remove(target);
     }
 
-    public void post() {
+    public <T> void register(@NonNull T subscriber) {
+        bus.register(subscriber);
+    }
 
+    public <T> void unregister(@NonNull T subscriber) {
+        bus.unregister(subscriber);
     }
 }

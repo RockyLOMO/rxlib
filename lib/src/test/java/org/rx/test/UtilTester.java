@@ -170,7 +170,7 @@ public class UtilTester extends AbstractTester {
         girl.setFlags(new int[]{0, 1});
         girl.setSister(new GirlBean());
         valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
-        changedMap = ObjectChangeTracker.compareValueMap(valueMap1, valueMap2);
+        changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
         log.info("changedMap\n{}", toJsonString(changedMap));
 
         valueMap1 = valueMap2;
@@ -179,7 +179,7 @@ public class UtilTester extends AbstractTester {
         girl.setFlags(new int[]{0, 2, 3});
         girl.getSister().setAge(5);
         valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
-        changedMap = ObjectChangeTracker.compareValueMap(valueMap1, valueMap2);
+        changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
         log.info("changedMap\n{}", JSON.toJSONString(changedMap, JSONWriter.Feature.WriteNulls));
     }
 
