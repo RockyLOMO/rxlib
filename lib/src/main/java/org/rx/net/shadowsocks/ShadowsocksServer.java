@@ -6,7 +6,7 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;
 import org.rx.core.Disposable;
-import org.rx.core.EventTarget;
+import org.rx.core.EventPublisher;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
@@ -17,7 +17,7 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.TripleAction;
 
 @Slf4j
-public class ShadowsocksServer extends Disposable implements EventTarget<ShadowsocksServer> {
+public class ShadowsocksServer extends Disposable implements EventPublisher<ShadowsocksServer> {
     public static final TripleAction<ShadowsocksServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public final Delegate<ShadowsocksServer, SocksContext> onRoute = Delegate.create(DIRECT_ROUTER),
             onUdpRoute = Delegate.create(DIRECT_ROUTER);

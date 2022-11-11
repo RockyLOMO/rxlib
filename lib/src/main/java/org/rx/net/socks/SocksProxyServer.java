@@ -10,7 +10,7 @@ import io.netty.handler.codec.socksx.v5.Socks5ServerEncoder;
 import lombok.*;
 import org.rx.core.Delegate;
 import org.rx.core.Disposable;
-import org.rx.core.EventTarget;
+import org.rx.core.EventPublisher;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
@@ -19,7 +19,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
-public class SocksProxyServer extends Disposable implements EventTarget<SocksProxyServer> {
+public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
 //            || dstEp.getPort() == 80

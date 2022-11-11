@@ -1,7 +1,6 @@
 package org.rx.core;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONReader;
 import lombok.Getter;
 import lombok.NonNull;
@@ -26,7 +25,7 @@ import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.values;
 
 @Slf4j
-public class YamlConfiguration implements EventTarget<YamlConfiguration> {
+public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
     @RequiredArgsConstructor
     @Getter
     public static class ChangedEventArgs extends EventArgs {

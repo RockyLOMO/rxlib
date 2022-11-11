@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 @Slf4j
-public class EventBus implements EventTarget<EventBus> {
+public class EventBus implements EventPublisher<EventBus> {
     public static final EventBus DEFAULT = new EventBus();
     public final Delegate<EventBus, NEventArgs<?>> onDeadEvent = Delegate.create();
     final Map<Class<?>, Set<Tuple<Object, Method>>> subscribers = new ConcurrentHashMap<>();

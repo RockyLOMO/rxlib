@@ -269,7 +269,7 @@ public final class Remoting {
                     case COMPUTE_ARGS:
                         try {
                             isCompute.set(true);
-                            EventTarget<?> target = (EventTarget<?>) proxyObject;
+                            EventPublisher<?> target = (EventPublisher<?>) proxyObject;
                             target.raiseEvent(x.eventName, x.eventArgs);
                             log.info("clientSide event {} -> {} OK & args={}", x.eventName, x.flag, toJsonString(x.eventArgs));
                         } catch (Exception ex) {
@@ -337,7 +337,7 @@ public final class Remoting {
                     ServerBean.EventBean eventBean = bean.eventBeans.computeIfAbsent(p.eventName, x -> new ServerBean.EventBean());
                     switch (p.flag) {
                         case SUBSCRIBE:
-                            EventTarget<?> eventTarget = (EventTarget<?>) contractInstance;
+                            EventPublisher<?> eventTarget = (EventPublisher<?>) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
                                 synchronized (eventBean) {
                                     ServerBean.EventContext eCtx = new ServerBean.EventContext(args);

@@ -29,7 +29,7 @@ import static org.rx.core.Extends.newConcurrentList;
 import static org.rx.core.Extends.tryClose;
 
 @Slf4j
-public class ShellCommander extends Disposable implements EventTarget<ShellCommander> {
+public class ShellCommander extends Disposable implements EventPublisher<ShellCommander> {
     @RequiredArgsConstructor
     @Getter
     public static class PrintOutEventArgs extends EventArgs {
@@ -200,7 +200,7 @@ public class ShellCommander extends Disposable implements EventTarget<ShellComma
     }
 
     public synchronized ShellCommander setAutoRestart() {
-        onExited.tail((s, e) -> restart());
+        onExited.last((s, e) -> restart());
         return this;
     }
 

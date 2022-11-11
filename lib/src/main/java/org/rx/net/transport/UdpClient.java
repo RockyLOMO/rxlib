@@ -31,7 +31,7 @@ import static org.rx.core.Extends.circuitContinue;
 import static org.rx.core.Extends.tryAs;
 
 @Slf4j
-public class UdpClient implements EventTarget<UdpClient> {
+public class UdpClient implements EventPublisher<UdpClient> {
     @RequiredArgsConstructor
     static class Context {
         public final UdpMessage message;

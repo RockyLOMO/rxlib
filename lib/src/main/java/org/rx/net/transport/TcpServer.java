@@ -31,7 +31,7 @@ import static org.rx.core.Extends.*;
 
 @Slf4j
 @RequiredArgsConstructor
-public class TcpServer extends Disposable implements EventTarget<TcpServer> {
+public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     class ClientImpl extends ChannelInboundHandlerAdapter implements TcpClient {
         final Delegate<TcpClient, NEventArgs<Serializable>> onReceive = Delegate.create();
         @Getter

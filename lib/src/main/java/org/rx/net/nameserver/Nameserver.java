@@ -4,7 +4,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.rx.bean.RandomList;
 import org.rx.core.EventArgs;
-import org.rx.core.EventTarget;
+import org.rx.core.EventPublisher;
 import org.rx.core.Extends;
 import org.rx.core.RxConfig;
 
@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public interface Nameserver extends EventTarget<Nameserver>, AutoCloseable {
+public interface Nameserver extends EventPublisher<Nameserver>, AutoCloseable {
     @Getter
     class AppChangedEventArgs extends EventArgs {
         private static final long serialVersionUID = -398674064775226514L;

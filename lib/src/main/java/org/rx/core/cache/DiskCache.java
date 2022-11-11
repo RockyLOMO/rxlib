@@ -18,7 +18,7 @@ import java.util.Set;
 import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
-public class DiskCache<TK, TV> implements Cache<TK, TV>, EventTarget<DiskCache<TK, TV>> {
+public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCache<TK, TV>> {
     static {
         Container.register(DiskCache.class, new DiskCache<>());
     }

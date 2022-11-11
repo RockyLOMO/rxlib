@@ -15,7 +15,7 @@ import java.util.concurrent.Future;
 import static org.rx.core.Extends.quietly;
 
 @Slf4j
-public class FileWatcher extends Disposable implements EventTarget<FileWatcher> {
+public class FileWatcher extends Disposable implements EventPublisher<FileWatcher> {
     @RequiredArgsConstructor
     public static class FileChangeEventArgs extends EventArgs {
         @Getter

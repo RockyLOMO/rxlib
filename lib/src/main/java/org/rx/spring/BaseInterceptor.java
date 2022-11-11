@@ -16,7 +16,7 @@ import java.util.List;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Sys.*;
 
-public abstract class BaseInterceptor implements EventTarget<BaseInterceptor> {
+public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor> {
     static final int MAX_FIELD_SIZE = 1024 * 4;
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
     public final Delegate<BaseInterceptor, ProceedEventArgs> onProcessing = Delegate.create(),

@@ -651,7 +651,7 @@ public class CoreTester extends AbstractTester {
         UserManagerImpl mgr = new UserManagerImpl();
         PersonBean p = PersonBean.YouFan;
 
-        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
+        mgr.onCreate.last((s, e) -> System.out.println("always tail:" + e));
         TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
         TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
         TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
