@@ -52,7 +52,7 @@ public class EventBus implements EventPublisher<EventBus> {
         return methodsInListener;
     }
 
-    public <T> void post(@NonNull T event) {
+    public <T> void publish(@NonNull T event) {
         Class<?> type = event.getClass();
         List<Class<?>> eventTypes = ClassUtils.getAllSuperclasses(type);
         eventTypes.add(type);

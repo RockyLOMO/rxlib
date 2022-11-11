@@ -476,11 +476,11 @@ public class CoreTester extends AbstractTester {
         bus.register(this);
         bus.register(this);
         for (int i = 0; i < 5; i++) {
-            bus.post(PersonBean.YouFan);
+            bus.publish(PersonBean.YouFan);
         }
         bus.unregister(this);
         for (int i = 0; i < 5; i++) {
-            bus.post(PersonBean.YouFan);
+            bus.publish(PersonBean.YouFan);
         }
     }
 
