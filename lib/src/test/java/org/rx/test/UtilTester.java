@@ -1,15 +1,15 @@
 package org.rx.test;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONWriter;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
-import org.rx.bean.BiTuple;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
-import org.rx.bean.Tuple;
 import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.test.bean.GirlBean;
@@ -22,7 +22,6 @@ import org.springframework.validation.annotation.Validated;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.core.Sys.toJsonString;
 
@@ -140,19 +139,48 @@ public class UtilTester extends AbstractTester {
     @Test
     public void objectChangeTracker() {
         ObjectChangeTracker tracker = new ObjectChangeTracker();
-        Map<String, Object> map1 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.LeZhi,
-                Arrays.asList(PersonBean.YouFan, PersonBean.LeZhi),
-                Collections.singletonMap("one", PersonBean.LeZhi)), false);
-        System.out.println(map1);
-        System.out.println(toJsonString(map1));
 
-        Map<String, Object> map2 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.LeZhi,
-                Arrays.asList(PersonBean.YouFan, PersonBean.LeZhi),
-                Collections.singletonMap("one", PersonBean.LeZhi)), false);
-        System.out.println(toJsonString(map2));
+        Map<String, Object> valueMap1, valueMap2;
+        Map<String, ObjectChangeTracker.ChangedValue> changedMap;
 
-        Map<String, Tuple<Object, Object>> changedMap = ObjectChangeTracker.getChangedMap(map1, map2);
+//        List<PersonBean> arr1 = Collections.singletonList(PersonBean.YouFan);
+//        List<PersonBean> arr2 = Arrays.asList(PersonBean.YouFan, PersonBean.LeZhi);
+//        Map<String, PersonBean> map1 = Collections.singletonMap("one", PersonBean.LeZhi);
+//        Map<String, PersonBean> map2 = new HashMap<>();
+//        map2.put("one", PersonBean.LeZhi);
+//        map2.put("two", PersonBean.YouFan);
+//
+//        valueMap1 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.YouFan, arr1, map1), false);
+//        System.out.println(valueMap1);
+//        System.out.println(toJsonString(valueMap1));
+//
+//        valueMap2 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.LeZhi, arr2, map2), false);
+//        System.out.println(toJsonString(valueMap2));
+//
+//        valueMap1 = ObjectChangeTracker.getValueMap(PersonBean.YouFan, false);
+//        valueMap2 = ObjectChangeTracker.getValueMap(PersonBean.LeZhi, false);
+//        changedMap = ObjectChangeTracker.getChangedMap(valueMap1, valueMap2);
+//        log.info("changedMap\n{}", toJsonString(changedMap));
+
+        GirlBean girl = GirlBean.YouFan;
+
+        valueMap1 = ObjectChangeTracker.getSnapshotMap(girl, false);
+        girl.setIndex(1);
+        girl.setObj(1);
+        girl.setFlags(new int[]{0, 1});
+        girl.setSister(new GirlBean());
+        valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
+        changedMap = ObjectChangeTracker.compareValueMap(valueMap1, valueMap2);
         log.info("changedMap\n{}", toJsonString(changedMap));
+
+        valueMap1 = valueMap2;
+        girl.setIndex(64);
+        girl.setObj("a");
+        girl.setFlags(new int[]{0, 2, 3});
+        girl.getSister().setAge(5);
+        valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
+        changedMap = ObjectChangeTracker.compareValueMap(valueMap1, valueMap2);
+        log.info("changedMap\n{}", JSON.toJSONString(changedMap, JSONWriter.Feature.WriteNulls));
     }
 
     @Test
