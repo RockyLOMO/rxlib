@@ -175,7 +175,7 @@ public final class Sys extends SystemUtils {
             if (arg.startsWith("-")) {
                 Matcher matcher = PATTERN_TO_FIND_OPTIONS.matcher(arg);
                 if (matcher.find()) {
-                    result.put(matcher.group(), arg.replaceFirst("-.*?=", ""));
+                    result.put(matcher.group(), arg.replaceFirst("-.*?=", Strings.EMPTY));
                 }
             }
         }

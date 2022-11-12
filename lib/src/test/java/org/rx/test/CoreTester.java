@@ -469,24 +469,69 @@ public class CoreTester extends AbstractTester {
         sleep(15000);
     }
 
+    static final String MY_TOPIC = "myTopic";
+    static final String HER_TOPIC = "herTopic";
+    AtomicInteger eventBusCounter = new AtomicInteger();
+    AtomicInteger eventBusTopicCounter = new AtomicInteger();
+
     @Test
     public void eventBus() {
+        AtomicInteger deadEventCounter = new AtomicInteger();
         EventBus bus = EventBus.DEFAULT;
-        bus.onDeadEvent.combine((s, e) -> log.error("DeadEvent {}", e.getValue()));
+        bus.onDeadEvent.combine((s, e) -> {
+            log.error("DeadEvent {}", e.getValue());
+            deadEventCounter.incrementAndGet();
+        });
+
         bus.register(this);
         bus.register(this);
-        for (int i = 0; i < 5; i++) {
-            bus.publish(PersonBean.YouFan);
+        bus.register(this, MY_TOPIC);
+        bus.register(this, MY_TOPIC);
+        bus.register(this, HER_TOPIC);
+        for (int i = 0; i < 4; i++) {
+            String topic = i % 2 == 0 ? MY_TOPIC : null;
+            bus.publish(PersonBean.YouFan, topic);
         }
+        assert eventBusCounter.get() == 2;
+        assert eventBusTopicCounter.get() == 4;
+        assert deadEventCounter.get() == 0;
+
+        bus.unregister(this, MY_TOPIC);
+        for (int i = 0; i < 2; i++) {
+            bus.publish(PersonBean.YouFan, MY_TOPIC);
+        }
+        assert eventBusCounter.get() == 2;
+        assert eventBusTopicCounter.get() == 4;
+        assert deadEventCounter.get() == 2;
+
+        bus.register(this, MY_TOPIC);
+        for (int i = 0; i < 4; i++) {
+            String topic = i % 2 == 0 ? MY_TOPIC : null;
+            bus.publish(PersonBean.YouFan, topic);
+        }
+        assert eventBusCounter.get() == 4;
+        assert eventBusTopicCounter.get() == 8;
+        assert deadEventCounter.get() == 2;
+
         bus.unregister(this);
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 2; i++) {
             bus.publish(PersonBean.YouFan);
         }
+        assert eventBusCounter.get() == 4;
+        assert eventBusTopicCounter.get() == 8;
+        assert deadEventCounter.get() == 4;
     }
 
     @Subscribe
     void OnUserCreate(PersonBean personBean) {
         log.info("OnUserCreate: {}", personBean);
+        eventBusCounter.incrementAndGet();
+    }
+
+    @Subscribe(MY_TOPIC)
+    void OnUserCreateWithTopic(PersonBean personBean) {
+        log.info("OnUserCreateWithTopic: {}", personBean);
+        eventBusTopicCounter.incrementAndGet();
     }
 
     @SneakyThrows

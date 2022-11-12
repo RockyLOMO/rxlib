@@ -9,4 +9,5 @@ import static java.lang.annotation.ElementType.*;
 @Target({METHOD})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Subscribe {
+    String value() default "";
 }

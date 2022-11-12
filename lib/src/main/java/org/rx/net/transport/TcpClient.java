@@ -5,6 +5,7 @@ import io.netty.util.AttributeKey;
 import org.rx.core.Delegate;
 import org.rx.core.EventPublisher;
 import org.rx.core.NEventArgs;
+import org.rx.core.Strings;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -35,7 +36,7 @@ public interface TcpClient extends AutoCloseable, EventPublisher<TcpClient> {
 
     default <T> void attr(String name, T val) {
         if (!isConnected()) {
-            throw new ClientDisconnectedException("");
+            throw new ClientDisconnectedException(Strings.EMPTY);
         }
 
         getChannel().attr(AttributeKey.valueOf(name)).set(val);
