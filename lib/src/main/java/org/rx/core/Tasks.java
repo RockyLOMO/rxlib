@@ -93,7 +93,6 @@ public final class Tasks {
                 for (int i = poolCount; i < replicas.size(); i++) {
                     if (replicas.get(i).getActiveCount() == 0) {
                         replicas.remove(i);
-                        break;
                     }
                 }
             }, 60000, replicas, TimeoutFlag.PERIOD.flags(TimeoutFlag.REPLACE));
