@@ -4,6 +4,7 @@ import io.netty.util.internal.ThreadLocalRandom;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
 import org.rx.exception.TraceHandler;
@@ -16,19 +17,20 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
 
+import static org.rx.core.Constants.RX_CONF_TOPIC;
+import static org.rx.core.Extends.circuitContinue;
+
 //Java 11 ForkJoinPool.commonPool() has class loading issue
 public final class Tasks {
-    static final int POOL_COUNT = RxConfig.INSTANCE.threadPool.replicas;
     //Random load balance, if methodA wait methodA, methodA is executing wait and methodB is in ThreadPoolQueue, then there will be a false death.
     static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
     static final ExecutorService executor;
     static final WheelTimer timer;
     static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
+    static int poolCount;
 
     static {
-        for (int i = 0; i < POOL_COUNT; i++) {
-            replicas.add(new ThreadPool(String.valueOf(i)));
-        }
+        onChanged(null);
         executor = new AbstractExecutorService() {
             @Getter
             boolean shutdown;
@@ -61,6 +63,7 @@ public final class Tasks {
         };
         timer = new WheelTimer(executor);
 
+        ObjectChangeTracker.DEFAULT.register(Tasks.class, RX_CONF_TOPIC);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             Action fn;
             while ((fn = shutdownActions.poll()) != null) {
@@ -73,8 +76,32 @@ public final class Tasks {
         }));
     }
 
+    @Subscribe(RX_CONF_TOPIC)
+    static synchronized void onChanged(ObjectChangedEvent event) {
+        int newCount = RxConfig.INSTANCE.threadPool.replicas;
+        for (int i = 0; i < newCount; i++) {
+            replicas.add(0, new ThreadPool(String.valueOf(i)));
+        }
+        poolCount = newCount;
+
+        if (replicas.size() > poolCount) {
+            timer.setTimeout(() -> {
+                if (replicas.size() == poolCount) {
+                    circuitContinue(false);
+                    return;
+                }
+                for (int i = poolCount; i < replicas.size(); i++) {
+                    if (replicas.get(i).getActiveCount() == 0) {
+                        replicas.remove(i);
+                        break;
+                    }
+                }
+            }, 60000, replicas, TimeoutFlag.PERIOD.flags(TimeoutFlag.REPLACE));
+        }
+    }
+
     public static ThreadPool nextPool() {
-        return replicas.get(ThreadLocalRandom.current().nextInt(0, POOL_COUNT));
+        return replicas.get(ThreadLocalRandom.current().nextInt(0, poolCount));
     }
 
     public static ExecutorService executor() {
