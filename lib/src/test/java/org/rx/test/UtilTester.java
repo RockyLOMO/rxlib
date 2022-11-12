@@ -11,10 +11,7 @@ import org.rx.annotation.Mapping;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
-import org.rx.core.ObjectChangeTracker;
-import org.rx.core.ObjectChangedEvent;
-import org.rx.core.Strings;
-import org.rx.core.Tasks;
+import org.rx.core.*;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
@@ -26,6 +23,7 @@ import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.util.*;
 
+import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
@@ -141,6 +139,7 @@ public class UtilTester extends AbstractTester {
 
     @Test
     public void objectChangeTracker() {
+        Sys.mxInfo();
         Map<String, Object> valueMap1, valueMap2;
         Map<String, ObjectChangeTracker.ChangedValue> changedMap;
 
@@ -201,6 +200,7 @@ public class UtilTester extends AbstractTester {
     @Subscribe
     void onChange(ObjectChangedEvent e) {
         log.info("change {} ->\n{}", e.getSource(), toJson(e.getChangedValues()));
+        sleep(2000);
         _notify();
     }
 

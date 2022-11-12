@@ -158,7 +158,9 @@ public final class Sys extends SystemUtils {
         Container.register(Cache.class, Container.<Cache>get(conf.cache.mainInstance));
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getAllLocalAddresses(), JSON.toJSONString(conf));
-        ObjectChangeTracker.DEFAULT.watch(conf, true).register(Sys.class, RX_CONF_TOPIC);
+        ObjectChangeTracker.DEFAULT.watch(conf, true)
+                .register(Sys.class, RX_CONF_TOPIC)
+                .register(Tasks.class, RX_CONF_TOPIC);
     }
 
     @Subscribe(RX_CONF_TOPIC)

@@ -63,7 +63,6 @@ public final class Tasks {
         };
         timer = new WheelTimer(executor);
 
-        ObjectChangeTracker.DEFAULT.register(Tasks.class, RX_CONF_TOPIC);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             Action fn;
             while ((fn = shutdownActions.poll()) != null) {
