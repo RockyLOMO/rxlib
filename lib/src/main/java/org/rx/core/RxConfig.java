@@ -26,7 +26,6 @@ public final class RxConfig {
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
-        String THREAD_POOL_CPU_LOAD_WARNING_THRESHOLD = "app.threadPool.cpuLoadWarningThreshold";
         String THREAD_POOL_SAMPLING_PERIOD = "app.threadPool.samplingPeriod";
         String THREAD_POOL_SAMPLING_TIMES = "app.threadPool.samplingTimes";
         String THREAD_POOL_MIN_DYNAMIC_SIZE = "app.threadPool.minDynamicSize";

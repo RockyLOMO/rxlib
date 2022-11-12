@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.rx.annotation.Subscribe;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.ExceptionLevel;
@@ -25,6 +26,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Sys.fromJson;
 import static org.rx.core.Sys.toJsonObject;
@@ -178,6 +180,12 @@ public class MxController {
     @PostConstruct
     public void init() {
         Class.forName(Sys.class.getName());
+        ObjectChangeTracker.DEFAULT.register(this, RX_CONF_TOPIC);
+        onChanged(null);
+    }
+
+    @Subscribe(RX_CONF_TOPIC)
+    void onChanged(ObjectChangedEvent event) {
         Tasks.setTimeout(() -> {
             String omega = RxConfig.INSTANCE.getOmega();
             if (omega != null) {

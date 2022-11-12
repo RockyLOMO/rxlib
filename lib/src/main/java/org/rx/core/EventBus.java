@@ -65,7 +65,7 @@ public class EventBus implements EventPublisher<EventBus> {
 
     Map<Class<?>, Set<Tuple<Object, Method>>> findAllSubscribers(Object listener, String topic) {
         Map<Class<?>, Set<Tuple<Object, Method>>> methodsInListener = new HashMap<>();
-        for (Method method : Linq.from(Reflects.getMethodMap(listener.getClass()).values()).selectMany(p -> p).where(p -> {
+        for (Method method : Linq.from(Reflects.getMethodMap(listener instanceof Class ? (Class<?>) listener : listener.getClass()).values()).selectMany(p -> p).where(p -> {
             Subscribe subscribe = p.getAnnotation(Subscribe.class);
             return subscribe != null && (topic == null || Strings.hashEquals(subscribe.value(), topic)) && !p.isSynthetic();
         })) {

@@ -1,11 +1,10 @@
-package org.rx.util;
+package org.rx.core;
 
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
-import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.springframework.cglib.proxy.Enhancer;
 
@@ -24,17 +23,6 @@ public class ObjectChangeTracker {
     @Target(FIELD)
     @Retention(RetentionPolicy.RUNTIME)
     public @interface Ignore {
-    }
-
-    @Getter
-    public static class ObjectChangedEvent extends EventObject {
-        private static final long serialVersionUID = -2993269004798534124L;
-        final Map<String, ChangedValue> changedValues;
-
-        public ObjectChangedEvent(Object source, Map<String, ChangedValue> changedValues) {
-            super(source);
-            this.changedValues = changedValues;
-        }
     }
 
     @Getter
@@ -124,6 +112,10 @@ public class ObjectChangeTracker {
         }
 
         String name = concatName(parentName, concatName, field.getName());
+        if (val instanceof Class) {
+            parent.put(name, val);
+            return;
+        }
         Class<?> type = val.getClass();
         if (Linq.tryAsIterableType(type)) {
             parent.put(name, Linq.fromIterable(val).select(p -> resolveValue(name, concatName, p)).toList());
@@ -177,6 +169,7 @@ public class ObjectChangeTracker {
     }
     //endregion
 
+    public static final ObjectChangeTracker DEFAULT = new ObjectChangeTracker();
     final Map<Object, Map<String, Object>> sources = Collections.synchronizedMap(new WeakHashMap<>());
     final EventBus bus = EventBus.DEFAULT;
 
@@ -202,12 +195,16 @@ public class ObjectChangeTracker {
         });
     }
 
-    public <T> ObjectChangeTracker watch(@NonNull T source) {
+    public <T> ObjectChangeTracker watch(T source) {
+        return watch(source, false);
+    }
+
+    public <T> ObjectChangeTracker watch(@NonNull T source, boolean emptySnapshotMap) {
         Object target = getTarget(source);
         if (target == null) {
             throw new InvalidException("Proxy object can not be tracked, plz use source object instead");
         }
-        sources.put(target, getSnapshotMap(target, false));
+        sources.put(target, emptySnapshotMap ? Collections.emptyMap() : getSnapshotMap(target, false));
         return this;
     }
 
@@ -221,13 +218,13 @@ public class ObjectChangeTracker {
         return this;
     }
 
-    public <T> ObjectChangeTracker register(@NonNull T subscriber) {
-        bus.register(subscriber);
+    public <T> ObjectChangeTracker register(@NonNull T subscriber, String topic) {
+        bus.register(subscriber, topic);
         return this;
     }
 
-    public <T> ObjectChangeTracker unregister(@NonNull T subscriber) {
-        bus.unregister(subscriber);
+    public <T> ObjectChangeTracker unregister(@NonNull T subscriber, String topic) {
+        bus.unregister(subscriber, topic);
         return this;
     }
 }

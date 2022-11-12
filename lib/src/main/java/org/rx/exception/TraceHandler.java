@@ -4,6 +4,7 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.DbColumn;
+import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
@@ -20,6 +21,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
 
+import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Sys.toJsonString;
 
@@ -84,11 +86,24 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
 
     ScheduledFuture<?> future;
 
-    public int getKeepDays() {
-        return RxConfig.INSTANCE.getTraceKeepDays();
+    private TraceHandler() {
+        try {
+            Thread.setDefaultUncaughtExceptionHandler(this);
+            setKeepDays(RxConfig.INSTANCE.getTraceKeepDays());
+        } catch (Throwable e) {
+            log.error("rx init error", e);
+        }
     }
 
-    public synchronized void setKeepDays(int keepDays) {
+    @Subscribe(RX_CONF_TOPIC)
+    void onChanged(ObjectChangedEvent event) {
+        ObjectChangeTracker.ChangedValue changedValue = event.getChangedValues().get(RxConfig.ConfigNames.TRACE_KEEP_DAYS.substring(4));
+        if (changedValue != null) {
+            setKeepDays((int) changedValue.getNewValue());
+        }
+    }
+
+    void setKeepDays(int keepDays) {
         if (keepDays > 0) {
             EntityDatabase db = EntityDatabase.DEFAULT;
             db.createMapping(ErrorEntity.class, MethodEntity.class, MetricsEntity.class);
@@ -107,16 +122,6 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 future.cancel(true);
                 future = null;
             }
-        }
-        RxConfig.INSTANCE.setTraceKeepDays(keepDays);
-    }
-
-    private TraceHandler() {
-        try {
-            Thread.setDefaultUncaughtExceptionHandler(this);
-            setKeepDays(RxConfig.INSTANCE.getTraceKeepDays());
-        } catch (Throwable e) {
-            log.error("rx init error", e);
         }
     }
 
@@ -150,7 +155,8 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Thread t, String msg, Throwable e) {
-        if (getKeepDays() <= 0) {
+        RxConfig conf = RxConfig.INSTANCE;
+        if (conf.getTraceKeepDays() <= 0) {
             return;
         }
 
@@ -172,7 +178,6 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                     entity.setMessages(new ConcurrentLinkedQueue<>());
                     entity.setStackTrace(stackTrace);
                 }
-                RxConfig conf = RxConfig.INSTANCE;
                 Queue<String> queue = entity.getMessages();
                 if (queue.size() > conf.getTraceErrorMessageSize()) {
                     queue.poll();
@@ -215,7 +220,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
 
     public void saveTrace(Class<?> declaringType, String methodName, Object[] parameters, long elapsedMicros) {
         RxConfig conf = RxConfig.INSTANCE;
-        if (getKeepDays() <= 0 || elapsedMicros < conf.getTraceSlowElapsedMicros()) {
+        if (conf.getTraceKeepDays() <= 0 || elapsedMicros < conf.getTraceSlowElapsedMicros()) {
             return;
         }
 

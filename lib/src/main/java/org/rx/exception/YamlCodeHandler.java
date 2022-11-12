@@ -20,9 +20,7 @@ import static org.rx.core.Extends.as;
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class YamlCodeHandler {
-    static {
-        Container.register(YamlCodeHandler.class, new YamlCodeHandler());
-    }
+    public static final YamlCodeHandler INSTANCE = new YamlCodeHandler();
 
     protected YamlConfiguration getMessageSource() {
         return YamlConfiguration.RX_CONF;

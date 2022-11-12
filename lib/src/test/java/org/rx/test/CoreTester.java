@@ -520,6 +520,9 @@ public class CoreTester extends AbstractTester {
         assert eventBusCounter.get() == 4;
         assert eventBusTopicCounter.get() == 8;
         assert deadEventCounter.get() == 4;
+
+        bus.register(CoreTester.class);
+        bus.publish(1);
     }
 
     @Subscribe
@@ -532,6 +535,11 @@ public class CoreTester extends AbstractTester {
     void OnUserCreateWithTopic(PersonBean personBean) {
         log.info("OnUserCreateWithTopic: {}", personBean);
         eventBusTopicCounter.incrementAndGet();
+    }
+
+    @Subscribe
+    static void onEvent(Integer obj) {
+        System.out.println(obj);
     }
 
     @SneakyThrows

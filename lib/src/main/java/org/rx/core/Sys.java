@@ -14,6 +14,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.SystemUtils;
+import org.rx.annotation.Subscribe;
 import org.rx.bean.DynamicProxyBean;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.ProceedEventArgs;
@@ -43,6 +44,7 @@ import static com.alibaba.fastjson2.JSONReader.Feature.AllowUnQuotedFieldNames;
 import static com.alibaba.fastjson2.JSONReader.Feature.SupportClassForName;
 import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
 import static org.rx.core.Constants.PERCENT;
+import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.as;
 
 @Slf4j
@@ -154,9 +156,14 @@ public final class Sys extends SystemUtils {
     static {
         RxConfig conf = RxConfig.INSTANCE;
         Container.register(Cache.class, Container.<Cache>get(conf.cache.mainInstance));
-
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getAllLocalAddresses(), JSON.toJSONString(conf));
+        ObjectChangeTracker.DEFAULT.watch(conf, true).register(Sys.class, RX_CONF_TOPIC);
+    }
+
+    @Subscribe(RX_CONF_TOPIC)
+    static void onChanged(ObjectChangedEvent event) {
+        RxConfig conf = (RxConfig) event.getSource();
         if ((conf.net.ntp.enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
         }

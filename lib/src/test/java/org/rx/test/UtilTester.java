@@ -11,6 +11,8 @@ import org.rx.annotation.Mapping;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
+import org.rx.core.ObjectChangeTracker;
+import org.rx.core.ObjectChangedEvent;
 import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.test.bean.GirlBean;
@@ -182,7 +184,7 @@ public class UtilTester extends AbstractTester {
         log.info("changedMap\n{}", toJson(changedMap));
 
         ObjectChangeTracker tracker = new ObjectChangeTracker(2000);
-        tracker.watch(girl).register(this);
+        tracker.watch(girl).register(this, null);
         Tasks.setTimeout(() -> {
             girl.setIndex(128);
             girl.setObj(new ArrayList<>());
@@ -197,7 +199,7 @@ public class UtilTester extends AbstractTester {
     }
 
     @Subscribe
-    void onChange(ObjectChangeTracker.ObjectChangedEvent e) {
+    void onChange(ObjectChangedEvent e) {
         log.info("change {} ->\n{}", e.getSource(), toJson(e.getChangedValues()));
         _notify();
     }
