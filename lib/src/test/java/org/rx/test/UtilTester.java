@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
+import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.Strings;
@@ -138,8 +139,6 @@ public class UtilTester extends AbstractTester {
 
     @Test
     public void objectChangeTracker() {
-        ObjectChangeTracker tracker = new ObjectChangeTracker();
-
         Map<String, Object> valueMap1, valueMap2;
         Map<String, ObjectChangeTracker.ChangedValue> changedMap;
 
@@ -171,7 +170,7 @@ public class UtilTester extends AbstractTester {
         girl.setSister(new GirlBean());
         valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
         changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
-        log.info("changedMap\n{}", toJsonString(changedMap));
+        log.info("changedMap\n{}", toJson(changedMap));
 
         valueMap1 = valueMap2;
         girl.setIndex(64);
@@ -180,7 +179,27 @@ public class UtilTester extends AbstractTester {
         girl.getSister().setAge(5);
         valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
         changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
-        log.info("changedMap\n{}", JSON.toJSONString(changedMap, JSONWriter.Feature.WriteNulls));
+        log.info("changedMap\n{}", toJson(changedMap));
+
+        ObjectChangeTracker tracker = new ObjectChangeTracker(2000);
+        tracker.watch(girl).register(this);
+        Tasks.setTimeout(() -> {
+            girl.setIndex(128);
+            girl.setObj(new ArrayList<>());
+            girl.setFlags(new int[]{0});
+            girl.getSister().setAge(3);
+        }, 5000);
+        _wait();
+    }
+
+    String toJson(Object source) {
+        return JSON.toJSONString(source, JSONWriter.Feature.WriteNulls);
+    }
+
+    @Subscribe
+    void onChange(ObjectChangeTracker.ObjectChangedEvent e) {
+        log.info("change {} ->\n{}", e.getSource(), toJson(e.getChangedValues()));
+        _notify();
     }
 
     @Test

@@ -103,8 +103,8 @@ public class ObjectChangeTracker {
         }
     }
 
-    public static <T> Map<String, Object> getSnapshotMap(@NonNull T subscriber, boolean concatName) {
-        Object target = getTarget(subscriber);
+    public static <T> Map<String, Object> getSnapshotMap(@NonNull T sourceObj, boolean concatName) {
+        Object target = getTarget(sourceObj);
         if (target == null) {
             return Collections.emptyMap();
         }
@@ -139,6 +139,10 @@ public class ObjectChangeTracker {
     }
 
     static Object resolveValue(String name, boolean concatName, Object val) {
+        if (val == null) {
+            return null;
+        }
+
         Class<?> type = val.getClass();
         if (!Reflects.isBasicType(type)) {
             Map<String, Object> children = new HashMap<>();
@@ -164,12 +168,12 @@ public class ObjectChangeTracker {
         return Linq.from(Reflects.getFieldMap(type).values()).where(p -> !Modifier.isStatic(p.getModifiers()));
     }
 
-    static Object getTarget(Object subscriber) {
-        Class<?> type = subscriber.getClass();
+    static Object getTarget(Object sourceObj) {
+        Class<?> type = sourceObj.getClass();
         if (Proxy.isProxyClass(type) || Enhancer.isEnhanced(type)) {
-            return Sys.targetObject(subscriber);
+            return Sys.targetObject(sourceObj);
         }
-        return subscriber;
+        return sourceObj;
     }
     //endregion
 
@@ -180,51 +184,50 @@ public class ObjectChangeTracker {
         this(30000);
     }
 
-    public ObjectChangeTracker(long checkPeriod) {
-        Tasks.schedulePeriod(this::publishChange, checkPeriod);
+    public ObjectChangeTracker(long publishPeriod) {
+        Tasks.schedulePeriod(this::publishChange, publishPeriod);
     }
 
     public void publishChange() {
         eachQuietly(Linq.from(sources.entrySet()).toList(), p -> {
             Object obj = p.getKey();
             Map<String, Object> oldMap = p.getValue();
-            Map<String, Object> newMap = getSnapshotMap(p, false);
-            if (oldMap.isEmpty()) {
-                if (!newMap.isEmpty()) {
-                    sources.put(obj, newMap);
-                }
-                return;
-            }
+            Map<String, Object> newMap = getSnapshotMap(obj, false);
             TreeMap<String, ChangedValue> changedValues = compareSnapshotMap(oldMap, newMap);
             if (changedValues.isEmpty()) {
                 return;
             }
+            sources.put(obj, newMap);
             bus.publish(new ObjectChangedEvent(obj, changedValues));
         });
     }
 
-    public <T> void watch(@NonNull T source) {
+    public <T> ObjectChangeTracker watch(@NonNull T source) {
         Object target = getTarget(source);
         if (target == null) {
             throw new InvalidException("Proxy object can not be tracked, plz use source object instead");
         }
         sources.put(target, getSnapshotMap(target, false));
+        return this;
     }
 
-    public <T> void unwatch(@NonNull T source) {
+    public <T> ObjectChangeTracker unwatch(@NonNull T source) {
         Object target = getTarget(source);
         if (target == null) {
 //            throw new InvalidException("Proxy object can not be tracked, plz use source object instead");
-            return;
+            return this;
         }
         sources.remove(target);
+        return this;
     }
 
-    public <T> void register(@NonNull T subscriber) {
+    public <T> ObjectChangeTracker register(@NonNull T subscriber) {
         bus.register(subscriber);
+        return this;
     }
 
-    public <T> void unregister(@NonNull T subscriber) {
+    public <T> ObjectChangeTracker unregister(@NonNull T subscriber) {
         bus.unregister(subscriber);
+        return this;
     }
 }

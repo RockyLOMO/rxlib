@@ -120,7 +120,7 @@ public class Delegate<TSender extends EventPublisher<TSender>, TArgs extends Eve
     }
 
     public <T extends EventObject & Serializable> void invoke(T event) throws Throwable {
-        invoke((TSender) event.getSource(), (TArgs) event);
+        invoke((TSender) event.getSource(), (TArgs) (Object) event);
     }
 
     @Override
