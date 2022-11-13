@@ -505,7 +505,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class DynamicSizer implements TimerTask {
-        final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
+        final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = new WeakIdentityMap<>(8);
 
         DynamicSizer() {
             timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);

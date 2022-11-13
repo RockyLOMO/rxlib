@@ -14,8 +14,16 @@ import java.util.stream.Collectors;
 
 //ReferenceIdentityMap
 public class WeakIdentityMap<K, V> implements AbstractMap<K, V> {
-    final Map<WeakReference<K>, V> map = new ConcurrentHashMap<>();
+    final Map<WeakReference<K>, V> map;
     final ReferenceQueue<K> refQueue = new ReferenceQueue<>();
+
+    public WeakIdentityMap() {
+        this(16);
+    }
+
+    public WeakIdentityMap(int initialCapacity) {
+        map = new ConcurrentHashMap<>(initialCapacity);
+    }
 
     @Override
     public int size() {

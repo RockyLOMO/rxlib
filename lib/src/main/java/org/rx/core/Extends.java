@@ -18,7 +18,6 @@ import java.lang.reflect.AnnotatedElement;
 import java.util.List;
 import java.util.Map;
 import java.util.Vector;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @SuppressWarnings(Constants.NON_UNCHECKED)
@@ -237,12 +236,8 @@ public interface Extends extends Serializable {
     }
     //endregion
 
-    static <TK, TV> Map<TK, TV> weakMap(Object ref) {
-        return Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(ref, k -> new ConcurrentHashMap<>(8));
-    }
-
     default <TK, TV> TV attr(TK key) {
-        Map<TK, TV> attrMap = Container.<Object, Map<TK, TV>>weakMap().get(this);
+        Map<TK, TV> attrMap = Container.weakIdentityMap(this);
         if (attrMap == null) {
             return null;
         }
@@ -250,7 +245,7 @@ public interface Extends extends Serializable {
     }
 
     default <TK, TV> void attr(TK key, TV value) {
-        weakMap(this).put(key, value);
+        Container.weakIdentityMap(this).put(key, value);
     }
 
     default <T> T deepClone() {
