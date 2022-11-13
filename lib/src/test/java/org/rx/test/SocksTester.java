@@ -29,7 +29,6 @@ import org.rx.net.http.RestClient;
 import org.rx.net.nameserver.NameserverClient;
 import org.rx.net.nameserver.NameserverConfig;
 import org.rx.net.nameserver.NameserverImpl;
-import org.rx.net.ntp.*;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
@@ -47,6 +46,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.*;
 import org.rx.test.bean.*;
+import org.rx.third.apache.ntp.*;
 import org.rx.util.function.TripleAction;
 
 import java.io.IOException;
@@ -97,7 +97,7 @@ public class SocksTester extends AbstractTester {
         c1.registerAsync(node1).join();
         List<InetAddress> discover = c1.discover(appUsercenter);
         System.out.println(toJsonString(discover));
-        assert discover.contains(Sockets.loopbackAddress());
+        assert discover.contains(Sockets.getLoopbackAddress());
 
         discover = c1.discover(appOrder);
         assert CollectionUtils.isEmpty(discover);
@@ -105,7 +105,7 @@ public class SocksTester extends AbstractTester {
         c2.registerAsync(node1).join();
 
         discover = c1.discover(appOrder);
-        assert discover.contains(Sockets.loopbackAddress());
+        assert discover.contains(Sockets.getLoopbackAddress());
 
         c2.deregisterAsync().join();
         discover = c1.discover(appOrder);
@@ -390,11 +390,11 @@ public class SocksTester extends AbstractTester {
     public void ssProxy() {
         //dns
         int shadowDnsPort = 853;
-        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
         DnsServer dnsSvr = new DnsServer(shadowDnsPort);
 
         //backend
-        InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
+        InetSocketAddress backSrvEp = Sockets.newLoopbackEndpoint(2080);
         String defPwd = "123456";
         SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
@@ -414,7 +414,7 @@ public class SocksTester extends AbstractTester {
         shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
-        ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.anyEndpoint(2090),
+        ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(2090),
                 CipherKind.AES_128_GCM.getCipherName(), defPwd);
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
@@ -457,12 +457,12 @@ public class SocksTester extends AbstractTester {
 
         //dns
         int shadowDnsPort = 853;
-        InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
         DnsServer dnsSvr = new DnsServer(shadowDnsPort);
 //        Sockets.injectNameService(shadowDnsEp);
 
         //backend
-        InetSocketAddress backSrvEp = Sockets.localEndpoint(2080);
+        InetSocketAddress backSrvEp = Sockets.newLoopbackEndpoint(2080);
         SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
         backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);

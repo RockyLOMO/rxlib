@@ -505,7 +505,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class DynamicSizer implements TimerTask {
-        final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = Collections.synchronizedMap(new WeakHashMap<>(8));
+        final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = new WeakIdentityMap<>(8);
 
         DynamicSizer() {
             timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
@@ -670,7 +670,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static ThreadFactory newThreadFactory(String name) {
-        //可用全局setUncaughtExceptionHandler
         return new DefaultThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true
 //                , Thread.NORM_PRIORITY + 1
         );
@@ -837,7 +836,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         return run(task, null, null);
     }
 
-    public Future<Void> run(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public Future<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
         return submit((Callable<Void>) new Task<Void>(task.toFunc(), flags, taskId));
     }
 
@@ -845,7 +844,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         return run(task, null, null);
     }
 
-    public <T> Future<T> run(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public <T> Future<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         return submit((Callable<T>) new Task<>(task, flags, taskId));
     }
 
@@ -871,7 +870,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         return runAsync(task, null, null);
     }
 
-    public CompletableFuture<Void> runAsync(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public CompletableFuture<Void> runAsync(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
         Task<Void> t = new Task<>(task.toFunc(), flags, taskId);
         return wrap(CompletableFuture.runAsync(t, asyncExecutor), false);
     }
@@ -880,7 +879,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         return runAsync(task, null, null);
     }
 
-    public <T> CompletableFuture<T> runAsync(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+    public <T> CompletableFuture<T> runAsync(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         Task<T> t = new Task<>(task, flags, taskId);
         return wrap(CompletableFuture.supplyAsync(t, asyncExecutor), false);
     }
@@ -939,7 +938,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public <T> MultiTaskFuture<Void, T> runAllAsync(Collection<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
             Task<T> t = new Task<>(task, null, null);
-            //allOfFuture.join()会hang住
+            //allOfFuture.join() will hang
 //            return wrap(CompletableFuture.supplyAsync(t, this), t.traceId);
             return CompletableFuture.supplyAsync(t, asyncExecutor);
         }).toArray();

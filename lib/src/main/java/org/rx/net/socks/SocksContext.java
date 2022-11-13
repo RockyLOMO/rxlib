@@ -22,6 +22,8 @@ import java.net.InetSocketAddress;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+import static org.rx.core.Extends.require;
+
 @RequiredArgsConstructor
 public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
@@ -49,12 +51,12 @@ public final class SocksContext extends EventArgs {
     }
 
     public static SocksContext ctx(Channel channel) {
-        return Objects.requireNonNull(channel.attr(CTX).get());
+        return require(channel.attr(CTX).get());
     }
 
     //region common
     public static SocksProxyServer server(Channel channel) {
-        return Objects.requireNonNull(channel.attr(SERVER).get());
+        return require(channel.attr(SERVER).get());
     }
 
     public static void server(Channel channel, SocksProxyServer server) {

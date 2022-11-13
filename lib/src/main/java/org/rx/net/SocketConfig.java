@@ -16,7 +16,7 @@ public class SocketConfig implements Extends {
     private static final long serialVersionUID = 5312790348211652335L;
     public static final int DELAY_TIMEOUT_MILLIS = 30000;
 
-    //随进程存活设为true
+    //Set true if live with current process.
     private boolean useSharedTcpEventLoop = true;
     private boolean enableLog = RxConfig.INSTANCE.getNet().isEnableLog();
     private MemoryMode memoryMode = MemoryMode.LOW;

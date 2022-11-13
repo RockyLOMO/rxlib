@@ -2,11 +2,10 @@ package org.rx.core;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.rx.bean.WeakIdentityMap;
 import org.rx.exception.InvalidException;
 
-import java.util.Collections;
 import java.util.Map;
-import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
@@ -14,8 +13,8 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 @SuppressWarnings(NON_UNCHECKED)
 public final class Container {
     static final Map<Class<?>, Object> HOLDER = new ConcurrentHashMap<>(8);
-    //不要放值类型, ReferenceQueue、ConcurrentMap<TK, Reference<TV>> 不准
-    static final Map WEAK_MAP = Collections.synchronizedMap(new WeakHashMap<>());
+    //不要放值类型
+    static final Map WEAK_IDENTITY_MAP = new WeakIdentityMap<>();
 
     @SneakyThrows
     public static <T> T getOrDefault(Class<T> type, Class<? extends T> defType) {
@@ -51,7 +50,7 @@ public final class Container {
         HOLDER.remove(type);
     }
 
-    static <K, V> Map<K, V> weakMap() {
-        return WEAK_MAP;
+    static <K, V> Map<K, V> weakIdentityMap(Object ref) {
+        return (Map<K, V>) WEAK_IDENTITY_MAP.computeIfAbsent(ref, k -> new ConcurrentHashMap<>(4));
     }
 }

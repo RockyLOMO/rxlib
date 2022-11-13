@@ -10,7 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.IdGenerator;
+import org.rx.util.IdGenerator;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
 import org.rx.io.MemoryStream;
@@ -31,7 +31,7 @@ import static org.rx.core.Extends.circuitContinue;
 import static org.rx.core.Extends.tryAs;
 
 @Slf4j
-public class UdpClient implements EventTarget<UdpClient> {
+public class UdpClient implements EventPublisher<UdpClient> {
     @RequiredArgsConstructor
     static class Context {
         public final UdpMessage message;
@@ -147,7 +147,7 @@ public class UdpClient implements EventTarget<UdpClient> {
         if (message.ack != AckSync.NONE) {
             Context ctx = queue.get(message.id);
             if (ctx == null) {
-                //已ack
+                //already ack
                 return future;
             }
             try {

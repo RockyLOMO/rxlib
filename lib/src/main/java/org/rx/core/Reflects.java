@@ -88,8 +88,12 @@ public class Reflects extends ClassUtils {
 
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
+        registerConvert(Long.class, Date.class, (sv, tt) -> new Date(sv));
+        registerConvert(Long.class, DateTime.class, (sv, tt) -> new DateTime(sv));
+        registerConvert(Date.class, Long.class, (sv, tt) -> sv.getTime());
         registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
-        registerConvert(String.class, ULID.class, (sv, tt) -> ULID.valueOf(sv));
+        registerConvert(String.class, BigDecimal.class, (sv, tt) -> new BigDecimal(sv));
+        registerConvert(String.class, UUID.class, (sv, tt) -> UUID.fromString(sv));
     }
 
     //region class
@@ -102,21 +106,20 @@ public class Reflects extends ClassUtils {
     }
 
     public static Linq<StackTraceElement> stackTrace(int takeCount) {
-        //Thread.currentThread().getStackTrace()性能略差
         return Linq.from(new Throwable().getStackTrace()).skip(2).take(takeCount);
     }
 
     public static Class<?> stackClass(int depth) {
-        //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 获取不到
+        //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 not exist
         return SecurityManagerEx.INSTANCE.stackClass(2 + depth);
     }
 
     public static InputStream getResource(String namePattern) {
-        InputStream stream = getClassLoader().getResourceAsStream(namePattern);
-        if (stream != null) {
-            return stream;
+        InputStream in = getClassLoader().getResourceAsStream(namePattern);
+        if (in != null) {
+            return in;
         }
-        InputStream in = getResources(namePattern).firstOrDefault();
+        in = getResources(namePattern).firstOrDefault();
         if (in == null) {
             throw new InvalidException("Resource {} not found", namePattern);
         }
@@ -193,7 +196,7 @@ public class Reflects extends ClassUtils {
 
     @ErrorCode
     @SneakyThrows
-    public static <T> T newInstance(@NonNull Class<?> type, Object... args) {
+    public static <T> T newInstance(Class<?> type, Object... args) {
         if (args == null) {
             args = Arrays.EMPTY_OBJECT_ARRAY;
         }
@@ -311,7 +314,7 @@ public class Reflects extends ClassUtils {
 
         try {
             if (isStatic) {
-                Class<?>[] parameterTypes = toClass(args);  //null 不准
+                Class<?>[] parameterTypes = toClass(args);  //May not right match if args have null value
                 method = MethodUtils.getMatchingMethod(searchType, name, parameterTypes);
                 return invokeMethod(method, args);
             } else {
@@ -328,7 +331,7 @@ public class Reflects extends ClassUtils {
         return (T) method.invoke(instance, args);
     }
 
-    public static Map<String, Linq<Method>> getMethodMap(@NonNull Class<?> type) {
+    public static Map<String, Linq<Method>> getMethodMap(Class<?> type) {
         return methodCache.getValue().get(type, k -> {
             List<Method> all = new ArrayList<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
@@ -378,7 +381,6 @@ public class Reflects extends ClassUtils {
             throw new InvalidException("Invalid name {}", getterOrSetter);
         }
 
-//        Introspector.decapitalize
         if (Character.isLowerCase(name.charAt(0))) {
             return name;
         }
@@ -429,7 +431,7 @@ public class Reflects extends ClassUtils {
         field.set(instance, changeType(value, field.getType()));
     }
 
-    public static Map<String, Field> getFieldMap(@NonNull Class<?> type) {
+    public static Map<String, Field> getFieldMap(Class<?> type) {
         return fieldCache.getValue().get(type, k -> {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
@@ -457,14 +459,14 @@ public class Reflects extends ClassUtils {
         }
     }
 
-    public static <T> T tryConvert(Object val, Class<T> toType) {
-        return tryConvert(val, toType, null);
+    public static <T> T convertQuietly(Object val, Class<T> toType) {
+        return convertQuietly(val, toType, null);
     }
 
-    public static <T> T tryConvert(Object val, @NonNull Class<T> toType, T defaultVal) {
+    public static <T> T convertQuietly(Object val, @NonNull Class<T> toType, T defaultVal) {
         try {
             return ifNull(changeType(val, toType), defaultVal);
-        } catch (Exception ex) {
+        } catch (Throwable e) {
             return defaultVal;
         }
     }
@@ -473,7 +475,7 @@ public class Reflects extends ClassUtils {
         convertBeans.add(0, new ConvertBean<>(baseFromType, toType, converter));
     }
 
-    public static <T> T defaultValue(Class<T> type) {
+    public static <T> T defaultValue(@NonNull Class<T> type) {
         return changeType(null, type);
     }
 
@@ -481,7 +483,7 @@ public class Reflects extends ClassUtils {
     @ErrorCode("enumError")
     @ErrorCode(cause = NoSuchMethodException.class)
     @ErrorCode(cause = ReflectiveOperationException.class)
-    public static <T> T changeType(Object value, @NonNull Class<T> toType) {
+    public static <T> T changeType(Object value, Class<T> toType) {
         if (value == null) {
             if (!toType.isPrimitive()) {
                 if (toType == List.class) {
@@ -502,10 +504,6 @@ public class Reflects extends ClassUtils {
         Object fValue = value;
         if (toType == String.class) {
             value = value.toString();
-        } else if (toType == UUID.class) {
-            value = UUID.fromString(value.toString());
-        } else if (toType == BigDecimal.class) {
-            value = new BigDecimal(value.toString());
         } else if (toType.isEnum()) {
             boolean failBack = true;
             if (NEnum.class.isAssignableFrom(toType)) {
@@ -537,7 +535,7 @@ public class Reflects extends ClassUtils {
             try {
                 toType = (Class) primitiveToWrapper(toType);
                 if (toType == Boolean.class && value instanceof Number) {
-                    int val = ((Number) value).intValue();
+                    byte val = ((Number) value).byteValue();
                     if (val == 0) {
                         value = Boolean.FALSE;
                     } else if (val == 1) {
@@ -556,7 +554,7 @@ public class Reflects extends ClassUtils {
                         throw new NoSuchMethodException(CHANGE_TYPE_METHOD);
                     }
 
-                    if (isAssignable(toType, Number.class)) {
+                    if (Number.class.isAssignableFrom(toType)) {
                         if (value instanceof Boolean) {
                             if (!(Boolean) value) {
                                 value = "0";
@@ -580,7 +578,7 @@ public class Reflects extends ClassUtils {
 
                     Method m = null;
                     for (Method p : methods) {
-                        if (!(p.getParameterCount() == 1 && p.getParameterTypes()[0].equals(String.class))) {
+                        if (!(p.getParameterCount() == 1 && p.getParameterTypes()[0] == String.class)) {
                             continue;
                         }
                         m = p;
@@ -598,6 +596,17 @@ public class Reflects extends ClassUtils {
             }
         }
         return (T) value;
+    }
+
+    public static boolean isBasicType(@NonNull Class<?> type) {
+        Class<?> wrapType;
+        return type == String.class || Number.class.isAssignableFrom(wrapType = primitiveToWrapper(type))
+                || wrapType == Boolean.class
+                || type.isEnum()
+                || Date.class.isAssignableFrom(type)
+                || type == ULID.class
+                || type == Class.class
+                || type == UUID.class;
     }
     //endregion
 }

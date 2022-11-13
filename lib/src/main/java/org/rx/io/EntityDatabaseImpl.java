@@ -21,7 +21,7 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
-import org.rx.util.thrid.CaseFormat;
+import org.rx.third.guava.CaseFormat;
 
 import java.io.InputStream;
 import java.io.Reader;
@@ -527,7 +527,6 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 throw new InvalidException("Require a primaryKey mapping");
             }
 
-//            createCols.setLength(createCols.length() - 3);
             insert.setLength(insert.length() - 1).append(")");
 
             String sql = new StringBuilder(SQL_CREATE).replace($TABLE, tableName)
@@ -700,9 +699,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     static String toH2Type(Class<?> fieldType) {
         String h2Type;
-        if (Reflects.isAssignable(fieldType, NEnum.class)) {
+        if (Reflects.isAssignable(fieldType, NEnum.class, false)) {
             h2Type = H2Type.INTEGER.getName();
-        } else if (Reflects.isAssignable(fieldType, Decimal.class) || fieldType == BigDecimal.class) {
+        } else if (Reflects.isAssignable(fieldType, Decimal.class, false) || fieldType == BigDecimal.class) {
 //            h2Type = H2Type.NUMERIC.getName();
             h2Type = "NUMERIC(56, 6)";
         } else if (fieldType.isArray()) {

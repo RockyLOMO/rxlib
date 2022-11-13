@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.rx.net.ntp;
+package org.rx.third.apache.ntp;
 
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -24,10 +24,7 @@ import java.net.SocketException;
 /**
  * DefaultDatagramSocketFactory implements the DatagramSocketFactory
  * interface by simply wrapping the java.net.DatagramSocket
- * constructors.  It is the default DatagramSocketFactory used by
- * {@link org.apache.commons.net.DatagramSocketClient}
- *  implementations.
- *
+ * constructors.
  *
  * @see DatagramSocketFactory
  * @see DatagramSocketClient

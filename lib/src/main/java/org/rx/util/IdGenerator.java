@@ -1,4 +1,4 @@
-package org.rx.bean;
+package org.rx.util;
 
 public class IdGenerator {
     public static final IdGenerator DEFAULT = new IdGenerator();

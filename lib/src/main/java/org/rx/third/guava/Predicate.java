@@ -12,7 +12,7 @@
  * the License.
  */
 
-package org.rx.util.thrid;
+package org.rx.third.guava;
 
 /**
  * Legacy version of {@link java.util.function.Predicate java.util.function.Predicate}. Determines a

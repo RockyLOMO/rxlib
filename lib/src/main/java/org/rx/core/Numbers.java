@@ -25,7 +25,7 @@ public class Numbers extends NumberUtils {
         return (int) Math.ceil(val * PERCENT);
     }
 
-    //是否包含小数
+    //Whether to include decimals
     public static boolean hasPrecision(double n) {
         return n % 1 == 0;
     }

@@ -12,8 +12,9 @@ import org.rx.io.Files;
 import java.util.Properties;
 
 public class TimeAdvice {
-//    static final int SHARE_KEY = 0;
+    //    static final int SHARE_KEY = 0;
     static final String SHARE_KEY = "";
+    static boolean transformed;
 
     @Advice.OnMethodExit
     static void exit(@Advice.Return(readOnly = false) long r) throws Throwable {
@@ -46,7 +47,11 @@ public class TimeAdvice {
         r = x / y + arr[1];
     }
 
-    public static void transform() {
+    public synchronized static void transform() {
+        if (transformed) {
+            return;
+        }
+        transformed = true;
         String djar = "rxdaemon-1.0.jar";
         Files.saveFile(djar, Reflects.getResource(djar));
         Properties props = System.getProperties();

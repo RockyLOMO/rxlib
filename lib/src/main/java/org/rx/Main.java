@@ -46,21 +46,21 @@ public final class Main implements SocksSupport {
     @SneakyThrows
     public static void main(String[] args) {
         Map<String, String> options = Sys.mainOptions(args);
-        Integer port = Reflects.tryConvert(options.get("port"), Integer.class);
+        Integer port = Reflects.convertQuietly(options.get("port"), Integer.class);
         if (port == null) {
             log.info("Invalid port arg");
             return;
         }
 
         Main app;
-        Integer connectTimeout = Reflects.tryConvert(options.get("connectTimeout"), Integer.class, 60000);
+        Integer connectTimeout = Reflects.convertQuietly(options.get("connectTimeout"), Integer.class, 60000);
         String mode = options.get("shadowMode");
 
         boolean udp2raw = false;
 //        Udp2rawHandler.DEFAULT.setGzipMinLength(Integer.MAX_VALUE);
 
         if (eq(mode, "1")) {
-            AuthenticEndpoint shadowUser = Reflects.tryConvert(options.get("shadowUser"), AuthenticEndpoint.class);
+            AuthenticEndpoint shadowUser = Reflects.convertQuietly(options.get("shadowUser"), AuthenticEndpoint.class);
             if (shadowUser == null) {
                 log.info("Invalid shadowUser arg");
                 return;
@@ -98,7 +98,7 @@ public final class Main implements SocksSupport {
                 }
 
                 conf = changed;
-                Linq<AuthenticEndpoint> svrs = Linq.from(conf.shadowServer).select(p -> Reflects.tryConvert(p, AuthenticEndpoint.class));
+                Linq<AuthenticEndpoint> svrs = Linq.from(conf.shadowServer).select(p -> Reflects.convertQuietly(p, AuthenticEndpoint.class));
                 if (!svrs.any() || svrs.any(Objects::isNull)) {
                     throw new InvalidException("Invalid shadowServer arg");
                 }
@@ -124,7 +124,7 @@ public final class Main implements SocksSupport {
             watcher.raiseChange();
             Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(arg1).select(shadowUser -> {
                 String[] sArgs = Strings.split(shadowUser, ":", 4);
-                ShadowsocksConfig config = new ShadowsocksConfig(Sockets.anyEndpoint(Integer.parseInt(sArgs[0])),
+                ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(Integer.parseInt(sArgs[0])),
                         CipherKind.AES_256_GCM.getCipherName(), sArgs[1]);
                 config.setTcpTimeoutSeconds(conf.tcpTimeoutSeconds);
                 config.setUdpTimeoutSeconds(conf.udpTimeoutSeconds);
@@ -134,12 +134,12 @@ public final class Main implements SocksSupport {
                 return Tuple.of(config, user);
             });
 
-            Integer shadowDnsPort = Reflects.tryConvert(options.get("shadowDnsPort"), Integer.class, 53);
+            Integer shadowDnsPort = Reflects.convertQuietly(options.get("shadowDnsPort"), Integer.class, 53);
             DnsServer dnsSvr = new DnsServer(shadowDnsPort);
             dnsSvr.setTtl(60 * 60 * 10); //12 hour
             dnsSvr.setShadowServers(shadowServers);
             dnsSvr.addHostsFile("hosts.txt");
-            InetSocketAddress shadowDnsEp = Sockets.localEndpoint(shadowDnsPort);
+            InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
             Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
             frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
@@ -210,7 +210,7 @@ public final class Main implements SocksSupport {
             fn.invoke();
             Tasks.schedulePeriod(fn, conf.autoWhiteListSeconds * 1000L);
 
-            InetSocketAddress frontSvrEp = Sockets.localEndpoint(port);
+            InetSocketAddress frontSvrEp = Sockets.newLoopbackEndpoint(port);
             for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
                 ShadowsocksConfig ssConfig = tuple.left;
                 SocksUser user = tuple.right;

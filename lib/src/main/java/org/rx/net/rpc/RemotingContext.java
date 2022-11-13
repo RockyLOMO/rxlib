@@ -11,6 +11,8 @@ import org.rx.util.function.Func;
 
 import java.util.Objects;
 
+import static org.rx.core.Extends.require;
+
 @Getter
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class RemotingContext {
@@ -18,7 +20,7 @@ public final class RemotingContext {
 
     public static RemotingContext context() {
         RemotingContext ctx = CTX.getIfExists();
-        Objects.requireNonNull(ctx, "No context");
+        require(ctx);
         return ctx;
     }
 

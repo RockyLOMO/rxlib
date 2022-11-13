@@ -11,13 +11,12 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.IdGenerator;
+import org.rx.util.IdGenerator;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
-import org.rx.net.TransportUtil;
 import org.rx.net.transport.protocol.PingPacket;
 
 import java.io.Serializable;
@@ -32,7 +31,7 @@ import static org.rx.core.Extends.*;
 
 @Slf4j
 @RequiredArgsConstructor
-public class TcpServer extends Disposable implements EventTarget<TcpServer> {
+public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     class ClientImpl extends ChannelInboundHandlerAdapter implements TcpClient {
         final Delegate<TcpClient, NEventArgs<Serializable>> onReceive = Delegate.create();
         @Getter
@@ -221,9 +220,9 @@ public class TcpServer extends Disposable implements EventTarget<TcpServer> {
             Sockets.closeBootstrap(bootstrap);
         }
         bootstrap = Sockets.serverBootstrap(config, channel -> {
-            //tcp keepalive OS层面，IdleStateHandler应用层面
+            //tcp keepalive OS level，IdleStateHandler APP level
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), 0, 0));
-            TransportUtil.addFrontendHandler(channel, config);
+            Sockets.addFrontendHandler(channel, config);
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientImpl());

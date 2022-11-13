@@ -19,8 +19,14 @@ import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldPrepender;
+import io.netty.handler.codec.compression.ZlibCodecFactory;
+import io.netty.handler.codec.compression.ZlibWrapper;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.netty.util.NetUtil;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +34,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
+import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
@@ -48,6 +55,8 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class Sockets {
+    public static final String ZIP_ENCODER = "ZIP_ENCODER";
+    public static final String ZIP_DECODER = "ZIP_DECODER";
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
     static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
@@ -56,6 +65,7 @@ public final class Sockets {
     static String loopbackAddr;
     static volatile BiFunc<String, List<InetAddress>> nsInterceptor;
 
+    //region netty
     public static void injectNameService(List<InetSocketAddress> nameServerList) {
         DnsClient client = CollectionUtils.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(nameServerList);
         injectNameService(client::resolveAll);
@@ -104,7 +114,7 @@ public final class Sockets {
         });
     }
 
-    static EventLoopGroup reactor(@NonNull String reactorName) {
+    static EventLoopGroup reactor(String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> {
             int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
             return Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
@@ -115,11 +125,11 @@ public final class Sockets {
         return udpReactor(SHARED_UDP_REACTOR);
     }
 
-    static EventLoopGroup udpReactor(@NonNull String reactorName) {
+    static EventLoopGroup udpReactor(String reactorName) {
         return reactors.computeIfAbsent(reactorName, k -> new NioEventLoopGroup(RxConfig.INSTANCE.getNet().getReactorThreadAmount()));
     }
 
-    //not executor
+    //Don't use executor
     private static EventLoopGroup newEventLoop(int threadAmount) {
         return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
     }
@@ -272,7 +282,56 @@ public final class Sockets {
         return b;
     }
 
-    public static void writeAndFlush(@NonNull Channel channel, @NonNull Queue<?> packs) {
+    @SneakyThrows
+    public static void addFrontendHandler(Channel channel, SocketConfig config) {
+        FlagsEnum<TransportFlags> flags = config.getTransportFlags();
+        if (flags == null) {
+            return;
+        }
+
+        ChannelPipeline pipeline = channel.pipeline();
+        if (flags.has(TransportFlags.FRONTEND_SSL)) {
+            SelfSignedCertificate ssc = new SelfSignedCertificate();
+            SslContext sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
+            pipeline.addLast(sslCtx.newHandler(channel.alloc()));
+        }
+        if (flags.has(TransportFlags.FRONTEND_AES)) {
+            if (config.getAesKey() == null) {
+                throw new InvalidException("AES key is empty");
+            }
+            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
+        }
+        if (flags.has(TransportFlags.FRONTEND_COMPRESS)) {
+            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))
+                    .addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+        }
+    }
+
+    @SneakyThrows
+    public static void addBackendHandler(Channel channel, SocketConfig config, InetSocketAddress remoteEndpoint) {
+        FlagsEnum<TransportFlags> flags = config.getTransportFlags();
+        if (flags == null) {
+            return;
+        }
+
+        ChannelPipeline pipeline = channel.pipeline();
+        if (flags.has(TransportFlags.BACKEND_SSL)) {
+            SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
+            pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
+        }
+        if (flags.has(TransportFlags.BACKEND_AES)) {
+            if (config.getAesKey() == null) {
+                throw new InvalidException("AES key is empty");
+            }
+            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
+        }
+        if (flags.has(TransportFlags.BACKEND_COMPRESS)) {
+            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))
+                    .addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+        }
+    }
+
+    public static void writeAndFlush(Channel channel, @NonNull Queue<?> packs) {
         EventLoop eventLoop = channel.eventLoop();
         if (eventLoop.inEventLoop()) {
             Object pack;
@@ -292,8 +351,8 @@ public final class Sockets {
         });
     }
 
-    public static void closeOnFlushed(@NonNull Channel channel) {
-        if (!channel.isActive()) {
+    public static void closeOnFlushed(Channel channel) {
+        if (channel == null || !channel.isActive()) {
             return;
         }
         channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
@@ -363,28 +422,13 @@ public final class Sockets {
             }
         }
     }
+    //endregion
 
     //region Address
-    public static String loopbackHostAddress() {
-        if (loopbackAddr == null) {
-            loopbackAddr = loopbackAddress().getHostAddress();
-        }
-        return loopbackAddr;
-    }
-
-    public static InetAddress loopbackAddress() {
-        return InetAddress.getLoopbackAddress();
-    }
-
-    @SneakyThrows
-    public static InetAddress anyLocalAddress() {
-        return InetAddress.getByName("0.0.0.0");
-    }
-
     @SneakyThrows
     public static boolean isLanIp(InetAddress ip) {
         String hostAddress = ip.getHostAddress();
-        if (Strings.hashEquals(loopbackHostAddress(), hostAddress)) {
+        if (Strings.hashEquals(getLoopbackHostAddress(), hostAddress)) {
             return true;
         }
         for (String regex : RxConfig.INSTANCE.getNet().getLanIps()) {
@@ -399,17 +443,33 @@ public final class Sockets {
         return NetUtil.isValidIpV4Address(ip) || NetUtil.isValidIpV6Address(ip);
     }
 
-    @SneakyThrows
-    public static InetAddress getLocalAddress() {
-        Inet4Address first = Linq.from(getLocalAddresses()).orderByDescending(p -> p.isSiteLocalAddress()).firstOrDefault();
-        if (first != null) {
-            return first;
+    public static String getLoopbackHostAddress() {
+        if (loopbackAddr == null) {
+            loopbackAddr = getLoopbackAddress().getHostAddress();
         }
-        return InetAddress.getLocalHost(); //可能返回127.0.0.1
+        return loopbackAddr;
+    }
+
+    public static InetAddress getLoopbackAddress() {
+        return InetAddress.getLoopbackAddress();
     }
 
     @SneakyThrows
-    public static List<Inet4Address> getLocalAddresses() {
+    public static InetAddress getAnyLocalAddress() {
+        return InetAddress.getByName("0.0.0.0");
+    }
+
+    @SneakyThrows
+    public static InetAddress getLocalAddress() {
+        Inet4Address first = Linq.from(getAllLocalAddresses()).orderByDescending(Inet4Address::isSiteLocalAddress).firstOrDefault();
+        if (first != null) {
+            return first;
+        }
+        return InetAddress.getLocalHost(); //may return 127.0.0.1
+    }
+
+    @SneakyThrows
+    public static List<Inet4Address> getAllLocalAddresses() {
         List<Inet4Address> ips = new ArrayList<>();
         Enumeration<NetworkInterface> networks = NetworkInterface.getNetworkInterfaces();
         while (networks.hasMoreElements()) {
@@ -435,25 +495,12 @@ public final class Sockets {
         return ips;
     }
 
-    public static InetSocketAddress localEndpoint(int port) {
-        return new InetSocketAddress(loopbackAddress(), port);
+    public static InetSocketAddress newLoopbackEndpoint(int port) {
+        return new InetSocketAddress(getLoopbackAddress(), port);
     }
 
-    public static InetSocketAddress anyEndpoint(int port) {
-        return new InetSocketAddress(anyLocalAddress(), port);
-    }
-
-    //check jdk11 unknown host
-    public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
-        int i = endpoint.lastIndexOf(":");
-        if (i == -1) {
-            throw new InvalidException("Invalid endpoint {}", endpoint);
-        }
-
-        String ip = endpoint.substring(0, i);
-        int port = Integer.parseInt(endpoint.substring(i + 1));
-        return new InetSocketAddress(ip, port);
-//        return InetSocketAddress.createUnresolved(ip, port);  //DNS解析有问题
+    public static InetSocketAddress newAnyEndpoint(int port) {
+        return new InetSocketAddress(getAnyLocalAddress(), port);
     }
 
     public static InetSocketAddress newEndpoint(String endpoint, int port) {
@@ -468,8 +515,20 @@ public final class Sockets {
     }
 
     @SneakyThrows
-    public static List<InetSocketAddress> allEndpoints(@NonNull InetSocketAddress endpoint) {
+    public static List<InetSocketAddress> newAllEndpoints(@NonNull InetSocketAddress endpoint) {
         return Linq.from(InetAddress.getAllByName(endpoint.getHostString())).select(p -> new InetSocketAddress(p, endpoint.getPort())).toList();
+    }
+
+    public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
+        int i = endpoint.lastIndexOf(":");
+        if (i == -1) {
+            throw new InvalidException("Invalid endpoint {}", endpoint);
+        }
+
+        String ip = endpoint.substring(0, i);
+        int port = Integer.parseInt(endpoint.substring(i + 1));
+        return new InetSocketAddress(ip, port);
+//        return InetSocketAddress.createUnresolved(ip, port);  //DNS issues
     }
 
     public static String toString(InetSocketAddress endpoint) {
@@ -572,7 +631,7 @@ public final class Sockets {
         prop.setProperty("https.proxyHost", ipe.getAddress().getHostAddress());
         prop.setProperty("https.proxyPort", String.valueOf(ipe.getPort()));
         if (!CollectionUtils.isEmpty(nonProxyHosts)) {
-            //如"localhost|192.168.0.*"
+            //"localhost|192.168.1.*"
             prop.setProperty("http.nonProxyHosts", String.join("|", nonProxyHosts));
         }
         if (userName != null && password != null) {

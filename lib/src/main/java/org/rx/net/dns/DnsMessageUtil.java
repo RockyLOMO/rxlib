@@ -30,19 +30,6 @@ public class DnsMessageUtil {
         return response;
     }
 
-//    @Nonnull
-//    public static DatagramDnsQuery newUdpQuery(@Nonnull InetSocketAddress sender,
-//                                               @Nonnull InetSocketAddress recipient,
-//                                               @Nonnull DnsQuery dnsQuery) {
-//        final DatagramDnsQuery newQuery = new DatagramDnsQuery(sender, recipient, dnsQuery.id(), dnsQuery.opCode())
-//                .setRecursionDesired(dnsQuery.isRecursionDesired())
-//                .setZ(dnsQuery.z());
-//        if (dnsQuery.count(DnsSection.QUESTION) > 0) {
-//            setRecords(DnsSection.QUESTION, dnsQuery, newQuery);
-//        }
-//        return newQuery;
-//    }
-
     public static DefaultDnsResponse newErrorResponse(DefaultDnsQuery dnsQuery, DnsResponseCode rCode) {
         if (dnsQuery instanceof DatagramDnsQuery) {
             return newErrorResponse(((DatagramDnsQuery) dnsQuery).recipient(), ((DatagramDnsQuery) dnsQuery).sender(), dnsQuery, rCode);

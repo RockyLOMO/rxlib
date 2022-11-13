@@ -62,7 +62,7 @@ public class NameserverImpl implements Nameserver {
         this.config = config;
         dnsServer = new DnsServer(config.getDnsPort());
         dnsServer.setTtl(config.getDnsTtl());
-        svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::allEndpoints).toList());
+        svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toList());
 
         rs = Remoting.register(this, config.getRegisterPort(), false);
         rs.onDisconnected.combine((s, e) -> {

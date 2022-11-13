@@ -38,7 +38,7 @@ public class Servlets extends ServletRequestUtils {
         Tuple<HttpServletRequest, HttpServletResponse> tuple = CTX.getIfExists();
         if (tuple == null) {
             ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
-            //response 注入有问题
+            //inject response may have issues
             tuple = Tuple.of(ra.getRequest(), ra.getResponse());
         }
         return tuple;

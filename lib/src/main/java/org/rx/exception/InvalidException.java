@@ -25,20 +25,20 @@ public class InvalidException extends NestedRuntimeException {
     }
 
     @Getter
-    protected ExceptionLevel level;
-
-    public InvalidException level(ExceptionLevel level) {
-        this.level = level;
-        return this;
-    }
+    final ExceptionLevel level;
 
     protected InvalidException(Throwable e) {
-        this(null, e);
+        this(ExceptionLevel.SYSTEM, null, e);
     }
 
     public InvalidException(String messagePattern, Object... args) {
+        this(ExceptionLevel.SYSTEM, messagePattern, args);
+    }
+
+    public InvalidException(ExceptionLevel level, String messagePattern, Object... args) {
         super(messagePattern != null ? MessageFormatter.arrayFormat(messagePattern, args).getMessage() : null,
                 MessageFormatter.getThrowableCandidate(args));
+        this.level = level;
     }
 
     public <T extends Throwable> boolean tryGet($<T> out, Class<T> exType) {

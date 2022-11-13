@@ -82,6 +82,6 @@ public class ApplicationException extends InvalidException {
         } else {
             stacks = null;
         }
-        Container.get(YamlCodeHandler.class).handle(this);
+        YamlCodeHandler.INSTANCE.handle(this);
     }
 }

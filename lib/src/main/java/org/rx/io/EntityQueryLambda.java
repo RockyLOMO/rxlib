@@ -10,7 +10,7 @@ import org.rx.core.Linq;
 import org.rx.core.Reflects;
 import org.rx.core.StringBuilder;
 import org.rx.util.function.BiFunc;
-import org.rx.util.thrid.CaseFormat;
+import org.rx.third.guava.CaseFormat;
 
 import java.io.Serializable;
 import java.util.ArrayList;

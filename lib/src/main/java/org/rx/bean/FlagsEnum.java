@@ -69,17 +69,21 @@ public final class FlagsEnum<T extends Enum<T> & NEnum<T>> implements NEnum<T> {
     }
 
     public FlagsEnum<T> add(FlagsEnum<T> fEnum) {
-        flags |= fEnum.flags;
+        if (fEnum != null) {
+            flags |= fEnum.flags;
+        }
         return this;
     }
 
     public FlagsEnum<T> remove(FlagsEnum<T> fEnum) {
-        flags &= ~fEnum.flags;
+        if (fEnum != null) {
+            flags &= ~fEnum.flags;
+        }
         return this;
     }
 
     public boolean has(FlagsEnum<T> fEnum) {
-        return (flags & fEnum.flags) == fEnum.flags;
+        return fEnum != null && (flags & fEnum.flags) == fEnum.flags;
     }
 
     @SuppressWarnings(NON_UNCHECKED)

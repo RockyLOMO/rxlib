@@ -11,7 +11,7 @@ import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
-import org.rx.codec.CrcModel;
+import org.rx.third.open.CrcModel;
 import org.rx.codec.RSAUtil;
 import org.rx.core.Arrays;
 import org.rx.core.*;
@@ -469,24 +469,77 @@ public class CoreTester extends AbstractTester {
         sleep(15000);
     }
 
+    static final String MY_TOPIC = "myTopic";
+    static final String HER_TOPIC = "herTopic";
+    AtomicInteger eventBusCounter = new AtomicInteger();
+    AtomicInteger eventBusTopicCounter = new AtomicInteger();
+
     @Test
     public void eventBus() {
+        AtomicInteger deadEventCounter = new AtomicInteger();
         EventBus bus = EventBus.DEFAULT;
-        bus.onDeadEvent.combine((s, e) -> log.error("DeadEvent {}", e.getValue()));
+        bus.onDeadEvent.combine((s, e) -> {
+            log.error("DeadEvent {}", e.getValue());
+            deadEventCounter.incrementAndGet();
+        });
+
         bus.register(this);
         bus.register(this);
-        for (int i = 0; i < 5; i++) {
-            bus.post(PersonBean.YouFan);
+        bus.register(this, MY_TOPIC);
+        bus.register(this, MY_TOPIC);
+        bus.register(this, HER_TOPIC);
+        for (int i = 0; i < 4; i++) {
+            String topic = i % 2 == 0 ? MY_TOPIC : null;
+            bus.publish(PersonBean.YouFan, topic);
         }
+        assert eventBusCounter.get() == 2;
+        assert eventBusTopicCounter.get() == 4;
+        assert deadEventCounter.get() == 0;
+
+        bus.unregister(this, MY_TOPIC);
+        for (int i = 0; i < 2; i++) {
+            bus.publish(PersonBean.YouFan, MY_TOPIC);
+        }
+        assert eventBusCounter.get() == 2;
+        assert eventBusTopicCounter.get() == 4;
+        assert deadEventCounter.get() == 2;
+
+        bus.register(this, MY_TOPIC);
+        for (int i = 0; i < 4; i++) {
+            String topic = i % 2 == 0 ? MY_TOPIC : null;
+            bus.publish(PersonBean.YouFan, topic);
+        }
+        assert eventBusCounter.get() == 4;
+        assert eventBusTopicCounter.get() == 8;
+        assert deadEventCounter.get() == 2;
+
         bus.unregister(this);
-        for (int i = 0; i < 5; i++) {
-            bus.post(PersonBean.YouFan);
+        for (int i = 0; i < 2; i++) {
+            bus.publish(PersonBean.YouFan);
         }
+        assert eventBusCounter.get() == 4;
+        assert eventBusTopicCounter.get() == 8;
+        assert deadEventCounter.get() == 4;
+
+        bus.register(CoreTester.class);
+        bus.publish(1);
     }
 
     @Subscribe
     void OnUserCreate(PersonBean personBean) {
         log.info("OnUserCreate: {}", personBean);
+        eventBusCounter.incrementAndGet();
+    }
+
+    @Subscribe(MY_TOPIC)
+    void OnUserCreateWithTopic(PersonBean personBean) {
+        log.info("OnUserCreateWithTopic: {}", personBean);
+        eventBusTopicCounter.incrementAndGet();
+    }
+
+    @Subscribe
+    static void onEvent(Integer obj) {
+        System.out.println(obj);
     }
 
     @SneakyThrows
@@ -651,7 +704,7 @@ public class CoreTester extends AbstractTester {
         UserManagerImpl mgr = new UserManagerImpl();
         PersonBean p = PersonBean.YouFan;
 
-        mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
+        mgr.onCreate.last((s, e) -> System.out.println("always tail:" + e));
         TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
         TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
         TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);

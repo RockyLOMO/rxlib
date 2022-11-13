@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import io.netty.util.internal.ThreadLocalRandom;
+import lombok.NonNull;
 import org.apache.commons.lang3.StringUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
@@ -14,6 +15,7 @@ import java.util.regex.Pattern;
 import static org.rx.core.Extends.*;
 
 public class Strings extends StringUtils {
+    //region VarExpression
     public static String trimVarExpressionName(String exprName) {
         if (exprName == null) {
             return null;
@@ -34,7 +36,7 @@ public class Strings extends StringUtils {
      * @param expr This is ${name}
      * @return name
      */
-    public static List<String> getVarExpressionNames(String expr, boolean onlyName) {
+    public static List<String> getVarExpressionNames(@NonNull String expr, boolean onlyName) {
         List<String> list = new ArrayList<>();
         int s = 0, e;
         while ((s = expr.indexOf("${", s)) != -1) {
@@ -58,24 +60,13 @@ public class Strings extends StringUtils {
      * @param vars {\"${name}\": \"xf\"}
      * @return This is xf
      */
-    public static String resolveVarExpression(StringBuilder expr, Map<String, Object> vars) {
+    public static String resolveVarExpression(@NonNull StringBuilder expr, @NonNull Map<String, Object> vars) {
         for (Map.Entry<String, Object> var : vars.entrySet()) {
             expr.replace(var.getKey(), ifNull(var.getValue(), Strings.EMPTY).toString());
         }
         return expr.toString();
     }
-
-    public static <T> T readValue(Map<String, Object> json, String path) {
-        String[] paths = Strings.split(path, ".");
-        int last = paths.length - 1;
-        Map<String, Object> tmp = json;
-        for (int i = 0; i < last; i++) {
-            if ((tmp = as(tmp.get(paths[i]), Map.class)) == null) {
-                throw new InvalidException("Get empty sub object by path {}", paths[i]);
-            }
-        }
-        return (T) tmp.get(paths[last]);
-    }
+    //endregion
 
     /**
      * 简单的计算字符串
@@ -83,7 +74,7 @@ public class Strings extends StringUtils {
      * @param expression 字符串
      * @return 计算结果
      */
-    public static double simpleEval(final String expression) {
+    public static double simpleEval(@NonNull String expression) {
         return new Object() {
             int pos = -1, ch;
 
@@ -152,7 +143,7 @@ public class Strings extends StringUtils {
         }.parse();
     }
 
-    public static int compareVersion(String version1, String version2) {
+    public static int compareVersion(@NonNull String version1, @NonNull String version2) {
         int len1 = version1.length();
         int len2 = version2.length();
         int p1 = 0;
@@ -174,26 +165,6 @@ public class Strings extends StringUtils {
             return num1 > num2 ? 1 : -1;
         }
         return 0;
-    }
-
-    public static String toNumeric(String str) {
-        if (isEmpty(str)) {
-            return EMPTY;
-        }
-        StringBuilder output = new StringBuilder();
-        int len = str.length();
-        for (int i = 0; i < len; i++) {
-            char c = str.charAt(i);
-            if (!Character.isDigit(c) && c != '.') {
-                continue;
-            }
-            output.append(c);
-        }
-        return output.toString();
-    }
-
-    public static String randomValue(int maxValue) {
-        return String.format("%0" + String.valueOf(maxValue).length() + "d", ThreadLocalRandom.current().nextInt(maxValue));
     }
 
     public static String maskPrivacy(String str) {
@@ -225,8 +196,46 @@ public class Strings extends StringUtils {
         return str.substring(0, left) + x + str.substring(left + x.length());
     }
 
+    public static String randomValue(int maxValue) {
+        return String.format("%0" + String.valueOf(maxValue).length() + "d", ThreadLocalRandom.current().nextInt(maxValue));
+    }
+
+    public static String toNumeric(String str) {
+        if (isEmpty(str)) {
+            return EMPTY;
+        }
+        StringBuilder buf = new StringBuilder();
+        int len = str.length();
+        for (int i = 0; i < len; i++) {
+            char c = str.charAt(i);
+            if (!Character.isDigit(c) && c != '.') {
+                continue;
+            }
+            buf.append(c);
+        }
+        return buf.toString();
+    }
+
+    //String hashcode has cached
+    public static boolean hashEquals(String a, String b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        if (a.hashCode() != b.hashCode()) {
+            return false;
+        }
+        return a.equals(b);
+    }
+
     public static boolean containsAll(String str, CharSequence... searches) {
         return str != null && Linq.from(searches).all(str::contains);
+    }
+
+    public static String replaceLast(String text, String regex, String replacement) {
+        if (text == null || regex == null) {
+            return text;
+        }
+        return text.replaceFirst("(?s)" + regex + "(?!.*?" + regex + ")", replacement);
     }
 
     public static String[] split(String str, String delimiter) {
@@ -247,22 +256,7 @@ public class Strings extends StringUtils {
         return result;
     }
 
-    //String hashcode has cached
-    public static boolean hashEquals(String a, String b) {
-        if (a == null || b == null) {
-            return a == b;
-        }
-        if (a.hashCode() != b.hashCode()) {
-            return false;
-        }
-        return a.equals(b);
-    }
-
-    public static String replaceLast(String text, String regex, String replacement) {
-        return text.replaceFirst("(?s)" + regex + "(?!.*?" + regex + ")", replacement);
-    }
-
-    //region Nested
+    //region Regular
     public interface RegularExp {
         /**
          * 验证email地址
@@ -385,7 +379,7 @@ public class Strings extends StringUtils {
          */
         String PWD_STRENGTH = "^(?=.*\\d)(?=.*[a-z])(?=.*[A-Z]).{8,40}$";
     }
-    //#endregion
+    //endregion
 
     public static boolean isMatch(CharSequence input, String regularExp) {
         return input != null && regularExp != null && Pattern.matches(regularExp, input);

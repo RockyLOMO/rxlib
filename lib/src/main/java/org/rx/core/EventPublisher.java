@@ -13,7 +13,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
 
-public interface EventTarget<TSender extends EventTarget<TSender>> extends EventListener {
+public interface EventPublisher<TSender extends EventPublisher<TSender>> extends EventListener {
     @RequiredArgsConstructor
     enum EventFlags implements NEnum<EventFlags> {
         NONE(0),

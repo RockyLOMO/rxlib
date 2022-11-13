@@ -9,8 +9,8 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
-import org.rx.bean.DynamicProxy;
-import org.rx.bean.IdGenerator;
+import org.rx.bean.DynamicProxyBean;
+import org.rx.util.IdGenerator;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
@@ -76,7 +76,6 @@ public final class Remoting {
     public static <T> T createFacade(@NonNull Class<T> contract, @NonNull RpcClientConfig<T> config) {
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
         $<StatefulTcpClient> sync = $();
-        //onInit由调用方触发可能spring还没起来的情况
         return proxy(contract, (m, p) -> {
             if (Reflects.OBJECT_METHODS.contains(m)) {
                 return p.fastInvokeSuper();
@@ -165,7 +164,7 @@ public final class Remoting {
                             s.asyncScheduler().runAsync(() -> {
                                 for (ClientBean val : getClientBeans((StatefulTcpClient) s).values()) {
                                     if (val.syncRoot.getHoldCount() == 0) {
-                                        return;
+                                        continue;
                                     }
                                     log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
                                     try {
@@ -177,7 +176,7 @@ public final class Remoting {
                             });
                         });
                         initFn.invoke((T) p.getProxyObject(), sync.v);
-                        //onHandshake returnObject的情况
+                        //Recheck if onHandshake() return client to pool
                         if (sync.v == null) {
                             init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
                         }
@@ -270,7 +269,7 @@ public final class Remoting {
                     case COMPUTE_ARGS:
                         try {
                             isCompute.set(true);
-                            EventTarget<?> target = (EventTarget<?>) proxyObject;
+                            EventPublisher<?> target = (EventPublisher<?>) proxyObject;
                             target.raiseEvent(x.eventName, x.eventArgs);
                             log.info("clientSide event {} -> {} OK & args={}", x.eventName, x.flag, toJsonString(x.eventArgs));
                         } catch (Exception ex) {
@@ -310,7 +309,7 @@ public final class Remoting {
     }
 
     @SneakyThrows
-    private static Object invokeSuper(Method m, DynamicProxy p) {
+    private static Object invokeSuper(Method m, DynamicProxyBean p) {
         if (m.isDefault()) {
             return Reflects.invokeDefaultMethod(m, p.getProxyObject(), p.arguments);
         }
@@ -338,7 +337,7 @@ public final class Remoting {
                     ServerBean.EventBean eventBean = bean.eventBeans.computeIfAbsent(p.eventName, x -> new ServerBean.EventBean());
                     switch (p.flag) {
                         case SUBSCRIBE:
-                            EventTarget<?> eventTarget = (EventTarget<?>) contractInstance;
+                            EventPublisher<?> eventTarget = (EventPublisher<?>) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
                                 synchronized (eventBean) {
                                     ServerBean.EventContext eCtx = new ServerBean.EventContext(args);
@@ -378,7 +377,7 @@ public final class Remoting {
                                     }
                                     broadcast(bean, p, eventBean, eCtx);
                                 }
-                            }, false); //必须false
+                            }, false); //must false
                             log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, e.getClient().getRemoteEndpoint());
                             eventBean.subscribe.add(e.getClient());
                             break;
@@ -398,7 +397,6 @@ public final class Remoting {
                                 if (ctx == null) {
                                     log.warn("serverSide event {} [{}] -> COMPUTE_ARGS FAIL", p.eventName, p.computeId);
                                 } else {
-                                    //赋值原引用对象
                                     BeanMapper.DEFAULT.map(p.eventArgs, ctx.computedArgs);
                                     log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, ctx.computingClient.getRemoteEndpoint(), toJsonString(ctx.computedArgs));
                                 }

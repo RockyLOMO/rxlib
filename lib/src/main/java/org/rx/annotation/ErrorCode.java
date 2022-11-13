@@ -2,12 +2,14 @@ package org.rx.annotation;
 
 import java.lang.annotation.*;
 
-@Target({ElementType.METHOD, ElementType.FIELD})
+import static java.lang.annotation.ElementType.*;
+
+@Target({METHOD, FIELD})
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @Repeatable(ErrorCode.ErrorCodes.class)
 public @interface ErrorCode {
-    @Target({ElementType.METHOD, ElementType.FIELD})
+    @Target({METHOD, FIELD})
     @Retention(RetentionPolicy.RUNTIME)
     @Documented
     @interface ErrorCodes {

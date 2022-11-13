@@ -2,6 +2,7 @@ package org.rx.spring;
 
 import org.rx.bean.Decimal;
 import org.rx.core.Reflects;
+import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.http.tunnel.Server;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 import javax.validation.Validation;
 import javax.validation.Validator;
 import java.io.File;
+import java.util.concurrent.ExecutorService;
 
 @Configuration
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
@@ -30,10 +32,10 @@ public class SpringConfig
 //        return (e, m, a) -> TraceHandler.INSTANCE.log(e);
 //    }
 
-//    @Bean
-//    public ExecutorService executorService() {
-//        return new ThreadPool("rx-spring-2");
-//    }
+    @Bean("defaultExecutorService")
+    public ExecutorService executorService() {
+        return Tasks.executor();
+    }
 
     @Bean
     public Server server() {

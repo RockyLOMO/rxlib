@@ -2,8 +2,8 @@ package org.rx.core;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.net.ntp.NTPUDPClient;
-import org.rx.net.ntp.TimeInfo;
+import org.rx.third.apache.ntp.NTPUDPClient;
+import org.rx.third.apache.ntp.TimeInfo;
 
 import java.io.Serializable;
 import java.net.InetAddress;

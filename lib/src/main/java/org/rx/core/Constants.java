@@ -4,11 +4,14 @@ public interface Constants {
     enum MetricName {
         THREAD_QUEUE_SIZE_ERROR,
         OBJECT_POOL_LEAK,
-        DEAD_EVENT
+        DEAD_EVENT,
+        OBJECT_TRACK_OVERFLOW
     }
 
     String RX_CONFIG_FILE = "rx.yml";
     int CPU_THREADS = Runtime.getRuntime().availableProcessors();
+    String DEFAULT_TRACE_NAME = "rx-traceId";
+    String RX_CONF_TOPIC = "RxConf";
 
     String CONFIG_KEY_SPLITS = ".";
     String CACHE_KEY_SUFFIX = ":";
@@ -25,8 +28,6 @@ public interface Constants {
     int KB = 1024, MB = KB * 1024, GB = MB * 1024;
     long TB = GB * 1024L;
     int SIZE_4K = KB * 4;
-
-    String DEFAULT_TRACE_NAME = "rx-traceId";
 
     String NON_UNCHECKED = "unchecked";
     String NON_RAW_TYPES = "unchecked,rawtypes";

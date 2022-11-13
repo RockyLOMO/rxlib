@@ -13,7 +13,7 @@ public class ProxyChannelIdleHandler extends IdleStateHandler {
         super(readerIdleTimeSeconds, writerIdleTimeSeconds, 0);
     }
 
-    //userEventTriggered 不触发
+    //userEventTriggered not fire
     @SneakyThrows
     @Override
     protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {

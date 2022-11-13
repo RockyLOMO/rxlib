@@ -14,7 +14,8 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.SystemUtils;
-import org.rx.bean.DynamicProxy;
+import org.rx.annotation.Subscribe;
+import org.rx.bean.DynamicProxyBean;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
@@ -43,7 +44,10 @@ import static com.alibaba.fastjson2.JSONReader.Feature.AllowUnQuotedFieldNames;
 import static com.alibaba.fastjson2.JSONReader.Feature.SupportClassForName;
 import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
 import static org.rx.core.Constants.PERCENT;
+import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.as;
+import static org.rx.core.RxConfig.ConfigNames.NTP_ENABLE_FLAGS;
+import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
@@ -136,13 +140,16 @@ public final class Sys extends SystemUtils {
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final JSONReader.Feature[] JSON_READ_FLAGS = new JSONReader.Feature[]{SupportClassForName, AllowUnQuotedFieldNames};
     static final JSONWriter.Feature[] JSON_WRITE_FLAGS = new JSONWriter.Feature[]{NotWriteDefaultValue};
-    static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
+    public static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
         if (v != null) {
             Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
-            if (Linq.canBeCollection(v.getClass())) {
-                List<Object> list = Linq.asList(v, true);
-                list.replaceAll(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
-                return list;
+            if (Linq.tryAsIterableType(v.getClass())) {
+                return Linq.fromIterable(v).select(fv -> {
+                    if (fv != null && q.any(t -> Reflects.isInstance(fv, t))) {
+                        return fv.getClass().getName();
+                    }
+                    return fv;
+                }).toList(); //fastjson2 iterable issues
             }
             if (q.any(t -> Reflects.isInstance(v, t))) {
                 return v.getClass().getName();
@@ -156,13 +163,42 @@ public final class Sys extends SystemUtils {
     static {
         RxConfig conf = RxConfig.INSTANCE;
         Container.register(Cache.class, Container.<Cache>get(conf.cache.mainInstance));
-
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
-                new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(), JSON.toJSONString(conf));
-        if ((conf.net.ntp.enableFlags & 1) == 1) {
+                new File(Strings.EMPTY).getAbsolutePath(), Sockets.getAllLocalAddresses(), JSON.toJSONString(conf));
+        ObjectChangeTracker.DEFAULT.watch(conf, true)
+                .register(Sys.class)
+                .register(Tasks.class)
+                .register(TraceHandler.INSTANCE);
+    }
+
+    @Subscribe(RX_CONF_TOPIC)
+    static void onChanged(ObjectChangedEvent event) {
+        Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
+        ObjectChangeTracker.ChangedValue changedValue = changedMap.get("net");
+        int enableFlags;
+        if (changedValue != null) {
+            if (changedValue.newValue() != null) {
+                return;
+            }
+            enableFlags = changedValue.<RxConfig.NetConfig>newValue().ntp.enableFlags;
+        } else if ((changedValue = changedMap.get("net.ntp")) != null) {
+            if (changedValue.newValue() != null) {
+                return;
+            }
+            enableFlags = changedValue.<RxConfig.NtpConfig>newValue().enableFlags;
+        } else {
+            changedValue = changedMap.get(getWithoutPrefix(NTP_ENABLE_FLAGS));
+            if (changedValue == null) {
+                return;
+            }
+            enableFlags = changedValue.newValue();
+        }
+
+        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, changedValue);
+        if ((enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
         }
-        if ((conf.net.ntp.enableFlags & 2) == 2) {
+        if ((enableFlags & 2) == 2) {
             Tasks.setTimeout(() -> {
                 log.info("TimeAdvice inject..");
                 TimeAdvice.transform();
@@ -177,7 +213,7 @@ public final class Sys extends SystemUtils {
             if (arg.startsWith("-")) {
                 Matcher matcher = PATTERN_TO_FIND_OPTIONS.matcher(arg);
                 if (matcher.find()) {
-                    result.put(matcher.group(), arg.replaceFirst("-.*?=", ""));
+                    result.put(matcher.group(), arg.replaceFirst("-.*?=", Strings.EMPTY));
                 }
             }
         }
@@ -225,26 +261,26 @@ public final class Sys extends SystemUtils {
     }
 
     public static <T> T targetObject(Object proxyObject) {
-        return Extends.<String, T>weakMap(proxyObject).get(DPT);
+        return Container.<String, T>weakIdentityMap(proxyObject).get(DPT);
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func) {
+    public static <T> T proxy(Class<?> type, TripleFunc<Method, DynamicProxyBean, Object> func) {
         return proxy(type, func, false);
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, boolean jdkProxy) {
+    public static <T> T proxy(Class<?> type, TripleFunc<Method, DynamicProxyBean, Object> func, boolean jdkProxy) {
         return proxy(type, func, null, jdkProxy);
     }
 
-    public static <T> T proxy(Class<?> type, @NonNull TripleFunc<Method, DynamicProxy, Object> func, T rawObject, boolean jdkProxy) {
+    public static <T> T proxy(Class<?> type, TripleFunc<Method, DynamicProxyBean, Object> func, T rawObject, boolean jdkProxy) {
         T proxyObj;
         if (jdkProxy) {
-            proxyObj = (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxy(func));
+            proxyObj = (T) Proxy.newProxyInstance(Reflects.getClassLoader(), new Class[]{type}, new DynamicProxyBean(func));
         } else {
-            proxyObj = (T) Enhancer.create(type, new DynamicProxy(func));
+            proxyObj = (T) Enhancer.create(type, new DynamicProxyBean(func));
         }
         if (rawObject != null) {
-            Extends.weakMap(proxyObj).put(DPT, rawObject);
+            Container.weakIdentityMap(proxyObj).put(DPT, rawObject);
         }
         return proxyObj;
     }
@@ -478,7 +514,19 @@ public final class Sys extends SystemUtils {
     }
 
     //region json
-    //final 字段不会覆盖, TypeReference
+    public static <T> T readValue(@NonNull Map<String, Object> json, String path) {
+        String[] paths = Strings.split(path, ".");
+        int last = paths.length - 1;
+        Map<String, Object> tmp = json;
+        for (int i = 0; i < last; i++) {
+            if ((tmp = as(tmp.get(paths[i]), Map.class)) == null) {
+                throw new InvalidException("Get empty sub object by path {}", paths[i]);
+            }
+        }
+        return (T) tmp.get(paths[last]);
+    }
+
+    //TypeReference
     public static <T> T fromJson(Object src, Type type) {
         String js = toJsonString(src);
         try {
@@ -533,8 +581,8 @@ public final class Sys extends SystemUtils {
             return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(src, null, src), JSON_WRITE_FLAGS);
         } catch (Throwable e) {
             Linq<Object> q;
-            if (Linq.canBeCollection(src.getClass())) {
-                q = Linq.fromCollection(src);
+            if (Linq.tryAsIterableType(src.getClass())) {
+                q = Linq.fromIterable(src);
             } else {
                 q = Linq.from(src);
             }

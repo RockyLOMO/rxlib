@@ -5,7 +5,7 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
-import org.rx.net.TransportUtil;
+import org.rx.net.Sockets;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
@@ -30,6 +30,6 @@ public class Socks5UdpUpstream extends Upstream {
         }
 
         AuthenticEndpoint svrEp = socksServer = next.getEndpoint();
-        TransportUtil.addBackendHandler(channel, config, svrEp.getEndpoint());
+        Sockets.addBackendHandler(channel, config, svrEp.getEndpoint());
     }
 }

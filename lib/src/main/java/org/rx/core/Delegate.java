@@ -8,7 +8,9 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.TripleAction;
 
+import java.io.Serializable;
 import java.lang.reflect.Field;
+import java.util.EventObject;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
@@ -17,27 +19,19 @@ import static org.rx.core.Extends.tryAs;
 import static org.rx.core.Extends.tryClose;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventArgs> implements TripleAction<TSender, TArgs> {
-    public static void register(Object eventListener) {
-        EventBus.DEFAULT.register(eventListener);
-    }
-
-    public static void post(Object eventObject) {
-        EventBus.DEFAULT.post(eventObject);
-    }
-
-    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> create() {
+public class Delegate<TSender extends EventPublisher<TSender>, TArgs extends EventArgs> implements TripleAction<TSender, TArgs> {
+    public static <TSender extends EventPublisher<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> create() {
         return create((TripleAction<TSender, TArgs>[]) null);
     }
 
     @SafeVarargs
-    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> create(TripleAction<TSender, TArgs>... delegates) {
+    public static <TSender extends EventPublisher<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> create(TripleAction<TSender, TArgs>... delegates) {
         return new Delegate<TSender, TArgs>().combine(delegates);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
-    public static <TSender extends EventTarget<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> wrap(@NonNull EventTarget<TSender> target, @NonNull String fnName) {
+    public static <TSender extends EventPublisher<TSender>, TArgs extends EventArgs> Delegate<TSender, TArgs> wrap(@NonNull EventPublisher<TSender> target, @NonNull String fnName) {
         Delegate<TSender, TArgs> d;
         Field field = Reflects.getFieldMap(target.getClass()).get(fnName);
         if (field != null) {
@@ -46,29 +40,29 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
                 throw new InvalidException("Event {} not defined", fnName);
             }
         } else {
-            if (!target.eventFlags().has(EventTarget.EventFlags.DYNAMIC_ATTACH)) {
+            if (!target.eventFlags().has(EventPublisher.EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event {} not defined", fnName);
             }
-            d = Extends.<String, Delegate<TSender, TArgs>>weakMap(target).computeIfAbsent(fnName, k -> new Delegate<>());
+            d = Container.<String, Delegate<TSender, TArgs>>weakIdentityMap(target).computeIfAbsent(fnName, k -> new Delegate<>());
         }
         return d;
     }
 
     final Set<TripleAction<TSender, TArgs>> invocations = new CopyOnWriteArraySet<>();
-    volatile TripleAction<TSender, TArgs> headInvocation;
-    volatile TripleAction<TSender, TArgs> tailInvocation;
+    volatile TripleAction<TSender, TArgs> firstInvocation;
+    volatile TripleAction<TSender, TArgs> lastInvocation;
 
     public boolean isEmpty() {
-        return invocations.isEmpty() && headInvocation == null && tailInvocation == null;
+        return invocations.isEmpty() && firstInvocation == null && lastInvocation == null;
     }
 
-    public Delegate<TSender, TArgs> head(TripleAction<TSender, TArgs> delegate) {
-        headInvocation = delegate;
+    public Delegate<TSender, TArgs> first(TripleAction<TSender, TArgs> delegate) {
+        firstInvocation = delegate;
         return this;
     }
 
-    public Delegate<TSender, TArgs> tail(TripleAction<TSender, TArgs> delegate) {
-        tailInvocation = delegate;
+    public Delegate<TSender, TArgs> last(TripleAction<TSender, TArgs> delegate) {
+        lastInvocation = delegate;
         return this;
     }
 
@@ -111,23 +105,27 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
     }
 
     public Delegate<TSender, TArgs> close() {
-        tryClose(headInvocation);
+        tryClose(firstInvocation);
         for (TripleAction<TSender, TArgs> invocation : invocations) {
             tryClose(invocation);
         }
-        tryClose(tailInvocation);
+        tryClose(lastInvocation);
         return purge();
     }
 
     public Delegate<TSender, TArgs> purge() {
         invocations.clear();
-        headInvocation = tailInvocation = null;
+        firstInvocation = lastInvocation = null;
         return this;
+    }
+
+    public <T extends EventObject & Serializable> void invoke(T event) throws Throwable {
+        invoke((TSender) event.getSource(), (TArgs) (Object) event);
     }
 
     @Override
     public void invoke(@NonNull TSender target, @NonNull TArgs args) throws Throwable {
-        if (!innerInvoke(headInvocation, target, args)) {
+        if (!innerInvoke(firstInvocation, target, args)) {
             return;
         }
         for (TripleAction<TSender, TArgs> delegate : invocations) {
@@ -135,7 +133,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
                 break;
             }
         }
-        innerInvoke(tailInvocation, target, args);
+        innerInvoke(lastInvocation, target, args);
     }
 
     boolean innerInvoke(TripleAction<TSender, TArgs> delegate, TSender target, TArgs args) throws Throwable {
@@ -148,7 +146,7 @@ public class Delegate<TSender extends EventTarget<TSender>, TArgs extends EventA
                 return false;
             }
         } catch (Throwable e) {
-            if (!target.eventFlags().has(EventTarget.EventFlags.QUIETLY)) {
+            if (!target.eventFlags().has(EventPublisher.EventFlags.QUIETLY)) {
                 throw e;
             }
             TraceHandler.INSTANCE.log(e);

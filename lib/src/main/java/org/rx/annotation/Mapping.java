@@ -5,12 +5,14 @@ import org.rx.util.BeanMapNullValueStrategy;
 
 import java.lang.annotation.*;
 
-@Target({ElementType.METHOD})
+import static java.lang.annotation.ElementType.*;
+
+@Target({METHOD})
 @Retention(RetentionPolicy.RUNTIME)
 @Inherited
 @Repeatable(Mapping.Mappings.class)
 public @interface Mapping {
-    @Target({ElementType.METHOD})
+    @Target({METHOD})
     @Retention(RetentionPolicy.RUNTIME)
     @Inherited
     @interface Mappings {

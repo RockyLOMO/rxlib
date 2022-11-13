@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 import java.util.Objects;
 
+import static org.rx.core.Extends.require;
+
 /**
  * BeanPostProcessor 注册bean时变更
  * AopUtils
@@ -27,11 +29,10 @@ public class SpringContext implements ApplicationContextAware {
     }
 
     public static ApplicationContext getApplicationContext() {
-        Objects.requireNonNull(applicationContext, "applicationContext");
+        require(applicationContext);
         return applicationContext;
     }
 
-    //类名(首字母小写)
     public static <T> T getBean(String name) {
         return (T) getApplicationContext().getBean(name);
     }

@@ -188,7 +188,6 @@ public class Decimal extends Number implements Comparable<Decimal> {
 
     public Decimal multiply(BigDecimal val) {
         if (val == null) {
-//            val = BigDecimal.ZERO;
             return Decimal.ZERO;
         }
         before(val);
@@ -208,7 +207,6 @@ public class Decimal extends Number implements Comparable<Decimal> {
 
     public Decimal divide(BigDecimal val) {
         if (val == null) {
-//            val = BigDecimal.ZERO;
             return Decimal.ZERO;
         }
         before(val);
@@ -276,7 +274,8 @@ public class Decimal extends Number implements Comparable<Decimal> {
     }
 
     public long toCent() {
-        return multiply(PERCENT_DIVISOR).value.longValue();//.longValueExact();有毒
+        //longValueExact() poisonous
+        return multiply(PERCENT_DIVISOR).value.longValue();
     }
 
     @Override

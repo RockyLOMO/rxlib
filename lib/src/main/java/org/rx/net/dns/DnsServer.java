@@ -82,7 +82,7 @@ public class DnsServer extends Disposable {
         this(port, null);
     }
 
-    //aes tls 主要针对TCP
+    //AES or TLS mainly for TCP
     public DnsServer(int port, Collection<InetSocketAddress> nameServerList) {
         if (nameServerList == null) {
             nameServerList = Collections.emptyList();
@@ -107,7 +107,6 @@ public class DnsServer extends Disposable {
         if (CollectionUtils.isEmpty(ips)) {
             return Collections.emptyList();
         }
-        //根据权重取2个
         return enableHostsWeight ? Linq.from(ips.next(), ips.next()).distinct().toList() : new ArrayList<>(ips);
     }
 

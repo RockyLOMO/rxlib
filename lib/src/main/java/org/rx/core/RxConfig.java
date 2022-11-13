@@ -26,7 +26,6 @@ public final class RxConfig {
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
-        String THREAD_POOL_CPU_LOAD_WARNING_THRESHOLD = "app.threadPool.cpuLoadWarningThreshold";
         String THREAD_POOL_SAMPLING_PERIOD = "app.threadPool.samplingPeriod";
         String THREAD_POOL_SAMPLING_TIMES = "app.threadPool.samplingTimes";
         String THREAD_POOL_MIN_DYNAMIC_SIZE = "app.threadPool.minDynamicSize";
@@ -63,6 +62,10 @@ public final class RxConfig {
         String AES_KEY = "app.aesKey";
         String OMEGA = "app.omega";
         String MXPWD = "app.mxpwd";
+
+        static String getWithoutPrefix(String name) {
+            return name.substring(4);
+        }
     }
 
     @Data
@@ -127,7 +130,7 @@ public final class RxConfig {
         try {
             temp = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);
         } catch (Throwable e) {
-            log.error("rx init error", e);
+            log.error("RxMeta init error", e);
             temp = new RxConfig();
         }
         INSTANCE = temp;

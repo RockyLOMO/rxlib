@@ -18,7 +18,6 @@ import java.lang.reflect.AnnotatedElement;
 import java.util.List;
 import java.util.Map;
 import java.util.Vector;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @SuppressWarnings(Constants.NON_UNCHECKED)
@@ -33,13 +32,19 @@ public interface Extends extends Serializable {
     }
 
     static <T> List<T> newConcurrentList(int initialCapacity, boolean readMore) {
-        //CopyOnWriteArrayList 写性能差
         return readMore ? new CopyOnWriteArrayList<>() : new Vector<>(initialCapacity);
     }
 
-    //todo checkerframework
+    static <T> T require(T arg) {
+        if (arg == null) {
+            throw new IllegalArgumentException("The object requires non null");
+        }
+        return arg;
+    }
+
     @ErrorCode("test")
-    static void require(Object arg, boolean testResult) {
+    static <T> void require(T arg, boolean testResult) {
+        require(arg);
         if (!testResult) {
             throw new ApplicationException("test", values(arg));
         }
@@ -71,7 +76,7 @@ public interface Extends extends Serializable {
     }
 
     static <T> T quietly(Func<T> fn) {
-        return quietly(fn, 1, null);
+        return quietly(fn, 1, (Func<T>) Func.EMPTY);
     }
 
     static <T> T quietly(Func<T> fn, int retryCount) {
@@ -103,7 +108,7 @@ public interface Extends extends Serializable {
 
     //region each
     static <T> void eachQuietly(Object array, BiAction<T> fn) {
-        eachQuietly(Linq.asList(array, true), fn);
+        eachQuietly(Linq.fromIterable(array), fn);
     }
 
     static <T> void eachQuietly(Iterable<T> iterable, BiAction<T> fn) {
@@ -115,7 +120,7 @@ public interface Extends extends Serializable {
     }
 
     static <T> void each(Object array, BiAction<T> fn) {
-        each(Linq.asList(array, true), fn);
+        each(Linq.fromIterable(array), fn);
     }
 
     static <T> void each(Iterable<T> iterable, BiAction<T> fn) {
@@ -226,17 +231,13 @@ public interface Extends extends Serializable {
     }
 
     static <T> boolean eq(T a, T b) {
-        //Objects.equals() 有坑
+        //Objects.equals() poisonous
         return a == b || (a != null && a.equals(b));
     }
     //endregion
 
-    static <TK, TV> Map<TK, TV> weakMap(Object ref) {
-        return Container.<Object, Map<TK, TV>>weakMap().computeIfAbsent(ref, k -> new ConcurrentHashMap<>(8));
-    }
-
     default <TK, TV> TV attr(TK key) {
-        Map<TK, TV> attrMap = Container.<Object, Map<TK, TV>>weakMap().get(this);
+        Map<TK, TV> attrMap = Container.weakIdentityMap(this);
         if (attrMap == null) {
             return null;
         }
@@ -244,7 +245,7 @@ public interface Extends extends Serializable {
     }
 
     default <TK, TV> void attr(TK key, TV value) {
-        weakMap(this).put(key, value);
+        Container.weakIdentityMap(this).put(key, value);
     }
 
     default <T> T deepClone() {

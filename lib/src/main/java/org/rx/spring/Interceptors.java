@@ -12,8 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.lang.reflect.Executable;
 
-//@within 对象级别
-//@annotation 方法级别
+//@within class level, @annotation method level
 public class Interceptors {
     @Aspect
     @Component

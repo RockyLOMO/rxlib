@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.rx.util.thrid;
+package org.rx.third.guava;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;

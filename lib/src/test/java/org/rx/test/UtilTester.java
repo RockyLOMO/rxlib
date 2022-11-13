@@ -1,88 +1,33 @@
 package org.rx.test;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONWriter;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
+import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
-import org.rx.core.Strings;
-import org.rx.core.Tasks;
+import org.rx.bean.WeakIdentityMap;
+import org.rx.core.*;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.util.*;
-import org.rx.util.thrid.CaseFormat;
+import org.rx.third.guava.CaseFormat;
 import org.springframework.validation.annotation.Validated;
 
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class UtilTester extends AbstractTester {
-    List<Integer> queue = new ArrayList<>();
-
-    @SneakyThrows
-    @Test
-    public void productAndConsume() {
-        final boolean[] run = {true};
-        Object lock = new Object();
-        int bufSize = 5, max = bufSize * 10;
-        AtomicInteger c = new AtomicInteger();
-        Tasks.run(() -> {
-            while (run[0]) {
-                synchronized (lock) {
-                    if (queue.size() < bufSize) {
-                        int v = c.incrementAndGet();
-                        queue.add(v);
-                        log.info("product {}", v);
-                        if (v == max) {
-                            run[0] = false;
-                        }
-                        continue;
-                    }
-                    lock.notifyAll();
-                    lock.wait();
-                }
-            }
-        });
-        Tasks.run(() -> {
-            while (run[0]) {
-                synchronized (lock) {
-                    if (queue.size() < bufSize) {
-                        lock.wait();
-                        continue;
-                    }
-                    for (Integer v : queue) {
-                        log.info("consume {}", v);
-                    }
-                    queue.clear();
-                    lock.notifyAll();
-                }
-            }
-        });
-        System.in.read();
-    }
-
-    @Test
-    public void snowflake() {
-        Set<Long> set = new HashSet<>();
-        int len = 1 << 12;
-        System.out.println(len);
-        Snowflake snowflake = Snowflake.DEFAULT;
-        for (int i = 0; i < len; i++) {
-            Tasks.run(() -> {
-                assert set.add(snowflake.nextId());
-            });
-        }
-    }
-
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
         PersonMapper INSTANCE = BeanMapper.DEFAULT.define(PersonMapper.class);
@@ -193,14 +138,115 @@ public class UtilTester extends AbstractTester {
     }
 
     @Test
-    public void version() {
+    public void objectChangeTracker() {
+        Sys.mxInfo();
+        Map<String, Object> valueMap1, valueMap2;
+        Map<String, ObjectChangeTracker.ChangedValue> changedMap;
+
+//        List<PersonBean> arr1 = Collections.singletonList(PersonBean.YouFan);
+//        List<PersonBean> arr2 = Arrays.asList(PersonBean.YouFan, PersonBean.LeZhi);
+//        Map<String, PersonBean> map1 = Collections.singletonMap("one", PersonBean.LeZhi);
+//        Map<String, PersonBean> map2 = new HashMap<>();
+//        map2.put("one", PersonBean.LeZhi);
+//        map2.put("two", PersonBean.YouFan);
+//
+//        valueMap1 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.YouFan, arr1, map1), false);
+//        System.out.println(valueMap1);
+//        System.out.println(toJsonString(valueMap1));
+//
+//        valueMap2 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.LeZhi, arr2, map2), false);
+//        System.out.println(toJsonString(valueMap2));
+//
+//        valueMap1 = ObjectChangeTracker.getValueMap(PersonBean.YouFan, false);
+//        valueMap2 = ObjectChangeTracker.getValueMap(PersonBean.LeZhi, false);
+//        changedMap = ObjectChangeTracker.getChangedMap(valueMap1, valueMap2);
+//        log.info("changedMap\n{}", toJsonString(changedMap));
+
+        GirlBean girl = GirlBean.YouFan;
+
+        valueMap1 = ObjectChangeTracker.getSnapshotMap(girl, false);
+        girl.setIndex(1);
+        girl.setObj(1);
+        girl.setFlags(new int[]{0, 1});
+        girl.setSister(new GirlBean());
+        valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
+        changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
+        log.info("changedMap\n{}", toJson(changedMap));
+
+        valueMap1 = valueMap2;
+        girl.setIndex(64);
+        girl.setObj("a");
+        girl.setFlags(new int[]{0, 2, 3});
+        girl.getSister().setAge(5);
+        valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
+        changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
+        log.info("changedMap\n{}", toJson(changedMap));
+
+        ObjectChangeTracker tracker = new ObjectChangeTracker(2000);
+//        tracker.watch(RxConfig.INSTANCE,true);
+        tracker.watch(girl).register(this);
+        Tasks.setTimeout(() -> {
+            girl.setIndex(128);
+            girl.setObj(new ArrayList<>());
+            girl.setFlags(new int[]{0});
+            girl.getSister().setAge(3);
+        }, 5000);
+        _wait();
+    }
+
+    String toJson(Object source) {
+        return JSON.toJSONString(source, JSONWriter.Feature.WriteNulls);
+    }
+
+    @Subscribe
+    void onChange(ObjectChangedEvent e) {
+        log.info("change {} ->\n{}", e.getSource(), toJson(e.getChangedMap()));
+//        sleep(10000);
+//        _notify();
+    }
+
+    @Test
+    public void other() {
+        //snowflake
+        Set<Long> set = new HashSet<>();
+        int len = 1 << 12;
+        System.out.println(len);
+        Snowflake snowflake = Snowflake.DEFAULT;
+        for (int i = 0; i < len; i++) {
+            Tasks.run(() -> {
+                assert set.add(snowflake.nextId());
+            });
+        }
+
+        //compareVersion
         assert Strings.compareVersion("1.01", "1.001") == 0;
         assert Strings.compareVersion("1.0", "1.0.0") == 0;
         assert Strings.compareVersion("0.1", "1.1") == -1;
     }
 
+    @Data
+    static class IBJ {
+        int val;
+    }
+
     @Test
     public void third() {
+        Map<Object, Integer> map = new WeakIdentityMap<>();
+        IBJ k = new IBJ();
+        map.put(k, 1);
+        k.val = 2;
+        map.put(k, 2);
+        System.out.println(toJsonString(map.entrySet()));
+
+        Object[] x = {2, "b"};
+        System.out.println(toJsonString(x));
+        System.out.println(JSON.toJSONString(new Iterable<String>() {
+            @Override
+            public Iterator iterator() {
+                return Collections.singletonList(x[0]).iterator();
+            }
+        }));
+
         System.out.println(FilenameUtils.getFullPath("a.txt"));
         System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
         System.out.println(FilenameUtils.getFullPath("/a/b.txt"));
