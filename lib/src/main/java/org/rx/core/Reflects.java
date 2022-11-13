@@ -599,10 +599,13 @@ public class Reflects extends ClassUtils {
     }
 
     public static boolean isBasicType(@NonNull Class<?> type) {
-        return type == String.class || Number.class.isAssignableFrom(primitiveToWrapper(type))
+        Class<?> wrapType;
+        return type == String.class || Number.class.isAssignableFrom(wrapType = primitiveToWrapper(type))
+                || wrapType == Boolean.class
                 || type.isEnum()
                 || Date.class.isAssignableFrom(type)
                 || type == ULID.class
+                || type == Class.class
                 || type == UUID.class;
     }
     //endregion

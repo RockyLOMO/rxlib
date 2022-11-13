@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONWriter;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
@@ -183,7 +184,7 @@ public class UtilTester extends AbstractTester {
         log.info("changedMap\n{}", toJson(changedMap));
 
         ObjectChangeTracker tracker = new ObjectChangeTracker(2000);
-        tracker.watch(girl).register(this, null);
+        tracker.watch(girl).register(this);
         Tasks.setTimeout(() -> {
             girl.setIndex(128);
             girl.setObj(new ArrayList<>());
@@ -225,6 +226,18 @@ public class UtilTester extends AbstractTester {
 
     @Test
     public void third() {
+        Map<String, Object> snapshotMap = ObjectChangeTracker.getSnapshotMap(RxConfig.INSTANCE, false);
+        System.out.println(snapshotMap);
+
+        Object[] x = {2, "b"};
+        System.out.println(toJsonString(x));
+        System.out.println(JSON.toJSONString(new Iterable<String>() {
+            @Override
+            public Iterator iterator() {
+                return Collections.singletonList(x[0]).iterator();
+            }
+        }));
+
         System.out.println(FilenameUtils.getFullPath("a.txt"));
         System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
         System.out.println(FilenameUtils.getFullPath("/a/b.txt"));

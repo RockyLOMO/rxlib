@@ -164,7 +164,7 @@ public final class Remoting {
                             s.asyncScheduler().runAsync(() -> {
                                 for (ClientBean val : getClientBeans((StatefulTcpClient) s).values()) {
                                     if (val.syncRoot.getHoldCount() == 0) {
-                                        return;
+                                        continue;
                                     }
                                     log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
                                     try {

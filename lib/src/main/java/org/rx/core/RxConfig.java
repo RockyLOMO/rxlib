@@ -62,6 +62,10 @@ public final class RxConfig {
         String AES_KEY = "app.aesKey";
         String OMEGA = "app.omega";
         String MXPWD = "app.mxpwd";
+
+        static String getWithoutPrefix(String name) {
+            return name.substring(4);
+        }
     }
 
     @Data
@@ -126,7 +130,7 @@ public final class RxConfig {
         try {
             temp = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);
         } catch (Throwable e) {
-            log.error("rx init error", e);
+            log.error("RxMeta init error", e);
             temp = new RxConfig();
         }
         INSTANCE = temp;

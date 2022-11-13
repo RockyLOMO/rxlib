@@ -615,6 +615,9 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public List<T> toList() {
+        if (!parallel && data instanceof List) {
+            return (List<T>) data;
+        }
         List<T> result = newList();
         for (T item : data) {
             result.add(item);
@@ -623,6 +626,9 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public Set<T> toSet() {
+        if (!parallel && data instanceof Set) {
+            return (Set<T>) data;
+        }
         Set<T> result = newSet();
         for (T item : data) {
             result.add(item);

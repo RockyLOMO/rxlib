@@ -180,14 +180,13 @@ public class MxController {
     @PostConstruct
     public void init() {
         Class.forName(Sys.class.getName());
-        ObjectChangeTracker.DEFAULT.register(this, RX_CONF_TOPIC);
-        onChanged(null);
+        ObjectChangeTracker.DEFAULT.register(this);
     }
 
     @Subscribe(RX_CONF_TOPIC)
     void onChanged(ObjectChangedEvent event) {
         Tasks.setTimeout(() -> {
-            String omega = RxConfig.INSTANCE.getOmega();
+            String omega = event.<RxConfig>source().getOmega();
             if (omega != null) {
                 SocksContext.omega(omega, null);
             }

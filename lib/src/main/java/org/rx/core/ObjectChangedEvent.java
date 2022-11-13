@@ -14,4 +14,8 @@ public class ObjectChangedEvent extends EventObject {
         super(source);
         this.changedValues = changedValues;
     }
+
+    public <T> T source() {
+        return (T) getSource();
+    }
 }

@@ -4,6 +4,7 @@ import io.netty.util.internal.ThreadLocalRandom;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
@@ -21,6 +22,7 @@ import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.circuitContinue;
 
 //Java 11 ForkJoinPool.commonPool() has class loading issue
+@Slf4j
 public final class Tasks {
     //Random load balance, if methodA wait methodA, methodA is executing wait and methodB is in ThreadPoolQueue, then there will be a false death.
     static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
@@ -78,6 +80,11 @@ public final class Tasks {
     @Subscribe(RX_CONF_TOPIC)
     static synchronized void onChanged(ObjectChangedEvent event) {
         int newCount = RxConfig.INSTANCE.threadPool.replicas;
+        if (newCount == poolCount) {
+            return;
+        }
+
+        log.info("RxMeta {} changed {} -> {}", RxConfig.ConfigNames.THREAD_POOL_REPLICAS, poolCount, newCount);
         for (int i = 0; i < newCount; i++) {
             replicas.add(0, new ThreadPool(String.valueOf(i)));
         }

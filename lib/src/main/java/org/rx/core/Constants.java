@@ -4,7 +4,8 @@ public interface Constants {
     enum MetricName {
         THREAD_QUEUE_SIZE_ERROR,
         OBJECT_POOL_LEAK,
-        DEAD_EVENT
+        DEAD_EVENT,
+        OBJECT_TRACK_OVERFLOW
     }
 
     String RX_CONFIG_FILE = "rx.yml";

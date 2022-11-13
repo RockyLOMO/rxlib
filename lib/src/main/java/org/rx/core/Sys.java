@@ -46,6 +46,8 @@ import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
 import static org.rx.core.Constants.PERCENT;
 import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.as;
+import static org.rx.core.RxConfig.ConfigNames.NTP_ENABLE_FLAGS;
+import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 
 @Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
@@ -138,11 +140,16 @@ public final class Sys extends SystemUtils {
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final JSONReader.Feature[] JSON_READ_FLAGS = new JSONReader.Feature[]{SupportClassForName, AllowUnQuotedFieldNames};
     static final JSONWriter.Feature[] JSON_WRITE_FLAGS = new JSONWriter.Feature[]{NotWriteDefaultValue};
-    static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
+    public static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
         if (v != null) {
             Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
             if (Linq.tryAsIterableType(v.getClass())) {
-                return Linq.fromIterable(v).select(fv -> fv != null && q.any(t -> Reflects.isInstance(fv, t)) ? fv.getClass().getName() : fv);
+                return Linq.fromIterable(v).select(fv -> {
+                    if (fv != null && q.any(t -> Reflects.isInstance(fv, t))) {
+                        return fv.getClass().getName();
+                    }
+                    return fv;
+                }).toList(); //fastjson2 iterable issues
             }
             if (q.any(t -> Reflects.isInstance(v, t))) {
                 return v.getClass().getName();
@@ -159,17 +166,24 @@ public final class Sys extends SystemUtils {
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getAllLocalAddresses(), JSON.toJSONString(conf));
         ObjectChangeTracker.DEFAULT.watch(conf, true)
-                .register(Sys.class, RX_CONF_TOPIC)
-                .register(Tasks.class, RX_CONF_TOPIC);
+                .register(Sys.class)
+                .register(Tasks.class)
+                .register(TraceHandler.INSTANCE);
     }
 
     @Subscribe(RX_CONF_TOPIC)
     static void onChanged(ObjectChangedEvent event) {
-        RxConfig conf = (RxConfig) event.getSource();
-        if ((conf.net.ntp.enableFlags & 1) == 1) {
+        ObjectChangeTracker.ChangedValue changedValue = event.getChangedValues().get(getWithoutPrefix(NTP_ENABLE_FLAGS));
+        if (changedValue == null) {
+            return;
+        }
+
+        int enableFlags = changedValue.getNewValue();
+        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, changedValue);
+        if ((enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
         }
-        if ((conf.net.ntp.enableFlags & 2) == 2) {
+        if ((enableFlags & 2) == 2) {
             Tasks.setTimeout(() -> {
                 log.info("TimeAdvice inject..");
                 TimeAdvice.transform();

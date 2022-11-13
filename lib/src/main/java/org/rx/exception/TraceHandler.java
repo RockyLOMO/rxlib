@@ -23,6 +23,8 @@ import java.util.concurrent.ScheduledFuture;
 
 import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.as;
+import static org.rx.core.RxConfig.ConfigNames.TRACE_KEEP_DAYS;
+import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
@@ -89,26 +91,26 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     private TraceHandler() {
         try {
             Thread.setDefaultUncaughtExceptionHandler(this);
-            setKeepDays(RxConfig.INSTANCE.getTraceKeepDays());
+            EntityDatabase db = EntityDatabase.DEFAULT;
+            db.createMapping(ErrorEntity.class, MethodEntity.class, MetricsEntity.class);
         } catch (Throwable e) {
-            log.error("rx init error", e);
+            log.error("RxMeta init error", e);
         }
     }
 
     @Subscribe(RX_CONF_TOPIC)
     void onChanged(ObjectChangedEvent event) {
-        ObjectChangeTracker.ChangedValue changedValue = event.getChangedValues().get(RxConfig.ConfigNames.TRACE_KEEP_DAYS.substring(4));
-        if (changedValue != null) {
-            setKeepDays((int) changedValue.getNewValue());
+        ObjectChangeTracker.ChangedValue changedValue = event.getChangedValues().get(getWithoutPrefix(TRACE_KEEP_DAYS));
+        if (changedValue == null) {
+            return;
         }
-    }
 
-    void setKeepDays(int keepDays) {
+        int keepDays = changedValue.getNewValue();
+        log.info("RxMeta {} changed {}", TRACE_KEEP_DAYS, changedValue);
         if (keepDays > 0) {
-            EntityDatabase db = EntityDatabase.DEFAULT;
-            db.createMapping(ErrorEntity.class, MethodEntity.class, MetricsEntity.class);
             if (future == null) {
                 future = Tasks.scheduleDaily(() -> {
+                    EntityDatabase db = EntityDatabase.DEFAULT;
                     DateTime d = DateTime.now().addDays(-keepDays - 1);
                     db.delete(new EntityQueryLambda<>(ErrorEntity.class)
                             .lt(ErrorEntity::getModifyTime, d));

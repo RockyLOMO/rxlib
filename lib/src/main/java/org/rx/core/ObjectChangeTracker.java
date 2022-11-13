@@ -1,11 +1,10 @@
 package org.rx.core;
 
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.springframework.cglib.proxy.Enhancer;
 
 import java.lang.annotation.Retention;
@@ -19,17 +18,26 @@ import java.util.*;
 import static java.lang.annotation.ElementType.FIELD;
 import static org.rx.core.Extends.*;
 
+@Slf4j
 public class ObjectChangeTracker {
     @Target(FIELD)
     @Retention(RetentionPolicy.RUNTIME)
     public @interface Ignore {
     }
 
-    @Getter
     @RequiredArgsConstructor
+    @ToString
     public static class ChangedValue {
         final Object oldValue;
         final Object newValue;
+
+        public <T> T getOldValue() {
+            return (T) oldValue;
+        }
+
+        public <T> T getNewValue() {
+            return (T) newValue;
+        }
     }
 
     //region snapshotMap
@@ -99,47 +107,49 @@ public class ObjectChangeTracker {
 
         Map<String, Object> root = new HashMap<>();
         for (Field field : getFieldMap(target.getClass())) {
-            resolve(root, null, concatName, target, field);
+            resolve(root, null, concatName, target, field, 0);
         }
         return root;
     }
 
     @SneakyThrows
-    static void resolve(Map<String, Object> parent, String parentName, boolean concatName, Object obj, Field field) {
+    static void resolve(Map<String, Object> parent, String parentName, boolean concatName, Object obj, Field field, int recursionDepth) {
         Object val;
         if (field.isAnnotationPresent(Ignore.class) || (val = field.get(obj)) == null) {
             return;
         }
 
         String name = concatName(parentName, concatName, field.getName());
-        if (val instanceof Class) {
-            parent.put(name, val);
-            return;
-        }
         Class<?> type = val.getClass();
         if (Linq.tryAsIterableType(type)) {
-            parent.put(name, Linq.fromIterable(val).select(p -> resolveValue(name, concatName, p)).toList());
+            parent.put(name, Linq.fromIterable(val).select(p -> resolveValue(name, concatName, p, recursionDepth)).toList());
             return;
         }
         if (Map.class.isAssignableFrom(type)) {
             Map<?, ?> x = (Map<?, ?>) val;
-            parent.put(name, Linq.from(x.entrySet()).select(p -> new DefaultMapEntry<>(resolveValue(name, concatName, p.getKey()),
-                    resolveValue(name, concatName, p.getValue()))).toMap());
+            parent.put(name, Linq.from(x.entrySet()).select(p -> new DefaultMapEntry<>(resolveValue(name, concatName, p.getKey(), recursionDepth),
+                    resolveValue(name, concatName, p.getValue(), recursionDepth))).toMap());
             return;
         }
-        parent.put(name, resolveValue(name, concatName, val));
+        parent.put(name, resolveValue(name, concatName, val, recursionDepth));
     }
 
-    static Object resolveValue(String name, boolean concatName, Object val) {
+    static Object resolveValue(String name, boolean concatName, Object val, int recursionDepth) {
         if (val == null) {
             return null;
         }
 
         Class<?> type = val.getClass();
         if (!Reflects.isBasicType(type)) {
+            if (++recursionDepth > 128) {
+                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_TRACK_OVERFLOW.name(),
+                        String.format("%s recursion overflow", type));
+                return val;
+            }
+            log.debug("recursion {} -> {}", type, recursionDepth);
             Map<String, Object> children = new HashMap<>();
             for (Field childField : getFieldMap(type)) {
-                resolve(children, name, concatName, val, childField);
+                resolve(children, name, concatName, val, childField, recursionDepth);
             }
             return children;
         }
@@ -178,21 +188,30 @@ public class ObjectChangeTracker {
     }
 
     public ObjectChangeTracker(long publishPeriod) {
-        Tasks.schedulePeriod(this::publishChange, publishPeriod);
+        Tasks.schedulePeriod(this::publishAll, publishPeriod);
     }
 
-    public void publishChange() {
-        eachQuietly(Linq.from(sources.entrySet()).toList(), p -> {
-            Object obj = p.getKey();
-            Map<String, Object> oldMap = p.getValue();
-            Map<String, Object> newMap = getSnapshotMap(obj, false);
-            TreeMap<String, ChangedValue> changedValues = compareSnapshotMap(oldMap, newMap);
-            if (changedValues.isEmpty()) {
-                return;
-            }
-            sources.put(obj, newMap);
-            bus.publish(new ObjectChangedEvent(obj, changedValues));
-        });
+    public void publishAll() {
+        eachQuietly(sources.entrySet(), p -> publish(p.getKey(), p.getValue(), false));
+    }
+
+    public <T> ObjectChangeTracker publish(@NonNull T source, boolean forcePublish) {
+        Map<String, Object> oldMap = sources.get(source);
+        if (oldMap == null) {
+            throw new InvalidException("Object {} not watched", source);
+        }
+        publish(source, oldMap, forcePublish);
+        return this;
+    }
+
+    void publish(Object source, Map<String, Object> oldMap, boolean forcePub) {
+        Map<String, Object> newMap = getSnapshotMap(source, false);
+        TreeMap<String, ChangedValue> changedValues = compareSnapshotMap(oldMap, newMap);
+        if (changedValues.isEmpty() && !forcePub) {
+            return;
+        }
+        sources.put(source, newMap);
+        bus.publish(new ObjectChangedEvent(source, changedValues));
     }
 
     public <T> ObjectChangeTracker watch(T source) {
@@ -218,13 +237,13 @@ public class ObjectChangeTracker {
         return this;
     }
 
-    public <T> ObjectChangeTracker register(@NonNull T subscriber, String topic) {
-        bus.register(subscriber, topic);
+    public <T> ObjectChangeTracker register(@NonNull T subscriber) {
+        bus.register(subscriber);
         return this;
     }
 
-    public <T> ObjectChangeTracker unregister(@NonNull T subscriber, String topic) {
-        bus.unregister(subscriber, topic);
+    public <T> ObjectChangeTracker unregister(@NonNull T subscriber) {
+        bus.unregister(subscriber);
         return this;
     }
 }
