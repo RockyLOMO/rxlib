@@ -1,10 +1,9 @@
 package org.rx.bean;
 
-import org.rx.core.Linq;
-
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public interface AbstractMap<K, V> extends Map<K, V> {
     @Override
@@ -38,12 +37,12 @@ public interface AbstractMap<K, V> extends Map<K, V> {
 
     @Override
     default Set<K> keySet() {
-        return Linq.from(entrySet()).select(Entry::getKey).toSet();
+        return entrySet().stream().map(Entry::getKey).collect(Collectors.toSet());
     }
 
     @Override
     default Collection<V> values() {
-        return Linq.from(entrySet()).select(Entry::getValue).toList();
+        return entrySet().stream().map(Entry::getValue).collect(Collectors.toList());
     }
 
     @Override

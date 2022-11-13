@@ -6,12 +6,14 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IterableUtils;
+import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
+import org.rx.bean.WeakIdentityMap;
 import org.rx.core.*;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
@@ -184,6 +186,7 @@ public class UtilTester extends AbstractTester {
         log.info("changedMap\n{}", toJson(changedMap));
 
         ObjectChangeTracker tracker = new ObjectChangeTracker(2000);
+//        tracker.watch(RxConfig.INSTANCE,true);
         tracker.watch(girl).register(this);
         Tasks.setTimeout(() -> {
             girl.setIndex(128);
@@ -201,8 +204,8 @@ public class UtilTester extends AbstractTester {
     @Subscribe
     void onChange(ObjectChangedEvent e) {
         log.info("change {} ->\n{}", e.getSource(), toJson(e.getChangedValues()));
-        sleep(2000);
-        _notify();
+//        sleep(10000);
+//        _notify();
     }
 
     @Test
@@ -224,10 +227,19 @@ public class UtilTester extends AbstractTester {
         assert Strings.compareVersion("0.1", "1.1") == -1;
     }
 
+    @Data
+    static class IBJ {
+        int val;
+    }
+
     @Test
     public void third() {
-        Map<String, Object> snapshotMap = ObjectChangeTracker.getSnapshotMap(RxConfig.INSTANCE, false);
-        System.out.println(snapshotMap);
+        Map<Object, Integer> map = new WeakIdentityMap<>();
+        IBJ k = new IBJ();
+        map.put(k, 1);
+        k.val = 2;
+        map.put(k, 2);
+        System.out.println(toJsonString(map.entrySet()));
 
         Object[] x = {2, "b"};
         System.out.println(toJsonString(x));

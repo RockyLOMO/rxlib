@@ -3,6 +3,7 @@ package org.rx.core;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
+import org.rx.bean.WeakIdentityMap;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.springframework.cglib.proxy.Enhancer;
@@ -180,7 +181,7 @@ public class ObjectChangeTracker {
     //endregion
 
     public static final ObjectChangeTracker DEFAULT = new ObjectChangeTracker();
-    final Map<Object, Map<String, Object>> sources = Collections.synchronizedMap(new WeakHashMap<>());
+    final Map<Object, Map<String, Object>> sources = new WeakIdentityMap<>();
     final EventBus bus = EventBus.DEFAULT;
 
     public ObjectChangeTracker() {
@@ -192,26 +193,32 @@ public class ObjectChangeTracker {
     }
 
     public void publishAll() {
+        log.info("Tracker {}", sources.size());
         eachQuietly(sources.entrySet(), p -> publish(p.getKey(), p.getValue(), false));
     }
 
     public <T> ObjectChangeTracker publish(@NonNull T source, boolean forcePublish) {
-        Map<String, Object> oldMap = sources.get(source);
-        if (oldMap == null) {
-            throw new InvalidException("Object {} not watched", source);
+        Object target = getTarget(source);
+        if (target == null) {
+            throw new InvalidException("Proxy object can not be tracked, plz use source object instead");
         }
-        publish(source, oldMap, forcePublish);
+        Map<String, Object> oldMap = sources.get(target);
+        if (oldMap == null) {
+            throw new InvalidException("Object {} not watched", target);
+        }
+        publish(target, oldMap, forcePublish);
         return this;
     }
 
-    void publish(Object source, Map<String, Object> oldMap, boolean forcePub) {
-        Map<String, Object> newMap = getSnapshotMap(source, false);
+    void publish(Object target, Map<String, Object> oldMap, boolean forcePub) {
+        Map<String, Object> newMap = getSnapshotMap(target, false);
         TreeMap<String, ChangedValue> changedValues = compareSnapshotMap(oldMap, newMap);
         if (changedValues.isEmpty() && !forcePub) {
             return;
         }
-        sources.put(source, newMap);
-        bus.publish(new ObjectChangedEvent(source, changedValues));
+        log.info("Tracker {} ->\n\t{}\n\t{}\n-> {}", target, oldMap, newMap, Sys.toJsonString(changedValues));
+        sources.put(target, newMap);
+        bus.publish(new ObjectChangedEvent(target, changedValues));
     }
 
     public <T> ObjectChangeTracker watch(T source) {
