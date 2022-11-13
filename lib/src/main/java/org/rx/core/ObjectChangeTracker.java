@@ -193,7 +193,7 @@ public class ObjectChangeTracker {
     }
 
     public void publishAll() {
-        log.info("Tracker {}", sources.size());
+//        log.info("Tracker {}", sources.size());
         eachQuietly(sources.entrySet(), p -> publish(p.getKey(), p.getValue(), false));
     }
 
