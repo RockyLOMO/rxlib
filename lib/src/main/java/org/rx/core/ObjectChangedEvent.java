@@ -8,11 +8,11 @@ import java.util.Map;
 @Getter
 public class ObjectChangedEvent extends EventObject {
     private static final long serialVersionUID = -2993269004798534124L;
-    final Map<String, ObjectChangeTracker.ChangedValue> changedValues;
+    final Map<String, ObjectChangeTracker.ChangedValue> changedMap;
 
-    public ObjectChangedEvent(Object source, Map<String, ObjectChangeTracker.ChangedValue> changedValues) {
+    public ObjectChangedEvent(Object source, Map<String, ObjectChangeTracker.ChangedValue> changedMap) {
         super(source);
-        this.changedValues = changedValues;
+        this.changedMap = changedMap;
     }
 
     public <T> T source() {

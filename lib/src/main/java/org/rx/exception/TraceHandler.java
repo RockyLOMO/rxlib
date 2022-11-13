@@ -100,12 +100,12 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
 
     @Subscribe(RX_CONF_TOPIC)
     void onChanged(ObjectChangedEvent event) {
-        ObjectChangeTracker.ChangedValue changedValue = event.getChangedValues().get(getWithoutPrefix(TRACE_KEEP_DAYS));
+        ObjectChangeTracker.ChangedValue changedValue = event.getChangedMap().get(getWithoutPrefix(TRACE_KEEP_DAYS));
         if (changedValue == null) {
             return;
         }
 
-        int keepDays = changedValue.getNewValue();
+        int keepDays = changedValue.newValue();
         log.info("RxMeta {} changed {}", TRACE_KEEP_DAYS, changedValue);
         if (keepDays > 0) {
             if (future == null) {

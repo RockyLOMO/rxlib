@@ -173,12 +173,27 @@ public final class Sys extends SystemUtils {
 
     @Subscribe(RX_CONF_TOPIC)
     static void onChanged(ObjectChangedEvent event) {
-        ObjectChangeTracker.ChangedValue changedValue = event.getChangedValues().get(getWithoutPrefix(NTP_ENABLE_FLAGS));
-        if (changedValue == null) {
-            return;
+        Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
+        ObjectChangeTracker.ChangedValue changedValue = changedMap.get("net");
+        int enableFlags;
+        if (changedValue != null) {
+            if (changedValue.newValue() != null) {
+                return;
+            }
+            enableFlags = changedValue.<RxConfig.NetConfig>newValue().ntp.enableFlags;
+        } else if ((changedValue = changedMap.get("net.ntp")) != null) {
+            if (changedValue.newValue() != null) {
+                return;
+            }
+            enableFlags = changedValue.<RxConfig.NtpConfig>newValue().enableFlags;
+        } else {
+            changedValue = changedMap.get(getWithoutPrefix(NTP_ENABLE_FLAGS));
+            if (changedValue == null) {
+                return;
+            }
+            enableFlags = changedValue.newValue();
         }
 
-        int enableFlags = changedValue.getNewValue();
         log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, changedValue);
         if ((enableFlags & 1) == 1) {
             NtpClock.scheduleTask();

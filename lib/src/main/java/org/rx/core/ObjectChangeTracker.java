@@ -32,11 +32,11 @@ public class ObjectChangeTracker {
         final Object oldValue;
         final Object newValue;
 
-        public <T> T getOldValue() {
+        public <T> T oldValue() {
             return (T) oldValue;
         }
 
-        public <T> T getNewValue() {
+        public <T> T newValue() {
             return (T) newValue;
         }
     }

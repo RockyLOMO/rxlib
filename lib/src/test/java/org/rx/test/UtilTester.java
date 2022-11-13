@@ -5,8 +5,6 @@ import com.alibaba.fastjson2.JSONWriter;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.IterableUtils;
-import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.Mapping;
@@ -26,7 +24,6 @@ import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.util.*;
 
-import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
@@ -203,7 +200,7 @@ public class UtilTester extends AbstractTester {
 
     @Subscribe
     void onChange(ObjectChangedEvent e) {
-        log.info("change {} ->\n{}", e.getSource(), toJson(e.getChangedValues()));
+        log.info("change {} ->\n{}", e.getSource(), toJson(e.getChangedMap()));
 //        sleep(10000);
 //        _notify();
     }
