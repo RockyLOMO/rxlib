@@ -237,8 +237,9 @@ public final class Main implements SocksSupport {
             server.onRoute.replace(ssFirstRoute, (s, e) -> {
                 //gateway
                 String host = e.getFirstDestination().getHost();
-                if (!Sockets.isBypass(conf.gfwList, host)) {
+                if (Sockets.isBypass(conf.gfwList, host)) {
                     log.info("ss gfw: {}", host);
+                } else {
                     IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(e.getFirstDestination().getHost(), true), SocksSupport.ASYNC_TIMEOUT / 2);
                     if (ipAddress != null && ipAddress.isChina()) {
                         e.setUpstream(new Upstream(e.getFirstDestination()));
