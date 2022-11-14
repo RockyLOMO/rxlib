@@ -142,9 +142,7 @@ public class Delegate<TSender extends EventPublisher<TSender>, TArgs extends Eve
         }
         try {
             delegate.invoke(target, args);
-            if (args.isCancel()) {
-                return false;
-            }
+            return !args.isCancel() && !args.isHandled();
         } catch (Throwable e) {
             if (!target.eventFlags().has(EventPublisher.EventFlags.QUIETLY)) {
                 throw e;

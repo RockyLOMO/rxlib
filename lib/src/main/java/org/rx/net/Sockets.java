@@ -33,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
@@ -425,18 +426,29 @@ public final class Sockets {
     //endregion
 
     //region Address
+    public static boolean isBypass(Iterable<String> bypassList, String host) {
+        if (bypassList == null) {
+            return false;
+        }
+        for (String regex : bypassList) {
+//            if (Pattern.matches(regex.replace("*", "\\w*")
+//                    .replace("?", "\\w"), host)) {
+//                return true;
+//            }
+            if (FilenameUtils.wildcardMatch(host, regex)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @SneakyThrows
     public static boolean isLanIp(InetAddress ip) {
         String hostAddress = ip.getHostAddress();
         if (Strings.hashEquals(getLoopbackHostAddress(), hostAddress)) {
             return true;
         }
-        for (String regex : RxConfig.INSTANCE.getNet().getLanIps()) {
-            if (Pattern.matches(regex, hostAddress)) {
-                return true;
-            }
-        }
-        return false;
+        return isBypass(RxConfig.INSTANCE.getNet().getLanIps(), hostAddress);
     }
 
     public static boolean isValidIp(String ip) {

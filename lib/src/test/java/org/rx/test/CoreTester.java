@@ -11,6 +11,7 @@ import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
+import org.rx.net.Sockets;
 import org.rx.third.open.CrcModel;
 import org.rx.codec.RSAUtil;
 import org.rx.core.Arrays;
@@ -33,6 +34,7 @@ import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
@@ -723,6 +725,12 @@ public class CoreTester extends AbstractTester {
 
         mgr.onCreate.replace(a, c);
         mgr.create(p); //触发事件（a, c执行）
+
+        mgr.onCreate.purge().combine((s, e) -> {
+            e.setHandled(true);
+            System.out.println("only handled");
+        }, a);
+        mgr.create(p);
     }
     //endregion
 
@@ -968,6 +976,7 @@ public class CoreTester extends AbstractTester {
 //        Iterable<Object> all = new Yaml().loadAll(Reflects.getResource("application.yml"));
 //        List<Object> list = IterableUtils.toList(all);
         RxConfig rxConf = RxConfig.INSTANCE;
+        System.out.println(toJsonString(Sockets.newAnyEndpoint(1024).getAddress()));
 //        assert rxConf.getId().equals("Rx");
 //        assert rxConf.getThreadPool().getReplicas() == 4;
 //        assert rxConf.getNet().getConnectTimeoutMillis() == 40000;
