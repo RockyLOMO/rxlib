@@ -426,7 +426,7 @@ public class SocksTester extends AbstractTester {
                 return;
             }
             //bypass
-            if (frontConf.isBypass(dstEp.getHost())) {
+            if (Sockets.isBypass(frontConf.getBypassList(), dstEp.getHost())) {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
@@ -499,7 +499,7 @@ public class SocksTester extends AbstractTester {
                 return;
             }
             //bypass
-            if (frontConf.isBypass(dstEp.getHost())) {
+            if (Sockets.isBypass(frontConf.getBypassList(), dstEp.getHost())) {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
@@ -754,11 +754,14 @@ public class SocksTester extends AbstractTester {
 //        fn.invoke("x.f-li.cn");
 
         SocketConfig conf = new SocketConfig();
-        assert conf.isBypass("127.0.0.1");
-        assert conf.isBypass("192.168.31.1");
-        assert !conf.isBypass("192.169.31.1");
-        assert conf.isBypass("localhost");
-        assert !conf.isBypass("google.cn");
+        assert Sockets.isBypass(conf.getBypassList(), "127.0.0.1");
+        assert Sockets.isBypass(conf.getBypassList(), "192.168.31.1");
+        assert !Sockets.isBypass(conf.getBypassList(), "192.169.31.1");
+        assert Sockets.isBypass(conf.getBypassList(), "localhost");
+        assert !Sockets.isBypass(conf.getBypassList(), "google.cn");
+        assert !Sockets.isBypass(Arrays.toList("*google.com"), "google.cn");
+        assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
+        assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
     }
 
     @SneakyThrows

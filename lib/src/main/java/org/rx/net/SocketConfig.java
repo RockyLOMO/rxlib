@@ -9,7 +9,6 @@ import org.rx.core.RxConfig;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.regex.Pattern;
 
 @Data
 public class SocketConfig implements Extends {
@@ -35,14 +34,5 @@ public class SocketConfig implements Extends {
 
     private Set<String> bypassList() {
         return new CopyOnWriteArraySet<>(RxConfig.INSTANCE.getNet().getLanIps());
-    }
-
-    public boolean isBypass(String host) {
-        for (String regex : getBypassList()) {
-            if (Pattern.matches(regex, host)) {
-                return true;
-            }
-        }
-        return false;
     }
 }

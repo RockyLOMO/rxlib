@@ -15,4 +15,9 @@ public class EventArgs implements Serializable {
     @Getter
     @Setter
     private boolean cancel;
+
+    //Prevent Bubbling of Event
+    @Getter
+    @Setter
+    private boolean handled;
 }
