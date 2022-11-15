@@ -71,6 +71,7 @@ public final class Main implements SocksSupport {
         public List<String> bypassHosts;
         public int steeringTTL;
         public List<String> gfwList;
+        public List<String> directList;
         public int ddnsSeconds;
         public List<String> ddnsDomains;
         public String godaddyKey;
@@ -229,22 +230,27 @@ public final class Main implements SocksSupport {
                 }
                 //bypass
                 if (Sockets.isBypass(ssConfig.getBypassList(), dstEp.getHost())) {
-                    log.info("ss bypass: {}", dstEp);
+//                    log.info("ss bypass: {}", dstEp);
                     e.setUpstream(new Upstream(dstEp));
                     e.setHandled(true);
                 }
             };
             server.onRoute.replace(ssFirstRoute, (s, e) -> {
                 //gateway
+                boolean gfw;
                 String host = e.getFirstDestination().getHost();
                 if (Sockets.isBypass(conf.gfwList, host)) {
                     log.info("ss gfw: {}", host);
+                    gfw = true;
+                } else if (Sockets.isBypass(conf.directList, host)) {
+                    gfw = false;
                 } else {
-                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(e.getFirstDestination().getHost(), true), SocksSupport.ASYNC_TIMEOUT / 2);
-                    if (ipAddress != null && ipAddress.isChina()) {
-                        e.setUpstream(new Upstream(e.getFirstDestination()));
-                        return;
-                    }
+                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(host, true), SocksSupport.ASYNC_TIMEOUT / 2);
+                    gfw = ipAddress == null || !ipAddress.isChina();
+                }
+                if (!gfw) {
+                    e.setUpstream(new Upstream(e.getFirstDestination()));
+                    return;
                 }
 
                 e.setUpstream(new Socks5Upstream(e.getFirstDestination(), directConf, () -> new UpstreamSupport(srvEp, null)));
