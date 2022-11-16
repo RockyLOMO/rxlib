@@ -11,6 +11,7 @@ import org.rx.annotation.Mapping;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
+import org.rx.bean.ULID;
 import org.rx.bean.WeakIdentityMap;
 import org.rx.core.*;
 import org.rx.test.bean.GirlBean;
@@ -18,10 +19,8 @@ import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 import org.rx.util.*;
 import org.rx.third.guava.CaseFormat;
-import org.springframework.validation.annotation.Validated;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import java.lang.reflect.Method;
 import java.util.*;
 
 import static org.rx.core.Sys.toJsonString;
@@ -112,29 +111,46 @@ public class UtilTester extends AbstractTester {
         System.out.println(c);
     }
 
-    @Data
-    public static class TwoPerson {
-        @NotNull
-        public String name;
-        @Valid
-        public PersonBean person = new PersonBean();
-
-        @Validated
-        @NotNull
-        public String renew(@NotNull @Valid List<PersonBean> person) {
-            return null;
-        }
-    }
-
     @Test
     @SneakyThrows
     public void validate() {
-        TwoPerson tp = new TwoPerson();
-        Validator.validateBean(tp);
+        GirlBean girl = new GirlBean();
+        try {
+            Validator.validateBean(girl);
+        } catch (ValidateException e) {
+            e.printStackTrace();
+            assert Linq.from("id", "name").contains(e.getPropertyPath());
+        }
+        girl.setId(ULID.randomULID());
+        girl.setName(str_name_wyf);
+        girl.setSister(new GirlBean());
+        try {
+            Validator.validateBean(girl);
+        } catch (ValidateException e) {
+            e.printStackTrace();
+            assert Linq.from("sister.id", "sister.name").contains(e.getPropertyPath());
+        }
 
-        Validator.validateMethod(TwoPerson.class.getMethod("renew", List.class), tp, new Object[]{null}, () -> "a");
-        List<TwoPerson> list = Collections.singletonList(tp);
-        Validator.validateBean(list);
+        Method m = GirlBean.class.getMethod("renew", List.class);
+        try {
+            Validator.validateMethod(m, girl, new Object[]{null}, null);
+        } catch (ValidateException e) {
+            e.printStackTrace();
+            assert Linq.from("renew.arg0").contains(e.getPropertyPath());
+        }
+        try {
+            Validator.validateMethod(m, girl, new Object[]{Collections.singletonList(new GirlBean())}, null);
+        } catch (ValidateException e) {
+            e.printStackTrace();
+            assert Linq.from("renew.arg0[0].id", "renew.arg0[0].name").contains(e.getPropertyPath());
+        }
+        try {
+            Validator.validateMethod(m, girl, new Object[]{Collections.emptyList()}, () -> null);
+        } catch (ValidateException e) {
+            e.printStackTrace();
+            assert Linq.from("renew.<return value>").contains(e.getPropertyPath());
+        }
+        Validator.validateMethod(m, girl, new Object[]{Collections.emptyList()}, () -> 0);
     }
 
     @Test

@@ -4,9 +4,12 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.rx.bean.ULID;
+import org.springframework.validation.annotation.Validated;
 
+import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -31,5 +34,12 @@ public class GirlBean {
 
     private Object obj;
     private int[] flags;
+    @Valid
     private GirlBean sister;
+
+    //    @Validated
+    @NotNull
+    public String renew(@Valid @NotNull List<GirlBean> girls) {
+        return null;
+    }
 }
