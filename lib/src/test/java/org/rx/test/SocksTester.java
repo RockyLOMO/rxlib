@@ -595,7 +595,7 @@ public class SocksTester extends AbstractTester {
         InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
         List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(host_devops);
         System.out.println("ddns: " + wanIp + " = " + currentIps);
-        //注入变更 InetAddress.getAllByName 内部查询dnsServer的地址，支持非53端口
+        //注入InetAddress.getAllByName()变更要查询的dnsServer的地址，支持非53端口
         Sockets.injectNameService(Collections.singletonList(localNsEp));
 
         List<InetAddress> wanResult = DnsClient.inlandClient().resolveAll(host_devops);

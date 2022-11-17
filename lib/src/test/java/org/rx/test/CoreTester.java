@@ -169,7 +169,7 @@ public class CoreTester extends AbstractTester {
 
     @Test
     public void threadPoolAutosize() {
-        //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
+        //LinkedTransferQueue基于CAS实现，大部分场景下性能比LinkedBlockingQueue好。
         //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
         //支持netty FastThreadLocal
         long delayMillis = 5000;
@@ -424,16 +424,24 @@ public class CoreTester extends AbstractTester {
 
     @Test
     public void ntpClock() {
+        //硬码方式获取同步时间
         NtpClock clock = NtpClock.UTC;
         log.info("local ts {}", clock.millis());
-//        NtpClock.sync();
-//        log.info("ntp ts {}", clock.millis());
+
+        //手动同步
+        NtpClock.sync();
+        log.info("ntp ts {}", clock.millis());
+
+        //定时同步
         RxConfig.INSTANCE.getNet().getNtp().setSyncPeriod(2000);
         NtpClock.scheduleTask();
         for (int i = 0; i < 10; i++) {
             sleep(2500);
             log.info("ntp ts {}", clock.millis());
         }
+
+        //注入System.currentTimeMillis()方法，全局代码无入侵
+        TimeAdvice.transform();
     }
 
     @Test
