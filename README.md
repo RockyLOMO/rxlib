@@ -2,13 +2,14 @@
 
 # ℞lib-java
 A set of utilities for Java.
+℞lib is a set of core Java libraries that includes dynamic thread pool, ntp client (System.currentTimeMillis() aspect), dns server and client (InetAddress.getByName() aspect), and utilities for concurrency, I/O, socks, and more.
 
 ### Maven
 ```xml
 <dependency>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.18.7</version>
+    <version>2.18.11</version>
 </dependency>
 ```
 ### FEATURE
