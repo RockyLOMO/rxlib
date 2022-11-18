@@ -441,7 +441,7 @@ public class CoreTester extends AbstractTester {
         }
 
         //注入System.currentTimeMillis()方法，全局代码无入侵
-        TimeAdvice.transform();
+        NtpClock.TimeAdvice.transform();
     }
 
     @Test

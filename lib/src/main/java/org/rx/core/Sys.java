@@ -174,18 +174,20 @@ public final class Sys extends SystemUtils {
     @Subscribe(RX_CONF_TOPIC)
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
-        ObjectChangeTracker.ChangedValue changedValue = changedMap.get("net");
+        ObjectChangeTracker.ChangedValue changedValue;
         int enableFlags;
-        if (changedValue != null) {
-            if (changedValue.newValue() != null) {
+        if ((changedValue = changedMap.get("net")) != null) {
+            RxConfig.NetConfig netConfig = changedValue.newValue();
+            if (netConfig == null) {
                 return;
             }
-            enableFlags = changedValue.<RxConfig.NetConfig>newValue().ntp.enableFlags;
+            enableFlags = netConfig.ntp.enableFlags;
         } else if ((changedValue = changedMap.get("net.ntp")) != null) {
-            if (changedValue.newValue() != null) {
+            RxConfig.NtpConfig ntpConfig = changedValue.newValue();
+            if (ntpConfig == null) {
                 return;
             }
-            enableFlags = changedValue.<RxConfig.NtpConfig>newValue().enableFlags;
+            enableFlags = ntpConfig.enableFlags;
         } else {
             changedValue = changedMap.get(getWithoutPrefix(NTP_ENABLE_FLAGS));
             if (changedValue == null) {
@@ -201,7 +203,7 @@ public final class Sys extends SystemUtils {
         if ((enableFlags & 2) == 2) {
             Tasks.setTimeout(() -> {
                 log.info("TimeAdvice inject..");
-                TimeAdvice.transform();
+                NtpClock.TimeAdvice.transform();
             }, 60000);
         }
     }

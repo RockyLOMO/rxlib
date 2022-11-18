@@ -12,16 +12,21 @@ import org.rx.core.*;
 import org.rx.exception.ExceptionLevel;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
+import org.rx.io.IOStream;
 import org.rx.net.http.tunnel.Server;
 import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapper;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import sun.reflect.generics.reflectiveObjects.ParameterizedTypeImpl;
 
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
 import java.lang.management.ManagementFactory;
+import java.lang.reflect.Method;
+import java.lang.reflect.Type;
 import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -67,13 +72,14 @@ public class MxController {
 
     @RequestMapping("health")
     public Object health(HttpServletRequest request) {
-        if (!check(request)) {
+        String x = request.getParameter("x");
+        if (!check(request) || x == null) {
             return null;
         }
         try {
-            switch (Integer.parseInt(request.getParameter("method"))) {
+            switch (Integer.parseInt(x)) {
                 case 1:
-                    String config = request.getParameter("config");
+                    String config = request.getParameter("conf");
                     return BeanMapper.DEFAULT.map(fromJson(config, new TypeReference<RxConfig>() {
                     }.getType()), RxConfig.INSTANCE);
                 case 2:
@@ -97,6 +103,8 @@ public class MxController {
                 case 5:
                     String host = request.getParameter("host");
                     return Linq.from(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
+                case 6:
+                    return invoke(request);
             }
             return svrState(request);
         } catch (Throwable e) {
@@ -120,6 +128,31 @@ public class MxController {
 //            binary.read(out);
 //        }
 //    }
+
+    @SneakyThrows
+    Object invoke(HttpServletRequest request) {
+        String b = request.getParameter("body");
+        if (b == null) {
+            b = IOStream.readString(request.getInputStream(), StandardCharsets.UTF_8);
+        }
+        Map<String, Object> params = toJsonObject(b);
+
+        Class<?> kls = Class.forName((String) params.get("bean"));
+        Object bean = SpringContext.getBean(kls);
+        Method method = Reflects.getMethodMap(kls).get((String) params.get("method")).first();
+        Object arg = fromJson(params.get("args"), kls);
+
+        String genericField = (String) params.get("genericField");
+        if (genericField != null) {
+            Object subArg = Reflects.readField(arg, genericField);
+            Type type = method.getGenericParameterTypes()[0];
+            if (subArg instanceof JSONObject && type instanceof ParameterizedTypeImpl) {
+                ParameterizedTypeImpl pt = (ParameterizedTypeImpl) type;
+                Reflects.writeField(arg, genericField, fromJson(subArg, pt.getActualTypeArguments()[0]));
+            }
+        }
+        return Reflects.invokeMethod(method, bean, new Object[]{arg});
+    }
 
     Map<String, Object> svrState(HttpServletRequest request) {
         Map<String, Object> j = new LinkedHashMap<>();
