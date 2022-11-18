@@ -2,9 +2,11 @@ package org.rx.core;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.apache.commons.lang3.ClassUtils;
 import org.rx.bean.WeakIdentityMap;
 import org.rx.exception.InvalidException;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -12,16 +14,16 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 
 @SuppressWarnings(NON_UNCHECKED)
 public final class Container {
-    static final Map<Class<?>, Object> HOLDER = new ConcurrentHashMap<>(8);
+    static final Map<Class<?>, Object> holder = new ConcurrentHashMap<>(8);
     //不要放值类型
     static final Map WEAK_IDENTITY_MAP = new WeakIdentityMap<>();
 
     @SneakyThrows
     public static <T> T getOrDefault(Class<T> type, Class<? extends T> defType) {
-        T instance = (T) HOLDER.get(type);
+        T instance = (T) holder.get(type);
         if (instance == null) {
             Class.forName(type.getName());
-            instance = (T) HOLDER.get(type);
+            instance = (T) holder.get(type);
             if (instance == null) {
                 return get(defType);
             }
@@ -31,10 +33,10 @@ public final class Container {
 
     @SneakyThrows
     public static <T> T get(Class<T> type) {
-        T instance = (T) HOLDER.get(type);
+        T instance = (T) holder.get(type);
         if (instance == null) {
             Class.forName(type.getName());
-            instance = (T) HOLDER.get(type);
+            instance = (T) holder.get(type);
             if (instance == null) {
                 throw new InvalidException("Bean {} not registered", type.getName());
             }
@@ -43,11 +45,16 @@ public final class Container {
     }
 
     public static <T> void register(@NonNull Class<T> type, @NonNull T instance) {
-        HOLDER.put(type, instance);
+//        List<Class<?>> types = ClassUtils.getAllSuperclasses(type);
+//        types.remove(Object.class);
+//        for (Class<?> t : types) {
+//            holder.put(t, instance);
+//        }
+        holder.put(type, instance);
     }
 
     public static <T> void unregister(Class<T> type) {
-        HOLDER.remove(type);
+        holder.remove(type);
     }
 
     static <K, V> Map<K, V> weakIdentityMap(Object ref) {

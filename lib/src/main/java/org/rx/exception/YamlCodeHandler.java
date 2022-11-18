@@ -65,15 +65,16 @@ public class YamlCodeHandler {
             return;
         }
 
+        Cache<String, Tuple<Class<?>, Method[]>> cache = Cache.getInstance(Cache.MEMORY_CACHE);
         for (StackTraceElement stack : e.getStacks()) {
             Map<String, Object> messageSource = getMessageSource().readAs(stack.getClassName(), Map.class);
             if (messageSource == null) {
                 continue;
             }
-            Tuple<Class<?>, Method[]> caller = as(Cache.getOrSet(stack.getClassName(), p -> {
+            Tuple<Class<?>, Method[]> caller = as(cache.get(stack.getClassName(), p -> {
                 Class<?> type = Reflects.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
-            }, Cache.MEMORY_CACHE), Tuple.class);
+            }), Tuple.class);
             if (caller == null) {
                 continue;
             }

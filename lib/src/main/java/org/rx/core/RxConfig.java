@@ -90,7 +90,7 @@ public final class RxConfig {
     public static class CacheConfig {
         int physicalMemoryUsageWarningThreshold;
 
-        Class mainInstance;
+        Class<? extends Cache> mainCache;
         int slidingSeconds;
         int maxItemSize;
     }
@@ -183,9 +183,9 @@ public final class RxConfig {
         cache.physicalMemoryUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.PHYSICAL_MEMORY_USAGE_WARNING, 95);
         String mc = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
         if (mc != null) {
-            cache.mainInstance = Class.forName(mc);
+            cache.mainCache = (Class<? extends Cache>) Class.forName(mc);
         } else {
-            cache.mainInstance = Cache.MEMORY_CACHE;
+            cache.mainCache = Cache.MEMORY_CACHE;
         }
         cache.slidingSeconds = SystemPropertyUtil.getInt(ConfigNames.CACHE_SLIDING_SECONDS, 60);
         cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, 5000);

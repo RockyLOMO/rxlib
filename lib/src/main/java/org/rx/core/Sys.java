@@ -162,7 +162,7 @@ public final class Sys extends SystemUtils {
 
     static {
         RxConfig conf = RxConfig.INSTANCE;
-        Container.register(Cache.class, Container.<Cache>get(conf.cache.mainInstance));
+//        Container.register(Cache.class, Container.get(conf.cache.mainCache));
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getAllLocalAddresses(), JSON.toJSONString(conf));
         ObjectChangeTracker.DEFAULT.watch(conf, true)
@@ -174,7 +174,7 @@ public final class Sys extends SystemUtils {
     @Subscribe(RX_CONF_TOPIC)
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
-        log.info("RxMeta Sys changed {}", toJsonString(changedMap));
+        log.info("RxMeta Sys changed {}\n{}", toJsonString(changedMap), changedMap);
         ObjectChangeTracker.ChangedValue changedValue;
         int enableFlags;
         if ((changedValue = changedMap.get("net")) != null) {

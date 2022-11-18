@@ -16,24 +16,21 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     Class<ThreadCache> THREAD_CACHE = ThreadCache.class;
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
-        return getOrSet(key, loadingFunc, (CachePolicy) null);
-    }
-
-    static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc, Class<?> cacheName) {
-        return getOrSet(key, loadingFunc, null, cacheName);
+        return getOrSet(key, loadingFunc, null);
     }
 
     static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CachePolicy expiration) {
-        return getOrSet(key, loadingFunc, expiration, Cache.class);
+        return Cache.<TK, TV>getInstance().get(key, loadingFunc, expiration);
     }
 
-    static <TK, TV> TV getOrSet(@NonNull TK key, @NonNull BiFunc<TK, TV> loadingFunc, CachePolicy expiration, Class<?> cacheName) {
-        return Cache.<TK, TV>getInstance(cacheName).get(key, loadingFunc, expiration);
+    static <TK, TV> Cache<TK, TV> getInstance() {
+        //Cache.class
+        return getInstance(RxConfig.INSTANCE.cache.mainCache);
     }
 
     @SuppressWarnings(NON_RAW_TYPES)
-    static <TK, TV> Cache<TK, TV> getInstance(Class<?> cacheName) {
-        return (Cache<TK, TV>) Container.getOrDefault(cacheName, (Class) MemoryCache.class);
+    static <TK, TV> Cache<TK, TV> getInstance(Class<? extends Cache> cacheType) {
+        return (Cache<TK, TV>) Container.getOrDefault(cacheType, (Class) MemoryCache.class);
     }
 
     default TV get(TK key, BiFunc<TK, TV> loadingFunc) {
