@@ -3,29 +3,21 @@ package org.rx.core;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
+import org.rx.annotation.Ignore;
 import org.rx.bean.WeakIdentityMap;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.springframework.cglib.proxy.Enhancer;
 
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.util.*;
 
-import static java.lang.annotation.ElementType.FIELD;
 import static org.rx.core.Extends.*;
 
 @Slf4j
 public class ObjectChangeTracker {
-    @Target(FIELD)
-    @Retention(RetentionPolicy.RUNTIME)
-    public @interface Ignore {
-    }
-
     @RequiredArgsConstructor
     @ToString
     public static class ChangedValue {

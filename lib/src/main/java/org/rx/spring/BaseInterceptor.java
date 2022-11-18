@@ -75,14 +75,7 @@ public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor>
                 eventArgs.setError(e);
             } finally {
                 raiseEvent(onProceed, eventArgs);
-                log(eventArgs, msg -> {
-                    msg.appendLine("Call:\t%s", signature.getName());
-                    msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()))
-                            .appendLine("ReturnValue:\t%s\tElapsed=%s", jsonString(signature, eventArgs.getReturnValue()), Sys.formatNanosElapsed(eventArgs.getElapsedNanos()));
-                    if (eventArgs.getError() != null) {
-                        msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
-                    }
-                });
+                onLog(signature, eventArgs);
             }
             return eventArgs.getReturnValue();
         } finally {
@@ -92,20 +85,23 @@ public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor>
         }
     }
 
+    protected void onLog(Signature signature, ProceedEventArgs eventArgs) {
+        log(eventArgs, msg -> {
+            msg.appendLine("Call:\t%s", signature.getName());
+            msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()))
+                    .appendLine("ReturnValue:\t%s\tElapsed=%s", jsonString(signature, eventArgs.getReturnValue()), Sys.formatNanosElapsed(eventArgs.getElapsedNanos()));
+            if (eventArgs.getError() != null) {
+                msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
+            }
+        });
+    }
+
     private String jsonString(Signature signature, Object... args) {
         if (Arrays.isEmpty(args)) {
             return "{}";
         }
         List<Object> list = Linq.from(args).select(p -> shortArg(signature, p)).toList();
         return toJsonString(list.size() == 1 ? list.get(0) : list);
-    }
-
-    protected final Object defaultValue(Signature signature) {
-        MethodSignature methodSignature = as(signature, MethodSignature.class);
-        if (methodSignature == null) {
-            return null;
-        }
-        return Reflects.defaultValue(methodSignature.getReturnType());
     }
 
     protected Object shortArg(Signature signature, Object arg) {
@@ -122,5 +118,13 @@ public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor>
             }
         }
         return arg;
+    }
+
+    protected final Object defaultValue(Signature signature) {
+        MethodSignature methodSignature = as(signature, MethodSignature.class);
+        if (methodSignature == null) {
+            return null;
+        }
+        return Reflects.defaultValue(methodSignature.getReturnType());
     }
 }
