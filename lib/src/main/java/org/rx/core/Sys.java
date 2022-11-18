@@ -174,6 +174,7 @@ public final class Sys extends SystemUtils {
     @Subscribe(RX_CONF_TOPIC)
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
+        log.info("RxMeta Sys changed {}", changedMap);
         ObjectChangeTracker.ChangedValue changedValue;
         int enableFlags;
         if ((changedValue = changedMap.get("net")) != null) {
