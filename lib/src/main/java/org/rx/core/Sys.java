@@ -174,16 +174,18 @@ public final class Sys extends SystemUtils {
     @Subscribe(RX_CONF_TOPIC)
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
-        log.info("RxMeta Sys changed {}", changedMap);
+        log.info("RxMeta Sys changed {}", toJsonString(changedMap));
         ObjectChangeTracker.ChangedValue changedValue;
         int enableFlags;
         if ((changedValue = changedMap.get("net")) != null) {
+            log.info("RxMeta Sys1 {}", toJsonString(changedValue));
             RxConfig.NetConfig netConfig = changedValue.newValue();
             if (netConfig == null) {
                 return;
             }
             enableFlags = netConfig.ntp.enableFlags;
         } else if ((changedValue = changedMap.get("net.ntp")) != null) {
+            log.info("RxMeta Sys2 {}", toJsonString(changedValue));
             RxConfig.NtpConfig ntpConfig = changedValue.newValue();
             if (ntpConfig == null) {
                 return;
