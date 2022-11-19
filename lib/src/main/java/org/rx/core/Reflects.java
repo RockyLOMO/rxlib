@@ -72,7 +72,6 @@ public class Reflects extends ClassUtils {
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
     static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PACKAGE | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE;
     //must lazy before thread pool init.
-    static final Lazy<Cache<String, Object>> lazyCache = new Lazy<>(() -> Cache.getInstance(Cache.MEMORY_CACHE));
     static final Lazy<Cache<Class<?>, Map<String, Linq<Method>>>> methodCache = new Lazy<>(MemoryCache::new);
     static final Lazy<Cache<Class<?>, Map<String, Field>>> fieldCache = new Lazy<>(MemoryCache::new);
     static final Constructor<MethodHandles.Lookup> lookupConstructor;
@@ -357,7 +356,8 @@ public class Reflects extends ClassUtils {
 
     //region fields
     public static Linq<PropertyNode> getProperties(Class<?> to) {
-        return (Linq<PropertyNode>) lazyCache.getValue().get(fastCacheKey("properties", to), k -> {
+        Cache<String, Linq<PropertyNode>> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+        return cache.get(fastCacheKey("properties", to), k -> {
             Method getClass = Object.class.getDeclaredMethod("getClass");
             Linq<Method> q = Linq.from(to.getMethods());
             Linq<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));
