@@ -34,7 +34,7 @@ public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor>
         }
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
         conf.setTraceName(traceName);
-        ThreadPool.traceIdChangedHandler = p -> logCtx(conf.getTraceName(), p);
+        ThreadPool.traceIdChanger = p -> logCtx(conf.getTraceName(), p);
     }
 
     protected String startTrace(JoinPoint joinPoint, String parentTraceId) {

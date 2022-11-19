@@ -5,7 +5,7 @@ import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.core.Container;
+import org.rx.core.IOC;
 import org.rx.core.EventArgs;
 import org.rx.core.Reflects;
 import org.rx.core.ShellCommander;
@@ -19,7 +19,6 @@ import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
 
 import java.net.InetSocketAddress;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.rx.core.Extends.require;
@@ -95,7 +94,7 @@ public final class SocksContext extends EventArgs {
             if (o != null) {
                 sc.onPrintOut.combine((s, e) -> o.invoke(e));
             }
-            Container.register(ShellCommander.class, sc.start());
+            IOC.register(ShellCommander.class, sc.start());
         } catch (Throwable e) {
             if (o != null) {
                 o.invoke(new ShellCommander.PrintOutEventArgs(0, e.toString()));

@@ -5,7 +5,6 @@ import lombok.SneakyThrows;
 import org.rx.bean.AbstractMap;
 import org.rx.core.cache.DiskCache;
 import org.rx.core.cache.MemoryCache;
-import org.rx.core.cache.ThreadCache;
 import org.rx.util.function.BiFunc;
 
 import static org.rx.core.Constants.NON_RAW_TYPES;
@@ -13,7 +12,6 @@ import static org.rx.core.Constants.NON_RAW_TYPES;
 public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     Class<MemoryCache> MEMORY_CACHE = MemoryCache.class;
     Class<DiskCache> DISK_CACHE = DiskCache.class;
-    Class<ThreadCache> THREAD_CACHE = ThreadCache.class;
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
         return getOrSet(key, loadingFunc, null);
@@ -24,13 +22,12 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     }
 
     static <TK, TV> Cache<TK, TV> getInstance() {
-        //Cache.class
-        return getInstance(RxConfig.INSTANCE.cache.mainCache);
+        return IOC.get(Cache.class);
     }
 
     @SuppressWarnings(NON_RAW_TYPES)
     static <TK, TV> Cache<TK, TV> getInstance(Class<? extends Cache> cacheType) {
-        return (Cache<TK, TV>) Container.getOrDefault(cacheType, (Class) MemoryCache.class);
+        return IOC.get(cacheType, (Class) MemoryCache.class);
     }
 
     default TV get(TK key, BiFunc<TK, TV> loadingFunc) {

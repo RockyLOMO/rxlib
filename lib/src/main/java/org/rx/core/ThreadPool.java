@@ -615,7 +615,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     //region static members
     public static volatile Func<String> traceIdGenerator;
-    public static volatile BiAction<String> traceIdChangedHandler;
+    public static volatile BiAction<String> traceIdChanger;
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
     static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
@@ -638,7 +638,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
         }
 //        log.info("trace init {}", tid);
-        BiAction<String> fn = traceIdChangedHandler;
+        BiAction<String> fn = traceIdChanger;
         if (fn != null) {
             fn.invoke(tid);
         }
@@ -653,7 +653,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static void endTrace() {
 //        log.info("trace remove");
         CTX_TRACE_ID.remove();
-        BiAction<String> fn = traceIdChangedHandler;
+        BiAction<String> fn = traceIdChanger;
         if (fn != null) {
             fn.invoke(null);
         }

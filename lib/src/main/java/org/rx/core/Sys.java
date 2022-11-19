@@ -162,13 +162,14 @@ public final class Sys extends SystemUtils {
 
     static {
         RxConfig conf = RxConfig.INSTANCE;
-//        Container.register(Cache.class, Container.get(conf.cache.mainCache));
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getAllLocalAddresses(), JSON.toJSONString(conf));
+
         ObjectChangeTracker.DEFAULT.watch(conf, true)
                 .register(Sys.class)
                 .register(Tasks.class)
                 .register(TraceHandler.INSTANCE);
+        IOC.register(Cache.class, IOC.get(conf.cache.mainCache));
     }
 
     @Subscribe(RX_CONF_TOPIC)
@@ -266,7 +267,7 @@ public final class Sys extends SystemUtils {
     }
 
     public static <T> T targetObject(Object proxyObject) {
-        return Container.<String, T>weakIdentityMap(proxyObject).get(DPT);
+        return IOC.<String, T>weakIdentityMap(proxyObject).get(DPT);
     }
 
     public static <T> T proxy(Class<?> type, TripleFunc<Method, DynamicProxyBean, Object> func) {
@@ -285,7 +286,7 @@ public final class Sys extends SystemUtils {
             proxyObj = (T) Enhancer.create(type, new DynamicProxyBean(func));
         }
         if (rawObject != null) {
-            Container.weakIdentityMap(proxyObj).put(DPT, rawObject);
+            IOC.weakIdentityMap(proxyObj).put(DPT, rawObject);
         }
         return proxyObj;
     }

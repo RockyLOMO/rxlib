@@ -16,7 +16,7 @@ import static org.rx.core.Extends.require;
 
 public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     static {
-        Container.register(MemoryCache.class, new MemoryCache<>());
+        IOC.register(MemoryCache.class, new MemoryCache<>());
     }
 
     public static Caffeine<Object, Object> weightBuilder(Caffeine<Object, Object> b, float memoryPercent, int entryBytes) {

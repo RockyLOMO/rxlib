@@ -237,7 +237,7 @@ public interface Extends extends Serializable {
     //endregion
 
     default <TK, TV> TV attr(TK key) {
-        Map<TK, TV> attrMap = Container.weakIdentityMap(this);
+        Map<TK, TV> attrMap = IOC.weakIdentityMap(this);
         if (attrMap == null) {
             return null;
         }
@@ -245,7 +245,7 @@ public interface Extends extends Serializable {
     }
 
     default <TK, TV> void attr(TK key, TV value) {
-        Container.weakIdentityMap(this).put(key, value);
+        IOC.weakIdentityMap(this).put(key, value);
     }
 
     default <T> T deepClone() {
