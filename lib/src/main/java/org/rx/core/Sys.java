@@ -23,6 +23,7 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 import org.rx.util.function.TripleFunc;
 import org.slf4j.MDC;
 import org.slf4j.spi.MDCAdapter;
@@ -175,32 +176,12 @@ public final class Sys extends SystemUtils {
     @Subscribe(RX_CONF_TOPIC)
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
-        log.info("RxMeta Sys changed {}\n{}", toJsonString(changedMap), changedMap);
-        ObjectChangeTracker.ChangedValue changedValue;
-        int enableFlags;
-        if ((changedValue = changedMap.get("net")) != null) {
-            log.info("RxMeta Sys1 {}", toJsonString(changedValue));
-            RxConfig.NetConfig netConfig = changedValue.newValue();
-            if (netConfig == null) {
-                return;
-            }
-            enableFlags = netConfig.ntp.enableFlags;
-        } else if ((changedValue = changedMap.get("net.ntp")) != null) {
-            log.info("RxMeta Sys2 {}", toJsonString(changedValue));
-            RxConfig.NtpConfig ntpConfig = changedValue.newValue();
-            if (ntpConfig == null) {
-                return;
-            }
-            enableFlags = ntpConfig.enableFlags;
-        } else {
-            changedValue = changedMap.get(getWithoutPrefix(NTP_ENABLE_FLAGS));
-            if (changedValue == null) {
-                return;
-            }
-            enableFlags = changedValue.newValue();
+//        log.info("RxMeta Sys changed {}", changedMap);
+        Integer enableFlags = event.readValue(getWithoutPrefix(NTP_ENABLE_FLAGS));
+        if (enableFlags == null) {
+            return;
         }
-
-        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, changedValue);
+        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, enableFlags);
         if ((enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
         }
@@ -520,13 +501,26 @@ public final class Sys extends SystemUtils {
     }
 
     //region json
-    public static <T> T readValue(@NonNull Map<String, Object> json, String path) {
+    public static <T> T readJsonValue(@NonNull Map<String, ?> json, String path,
+                                      BiFunc<Object, ?> childSelect,
+                                      boolean throwOnEmptyChild) {
         String[] paths = Strings.split(path, ".");
+        if (paths.length == 0) {
+            return null;
+        }
+
         int last = paths.length - 1;
-        Map<String, Object> tmp = json;
+        Map<String, ?> tmp = json;
         for (int i = 0; i < last; i++) {
-            if ((tmp = as(tmp.get(paths[i]), Map.class)) == null) {
-                throw new InvalidException("Get empty sub object by path {}", paths[i]);
+            Object child = tmp.get(paths[i]);
+            if (childSelect != null) {
+                child = childSelect.apply(child);
+            }
+            if ((tmp = as(child, Map.class)) == null) {
+                if (throwOnEmptyChild) {
+                    throw new InvalidException("Get empty sub object by path {}", paths[i]);
+                }
+                return null;
             }
         }
         return (T) tmp.get(paths[last]);
