@@ -43,7 +43,7 @@ public class Delegate<TSender extends EventPublisher<TSender>, TArgs extends Eve
             if (!target.eventFlags().has(EventPublisher.EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event {} not defined", fnName);
             }
-            d = Container.<String, Delegate<TSender, TArgs>>weakIdentityMap(target).computeIfAbsent(fnName, k -> new Delegate<>());
+            d = IOC.<String, Delegate<TSender, TArgs>>weakIdentityMap(target).computeIfAbsent(fnName, k -> new Delegate<>());
         }
         return d;
     }

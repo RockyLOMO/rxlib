@@ -23,6 +23,7 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 import org.rx.util.function.TripleFunc;
 import org.slf4j.MDC;
 import org.slf4j.spi.MDCAdapter;
@@ -162,46 +163,32 @@ public final class Sys extends SystemUtils {
 
     static {
         RxConfig conf = RxConfig.INSTANCE;
-        Container.register(Cache.class, Container.<Cache>get(conf.cache.mainInstance));
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getAllLocalAddresses(), JSON.toJSONString(conf));
+
         ObjectChangeTracker.DEFAULT.watch(conf, true)
                 .register(Sys.class)
                 .register(Tasks.class)
                 .register(TraceHandler.INSTANCE);
+        IOC.register(Cache.class, IOC.get(conf.cache.mainCache));
     }
 
     @Subscribe(RX_CONF_TOPIC)
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
-        ObjectChangeTracker.ChangedValue changedValue = changedMap.get("net");
-        int enableFlags;
-        if (changedValue != null) {
-            if (changedValue.newValue() != null) {
-                return;
-            }
-            enableFlags = changedValue.<RxConfig.NetConfig>newValue().ntp.enableFlags;
-        } else if ((changedValue = changedMap.get("net.ntp")) != null) {
-            if (changedValue.newValue() != null) {
-                return;
-            }
-            enableFlags = changedValue.<RxConfig.NtpConfig>newValue().enableFlags;
-        } else {
-            changedValue = changedMap.get(getWithoutPrefix(NTP_ENABLE_FLAGS));
-            if (changedValue == null) {
-                return;
-            }
-            enableFlags = changedValue.newValue();
+//        log.info("RxMeta Sys changed {}", changedMap);
+        Integer enableFlags = event.readValue(getWithoutPrefix(NTP_ENABLE_FLAGS));
+        if (enableFlags == null) {
+            return;
         }
-
-        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, changedValue);
+        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, enableFlags);
         if ((enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
         }
         if ((enableFlags & 2) == 2) {
             Tasks.setTimeout(() -> {
                 log.info("TimeAdvice inject..");
-                TimeAdvice.transform();
+                NtpClock.TimeAdvice.transform();
             }, 60000);
         }
     }
@@ -261,7 +248,7 @@ public final class Sys extends SystemUtils {
     }
 
     public static <T> T targetObject(Object proxyObject) {
-        return Container.<String, T>weakIdentityMap(proxyObject).get(DPT);
+        return IOC.<String, T>weakIdentityMap(proxyObject).get(DPT);
     }
 
     public static <T> T proxy(Class<?> type, TripleFunc<Method, DynamicProxyBean, Object> func) {
@@ -280,7 +267,7 @@ public final class Sys extends SystemUtils {
             proxyObj = (T) Enhancer.create(type, new DynamicProxyBean(func));
         }
         if (rawObject != null) {
-            Container.weakIdentityMap(proxyObj).put(DPT, rawObject);
+            IOC.weakIdentityMap(proxyObj).put(DPT, rawObject);
         }
         return proxyObj;
     }
@@ -514,13 +501,26 @@ public final class Sys extends SystemUtils {
     }
 
     //region json
-    public static <T> T readValue(@NonNull Map<String, Object> json, String path) {
+    public static <T> T readJsonValue(@NonNull Map<String, ?> json, String path,
+                                      BiFunc<Object, ?> childSelect,
+                                      boolean throwOnEmptyChild) {
         String[] paths = Strings.split(path, ".");
+        if (paths.length == 0) {
+            return null;
+        }
+
         int last = paths.length - 1;
-        Map<String, Object> tmp = json;
+        Map<String, ?> tmp = json;
         for (int i = 0; i < last; i++) {
-            if ((tmp = as(tmp.get(paths[i]), Map.class)) == null) {
-                throw new InvalidException("Get empty sub object by path {}", paths[i]);
+            Object child = tmp.get(paths[i]);
+            if (childSelect != null) {
+                child = childSelect.apply(child);
+            }
+            if ((tmp = as(child, Map.class)) == null) {
+                if (throwOnEmptyChild) {
+                    throw new InvalidException("Get empty sub object by path {}", paths[i]);
+                }
+                return null;
             }
         }
         return (T) tmp.get(paths[last]);

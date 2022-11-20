@@ -4,7 +4,6 @@ import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.DateTime;
 import org.rx.core.NtpClock;
-import org.rx.core.TimeAdvice;
 
 public class AgentTester extends AbstractTester {
     int total = 10000;
@@ -28,7 +27,7 @@ public class AgentTester extends AbstractTester {
 
     @Test
     public void agentTime2() {
-        TimeAdvice.transform();
+        NtpClock.TimeAdvice.transform();
         System.out.println(System.currentTimeMillis());
         for (int i = 0; i < time; i++) {
             invoke("agent2", x -> System.currentTimeMillis(), total);
@@ -42,7 +41,7 @@ public class AgentTester extends AbstractTester {
         System.out.println(new DateTime(ts));
 
         //inject
-        TimeAdvice.transform();
+        NtpClock.TimeAdvice.transform();
         NtpClock.sync();
         ts = System.currentTimeMillis();
         System.out.println(ts);

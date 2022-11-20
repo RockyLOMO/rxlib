@@ -18,4 +18,17 @@ public class ObjectChangedEvent extends EventObject {
     public <T> T source() {
         return (T) getSource();
     }
+
+    public <T> T readValue(String path) {
+        return readValue(path, false);
+    }
+
+    public <T> T readValue(String path, boolean throwOnEmptyChild) {
+        return Sys.readJsonValue(changedMap, path, p -> {
+            if (p instanceof ObjectChangeTracker.ChangedValue) {
+                return ((ObjectChangeTracker.ChangedValue) p).newValue();
+            }
+            return p;
+        }, throwOnEmptyChild);
+    }
 }

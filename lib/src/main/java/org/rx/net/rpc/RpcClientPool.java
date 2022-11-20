@@ -22,7 +22,7 @@ class RpcClientPool extends Disposable implements TcpClientPool {
             client.connect(config.getServerEndpoint());
             log.debug("Create RpcClient {}", client);
             return client;
-        }, StatefulTcpClient::isConnected, client -> {
+        }, c -> c.getConfig().isEnableReconnect() || c.isConnected(), client -> {
             client.getConfig().setEnableReconnect(false);
             client.onError.purge();
             client.onReceive.purge();
@@ -45,9 +45,7 @@ class RpcClientPool extends Disposable implements TcpClientPool {
     public StatefulTcpClient borrowClient() {
         checkNotClosed();
 
-        StatefulTcpClient client = pool.borrow();
-        log.debug("Take RpcClient {}", client);
-        return client;
+        return pool.borrow();
     }
 
     @SneakyThrows
@@ -55,13 +53,7 @@ class RpcClientPool extends Disposable implements TcpClientPool {
     public StatefulTcpClient returnClient(StatefulTcpClient client) {
         checkNotClosed();
 
-        if (!client.getConfig().isEnableReconnect() && !client.isConnected()) {
-            pool.retire(client);
-            return null;
-        }
-
         pool.recycle(client);
-        log.debug("Return RpcClient {}", client);
         return null;
     }
 }
