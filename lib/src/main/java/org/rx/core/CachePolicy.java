@@ -16,7 +16,7 @@ public class CachePolicy implements Serializable {
 
     public static CachePolicy today(int expireSeconds) {
         DateTime now = DateTime.now(), expire = now.addSeconds(expireSeconds);
-        DateTime max = now.setTimeComponent("23:59:59");
+        DateTime max = now.setTimePart("23:59:59");
         return new CachePolicy((expire.before(max) ? expire : max).getTime(), 0);
     }
 

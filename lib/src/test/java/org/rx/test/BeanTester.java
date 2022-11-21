@@ -193,11 +193,12 @@ public class BeanTester extends AbstractTester {
         assert d2.getYear() == 2011;
         assert d.subtract(d3).getTotalHours() == 24;
 
-        System.out.println(now);
-        System.out.println(utc);
-        System.out.println(d.toDateTimeString());
-
-        assert d.setTimeComponent("14:30:01").toDateTimeString().equals("2010-08-24 14:30:01");
+        long ts = d.getTime();
+        System.out.println(ts);
+        System.out.println(d);
+        String sts = String.valueOf(ts);
+        assert d.toString().equals("2010-08-24 11:12:13," + sts.substring(sts.length() - 3) + "+0800");
+        assert d.setTimePart("14:30:01").toDateTimeString().equals("2010-08-24 14:30:01");
     }
 
     @Test

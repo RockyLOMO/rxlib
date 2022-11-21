@@ -4,6 +4,7 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
+import org.rx.core.Arrays;
 import org.rx.core.Linq;
 import org.rx.exception.ApplicationException;
 
@@ -13,9 +14,8 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
 
-import static org.rx.bean.$.$;
 import static org.rx.core.Constants.NON_UNCHECKED;
-import static org.rx.core.Extends.values;
+import static org.rx.core.Extends.*;
 
 /**
  * GMT: UTC +0
@@ -23,14 +23,13 @@ import static org.rx.core.Extends.values;
  */
 public final class DateTime extends Date {
     private static final long serialVersionUID = 414744178681347341L;
-    public static final DateTime MIN = new DateTime(2000, 1, 1), MAX = new DateTime(9999, 12, 31);
-    public static final Linq<String> FORMATS = Linq.from("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss,SSS", "yyyyMMddHHmmssSSS", "yyyy-MM-dd HH:mm:ss,SSSZ");
-    static final String DATE_PART = "yyyMMdd";
+    public static final DateTime MIN = new DateTime(2000, 1, 1, 0, 0, 0), MAX = new DateTime(9999, 12, 31, 0, 0, 0);
+    static final String DATE_FORMAT = "yyy-MM-dd";
+    static final String TIME_FORMAT = "HH:mm:ss";
+    public static final String DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
+    public static final String FULL_FORMAT = "yyyy-MM-dd HH:mm:ss,SSSZ";
+    public static final Linq<String> FORMATS = Linq.from(DATE_TIME_FORMAT, "yyyy-MM-dd HH:mm:ss,SSS", FULL_FORMAT, "yyyyMMddHHmmssSSS");
     static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
-
-    public static boolean isToday(Date time) {
-        return DateTime.now().toString(DATE_PART).equals(new DateTime(time).toString(DATE_PART));
-    }
 
     public static DateTime now() {
         return new DateTime(System.currentTimeMillis());
@@ -46,17 +45,15 @@ public final class DateTime extends Date {
 
     @ErrorCode(cause = ParseException.class)
     public static DateTime valueOf(String dateString) {
-        ApplicationException lastEx = null;
-        for (String format : FORMATS) {
+        Throwable lastEx = null;
+        for (String format : Arrays.toList(DATE_TIME_FORMAT, "yyyy-MM-dd HH:mm:ss,SSS", FULL_FORMAT, "yyyyMMddHHmmssSSS")) {
             try {
                 return valueOf(dateString, format);
-            } catch (ApplicationException ex) {
+            } catch (Throwable ex) {
                 lastEx = ex;
             }
         }
-        $<ParseException> out = $();
-        Exception nested = lastEx.tryGet(out, ParseException.class) ? out.v : lastEx;
-        throw new ApplicationException(values(String.join(",", FORMATS), dateString), nested);
+        throw new ApplicationException(values(String.join(",", FORMATS), dateString), lastEx);
     }
 
     @SneakyThrows
@@ -75,18 +72,24 @@ public final class DateTime extends Date {
         return calendar;
     }
 
-    public DateTime getDateComponent() {
-        return DateTime.valueOf(toString(DATE_PART), DATE_PART);
+    public DateTime getDatePart() {
+        return DateTime.valueOf(toDateString(), DATE_FORMAT);
     }
 
-    public DateTime getDateTimeComponent() {
-        String f = "yyyyMMddHHmmss";
-        return DateTime.valueOf(toString(f), f);
+    public DateTime setDatePart(String date) {
+        return DateTime.valueOf(date + " " + toTimeString(), DATE_TIME_FORMAT);
     }
 
-    public DateTime setTimeComponent(String time) {
-        String f = "yyyyMMddHH:mm:ss";
-        return DateTime.valueOf(toString(DATE_PART) + time, f);
+    public DateTime getTimePart() {
+        return DateTime.valueOf(toTimeString(), TIME_FORMAT);
+    }
+
+    public DateTime setTimePart(String time) {
+        return DateTime.valueOf(toDateString() + " " + time, DATE_TIME_FORMAT);
+    }
+
+    public boolean isToday() {
+        return DateTime.now().toString(DATE_FORMAT).equals(toDateString());
     }
 
     @SuppressWarnings(NON_UNCHECKED)
@@ -155,10 +158,6 @@ public final class DateTime extends Date {
 
     public double getTotalMilliseconds() {
         return super.getTime();
-    }
-
-    public DateTime(int year, int month, int day) {
-        this(year, month, day, 0, 0, 0);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
@@ -248,16 +247,20 @@ public final class DateTime extends Date {
     }
 
     public String toDateString() {
-        return toString("yyyy-MM-dd");
+        return toString(DATE_FORMAT);
+    }
+
+    public String toTimeString() {
+        return toString(TIME_FORMAT);
     }
 
     public String toDateTimeString() {
-        return toString(FORMATS.first());
+        return toString(DATE_TIME_FORMAT);
     }
 
     @Override
     public String toString() {
-        return toString(FORMATS.last());
+        return toString(FULL_FORMAT);
     }
 
     public String toString(@NonNull String format) {

@@ -84,7 +84,7 @@ public class UtilTester extends AbstractTester {
         f.setIndex(2);
         f.setName(str_name_wyf);
         f.setAge(6);
-        f.setBirth(new DateTime(2020, 2, 20));
+        f.setBirth(new DateTime(2020, 2, 20, 0, 0, 0));
         f.setGender(PersonGender.BOY);
         f.setCashCent(200L);
         GirlBean t = new GirlBean();
