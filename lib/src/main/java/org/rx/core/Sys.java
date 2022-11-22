@@ -587,7 +587,7 @@ public final class Sys extends SystemUtils {
                 q = Linq.from(src);
             }
             Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
-            jsonSkipTypes.addAll(q.where(p -> p != null && !p.getClass().getName().startsWith("java.")).select(Object::getClass).toSet());
+            jsonSkipTypes.addAll(q.where(Objects::nonNull).select(Object::getClass).toSet());
             TraceHandler.INSTANCE.log("toJsonString {}", Linq.from(jsonSkipTypes).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
