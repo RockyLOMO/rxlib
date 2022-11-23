@@ -116,7 +116,28 @@ public final class Main implements SocksSupport {
                 if (Strings.isEmpty(weight)) {
                     continue;
                 }
-                shadowServers.add(new UpstreamSupport(shadowServer, Remoting.createFacade(SocksSupport.class, rpcConf)), Integer.parseInt(weight));
+                SocksSupport facade = Remoting.createFacade(SocksSupport.class, rpcConf);
+                shadowServers.add(new UpstreamSupport(shadowServer, new SocksSupport() {
+                    final DnsClient inlandClient = DnsClient.newInlandClient();
+
+                    @Override
+                    public void fakeEndpoint(long hash, String realEndpoint) {
+                        facade.fakeEndpoint(hash, realEndpoint);
+                    }
+
+                    @Override
+                    public List<InetAddress> resolveHost(String host) {
+                        if (Sockets.isBypass(conf.directList, host)) {
+                            return inlandClient.resolveAll(host);
+                        }
+                        return facade.resolveHost(host);
+                    }
+
+                    @Override
+                    public void addWhiteList(InetAddress endpoint) {
+                        facade.addWhiteList(endpoint);
+                    }
+                }), Integer.parseInt(weight));
             }
             log.info("reload svrs {}", toJsonString(svrs));
 
@@ -140,7 +161,7 @@ public final class Main implements SocksSupport {
         Integer shadowDnsPort = Reflects.convertQuietly(options.get("shadowDnsPort"), Integer.class, 53);
         DnsServer dnsSvr = new DnsServer(shadowDnsPort);
         dnsSvr.setTtl(60 * 60 * 10); //12 hour
-        dnsSvr.setShadowServers(shadowServers);
+        dnsSvr.setInterceptors((RandomList) shadowServers);
         dnsSvr.addHostsFile("hosts.txt");
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
@@ -240,7 +261,7 @@ public final class Main implements SocksSupport {
                 boolean gfw;
                 String host = e.getFirstDestination().getHost();
                 if (Sockets.isBypass(conf.gfwList, host)) {
-                    log.info("ss gfw: {}", host);
+//                    log.info("ss gfw: {}", host);
                     gfw = true;
                 } else if (Sockets.isBypass(conf.directList, host)) {
                     gfw = false;
@@ -291,9 +312,11 @@ public final class Main implements SocksSupport {
         app.await();
     }
 
+    final DnsClient outlandClient = DnsClient.newOutlandClient();
     final SocksProxyServer proxyServer;
 
     void ddns() {
+        DnsClient client = DnsClient.newInlandClient();
         Tasks.schedulePeriod(() -> {
             if (conf == null) {
                 log.warn("conf is null");
@@ -301,7 +324,7 @@ public final class Main implements SocksSupport {
 
             InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
             for (String ddns : conf.ddnsDomains) {
-                List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
+                List<InetAddress> currentIps = client.resolveAll(ddns);
                 if (currentIps.contains(wanIp)) {
                     continue;
                 }
@@ -320,7 +343,7 @@ public final class Main implements SocksSupport {
 
     @Override
     public List<InetAddress> resolveHost(String host) {
-        return DnsClient.outlandClient().resolveAll(host);
+        return outlandClient.resolveAll(host);
     }
 
     @Override

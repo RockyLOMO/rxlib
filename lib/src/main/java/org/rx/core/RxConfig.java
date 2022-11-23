@@ -111,6 +111,7 @@ public final class RxConfig {
         String userAgent;
         final List<String> lanIps = newConcurrentList(true);
         NtpConfig ntp = new NtpConfig();
+        DnsConfig dns = new DnsConfig();
     }
 
     @Data
@@ -120,6 +121,12 @@ public final class RxConfig {
         long syncPeriod;
         long timeoutMillis;
         final List<String> servers = newConcurrentList(true);
+    }
+
+    @Data
+    public static class DnsConfig {
+        final List<String> inlandServers = newConcurrentList(true);
+        final List<String> outlandServers = newConcurrentList(true);
     }
 
     public static final RxConfig INSTANCE;

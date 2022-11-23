@@ -2,12 +2,13 @@ package org.rx.net.support;
 
 import org.rx.core.Arrays;
 import org.rx.core.Cache;
+import org.rx.net.dns.DnsServer;
 
 import java.net.InetAddress;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public interface SocksSupport extends AutoCloseable {
+public interface SocksSupport extends AutoCloseable, DnsServer.ResolveInterceptor {
     String FAKE_HOST_SUFFIX = "x.f-li.cn";
     int[] FAKE_PORT_OBFS = new int[]{443, 3306};
     List<String> FAKE_IPS = new CopyOnWriteArrayList<>();  //There is no need to set up '8.8.8.8'
