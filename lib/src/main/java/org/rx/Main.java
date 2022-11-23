@@ -310,7 +310,6 @@ public final class Main implements SocksSupport {
         app.await();
     }
 
-    final DnsClient outlandClient = DnsClient.newOutlandClient();
     final SocksProxyServer proxyServer;
 
     void ddns() {
@@ -340,7 +339,7 @@ public final class Main implements SocksSupport {
 
     @Override
     public List<InetAddress> resolveHost(String host) {
-        return outlandClient.resolveAll(host);
+        return DnsClient.outlandClient().resolveAll(host);
     }
 
     @Override

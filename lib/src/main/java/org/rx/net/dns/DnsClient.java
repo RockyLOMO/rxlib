@@ -37,7 +37,7 @@ public class DnsClient extends Disposable {
         }
     }
 
-    static DnsClient inlandClient;
+    static DnsClient inlandClient, outlandClient;
 
     public static DnsClient inlandClient() {
         if (inlandClient == null) {
@@ -46,8 +46,11 @@ public class DnsClient extends Disposable {
         return inlandClient;
     }
 
-    public static DnsClient newOutlandClient() {
-        return new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getOutlandServers()).select(Sockets::parseEndpoint).toList());
+    public static DnsClient outlandClient() {
+        if (outlandClient == null) {
+            outlandClient = new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getOutlandServers()).select(Sockets::parseEndpoint).toList());
+        }
+        return outlandClient;
     }
 
     @Getter
