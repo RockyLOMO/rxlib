@@ -37,8 +37,13 @@ public class DnsClient extends Disposable {
         }
     }
 
-    public static DnsClient newInlandClient() {
-        return new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getInlandServers()).select(Sockets::parseEndpoint).toList());
+    static DnsClient inlandClient;
+
+    public static DnsClient inlandClient() {
+        if (inlandClient == null) {
+            inlandClient = new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getInlandServers()).select(Sockets::parseEndpoint).toList());
+        }
+        return inlandClient;
     }
 
     public static DnsClient newOutlandClient() {

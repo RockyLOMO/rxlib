@@ -592,7 +592,7 @@ public class SocksTester extends AbstractTester {
             _notify();
         }, 6000);
 
-        DnsClient inlandClient = DnsClient.newInlandClient();
+        DnsClient inlandClient = DnsClient.inlandClient();
         InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
         List<InetAddress> currentIps = inlandClient.resolveAll(host_devops);
         System.out.println("ddns: " + wanIp + " = " + currentIps);
