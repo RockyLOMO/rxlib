@@ -20,7 +20,6 @@ import org.rx.io.Files;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
-import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -32,6 +31,10 @@ import static org.rx.core.Tasks.awaitQuietly;
 
 @Slf4j
 public class DnsServer extends Disposable {
+    public interface ResolveInterceptor {
+        List<InetAddress> resolveHost(String host);
+    }
+
     static final String DOMAIN_PREFIX = "resolveHost:";
     final ServerBootstrap serverBootstrap;
     @Setter
@@ -42,11 +45,11 @@ public class DnsServer extends Disposable {
     boolean enableHostsWeight;
     @Getter
     final Map<String, RandomList<InetAddress>> hosts = new ConcurrentHashMap<>();
-    RandomList<UpstreamSupport> shadowServers;
-    Cache<String, List<InetAddress>> shadowCache;
+    RandomList<ResolveInterceptor> interceptors;
+    Cache<String, List<InetAddress>> interceptorCache;
 
-    public void setShadowServers(RandomList<UpstreamSupport> shadowServers) {
-        if (CollectionUtils.isEmpty(this.shadowServers = shadowServers)) {
+    public void setInterceptors(RandomList<ResolveInterceptor> interceptors) {
+        if (CollectionUtils.isEmpty(this.interceptors = interceptors)) {
             return;
         }
 
@@ -62,7 +65,7 @@ public class DnsServer extends Disposable {
             String domain = key.substring(DOMAIN_PREFIX.length());
             List<InetAddress> lastAddresses = (List<InetAddress>) entry.getValue();
             List<InetAddress> addresses = awaitQuietly(() -> {
-                List<InetAddress> list = shadowServers.next().getSupport().resolveHost(domain);
+                List<InetAddress> list = interceptors.next().resolveHost(domain);
                 if (CollectionUtils.isEmpty(list)) {
                     return null;
                 }
@@ -75,7 +78,7 @@ public class DnsServer extends Disposable {
             }
             log.info("renew {} lastAddresses={} currentAddresses={}", key, lastAddresses, entry.getValue());
         });
-        shadowCache = (Cache) cache;
+        interceptorCache = (Cache) cache;
     }
 
     public DnsServer(int port) {

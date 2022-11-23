@@ -14,7 +14,6 @@ import org.rx.core.Linq;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
-import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -54,13 +53,13 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             ctx.writeAndFlush(newResponse(query, question, Short.MAX_VALUE, Collections.singletonList(Sockets.getLoopbackAddress().getAddress())));
             return;
         }
-        RandomList<UpstreamSupport> shadowServers = server.shadowServers;
-        if (shadowServers != null) {
+        RandomList<DnsServer.ResolveInterceptor> interceptors = server.interceptors;
+        if (interceptors != null) {
             String k = DOMAIN_PREFIX + domain;
-            List<InetAddress> sIps = server.shadowCache.get(k);
+            List<InetAddress> sIps = server.interceptorCache.get(k);
             if (sIps == null) {
                 //cache value can't be null
-                server.shadowCache.put(k, sIps = quietly(() -> shadowServers.next().getSupport().resolveHost(domain), 2, Collections::emptyList),
+                server.interceptorCache.put(k, sIps = quietly(() -> interceptors.next().resolveHost(domain), 2, Collections::emptyList),
                         CachePolicy.absolute(sIps.isEmpty() ? 5 : server.ttl));
             }
             if (CollectionUtils.isEmpty(sIps)) {

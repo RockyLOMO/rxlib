@@ -35,6 +35,12 @@ app:
         - ntp.aliyun.com
         - ntp.tencent.com
         - cn.pool.ntp.org
+    dns:
+      inlandServers:
+        - "114.114.114.114:53"
+      outlandServers:
+        - "8.8.8.8:53"
+        - "1.1.1.1:53"
   mxSamplingPeriod: 60000
   jsonSkipTypes:
     - javax.servlet.ServletRequest

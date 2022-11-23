@@ -555,7 +555,7 @@ public class SocksTester extends AbstractTester {
         final InetAddress aopIp = InetAddress.getByName("1.2.3.4");
         DnsServer server = new DnsServer(localNsEp.getPort(), Collections.singletonList(nsEp));
 //        DnsServer server = new DnsServer(localNsEp.getPort());
-        server.setShadowServers(new RandomList<>(Collections.singletonList(new UpstreamSupport(null, new SocksSupport() {
+        server.setInterceptors(new RandomList<>(Collections.singletonList(new SocksSupport() {
             @Override
             public void fakeEndpoint(long hash, String realEndpoint) {
 
@@ -573,7 +573,7 @@ public class SocksTester extends AbstractTester {
             public void addWhiteList(InetAddress endpoint) {
 
             }
-        }))));
+        })));
         server.setHostsTtl(5);
         server.setEnableHostsWeight(false);
         server.addHosts(host_devops, 2, Arrays.toList(ip2, ip4));
@@ -592,13 +592,14 @@ public class SocksTester extends AbstractTester {
             _notify();
         }, 6000);
 
+        DnsClient inlandClient = DnsClient.newInlandClient();
         InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
-        List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(host_devops);
+        List<InetAddress> currentIps = inlandClient.resolveAll(host_devops);
         System.out.println("ddns: " + wanIp + " = " + currentIps);
         //注入InetAddress.getAllByName()变更要查询的dnsServer的地址，支持非53端口
         Sockets.injectNameService(Collections.singletonList(localNsEp));
 
-        List<InetAddress> wanResult = DnsClient.inlandClient().resolveAll(host_devops);
+        List<InetAddress> wanResult = inlandClient.resolveAll(host_devops);
         InetAddress[] localResult = InetAddress.getAllByName(host_devops);
         System.out.println("wanResolve: " + wanResult + " != " + toJsonString(localResult));
         assert !wanResult.get(0).equals(localResult[0]);

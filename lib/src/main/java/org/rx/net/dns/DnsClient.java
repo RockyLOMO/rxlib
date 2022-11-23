@@ -8,8 +8,9 @@ import io.netty.resolver.dns.*;
 import io.netty.util.concurrent.Future;
 import lombok.Getter;
 import lombok.NonNull;
-import org.rx.core.Arrays;
 import org.rx.core.Disposable;
+import org.rx.core.Linq;
+import org.rx.core.RxConfig;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 
@@ -36,12 +37,12 @@ public class DnsClient extends Disposable {
         }
     }
 
-    public static DnsClient inlandClient() {
-        return new DnsClient(Arrays.toList(Sockets.parseEndpoint("114.114.114.114:53")));
+    public static DnsClient newInlandClient() {
+        return new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getInlandServers()).select(Sockets::parseEndpoint).toList());
     }
 
-    public static DnsClient outlandClient() {
-        return new DnsClient(Arrays.toList(Sockets.parseEndpoint("8.8.8.8:53"), Sockets.parseEndpoint("1.1.1.1:53")));
+    public static DnsClient newOutlandClient() {
+        return new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getOutlandServers()).select(Sockets::parseEndpoint).toList());
     }
 
     @Getter

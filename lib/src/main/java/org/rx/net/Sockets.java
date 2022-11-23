@@ -39,6 +39,7 @@ import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.dns.DnsClient;
+import org.rx.net.dns.DnsServer;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -47,7 +48,6 @@ import java.lang.reflect.Proxy;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Extends.quietly;
@@ -64,20 +64,23 @@ public final class Sockets {
     static final String SHARED_TCP_REACTOR = "_TCP", SHARED_UDP_REACTOR = "_UDP", SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
-    static volatile BiFunc<String, List<InetAddress>> nsInterceptor;
+    static volatile DnsServer.ResolveInterceptor nsInterceptor;
 
     //region netty
     public static void injectNameService(List<InetSocketAddress> nameServerList) {
-        DnsClient client = CollectionUtils.isEmpty(nameServerList) ? DnsClient.inlandClient() : new DnsClient(nameServerList);
+        if (CollectionUtils.isEmpty(nameServerList)) {
+            throw new InvalidException("Empty server list");
+        }
+        DnsClient client = new DnsClient(nameServerList);
         injectNameService(client::resolveAll);
     }
 
     @SneakyThrows
-    public static void injectNameService(@NonNull BiFunc<String, List<InetAddress>> fn) {
+    public static void injectNameService(@NonNull DnsServer.ResolveInterceptor interceptor) {
         if (nsInterceptor == null) {
             synchronized (Sockets.class) {
                 if (nsInterceptor == null) {
-                    nsInterceptor = fn;
+                    nsInterceptor = interceptor;
                     Class<?> type = InetAddress.class;
                     try {
                         Field field = type.getDeclaredField("nameService");
@@ -92,7 +95,7 @@ public final class Sockets {
                 }
             }
         }
-        nsInterceptor = fn;
+        nsInterceptor = interceptor;
     }
 
     private static Object nsProxy(Object ns) {
@@ -103,7 +106,7 @@ public final class Sockets {
                 String host = (String) args[0];
                 //If all interceptors can't handle it, the source object will process it.
                 try {
-                    List<InetAddress> addresses = nsInterceptor.invoke(host);
+                    List<InetAddress> addresses = nsInterceptor.resolveHost(host);
                     if (!CollectionUtils.isEmpty(addresses)) {
                         return addresses.toArray(empty);
                     }
