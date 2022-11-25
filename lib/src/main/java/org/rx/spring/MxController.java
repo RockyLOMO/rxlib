@@ -164,7 +164,8 @@ public class MxController {
             j.put("UnlockCommercialFeatures", e.toString());
         }
         j.put("vmOptions", Sys.diagnosticMx.getDiagnosticOptions());
-        j.put("sysProperties", System.getProperties());
+        //jackson json issue when ntp enable
+        j.put("sysProperties", Linq.from(System.getProperties().entrySet()).toMap());
         j.put("sysEnv", System.getenv());
         Sys.Info info = Sys.mxInfo();
         JSONObject infoJson = toJsonObject(info);
