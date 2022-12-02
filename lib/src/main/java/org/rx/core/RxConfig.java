@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.LogStrategy;
 import org.rx.net.Sockets;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,6 +52,8 @@ public final class RxConfig {
         String NTP_SYNC_PERIOD = "app.net.ntp.syncPeriod";
         String NTP_TIMEOUT_MILLIS = "app.net.ntp.timeoutMillis";
         String NTP_SERVERS = "app.net.ntp.servers";
+        String DNS_INLAND_SERVERS = "app.net.dns.inlandServers";
+        String DNS_OUTLAND_SERVERS = "app.net.dns.outlandServers";
 
         String APP_ID = "app.id";
         String MX_SAMPLING_PERIOD = "app.mxSamplingPeriod";
@@ -209,20 +212,15 @@ public final class RxConfig {
         }
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, 120);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36 QBCore/4.0.1301.400 QQBrowser/9.0.2524.400 Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2875.116 Safari/537.36 NetType/WIFI MicroMessenger/7.0.5 WindowsWechat");
-        net.lanIps.clear();
-        String v = SystemPropertyUtil.get(ConfigNames.NET_LAN_IPS);
-        if (v != null) {
-            net.lanIps.addAll(Linq.from(Strings.split(v, ",")).toSet());
-        }
+        reset(net.lanIps, ConfigNames.NET_LAN_IPS);
 
         net.ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, 0);
         net.ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, 128000);
         net.ntp.timeoutMillis = SystemPropertyUtil.getLong(ConfigNames.NTP_TIMEOUT_MILLIS, 2048);
-        net.ntp.servers.clear();
-        v = SystemPropertyUtil.get(ConfigNames.NTP_SERVERS);
-        if (v != null) {
-            net.ntp.servers.addAll(Linq.from(Strings.split(v, ",")).toSet());
-        }
+        reset(net.ntp.servers, ConfigNames.NTP_SERVERS);
+
+        reset(net.dns.inlandServers, ConfigNames.DNS_INLAND_SERVERS);
+        reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID);
         if (id == null) {
@@ -232,7 +230,7 @@ public final class RxConfig {
         traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, 1);
         traceErrorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, 10);
         traceSlowElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_ELAPSED_MICROS, 50000);
-        v = SystemPropertyUtil.get(ConfigNames.LOG_STRATEGY);
+        String v = SystemPropertyUtil.get(ConfigNames.LOG_STRATEGY);
         if (v != null) {
             logStrategy = LogStrategy.valueOf(v);
         }
@@ -246,5 +244,14 @@ public final class RxConfig {
         aesKey = SystemPropertyUtil.get(ConfigNames.AES_KEY, "℞FREEDOM");
         omega = SystemPropertyUtil.get(ConfigNames.OMEGA);
         mxpwd = SystemPropertyUtil.get(ConfigNames.MXPWD);
+    }
+
+    void reset(Collection<String> conf, String propName) {
+        conf.clear();
+        String v = SystemPropertyUtil.get(propName);
+        if (v == null) {
+            return;
+        }
+        conf.addAll(Linq.from(Strings.split(v, ",")).toSet());
     }
 }

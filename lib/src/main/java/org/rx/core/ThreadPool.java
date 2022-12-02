@@ -990,27 +990,27 @@ public class ThreadPool extends ThreadPoolExecutor {
     @Override
     protected void afterExecute(Runnable r, Throwable t) {
         Task<?> task = getTask(r, true);
+        //Default Behavior with Callable
+        //The uncaught exception - if one occurs - is considered as a part of this Future.
+        //Thus the JDK doesn't try to notify the handler.
+//      if (t == null && r instanceof FutureTask) {
+//          try {
+//              FutureTask<?> f = (FutureTask<?>) r;
+//              if (f.isDone()) {
+//                  f.get();
+//              }
+//          } catch (CancellationException ce) {
+//              t = ce;
+//          } catch (ExecutionException ee) {
+//              t = ee.getCause();
+//          } catch (InterruptedException ie) {
+//              Thread.currentThread().interrupt();
+//          }
+//          if (t != null) {
+//              TraceHandler.INSTANCE.log(t);
+//          }
+//      }
         if (task == null) {
-            //Default Behavior with Callable
-            //The uncaught exception - if one occurs - is considered as a part of this Future.
-            //Thus the JDK doesn't try to notify the handler.
-//            if (t == null && r instanceof FutureTask) {
-//                try {
-//                    FutureTask<?> f = (FutureTask<?>) r;
-//                    if (f.isDone()) {
-//                        f.get();
-//                    }
-//                } catch (CancellationException ce) {
-//                    t = ce;
-//                } catch (ExecutionException ee) {
-//                    t = ee.getCause();
-//                } catch (InterruptedException ie) {
-//                    Thread.currentThread().interrupt();
-//                }
-//                if (t != null) {
-//                    TraceHandler.INSTANCE.log(t);
-//                }
-//            }
             return;
         }
 

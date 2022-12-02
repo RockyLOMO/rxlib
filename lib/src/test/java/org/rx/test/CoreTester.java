@@ -409,15 +409,26 @@ public class CoreTester extends AbstractTester {
         assert Sys.formatNanosElapsed(2211985, 1).equals("2s");
         assert Sys.formatNanosElapsed(2048211985).equals("2s");
 
-        Sys.mxScheduleTask(p -> {
-            log.info("Disk={} <- {}", p.getDisks().where(DiskInfo::isBootstrapDisk).first().getUsedPercent(),
-                    toJsonString(p));
-        });
+//        Sys.mxScheduleTask(p -> {
+//            log.info("Disk={} <- {}", p.getDisks().where(DiskInfo::isBootstrapDisk).first().getUsedPercent(),
+//                    toJsonString(p));
+//        });
+//
+//        System.out.println("main thread done");
+//        sleep(12000);
+//        log.info("dlt: {}", Sys.findDeadlockedThreads());
+//        log.info("at: {}", Sys.getAllThreads().toJoinString("\n", ThreadInfo::toString));
 
-        System.out.println("main thread done");
-        sleep(12000);
-        log.info("dlt: {}", Sys.findDeadlockedThreads());
-        log.info("at: {}", Sys.getAllThreads().toJoinString("\n", ThreadInfo::toString));
+        Tasks.nextPool().submit(() -> {
+            log.info("pool exec");
+            throw new Exception("pool exec");
+        });
+        Tasks.timer().setTimeout(() -> {
+            log.info("timer exec");
+            throw new Exception("timer exec");
+        }, 1000);
+
+        _wait();
     }
     //endregion
 
