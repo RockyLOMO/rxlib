@@ -38,6 +38,21 @@ public final class Tasks {
             boolean shutdown;
 
             @Override
+            public Future<?> submit(Runnable task) {
+                return nextPool().submit(task);
+            }
+
+            @Override
+            public <T> Future<T> submit(Runnable task, T result) {
+                return nextPool().submit(task, result);
+            }
+
+            @Override
+            public <T> Future<T> submit(Callable<T> task) {
+                return nextPool().submit(task);
+            }
+
+            @Override
             public void execute(Runnable command) {
                 nextPool().execute(command);
             }
