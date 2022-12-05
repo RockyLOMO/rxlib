@@ -45,7 +45,6 @@ import static com.alibaba.fastjson2.JSONReader.Feature.AllowUnQuotedFieldNames;
 import static com.alibaba.fastjson2.JSONReader.Feature.SupportClassForName;
 import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
 import static org.rx.core.Constants.PERCENT;
-import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.as;
 import static org.rx.core.RxConfig.ConfigNames.NTP_ENABLE_FLAGS;
 import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;

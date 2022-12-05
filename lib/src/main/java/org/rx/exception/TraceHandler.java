@@ -21,7 +21,6 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
 
-import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.as;
 import static org.rx.core.RxConfig.ConfigNames.TRACE_KEEP_DAYS;
 import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;

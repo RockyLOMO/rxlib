@@ -31,7 +31,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Sys.fromJson;
 import static org.rx.core.Sys.toJsonObject;
