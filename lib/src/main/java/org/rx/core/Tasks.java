@@ -92,7 +92,7 @@ public final class Tasks {
         }));
     }
 
-    @Subscribe(RX_CONF_TOPIC)
+    @Subscribe(topicClass = RxConfig.class)
     static synchronized void onChanged(ObjectChangedEvent event) {
         int newCount = RxConfig.INSTANCE.threadPool.replicas;
         if (newCount == poolCount) {

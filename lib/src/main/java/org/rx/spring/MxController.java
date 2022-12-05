@@ -217,7 +217,7 @@ public class MxController {
         ObjectChangeTracker.DEFAULT.register(this);
     }
 
-    @Subscribe(RX_CONF_TOPIC)
+    @Subscribe(topicClass = RxConfig.class)
     void onChanged(ObjectChangedEvent event) {
         Tasks.setTimeout(() -> {
             String omega = event.<RxConfig>source().getOmega();

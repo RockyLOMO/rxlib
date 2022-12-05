@@ -14,10 +14,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.newConcurrentList;
 
-@Metadata(RX_CONF_TOPIC)
+@Metadata(topicClass = RxConfig.class)
 @Slf4j
 @Data
 public final class RxConfig {

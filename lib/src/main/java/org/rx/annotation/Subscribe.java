@@ -12,4 +12,8 @@ import static java.lang.annotation.ElementType.*;
 @Documented
 public @interface Subscribe {
     String value() default "";
+
+    String topic() default "";
+
+    Class<?> topicClass() default Object.class;
 }

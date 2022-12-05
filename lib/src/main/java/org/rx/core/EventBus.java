@@ -27,7 +27,16 @@ public class EventBus implements EventPublisher<EventBus> {
             Class<?> eventType = entry.getKey();
             Set<Tuple<Object, Method>> eventMethods = entry.getValue();
             Map<String, Set<Tuple<Object, Method>>> topicMap = subscribers.computeIfAbsent(eventType, k -> new ConcurrentHashMap<>(TOPIC_MAP_INITIAL_CAPACITY));
-            for (Map.Entry<String, Set<Tuple<Object, Method>>> subEntry : Linq.from(eventMethods).groupByIntoMap(p -> p.right.getAnnotation(Subscribe.class).value(), (p, x) -> x.toSet()).entrySet()) {
+            for (Map.Entry<String, Set<Tuple<Object, Method>>> subEntry : Linq.from(eventMethods).groupByIntoMap(p -> {
+                Subscribe m = p.right.getAnnotation(Subscribe.class);
+                if (m.topicClass() != Object.class) {
+                    return m.topicClass().getName();
+                }
+                if (!m.topic().isEmpty()) {
+                    return m.topic();
+                }
+                return m.value();
+            }, (p, x) -> x.toSet()).entrySet()) {
                 topicMap.computeIfAbsent(subEntry.getKey(), k -> new CopyOnWriteArraySet<>()).addAll(subEntry.getValue());
             }
         }
@@ -75,8 +84,16 @@ public class EventBus implements EventPublisher<EventBus> {
     }
 
     public <T> void publish(T event) {
+        String topic = null;
         Metadata m = event.getClass().getAnnotation(Metadata.class);
-        publish(event, m != null ? m.value() : null);
+        if (m != null) {
+            if (m.topicClass() != Object.class) {
+                topic = m.topicClass().getName();
+            } else if (!m.topic().isEmpty()) {
+                topic = m.topic();
+            }
+        }
+        publish(event, topic);
     }
 
     public <T> void publish(@NonNull T event, String topic) {

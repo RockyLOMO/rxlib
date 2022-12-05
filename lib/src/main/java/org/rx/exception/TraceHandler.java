@@ -98,7 +98,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
     }
 
-    @Subscribe(RX_CONF_TOPIC)
+    @Subscribe(topicClass = RxConfig.class)
     void onChanged(ObjectChangedEvent event) {
         ObjectChangeTracker.ChangedValue changedValue = event.getChangedMap().get(getWithoutPrefix(TRACE_KEEP_DAYS));
         if (changedValue == null) {

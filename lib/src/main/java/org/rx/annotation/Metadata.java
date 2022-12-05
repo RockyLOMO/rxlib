@@ -11,4 +11,8 @@ public @interface Metadata {
     String value() default "";
 
     boolean ignore() default false;
+
+    String topic() default "";
+
+    Class<?> topicClass() default Object.class;
 }

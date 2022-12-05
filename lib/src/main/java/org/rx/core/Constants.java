@@ -11,7 +11,6 @@ public interface Constants {
     String RX_CONFIG_FILE = "rx.yml";
     int CPU_THREADS = Runtime.getRuntime().availableProcessors();
     String DEFAULT_TRACE_NAME = "rx-traceId";
-    String RX_CONF_TOPIC = "RxConf";
 
     String CONFIG_KEY_SPLITS = ".";
     String CACHE_KEY_SUFFIX = ":";

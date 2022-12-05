@@ -173,7 +173,7 @@ public final class Sys extends SystemUtils {
         IOC.register(Cache.class, IOC.get(conf.cache.mainCache));
     }
 
-    @Subscribe(RX_CONF_TOPIC)
+    @Subscribe(topicClass = RxConfig.class)
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
 //        log.info("RxMeta Sys changed {}", changedMap);
