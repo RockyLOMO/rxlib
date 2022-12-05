@@ -35,6 +35,6 @@ public interface NEnum<T extends Enum<T> & NEnum<T>> extends Serializable {
     @SneakyThrows
     default String description() {
         Class<?> type = this.getClass();
-        return Extends.description(type.getField(((T) this).name()));
+        return Extends.metadata(type.getField(((T) this).name()));
     }
 }

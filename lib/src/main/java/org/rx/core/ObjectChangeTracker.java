@@ -3,7 +3,7 @@ package org.rx.core;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
-import org.rx.annotation.Ignore;
+import org.rx.annotation.Metadata;
 import org.rx.bean.WeakIdentityMap;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -107,8 +107,9 @@ public class ObjectChangeTracker {
 
     @SneakyThrows
     static void resolve(Map<String, Object> parent, String parentName, boolean concatName, Object obj, Field field, int recursionDepth) {
+        Metadata m = field.getAnnotation(Metadata.class);
         Object val;
-        if (field.isAnnotationPresent(Ignore.class) || (val = field.get(obj)) == null) {
+        if ((m != null && m.ignore()) || (val = field.get(obj)) == null) {
             return;
         }
 
@@ -210,7 +211,8 @@ public class ObjectChangeTracker {
         }
         log.info("Tracker {} ->\n\t{}\n\t{}\n-> {}", target, oldMap, newMap, Sys.toJsonString(changedValues));
         sources.put(target, newMap);
-        bus.publish(new ObjectChangedEvent(target, changedValues));
+
+        bus.publish(new ObjectChangedEvent(target, changedValues), Extends.metadata(target.getClass()));
     }
 
     public <T> ObjectChangeTracker watch(T source) {

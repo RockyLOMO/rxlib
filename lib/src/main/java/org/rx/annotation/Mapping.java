@@ -9,11 +9,13 @@ import static java.lang.annotation.ElementType.*;
 
 @Target({METHOD})
 @Retention(RetentionPolicy.RUNTIME)
+@Documented
 @Inherited
 @Repeatable(Mapping.Mappings.class)
 public @interface Mapping {
     @Target({METHOD})
     @Retention(RetentionPolicy.RUNTIME)
+    @Documented
     @Inherited
     @interface Mappings {
         Mapping[] value();

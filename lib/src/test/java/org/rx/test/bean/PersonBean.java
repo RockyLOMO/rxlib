@@ -4,7 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.rx.annotation.DbColumn;
-import org.rx.annotation.Description;
+import org.rx.annotation.Metadata;
 import org.rx.bean.DateTime;
 import org.rx.bean.Decimal;
 import org.rx.bean.ULID;
@@ -17,7 +17,7 @@ import java.util.Date;
 @NoArgsConstructor
 @AllArgsConstructor
 @Data
-@Description("person")
+@Metadata("person")
 public class PersonBean implements IPerson, Extends {
     public static final int[] PROP_Flags = new int[]{2, 4};
     public static final Object[] PROP_EXTRA = new Object[]{0, "a"};
