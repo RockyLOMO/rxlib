@@ -32,10 +32,10 @@ public class SpringConfig
 //        return (e, m, a) -> TraceHandler.INSTANCE.log(e);
 //    }
 
-    @Bean("defaultExecutorService")
-    public ExecutorService executorService() {
-        return Tasks.executor();
-    }
+//    @Bean("defaultExecutorService")
+//    public ExecutorService executorService() {
+//        return Tasks.executor();
+//    }
 
     @Bean
     public Server server() {

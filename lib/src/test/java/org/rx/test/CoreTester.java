@@ -505,9 +505,6 @@ public class CoreTester extends AbstractTester {
 
         bus.register(this);
         bus.register(this);
-        bus.register(this, MY_TOPIC);
-        bus.register(this, MY_TOPIC);
-        bus.register(this, HER_TOPIC);
         for (int i = 0; i < 4; i++) {
             String topic = i % 2 == 0 ? MY_TOPIC : null;
             bus.publish(PersonBean.YouFan, topic);
@@ -524,7 +521,7 @@ public class CoreTester extends AbstractTester {
         assert eventBusTopicCounter.get() == 4;
         assert deadEventCounter.get() == 2;
 
-        bus.register(this, MY_TOPIC);
+        bus.register(this);
         for (int i = 0; i < 4; i++) {
             String topic = i % 2 == 0 ? MY_TOPIC : null;
             bus.publish(PersonBean.YouFan, topic);

@@ -5,6 +5,7 @@ import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.annotation.Metadata;
 import org.rx.bean.LogStrategy;
 import org.rx.net.Sockets;
 
@@ -15,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.newConcurrentList;
 
+@Metadata(topicClass = RxConfig.class)
 @Slf4j
 @Data
 public final class RxConfig {

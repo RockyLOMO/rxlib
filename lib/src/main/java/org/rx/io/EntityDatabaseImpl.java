@@ -566,9 +566,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     @Override
     public String tableName(Class<?> entityType) {
-        String desc = Extends.description(entityType);
-        if (desc != null) {
-            return desc;
+        String n = Extends.metadata(entityType);
+        if (n != null) {
+            return n;
         }
         return autoUnderscoreColumnName ? CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, entityType.getSimpleName())
                 : entityType.getSimpleName();

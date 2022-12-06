@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
 
-import static org.rx.core.Constants.RX_CONF_TOPIC;
 import static org.rx.core.Extends.circuitContinue;
 
 //Java 11 ForkJoinPool.commonPool() has class loading issue
@@ -92,7 +91,7 @@ public final class Tasks {
         }));
     }
 
-    @Subscribe(RX_CONF_TOPIC)
+    @Subscribe(topicClass = RxConfig.class)
     static synchronized void onChanged(ObjectChangedEvent event) {
         int newCount = RxConfig.INSTANCE.threadPool.replicas;
         if (newCount == poolCount) {

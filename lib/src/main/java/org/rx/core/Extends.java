@@ -3,7 +3,7 @@ package org.rx.core;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.reflect.TypeUtils;
-import org.rx.annotation.Description;
+import org.rx.annotation.Metadata;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
@@ -197,12 +197,12 @@ public interface Extends extends Serializable {
         return true;
     }
 
-    static String description(@NonNull AnnotatedElement annotatedElement) {
-        Description desc = annotatedElement.getAnnotation(Description.class);
-        if (desc == null) {
+    static String metadata(@NonNull AnnotatedElement annotatedElement) {
+        Metadata m = annotatedElement.getAnnotation(Metadata.class);
+        if (m == null) {
             return null;
         }
-        return desc.value();
+        return m.value();
     }
 
     static Object[] values(Object... args) {

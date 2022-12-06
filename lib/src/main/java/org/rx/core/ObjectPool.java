@@ -3,7 +3,6 @@ package org.rx.core;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -66,7 +65,7 @@ public class ObjectPool<T> extends Disposable {
     long idleTimeout = 600000;
     @Getter
     long validationTimeout = 5000;
-    //    long keepaliveTime;
+//    long keepaliveTime;
 //    long maxLifetime = 1800000;
     @Getter
     long leakDetectionThreshold;
@@ -146,13 +145,12 @@ public class ObjectPool<T> extends Disposable {
         });
     }
 
-    @SneakyThrows
     T doCreate() {
         if (size() > maxSize) {
             return null;
         }
 
-        T obj = createHandler.invoke();
+        T obj = createHandler.get();
 
         if (!stack.offer(obj)) {
 //            throw new InvalidException("create object fail");
@@ -166,7 +164,7 @@ public class ObjectPool<T> extends Disposable {
         size.incrementAndGet();
 
         if (passivateHandler != null) {
-            passivateHandler.invoke(obj);
+            passivateHandler.accept(obj);
         }
         return obj;
     }
@@ -211,7 +209,6 @@ public class ObjectPool<T> extends Disposable {
         return obj;
     }
 
-    @SneakyThrows
     public void recycle(@NonNull T obj) {
         if (!validateHandler.test(obj)) {
             doRetire(obj);
@@ -234,7 +231,7 @@ public class ObjectPool<T> extends Disposable {
         }
 
         if (passivateHandler != null) {
-            passivateHandler.invoke(obj);
+            passivateHandler.accept(obj);
         }
     }
 

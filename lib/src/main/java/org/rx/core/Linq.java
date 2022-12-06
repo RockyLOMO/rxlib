@@ -19,7 +19,6 @@ import java.lang.reflect.Array;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.ToDoubleFunction;
@@ -227,19 +226,19 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return me(stream().filter(p -> predicate.test(p, counter.getAndIncrement())));
     }
 
-    public <TI, TR> Linq<TR> join(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> join(Iterable<TI> inner, BiPredicate<T, TI> keySelector, TripleFunc<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3))));
     }
 
-    public <TI, TR> Linq<TR> join(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> join(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, TripleFunc<T, TI, TR> resultSelector) {
         return join(stream().map(innerSelector).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> Linq<TR> joinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> joinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, TripleFunc<T, TI, TR> resultSelector) {
         return join(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> Linq<TR> leftJoin(Iterable<TI> inner, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> leftJoin(Iterable<TI> inner, BiPredicate<T, TI> keySelector, TripleFunc<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> {
             if (!newStream(inner).anyMatch(p2 -> keySelector.test(p, p2))) {
                 return Stream.of(resultSelector.apply(p, null));
@@ -248,11 +247,11 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         }));
     }
 
-    public <TI, TR> Linq<TR> leftJoin(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> leftJoin(BiFunc<T, TI> innerSelector, BiPredicate<T, TI> keySelector, TripleFunc<T, TI, TR> resultSelector) {
         return leftJoin(stream().map(innerSelector).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> Linq<TR> leftJoinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, BiFunction<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> leftJoinMany(BiFunc<T, Iterable<TI>> innerSelector, BiPredicate<T, TI> keySelector, TripleFunc<T, TI, TR> resultSelector) {
         return leftJoin(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
@@ -361,7 +360,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         }
     }
 
-    public <TK, TR> Linq<TR> groupBy(BiFunc<T, TK> keySelector, BiFunction<TK, Linq<T>, TR> resultSelector) {
+    public <TK, TR> Linq<TR> groupBy(BiFunc<T, TK> keySelector, TripleFunc<TK, Linq<T>, TR> resultSelector) {
         Map<TK, List<T>> map = stream().collect(Collectors.groupingBy(keySelector, this::newMap, Collectors.toList()));
         List<TR> result = newList();
         for (Map.Entry<TK, List<T>> entry : map.entrySet()) {
@@ -370,7 +369,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return me(result);
     }
 
-    public <TK, TR> Map<TK, TR> groupByIntoMap(BiFunc<T, TK> keySelector, BiFunction<TK, Linq<T>, TR> resultSelector) {
+    public <TK, TR> Map<TK, TR> groupByIntoMap(BiFunc<T, TK> keySelector, TripleFunc<TK, Linq<T>, TR> resultSelector) {
         Map<TK, List<T>> map = stream().collect(Collectors.groupingBy(keySelector, this::newMap, Collectors.toList()));
         Map<TK, TR> result = newMap();
         for (Map.Entry<TK, List<T>> entry : map.entrySet()) {
@@ -379,7 +378,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return result;
     }
 
-    public <TR> Linq<TR> groupByMany(BiFunc<T, List<Object>> keySelector, BiFunction<List<Object>, Linq<T>, TR> resultSelector) {
+    public <TR> Linq<TR> groupByMany(BiFunc<T, List<Object>> keySelector, TripleFunc<List<Object>, Linq<T>, TR> resultSelector) {
         Map<List<Object>, List<T>> map = stream().collect(Collectors.groupingBy(keySelector, this::newMap, Collectors.toList()));
         List<TR> result = newList();
         for (Map.Entry<List<Object>, List<T>> entry : map.entrySet()) {
@@ -445,7 +444,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     @SuppressWarnings(NON_UNCHECKED)
     public <TR> Linq<TR> ofType(Class<TR> type) {
-        return where(p -> Reflects.isInstance(p, type)).select(p -> (TR) p);
+        return where(p -> p != null && Reflects.isInstance(p, type)).select(p -> (TR) p);
     }
 
     public T first() {

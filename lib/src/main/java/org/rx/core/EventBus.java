@@ -3,11 +3,13 @@ package org.rx.core;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
+import org.rx.annotation.Metadata;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.Tuple;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 
+import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,21 +21,25 @@ public class EventBus implements EventPublisher<EventBus> {
     static final int TOPIC_MAP_INITIAL_CAPACITY = 4;
     public final Delegate<EventBus, NEventArgs<?>> onDeadEvent = Delegate.create();
     //eventType -> topic -> eventMethodsInListener
-    final Map<Class<?>, Map<String, Set<Tuple<Object, Method>>>> subscribers = new ConcurrentHashMap<>();
+    final Map<Class<?>, Map<Serializable, Set<Tuple<Object, Method>>>> subscribers = new ConcurrentHashMap<>();
 
-    public <T> void register(T subscriber) {
-        register(subscriber, null);
-    }
-
-    public <T> void register(@NonNull T subscriber, String topic) {
-        for (Map.Entry<Class<?>, Set<Tuple<Object, Method>>> entry : findAllSubscribers(subscriber, topic).entrySet()) {
-            if (topic == null) {
-                topic = Strings.EMPTY;
-            }
+    public <T> void register(@NonNull T subscriber) {
+        for (Map.Entry<Class<?>, Set<Tuple<Object, Method>>> entry : findAllSubscribers(subscriber).entrySet()) {
             Class<?> eventType = entry.getKey();
             Set<Tuple<Object, Method>> eventMethods = entry.getValue();
-            subscribers.computeIfAbsent(eventType, k -> new ConcurrentHashMap<>(TOPIC_MAP_INITIAL_CAPACITY))
-                    .computeIfAbsent(topic, k -> new CopyOnWriteArraySet<>()).addAll(eventMethods);
+            Map<Serializable, Set<Tuple<Object, Method>>> topicMap = subscribers.computeIfAbsent(eventType, k -> new ConcurrentHashMap<>(TOPIC_MAP_INITIAL_CAPACITY));
+            for (Map.Entry<Serializable, Set<Tuple<Object, Method>>> subEntry : Linq.from(eventMethods).groupByIntoMap(p -> {
+                Subscribe m = p.right.getAnnotation(Subscribe.class);
+                if (m.topicClass() != Object.class) {
+                    return m.topicClass();
+                }
+                if (!m.topic().isEmpty()) {
+                    return m.topic();
+                }
+                return m.value();
+            }, (p, x) -> x.toSet()).entrySet()) {
+                topicMap.computeIfAbsent(subEntry.getKey(), k -> new CopyOnWriteArraySet<>()).addAll(subEntry.getValue());
+            }
         }
     }
 
@@ -41,12 +47,12 @@ public class EventBus implements EventPublisher<EventBus> {
         unregister(subscriber, null);
     }
 
-    public <T> void unregister(@NonNull T subscriber, String topic) {
-        for (Map.Entry<Class<?>, Set<Tuple<Object, Method>>> entry : findAllSubscribers(subscriber, topic).entrySet()) {
+    public <T, TT extends Serializable> void unregister(@NonNull T subscriber, TT topic) {
+        boolean exist = false;
+        for (Map.Entry<Class<?>, Set<Tuple<Object, Method>>> entry : findAllSubscribers(subscriber).entrySet()) {
             Class<?> eventType = entry.getKey();
             Collection<Tuple<Object, Method>> eventMethods = entry.getValue();
-            Map<String, Set<Tuple<Object, Method>>> topicMap = subscribers.getOrDefault(eventType, Collections.emptyMap());
-            boolean exist = false;
+            Map<Serializable, Set<Tuple<Object, Method>>> topicMap = subscribers.getOrDefault(eventType, Collections.emptyMap());
             if (topic == null) {
                 for (Set<Tuple<Object, Method>> currentSubscribers : topicMap.values()) {
                     if (currentSubscribers.removeAll(eventMethods)) {
@@ -55,20 +61,20 @@ public class EventBus implements EventPublisher<EventBus> {
                 }
             } else {
                 Set<Tuple<Object, Method>> currentSubscribers = topicMap.get(topic);
-                exist = currentSubscribers.removeAll(eventMethods);
+                if (currentSubscribers != null && currentSubscribers.removeAll(eventMethods)) {
+                    exist = true;
+                }
             }
-            if (!exist) {
-                throw new InvalidException("missing event subscriber for an annotated method. Is {}[{}] registered?", subscriber, topic);
-            }
+        }
+        if (!exist) {
+            throw new InvalidException("missing event subscriber for an annotated method. Is {}[{}] registered?", subscriber, topic);
         }
     }
 
-    Map<Class<?>, Set<Tuple<Object, Method>>> findAllSubscribers(Object listener, String topic) {
+    Map<Class<?>, Set<Tuple<Object, Method>>> findAllSubscribers(Object listener) {
         Map<Class<?>, Set<Tuple<Object, Method>>> methodsInListener = new HashMap<>();
-        for (Method method : Linq.from(Reflects.getMethodMap(listener instanceof Class ? (Class<?>) listener : listener.getClass()).values()).selectMany(p -> p).where(p -> {
-            Subscribe subscribe = p.getAnnotation(Subscribe.class);
-            return subscribe != null && (topic == null || Strings.hashEquals(subscribe.value(), topic)) && !p.isSynthetic();
-        })) {
+        for (Method method : Linq.from(Reflects.getMethodMap(listener instanceof Class ? (Class<?>) listener : listener.getClass()).values()).selectMany(p -> p)
+                .where(p -> p.isAnnotationPresent(Subscribe.class) && !p.isSynthetic())) {
             if (method.getParameterCount() != 1) {
                 throw new InvalidException("Subscriber method %s has @Subscribe annotation must have exactly 1 parameter.", method);
             }
@@ -79,10 +85,19 @@ public class EventBus implements EventPublisher<EventBus> {
     }
 
     public <T> void publish(T event) {
-        publish(event, null);
+        Serializable topic = null;
+        Metadata m = event.getClass().getAnnotation(Metadata.class);
+        if (m != null) {
+            if (m.topicClass() != Object.class) {
+                topic = m.topicClass();
+            } else if (!m.topic().isEmpty()) {
+                topic = m.topic();
+            }
+        }
+        publish(event, topic);
     }
 
-    public <T> void publish(@NonNull T event, String topic) {
+    public <T, TT extends Serializable> void publish(@NonNull T event, TT topic) {
         Class<?> type = event.getClass();
         List<Class<?>> eventTypes = ClassUtils.getAllSuperclasses(type);
         eventTypes.add(type);
