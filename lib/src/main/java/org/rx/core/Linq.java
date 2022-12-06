@@ -444,7 +444,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     @SuppressWarnings(NON_UNCHECKED)
     public <TR> Linq<TR> ofType(Class<TR> type) {
-        return where(p -> Reflects.isInstance(p, type)).select(p -> (TR) p);
+        return where(p -> p != null && Reflects.isInstance(p, type)).select(p -> (TR) p);
     }
 
     public T first() {

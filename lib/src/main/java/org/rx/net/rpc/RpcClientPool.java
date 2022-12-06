@@ -33,6 +33,7 @@ class RpcClientPool extends Disposable implements TcpClientPool {
             client.onReconnecting.purge();
         });
         pool.setBorrowTimeout(template.getTcpConfig().getConnectTimeoutMillis());
+        pool.setLeakDetectionThreshold(pool.getIdleTimeout());
     }
 
     @Override
@@ -48,7 +49,6 @@ class RpcClientPool extends Disposable implements TcpClientPool {
         return pool.borrow();
     }
 
-    @SneakyThrows
     @Override
     public StatefulTcpClient returnClient(StatefulTcpClient client) {
         checkNotClosed();
