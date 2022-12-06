@@ -418,7 +418,7 @@ public final class Remoting {
                     pack.returnValue = RemotingContext.invoke(() -> args.proceed(() -> {
                         String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
                         if (tn != null) {
-                            ThreadPool.startTrace(pack.traceId);
+                            ThreadPool.startTrace(pack.traceId, true);
                         }
                         try {
                             return Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters);
