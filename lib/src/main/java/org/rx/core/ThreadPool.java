@@ -616,6 +616,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     //region static members
     public static volatile Func<String> traceIdGenerator;
     public static volatile BiAction<String> traceIdChanger;
+    static final ThreadLocal<Queue<String>> CTX_PARENT_TRACE_ID = new InheritableThreadLocal<>();
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
     static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
@@ -627,17 +628,32 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final Map<Object, LockContext> taskLockMap = new ConcurrentHashMap<>(8);
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
 
-    @SneakyThrows
     public static String startTrace(String traceId) {
+        return startTrace(traceId, false);
+    }
+
+    @SneakyThrows
+    public static String startTrace(String traceId, boolean requiresNew) {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
             tid = traceId != null ? traceId :
                     traceIdGenerator != null ? traceIdGenerator.invoke() : ULID.randomULID().toBase64String();
             CTX_TRACE_ID.set(tid);
         } else if (traceId != null && !traceId.equals(tid)) {
-            log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
+            if (!requiresNew) {
+                log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
+            } else {
+                LinkedList<String> queue = (LinkedList<String>) CTX_PARENT_TRACE_ID.get();
+                if (queue == null) {
+                    CTX_PARENT_TRACE_ID.set(queue = new LinkedList<>());
+                }
+                queue.addFirst(tid);
+                CTX_TRACE_ID.set(traceId);
+                log.info("trace requires new to {} with parent {}", traceId, tid);
+                tid = traceId;
+            }
         }
-//        log.info("trace init {}", tid);
+//        log.info("trace start {}", tid);
         BiAction<String> fn = traceIdChanger;
         if (fn != null) {
             fn.invoke(tid);
@@ -651,11 +667,21 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @SneakyThrows
     public static void endTrace() {
-//        log.info("trace remove");
-        CTX_TRACE_ID.remove();
+//        log.info("trace end");
+        Queue<String> queue = CTX_PARENT_TRACE_ID.get();
+        String parentTid;
+        if (queue != null && (parentTid = queue.poll()) != null) {
+            CTX_TRACE_ID.set(parentTid);
+            if (queue.isEmpty()) {
+                CTX_PARENT_TRACE_ID.remove();
+            }
+        } else {
+            parentTid = null;
+            CTX_TRACE_ID.remove();
+        }
         BiAction<String> fn = traceIdChanger;
         if (fn != null) {
-            fn.invoke(null);
+            fn.invoke(parentTid);
         }
     }
 

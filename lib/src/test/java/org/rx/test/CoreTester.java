@@ -193,87 +193,101 @@ public class CoreTester extends AbstractTester {
         ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
 
         //当线程池无空闲线程时，任务放置队列后，当队列任务执行时会带上正确的traceId
+//        ThreadPool.startTrace(null);
+//        for (int i = 0; i < 2; i++) {
+//            int finalI = i;
+//            pool.run(() -> {
+//                log.info("TRACE DELAY-1 {}", finalI);
+//                pool.run(() -> {
+//                    log.info("TRACE DELAY-1_1 {}", finalI);
+//                    sleep(oneSecond);
+//                });
+//                sleep(oneSecond);
+//            });
+//            log.info("TRACE DELAY MAIN {}", finalI);
+//            pool.run(() -> {
+//                log.info("TRACE DELAY-2 {}", finalI);
+//                sleep(oneSecond);
+//            });
+//        }
+//        ThreadPool.endTrace();
+//        sleep(8000);
+//
+//        //WheelTimer(ScheduledExecutorService) 异步trace
+//        WheelTimer timer = Tasks.timer();
+//        ThreadPool.startTrace(null);
+//        for (int i = 0; i < 2; i++) {
+//            int finalI = i;
+//            timer.setTimeout(() -> {
+//                log.info("TRACE TIMER {}", finalI);
+//                sleep(oneSecond);
+//            }, oneSecond);
+//            log.info("TRACE TIMER MAIN {}", finalI);
+//        }
+//        ThreadPool.endTrace();
+//        sleep(4000);
+//
+//        //CompletableFuture.xxAsync异步方法正确获取trace
+//        ThreadPool.startTrace(null);
+//        for (int i = 0; i < 2; i++) {
+//            int finalI = i;
+//            pool.runAsync(() -> {
+//                log.info("TRACE ASYNC-1 {}", finalI);
+//                pool.runAsync(() -> {
+//                    log.info("TRACE ASYNC-1_1 {}", finalI);
+//                    sleep(oneSecond);
+//                }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
+//                sleep(oneSecond);
+//            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
+//            log.info("TRACE ASYNC MAIN {}", finalI);
+//            pool.runAsync(() -> {
+//                log.info("TRACE ASYNC-2 {}", finalI);
+//                sleep(oneSecond);
+//            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
+//        }
+//        ThreadPool.endTrace();
+//        sleep(10000);
+//
+//        //netty FastThreadLocal 支持继承
+//        FastThreadLocal<Integer> ftl = new FastThreadLocal<>();
+//        ftl.set(64);
+//        pool.run(() -> {
+//            assert ftl.get() == 64;
+//            log.info("Inherit ok 1");
+//        }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
+//
+//        pool.runAsync(() -> {
+//            assert ftl.get() == 64;
+//            log.info("Inherit ok 2");
+//        }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
+//        sleep(2000);
+//
+        log.info("--ExecutorService--");
         ThreadPool.startTrace(null);
-        for (int i = 0; i < 2; i++) {
-            int finalI = i;
-            pool.run(() -> {
-                log.info("TRACE DELAY-1 {}", finalI);
-                pool.run(() -> {
-                    log.info("TRACE DELAY-1_1 {}", finalI);
-                    sleep(oneSecond);
-                });
-                sleep(oneSecond);
-            });
-            log.info("TRACE DELAY MAIN {}", finalI);
-            pool.run(() -> {
-                log.info("TRACE DELAY-2 {}", finalI);
-                sleep(oneSecond);
-            });
-        }
+//        ExecutorService es = pool;
+//        es.submit(() -> {
+//            log.info("submit..");
+//            return 1024;
+//        });
+//        es.execute(() -> {
+//            log.info("exec..");
+//        });
+//        sleep(1000);
+
+        log.info("test scope1 start");
+        ThreadPool.startTrace("newScope1", true);
+        log.info("test scope2 start");
+
+        ThreadPool.startTrace("newScope2", true);
+        log.info("test scope3");
         ThreadPool.endTrace();
-        sleep(8000);
 
-        //WheelTimer(ScheduledExecutorService) 异步trace
-        WheelTimer timer = Tasks.timer();
-        ThreadPool.startTrace(null);
-        for (int i = 0; i < 2; i++) {
-            int finalI = i;
-            timer.setTimeout(() -> {
-                log.info("TRACE TIMER {}", finalI);
-                sleep(oneSecond);
-            }, oneSecond);
-            log.info("TRACE TIMER MAIN {}", finalI);
-        }
+        log.info("test scope2 end");
         ThreadPool.endTrace();
-        sleep(4000);
 
-        //CompletableFuture.xxAsync异步方法正确获取trace
-        ThreadPool.startTrace(null);
-        for (int i = 0; i < 2; i++) {
-            int finalI = i;
-            pool.runAsync(() -> {
-                log.info("TRACE ASYNC-1 {}", finalI);
-                pool.runAsync(() -> {
-                    log.info("TRACE ASYNC-1_1 {}", finalI);
-                    sleep(oneSecond);
-                }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
-                sleep(oneSecond);
-            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
-            log.info("TRACE ASYNC MAIN {}", finalI);
-            pool.runAsync(() -> {
-                log.info("TRACE ASYNC-2 {}", finalI);
-                sleep(oneSecond);
-            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
-        }
+        log.info("test scope1 end");
         ThreadPool.endTrace();
-        sleep(10000);
-
-        //netty FastThreadLocal 支持继承
-        FastThreadLocal<Integer> ftl = new FastThreadLocal<>();
-        ftl.set(64);
-        pool.run(() -> {
-            assert ftl.get() == 64;
-            log.info("Inherit ok 1");
-        }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
-
-        pool.runAsync(() -> {
-            assert ftl.get() == 64;
-            log.info("Inherit ok 2");
-        }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
-        sleep(2000);
-
-        System.out.println("--ExecutorService--");
-        ThreadPool.startTrace(null);
-        ExecutorService es = pool;
-        es.submit(() -> {
-            log.info("submit..");
-            return 1024;
-        });
-        es.execute(() -> {
-            log.info("exec..");
-        });
-        sleep(1000);
-        ThreadPool.endTrace();
+        log.info("--done--");
     }
 
     @SneakyThrows

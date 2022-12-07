@@ -86,14 +86,14 @@ public final class ULID implements Serializable, Comparable<ULID> {
         return new ULID(Bytes.randomBytes(16), System.currentTimeMillis());
     }
 
-    public static ULID newULID(@NonNull Object key) {
+    public static ULID newULID(@NonNull Object key, long timestamp) {
         if (key instanceof String) {
             return newULID(((String) key).getBytes());
         }
         if (key instanceof Long) {
             return newULID(Bytes.getBytes(((Long) key)));
         }
-        return newULID(org.rx.io.Serializer.DEFAULT.serialize(key));
+        return newULID(org.rx.io.Serializer.DEFAULT.serialize(key).toArray(), timestamp);
     }
 
     public static ULID newULID(byte[] key) {
