@@ -18,22 +18,20 @@ import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapper;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import sun.reflect.generics.reflectiveObjects.ParameterizedTypeImpl;
 
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
-import java.lang.reflect.Type;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.rx.core.Extends.eq;
-import static org.rx.core.Sys.fromJson;
-import static org.rx.core.Sys.toJsonObject;
+import static org.rx.core.Sys.*;
 
 @RequiredArgsConstructor
 @RestController
@@ -139,18 +137,10 @@ public class MxController {
         Class<?> kls = Class.forName((String) params.get("bean"));
         Object bean = SpringContext.getBean(kls);
         Method method = Reflects.getMethodMap(kls).get((String) params.get("method")).first();
-        Object arg = fromJson(params.get("args"), kls);
-
-        String genericField = (String) params.get("genericField");
-        if (genericField != null) {
-            Object subArg = Reflects.readField(arg, genericField);
-            Type type = method.getGenericParameterTypes()[0];
-            if (subArg instanceof JSONObject && type instanceof ParameterizedTypeImpl) {
-                ParameterizedTypeImpl pt = (ParameterizedTypeImpl) type;
-                Reflects.writeField(arg, genericField, fromJson(subArg, pt.getActualTypeArguments()[0]));
-            }
-        }
-        return Reflects.invokeMethod(method, bean, new Object[]{arg});
+        List<Object> args = (List<Object>) params.get("args");
+        Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> fromJson(args.get(i), p)).toArray();
+//        log.info("mx invoke {}({})", method, toJsonString(a));
+        return Reflects.invokeMethod(method, bean, a);
     }
 
     Map<String, Object> svrState(HttpServletRequest request) {

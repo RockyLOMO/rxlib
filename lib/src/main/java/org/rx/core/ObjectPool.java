@@ -65,7 +65,7 @@ public class ObjectPool<T> extends Disposable {
     long idleTimeout = 600000;
     @Getter
     long validationTimeout = 5000;
-//    long keepaliveTime;
+    //    long keepaliveTime;
 //    long maxLifetime = 1800000;
     @Getter
     long leakDetectionThreshold;
@@ -202,6 +202,7 @@ public class ObjectPool<T> extends Disposable {
         while ((obj = ifNull(doPoll(), this::doCreate)) == null || !validateHandler.test(obj)) {
             long bt = (System.nanoTime() - start) / Constants.NANO_TO_MILLIS;
             if (borrowTimeout > Constants.TIMEOUT_INFINITE && bt > borrowTimeout) {
+                log.warn("borrow timeout, pool state={}", this);
                 throw new TimeoutException("borrow timeout");
             }
             sleep(bt);
@@ -239,5 +240,19 @@ public class ObjectPool<T> extends Disposable {
         if (!doRetire(obj)) {
             throw new InvalidException("Object '{}' not belong to this pool", obj);
         }
+    }
+
+    @Override
+    public String toString() {
+        return "ObjectPool{" +
+                "stack=" + stack.size() +
+                ", conf=" + conf.size() +
+                ", size=" + size +
+                ", borrowTimeout=" + borrowTimeout +
+                ", idleTimeout=" + idleTimeout +
+                ", validationTimeout=" + validationTimeout +
+                ", leakDetectionThreshold=" + leakDetectionThreshold +
+                ", retireLeak=" + retireLeak +
+                '}';
     }
 }

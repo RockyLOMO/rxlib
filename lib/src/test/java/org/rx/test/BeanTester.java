@@ -115,7 +115,7 @@ public class BeanTester extends AbstractTester {
         ULID id = fromJson(jstr, ULID.class);
         assert jstr.substring(1, jstr.length() - 1).equals(id.toString());
 
-        ULID id1 = ULID.newULID(str_name_wyf);
+        ULID id1 = ULID.newULID(str_name_wyf, System.currentTimeMillis());
         System.out.println(id1);
         ULID valueOf = ULID.valueOf(id1.toString());
         System.out.println(valueOf);
