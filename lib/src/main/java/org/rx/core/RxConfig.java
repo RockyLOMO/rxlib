@@ -29,6 +29,7 @@ public final class RxConfig {
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
+        String THREAD_POOL_MAX_TRACE_DEPTH = "app.threadPool.maxTraceDepth";
         String THREAD_POOL_SAMPLING_PERIOD = "app.threadPool.samplingPeriod";
         String THREAD_POOL_SAMPLING_TIMES = "app.threadPool.samplingTimes";
         String THREAD_POOL_MIN_DYNAMIC_SIZE = "app.threadPool.minDynamicSize";
@@ -82,6 +83,7 @@ public final class RxConfig {
         int highCpuWaterMark;
         int replicas;
         String traceName;
+        int maxTraceDepth;
 
         int cpuLoadWarningThreshold;
         long samplingPeriod;
@@ -185,6 +187,7 @@ public final class RxConfig {
         threadPool.highCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_HIGH_CPU_WATER_MARK, 70);
         threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, 2));
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
+        threadPool.maxTraceDepth = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_TRACE_DEPTH, 5);
         threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, 80);
         threadPool.samplingPeriod = SystemPropertyUtil.getLong(ConfigNames.THREAD_POOL_SAMPLING_PERIOD, 3000);
         threadPool.samplingTimes = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SAMPLING_TIMES, 2);
