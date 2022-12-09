@@ -8,6 +8,7 @@ pipeline {
     environment {
         APP_NAME = 'socks-client'
         JAR_NAME = 'rxlib-2.18.13-SNAPSHOT.jar'
+        RENAME = 'rxlib-latest.jar'
 
         APP_HOST = 's.f-li.cn'
         REMOTE_PATH = '/home/rxsocks/'
@@ -33,7 +34,7 @@ pipeline {
             }
             steps {
                 container ('maven-jdk-11') {
-                    sh '/home/scpx.sh ${JAR_NAME} ${APP_HOST} ${REMOTE_PATH}${JAR_NAME} ${U0}'
+                    sh '/home/scpx.sh ${JAR_NAME} ${APP_HOST} ${REMOTE_PATH}${RENAME} ${U0}'
                     sh '/home/sshx.sh ${APP_HOST} "${REMOTE_PATH}${APP_NAME}.sh" ${U0}'
                     script {
                         sleep(10)
