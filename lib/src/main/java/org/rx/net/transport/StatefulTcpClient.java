@@ -64,7 +64,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             log.info("clientInactive {}", channel.remoteAddress());
 
             raiseEvent(onDisconnected, EventArgs.EMPTY);
-            Tasks.setTimeout(() -> doConnect(true, null), 1000);
+            reconnectAsync();
         }
 
         @Override
@@ -270,6 +270,10 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         });
     }
 
+    void reconnectAsync() {
+        Tasks.setTimeout(() -> doConnect(true, null), 1000, bootstrap, TimeoutFlag.REPLACE.flags());
+    }
+
     ChannelId channelId() {
         return channel != null ? channel.id() : null;
     }
@@ -281,6 +285,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                 try {
                     FluentWait.newInstance(sendWaitConnectMillis).until(s -> isConnected());
                 } catch (TimeoutException e) {
+                    reconnectAsync();
                     throw new ClientDisconnectedException(e);
                 }
             }
