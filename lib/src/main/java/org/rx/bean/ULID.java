@@ -48,18 +48,26 @@ public final class ULID implements Serializable, Comparable<ULID> {
 
     private static final long serialVersionUID = -8408685951892844844L;
 
-    public static ULID valueOf(UUID uuid) {
-        byte[] buf = new byte[16];
-        Bytes.getBytes(uuid.getMostSignificantBits(), buf, 0);
-        Bytes.getBytes(uuid.getLeastSignificantBits(), buf, 8);
-        return new ULID(buf);
+    public static ULID randomULID() {
+        return new ULID(Bytes.randomBytes(16), System.currentTimeMillis());
     }
 
-    public static ULID valueOf(@NonNull byte[] buf) {
-        if (buf.length != 16) {
-            throw new InvalidException("Invalid ULID");
+    public static ULID nameULID(String name) {
+        return new ULID(CodecUtil.md5(name));
+    }
+
+    public static ULID newULID(@NonNull Object name, long timestamp) {
+        if (name instanceof String) {
+            return newULID(((String) name).getBytes(), timestamp);
         }
-        return new ULID(buf);
+        if (name instanceof Long) {
+            return newULID(Bytes.getBytes((Long) name), timestamp);
+        }
+        return newULID(org.rx.io.Serializer.DEFAULT.serialize(name).toArray(), timestamp);
+    }
+
+    public static ULID newULID(byte[] name, long timestamp) {
+        return new ULID(CodecUtil.md5(name), timestamp);
     }
 
     public static ULID valueOf(@NonNull String ulid) {
@@ -82,26 +90,18 @@ public final class ULID implements Serializable, Comparable<ULID> {
         return new ULID(buf);
     }
 
-    public static ULID randomULID() {
-        return new ULID(Bytes.randomBytes(16), System.currentTimeMillis());
+    public static ULID valueOf(UUID uuid) {
+        byte[] buf = new byte[16];
+        Bytes.getBytes(uuid.getMostSignificantBits(), buf, 0);
+        Bytes.getBytes(uuid.getLeastSignificantBits(), buf, 8);
+        return new ULID(buf);
     }
 
-    public static ULID newULID(@NonNull Object key, long timestamp) {
-        if (key instanceof String) {
-            return newULID(((String) key).getBytes());
+    public static ULID valueOf(byte[] buf) {
+        if (buf == null || buf.length != 16) {
+            throw new InvalidException("Invalid ULID");
         }
-        if (key instanceof Long) {
-            return newULID(Bytes.getBytes(((Long) key)));
-        }
-        return newULID(org.rx.io.Serializer.DEFAULT.serialize(key).toArray(), timestamp);
-    }
-
-    public static ULID newULID(byte[] key) {
-        return newULID(key, System.currentTimeMillis());
-    }
-
-    public static ULID newULID(byte[] key, long timestamp) {
-        return new ULID(CodecUtil.md5(key), timestamp);
+        return new ULID(buf);
     }
 
     final byte[] buf;
@@ -132,6 +132,18 @@ public final class ULID implements Serializable, Comparable<ULID> {
             base64String = Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
         }
         return base64String;
+    }
+
+    public UUID toUUID() {
+        byte[] guidBytes = buf;
+        long msb = 0, lsb = 0;
+        for (int i = 0; i < 8; i++) {
+            msb = (msb << 8) | (guidBytes[i] & 0xff);
+        }
+        for (int i = 8; i < 16; i++) {
+            lsb = (lsb << 8) | (guidBytes[i] & 0xff);
+        }
+        return new UUID(msb, lsb);
     }
 
     @Override

@@ -647,6 +647,9 @@ public class ThreadPool extends ThreadPoolExecutor {
                 if (queue == null) {
                     CTX_PARENT_TRACE_ID.set(queue = new LinkedList<>());
                 }
+                if (queue.size() > RxConfig.INSTANCE.threadPool.maxTraceDepth) {
+                    queue.poll();
+                }
                 queue.addFirst(tid);
                 CTX_TRACE_ID.set(traceId);
                 log.info("trace requires new to {} with parent {}", traceId, tid);
