@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
@@ -68,7 +69,7 @@ public class MxController {
     }
 
     @RequestMapping("health")
-    public Object health(HttpServletRequest request) {
+    public Object health(HttpServletRequest request, HttpServletResponse response) {
         String x = request.getParameter("x");
         if (!check(request) || x == null) {
             return null;
@@ -90,6 +91,7 @@ public class MxController {
                     Sys.threadMx.setThreadCpuTimeEnabled(enable);
                     return "ok";
                 case 4:
+                    response.setContentType("text/plain;charset=UTF-8");
                     String a1 = request.getParameter("cmd"),
                             a2 = request.getParameter("workspace");
                     StringBuilder echo = new StringBuilder();
@@ -105,6 +107,7 @@ public class MxController {
             }
             return svrState(request);
         } catch (Throwable e) {
+            response.setContentType("text/plain;charset=UTF-8");
             return String.format("%s\n%s", e, ExceptionUtils.getStackTrace(e));
         }
     }
