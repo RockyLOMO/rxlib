@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
@@ -68,7 +69,7 @@ public class MxController {
     }
 
     @RequestMapping("health")
-    public Object health(HttpServletRequest request) {
+    public Object health(HttpServletRequest request, HttpServletResponse response) {
         String x = request.getParameter("x");
         if (!check(request) || x == null) {
             return null;
@@ -90,21 +91,17 @@ public class MxController {
                     Sys.threadMx.setThreadCpuTimeEnabled(enable);
                     return "ok";
                 case 4:
-                    String a1 = request.getParameter("cmd"),
-                            a2 = request.getParameter("workspace");
-                    StringBuilder echo = new StringBuilder();
-                    ShellCommander cmd = new ShellCommander(a1, a2).setReadFullyThenExit();
-                    cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
-                    cmd.start().waitFor(60);
-                    return echo.toString();
-                case 5:
                     String host = request.getParameter("host");
                     return Linq.from(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
+                case 5:
+                    response.setContentType("text/plain;charset=UTF-8");
+                    return exec(request);
                 case 6:
                     return invoke(request);
             }
             return svrState(request);
         } catch (Throwable e) {
+            response.setContentType("text/plain;charset=UTF-8");
             return String.format("%s\n%s", e, ExceptionUtils.getStackTrace(e));
         }
     }
@@ -128,12 +125,7 @@ public class MxController {
 
     @SneakyThrows
     Object invoke(HttpServletRequest request) {
-        String b = request.getParameter("body");
-        if (b == null) {
-            b = IOStream.readString(request.getInputStream(), StandardCharsets.UTF_8);
-        }
-        Map<String, Object> params = toJsonObject(b);
-
+        Map<String, Object> params = getParams(request);
         Class<?> kls = Class.forName((String) params.get("bean"));
         Object bean = SpringContext.getBean(kls);
         Method method = Reflects.getMethodMap(kls).get((String) params.get("method")).first();
@@ -141,6 +133,26 @@ public class MxController {
         Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> fromJson(args.get(i), p)).toArray();
 //        log.info("mx invoke {}({})", method, toJsonString(a));
         return Reflects.invokeMethod(method, bean, a);
+    }
+
+    Object exec(HttpServletRequest request) {
+        Map<String, Object> params = getParams(request);
+        StringBuilder echo = new StringBuilder();
+        ShellCommander cmd = new ShellCommander((String) params.get("cmd"), String.valueOf(params.get("workspace")))
+//                            .setReadFullyThenExit()
+                ;
+        cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
+        cmd.start().waitFor(30);
+        return echo.toString();
+    }
+
+    @SneakyThrows
+    Map<String, Object> getParams(HttpServletRequest request) {
+        String b = request.getParameter("body");
+        if (b == null) {
+            b = IOStream.readString(request.getInputStream(), StandardCharsets.UTF_8);
+        }
+        return toJsonObject(b);
     }
 
     Map<String, Object> svrState(HttpServletRequest request) {
@@ -177,7 +189,7 @@ public class MxController {
         j.put("sysInfo", infoJson);
         j.put("deadlockedThreads", Sys.findDeadlockedThreads());
         Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
-        int take = 10;
+        int take = 8;
         j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos)
                 .take(take).select(Sys.ThreadInfo::toString));
         j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos)
@@ -191,7 +203,7 @@ public class MxController {
         j.put("rxConfig", RxConfig.INSTANCE);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames()))
                 .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.putAll(queryTraces(null, null, null, null, null, 10, request));
+        j.putAll(queryTraces(null, null, null, null, null, take, request));
         return j;
     }
 

@@ -34,7 +34,6 @@ class RpcClientPool extends Disposable implements TcpClientPool {
         });
         pool.setBorrowTimeout(template.getTcpConfig().getConnectTimeoutMillis());
         pool.setLeakDetectionThreshold(pool.getIdleTimeout());
-        pool.setRetireLeak(true);
     }
 
     @Override
