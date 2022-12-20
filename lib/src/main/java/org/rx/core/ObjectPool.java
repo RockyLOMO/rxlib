@@ -137,9 +137,9 @@ public class ObjectPool<T> extends Disposable {
             }
             if (c.isLeaked(leakDetectionThreshold)) {
                 TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
-                        String.format("Object '%s' leaked.\n%s", obj, Reflects.getStackTrace(c.t)));
+                        String.format("Pool %s owned Object '%s' leaked.\n%s", this, obj, Reflects.getStackTrace(c.t)));
 //                if (retireLeak) {
-                    doRetire(obj);
+                doRetire(obj);
 //                }
             }
         });
@@ -173,14 +173,14 @@ public class ObjectPool<T> extends Disposable {
         boolean ok;
 
         ok = stack.remove(obj);
-        if (ok) {
-            ObjectConf c = conf.remove(obj);
-            size.decrementAndGet();
+//        if (ok) {
+        ObjectConf c = conf.remove(obj);
+        size.decrementAndGet();
 
-            if (!c.isBorrowed()) {
-                tryClose(obj);
-            }
+        if (!c.isBorrowed()) {
+            tryClose(obj);
         }
+//        }
         log.info("doRetire {} -> {}", obj, ok);
         return ok;
     }
