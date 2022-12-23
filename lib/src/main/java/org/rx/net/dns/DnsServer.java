@@ -35,6 +35,7 @@ public class DnsServer extends Disposable {
         List<InetAddress> resolveHost(String host);
     }
 
+    static final boolean ENABLE_AUTO_RENEW = false;
     static final String DOMAIN_PREFIX = "resolveHost:";
     final ServerBootstrap serverBootstrap;
     @Setter
@@ -54,30 +55,32 @@ public class DnsServer extends Disposable {
         }
 
         DiskCache<Object, Object> cache = (DiskCache<Object, Object>) Cache.getInstance(Cache.DISK_CACHE);
-        cache.onExpired.combine((s, e) -> {
-            Map.Entry<Object, Object> entry = e.getValue();
-            String key;
-            if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
-                entry.setValue(null);
-                return;
-            }
-
-            String domain = key.substring(DOMAIN_PREFIX.length());
-            List<InetAddress> lastAddresses = (List<InetAddress>) entry.getValue();
-            List<InetAddress> addresses = awaitQuietly(() -> {
-                List<InetAddress> list = interceptors.next().resolveHost(domain);
-                if (CollectionUtils.isEmpty(list)) {
-                    return null;
+        if (ENABLE_AUTO_RENEW) {
+            cache.onExpired.combine((s, e) -> {
+                Map.Entry<Object, Object> entry = e.getValue();
+                String key;
+                if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
+                    entry.setValue(null);
+                    return;
                 }
-                cache.put(key, list, CachePolicy.absolute(ttl));
-                log.info("renewAsync {} lastAddresses={} addresses={}", key, lastAddresses, list);
-                return list;
-            }, SocksSupport.ASYNC_TIMEOUT);
-            if (!CollectionUtils.isEmpty(addresses)) {
-                entry.setValue(addresses);
-            }
-            log.info("renew {} lastAddresses={} currentAddresses={}", key, lastAddresses, entry.getValue());
-        });
+
+                String domain = key.substring(DOMAIN_PREFIX.length());
+                List<InetAddress> lastAddresses = (List<InetAddress>) entry.getValue();
+                List<InetAddress> addresses = awaitQuietly(() -> {
+                    List<InetAddress> list = interceptors.next().resolveHost(domain);
+                    if (CollectionUtils.isEmpty(list)) {
+                        return null;
+                    }
+                    cache.put(key, list, CachePolicy.absolute(ttl));
+                    log.info("renewAsync {} lastAddresses={} addresses={}", key, lastAddresses, list);
+                    return list;
+                }, SocksSupport.ASYNC_TIMEOUT);
+                if (!CollectionUtils.isEmpty(addresses)) {
+                    entry.setValue(addresses);
+                }
+                log.info("renew {} lastAddresses={} currentAddresses={}", key, lastAddresses, entry.getValue());
+            });
+        }
         interceptorCache = (Cache) cache;
     }
 
