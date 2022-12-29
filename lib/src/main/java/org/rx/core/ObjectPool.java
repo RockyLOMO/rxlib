@@ -175,10 +175,12 @@ public class ObjectPool<T> extends Disposable {
         ok = stack.remove(obj);
 //        if (ok) {
         ObjectConf c = conf.remove(obj);
-        size.decrementAndGet();
+        if (c != null) {
+            size.decrementAndGet();
 
-        if (!c.isBorrowed()) {
-            tryClose(obj);
+            if (!c.isBorrowed()) {
+                tryClose(obj);
+            }
         }
 //        }
         log.info("doRetire {} -> {}", obj, ok);
