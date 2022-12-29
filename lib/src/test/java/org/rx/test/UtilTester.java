@@ -21,6 +21,7 @@ import org.rx.util.*;
 import org.rx.third.guava.CaseFormat;
 
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 import static org.rx.core.Sys.toJsonString;
@@ -238,6 +239,9 @@ public class UtilTester extends AbstractTester {
         assert Strings.compareVersion("1.01", "1.001") == 0;
         assert Strings.compareVersion("1.0", "1.0.0") == 0;
         assert Strings.compareVersion("0.1", "1.1") == -1;
+
+        String ce = "适用苹果ipad 10.2平板钢化膜9.7寸/air5全屏防爆膜2020/2021版高清贴膜10.9/11寸12.9寸护眼抗蓝紫光钢化膜";
+        System.out.println(Strings.subStringByByteLen(ce, 78));
     }
 
     @Data

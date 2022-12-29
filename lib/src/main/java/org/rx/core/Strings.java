@@ -256,6 +256,30 @@ public class Strings extends StringUtils {
         return result;
     }
 
+    public static String subStringByByteLen(String text, int length) {
+        if (Strings.isEmpty(text)) {
+            return "";
+        }
+
+        int count = 0, offset;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) > 256) {
+                offset = 2;
+            } else {
+                offset = 1;
+            }
+            count += offset;
+            if (count >= length) {
+                int end = i + (offset == 2 ? 0 : 1);
+                if (i == 0) {
+                    break;
+                }
+                return text.substring(0, end);
+            }
+        }
+        return text;
+    }
+
     //region Regular
     public interface RegularExp {
         /**
