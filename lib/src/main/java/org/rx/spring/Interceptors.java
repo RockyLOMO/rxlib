@@ -15,6 +15,7 @@ import org.rx.core.Arrays;
 import org.rx.core.RxConfig;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.TraceHandler;
+import org.rx.net.http.HttpClient;
 import org.rx.util.Servlets;
 import org.rx.util.Validator;
 import org.springframework.http.HttpStatus;
@@ -32,6 +33,8 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.lang.reflect.Executable;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.rx.core.Extends.as;
@@ -44,6 +47,7 @@ public class Interceptors {
     @ControllerAdvice
     public static class ControllerInterceptor extends BaseInterceptor {
         final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
+        static final Map<Class<?>, Map<String, String>> fms = new ConcurrentHashMap<>();
 
         @Override
         protected Object shortArg(Signature signature, Object arg) {
@@ -80,6 +84,15 @@ public class Interceptors {
             MethodSignature methodSignature = as(signature, MethodSignature.class);
             if (methodSignature == null || skipMethods.contains(signature.getName())) {
                 return joinPoint.proceed();
+            }
+            Map<String, String> fts = fms.get(methodSignature.getDeclaringType());
+            if (fts != null) {
+                String fu = fts.get(methodSignature.getName());
+                if (fu != null) {
+                    logCtx("fu", fu);
+                    new HttpClient().forward(httpEnv.left, httpEnv.right, fu);
+                    return null;
+                }
             }
             IRequireSignIn requireSignIn = as(joinPoint.getTarget(), IRequireSignIn.class);
             if (requireSignIn != null && !requireSignIn.isSignIn(methodSignature.getMethod(), joinPoint.getArgs())) {

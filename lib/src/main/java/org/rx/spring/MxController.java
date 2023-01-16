@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.quietly;
@@ -94,11 +95,12 @@ public class MxController {
                         target = RxConfig.INSTANCE;
                     }
                     return BeanMapper.DEFAULT.map(source, target);
-                case 2:
+                case 2: {
                     String k = request.getParameter("k"),
                             v = request.getParameter("v");
                     Sys.diagnosticMx.setVMOption(k, v);
                     return "ok";
+                }
                 case 3:
                     boolean enable = Boolean.parseBoolean(request.getParameter("v"));
                     Sys.threadMx.setThreadContentionMonitoringEnabled(enable);
@@ -112,6 +114,20 @@ public class MxController {
                     return exec(request);
                 case 6:
                     return invoke(request);
+                case 7:
+                    Class<?> ft = Class.forName(request.getParameter("ft"));
+                    String fn = request.getParameter("fn");
+                    String fu = request.getParameter("fu");
+                    Map<Class<?>, Map<String, String>> fms = Interceptors.ControllerInterceptor.fms;
+                    if (fu == null) {
+                        Map<String, String> fts = fms.get(ft);
+                        if (fts != null) {
+                            fts.remove(fn);
+                        }
+                    } else {
+                        fms.computeIfAbsent(ft, k -> new ConcurrentHashMap<>(8)).put(fn, fu);
+                    }
+                    return fms;
             }
             return svrState(request);
         } catch (Throwable e) {
