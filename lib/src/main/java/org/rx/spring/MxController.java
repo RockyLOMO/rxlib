@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.quietly;
 import static org.rx.core.Sys.*;
 
 @RequiredArgsConstructor
@@ -77,9 +78,22 @@ public class MxController {
         try {
             switch (Integer.parseInt(x)) {
                 case 1:
-                    String config = request.getParameter("conf");
-                    return BeanMapper.DEFAULT.map(fromJson(config, new TypeReference<RxConfig>() {
-                    }.getType()), RxConfig.INSTANCE);
+                    String type = request.getParameter("type");
+                    String jsonVal = request.getParameter("jsonVal");
+                    Object source, target;
+                    if (!Strings.isBlank(type)) {
+                        Class<?> clazz = Class.forName(type);
+                        target = SpringContext.getBean(clazz);
+                        if (target == null) {
+                            return null;
+                        }
+                        source = fromJson(jsonVal, clazz);
+                    } else {
+                        source = fromJson(jsonVal, new TypeReference<RxConfig>() {
+                        }.getType());
+                        target = RxConfig.INSTANCE;
+                    }
+                    return BeanMapper.DEFAULT.map(source, target);
                 case 2:
                     String k = request.getParameter("k"),
                             v = request.getParameter("v");
@@ -130,7 +144,16 @@ public class MxController {
         Object bean = SpringContext.getBean(kls);
         Method method = Reflects.getMethodMap(kls).get((String) params.get("method")).first();
         List<Object> args = (List<Object>) params.get("args");
-        Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> fromJson(args.get(i), p)).toArray();
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> {
+            Object o = args.get(i);
+            try {
+                return fromJson(o, p);
+            } catch (Exception e) {
+//                log.info("mx invoke", e);
+                return Reflects.changeType(o, parameterTypes[i]);
+            }
+        }).toArray();
 //        log.info("mx invoke {}({})", method, toJsonString(a));
         return Reflects.invokeMethod(method, bean, a);
     }
@@ -189,7 +212,7 @@ public class MxController {
         j.put("sysInfo", infoJson);
         j.put("deadlockedThreads", Sys.findDeadlockedThreads());
         Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
-        int take = 8;
+        int take = Reflects.convertQuietly(request.getParameter("take"), Integer.class, 5);
         j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos)
                 .take(take).select(Sys.ThreadInfo::toString));
         j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos)
