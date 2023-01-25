@@ -30,8 +30,10 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.quietly;
 import static org.rx.core.Sys.*;
 
 @RequiredArgsConstructor
@@ -77,14 +79,28 @@ public class MxController {
         try {
             switch (Integer.parseInt(x)) {
                 case 1:
-                    String config = request.getParameter("conf");
-                    return BeanMapper.DEFAULT.map(fromJson(config, new TypeReference<RxConfig>() {
-                    }.getType()), RxConfig.INSTANCE);
-                case 2:
+                    String type = request.getParameter("type");
+                    String jsonVal = request.getParameter("jsonVal");
+                    Object source, target;
+                    if (!Strings.isBlank(type)) {
+                        Class<?> clazz = Class.forName(type);
+                        target = SpringContext.getBean(clazz);
+                        if (target == null) {
+                            return null;
+                        }
+                        source = fromJson(jsonVal, clazz);
+                    } else {
+                        source = fromJson(jsonVal, new TypeReference<RxConfig>() {
+                        }.getType());
+                        target = RxConfig.INSTANCE;
+                    }
+                    return BeanMapper.DEFAULT.map(source, target);
+                case 2: {
                     String k = request.getParameter("k"),
                             v = request.getParameter("v");
                     Sys.diagnosticMx.setVMOption(k, v);
                     return "ok";
+                }
                 case 3:
                     boolean enable = Boolean.parseBoolean(request.getParameter("v"));
                     Sys.threadMx.setThreadContentionMonitoringEnabled(enable);
@@ -98,6 +114,20 @@ public class MxController {
                     return exec(request);
                 case 6:
                     return invoke(request);
+                case 7:
+                    Class<?> ft = Class.forName(request.getParameter("ft"));
+                    String fn = request.getParameter("fn");
+                    String fu = request.getParameter("fu");
+                    Map<Class<?>, Map<String, String>> fms = Interceptors.ControllerInterceptor.fms;
+                    if (fu == null) {
+                        Map<String, String> fts = fms.get(ft);
+                        if (fts != null) {
+                            fts.remove(fn);
+                        }
+                    } else {
+                        fms.computeIfAbsent(ft, k -> new ConcurrentHashMap<>(8)).put(fn, fu);
+                    }
+                    return fms;
             }
             return svrState(request);
         } catch (Throwable e) {
@@ -130,7 +160,16 @@ public class MxController {
         Object bean = SpringContext.getBean(kls);
         Method method = Reflects.getMethodMap(kls).get((String) params.get("method")).first();
         List<Object> args = (List<Object>) params.get("args");
-        Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> fromJson(args.get(i), p)).toArray();
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> {
+            Object o = args.get(i);
+            try {
+                return fromJson(o, p);
+            } catch (Exception e) {
+//                log.info("mx invoke", e);
+                return Reflects.changeType(o, parameterTypes[i]);
+            }
+        }).toArray();
 //        log.info("mx invoke {}({})", method, toJsonString(a));
         return Reflects.invokeMethod(method, bean, a);
     }
@@ -189,7 +228,7 @@ public class MxController {
         j.put("sysInfo", infoJson);
         j.put("deadlockedThreads", Sys.findDeadlockedThreads());
         Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
-        int take = 8;
+        int take = Reflects.convertQuietly(request.getParameter("take"), Integer.class, 5);
         j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos)
                 .take(take).select(Sys.ThreadInfo::toString));
         j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos)
