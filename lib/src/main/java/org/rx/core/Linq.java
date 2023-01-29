@@ -582,6 +582,10 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         }, "takeWhile");
     }
 
+    public String toJoinString(String delimiter) {
+        return String.join(delimiter, this.cast());
+    }
+
     public String toJoinString(String delimiter, BiFunc<T, String> selector) {
         return String.join(delimiter, select(selector));
     }

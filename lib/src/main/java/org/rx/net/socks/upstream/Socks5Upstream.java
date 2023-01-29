@@ -19,6 +19,8 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Func;
 
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -51,7 +53,7 @@ public class Socks5Upstream extends Upstream {
                 && (SocksSupport.FAKE_IPS.contains(destination.getHost()) || SocksSupport.FAKE_PORTS.contains(destination.getPort())
                 || !Sockets.isValidIp(destination.getHost()))) {
             String dstEpStr = destination.toString();
-            long hash = CodecUtil.hash64(dstEpStr);
+            BigInteger hash = CodecUtil.hashUnsigned64(dstEpStr.getBytes(StandardCharsets.UTF_8));
             //change dest first
             destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
 //            Cache<Long, Boolean> cache = Cache.getInstance();

@@ -4,6 +4,7 @@ import org.rx.core.Arrays;
 import org.rx.core.Cache;
 import org.rx.net.dns.DnsServer;
 
+import java.math.BigInteger;
 import java.net.InetAddress;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -17,11 +18,11 @@ public interface SocksSupport extends AutoCloseable, DnsServer.ResolveIntercepto
     long ASYNC_TIMEOUT = 5 * 1000;
     EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
-    static Cache<Long, UnresolvedEndpoint> fakeDict() {
+    static Cache<BigInteger, UnresolvedEndpoint> fakeDict() {
         return Cache.getInstance(Cache.DISK_CACHE);
     }
 
-    void fakeEndpoint(long hash, String realEndpoint);
+    void fakeEndpoint(BigInteger hash, String realEndpoint);
 
     List<InetAddress> resolveHost(String host);
 
