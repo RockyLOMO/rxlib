@@ -14,6 +14,7 @@ import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
+import java.math.BigInteger;
 import java.net.Inet6Address;
 import java.net.InetSocketAddress;
 
@@ -40,7 +41,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         String dstEpHost = dstEp.getHost();
         if (dstEpHost.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
             UnresolvedEndpoint realEp = SocksSupport.fakeDict()
-                    .get(Long.valueOf(dstEpHost.substring(0, dstEpHost.length() - SocksSupport.FAKE_HOST_SUFFIX.length())));
+                    .get(new BigInteger(dstEpHost.substring(0, dstEpHost.length() - SocksSupport.FAKE_HOST_SUFFIX.length())));
             if (realEp == null) {
                 log.error("socks5[{}] recover dstEp {} fail", server.getConfig().getListenPort(), dstEp);
             } else {
