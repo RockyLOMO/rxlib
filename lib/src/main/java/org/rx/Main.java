@@ -29,6 +29,7 @@ import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.Action;
 import org.rx.util.function.TripleAction;
 
+import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Collections;
@@ -119,7 +120,7 @@ public final class Main implements SocksSupport {
                 SocksSupport facade = Remoting.createFacade(SocksSupport.class, rpcConf);
                 shadowServers.add(new UpstreamSupport(shadowServer, new SocksSupport() {
                     @Override
-                    public void fakeEndpoint(long hash, String realEndpoint) {
+                    public void fakeEndpoint(BigInteger hash, String realEndpoint) {
                         facade.fakeEndpoint(hash, realEndpoint);
                     }
 
@@ -333,7 +334,7 @@ public final class Main implements SocksSupport {
     }
 
     @Override
-    public void fakeEndpoint(long hash, String endpoint) {
+    public void fakeEndpoint(BigInteger hash, String endpoint) {
         SocksSupport.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 

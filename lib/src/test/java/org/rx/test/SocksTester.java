@@ -50,6 +50,7 @@ import org.rx.third.apache.ntp.*;
 import org.rx.util.function.TripleAction;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
@@ -557,7 +558,7 @@ public class SocksTester extends AbstractTester {
 //        DnsServer server = new DnsServer(localNsEp.getPort());
         server.setInterceptors(new RandomList<>(Collections.singletonList(new SocksSupport() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint) {
+            public void fakeEndpoint(BigInteger hash, String realEndpoint) {
 
             }
 

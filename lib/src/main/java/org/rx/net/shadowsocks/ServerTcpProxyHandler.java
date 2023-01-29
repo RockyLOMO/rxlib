@@ -12,7 +12,9 @@ import org.rx.net.socks.SocksContext;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
+import java.math.BigInteger;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -30,7 +32,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
 
         if (SocksSupport.FAKE_IPS.contains(dstEp.getHost()) || !Sockets.isValidIp(dstEp.getHost())) {
-            long hash = CodecUtil.hash64(dstEp.toString());
+            BigInteger hash = CodecUtil.hashUnsigned64(dstEp.toString().getBytes(StandardCharsets.UTF_8));
             SocksSupport.fakeDict().putIfAbsent(hash, dstEp);
 //            log.info("fakeEp {} {}", hash, dstEp);
             dstEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
