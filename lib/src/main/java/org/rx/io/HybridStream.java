@@ -13,7 +13,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     private static final long serialVersionUID = 2137331266386948293L;
     private final int maxMemorySize;
     private final String tempFilePath;
-    private MemoryStream memoryStream = new MemoryStream(Constants.HEAP_BUF_SIZE, true);
+    private MemoryStream memoryStream;
     private FileStream fileStream;
     @Setter
     private String name;
@@ -87,12 +87,13 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     }
 
     public HybridStream() {
-        this(Constants.MAX_HEAP_BUF_SIZE, null);
+        this(Constants.MAX_HEAP_BUF_SIZE, false, null);
     }
 
-    public HybridStream(int maxMemorySize, String tempFilePath) {
+    public HybridStream(int maxMemorySize, boolean directMemory, String tempFilePath) {
         this.maxMemorySize = maxMemorySize;
         this.tempFilePath = tempFilePath;
+        memoryStream = new MemoryStream(Constants.HEAP_BUF_SIZE, directMemory);
     }
 
     @Override

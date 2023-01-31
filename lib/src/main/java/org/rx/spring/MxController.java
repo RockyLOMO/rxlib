@@ -81,20 +81,24 @@ public class MxController {
                 case 1:
                     String type = request.getParameter("type");
                     String jsonVal = request.getParameter("jsonVal");
-                    Object source, target;
+                    Object source = null, target;
                     if (!Strings.isBlank(type)) {
                         Class<?> clazz = Class.forName(type);
                         target = SpringContext.getBean(clazz);
                         if (target == null) {
                             return null;
                         }
-                        source = fromJson(jsonVal, clazz);
+                        if (jsonVal != null) {
+                            source = fromJson(jsonVal, clazz);
+                        }
                     } else {
-                        source = fromJson(jsonVal, new TypeReference<RxConfig>() {
-                        }.getType());
+                        if (jsonVal != null) {
+                            source = fromJson(jsonVal, new TypeReference<RxConfig>() {
+                            }.getType());
+                        }
                         target = RxConfig.INSTANCE;
                     }
-                    return BeanMapper.DEFAULT.map(source, target);
+                    return source != null ? BeanMapper.DEFAULT.map(source, target) : target;
                 case 2: {
                     String k = request.getParameter("k"),
                             v = request.getParameter("v");

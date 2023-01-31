@@ -49,6 +49,12 @@ public class Interceptors {
         final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
         static final Map<Class<?>, Map<String, String>> fms = new ConcurrentHashMap<>();
 
+        @SneakyThrows
+        protected Object methodAround(ProceedingJoinPoint joinPoint, Tuple<HttpServletRequest, HttpServletResponse> httpEnv) {
+            logCtx("url", httpEnv.left.getRequestURL().toString());
+            return super.doAround(joinPoint);
+        }
+
         @Override
         protected Object shortArg(Signature signature, Object arg) {
             if (arg instanceof MultipartFile) {
@@ -81,13 +87,13 @@ public class Interceptors {
             }
 
             Signature signature = joinPoint.getSignature();
-            MethodSignature methodSignature = as(signature, MethodSignature.class);
-            if (methodSignature == null || skipMethods.contains(signature.getName())) {
+            MethodSignature ms = as(signature, MethodSignature.class);
+            if (ms == null || skipMethods.contains(signature.getName())) {
                 return joinPoint.proceed();
             }
-            Map<String, String> fts = fms.get(methodSignature.getDeclaringType());
+            Map<String, String> fts = fms.get(ms.getDeclaringType());
             if (fts != null) {
-                String fu = fts.get(methodSignature.getName());
+                String fu = fts.get(ms.getName());
                 if (fu != null) {
                     logCtx("fu", fu);
                     new HttpClient().forward(httpEnv.left, httpEnv.right, fu);
@@ -95,14 +101,13 @@ public class Interceptors {
                 }
             }
             IRequireSignIn requireSignIn = as(joinPoint.getTarget(), IRequireSignIn.class);
-            if (requireSignIn != null && !requireSignIn.isSignIn(methodSignature.getMethod(), joinPoint.getArgs())) {
+            if (requireSignIn != null && !requireSignIn.isSignIn(ms.getMethod(), joinPoint.getArgs())) {
                 throw new NotSignInException();
             }
-            logCtx("url", httpEnv.left.getRequestURL().toString());
-            return super.doAround(joinPoint);
+            return methodAround(joinPoint, httpEnv);
         }
 
-        Tuple<HttpServletRequest, HttpServletResponse> httpEnv() {
+        protected Tuple<HttpServletRequest, HttpServletResponse> httpEnv() {
             try {
                 return Servlets.currentRequest();
             } catch (IllegalStateException e) {
