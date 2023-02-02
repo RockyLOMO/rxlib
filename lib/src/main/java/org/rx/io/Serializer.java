@@ -36,6 +36,10 @@ public interface Serializer {
 
     <T> void serialize(T obj, IOStream<?, ?> stream);
 
+    default <T> T deserializeFromBytes(byte[] data) {
+        return deserialize(IOStream.wrap("", data));
+    }
+
     default <T> T deserialize(IOStream<?, ?> stream) {
         return deserialize(stream, false);
     }
