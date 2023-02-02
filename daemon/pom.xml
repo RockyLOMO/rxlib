@@ -3,19 +3,15 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
-    <groupId>com.github.rockylomo</groupId>
-    <artifactId>rxdaemon</artifactId>
+    <parent>
+        <groupId>com.github.rockylomo</groupId>
+        <artifactId>rx</artifactId>
+        <version>1.0</version>
+    </parent>
+    <artifactId>daemon</artifactId>
     <version>1.0</version>
 
     <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
-        <maven.test.skip>true</maven.test.skip>
-        <java.version>1.8</java.version>
         <lombok.version>1.18.24</lombok.version>
     </properties>
 
