@@ -8,8 +8,9 @@
         <version>1.0</version>
     </parent>
     <artifactId>rxlib</artifactId>
-    <version>2.18.14-SNAPSHOT</version>
+    <packaging>jar</packaging>
     <!-- -SNAPSHOT -->
+    <version>2.18.14-SNAPSHOT</version>
     <name>rxlib</name>
     <description>A set of utilities for Java</description>
     <url>https://github.com/RockyLOMO/rxlib</url>
