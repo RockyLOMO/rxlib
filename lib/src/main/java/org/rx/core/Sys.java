@@ -144,36 +144,22 @@ public final class Sys extends SystemUtils {
     static final JSONWriter.Feature[] JSON_WRITE_FLAGS = new JSONWriter.Feature[]{NotWriteDefaultValue};
     public static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
         if (v != null) {
-            if (v instanceof Iterable) {
-                return IterableUtils.toList((Iterable<?>) v);
+            Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
+            Iterable<Object> iter = Linq.asIterable(v, false);
+            if (iter != null) {
+                return Linq.from(iter).select(iv -> {
+                    if (iv != null && q.any(t -> Reflects.isInstance(iv, t))) {
+                        return iv.getClass().getName();
+                    }
+                    return iv;
+                }).toList(); //fastjson2 iterable issues
             }
-            if (v instanceof Iterator) {
-                return IteratorUtils.toList((Iterator<?>) v);
-            }
-            if (Linq.from(RxConfig.INSTANCE.jsonSkipTypes).any(t -> Reflects.isInstance(v, t))) {
+            if (q.any(t -> Reflects.isInstance(v, t))) {
                 return v.getClass().getName();
             }
         }
         return v;
     };
-    //    public static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
-//        if (v != null) {
-//            Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
-//            Iterable<Object> iter = Linq.asIterable(v, false);
-//            if (iter != null) {
-//                return Linq.from(iter).select(iv -> {
-//                    if (iv != null && q.any(t -> Reflects.isInstance(iv, t))) {
-//                        return iv.getClass().getName();
-//                    }
-//                    return iv;
-//                }).toList(); //fastjson2 iterable issues
-//            }
-//            if (q.any(t -> Reflects.isInstance(v, t))) {
-//                return v.getClass().getName();
-//            }
-//        }
-//        return v;
-//    };
     static final String[] seconds = {"ns", "µs", "ms", "s"};
     static Timeout samplingTimeout;
 
@@ -595,7 +581,6 @@ public final class Sys extends SystemUtils {
 
         try {
             return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(null, null, src), JSON_WRITE_SKIP_TYPES, JSON_WRITE_FLAGS);
-//            return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(src, null, src), JSON_WRITE_FLAGS);
         } catch (Throwable e) {
             Linq<Object> q;
             if (Linq.tryAsIterableType(src.getClass())) {

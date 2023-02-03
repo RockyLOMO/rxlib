@@ -818,10 +818,11 @@ public class CoreTester extends AbstractTester {
 
     @Test
     public void json() {
+//        RxConfig.INSTANCE.getJsonSkipTypes().add(ErrorBean.class);
         Object[] args = new Object[]{str_name_wyf, proxy(HttpServletResponse.class, (m, i) -> {
             throw new InvalidException("wont reach");
         }), new ErrorBean()};
-        System.out.println(toJsonString(args));
+        System.out.println(toJsonString(args) + " -> " + toJsonString(args));
         System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
 
         String str = "abc";
