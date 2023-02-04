@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         APP_NAME = 'socks-client'
-        JAR_NAME = 'rxlib-2.18.13-SNAPSHOT.jar'
+        JAR_NAME = 'rxlib-2.18.14-SNAPSHOT.jar'
         RENAME = 'rxlib-latest.jar'
 
         APP_HOST = 's.f-li.cn'
@@ -22,7 +22,7 @@ pipeline {
             }
             steps {
                 container ('maven-jdk-11') {
-                    sh 'mvn -B clean package -am -Dmaven.test.skip=true -Dgpg.skip=true --file lib/pom.xml'
+                    sh 'mvn -B clean package -Dmaven.test.skip=true -Dgpg.skip=true -pl lib -am'
                     sh 'cp -f ${PWD}/lib/target/${JAR_NAME} ${PWD}/${JAR_NAME}'
                 }
             }
