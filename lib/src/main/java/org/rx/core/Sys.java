@@ -13,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.IterableUtils;
+import org.apache.commons.collections4.IteratorUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DynamicProxyBean;
@@ -143,12 +145,13 @@ public final class Sys extends SystemUtils {
     public static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
         if (v != null) {
             Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
-            if (Linq.tryAsIterableType(v.getClass())) {
-                return Linq.fromIterable(v).select(fv -> {
-                    if (fv != null && q.any(t -> Reflects.isInstance(fv, t))) {
-                        return fv.getClass().getName();
+            Iterable<Object> iter = Linq.asIterable(v, false);
+            if (iter != null) {
+                return Linq.from(iter).select(iv -> {
+                    if (iv != null && q.any(t -> Reflects.isInstance(iv, t))) {
+                        return iv.getClass().getName();
                     }
-                    return fv;
+                    return iv;
                 }).toList(); //fastjson2 iterable issues
             }
             if (q.any(t -> Reflects.isInstance(v, t))) {
@@ -577,7 +580,7 @@ public final class Sys extends SystemUtils {
         }
 
         try {
-            return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(src, null, src), JSON_WRITE_FLAGS);
+            return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(null, null, src), JSON_WRITE_SKIP_TYPES, JSON_WRITE_FLAGS);
         } catch (Throwable e) {
             Linq<Object> q;
             if (Linq.tryAsIterableType(src.getClass())) {
@@ -586,7 +589,7 @@ public final class Sys extends SystemUtils {
                 q = Linq.from(src);
             }
             Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
-            jsonSkipTypes.addAll(q.where(Objects::nonNull).select(Object::getClass).toSet());
+            jsonSkipTypes.addAll(q.where(x -> x != null && !Reflects.isBasicType(x.getClass())).select(Object::getClass).toSet());
             TraceHandler.INSTANCE.log("toJsonString {}", Linq.from(jsonSkipTypes).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();

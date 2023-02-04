@@ -391,7 +391,7 @@ public class IOTester extends AbstractTester {
     public void hybridStream() {
         int[] maxSizes = new int[]{35, 70};
         for (int max : maxSizes) {
-            HybridStream stream = new HybridStream(max, null);
+            HybridStream stream = new HybridStream(max, true, null);
             testSeekStream(stream);
 
             long position = stream.getPosition();

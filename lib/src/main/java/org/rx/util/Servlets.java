@@ -48,27 +48,28 @@ public class Servlets extends ServletRequestUtils {
         HttpServletRequest request = currentRequest().left;
 
         String ip = request.getHeader("X-Forwarded-For");
-        if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("HTTP_CLIENT_IP");
-        }
-        if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("HTTP_X_FORWARDED_FOR");
-        }
-        if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+        if (Strings.isBlank(ip)) {
             ip = request.getHeader("x-real-ip");
         }
-        if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+        if (Strings.isBlank(ip)) {
+            ip = request.getHeader("HTTP_X_FORWARDED_FOR");
+        }
+//        if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+//            ip = request.getHeader("Proxy-Client-IP");
+//        }
+//        if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+//            ip = request.getHeader("WL-Proxy-Client-IP");
+//        }
+//        if (Strings.isEmpty(ip) || "unknown".equalsIgnoreCase(ip)) {
+//            ip = request.getHeader("HTTP_CLIENT_IP");
+//        }
+        if (Strings.isBlank(ip)) {
             ip = request.getRemoteAddr();
         }
         String[] ips = Strings.split(ip, ",");
         if (ips.length > 1) {
             ip = ips[0];
+                    //.trim();
         }
         return ip;
     }

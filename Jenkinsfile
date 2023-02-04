@@ -25,7 +25,7 @@ pipeline {
                     sh 'echo "$SU_USR : $SU_PWD"'
                 }
                 container ('maven') {
-                    sh 'mvn -B -Dmaven.test.skip=true -Dgpg.skip=true clean install --file lib/pom.xml'
+                    sh 'mvn -B -Dmaven.test.skip=true -Dgpg.skip=true clean install -pl lib -am'
                 }
             }
         }

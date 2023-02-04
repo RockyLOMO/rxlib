@@ -258,15 +258,6 @@ public class UtilTester extends AbstractTester {
         map.put(k, 2);
         System.out.println(toJsonString(map.entrySet()));
 
-        Object[] x = {2, "b"};
-        System.out.println(toJsonString(x));
-        System.out.println(JSON.toJSONString(new Iterable<String>() {
-            @Override
-            public Iterator iterator() {
-                return Collections.singletonList(x[0]).iterator();
-            }
-        }));
-
         System.out.println(FilenameUtils.getFullPath("a.txt"));
         System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));
         System.out.println(FilenameUtils.getFullPath("/a/b.txt"));

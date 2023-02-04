@@ -32,7 +32,7 @@ public class FluentWait {
 
     @Getter
     final long timeout;
-    @Getter
+    //    @Getter
     final long interval;
     private long retryMillis = TIMEOUT_INFINITE;
     private boolean doRetryFirst;
@@ -55,18 +55,18 @@ public class FluentWait {
         return this;
     }
 
-    public FluentWait throwOnTimeout(boolean throwOnTimeout) {
+    public synchronized FluentWait throwOnTimeout(boolean throwOnTimeout) {
         this.throwOnTimeout = throwOnTimeout;
         return this;
     }
 
-    public FluentWait withMessage(String message) {
+    public synchronized FluentWait withMessage(String message) {
         this.message = message;
         return this;
     }
 
     @SafeVarargs
-    public final FluentWait ignoreExceptions(Class<? extends Throwable>... exceptions) {
+    public synchronized final FluentWait ignoreExceptions(Class<? extends Throwable>... exceptions) {
         if (ignoredExceptions == null) {
             ignoredExceptions = new ArrayList<>();
         }
@@ -171,12 +171,6 @@ public class FluentWait {
                 }
             }
         }
-        if (e instanceof RuntimeException) {
-            throw (RuntimeException) e;
-        }
-        if (e instanceof Error) {
-            throw (Error) e;
-        }
-        throw new RuntimeException(e);
+        throw InvalidException.sneaky(e);
     }
 }

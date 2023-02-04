@@ -1,17 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
-        <groupId>org.sonatype.oss</groupId>
-        <artifactId>oss-parent</artifactId>
-        <version>9</version>
+        <groupId>com.github.rockylomo</groupId>
+        <artifactId>rx</artifactId>
+        <version>1.0</version>
     </parent>
-
-    <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.18.13-SNAPSHOT</version>
+    <packaging>jar</packaging>
     <!-- -SNAPSHOT -->
+    <version>2.18.14-SNAPSHOT</version>
     <name>rxlib</name>
     <description>A set of utilities for Java</description>
     <url>https://github.com/RockyLOMO/rxlib</url>
@@ -49,15 +48,15 @@
         <shallow>true</shallow>
         <gpg.skip>false</gpg.skip>
         <lombok.version>1.18.24</lombok.version>
-        <slf4j-api.version>2.0.6</slf4j-api.version>
-        <logback.version>1.4.5</logback.version>
+        <slf4j-api.version>2.0.4</slf4j-api.version>
+        <logback.version>1.3.5</logback.version>
         <fastjson2.version>2.0.23</fastjson2.version>
         <caffeine.version>2.9.3</caffeine.version>
         <commons-lang3.version>3.12.0</commons-lang3.version>
         <commons-collections4.version>4.4</commons-collections4.version>
         <commons-io.version>2.11.0</commons-io.version>
         <byte-buddy.version>1.12.18</byte-buddy.version>
-        <zip4j.version>2.10.0</zip4j.version>
+        <zip4j.version>2.11.3</zip4j.version>
         <h2.version>2.1.214</h2.version>
         <netty.version>4.1.86.Final</netty.version>
         <bcprov.version>1.70</bcprov.version>

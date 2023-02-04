@@ -1,11 +1,13 @@
 package org.rx.test;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.TypeReference;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
@@ -816,10 +818,11 @@ public class CoreTester extends AbstractTester {
 
     @Test
     public void json() {
+//        RxConfig.INSTANCE.getJsonSkipTypes().add(ErrorBean.class);
         Object[] args = new Object[]{str_name_wyf, proxy(HttpServletResponse.class, (m, i) -> {
             throw new InvalidException("wont reach");
         }), new ErrorBean()};
-        System.out.println(toJsonString(args));
+        System.out.println(toJsonString(args) + " -> " + toJsonString(args));
         System.out.println(toJsonString(Tuple.of(Collections.singletonList(new MemoryStream(12, false)), false)));
 
         String str = "abc";
@@ -847,6 +850,20 @@ public class CoreTester extends AbstractTester {
         Tuple<String, List<Float>> tuple3 = fromJson(tuple1, new TypeReference<Tuple<String, List<Float>>>() {
         }.getType());
         assert tuple1.equals(tuple3);
+
+        //fastjson2
+        Object[] x = {2, "b"};
+        Iterable<Object> iter = new Iterable<Object>() {
+            @NotNull
+            @Override
+            public Iterator<Object> iterator() {
+                return Collections.singletonList(x[0]).iterator();
+            }
+        };
+        System.out.println(toJsonString(x) + ", "
+                + toJsonString(iter) + " & " + toJsonString(Collections.singletonMap("list", iter)));
+        System.out.println(JSON.toJSONString(x) + ", "
+                + JSON.toJSONString(iter) + " & " + JSON.toJSONString(Collections.singletonMap("list", iter)));
     }
 
     @Test
