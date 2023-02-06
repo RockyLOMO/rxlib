@@ -119,19 +119,15 @@ public final class Sockets {
         });
     }
 
-    static EventLoopGroup reactor(String reactorName) {
+    static EventLoopGroup reactor(String reactorName, boolean isTcp) {
         return reactors.computeIfAbsent(reactorName, k -> {
             int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
-            return Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
+            return isTcp && Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
         });
     }
 
     public static EventLoopGroup udpReactor() {
-        return udpReactor(SHARED_UDP_REACTOR);
-    }
-
-    static EventLoopGroup udpReactor(String reactorName) {
-        return reactors.computeIfAbsent(reactorName, k -> new NioEventLoopGroup(RxConfig.INSTANCE.getNet().getReactorThreadAmount()));
+        return reactor(SHARED_UDP_REACTOR, false);
     }
 
     //Don't use executor
@@ -143,10 +139,7 @@ public final class Sockets {
         return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
     }
 
-    private static Class<? extends ServerSocketChannel> serverChannelClass() {
-        return Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
-    }
-
+    //region tcp
     public static ServerBootstrap serverBootstrap(BiAction<SocketChannel> initChannel) {
         return serverBootstrap(null, initChannel);
     }
@@ -163,8 +156,8 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
         WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SHARED_TCP_REACTOR) : newEventLoop(0))
-                .channel(serverChannelClass())
+                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SHARED_TCP_REACTOR, true) : newEventLoop(0))
+                .channel(Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
@@ -215,7 +208,7 @@ public final class Sockets {
     }
 
     public static Bootstrap bootstrap(@NonNull String reactorName, SocketConfig config, BiAction<SocketChannel> initChannel) {
-        return bootstrap(reactor(reactorName), config, initChannel);
+        return bootstrap(reactor(reactorName, true), config, initChannel);
     }
 
     public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
@@ -302,6 +295,7 @@ public final class Sockets {
                     .addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
         }
     }
+    //endregion
 
     public static Bootstrap udpServerBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
         return udpBootstrap(SHARED_UDP_SVR_REACTOR, mode, false, initChannel);
@@ -329,7 +323,7 @@ public final class Sockets {
             mif = NetworkInterface.getByInetAddress(Sockets.getLocalAddress(true));
         }
 
-        Bootstrap b = new Bootstrap().group(udpReactor(reactorName))
+        Bootstrap b = new Bootstrap().group(reactor(reactorName, false))
 //                .option(ChannelOption.SO_BROADCAST, true)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
@@ -353,7 +347,6 @@ public final class Sockets {
         }
         return b;
     }
-
 
     public static void writeAndFlush(Channel channel, @NonNull Queue<?> packs) {
         EventLoop eventLoop = channel.eventLoop();
