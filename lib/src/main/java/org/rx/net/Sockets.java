@@ -13,6 +13,7 @@ import io.netty.channel.epoll.EpollServerSocketChannel;
 import io.netty.channel.epoll.EpollSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.channel.socket.InternetProtocolFamily;
 import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioDatagramChannel;
@@ -61,7 +62,7 @@ public final class Sockets {
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
     static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
-    static final String SHARED_TCP_REACTOR = "_TCP", SHARED_UDP_REACTOR = "_UDP", SHARED_UDP_SVR_REACTOR = "_UDP:SVR";
+    static final String SHARED_TCP_REACTOR = "_TCP", SHARED_UDP_REACTOR = "_UDP", SHARED_UDP_SVR_REACTOR = "_SUDP";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
@@ -209,8 +210,8 @@ public final class Sockets {
         }
     }
 
-    public static Bootstrap bootstrap(BiAction<SocketChannel> initChannel) {
-        return bootstrap(SHARED_TCP_REACTOR, null, initChannel);
+    public static Bootstrap bootstrap(SocketConfig config, BiAction<SocketChannel> initChannel) {
+        return bootstrap(SHARED_TCP_REACTOR, config, initChannel);
     }
 
     public static Bootstrap bootstrap(@NonNull String reactorName, SocketConfig config, BiAction<SocketChannel> initChannel) {
@@ -246,39 +247,6 @@ public final class Sockets {
                 @SneakyThrows
                 @Override
                 protected void initChannel(SocketChannel socketChannel) {
-                    initChannel.invoke(socketChannel);
-                }
-            });
-        }
-        return b;
-    }
-
-    public static Bootstrap udpServerBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(SHARED_UDP_SVR_REACTOR, mode, initChannel);
-    }
-
-    public static Bootstrap udpBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(SHARED_UDP_REACTOR, mode, initChannel);
-    }
-
-    //BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
-    //DefaultDatagramChannelConfig
-    static Bootstrap udpBootstrap(String reactorName, MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
-        if (mode == null) {
-            mode = MemoryMode.LOW;
-        }
-
-        Bootstrap b = new Bootstrap().group(udpReactor(reactorName)).channel(NioDatagramChannel.class)
-//                .option(ChannelOption.SO_BROADCAST, true)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
-                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
-                .handler(WaterMarkHandler.DEFAULT);
-        b.handler(DEFAULT_LOG);
-        if (initChannel != null) {
-            b.handler(new ChannelInitializer<NioDatagramChannel>() {
-                @SneakyThrows
-                @Override
-                protected void initChannel(NioDatagramChannel socketChannel) {
                     initChannel.invoke(socketChannel);
                 }
             });
@@ -334,6 +302,58 @@ public final class Sockets {
                     .addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
         }
     }
+
+    public static Bootstrap udpServerBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(SHARED_UDP_SVR_REACTOR, mode, false, initChannel);
+    }
+
+    public static Bootstrap udpBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(mode, false, initChannel);
+    }
+
+    public static Bootstrap udpBootstrap(MemoryMode mode, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(SHARED_UDP_REACTOR, mode, multicast, initChannel);
+    }
+
+    //BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
+    //DefaultDatagramChannelConfig
+    @SneakyThrows
+    static Bootstrap udpBootstrap(String reactorName, MemoryMode mode, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
+        if (mode == null) {
+            mode = MemoryMode.LOW;
+        }
+        NetworkInterface mif = null;
+        if (multicast) {
+//            MulticastSocket ms = new MulticastSocket();
+//            mif = ms.getNetworkInterface();
+            mif = NetworkInterface.getByInetAddress(Sockets.getLocalAddress(true));
+        }
+
+        Bootstrap b = new Bootstrap().group(udpReactor(reactorName))
+//                .option(ChannelOption.SO_BROADCAST, true)
+                .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
+                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
+                .handler(WaterMarkHandler.DEFAULT);
+        if (multicast) {
+            b.channelFactory(() -> new NioDatagramChannel(InternetProtocolFamily.IPv4))
+                    .option(ChannelOption.IP_MULTICAST_IF, mif)
+                    .option(ChannelOption.SO_REUSEADDR, true);
+        } else {
+            b.channel(NioDatagramChannel.class);
+        }
+        b.handler(DEFAULT_LOG);
+        if (initChannel != null) {
+            b.handler(new ChannelInitializer<NioDatagramChannel>() {
+                @SneakyThrows
+                @Override
+                protected void initChannel(NioDatagramChannel socketChannel) {
+                    initChannel.invoke(socketChannel);
+                }
+            });
+        }
+        return b;
+    }
+
 
     public static void writeAndFlush(Channel channel, @NonNull Queue<?> packs) {
         EventLoop eventLoop = channel.eventLoop();
@@ -434,10 +454,6 @@ public final class Sockets {
             return false;
         }
         for (String regex : bypassList) {
-//            if (Pattern.matches(regex.replace("*", "\\w*")
-//                    .replace("?", "\\w"), host)) {
-//                return true;
-//            }
             if (FilenameUtils.wildcardMatch(host, regex)) {
                 return true;
             }
@@ -474,9 +490,13 @@ public final class Sockets {
         return InetAddress.getByName("0.0.0.0");
     }
 
-    @SneakyThrows
     public static InetAddress getLocalAddress() {
-        Inet4Address first = Linq.from(getAllLocalAddresses()).orderByDescending(Inet4Address::isSiteLocalAddress).firstOrDefault();
+        return getLocalAddress(false);
+    }
+
+    @SneakyThrows
+    public static InetAddress getLocalAddress(boolean supportsMulticast) {
+        Inet4Address first = Linq.from(getLocalAddresses(supportsMulticast)).orderByDescending(Inet4Address::isSiteLocalAddress).firstOrDefault();
         if (first != null) {
             return first;
         }
@@ -484,12 +504,12 @@ public final class Sockets {
     }
 
     @SneakyThrows
-    public static List<Inet4Address> getAllLocalAddresses() {
+    public static List<Inet4Address> getLocalAddresses(boolean supportsMulticast) {
         List<Inet4Address> ips = new ArrayList<>();
         Enumeration<NetworkInterface> networks = NetworkInterface.getNetworkInterfaces();
         while (networks.hasMoreElements()) {
             NetworkInterface network = networks.nextElement();
-            if (network.isLoopback() || network.isVirtual() || !network.isUp()) {
+            if (network.isLoopback() || network.isVirtual() || !network.isUp() || (supportsMulticast && !network.supportsMulticast())) {
                 continue;
             }
             Enumeration<InetAddress> addresses = network.getInetAddresses();
@@ -506,6 +526,9 @@ public final class Sockets {
 //                        addr.isMCGlobal(), addr.isMCOrgLocal(), addr.isMCNodeLocal());
                 ips.add((Inet4Address) addr);
             }
+        }
+        if (supportsMulticast && ips.isEmpty()) {
+            throw new InvalidException("Not multicast network found");
         }
         return ips;
     }

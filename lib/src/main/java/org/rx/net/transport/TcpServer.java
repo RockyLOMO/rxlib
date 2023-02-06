@@ -167,7 +167,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
         }
     }
 
-    public static final ThreadPool SCHEDULER = new ThreadPool(TcpServerConfig.REACTOR_NAME);
+    public static final ThreadPool SCHEDULER = new ThreadPool("Rpc");
     public final Delegate<TcpServer, TcpServerEventArgs<Serializable>> onConnected = Delegate.create(),
             onDisconnected = Delegate.create(),
             onSend = Delegate.create(),

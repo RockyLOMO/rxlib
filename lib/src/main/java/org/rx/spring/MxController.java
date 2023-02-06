@@ -13,7 +13,6 @@ import org.rx.exception.ExceptionLevel;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
-import org.rx.net.http.tunnel.Server;
 import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapper;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,15 +32,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
-import static org.rx.core.Extends.quietly;
 import static org.rx.core.Sys.*;
 
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("mx")
 public class MxController {
-    final Server server;
-
     @RequestMapping("queryTraces")
     public Map<String, Object> queryTraces(Boolean newest, String level,
                                            Boolean methodOccurMost, String methodNamePrefix,

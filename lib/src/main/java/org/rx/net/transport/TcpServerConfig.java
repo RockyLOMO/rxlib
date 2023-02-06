@@ -8,7 +8,6 @@ import org.rx.net.SocketConfig;
 @EqualsAndHashCode(callSuper = true)
 public class TcpServerConfig extends SocketConfig {
     private static final long serialVersionUID = 2719107972925015607L;
-    public static final String REACTOR_NAME = "℞Rpc";
 
     private final int listenPort;
     private int capacity = 10000;

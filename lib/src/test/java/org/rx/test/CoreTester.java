@@ -36,6 +36,7 @@ import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
@@ -864,6 +865,8 @@ public class CoreTester extends AbstractTester {
                 + toJsonString(iter) + " & " + toJsonString(Collections.singletonMap("list", iter)));
         System.out.println(JSON.toJSONString(x) + ", "
                 + JSON.toJSONString(iter) + " & " + JSON.toJSONString(Collections.singletonMap("list", iter)));
+        InetAddress addr = Sockets.getLocalAddress();
+        System.out.println(toJsonString(addr) + " & " + JSON.toJSONString(addr));
     }
 
     @Test
