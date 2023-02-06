@@ -174,8 +174,8 @@ public class SocksTester extends AbstractTester {
     @ChannelHandler.Sharable
     static class MultiCastInboundHandler extends SimpleChannelInboundHandler<DatagramPacket> {
         @Override
-        protected void channelRead0(ChannelHandlerContext channelHandlerContext, DatagramPacket packet) throws Exception {
-            log.info("recv: {}", packet);
+        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) throws Exception {
+            log.info("recv: {} - {}", ctx.channel().id(), packet);
         }
     }
 
@@ -186,41 +186,51 @@ public class SocksTester extends AbstractTester {
             System.out.println(address);
         }
 
-        NioDatagramChannel c1, c2;
-        int port = 8888;
-        InetAddress multiCastAddr = InetAddress.getByName("239.0.0.1");
+        InetSocketAddress multiCastEp = Sockets.parseEndpoint("239.0.0.1:8888");
+        NioDatagramChannel c1, c2, c3;
         MultiCastInboundHandler inHandler = new MultiCastInboundHandler();
         c1 = (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, true, c -> c.pipeline().addLast(inHandler))
-                .bind(port).addListener((ChannelFutureListener) f -> {
+                .bind(multiCastEp.getPort()).addListener((ChannelFutureListener) f -> {
                     if (!f.isSuccess()) {
-                        log.info("bind error", f.cause());
+                        log.info("multicast bind error", f.cause());
                         return;
                     }
                     NioDatagramChannel c = (NioDatagramChannel) f.channel();
-                    c.joinGroup(multiCastAddr);
-                    log.info("join {}", multiCastAddr);
+                    c.joinGroup(multiCastEp.getAddress());
+                    log.info("multicast join {}", multiCastEp);
                 }).channel();
 
         c2 = (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, true, c -> {
                     c.pipeline().addLast(inHandler);
                     log.info("c2 inHandler");
                 })
-                .bind(port).addListener((ChannelFutureListener) f -> {
+                .bind(multiCastEp.getPort()).addListener((ChannelFutureListener) f -> {
                     if (!f.isSuccess()) {
-                        log.info("bind error", f.cause());
+                        log.info("multicast bind error", f.cause());
                         return;
                     }
                     NioDatagramChannel c = (NioDatagramChannel) f.channel();
-                    c.joinGroup(multiCastAddr);
-                    log.info("join {}", multiCastAddr);
+                    c.joinGroup(multiCastEp.getAddress());
+                    log.info("multicast join {}", multiCastEp);
                 }).channel();
+
+        c3 = (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, false, c -> c.pipeline().addLast(inHandler))
+                .bind(0).channel();
 
         Tasks.setTimeout(() -> {
             ByteBuf buf = Bytes.directBuffer();
             buf.writeCharSequence("hello", StandardCharsets.UTF_8);
-            DatagramPacket pack = new DatagramPacket(buf, new InetSocketAddress(multiCastAddr, port));
+            DatagramPacket pack = new DatagramPacket(buf, multiCastEp);
             c1.writeAndFlush(pack);
             log.info("c1 send: {}", pack);
+        }, 4000);
+
+        Tasks.setTimeout(() -> {
+            ByteBuf buf = Bytes.directBuffer();
+            buf.writeCharSequence("hello", StandardCharsets.UTF_8);
+            DatagramPacket pack = new DatagramPacket(buf, multiCastEp);
+            c1.writeAndFlush(pack);
+            log.info("c3 send: {}", pack);
         }, 5000);
 
         System.in.read();
