@@ -13,8 +13,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.collections4.IterableUtils;
-import org.apache.commons.collections4.IteratorUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DynamicProxyBean;
@@ -37,6 +35,7 @@ import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
+import java.net.InetAddress;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +47,7 @@ import static com.alibaba.fastjson2.JSONReader.Feature.SupportClassForName;
 import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
 import static org.rx.core.Constants.PERCENT;
 import static org.rx.core.Extends.as;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.RxConfig.ConfigNames.NTP_ENABLE_FLAGS;
 import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 
@@ -157,6 +157,9 @@ public final class Sys extends SystemUtils {
             if (q.any(t -> Reflects.isInstance(v, t))) {
                 return v.getClass().getName();
             }
+            if (v instanceof InetAddress) {
+                return v.toString();
+            }
         }
         return v;
     };
@@ -166,7 +169,7 @@ public final class Sys extends SystemUtils {
     static {
         RxConfig conf = RxConfig.INSTANCE;
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
-                new File(Strings.EMPTY).getAbsolutePath(), Sockets.getAllLocalAddresses(), JSON.toJSONString(conf));
+                new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(false), JSON.toJSONString(conf));
 
         ObjectChangeTracker.DEFAULT.watch(conf, true)
                 .register(Sys.class)
@@ -571,6 +574,10 @@ public final class Sys extends SystemUtils {
     }
 
     public static String toJsonString(Object src) {
+        return toJsonString(src, null);
+    }
+
+    public static String toJsonString(Object src, ValueFilter valueFilter) {
         if (src == null) {
             return "{}";
         }
@@ -580,7 +587,7 @@ public final class Sys extends SystemUtils {
         }
 
         try {
-            return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(null, null, src), JSON_WRITE_SKIP_TYPES, JSON_WRITE_FLAGS);
+            return JSON.toJSONString(JSON_WRITE_SKIP_TYPES.apply(null, null, src), ifNull(valueFilter, JSON_WRITE_SKIP_TYPES), JSON_WRITE_FLAGS);
         } catch (Throwable e) {
             Linq<Object> q;
             if (Linq.tryAsIterableType(src.getClass())) {
