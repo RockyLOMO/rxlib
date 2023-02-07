@@ -22,7 +22,6 @@ import org.rx.util.function.Func;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Tasks.awaitQuietly;
 
@@ -56,33 +55,34 @@ public class Socks5Upstream extends Upstream {
             BigInteger hash = CodecUtil.hashUnsigned64(dstEpStr.getBytes(StandardCharsets.UTF_8));
             //change dest first
             destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
-//            Cache<Long, Boolean> cache = Cache.getInstance();
-//            if (!cache.containsKey(hash)) {
-//                try {
-//                    Tasks.runAsync(() -> {
-//                        Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
-//                        support.fakeEndpoint(hash, dstEpStr);
-//                        return true;
-//                    }).whenCompleteAsync((r, e) -> {
-//                        if (BooleanUtils.isTrue(r)) {
-//                            cache.put(hash, r);
-//                        }
-//                    }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
-//                } catch (Exception e) {
-//                    TraceHandler.INSTANCE.log(e);
-//                }
-//            }
 
-            Cache.getOrSet(hash, k -> awaitQuietly(() -> {
+            Cache<BigInteger, Boolean> cache = Cache.getInstance();
+            if (!cache.containsKey(hash)) {
                 try {
-                    Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
-                    support.fakeEndpoint(hash, dstEpStr);
-                    return true;
-                } catch (Throwable e) {
-                    TraceHandler.INSTANCE.log("test", e);
-                    return null;
+                    //Write the value after the current thread has timed out and the asynchronous thread is still executing successfully
+                    Tasks.runAsync(() -> {
+                        Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
+                        support.fakeEndpoint(hash, dstEpStr);
+                        return true;
+                    }).whenCompleteAsync((r, e) -> {
+                        if (BooleanUtils.isTrue(r)) {
+                            cache.put(hash, r);
+                        }
+                    }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
+                } catch (Exception e) {
+                    TraceHandler.INSTANCE.log(e);
                 }
-            }, SocksSupport.ASYNC_TIMEOUT));
+            }
+//            Cache.getOrSet(hash, k -> awaitQuietly(() -> {
+//                try {
+//                    Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
+//                    support.fakeEndpoint(hash, dstEpStr);
+//                    return true;
+//                } catch (Throwable e) {
+//                    TraceHandler.INSTANCE.log(e);
+//                    return null;
+//                }
+//            }, SocksSupport.ASYNC_TIMEOUT));
         }
 
         Socks5ProxyHandler proxyHandler = new Socks5ProxyHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());

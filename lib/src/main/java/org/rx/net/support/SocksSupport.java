@@ -15,7 +15,7 @@ public interface SocksSupport extends AutoCloseable, DnsServer.ResolveIntercepto
     List<String> FAKE_IPS = new CopyOnWriteArrayList<>();  //There is no need to set up '8.8.8.8'
     List<Integer> FAKE_PORTS = new CopyOnWriteArrayList<>(Arrays.toList(80));
     int DNS_PORT = 53;
-    long ASYNC_TIMEOUT = 5 * 1000;
+    long ASYNC_TIMEOUT = 4 * 1000;
     EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
     static Cache<BigInteger, UnresolvedEndpoint> fakeDict() {
