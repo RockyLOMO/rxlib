@@ -168,13 +168,9 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         });
         ResetEventWait syncRoot = new ResetEventWait();
         doConnect(false, syncRoot);
-        try {
-            syncRoot.waitOne(config.getConnectTimeoutMillis());
-            syncRoot.reset();
-        } catch (TimeoutException e) {
-            throw new InvalidException("Client connect fail", e);
-        }
-        if (!config.isEnableReconnect() && !isConnected()) {
+        syncRoot.waitOne(config.getConnectTimeoutMillis());
+        syncRoot.reset();
+        if (!isConnected()) {
             throw new InvalidException("Client connect {} fail", config.getServerEndpoint());
         }
     }

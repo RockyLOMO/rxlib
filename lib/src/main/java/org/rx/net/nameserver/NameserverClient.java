@@ -84,8 +84,10 @@ public final class NameserverClient extends Disposable {
     }
 
     public void waitInject(long timeout) throws TimeoutException {
-        syncRoot.waitOne(timeout);
-        syncRoot.set();
+        if (!syncRoot.waitOne(timeout)) {
+            throw new TimeoutException("Inject timeout");
+        }
+        syncRoot.reset();
     }
 
     public CompletableFuture<?> registerAsync(@NonNull String... registerEndpoints) {

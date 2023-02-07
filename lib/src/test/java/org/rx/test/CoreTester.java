@@ -866,7 +866,7 @@ public class CoreTester extends AbstractTester {
         System.out.println(JSON.toJSONString(x) + ", "
                 + JSON.toJSONString(iter) + " & " + JSON.toJSONString(Collections.singletonMap("list", iter)));
         InetAddress addr = Sockets.getLocalAddress();
-        System.out.println(toJsonString(addr) + " & " + JSON.toJSONString(addr));
+        System.out.println(toJsonString(addr) + ", " + toJsonString(Collections.singletonList(addr)) + " & " + JSON.toJSONString(addr));
     }
 
     @Test

@@ -1,7 +1,6 @@
 package org.rx.core;
 
 import lombok.Getter;
-import lombok.SneakyThrows;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.exception.InvalidException;
 
@@ -9,7 +8,7 @@ import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
 
-public final class ResetEventWait {
+public final class ResetEventWait implements EventWaitHandle {
     public static TimeoutException newTimeoutException(String message, Throwable e) {
         StringBuilder buf = new StringBuilder(message);
         if (e != null) {
@@ -20,7 +19,7 @@ public final class ResetEventWait {
 
     private volatile boolean open;
     @Getter
-    private int holdCount;
+    private volatile int holdCount;
 
     public ResetEventWait() {
         this(false);
@@ -30,30 +29,37 @@ public final class ResetEventWait {
         this.open = initialState;
     }
 
-    @SneakyThrows
-    public void waitOne() {
-        waitOne(TIMEOUT_INFINITE);
+    public boolean waitOne() {
+        return waitOne(TIMEOUT_INFINITE);
     }
 
-    public synchronized void waitOne(long timeout) throws TimeoutException {
-        timeout = timeout == TIMEOUT_INFINITE ? 0 : timeout;
+    /**
+     * Blocks the current thread until the current WaitHandle receives a signal, using a 32-bit signed integer to specify the time interval in milliseconds.
+     *
+     * @param timeoutMillis The number of milliseconds to wait, or Infinite (-1) to wait indefinitely.
+     * @return true if the current instance receives a signal; otherwise, false.
+     */
+    public synchronized boolean waitOne(long timeoutMillis) {
+        timeoutMillis = timeoutMillis == TIMEOUT_INFINITE ? 0 : timeoutMillis;
         while (!open) {
             try {
                 holdCount++;
-                wait(timeout);
+                wait(timeoutMillis);
             } catch (InterruptedException e) {
                 //ignore
+
                 throw InvalidException.sneaky(e);
             } finally {
                 holdCount--;
             }
-            if (timeout > 0) {
+            if (timeoutMillis > 0) {
                 if (!open) {
-                    throw new TimeoutException("Wait unpark timeout");
+                    return false;
                 }
                 break;
             }
         }
+        return true;
     }
 
     public synchronized void set() {
@@ -61,7 +67,7 @@ public final class ResetEventWait {
         notifyAll();
     }
 
-    public void reset() {//close stop
+    public synchronized void reset() {
         open = false;
     }
 }
