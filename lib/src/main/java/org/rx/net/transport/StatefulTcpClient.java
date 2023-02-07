@@ -295,11 +295,9 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     public synchronized void send(@NonNull Serializable pack) {
         if (!isConnected()) {
             if (isShouldReconnect()) {
-                try {
-                    FluentWait.polling(sendWaitConnectMillis).awaitTrue(w -> isConnected());
-                } catch (TimeoutException e) {
+                if (!FluentWait.polling(sendWaitConnectMillis).awaitTrue(w -> isConnected())) {
                     reconnectAsync();
-                    throw new ClientDisconnectedException(e);
+                    throw new ClientDisconnectedException(channelId());
                 }
             }
             if (!isConnected()) {
