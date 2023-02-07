@@ -193,17 +193,15 @@ public final class Remoting {
                 if (eventArgs != null) {
                     waitBeans = getClientBeans(client);
                     waitBeans.put(clientBean.pack.id, clientBean);
-                    try {
-                        clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis());
-                        clientBean.syncRoot.reset();
-                    } catch (TimeoutException e) {
+                    if (!clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis())) {
                         if (!client.isConnected()) {
-                            throw new ClientDisconnectedException(e);
+                            throw new ClientDisconnectedException(client);
                         }
                         if (clientBean.pack.returnValue == null) {
-                            throw e;
+                            throw new TimeoutException("Read timeout");
                         }
                     }
+                    clientBean.syncRoot.reset();
                 }
                 if (clientBean.pack.errorMessage != null) {
                     throw new RemotingException(clientBean.pack.errorMessage);
@@ -220,15 +218,13 @@ public final class Remoting {
                 }
                 waitBeans = getClientBeans(client);
                 waitBeans.put(clientBean.pack.id, clientBean);
-                try {
-                    clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis());
-                    clientBean.syncRoot.reset();
-                } catch (TimeoutException ie) {
+                if (!clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis())) {
                     if (clientBean.pack.returnValue == null) {
                         eventArgs.setError(e);
                         throw e;
                     }
                 }
+                clientBean.syncRoot.reset();
             } catch (Throwable e) {
                 if (eventArgs != null) {
                     eventArgs.setError(e);

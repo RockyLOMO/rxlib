@@ -143,25 +143,14 @@ public final class Sys extends SystemUtils {
     static final JSONReader.Feature[] JSON_READ_FLAGS = new JSONReader.Feature[]{SupportClassForName, AllowUnQuotedFieldNames};
     static final JSONWriter.Feature[] JSON_WRITE_FLAGS = new JSONWriter.Feature[]{NotWriteDefaultValue};
     public static final ValueFilter JSON_WRITE_SKIP_TYPES = (o, k, v) -> {
-        if (v != null) {
-            Linq<Class<?>> q = Linq.from(RxConfig.INSTANCE.jsonSkipTypes);
-            Iterable<Object> iter = Linq.asIterable(v, false);
-            if (iter != null) {
-                return Linq.from(iter).select(iv -> {
-                    if (iv != null && q.any(t -> Reflects.isInstance(iv, t))) {
-                        return iv.getClass().getName();
-                    }
-                    return iv;
-                }).toList(); //fastjson2 iterable issues
-            }
-            if (q.any(t -> Reflects.isInstance(v, t))) {
-                return v.getClass().getName();
-            }
-            if (v instanceof InetAddress) {
-                return v.toString();
-            }
+        if (v == null) {
+            return null;
         }
-        return v;
+        Iterable<Object> iter = Linq.asIterable(v, false);
+        if (iter != null) {
+            return Linq.from(iter).select(iv -> jsonValueFilter(o, k, iv)).toList(); //fastjson2 iterable issues
+        }
+        return jsonValueFilter(o, k, v);
     };
     static final String[] seconds = {"ns", "µs", "ms", "s"};
     static Timeout samplingTimeout;
@@ -604,6 +593,18 @@ public final class Sys extends SystemUtils {
             json.put("_error", e.getMessage());
             return json.toString();
         }
+    }
+
+    static Object jsonValueFilter(Object o, String k, Object v) {
+        if (v != null) {
+            if (v instanceof InetAddress) {
+                return v.toString();
+            }
+            if (Linq.from(RxConfig.INSTANCE.jsonSkipTypes).any(t -> Reflects.isInstance(v, t))) {
+                return v.getClass().getName();
+            }
+        }
+        return v;
     }
     //endregion
     //endregion
