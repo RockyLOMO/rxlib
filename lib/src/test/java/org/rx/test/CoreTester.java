@@ -892,23 +892,23 @@ public class CoreTester extends AbstractTester {
     @Test
     public void fluentWait() throws TimeoutException {
         AtomicInteger i = new AtomicInteger();
-        FluentWait.newInstance(2000, 200).until(s -> {
-            log.info("each[{}] {}", i.incrementAndGet(), s);
+        FluentWait.polling(2000, 200).await(w -> {
+            log.info("each[{}] {}", i.incrementAndGet(), w);
             return true;
         });
         assert i.get() == 1;
-        FluentWait.newInstance(2000, 200).until(s -> {
-            log.info("each[{}] {}", i.incrementAndGet(), s);
-            return s.getEvaluatedCount() == 9;
+        FluentWait.polling(2000, 200).awaitTrue(w -> {
+            log.info("each[{}] {}", i.incrementAndGet(), w);
+            return w.getEvaluatedCount() == 9;
         });
         assert i.get() == 11;
 
-        FluentWait.newInstance(2000, 200).retryEvery(500).until(s -> {
-            log.info("each {}", s);
-            return s.getEvaluatedCount() == 9;
-        }, s -> {
-            log.info("doRetry {}", s);
-            return true;
+        FluentWait.polling(2000, 200).retryEvery(500, w -> {
+            log.info("doRetry {}", w);
+        }).awaitTrue(w -> {
+            log.info("each ec={} {}", w.getEvaluatedCount(), w);
+            w.signal();
+            return w.getEvaluatedCount() == 9;
         });
     }
 
