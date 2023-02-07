@@ -88,8 +88,13 @@ public class FluentWait implements WaitHandle {
         throw InvalidException.sneaky(e);
     }
 
-    public boolean awaitTrue(PredicateFunc<FluentWait> isTrue) throws TimeoutException {
-        return ifNull(await(w -> isTrue.invoke(w) ? Boolean.TRUE : null), Boolean.FALSE);
+    public boolean awaitTrue(PredicateFunc<FluentWait> isTrue) {
+        try {
+            return ifNull(await(w -> isTrue.invoke(w) ? Boolean.TRUE : null), Boolean.FALSE);
+        } catch (TimeoutException e) {
+            //ignore
+        }
+        return false;
     }
 
     public <T> T await() throws TimeoutException {
