@@ -170,7 +170,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         doConnect(false, syncRoot);
         syncRoot.waitOne(config.getConnectTimeoutMillis());
         syncRoot.reset();
-        if (!isConnected()) {
+        if (!config.isEnableReconnect() && !isConnected()) {
             throw new InvalidException("Client connect {} fail", config.getServerEndpoint());
         }
     }
@@ -209,12 +209,20 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
 
             @Override
             public Void get() throws InterruptedException, ExecutionException {
-                return connectingFuture.get();
+                ChannelFuture f = connectingFuture;
+                if (f == null) {
+                    return null;
+                }
+                return f.get();
             }
 
             @Override
             public Void get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-                return connectingFuture.get(timeout, unit);
+                ChannelFuture f = connectingFuture;
+                if (f == null) {
+                    return null;
+                }
+                return f.get(timeout, unit);
             }
         };
     }
