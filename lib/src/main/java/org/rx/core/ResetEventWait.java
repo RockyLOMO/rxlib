@@ -1,22 +1,11 @@
 package org.rx.core;
 
 import lombok.Getter;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.exception.InvalidException;
-
-import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
 
-public final class ResetEventWait implements EventWaitHandle {
-    public static TimeoutException newTimeoutException(String message, Throwable e) {
-        StringBuilder buf = new StringBuilder(message);
-        if (e != null) {
-            buf.append("\n").append(ExceptionUtils.getStackTrace(e));
-        }
-        return new TimeoutException(buf.toString());
-    }
-
+public final class ResetEventWait implements WaitHandle {
     private volatile boolean open;
     @Getter
     private volatile int holdCount;
@@ -47,7 +36,6 @@ public final class ResetEventWait implements EventWaitHandle {
                 wait(timeoutMillis);
             } catch (InterruptedException e) {
                 //ignore
-
                 throw InvalidException.sneaky(e);
             } finally {
                 holdCount--;
@@ -69,5 +57,15 @@ public final class ResetEventWait implements EventWaitHandle {
 
     public synchronized void reset() {
         open = false;
+    }
+
+    @Override
+    public boolean await(long timeoutMillis) {
+        return waitOne(timeoutMillis);
+    }
+
+    @Override
+    public void signal() {
+        set();
     }
 }

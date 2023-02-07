@@ -6,6 +6,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
+import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.PredicateFunc;
 
@@ -14,56 +15,41 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
-import static org.rx.core.Extends.require;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-public class FluentWait {
-    public static FluentWait newInstance(long timeoutMillis) {
-        return newInstance(timeoutMillis, Constants.DEFAULT_INTERVAL);
+public class FluentWait implements WaitHandle {
+    public static FluentWait polling(long timeoutMillis) {
+        return polling(timeoutMillis, Constants.DEFAULT_INTERVAL);
     }
 
-    public static FluentWait newInstance(long timeoutMillis, long intervalMillis) {
+    public static FluentWait polling(long timeoutMillis, long intervalMillis) {
+        return polling(timeoutMillis, intervalMillis, null);
+    }
+
+    public static <T> FluentWait polling(long timeoutMillis, long intervalMillis, BiFunc<FluentWait, T> resultFunc) {
         require(timeoutMillis, timeoutMillis > TIMEOUT_INFINITE);
         require(intervalMillis, intervalMillis > TIMEOUT_INFINITE);
 
-        return new FluentWait(timeoutMillis, intervalMillis);
+        FluentWait wait = new FluentWait(timeoutMillis, intervalMillis);
+        wait.resultFunc = (BiFunc<FluentWait, Object>) resultFunc;
+        return wait;
     }
 
-    @Getter
     final long timeout;
-    //    @Getter
     final long interval;
-    private long retryMillis = TIMEOUT_INFINITE;
-    private boolean doRetryFirst;
-    private boolean throwOnTimeout = true;
-    private String message;
+    private BiFunc<FluentWait, Object> resultFunc;
     private List<Class<? extends Throwable>> ignoredExceptions;
+    private String message;
+    private long retryMillis = TIMEOUT_INFINITE;
+    private BiAction<FluentWait> retryFunc;
+    private boolean retryOnStart;
     @Getter
-    private long endTime;
+    private long deadline;
     @Getter
     private int evaluatedCount;
-
-    public FluentWait retryEvery(long interval) {
-        return retryEvery(interval, false);
-    }
-
-    public synchronized FluentWait retryEvery(long interval, boolean doRetryFirst) {
-        require(interval, interval >= TIMEOUT_INFINITE);
-        this.retryMillis = interval;
-        this.doRetryFirst = doRetryFirst;
-        return this;
-    }
-
-    public synchronized FluentWait throwOnTimeout(boolean throwOnTimeout) {
-        this.throwOnTimeout = throwOnTimeout;
-        return this;
-    }
-
-    public synchronized FluentWait withMessage(String message) {
-        this.message = message;
-        return this;
-    }
+    volatile boolean doBreak;
 
     @SafeVarargs
     public synchronized final FluentWait ignoreExceptions(Class<? extends Throwable>... exceptions) {
@@ -74,93 +60,21 @@ public class FluentWait {
         return this;
     }
 
-    public FluentWait sleep() {
-        if (interval > 0) {
-            try {
-                Thread.sleep(interval);
-            } catch (InterruptedException e) {
-                throw InvalidException.sneaky(e);
-            }
-        }
+    public synchronized FluentWait withMessage(String message) {
+        this.message = message;
         return this;
     }
 
-    public <T> T until(BiFunc<FluentWait, T> isTrue) throws TimeoutException {
-        return until(isTrue, null);
+    public FluentWait retryEvery(long interval, BiAction<FluentWait> retryFunc) {
+        return retryEvery(interval, retryFunc, false);
     }
 
-    /**
-     * Repeatedly applies this instance's input value to the given function until one of the following
-     * occurs:
-     * <ol>
-     * <li>the function returns neither null nor false</li>
-     * <li>the function throws an unignored exception</li>
-     * <li>the timeout expires</li>
-     * <li>the current thread is interrupted</li>
-     * </ol>
-     *
-     * @param isTrue the parameter to pass to the {@link BiFunc}
-     * @param <T>    The function's expected return type.
-     * @return The function's return value if the function returned something different
-     * from null or false before the timeout expired.
-     * @throws TimeoutException If the timeout expires.
-     */
-    public synchronized <T> T until(@NonNull BiFunc<FluentWait, T> isTrue, PredicateFunc<FluentWait> retryCondition) throws TimeoutException {
-        if (endTime != 0) {
-            throw new InvalidException("Not support invoke nested");
-        }
-        if (retryCondition != null && retryMillis == TIMEOUT_INFINITE) {
-            log.warn("Not call retryEvery() before until()");
-        }
-
-        endTime = System.currentTimeMillis() + timeout;
-        evaluatedCount = 0;
-        try {
-            int retryCount = TIMEOUT_INFINITE;
-            if (retryCondition != null) {
-                if (doRetryFirst) {
-                    retryCondition.test(this);
-                }
-                if (retryMillis > TIMEOUT_INFINITE) {
-                    retryCount = (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
-                }
-            }
-
-            Throwable lastException;
-            T lastResult = null;
-            do {
-                try {
-                    lastResult = isTrue.invoke(this);
-                    if (lastResult != null && (!(lastResult instanceof Boolean) || Boolean.TRUE.equals(lastResult))) {
-                        return lastResult;
-                    }
-                    lastException = null;
-                } catch (Throwable e) {
-                    lastException = propagateIfNotIgnored(e);
-                } finally {
-                    evaluatedCount++;
-                }
-
-                sleep();
-
-                if (retryCount > TIMEOUT_INFINITE && (retryCount == 0 || evaluatedCount % retryCount == 0)) {
-                    if (!retryCondition.test(this)) {
-                        break;
-                    }
-                }
-            }
-            while (endTime > System.currentTimeMillis());
-            if (!throwOnTimeout) {
-                return lastResult;
-            }
-
-            String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval)",
-                    message == null ? "waiting for " + isTrue : message,
-                    timeout, interval);
-            throw ResetEventWait.newTimeoutException(timeoutMessage, lastException);
-        } finally {
-            endTime = 0;
-        }
+    public synchronized FluentWait retryEvery(long interval, BiAction<FluentWait> retryFunc, boolean retryOnStart) {
+        require(interval, interval >= TIMEOUT_INFINITE);
+        this.retryMillis = interval;
+        this.retryFunc = retryFunc;
+        this.retryOnStart = retryOnStart;
+        return this;
     }
 
     private Throwable propagateIfNotIgnored(Throwable e) {
@@ -172,5 +86,97 @@ public class FluentWait {
             }
         }
         throw InvalidException.sneaky(e);
+    }
+
+    public boolean awaitTrue(PredicateFunc<FluentWait> isTrue) throws TimeoutException {
+        return ifNull(await(w -> isTrue.invoke(w) ? Boolean.TRUE : null), Boolean.FALSE);
+    }
+
+    public <T> T await() throws TimeoutException {
+        return (T) await(resultFunc);
+    }
+
+    /**
+     * Repeatedly applies this instance's input value to the given function until one of the following
+     * occurs:
+     * <ol>
+     * <li>the function returns neither null</li>
+     * <li>the function throws an unignored exception</li>
+     * <li>the timeout expires</li>
+     * <li>the current thread is interrupted</li>
+     * </ol>
+     *
+     * @param resultFunc the parameter to pass to the {@link BiFunc}
+     * @param <T>        The function's expected return type.
+     * @return The function's return value if the function returned something different from null before the timeout expired.
+     * @throws TimeoutException If the timeout expires.
+     */
+    public synchronized <T> T await(@NonNull BiFunc<FluentWait, T> resultFunc) throws TimeoutException {
+        if (deadline != 0) {
+            throw new InvalidException("Not support await nested");
+        }
+
+        doBreak = false;
+        deadline = System.currentTimeMillis() + timeout;
+        try {
+            int retryCount = TIMEOUT_INFINITE;
+            if (retryFunc != null) {
+                if (retryOnStart) {
+                    retryFunc.accept(this);
+                }
+                if (retryMillis > TIMEOUT_INFINITE) {
+                    retryCount = (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
+                }
+            }
+
+            boolean doRetry = retryCount > TIMEOUT_INFINITE;
+            Throwable cause;
+            T result = null;
+            do {
+                try {
+                    if ((result = resultFunc.invoke(this)) != null) {
+                        return result;
+                    }
+                    cause = null;
+                } catch (Throwable e) {
+                    cause = propagateIfNotIgnored(e);
+                } finally {
+                    evaluatedCount++;
+                }
+
+                if (doRetry && (retryCount == 0 || evaluatedCount % retryCount == 0)) {
+                    retryFunc.accept(this);
+                }
+
+                if (doBreak) {
+                    return result;
+                }
+                sleep(interval);
+            }
+            while (deadline > System.currentTimeMillis());
+
+            String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval)",
+                    message == null ? "waiting for " + resultFunc : message,
+                    timeout, interval);
+            throw WaitHandle.newTimeoutException(timeoutMessage, cause);
+        } finally {
+            deadline = 0;
+            evaluatedCount = 0;
+        }
+    }
+
+    @Override
+    public boolean await(long timeoutMillis) {
+        try {
+            polling(timeoutMillis, interval, resultFunc).await();
+            return true;
+        } catch (TimeoutException e) {
+            return false;
+        }
+    }
+
+    @Override
+    public void signal() {
+        doBreak = true;
     }
 }
