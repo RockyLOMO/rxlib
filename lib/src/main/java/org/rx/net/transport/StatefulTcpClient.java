@@ -8,6 +8,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -15,6 +16,7 @@ import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.transport.protocol.ErrorPacket;
 import org.rx.net.transport.protocol.PingPacket;
+import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -153,7 +155,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     }
 
     @Override
-    public synchronized void connect(@NonNull InetSocketAddress remoteEp) {
+    public synchronized void connect(@NonNull InetSocketAddress remoteEp) throws TimeoutException {
         if (isConnected()) {
             throw new InvalidException("Client has connected");
         }
@@ -166,12 +168,17 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler());
         });
-        ResetEventWait syncRoot = new ResetEventWait();
+        final Object syncRoot = config;
         doConnect(false, syncRoot);
-        syncRoot.waitOne(config.getConnectTimeoutMillis());
-        syncRoot.reset();
+        synchronized (syncRoot) {
+            try {
+                syncRoot.wait(config.getConnectTimeoutMillis());
+            } catch (InterruptedException e) {
+                throw InvalidException.sneaky(e);
+            }
+        }
         if (!isConnected()) {
-            throw new InvalidException("Client connect {} fail", config.getServerEndpoint());
+            throw new TimeoutException(MessageFormatter.format("Client connect {} timeout", config.getServerEndpoint()).getMessage());
         }
     }
 
@@ -209,17 +216,25 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
 
             @Override
             public Void get() throws InterruptedException, ExecutionException {
-                return connectingFuture.get();
+                ChannelFuture f = connectingFuture;
+                if (f == null) {
+                    return null;
+                }
+                return f.get();
             }
 
             @Override
             public Void get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-                return connectingFuture.get(timeout, unit);
+                ChannelFuture f = connectingFuture;
+                if (f == null) {
+                    return null;
+                }
+                return f.get(timeout, unit);
             }
         };
     }
 
-    synchronized void doConnect(boolean reconnect, ResetEventWait syncRoot) {
+    synchronized void doConnect(boolean reconnect, Object syncRoot) {
         InetSocketAddress ep;
         if (reconnect) {
             if (!isShouldReconnect()) {
@@ -257,7 +272,9 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             localEndpoint = (InetSocketAddress) channel.localAddress();
 
             if (syncRoot != null) {
-                syncRoot.set();
+                synchronized (syncRoot) {
+                    syncRoot.notifyAll();
+                }
             }
             if (reconnect) {
                 log.info("reconnect {} ok", ep);

@@ -1,8 +1,11 @@
 package org.rx.net.rpc;
 
 import lombok.RequiredArgsConstructor;
+import org.rx.exception.InvalidException;
 import org.rx.net.transport.StatefulTcpClient;
 import org.rx.net.transport.TcpClientConfig;
+
+import java.util.concurrent.TimeoutException;
 
 @RequiredArgsConstructor
 class NonClientPool implements TcpClientPool {
@@ -12,7 +15,13 @@ class NonClientPool implements TcpClientPool {
     public StatefulTcpClient borrowClient() {
         TcpClientConfig config = template.deepClone();
         StatefulTcpClient client = new StatefulTcpClient(config);
-        client.connect(config.getServerEndpoint());
+        try {
+            client.connect(config.getServerEndpoint());
+        } catch (TimeoutException e) {
+            if (!config.isEnableReconnect()) {
+                throw InvalidException.sneaky(e);
+            }
+        }
         return client;
     }
 
