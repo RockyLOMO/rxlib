@@ -10,13 +10,14 @@ import org.rx.core.Strings;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 
 public interface TcpClient extends AutoCloseable, EventPublisher<TcpClient> {
     boolean isConnected();
 
     InetSocketAddress getRemoteEndpoint();
 
-    void connect(InetSocketAddress remoteEp);
+    void connect(InetSocketAddress remoteEp) throws TimeoutException;
 
     Future<Void> connectAsync(InetSocketAddress remoteEp);
 

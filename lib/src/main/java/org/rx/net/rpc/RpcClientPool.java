@@ -8,6 +8,8 @@ import org.rx.core.ObjectPool;
 import org.rx.net.transport.StatefulTcpClient;
 import org.rx.net.transport.TcpClientConfig;
 
+import java.util.concurrent.TimeoutException;
+
 @Slf4j
 @RequiredArgsConstructor
 class RpcClientPool extends Disposable implements TcpClientPool {
@@ -19,7 +21,13 @@ class RpcClientPool extends Disposable implements TcpClientPool {
         pool = new ObjectPool<>(minSize, maxSize, () -> {
             TcpClientConfig config = template.getTcpConfig().deepClone();
             StatefulTcpClient client = new StatefulTcpClient(config);
-            client.connect(config.getServerEndpoint());
+            try {
+                client.connect(config.getServerEndpoint());
+            } catch (TimeoutException e) {
+                if (!config.isEnableReconnect()) {
+                    throw e;
+                }
+            }
             log.debug("Create RpcClient {}", client);
             return client;
         }, c -> c.getConfig().isEnableReconnect() || c.isConnected(), client -> {
