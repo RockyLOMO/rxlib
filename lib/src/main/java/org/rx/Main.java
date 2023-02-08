@@ -73,6 +73,7 @@ public final class Main implements SocksSupport {
         public int steeringTTL;
         public List<String> gfwList;
         public List<String> directList;
+        public int waitIpInfoMillis = 1000;
         public int ddnsSeconds;
         public List<String> ddnsDomains;
         public String godaddyKey;
@@ -268,7 +269,7 @@ public final class Main implements SocksSupport {
                 } else if (Sockets.isBypass(conf.directList, host)) {
                     gfw = false;
                 } else {
-                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(host, true), SocksSupport.ASYNC_TIMEOUT / 2);
+                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(host, true), conf.waitIpInfoMillis);
                     gfw = ipAddress == null || !ipAddress.isChina();
                 }
                 if (!gfw) {

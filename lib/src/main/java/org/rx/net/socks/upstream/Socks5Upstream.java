@@ -23,8 +23,6 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
-import static org.rx.core.Tasks.awaitQuietly;
-
 public class Socks5Upstream extends Upstream {
     final SocksConfig config; //Maybe frontend have a different configuration from backend
     final Func<UpstreamSupport> router;

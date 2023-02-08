@@ -384,8 +384,8 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return data;
     }
 
-    public final IOStream<TI, TO> rewind() {
+    public final <T extends IOStream<TI, TO>> T rewind() {
         setPosition(0);
-        return this;
+        return (T) this;
     }
 }
