@@ -21,7 +21,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import static org.rx.core.Extends.quietly;
 import static org.rx.net.dns.DnsServer.DOMAIN_PREFIX;
 
 @Slf4j
@@ -59,8 +58,8 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             List<InetAddress> sIps = server.interceptorCache.get(k);
             if (sIps == null) {
                 //cache value can't be null
-                server.interceptorCache.put(k, sIps = quietly(() -> interceptors.next().resolveHost(domain), 2, Collections::emptyList),
-                        CachePolicy.absolute(sIps.isEmpty() ? 5 : server.ttl));
+                server.interceptorCache.put(k, sIps = interceptors.next().resolveHost(domain),
+                        CachePolicy.absolute(CollectionUtils.isEmpty(sIps) ? 5 : server.ttl));
             }
             if (CollectionUtils.isEmpty(sIps)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
