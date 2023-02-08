@@ -15,5 +15,5 @@ public interface WaitHandle {
 
     boolean await(long timeoutMillis);
 
-    void signal();
+    void signalAll();
 }

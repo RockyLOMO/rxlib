@@ -130,7 +130,7 @@ public class FluentWait implements WaitHandle {
                     retryFunc.accept(this);
                 }
                 if (retryMillis > TIMEOUT_INFINITE) {
-                    retryCount = (int) (interval > 0 ? Math.floor((double) retryMillis / interval) : timeout);
+                    retryCount = interval > 0 ? (int) Math.floor((double) retryMillis / interval) : 0;
                 }
             }
 
@@ -181,7 +181,7 @@ public class FluentWait implements WaitHandle {
     }
 
     @Override
-    public void signal() {
+    public void signalAll() {
         doBreak = true;
     }
 }

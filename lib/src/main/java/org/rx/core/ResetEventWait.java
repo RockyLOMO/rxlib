@@ -5,7 +5,7 @@ import org.rx.exception.InvalidException;
 
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
 
-public final class ResetEventWait implements WaitHandle {
+public class ResetEventWait implements WaitHandle {
     private volatile boolean open;
     @Getter
     private volatile int holdCount;
@@ -65,7 +65,7 @@ public final class ResetEventWait implements WaitHandle {
     }
 
     @Override
-    public void signal() {
+    public void signalAll() {
         set();
     }
 }

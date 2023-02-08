@@ -2,7 +2,6 @@ package org.rx.test;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.TypeReference;
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -907,7 +906,7 @@ public class CoreTester extends AbstractTester {
             log.info("doRetry {}", w);
         }).awaitTrue(w -> {
             log.info("each ec={} {}", w.getEvaluatedCount(), w);
-            w.signal();
+            w.signalAll();
             return w.getEvaluatedCount() == 9;
         });
     }

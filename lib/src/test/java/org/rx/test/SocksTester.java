@@ -16,10 +16,8 @@ import org.rx.bean.MultiValueMap;
 import org.rx.bean.RandomList;
 import org.rx.bean.ULID;
 import org.rx.codec.AESUtil;
+import org.rx.core.*;
 import org.rx.core.Arrays;
-import org.rx.core.EventArgs;
-import org.rx.core.RxConfig;
-import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
@@ -234,6 +232,42 @@ public class SocksTester extends AbstractTester {
         }, 5000);
 
         System.in.read();
+    }
+
+    @SneakyThrows
+    @Test
+    public void netWait() {
+        AtomicInteger c = new AtomicInteger();
+        String g1 = "g1", g2 = "g2";
+        NetEventWait wait1 = new NetEventWait(g1),
+                wait2 = new NetEventWait(g1),
+                wait3 = new NetEventWait(g2);
+
+        Tasks.run(() -> {
+            boolean ok = wait1.await();
+            c.incrementAndGet();
+            log.info("wait1 {}", ok);
+        });
+        Tasks.run(() -> {
+            boolean ok = wait2.await();
+            c.incrementAndGet();
+            log.info("wait2 {}", ok);
+        });
+//        Tasks.run(() -> {
+//            boolean ok = wait3.await(2000, 500, w -> {
+//                log.info("segment {}", 1);
+//                return false;
+//            });
+//            log.info("wait3 {}", ok);
+//        });
+
+        Tasks.setTimeout(() -> {
+            wait2.setMulticastCount(2);
+            wait2.signalAll();
+            log.info("wait2 signalAll");
+        }, 4000);
+
+        FluentWait.polling(10000, 1000).awaitTrue(w -> c.get() == 2);
     }
 
     //region rpc
