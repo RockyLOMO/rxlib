@@ -93,6 +93,7 @@ public final class Main implements SocksSupport {
         }
 
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
+        RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
         SocksConfig frontConf = new SocksConfig(port);
         YamlConfiguration watcher = new YamlConfiguration("conf.yml").enableWatch();
         watcher.onChanged.combine((s, e) -> {
@@ -110,6 +111,7 @@ public final class Main implements SocksSupport {
                 tryClose(support.getSupport());
             }
             shadowServers.clear();
+            dnsInterceptors.clear();
             for (AuthenticEndpoint shadowServer : svrs) {
                 RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 6);
                 rpcConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
@@ -138,6 +140,7 @@ public final class Main implements SocksSupport {
                     }
                 }), Integer.parseInt(weight));
             }
+            dnsInterceptors.addAll(Linq.from(shadowServers).<DnsServer.ResolveInterceptor>select(UpstreamSupport::getSupport).toList());
             log.info("reload svrs {}", toJsonString(svrs));
 
             if (conf.bypassHosts != null) {
@@ -160,7 +163,7 @@ public final class Main implements SocksSupport {
         Integer shadowDnsPort = Reflects.convertQuietly(options.get("shadowDnsPort"), Integer.class, 53);
         DnsServer dnsSvr = new DnsServer(shadowDnsPort);
         dnsSvr.setTtl(60 * 60 * 10); //12 hour
-        dnsSvr.setInterceptors(new RandomList<>(Linq.from(shadowServers).<DnsServer.ResolveInterceptor>select(UpstreamSupport::getSupport).toList()));
+        dnsSvr.setInterceptors(dnsInterceptors);
         dnsSvr.addHostsFile("hosts.txt");
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
