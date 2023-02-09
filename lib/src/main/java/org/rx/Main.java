@@ -115,6 +115,7 @@ public final class Main implements SocksSupport {
             dnsInterceptors.clear();
             for (AuthenticEndpoint shadowServer : svrs) {
                 RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 6);
+                rpcConf.getTcpConfig().setEnableReconnect(true);
                 rpcConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
                 String weight = shadowServer.getParameters().get("w");
                 if (Strings.isEmpty(weight)) {
