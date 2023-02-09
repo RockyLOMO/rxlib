@@ -69,9 +69,6 @@ public class ObjectPool<T> extends Disposable {
 //    long maxLifetime = 1800000;
     @Getter
     long leakDetectionThreshold;
-//    @Getter
-//    @Setter
-//    boolean retireLeak;
 
     public int size() {
         return size.get();
@@ -113,9 +110,7 @@ public class ObjectPool<T> extends Disposable {
         this.validateHandler = validateHandler;
         this.passivateHandler = passivateHandler;
 
-        for (int i = 0; i < minSize; i++) {
-            doCreate();
-        }
+        insureMinSize();
         Tasks.timer.setTimeout(this::validNow, d -> validationTimeout, this, TimeoutFlag.PERIOD.flags());
     }
 
@@ -123,6 +118,13 @@ public class ObjectPool<T> extends Disposable {
     protected void freeObjects() {
         for (T obj : stack) {
             doRetire(obj);
+        }
+    }
+
+    void insureMinSize() {
+        log.info("insureMinSize {} = {}", size(), conf.size());
+        for (int i = size(); i < minSize; i++) {
+            doCreate();
         }
     }
 
@@ -138,11 +140,11 @@ public class ObjectPool<T> extends Disposable {
             if (c.isLeaked(leakDetectionThreshold)) {
                 TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
                         String.format("Pool %s owned Object '%s' leaked.\n%s", this, obj, Reflects.getStackTrace(c.t)));
-//                if (retireLeak) {
                 doRetire(obj);
-//                }
             }
         });
+
+        insureMinSize();
     }
 
     T doCreate() {
