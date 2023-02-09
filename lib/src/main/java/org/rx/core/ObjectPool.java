@@ -62,7 +62,7 @@ public class ObjectPool<T> extends Disposable {
     @Getter
     long idleTimeout = 600000;
     @Getter
-    long validationTimeout = 5000;
+    long validationTime = 5000;
     //    long keepaliveTime;
 //    long maxLifetime = 1800000;
     @Getter
@@ -80,8 +80,8 @@ public class ObjectPool<T> extends Disposable {
         this.idleTimeout = idleTimeout == 0 ? 0 : Math.max(10000, idleTimeout);
     }
 
-    public void setValidationTimeout(long validationTimeout) {
-        this.validationTimeout = Math.max(250, validationTimeout);
+    public void setValidationTime(long validationTime) {
+        this.validationTime = Math.max(250, validationTime);
     }
 
     public void setLeakDetectionThreshold(long leakDetectionThreshold) {
@@ -109,7 +109,7 @@ public class ObjectPool<T> extends Disposable {
         this.passivateHandler = passivateHandler;
 
         insureMinSize();
-        Tasks.timer.setTimeout(this::validNow, d -> validationTimeout, this, TimeoutFlag.PERIOD.flags());
+        Tasks.timer.setTimeout(this::validNow, d -> validationTime, this, TimeoutFlag.PERIOD.flags());
     }
 
     @Override
@@ -249,13 +249,12 @@ public class ObjectPool<T> extends Disposable {
     @Override
     public String toString() {
         return "ObjectPool{" +
-                "stack=" + stack.size() +
-                ", conf=" + conf.size() +
+                "stack=" + stack.size() + ":" + conf.size() +
                 ", size=" + size +
-                ", confSize=" + minSize + "-" + maxSize +
+                ", poolSize=" + minSize + "-" + maxSize +
                 ", borrowTimeout=" + borrowTimeout +
                 ", idleTimeout=" + idleTimeout +
-                ", validationTimeout=" + validationTimeout +
+                ", validationTime=" + validationTime +
                 ", leakDetectionThreshold=" + leakDetectionThreshold +
                 '}';
     }

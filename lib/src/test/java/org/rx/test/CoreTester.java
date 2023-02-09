@@ -499,7 +499,7 @@ public class CoreTester extends AbstractTester {
         }
 
         pool.setIdleTimeout(1);
-        pool.setValidationTimeout(1);
+        pool.setValidationTime(1);
         pool.setLeakDetectionThreshold(1);
 //        pool.setRetireLeak(true);
         sleep(15000);
