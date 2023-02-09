@@ -56,12 +56,19 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class Sockets {
+    public interface ReactorNames {
+        String SHARED_TCP = "_TCP";
+        String SHARED_UDP = "_UDP";
+        String RPC = "RPC";
+        String DNS = "DNS";
+        String SS = "SS";
+    }
+
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
     public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
     static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
-    static final String SHARED_TCP_REACTOR = "_TCP", SHARED_UDP_REACTOR = "_UDP", SHARED_UDP_SVR_REACTOR = "_SUDP";
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
@@ -118,15 +125,11 @@ public final class Sockets {
         });
     }
 
-    static EventLoopGroup reactor(String reactorName, boolean isTcp) {
+    public static EventLoopGroup reactor(String reactorName, boolean isTcp) {
         return reactors.computeIfAbsent(reactorName, k -> {
             int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
             return isTcp && Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
         });
-    }
-
-    public static EventLoopGroup udpReactor() {
-        return reactor(SHARED_UDP_REACTOR, false);
     }
 
     //Don't use executor
@@ -155,7 +158,7 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
         WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(SHARED_TCP_REACTOR, true) : newEventLoop(0))
+                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(ReactorNames.SHARED_TCP, true) : newEventLoop(0))
                 .channel(Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
                 .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
 //                .option(ChannelOption.SO_REUSEADDR, true)
@@ -203,10 +206,10 @@ public final class Sockets {
     }
 
     public static Bootstrap bootstrap(SocketConfig config, BiAction<SocketChannel> initChannel) {
-        return bootstrap(SHARED_TCP_REACTOR, config, initChannel);
+        return bootstrap(ReactorNames.SHARED_TCP, config, initChannel);
     }
 
-    public static Bootstrap bootstrap(@NonNull String reactorName, SocketConfig config, BiAction<SocketChannel> initChannel) {
+    public static Bootstrap bootstrap(String reactorName, SocketConfig config, BiAction<SocketChannel> initChannel) {
         return bootstrap(reactor(reactorName, true), config, initChannel);
     }
 
@@ -296,22 +299,22 @@ public final class Sockets {
     }
     //endregion
 
-    public static Bootstrap udpServerBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(SHARED_UDP_SVR_REACTOR, mode, false, initChannel);
+    public static Bootstrap udpBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(ReactorNames.SHARED_UDP, mode, false, initChannel);
     }
 
-    public static Bootstrap udpBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(mode, false, initChannel);
+    public static Bootstrap udpBootstrap(String reactorName, MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(reactorName, mode, false, initChannel);
     }
 
     public static Bootstrap udpBootstrap(MemoryMode mode, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(SHARED_UDP_REACTOR, mode, multicast, initChannel);
+        return udpBootstrap(ReactorNames.SHARED_UDP, mode, multicast, initChannel);
     }
 
     //BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
     //DefaultDatagramChannelConfig
     @SneakyThrows
-    static Bootstrap udpBootstrap(String reactorName, MemoryMode mode, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
+    static Bootstrap udpBootstrap(@NonNull String reactorName, MemoryMode mode, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
         if (mode == null) {
             mode = MemoryMode.LOW;
         }
