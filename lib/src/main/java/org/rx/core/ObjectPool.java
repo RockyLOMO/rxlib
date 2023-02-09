@@ -2,7 +2,6 @@ package org.rx.core;
 
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -10,7 +9,6 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 import org.rx.util.function.PredicateFunc;
 
-import java.util.Deque;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -52,7 +50,7 @@ public class ObjectPool<T> extends Disposable {
     final Func<T> createHandler;
     final PredicateFunc<T> validateHandler;
     final BiAction<T> passivateHandler;
-    final Deque<T> stack = new ConcurrentLinkedDeque<>();
+    final ConcurrentLinkedDeque<T> stack = new ConcurrentLinkedDeque<>();
     final Map<T, ObjectConf> conf = new ConcurrentHashMap<>();
     final AtomicInteger size = new AtomicInteger();
     @Getter
@@ -117,14 +115,13 @@ public class ObjectPool<T> extends Disposable {
     @Override
     protected void freeObjects() {
         for (T obj : stack) {
-            doRetire(obj);
+            doRetire(obj, 0);
         }
     }
 
     void insureMinSize() {
-        log.info("insureMinSize {} = {}", size(), conf.size());
         for (int i = size(); i < minSize; i++) {
-            doCreate();
+            quietly(this::doCreate);
         }
     }
 
@@ -134,28 +131,30 @@ public class ObjectPool<T> extends Disposable {
             ObjectConf c = p.getValue();
             if (!validateHandler.test(obj)
                     || (size() > minSize && c.isIdleTimeout(idleTimeout))) {
-                doRetire(obj);
+                doRetire(obj, 3);
                 return;
             }
             if (c.isLeaked(leakDetectionThreshold)) {
                 TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
                         String.format("Pool %s owned Object '%s' leaked.\n%s", this, obj, Reflects.getStackTrace(c.t)));
-                doRetire(obj);
+                doRetire(obj, 4);
             }
         });
 
+        log.info("ObjPool state: {}", this);
         insureMinSize();
     }
 
     T doCreate() {
         if (size() > maxSize) {
+            log.warn("ObjPool reject: Reach the maximum");
             return null;
         }
 
         T obj = createHandler.get();
 
         if (!stack.offer(obj)) {
-//            throw new InvalidException("create object fail");
+            log.error("ObjPool create object fail: Offer stack fail");
             return null;
         }
         ObjectConf c = new ObjectConf();
@@ -171,7 +170,8 @@ public class ObjectPool<T> extends Disposable {
         return obj;
     }
 
-    boolean doRetire(T obj) {
+    //0 close, 1 recycle validate, 2 recycle offer, 3 idleTimeout, 4 leaked
+    boolean doRetire(T obj, int action) {
         boolean ok;
 
         ok = stack.remove(obj);
@@ -185,7 +185,7 @@ public class ObjectPool<T> extends Disposable {
             }
         }
 //        }
-        log.info("doRetire {} -> {}", obj, ok);
+        log.info("ObjPool doRetire[{}] {} -> {}", action, obj, ok);
         return ok;
     }
 
@@ -206,7 +206,7 @@ public class ObjectPool<T> extends Disposable {
         while ((obj = ifNull(doPoll(), this::doCreate)) == null || !validateHandler.test(obj)) {
             long bt = (System.nanoTime() - start) / Constants.NANO_TO_MILLIS;
             if (borrowTimeout > Constants.TIMEOUT_INFINITE && bt > borrowTimeout) {
-                log.warn("borrow timeout, pool state={}", this);
+                log.warn("ObjPool borrow timeout, state: {}", this);
                 throw new TimeoutException("borrow timeout");
             }
             sleep(bt);
@@ -216,7 +216,7 @@ public class ObjectPool<T> extends Disposable {
 
     public void recycle(@NonNull T obj) {
         if (!validateHandler.test(obj)) {
-            doRetire(obj);
+            doRetire(obj, 1);
             return;
         }
 
@@ -231,7 +231,7 @@ public class ObjectPool<T> extends Disposable {
         if (
 //                size() > maxSize ||  //Not required
                 !stack.offer(obj)) {
-            doRetire(obj);
+            doRetire(obj, 2);
             return;
         }
 
@@ -241,7 +241,7 @@ public class ObjectPool<T> extends Disposable {
     }
 
     public void retire(@NonNull T obj) {
-        if (!doRetire(obj)) {
+        if (!doRetire(obj, 10)) {
             throw new InvalidException("Object '{}' not belong to this pool", obj);
         }
     }
@@ -252,6 +252,7 @@ public class ObjectPool<T> extends Disposable {
                 "stack=" + stack.size() +
                 ", conf=" + conf.size() +
                 ", size=" + size +
+                ", confSize=" + minSize + "-" + maxSize +
                 ", borrowTimeout=" + borrowTimeout +
                 ", idleTimeout=" + idleTimeout +
                 ", validationTimeout=" + validationTimeout +

@@ -69,9 +69,9 @@ public final class Main implements SocksSupport {
         public String socksPwd;
         public int tcpTimeoutSeconds = 60 * 2;
         public int udpTimeoutSeconds = 60 * 10;
-        public int autoWhiteListSeconds = 120;
         public int rpcMinSize = 2;
         public int rpcMaxSize = 6;
+        public int autoWhiteListSeconds = 120;
         public List<String> bypassHosts;
         public int steeringTTL;
         public List<String> gfwList;
