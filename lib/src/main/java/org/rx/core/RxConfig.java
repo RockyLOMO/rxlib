@@ -210,7 +210,7 @@ public final class RxConfig {
 
         net.reactorThreadAmount = SystemPropertyUtil.getInt(ConfigNames.NET_REACTOR_THREAD_AMOUNT, 0);
         net.enableLog = SystemPropertyUtil.getBoolean(ConfigNames.NET_ENABLE_LOG, false);
-        net.connectTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_CONNECT_TIMEOUT_MILLIS, 16000);
+        net.connectTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_CONNECT_TIMEOUT_MILLIS, 15000);
         net.poolMaxSize = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_MAX_SIZE, 0);
         if (net.poolMaxSize <= 0) {
             net.poolMaxSize = Constants.CPU_THREADS * 2;
