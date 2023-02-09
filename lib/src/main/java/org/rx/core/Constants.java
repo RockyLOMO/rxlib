@@ -8,7 +8,7 @@ public interface Constants {
         OBJECT_TRACK_OVERFLOW
     }
 
-    String RX_CONFIG_FILE = "rx.yml";
+    String DEFAULT_CONFIG_FILE = "rx.yml";
     int CPU_THREADS = Runtime.getRuntime().availableProcessors();
     String DEFAULT_TRACE_NAME = "rx-traceId";
 
