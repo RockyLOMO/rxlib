@@ -20,25 +20,25 @@ class RpcClientPool extends Disposable implements TcpClientPool {
         int maxSize = Math.max(minSize, template.getMaxPoolSize());
         pool = new ObjectPool<>(minSize, maxSize, () -> {
             TcpClientConfig config = template.getTcpConfig().deepClone();
-            StatefulTcpClient client = new StatefulTcpClient(config);
-            try {
-                client.connect(config.getServerEndpoint());
-            } catch (TimeoutException e) {
-                if (!config.isEnableReconnect()) {
-                    throw e;
-                }
-            }
-            log.debug("Create RpcClient {}", client);
-            return client;
-        }, c -> c.getConfig().isEnableReconnect() || c.isConnected(), client -> {
-            client.getConfig().setEnableReconnect(false);
-            client.onError.purge();
-            client.onReceive.purge();
-            client.onSend.purge();
-            client.onDisconnected.purge();
-            client.onConnected.purge();
-            client.onReconnected.purge();
-            client.onReconnecting.purge();
+            StatefulTcpClient c = new StatefulTcpClient(config);
+//            try {
+            c.connect(config.getServerEndpoint());
+//            } catch (TimeoutException e) {
+//                if (!config.isEnableReconnect()) {
+//                    throw e;
+//                }
+//            }
+            log.debug("Create RpcClient {}", c);
+            return c;
+        }, c -> c.getConfig().isEnableReconnect() || c.isConnected(), c -> {
+            c.getConfig().setEnableReconnect(false);
+            c.onError.purge();
+            c.onReceive.purge();
+            c.onSend.purge();
+            c.onDisconnected.purge();
+            c.onConnected.purge();
+            c.onReconnected.purge();
+            c.onReconnecting.purge();
         });
         pool.setBorrowTimeout(template.getTcpConfig().getConnectTimeoutMillis());
         pool.setLeakDetectionThreshold(pool.getIdleTimeout());

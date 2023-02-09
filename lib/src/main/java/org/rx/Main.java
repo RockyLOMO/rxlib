@@ -120,7 +120,6 @@ public final class Main implements SocksSupport {
                 RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1),
                         conf.rpcMinSize, conf.rpcMaxSize);
                 TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
-                tcpConfig.setEnableReconnect(true);
                 tcpConfig.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
                 String weight = shadowServer.getParameters().get("w");
                 if (Strings.isEmpty(weight)) {
