@@ -46,8 +46,6 @@ public class FluentWait implements WaitHandle {
     private BiAction<FluentWait> retryFunc;
     private boolean retryOnStart;
     @Getter
-    private long deadline;
-    @Getter
     private int evaluatedCount;
     volatile boolean doBreak;
 
@@ -117,12 +115,12 @@ public class FluentWait implements WaitHandle {
      * @throws TimeoutException If the timeout expires.
      */
     public synchronized <T> T await(@NonNull BiFunc<FluentWait, T> resultFunc) throws TimeoutException {
-        if (deadline != 0) {
-            throw new InvalidException("Not support await nested");
-        }
+//        if (deadline != 0) {
+//            throw new InvalidException("Not support await nested");
+//        }
 
         doBreak = false;
-        deadline = System.currentTimeMillis() + timeout;
+        long deadline = System.nanoTime() + timeout * 1000000;
         try {
             int retryCount = TIMEOUT_INFINITE;
             if (retryFunc != null) {
@@ -158,14 +156,13 @@ public class FluentWait implements WaitHandle {
                 }
                 sleep(interval);
             }
-            while (deadline > System.currentTimeMillis());
+            while (System.nanoTime() < deadline);
 
             String timeoutMessage = String.format("Expected condition failed: %s (tried for %d millisecond(s) with %d milliseconds interval)",
                     message == null ? "waiting for " + resultFunc : message,
                     timeout, interval);
             throw WaitHandle.newTimeoutException(timeoutMessage, cause);
         } finally {
-            deadline = 0;
             evaluatedCount = 0;
         }
     }

@@ -253,13 +253,13 @@ public class SocksTester extends AbstractTester {
             c.incrementAndGet();
             log.info("wait2 {}", ok);
         });
-//        Tasks.run(() -> {
-//            boolean ok = wait3.await(2000, 500, w -> {
-//                log.info("segment {}", 1);
-//                return false;
-//            });
-//            log.info("wait3 {}", ok);
-//        });
+        Tasks.run(() -> {
+            boolean ok = wait3.await(2000, 500, i -> {
+                log.info("segment {}", 1);
+                return i == 3;
+            });
+            log.info("wait3 {}", ok);
+        });
 
         Tasks.setTimeout(() -> {
             wait2.setMulticastCount(2);

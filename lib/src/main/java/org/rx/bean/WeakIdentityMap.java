@@ -1,21 +1,17 @@
 package org.rx.bean;
 
-import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
-
 import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 //ReferenceIdentityMap
 public class WeakIdentityMap<K, V> implements AbstractMap<K, V> {
     final Map<WeakReference<K>, V> map;
     final ReferenceQueue<K> refQueue = new ReferenceQueue<>();
+    transient MapView.EntrySetView<WeakReference<K>, K, V> entrySet;
 
     public WeakIdentityMap() {
         this(16);
@@ -58,7 +54,8 @@ public class WeakIdentityMap<K, V> implements AbstractMap<K, V> {
     @Override
     public Set<Entry<K, V>> entrySet() {
         expunge();
-        return map.entrySet().stream().map(p -> new DefaultMapEntry<>(p.getKey().get(), p.getValue())).filter(p -> p.getKey() != null).collect(Collectors.toSet());
+        MapView.EntrySetView<WeakReference<K>, K, V> es;
+        return (es = entrySet) != null ? es : (entrySet = new MapView.EntrySetView<>(map, Reference::get));
     }
 
     @Override
