@@ -44,7 +44,7 @@ public final class NetEventWait extends Disposable implements WaitHandle {
     static void multicastLocal(Channel channel, String group, int mcId) {
         for (NetEventWait w : channel.attr(REF).get()) {
             if (!Strings.hashEquals(w.group, group)) {
-                log.info("multicast skip {} ~ {}[{}]", w.idString, group, Integer.toHexString(mcId));
+                log.info("multicast skip {} ~ {}@{}", w.idString, group, Integer.toHexString(mcId));
                 continue;
             }
 
@@ -100,19 +100,20 @@ public final class NetEventWait extends Disposable implements WaitHandle {
 
     @Override
     public boolean await(long timeoutMillis) {
-        return await(timeoutMillis, 0, null);
+        return await(timeoutMillis, TIMEOUT_INFINITE, null);
     }
 
-    public boolean await(long timeoutMillis, long intervalMillis, PredicateFunc<NetEventWait> isTrue) {
-        if (intervalMillis > 0 && isTrue != null) {
+    public boolean await(long timeoutMillis, long intervalMillis, PredicateFunc<Integer> isTrue) {
+        if (intervalMillis >= 0 && isTrue != null) {
             long deadline = System.nanoTime() + timeoutMillis * 1000000;
-            System.out.println(deadline);
             synchronized (wait) {
                 wait.reset();
+                int i = 1;
                 do {
-                    if (wait.waitOne(timeoutMillis) || isTrue.test(this)) {
+                    if (wait.waitOne(intervalMillis) || isTrue.test(i)) {
                         return true;
                     }
+                    i++;
                 } while (System.nanoTime() < deadline);
                 return false;
             }
@@ -126,7 +127,6 @@ public final class NetEventWait extends Disposable implements WaitHandle {
 
     @Override
     public void signalAll() {
-//        wait.set();
         int mcId = hashCode();
         multicastLocal(channel, group, mcId);
 
