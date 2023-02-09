@@ -5,10 +5,7 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.codec.CodecUtil;
-import org.rx.core.Arrays;
-import org.rx.core.Cache;
-import org.rx.core.Sys;
-import org.rx.core.Tasks;
+import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.AuthenticEndpoint;
@@ -64,7 +61,7 @@ public class Socks5Upstream extends Upstream {
                         return true;
                     }).whenCompleteAsync((r, e) -> {
                         if (BooleanUtils.isTrue(r)) {
-                            cache.put(hash, r);
+                            cache.put(hash, r, CachePolicy.absolute(SocksSupport.FAKE_EXPIRE_SECONDS));
                         }
                     }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
                 } catch (Exception e) {

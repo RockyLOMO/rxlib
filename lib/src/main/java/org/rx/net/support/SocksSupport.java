@@ -12,6 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public interface SocksSupport extends AutoCloseable, DnsServer.ResolveInterceptor {
     String FAKE_HOST_SUFFIX = "x.f-li.cn";
     int[] FAKE_PORT_OBFS = new int[]{443, 3306};
+    int FAKE_EXPIRE_SECONDS = 60 * 5;
     List<String> FAKE_IPS = new CopyOnWriteArrayList<>();  //There is no need to set up '8.8.8.8'
     List<Integer> FAKE_PORTS = new CopyOnWriteArrayList<>(Arrays.toList(80));
     int DNS_PORT = 53;
