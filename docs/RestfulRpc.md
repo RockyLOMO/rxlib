@@ -75,7 +75,7 @@ public class UserService {
 ```yml
 app:
   bufferSize: 512
-  netTimeoutMillis: 16000
+  netTimeoutMillis: 15000
   netMinPoolSize: 2
   netMaxPoolSize: 0  #默认 cpu * 2
 ```

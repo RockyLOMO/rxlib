@@ -25,6 +25,7 @@ import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
+import org.rx.net.transport.TcpClientConfig;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.Action;
 import org.rx.util.function.TripleAction;
@@ -68,7 +69,9 @@ public final class Main implements SocksSupport {
         public String socksPwd;
         public int tcpTimeoutSeconds = 60 * 2;
         public int udpTimeoutSeconds = 60 * 10;
-        public int autoWhiteListSeconds;
+        public int autoWhiteListSeconds = 120;
+        public int rpcMinSize = 2;
+        public int rpcMaxSize = 6;
         public List<String> bypassHosts;
         public int steeringTTL;
         public List<String> gfwList;
@@ -114,9 +117,11 @@ public final class Main implements SocksSupport {
             shadowServers.clear();
             dnsInterceptors.clear();
             for (AuthenticEndpoint shadowServer : svrs) {
-                RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1), 2, 6);
-                rpcConf.getTcpConfig().setEnableReconnect(true);
-                rpcConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
+                RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1),
+                        conf.rpcMinSize, conf.rpcMaxSize);
+                TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
+                tcpConfig.setEnableReconnect(true);
+                tcpConfig.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
                 String weight = shadowServer.getParameters().get("w");
                 if (Strings.isEmpty(weight)) {
                     continue;
