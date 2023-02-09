@@ -59,7 +59,7 @@ public class DnsClient extends Disposable {
 
     public DnsClient(@NonNull Collection<InetSocketAddress> nameServerList) {
         serverEndpoints = new LinkedHashSet<>(nameServerList);
-        nameResolver = new DnsNameResolverBuilder(Sockets.udpReactor().next())
+        nameResolver = new DnsNameResolverBuilder(Sockets.reactor(Sockets.ReactorNames.SHARED_UDP, false).next())
                 .nameServerProvider(!serverEndpoints.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverEndpoints)
                         : DnsServerAddressStreamProviders.platformDefault())
                 .channelType(NioDatagramChannel.class)

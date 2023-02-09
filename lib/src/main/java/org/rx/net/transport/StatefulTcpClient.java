@@ -103,7 +103,6 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         }
     }
 
-    static final String REACTOR_NAME = "RPC";
     static final TcpClientConfig NULL_CONF = new TcpClientConfig();
     public final Delegate<TcpClient, EventArgs> onConnected = Delegate.create(),
             onDisconnected = Delegate.create();
@@ -161,7 +160,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         }
 
         config.setServerEndpoint(remoteEp);
-        bootstrap = Sockets.bootstrap(REACTOR_NAME, config, channel -> {
+        bootstrap = Sockets.bootstrap(Sockets.ReactorNames.RPC, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
             Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
@@ -189,7 +188,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         }
 
         config.setServerEndpoint(remoteEp);
-        bootstrap = Sockets.bootstrap(REACTOR_NAME, config, channel -> {
+        bootstrap = Sockets.bootstrap(Sockets.ReactorNames.RPC, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
             Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
