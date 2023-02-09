@@ -2,7 +2,6 @@ package org.rx.core;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
 import org.rx.annotation.Metadata;
 import org.rx.bean.WeakIdentityMap;
 import org.rx.exception.InvalidException;
@@ -121,7 +120,7 @@ public class ObjectChangeTracker {
         }
         if (Map.class.isAssignableFrom(type)) {
             Map<?, ?> x = (Map<?, ?>) val;
-            parent.put(name, Linq.from(x.entrySet()).select(p -> new DefaultMapEntry<>(resolveValue(name, concatName, p.getKey(), recursionDepth),
+            parent.put(name, Linq.from(x.entrySet()).select(p -> new AbstractMap.SimpleEntry<>(resolveValue(name, concatName, p.getKey(), recursionDepth),
                     resolveValue(name, concatName, p.getValue(), recursionDepth))).toMap());
             return;
         }

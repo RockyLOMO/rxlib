@@ -1,16 +1,14 @@
 package org.rx.net;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandler;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.WeakIdentityMap;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
@@ -18,6 +16,10 @@ import org.rx.util.function.PredicateFunc;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
 
@@ -30,24 +32,30 @@ public final class NetEventWait extends Disposable implements WaitHandle {
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) throws Exception {
             ByteBuf buf = packet.content();
-            int multicastId = buf.readInt();
-            String mcId = Integer.toHexString(multicastId);
+            int mcId = buf.readInt();
             String group = buf.toString(StandardCharsets.UTF_8);
-            NetEventWait w = ctx.channel().attr(REF).get();
+            multicastLocal(ctx.channel(), group, mcId);
+        }
+    }
+
+    static final AttributeKey<Set<NetEventWait>> REF = AttributeKey.valueOf("Ref");
+    static final Map<InetSocketAddress, NioDatagramChannel> channels = new ConcurrentHashMap<>(8);
+
+    static void multicastLocal(Channel channel, String group, int mcId) {
+        for (NetEventWait w : channel.attr(REF).get()) {
             if (!Strings.hashEquals(w.group, group)) {
-                log.info("multicast skip {} ~ {}[{}]", w.idString, group, mcId);
-                return;
+                log.info("multicast skip {} ~ {}[{}]", w.idString, group, Integer.toHexString(mcId));
+                continue;
             }
 
-            log.info("multicast signal {} <- {}", w.idString, mcId);
+            log.info("multicast signal {} <- {}", w.idString, Integer.toHexString(mcId));
             w.wait.set();
         }
     }
 
-    static final AttributeKey<NetEventWait> REF = AttributeKey.valueOf("Ref");
     final String group;
     final String idString;
-    final InetSocketAddress multiCastEndpoint;
+    final InetSocketAddress multicastEndpoint;
     final NioDatagramChannel channel;
     final ResetEventWait wait = new ResetEventWait();
     @Setter
@@ -57,28 +65,36 @@ public final class NetEventWait extends Disposable implements WaitHandle {
         this(group, new InetSocketAddress("239.0.0.2", 80));
     }
 
-    public NetEventWait(@NonNull String group, @NonNull InetSocketAddress multiCastEndpoint) {
+    public NetEventWait(@NonNull String group, @NonNull InetSocketAddress multicastEndpoint) {
         this.group = group;
+        this.multicastEndpoint = multicastEndpoint;
         idString = group + "@" + Integer.toHexString(hashCode());
-        this.multiCastEndpoint = multiCastEndpoint;
-        channel = (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, true, c -> {
-                    c.attr(REF).set(this);
+        channel = channels.computeIfAbsent(multicastEndpoint, k -> (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, true, c -> {
+                    c.attr(REF).set(Collections.newSetFromMap(new WeakIdentityMap<>()));
                     c.pipeline().addLast(Handler.DEFAULT);
                 })
-                .bind(multiCastEndpoint.getPort()).addListener((ChannelFutureListener) f -> {
+                .bind(multicastEndpoint.getPort()).addListener((ChannelFutureListener) f -> {
                     if (!f.isSuccess()) {
                         TraceHandler.INSTANCE.log("multicast bind error {}", idString, f.cause());
                         return;
                     }
                     NioDatagramChannel c = (NioDatagramChannel) f.channel();
-                    c.joinGroup(multiCastEndpoint.getAddress());
-                    log.info("multicast join {} -> {}", idString, multiCastEndpoint);
-                }).channel();
+//                    c.attr(REF).get().add(this);
+                    c.joinGroup(multicastEndpoint.getAddress());
+                    log.info("multicast join {} -> {}", idString, multicastEndpoint);
+                }).syncUninterruptibly().channel());
+        Set<NetEventWait> refs = channel.attr(REF).get();
+        if (refs != null) {
+            System.out.println("refs:" + this);
+            refs.add(this);
+        } else {
+            System.out.println(1111);
+        }
     }
 
     @Override
     protected void freeObjects() {
-        channel.close();
+        channel.attr(REF).get().remove(this);
     }
 
     public boolean await() {
@@ -113,12 +129,14 @@ public final class NetEventWait extends Disposable implements WaitHandle {
 
     @Override
     public void signalAll() {
-        wait.set();
+//        wait.set();
+        int mcId = hashCode();
+        multicastLocal(channel, group, mcId);
 
         ByteBuf buf = Bytes.directBuffer();
-        buf.writeInt(hashCode());
+        buf.writeInt(mcId);
         buf.writeCharSequence(group, StandardCharsets.UTF_8);
-        DatagramPacket packet = new DatagramPacket(buf, multiCastEndpoint);
+        DatagramPacket packet = new DatagramPacket(buf, multicastEndpoint);
         int last = multicastCount - 1;
         for (int i = 0; i < multicastCount; i++) {
             if (i < last) {

@@ -2,7 +2,6 @@ package org.rx.core.cache;
 
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.rx.core.*;
@@ -10,10 +9,7 @@ import org.rx.io.KeyValueStore;
 import org.rx.io.KeyValueStoreConfig;
 
 import java.io.Serializable;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
 
@@ -45,7 +41,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
             return;
         }
         if (item.isExpired()) {
-            raiseEvent(onExpired, new NEventArgs<>(new DefaultMapEntry<>(key, item.value)));
+            raiseEvent(onExpired, new NEventArgs<>(new AbstractMap.SimpleEntry<>(key, item.value)));
             return;
         }
         if (!(key instanceof Serializable && item.value instanceof Serializable)) {
@@ -91,7 +87,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
             if (onExpired == null) {
                 return null;
             }
-            NEventArgs<Map.Entry<TK, TV>> args = new NEventArgs<>(new DefaultMapEntry<>(key, item.value));
+            NEventArgs<Map.Entry<TK, TV>> args = new NEventArgs<>(new AbstractMap.SimpleEntry<>(key, item.value));
             raiseEvent(onExpired, args);
             return args.getValue().getValue();
         }
@@ -136,7 +132,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     public Set<Map.Entry<TK, TV>> entrySet() {
         return Linq.from(keySet()).select(k -> {
             TV v = get(k);
-            return v == null ? null : (Map.Entry<TK, TV>) new DefaultMapEntry<>(k, v);
+            return v == null ? null : (Map.Entry<TK, TV>) new AbstractMap.SimpleEntry<>(k, v);
         }).where(Objects::nonNull).toSet();
     }
 }
