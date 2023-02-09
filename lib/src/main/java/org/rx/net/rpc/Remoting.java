@@ -198,7 +198,7 @@ public final class Remoting {
                             throw new ClientDisconnectedException(client);
                         }
                         if (clientBean.pack.returnValue == null) {
-                            throw new TimeoutException("Read timeout");
+                            throw new TimeoutException(String.format("The method %s read timeout", clientBean.pack.methodName));
                         }
                     }
                     clientBean.syncRoot.reset();
