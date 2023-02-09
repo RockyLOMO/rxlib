@@ -79,16 +79,13 @@ public final class NetEventWait extends Disposable implements WaitHandle {
                         return;
                     }
                     NioDatagramChannel c = (NioDatagramChannel) f.channel();
-//                    c.attr(REF).get().add(this);
                     c.joinGroup(multicastEndpoint.getAddress());
                     log.info("multicast join {} -> {}", idString, multicastEndpoint);
                 }).syncUninterruptibly().channel());
         Set<NetEventWait> refs = channel.attr(REF).get();
         if (refs != null) {
-            System.out.println("refs:" + this);
+            log.info("multicast ref {}", idString);
             refs.add(this);
-        } else {
-            System.out.println(1111);
         }
     }
 
