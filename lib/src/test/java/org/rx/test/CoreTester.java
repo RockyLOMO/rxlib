@@ -925,7 +925,7 @@ public class CoreTester extends AbstractTester {
     @SneakyThrows
     @Test
     public void reflect() {
-        for (InputStream resource : Reflects.getResources(Constants.RX_CONFIG_FILE)) {
+        for (InputStream resource : Reflects.getResources(Constants.DEFAULT_CONFIG_FILE)) {
             System.out.println(resource);
             assert resource != null;
         }
@@ -1012,7 +1012,7 @@ public class CoreTester extends AbstractTester {
     @Test
     public void yamlConf() {
         YamlConfiguration conf = YamlConfiguration.RX_CONF;
-        conf.enableWatch();
+//        conf.enableWatch();
 
         System.out.println(conf.getYaml());
         Map codeMap = conf.readAs("org.rx.test.CoreTester", Map.class);
@@ -1024,7 +1024,7 @@ public class CoreTester extends AbstractTester {
 //        Iterable<Object> all = new Yaml().loadAll(Reflects.getResource("application.yml"));
 //        List<Object> list = IterableUtils.toList(all);
         RxConfig rxConf = RxConfig.INSTANCE;
-        System.out.println(toJsonString(Sockets.newAnyEndpoint(1024).getAddress()));
+        System.out.println(rxConf.getNet().getReactorThreadAmount());
 //        assert rxConf.getId().equals("Rx");
 //        assert rxConf.getThreadPool().getReplicas() == 4;
 //        assert rxConf.getNet().getConnectTimeoutMillis() == 40000;

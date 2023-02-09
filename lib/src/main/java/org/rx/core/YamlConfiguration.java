@@ -1,7 +1,6 @@
 package org.rx.core;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONReader;
 import lombok.Getter;
 import lombok.NonNull;
@@ -34,8 +33,8 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         final String filePath;
     }
 
-    static final String DEFAULT_CONFIG_FILE = "application.yml";
-    public static final YamlConfiguration RX_CONF = new YamlConfiguration(Constants.RX_CONFIG_FILE, DEFAULT_CONFIG_FILE);
+    static final String APP_CONFIG_FILE = "application.yml";
+    public static final YamlConfiguration RX_CONF = new YamlConfiguration(Constants.DEFAULT_CONFIG_FILE, APP_CONFIG_FILE);
 
     public static Map<String, Object> loadYaml(String... fileNames) {
         return loadYaml(Linq.from(fileNames).selectMany(p -> {

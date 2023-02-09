@@ -8,7 +8,6 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -104,6 +103,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         }
     }
 
+    static final String REACTOR_NAME = "RPC";
     static final TcpClientConfig NULL_CONF = new TcpClientConfig();
     public final Delegate<TcpClient, EventArgs> onConnected = Delegate.create(),
             onDisconnected = Delegate.create();
@@ -161,7 +161,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         }
 
         config.setServerEndpoint(remoteEp);
-        bootstrap = Sockets.bootstrap(config, channel -> {
+        bootstrap = Sockets.bootstrap(REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
             Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
@@ -189,7 +189,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         }
 
         config.setServerEndpoint(remoteEp);
-        bootstrap = Sockets.bootstrap(config, channel -> {
+        bootstrap = Sockets.bootstrap(REACTOR_NAME, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
             Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
