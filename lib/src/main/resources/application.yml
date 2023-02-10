@@ -3,6 +3,7 @@
 #  threadPool:
 #    replicas: 4
 #  net:
+#    reactorThreadAmount: 2
 #    connectTimeoutMillis: 40000
 #  logTypeWhitelist:
 #    - org.rx
