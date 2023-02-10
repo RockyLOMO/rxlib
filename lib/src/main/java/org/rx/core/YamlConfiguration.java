@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONReader;
 import lombok.Getter;
 import lombok.NonNull;

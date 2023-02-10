@@ -13,6 +13,11 @@ app:
     minDynamicSize: 2
     maxDynamicSize: 1000
     resizeQuantity: 2
+  cache:
+    physicalMemoryUsageWarningThreshold: 95
+    mainCache: org.rx.core.cache.MemoryCache
+    slidingSeconds: 60
+    maxItemSize: 5000
   disk:
     diskUsageWarningThreshold: 90
     entityDatabaseRollPeriod: 10000
@@ -42,6 +47,8 @@ app:
       outlandServers:
         - "8.8.8.8:53"
         - "1.1.1.1:53"
+  aesKey: ℞FREEDOM
+  mxpwd: rxlib
   mxSamplingPeriod: 60000
   jsonSkipTypes:
     - javax.servlet.ServletRequest
@@ -50,11 +57,13 @@ app:
     - org.springframework.ui.Model
     - org.springframework.validation.BindingResult
     - org.rx.io.IOStream
-  mxpwd: rxlib
+  #  logStrategy:
+  traceKeepDays: 1
+  traceErrorMessageSize: 10
+  traceSlowElapsedMicros: 50000
 
 #ErrorCode
 default: Network error, please retry later.
-
 org:
   rx:
     core:
