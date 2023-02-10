@@ -166,12 +166,11 @@ public final class NetEventWait extends Disposable implements WaitHandle {
             }
 
             if (httpSignal && HTTP_SIGNAL_HANDLER != null) {
+                Set<String> urls = HTTP_SIGNAL_HANDLER.apply(multicastEndpoint, group);
+                if (CollectionUtils.isEmpty(urls)) {
+                    return;
+                }
                 Tasks.run(() -> {
-                    Set<String> urls = HTTP_SIGNAL_HANDLER.invoke(multicastEndpoint, group);
-                    if (CollectionUtils.isEmpty(urls)) {
-                        return;
-                    }
-
                     HttpClient client = new HttpClient();
                     Map<String, Object> params = new HashMap<>();
                     params.put("multicast", Sockets.toString(multicastEndpoint));
