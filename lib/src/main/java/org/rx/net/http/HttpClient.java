@@ -372,32 +372,54 @@ public class HttpClient {
     }
     //endregion
 
-    //Not thread safe
-    final OkHttpClient client;
     @Getter
     final HttpHeaders requestHeaders = new DefaultHttpHeaders();
     @Setter
     boolean enableLog = RxConfig.INSTANCE.getNet().isEnableLog();
+    long timeoutMillis;
+    boolean enableCookie;
+    AuthenticProxy proxy;
+    //Not thread safe
+    OkHttpClient client;
     ResponseContent responseContent;
+
+    public synchronized void setTimeoutMillis(long timeoutMillis) {
+        this.timeoutMillis = timeoutMillis;
+        client = null;
+    }
+
+    public synchronized void setEnableCookie(boolean enableCookie) {
+        this.enableCookie = enableCookie;
+        client = null;
+    }
+
+    public synchronized void setProxy(AuthenticProxy proxy) {
+        this.proxy = proxy;
+        client = null;
+    }
+
+    OkHttpClient getClient() {
+        if (client == null) {
+            client = createClient(timeoutMillis, enableCookie, proxy);
+        }
+        return client;
+    }
 
     public HttpClient() {
         this(RxConfig.INSTANCE.getNet().getConnectTimeoutMillis());
     }
 
     public HttpClient(long timeoutMillis) {
-        this(timeoutMillis, false, null, null);
+        this(timeoutMillis, false, null);
     }
 
-    public HttpClient(long timeoutMillis, boolean enableCookie, Proxy proxy) {
-        this(timeoutMillis, enableCookie, null, proxy);
+    public HttpClient(long timeoutMillis, String rawCookie) {
+        this(timeoutMillis, false, rawCookie);
     }
 
-    public HttpClient(long timeoutMillis, String rawCookie, Proxy proxy) {
-        this(timeoutMillis, false, rawCookie, proxy);
-    }
-
-    public HttpClient(long timeoutMillis, boolean enableCookie, String rawCookie, Proxy proxy) {
-        client = createClient(timeoutMillis, enableCookie, proxy);
+    public HttpClient(long timeoutMillis, boolean enableCookie, String rawCookie) {
+        this.timeoutMillis = timeoutMillis;
+        this.enableCookie = enableCookie;
         requestHeaders.set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
         if (rawCookie != null) {
             requestHeaders.set(HttpHeaderNames.COOKIE, rawCookie);
@@ -413,7 +435,7 @@ public class HttpClient {
     }
 
     @SneakyThrows
-    private ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
+    private synchronized ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
         ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method, content.toString()}, false);
         try {
             Request.Builder request = createRequest(url);
@@ -436,7 +458,7 @@ public class HttpClient {
             if (responseContent != null) {
                 responseContent.response.close();
             }
-            return responseContent = args.proceed(() -> new ResponseContent(client.newCall(request.build()).execute()));
+            return responseContent = args.proceed(() -> new ResponseContent(getClient().newCall(request.build()).execute()));
         } catch (Throwable e) {
             args.setError(e);
             throw e;
@@ -504,7 +526,7 @@ public class HttpClient {
     }
 
     @SneakyThrows
-    public void forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
+    public synchronized void forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
         for (String n : Collections.list(servletRequest.getHeaderNames())) {
             if ("host".equals(n)) {
                 continue;
@@ -529,7 +551,7 @@ public class HttpClient {
                 }
             }
         }
-        Response response = client.newCall(request.method(servletRequest.getMethod(), requestBody).build()).execute();
+        Response response = getClient().newCall(request.method(servletRequest.getMethod(), requestBody).build()).execute();
         servletResponse.setStatus(response.code());
         for (Pair<? extends String, ? extends String> header : response.headers()) {
             servletResponse.setHeader(header.getFirst(), header.getSecond());
