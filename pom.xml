@@ -17,7 +17,7 @@
         <module>daemon</module>
     </modules>
 
-    <name>rxlib</name>
+    <name>rx</name>
     <description>A set of utilities for Java</description>
     <url>https://github.com/RockyLOMO/rxlib</url>
     <licenses>
