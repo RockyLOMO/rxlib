@@ -1,51 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.github.rockylomo</groupId>
         <artifactId>rx</artifactId>
-        <version>2.19.0</version>
+        <version>2.19.1-SNAPSHOT</version>
     </parent>
     <artifactId>rxlib</artifactId>
     <packaging>jar</packaging>
     <!-- -SNAPSHOT -->
     <!--    <version>2.18.14-SNAPSHOT</version>-->
-<!--    <name>rxlib</name>-->
-<!--    <description>A set of utilities for Java</description>-->
-<!--    <url>https://github.com/RockyLOMO/rxlib</url>-->
-<!--    <licenses>-->
-<!--        <license>-->
-<!--            <name>The Apache Software License, Version 2.0</name>-->
-<!--            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>-->
-<!--            <distribution>repo</distribution>-->
-<!--        </license>-->
-<!--    </licenses>-->
-<!--    <scm>-->
-<!--        <url>https://github.com/RockyLOMO/rxlib</url>-->
-<!--        <connection>scm:git:https://github.com/RockyLOMO/rxlib.git</connection>-->
-<!--        <developerConnection>scm:git:https://github.com/RockyLOMO/rxlib.git</developerConnection>-->
-<!--        <tag>HEAD</tag>-->
-<!--    </scm>-->
-<!--    <organization>-->
-<!--        <name>com.github.rockylomo</name>-->
-<!--    </organization>-->
-<!--    <developers>-->
-<!--        <developer>-->
-<!--            <id>0</id>-->
-<!--            <name>Rocky</name>-->
-<!--            <email>RockyWong.CHN@gmail.com</email>-->
-<!--        </developer>-->
-<!--    </developers>-->
+    <!--    <name>rxlib</name>-->
+    <!--    <description>A set of utilities for Java</description>-->
+    <!--    <url>https://github.com/RockyLOMO/rxlib</url>-->
+    <!--    <licenses>-->
+    <!--        <license>-->
+    <!--            <name>The Apache Software License, Version 2.0</name>-->
+    <!--            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>-->
+    <!--            <distribution>repo</distribution>-->
+    <!--        </license>-->
+    <!--    </licenses>-->
+    <!--    <scm>-->
+    <!--        <url>https://github.com/RockyLOMO/rxlib</url>-->
+    <!--        <connection>scm:git:https://github.com/RockyLOMO/rxlib.git</connection>-->
+    <!--        <developerConnection>scm:git:https://github.com/RockyLOMO/rxlib.git</developerConnection>-->
+    <!--        <tag>HEAD</tag>-->
+    <!--    </scm>-->
+    <!--    <organization>-->
+    <!--        <name>com.github.rockylomo</name>-->
+    <!--    </organization>-->
+    <!--    <developers>-->
+    <!--        <developer>-->
+    <!--            <id>0</id>-->
+    <!--            <name>Rocky</name>-->
+    <!--            <email>RockyWong.CHN@gmail.com</email>-->
+    <!--        </developer>-->
+    <!--    </developers>-->
 
     <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <!--        <maven.compiler.release>8</maven.compiler.release>-->
-        <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
-        <maven.test.skip>true</maven.test.skip>
-        <java.version>1.8</java.version>
-        <shallow>true</shallow>
-        <gpg.skip>false</gpg.skip>
+        <!--        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>-->
+        <!--        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>-->
+        <!--        &lt;!&ndash;        <maven.compiler.release>8</maven.compiler.release>&ndash;&gt;-->
+        <!--        <maven.compiler.encoding>UTF-8</maven.compiler.encoding>-->
+        <!--        <maven.test.skip>true</maven.test.skip>-->
+        <!--        <java.version>1.8</java.version>-->
+        <!--        <shallow>true</shallow>-->
+        <!--        <gpg.skip>false</gpg.skip>-->
         <lombok.version>1.18.26</lombok.version>
         <slf4j-api.version>2.0.4</slf4j-api.version>
         <logback.version>1.3.5</logback.version>
@@ -223,147 +224,147 @@
         </dependency>
     </dependencies>
 
-    <build>
-        <plugins>
-            <!--mvn package-->
-            <!--            <plugin>-->
-            <!--                <groupId>org.springframework.boot</groupId>-->
-            <!--                <artifactId>spring-boot-maven-plugin</artifactId>-->
-            <!--                <version>2.5.2</version>-->
-            <!--                <executions>-->
-            <!--                    <execution>-->
-            <!--                        <goals>-->
-            <!--                            <goal>repackage</goal>-->
-            <!--                        </goals>-->
-            <!--                    </execution>-->
-            <!--                </executions>-->
-            <!--            </plugin>-->
+    <!--    <build>-->
+    <!--        <plugins>-->
+    <!--            &lt;!&ndash;mvn package&ndash;&gt;-->
+    <!--            &lt;!&ndash;            <plugin>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                <groupId>org.springframework.boot</groupId>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                <artifactId>spring-boot-maven-plugin</artifactId>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                <version>2.5.2</version>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                <executions>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                    <execution>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                        <goals>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                            <goal>repackage</goal>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                        </goals>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                    </execution>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                </executions>&ndash;&gt;-->
+    <!--            &lt;!&ndash;            </plugin>&ndash;&gt;-->
 
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.2.0</version>
-                <configuration>
-                    <skip>${gpg.skip}</skip>
-                    <failOnError>false</failOnError>
-                    <charset>UTF-8</charset>
-                    <encoding>UTF-8</encoding>
-                    <docencoding>UTF-8</docencoding>
-                    <doclint>none</doclint>
-                    <additionalOptions>
-                        <additionalOption>-Xdoclint:none</additionalOption>
-                    </additionalOptions>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>attach-javadocs</id>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                        <configuration>
-                            <doclint>none</doclint>
-                            <additionalOptions>
-                                <additionalOption>-Xdoclint:none</additionalOption>
-                            </additionalOptions>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-gpg-plugin</artifactId>
-                <version>1.6</version>
-                <configuration>
-                    <skip>${gpg.skip}</skip>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>sign-artifacts</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>sign</goal>
-                        </goals>
-                        <configuration>
-                            <gpgArguments>
-                                <arg>--pinentry-mode</arg>
-                                <arg>loopback</arg>
-                            </gpgArguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.1</version>
-                <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
-                    <encoding>UTF-8</encoding>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>compile</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>testCompile</id>
-                        <phase>test-compile</phase>
-                        <goals>
-                            <goal>testCompile</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-release-plugin</artifactId>
-                <version>2.5.3</version>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.apache.maven.scm</groupId>
-                        <artifactId>maven-scm-api</artifactId>
-                        <version>1.10.0</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>org.apache.maven.scm</groupId>
-                        <artifactId>maven-scm-provider-gitexe</artifactId>
-                        <version>1.10.0</version>
-                    </dependency>
-                </dependencies>
-            </plugin>
-            <plugin>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>single</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
+    <!--            <plugin>-->
+    <!--                <groupId>org.apache.maven.plugins</groupId>-->
+    <!--                <artifactId>maven-javadoc-plugin</artifactId>-->
+    <!--                <version>3.2.0</version>-->
+    <!--                <configuration>-->
+    <!--                    <skip>${gpg.skip}</skip>-->
+    <!--                    <failOnError>false</failOnError>-->
+    <!--                    <charset>UTF-8</charset>-->
+    <!--                    <encoding>UTF-8</encoding>-->
+    <!--                    <docencoding>UTF-8</docencoding>-->
+    <!--                    <doclint>none</doclint>-->
+    <!--                    <additionalOptions>-->
+    <!--                        <additionalOption>-Xdoclint:none</additionalOption>-->
+    <!--                    </additionalOptions>-->
+    <!--                </configuration>-->
+    <!--                <executions>-->
+    <!--                    <execution>-->
+    <!--                        <id>attach-javadocs</id>-->
+    <!--                        <goals>-->
+    <!--                            <goal>jar</goal>-->
+    <!--                        </goals>-->
+    <!--                        <configuration>-->
+    <!--                            <doclint>none</doclint>-->
+    <!--                            <additionalOptions>-->
+    <!--                                <additionalOption>-Xdoclint:none</additionalOption>-->
+    <!--                            </additionalOptions>-->
+    <!--                        </configuration>-->
+    <!--                    </execution>-->
+    <!--                </executions>-->
+    <!--            </plugin>-->
+    <!--            <plugin>-->
+    <!--                <groupId>org.apache.maven.plugins</groupId>-->
+    <!--                <artifactId>maven-gpg-plugin</artifactId>-->
+    <!--                <version>1.6</version>-->
+    <!--                <configuration>-->
+    <!--                    <skip>${gpg.skip}</skip>-->
+    <!--                </configuration>-->
+    <!--                <executions>-->
+    <!--                    <execution>-->
+    <!--                        <id>sign-artifacts</id>-->
+    <!--                        <phase>verify</phase>-->
+    <!--                        <goals>-->
+    <!--                            <goal>sign</goal>-->
+    <!--                        </goals>-->
+    <!--                        <configuration>-->
+    <!--                            <gpgArguments>-->
+    <!--                                <arg>&#45;&#45;pinentry-mode</arg>-->
+    <!--                                <arg>loopback</arg>-->
+    <!--                            </gpgArguments>-->
+    <!--                        </configuration>-->
+    <!--                    </execution>-->
+    <!--                </executions>-->
+    <!--            </plugin>-->
+    <!--            <plugin>-->
+    <!--                <groupId>org.apache.maven.plugins</groupId>-->
+    <!--                <artifactId>maven-compiler-plugin</artifactId>-->
+    <!--                <version>3.8.1</version>-->
+    <!--                <configuration>-->
+    <!--                    <source>1.8</source>-->
+    <!--                    <target>1.8</target>-->
+    <!--                    <encoding>UTF-8</encoding>-->
+    <!--                </configuration>-->
+    <!--                <executions>-->
+    <!--                    <execution>-->
+    <!--                        <id>compile</id>-->
+    <!--                        <phase>compile</phase>-->
+    <!--                        <goals>-->
+    <!--                            <goal>compile</goal>-->
+    <!--                        </goals>-->
+    <!--                    </execution>-->
+    <!--                    <execution>-->
+    <!--                        <id>testCompile</id>-->
+    <!--                        <phase>test-compile</phase>-->
+    <!--                        <goals>-->
+    <!--                            <goal>testCompile</goal>-->
+    <!--                        </goals>-->
+    <!--                    </execution>-->
+    <!--                </executions>-->
+    <!--            </plugin>-->
+    <!--            <plugin>-->
+    <!--                <groupId>org.apache.maven.plugins</groupId>-->
+    <!--                <artifactId>maven-release-plugin</artifactId>-->
+    <!--                <version>2.5.3</version>-->
+    <!--                <dependencies>-->
+    <!--                    <dependency>-->
+    <!--                        <groupId>org.apache.maven.scm</groupId>-->
+    <!--                        <artifactId>maven-scm-api</artifactId>-->
+    <!--                        <version>1.10.0</version>-->
+    <!--                    </dependency>-->
+    <!--                    <dependency>-->
+    <!--                        <groupId>org.apache.maven.scm</groupId>-->
+    <!--                        <artifactId>maven-scm-provider-gitexe</artifactId>-->
+    <!--                        <version>1.10.0</version>-->
+    <!--                    </dependency>-->
+    <!--                </dependencies>-->
+    <!--            </plugin>-->
+    <!--            <plugin>-->
+    <!--                <artifactId>maven-assembly-plugin</artifactId>-->
+    <!--                <executions>-->
+    <!--                    <execution>-->
+    <!--                        <phase>package</phase>-->
+    <!--                        <goals>-->
+    <!--                            <goal>single</goal>-->
+    <!--                        </goals>-->
+    <!--                    </execution>-->
+    <!--                </executions>-->
+    <!--                <configuration>-->
+    <!--                    <descriptorRefs>-->
+    <!--                        <descriptorRef>jar-with-dependencies</descriptorRef>-->
+    <!--                    </descriptorRefs>-->
+    <!--                </configuration>-->
+    <!--            </plugin>-->
+    <!--        </plugins>-->
+    <!--    </build>-->
 
-    <distributionManagement>
-        <snapshotRepository>
-            <id>nexus-snapshots</id>
-            <name>Nexus Snapshot Repository</name>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-        </snapshotRepository>
-        <repository>
-            <id>nexus-releases</id>
-            <name>Nexus Release Repository</name>
-            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </repository>
-    </distributionManagement>
+    <!--    <distributionManagement>-->
+    <!--        <snapshotRepository>-->
+    <!--            <id>nexus-snapshots</id>-->
+    <!--            <name>Nexus Snapshot Repository</name>-->
+    <!--            <url>https://oss.sonatype.org/content/repositories/snapshots</url>-->
+    <!--        </snapshotRepository>-->
+    <!--        <repository>-->
+    <!--            <id>nexus-releases</id>-->
+    <!--            <name>Nexus Release Repository</name>-->
+    <!--            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>-->
+    <!--        </repository>-->
+    <!--    </distributionManagement>-->
 </project>
