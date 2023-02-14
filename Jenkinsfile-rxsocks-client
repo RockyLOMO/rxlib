@@ -22,8 +22,8 @@ pipeline {
             }
             steps {
                 container ('maven-jdk-11') {
-                    sh 'mvn -B clean package -Dmaven.test.skip=true -Dgpg.skip=true -pl lib -am'
-                    sh 'cp -f ${PWD}/lib/target/${JAR_NAME} ${PWD}/${JAR_NAME}'
+                    sh 'mvn -B clean package -Dmaven.test.skip=true -Dgpg.skip=true -pl rxlib -am'
+                    sh 'cp -f ${PWD}/rxlib/target/${JAR_NAME} ${PWD}/${JAR_NAME}'
                 }
             }
         }
