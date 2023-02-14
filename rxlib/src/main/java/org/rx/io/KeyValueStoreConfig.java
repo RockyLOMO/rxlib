@@ -14,6 +14,7 @@ public class KeyValueStoreConfig {
     public interface DirPaths {
         String DEFAULT = "./data/def";
         String SOCKS = "./data/socks";
+        String HOST = "./data/host";
     }
 
     public static KeyValueStoreConfig defaultConfig() {
