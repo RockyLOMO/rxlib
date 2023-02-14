@@ -25,9 +25,9 @@ public final class EndpointTracer {
     }
 
     public void link(Channel inbound, Channel outbound) {
-        LinkedData data = index.get(key(outbound.remoteAddress()), k -> new LinkedData(inbound.remoteAddress()));
+        LinkedData data = index.get(key(outbound.localAddress()), k -> new LinkedData(inbound.remoteAddress()));
 //        data.nodes.addAll(Arrays.toList(inbound.remoteAddress(), inbound.localAddress(), outbound.localAddress(), outbound.remoteAddress()));
-        index.put(key(outbound.localAddress()), data);
+//        index.put(key(outbound.localAddress()), data);
         log.info("EpTracer link {} <- {} {}", data.head, inbound, outbound);
     }
 
