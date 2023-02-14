@@ -1,6 +1,7 @@
 package org.rx.net.support;
 
 import io.netty.channel.Channel;
+import lombok.EqualsAndHashCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.Tuple;
@@ -11,6 +12,7 @@ import java.net.SocketAddress;
 @Slf4j
 public final class EndpointTracer {
     @RequiredArgsConstructor
+    @EqualsAndHashCode
     static class LinkedData {
         final SocketAddress head;
 //        final List<SocketAddress> nodes = new CopyOnWriteArrayList<>();
@@ -19,7 +21,7 @@ public final class EndpointTracer {
     final Cache<Tuple<String, SocketAddress>, LinkedData> index = Cache.getInstance(Cache.MEMORY_CACHE);
 
     Tuple<String, SocketAddress> key(SocketAddress sa) {
-        return Tuple.of("EndpointTracer", sa);
+        return Tuple.of("EpTracer", sa);
     }
 
     public void link(Channel inbound, Channel outbound) {

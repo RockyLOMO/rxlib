@@ -11,10 +11,13 @@ import org.rx.core.Constants;
 @RequiredArgsConstructor
 @Data
 public class KeyValueStoreConfig {
-    public static final String DEFAULT_DIRECTORY = "./data/def";
+    public interface DirPaths {
+        String DEFAULT = "./data/def";
+        String SOCKS = "./data/socks";
+    }
 
     public static KeyValueStoreConfig defaultConfig() {
-        return defaultConfig(DEFAULT_DIRECTORY);
+        return defaultConfig(DirPaths.DEFAULT);
     }
 
     public static KeyValueStoreConfig defaultConfig(String directoryPath) {

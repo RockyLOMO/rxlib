@@ -48,15 +48,15 @@ public class SocksUser implements Serializable {
         return Strings.hashEquals(ANONYMOUS.getUsername(), username);
     }
 
-    public String humanLatestLoginTime() {
+    public String getHumanLatestLoginTime() {
         return latestLoginTime.toString();
     }
 
-    public String humanTotalReadBytes() {
+    public String getHumanTotalReadBytes() {
         return Bytes.readableByteSize(totalReadBytes.get());
     }
 
-    public String humanTotalWriteBytes() {
+    public String getHumanTotalWriteBytes() {
         return Bytes.readableByteSize(totalWriteBytes.get());
     }
 }

@@ -1,5 +1,6 @@
 package org.rx.io;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
@@ -182,13 +183,24 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
                         Object key = reqJson.get("key");
                         if (key == null) {
-                            resJson.put("code", 1);
-                            resJson.put("top", iterator());
+                            JSONArray keys = reqJson.getJSONArray("keys");
+                            if (keys != null) {
+                                Map<TK, TV> map = new LinkedHashMap<>();
+                                for (int i = 0; i < keys.size(); i++) {
+                                    TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, keys.get(i));
+                                    map.put(k, get(k));
+                                }
+                                resJson.put("code", 0);
+                                resJson.put("entry", map);
+                            } else {
+                                resJson.put("code", 1);
+                                resJson.put("top", iterator());
+                            }
                             response.jsonBody(resJson);
                             return;
                         }
-                        TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, key);
 
+                        TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, key);
                         apiSerialize(resJson, VALUE_TYPE_FIELD, get(k));
                         response.jsonBody(resJson);
                     })).requestMapping("/set", (request, response) -> {
