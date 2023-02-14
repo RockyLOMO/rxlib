@@ -8,20 +8,22 @@ import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.WeakIdentityMap;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
+import org.rx.net.http.HttpClient;
 import org.rx.util.function.PredicateFunc;
+import org.rx.util.function.TripleFunc;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Constants.TIMEOUT_INFINITE;
+import static org.rx.core.Extends.eachQuietly;
 
 @Slf4j
 public final class NetEventWait extends Disposable implements WaitHandle {
@@ -38,8 +40,24 @@ public final class NetEventWait extends Disposable implements WaitHandle {
         }
     }
 
+    public static final String DEFAULT_URL_SUFFIX = "/mx/httpSignal";
+    public static TripleFunc<InetSocketAddress, String, Set<String>> HTTP_SIGNAL_HANDLER;
     static final AttributeKey<Set<NetEventWait>> REF = AttributeKey.valueOf("Ref");
     static final Map<InetSocketAddress, NioDatagramChannel> channels = new ConcurrentHashMap<>(8);
+
+    public static void appendDefaultUrlSuffix(Set<String> set) {
+        List<String> list = Linq.from(set).select(u -> u + DEFAULT_URL_SUFFIX).toList();
+        set.clear();
+        set.addAll(list);
+    }
+
+    public static void multicastLocal(InetSocketAddress multicastEndpoint, String group, int mcId) {
+        NioDatagramChannel channel = channels.get(multicastEndpoint);
+        if (channel == null) {
+            return;
+        }
+        multicastLocal(channel, group, mcId);
+    }
 
     static void multicastLocal(Channel channel, String group, int mcId) {
         for (NetEventWait w : channel.attr(REF).get()) {
@@ -127,19 +145,40 @@ public final class NetEventWait extends Disposable implements WaitHandle {
 
     @Override
     public void signalAll() {
-        int mcId = hashCode();
-        multicastLocal(channel, group, mcId);
+        signalAll(HTTP_SIGNAL_HANDLER != null);
+    }
 
-        ByteBuf buf = Bytes.directBuffer();
-        buf.writeInt(mcId);
-        buf.writeCharSequence(group, StandardCharsets.UTF_8);
-        DatagramPacket packet = new DatagramPacket(buf, multicastEndpoint);
-        int last = multicastCount - 1;
-        for (int i = 0; i < multicastCount; i++) {
-            if (i < last) {
-                packet.retain();
+    public void signalAll(boolean httpSignal) {
+        synchronized (wait) {
+            int mcId = hashCode();
+            multicastLocal(channel, group, mcId);
+
+            ByteBuf buf = Bytes.directBuffer();
+            buf.writeInt(mcId);
+            buf.writeCharSequence(group, StandardCharsets.UTF_8);
+            DatagramPacket packet = new DatagramPacket(buf, multicastEndpoint);
+            int last = multicastCount - 1;
+            for (int i = 0; i < multicastCount; i++) {
+                if (i < last) {
+                    packet.retain();
+                }
+                channel.writeAndFlush(packet);
             }
-            channel.writeAndFlush(packet);
+
+            if (httpSignal && HTTP_SIGNAL_HANDLER != null) {
+                Set<String> urls = HTTP_SIGNAL_HANDLER.apply(multicastEndpoint, group);
+                if (CollectionUtils.isEmpty(urls)) {
+                    return;
+                }
+                Tasks.run(() -> {
+                    HttpClient client = new HttpClient();
+                    Map<String, Object> params = new HashMap<>();
+                    params.put("multicast", Sockets.toString(multicastEndpoint));
+                    params.put("group", group);
+                    params.put("mcId", mcId);
+                    eachQuietly(urls, u -> client.get(HttpClient.buildUrl(u, params)));
+                });
+            }
         }
     }
 }

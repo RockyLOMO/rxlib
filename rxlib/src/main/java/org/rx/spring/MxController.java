@@ -13,6 +13,8 @@ import org.rx.exception.ExceptionLevel;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
+import org.rx.net.NetEventWait;
+import org.rx.net.Sockets;
 import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapper;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,12 +34,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Sys.*;
 
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("mx")
 public class MxController {
+    @RequestMapping("httpSignal")
+    public void httpSignal(String multicast, String group, Integer mcId) {
+        NetEventWait.multicastLocal(Sockets.parseEndpoint(multicast), group, ifNull(mcId, 0));
+    }
+
     @RequestMapping("queryTraces")
     public Map<String, Object> queryTraces(Boolean newest, String level,
                                            Boolean methodOccurMost, String methodNamePrefix,
