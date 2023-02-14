@@ -34,8 +34,7 @@ public final class EndpointTracer {
     public SocketAddress head(Channel channel) {
         LinkedData data = index.get(key(channel.remoteAddress()));
         SocketAddress head = data == null ? channel.remoteAddress() : data.head;
-//        log.info("tracer head {}{} {}", head, data == null ? "[NOT_FOUND]" : "",
-//                data == null ? "" : String.join(" => ", NQuery.of(data.nodes).select(Object::toString)));
+        log.info("EpTracer head {} <- {}", head, channel.remoteAddress());
         return head;
     }
 }
