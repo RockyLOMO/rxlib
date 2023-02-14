@@ -183,6 +183,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                         Object key = reqJson.get("key");
                         if (key == null) {
                             resJson.put("code", 1);
+                            resJson.put("top", iterator());
                             response.jsonBody(resJson);
                             return;
                         }

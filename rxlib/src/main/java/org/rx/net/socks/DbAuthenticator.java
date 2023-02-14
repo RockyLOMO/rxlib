@@ -48,6 +48,8 @@ final class DbAuthenticator implements Authenticator {
         }
         if (user.getLatestLoginTime() == null || user.getLatestLoginTime().before(startTime)) {
             user.getLoginIps().clear();
+            user.getTotalReadBytes().set(0);
+            user.getTotalWriteBytes().set(0);
         }
         user.setLatestLoginTime(DateTime.utcNow());
         save(user);
