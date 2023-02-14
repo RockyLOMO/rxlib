@@ -28,13 +28,13 @@ public final class EndpointTracer {
         LinkedData data = index.get(key(outbound.remoteAddress()), k -> new LinkedData(inbound.remoteAddress()));
 //        data.nodes.addAll(Arrays.toList(inbound.remoteAddress(), inbound.localAddress(), outbound.localAddress(), outbound.remoteAddress()));
         index.put(key(outbound.localAddress()), data);
-//        log.info("tracer link h={} {}", data.head, String.join(" => ", NQuery.of(data.nodes).select(Object::toString)));
+        log.info("EpTracer link {} <- {} {}", data.head, inbound, outbound);
     }
 
     public SocketAddress head(Channel channel) {
         LinkedData data = index.get(key(channel.remoteAddress()));
         SocketAddress head = data == null ? channel.remoteAddress() : data.head;
-        log.info("EpTracer head {} <- {}", head, channel.remoteAddress());
+        log.info("EpTracer head {} <- {}", head, channel);
         return head;
     }
 }
