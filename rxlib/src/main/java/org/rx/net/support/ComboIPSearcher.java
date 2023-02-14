@@ -26,7 +26,7 @@ class ComboIPSearcher implements IPSearcher {
     static final int TIMEOUT_SECONDS = 10000;
     final RandomList<BiFunc<String, IPAddress>> apis = new RandomList<>(),
             dApis = new RandomList<>();
-    final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig("./data/host"));
+    final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig(KeyValueStoreConfig.DirPaths.SOCKS));
 
     public ComboIPSearcher() {
 //        apis.add(this::ip_Api, 240);
