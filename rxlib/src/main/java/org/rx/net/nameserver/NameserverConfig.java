@@ -1,11 +1,15 @@
 package org.rx.net.nameserver;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 
 import java.io.Serializable;
 import java.util.List;
 
-@Data
+@Getter
+@Setter
+@ToString
 public class NameserverConfig implements Serializable {
     private static final long serialVersionUID = -333728009047376209L;
     private int dnsPort = 53;

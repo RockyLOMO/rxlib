@@ -1,6 +1,9 @@
 package org.rx.exception;
 
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.DbColumn;
@@ -28,7 +31,9 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class TraceHandler implements Thread.UncaughtExceptionHandler {
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class ErrorEntity implements Serializable {
         private static final long serialVersionUID = 8387064071982888474L;
         @DbColumn(primaryKey = true)
@@ -43,7 +48,9 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         Date modifyTime;
     }
 
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class MethodEntity implements Serializable {
         private static final long serialVersionUID = 941255683071148L;
         @DbColumn(primaryKey = true)
@@ -58,7 +65,9 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         Date modifyTime;
     }
 
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class MetricsEntity implements Serializable {
         private static final long serialVersionUID = 2049476730423563051L;
         @DbColumn(primaryKey = true)

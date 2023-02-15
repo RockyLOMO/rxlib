@@ -1,7 +1,8 @@
 package org.rx.net;
 
-import lombok.Data;
 import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.Extends;
 import org.rx.core.RxConfig;
@@ -10,7 +11,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
-@Data
+@Getter
+@Setter
+@ToString
 public class SocketConfig implements Extends {
     private static final long serialVersionUID = 5312790348211652335L;
     public static final int DELAY_TIMEOUT_MILLIS = 30000;

@@ -1,8 +1,6 @@
 package org.rx;
 
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
@@ -63,7 +61,9 @@ public final class Main implements SocksSupport {
         launchClient(options, port, connectTimeout);
     }
 
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class RSSConf {
         public List<String> shadowServer;
         public String socksPwd;

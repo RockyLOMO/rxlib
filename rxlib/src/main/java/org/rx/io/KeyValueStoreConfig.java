@@ -1,7 +1,6 @@
 package org.rx.io;
 
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import org.rx.core.Constants;
 
 /**
@@ -9,7 +8,9 @@ import org.rx.core.Constants;
  * index 12G
  */
 @RequiredArgsConstructor
-@Data
+@Getter
+@Setter
+@ToString
 public class KeyValueStoreConfig {
     public interface DirPaths {
         String DEFAULT = "./data/def";

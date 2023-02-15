@@ -1,13 +1,14 @@
 package org.rx.net;
 
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 
-@Data
 @RequiredArgsConstructor
+@Getter
+@Setter
+@ToString
 public class SocketInfo implements Serializable {
     private static final long serialVersionUID = -786086629306321445L;
     final SocketProtocol protocol;

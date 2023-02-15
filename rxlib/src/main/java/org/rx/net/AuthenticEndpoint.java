@@ -1,9 +1,6 @@
 package org.rx.net;
 
-import lombok.AccessLevel;
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.Tuple;
 import org.rx.core.StringBuilder;
@@ -17,7 +14,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @RequiredArgsConstructor
-@Data
+@Getter
+@Setter
 public class AuthenticEndpoint implements Serializable {
     private static final long serialVersionUID = -8777400710799771803L;
     static final String AT_FLAG = "@", AUTH_FLAG = ":", PARAM_FLAG = "?";

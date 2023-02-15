@@ -1,11 +1,14 @@
 package org.rx.net.support;
 
-import lombok.Data;
+import lombok.*;
 import org.rx.core.Strings;
 
 import java.io.Serializable;
 
-@Data
+@RequiredArgsConstructor
+@Getter
+@Setter
+@ToString
 public class IPAddress implements Serializable {
     private static final long serialVersionUID = 1529992648624772634L;
     private final String ip;
