@@ -22,67 +22,67 @@ final class WriteBehindQueue<K, V> extends Disposable {
     @Getter
     final long writeDelayed;
     @Getter
-    final IntWaterMark funcWaterMark;
+    final IntWaterMark waterMark;
     //sequential
-    final ConcurrentSkipListMap<K, Tuple<V, BiAction<V>>> funcs = new ConcurrentSkipListMap<>();
+    final ConcurrentSkipListMap<K, Tuple<V, BiAction<V>>> actions = new ConcurrentSkipListMap<>();
     final ResetEventWait syncRoot = new ResetEventWait();
 
-    WriteBehindQueue(long writeDelayed, int highFuncWaterMark) {
-        this(writeDelayed, new IntWaterMark((int) Math.ceil(highFuncWaterMark / 2d), highFuncWaterMark));
+    WriteBehindQueue(long writeDelayed, int highWaterMark) {
+        this(writeDelayed, new IntWaterMark((int) Math.ceil(highWaterMark / 2d), highWaterMark));
     }
 
-    WriteBehindQueue(long writeDelayed, @NonNull IntWaterMark funcWaterMark) {
+    WriteBehindQueue(long writeDelayed, @NonNull IntWaterMark waterMark) {
         this.writeDelayed = writeDelayed;
-        this.funcWaterMark = funcWaterMark;
+        this.waterMark = waterMark;
     }
 
     @Override
     protected void freeObjects() {
-        consume();
+        flush();
     }
 
-    public void reset() {
-        funcs.clear();
+    public void clear() {
+        actions.clear();
         syncRoot.set();
     }
 
     @SneakyThrows
-    public void offer(@NonNull K posKey, V writeVal, BiAction<V> writeFunc) {
+    public void offer(@NonNull K posKey, V writeVal, BiAction<V> writeAction) {
         if (isClosed()) {
-            writeFunc.invoke(writeVal);
+            writeAction.invoke(writeVal);
             return;
         }
 
-        funcs.put(posKey, Tuple.of(writeVal, writeFunc));
-        if (funcs.size() > funcWaterMark.getHigh()) {
+        actions.put(posKey, Tuple.of(writeVal, writeAction));
+        if (actions.size() > waterMark.getHigh()) {
             log.warn("high water mark threshold");
-            Tasks.timer().setTimeout(this::consume, d -> d == 0 ? 1 : writeDelayed, this, TimeoutFlag.SINGLE.flags());
+            Tasks.timer().setTimeout(this::flush, d -> d == 0 ? 1 : writeDelayed, this, TimeoutFlag.SINGLE.flags());
             syncRoot.waitOne();
             syncRoot.reset();
             log.info("below low water mark");
         }
 
-        Tasks.setTimeout(this::consume, writeDelayed, this, TimeoutFlag.SINGLE.flags());
+        Tasks.setTimeout(this::flush, writeDelayed, this, TimeoutFlag.SINGLE.flags());
         log.debug("offer {} delay={}", posKey, writeDelayed);
     }
 
     public boolean remove(@NonNull K posKey) {
-        return funcs.remove(posKey) != null;
+        return actions.remove(posKey) != null;
     }
 
     public V peek(@NonNull K posKey) {
-        Tuple<V, BiAction<V>> tuple = funcs.get(posKey);
+        Tuple<V, BiAction<V>> tuple = actions.get(posKey);
         if (tuple == null) {
             return null;
         }
         return tuple.left;
     }
 
-    public synchronized void consume() {
-        int size = funcs.size();
+    public synchronized void flush() {
+        int size = actions.size();
         while (size > 0) {
-            Map.Entry<K, Tuple<V, BiAction<V>>> entry = funcs.pollFirstEntry();
-            if (funcs.size() <= funcWaterMark.getLow()) {
+            Map.Entry<K, Tuple<V, BiAction<V>>> entry = actions.pollFirstEntry();
+            if (actions.size() <= waterMark.getLow()) {
                 log.debug("low water mark threshold");
                 syncRoot.set();
             }
@@ -91,7 +91,7 @@ final class WriteBehindQueue<K, V> extends Disposable {
             }
             Tuple<V, BiAction<V>> tuple = entry.getValue();
             quietly(() -> tuple.right.invoke(tuple.left));
-            log.debug("consume {}", entry.getKey());
+            log.debug("flush {}", entry.getKey());
             size--;
         }
     }

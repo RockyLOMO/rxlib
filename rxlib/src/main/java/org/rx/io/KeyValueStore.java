@@ -545,7 +545,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     @Override
     public void clear() {
         wal.lock.writeInvoke(() -> {
-            queue.reset();
+            queue.clear();
             indexer.clear();
             wal.clear();
         });
