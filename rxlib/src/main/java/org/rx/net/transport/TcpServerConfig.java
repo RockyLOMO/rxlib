@@ -1,11 +1,12 @@
 package org.rx.net.transport;
 
-import lombok.Data;
-import lombok.EqualsAndHashCode;
+import lombok.*;
 import org.rx.net.SocketConfig;
 
-@Data
-@EqualsAndHashCode(callSuper = true)
+@RequiredArgsConstructor
+@Getter
+@Setter
+@ToString
 public class TcpServerConfig extends SocketConfig {
     private static final long serialVersionUID = 2719107972925015607L;
 

@@ -120,7 +120,7 @@ public class FluentWait implements WaitHandle {
 //        }
 
         doBreak = false;
-        long deadline = System.nanoTime() + timeout * 1000000;
+        long deadline = System.nanoTime() + timeout * Constants.NANO_TO_MILLIS;
         try {
             int retryCount = TIMEOUT_INFINITE;
             if (retryFunc != null) {

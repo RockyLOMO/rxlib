@@ -1,12 +1,15 @@
 package org.rx.net.rpc;
 
-import lombok.Data;
+import lombok.*;
 import org.rx.net.transport.TcpServerConfig;
 
 import java.util.ArrayList;
 import java.util.List;
 
-@Data
+@RequiredArgsConstructor
+@Getter
+@Setter
+@ToString
 public class RpcServerConfig {
     private static final long serialVersionUID = 8065323693541916068L;
     public static final int EVENT_DISABLE_COMPUTE = -1;

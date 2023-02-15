@@ -3,6 +3,7 @@ package org.rx.net.socks;
 import lombok.NonNull;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.DateTime;
+import org.rx.core.Tasks;
 import org.rx.io.KeyValueStore;
 import org.rx.io.KeyValueStoreConfig;
 
@@ -12,7 +13,6 @@ import static org.rx.core.Extends.eq;
 
 final class DbAuthenticator implements Authenticator {
     final KeyValueStore<String, SocksUser> store;
-    final DateTime startTime = DateTime.utcNow();
 
     public int size() {
         return store.size();
@@ -35,6 +35,13 @@ final class DbAuthenticator implements Authenticator {
                 store.putBehind(user.getUsername(), user);
             }
         }
+
+//        Tasks.scheduleDaily(() -> {
+//            if (DateTime.now().getDay() != 1) {
+//                return;
+//            }
+//            resetData();
+//        }, "00:01:00");
     }
 
     @Override
@@ -46,13 +53,6 @@ final class DbAuthenticator implements Authenticator {
         if (!eq(user.getPassword(), password)) {
             return null;
         }
-        if (user.getLatestLoginTime() == null || user.getLatestLoginTime().before(startTime)) {
-            user.getLoginIps().clear();
-            user.getTotalReadBytes().set(0);
-            user.getTotalWriteBytes().set(0);
-        }
-        user.setLatestLoginTime(DateTime.utcNow());
-        save(user);
         return user;
     }
 
@@ -63,4 +63,13 @@ final class DbAuthenticator implements Authenticator {
     public void delete(@NonNull SocksUser user) {
         store.remove(user.getUsername());
     }
+
+//    public void resetData() {
+//        DateTime firstDay = DateTime.valueOf(DateTime.now().toString("yyyy-MM-01 00:00:00"));
+//        if (user.lastResetTime == null || user.lastResetTime.before(firstDay)) {
+//            user.getTotalReadBytes().set(0);
+//            user.getTotalWriteBytes().set(0);
+//        }
+//        user.lastResetTime = DateTime.now();
+//    }
 }

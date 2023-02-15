@@ -2,8 +2,7 @@ package org.rx.core;
 
 import com.alibaba.fastjson2.JSONFactory;
 import io.netty.util.internal.SystemPropertyUtil;
-import lombok.Data;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Metadata;
 import org.rx.bean.LogStrategy;
@@ -18,7 +17,9 @@ import static org.rx.core.Extends.newConcurrentList;
 
 @Metadata(topicClass = RxConfig.class)
 @Slf4j
-@Data
+@Getter
+@Setter
+@ToString
 public final class RxConfig {
     public interface ConfigNames {
         String THREAD_POOL_CPU_LOAD_WARNING = "app.threadPool.cpuLoadWarningThreshold";
@@ -74,7 +75,9 @@ public final class RxConfig {
         }
     }
 
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class ThreadPoolConfig {
         int initSize;
         int keepAliveSeconds;
@@ -93,7 +96,9 @@ public final class RxConfig {
         int resizeQuantity;
     }
 
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class CacheConfig {
         int physicalMemoryUsageWarningThreshold;
 
@@ -102,13 +107,17 @@ public final class RxConfig {
         int maxItemSize;
     }
 
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class DiskConfig {
         int diskUsageWarningThreshold;
         int entityDatabaseRollPeriod;
     }
 
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class NetConfig {
         int reactorThreadAmount;
         boolean enableLog;
@@ -121,7 +130,9 @@ public final class RxConfig {
         DnsConfig dns = new DnsConfig();
     }
 
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class NtpConfig {
         //1 syncTask, 2 injectJdkTime
         int enableFlags;
@@ -130,7 +141,9 @@ public final class RxConfig {
         final List<String> servers = newConcurrentList(true);
     }
 
-    @Data
+    @Getter
+    @Setter
+    @ToString
     public static class DnsConfig {
         final List<String> inlandServers = newConcurrentList(true);
         final List<String> outlandServers = newConcurrentList(true);

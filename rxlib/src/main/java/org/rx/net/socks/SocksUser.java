@@ -3,10 +3,14 @@ package org.rx.net.socks;
 import com.alibaba.fastjson2.JSONReader;
 import com.alibaba.fastjson2.annotation.JSONType;
 import com.alibaba.fastjson2.reader.ObjectReader;
-import lombok.Data;
+import lombok.*;
 import org.rx.bean.DateTime;
+import org.rx.core.Linq;
 import org.rx.core.Strings;
+import org.rx.core.Tasks;
 import org.rx.io.Bytes;
+import org.rx.net.support.IPAddress;
+import org.rx.net.support.IPSearcher;
 import org.rx.util.BeanMapper;
 
 import java.io.Serializable;
@@ -14,11 +18,13 @@ import java.lang.reflect.Type;
 import java.net.InetAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 @JSONType(deserializer = SocksUser.JsonReader.class)
-@Data
+@RequiredArgsConstructor
+@Getter
+@Setter
+@ToString
 public class SocksUser implements Serializable {
     public static class JsonReader implements ObjectReader<SocksUser> {
         @Override
@@ -33,26 +39,51 @@ public class SocksUser implements Serializable {
         }
     }
 
+    @Getter
+    @Setter
+    @ToString
+    public static class LoginInfo implements Serializable {
+        private static final long serialVersionUID = 1264936011170722186L;
+        final InetAddress ip;
+        IPAddress ipInfo;
+        DateTime latestTime;
+        int refCnt;
+        final AtomicLong totalActiveSeconds = new AtomicLong();
+        final AtomicLong totalReadBytes = new AtomicLong();
+        final AtomicLong totalWriteBytes = new AtomicLong();
+
+        public LoginInfo(InetAddress ip) {
+            this.ip = ip;
+            Tasks.run(() -> ipInfo = IPSearcher.DEFAULT.search(ip.getHostAddress()));
+        }
+    }
+
     private static final long serialVersionUID = 7845976131633777320L;
     public static final SocksUser ANONYMOUS = new SocksUser("anonymous");
 
-    private final String username;
-    private String password;
-    private int maxIpCount;
-    private final Map<InetAddress, AtomicInteger> loginIps = new ConcurrentHashMap<>();
-    private DateTime latestLoginTime;
-    private final AtomicLong totalReadBytes = new AtomicLong();
-    private final AtomicLong totalWriteBytes = new AtomicLong();
+    final String username;
+    final Map<InetAddress, LoginInfo> loginIps = new ConcurrentHashMap<>(8);
+    String password;
+    int maxIpCount;
+    DateTime lastResetTime;
 
     public boolean isAnonymous() {
         return Strings.hashEquals(ANONYMOUS.getUsername(), username);
     }
 
+    public long getTotalReadBytes() {
+        return (long) Linq.from(loginIps.values()).sum(p -> p.totalReadBytes.get());
+    }
+
+    public long getTotalWriteBytes() {
+        return (long) Linq.from(loginIps.values()).sum(p -> p.totalWriteBytes.get());
+    }
+
     public String getHumanTotalReadBytes() {
-        return Bytes.readableByteSize(totalReadBytes.get());
+        return Bytes.readableByteSize(getTotalReadBytes());
     }
 
     public String getHumanTotalWriteBytes() {
-        return Bytes.readableByteSize(totalWriteBytes.get());
+        return Bytes.readableByteSize(getTotalWriteBytes());
     }
 }

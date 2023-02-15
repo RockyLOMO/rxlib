@@ -6,12 +6,13 @@ import io.netty.handler.traffic.TrafficCounter;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.DateTime;
+import org.rx.core.Constants;
+import org.rx.core.Sys;
+import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 public class ProxyManageHandler extends ChannelTrafficShapingHandler {
@@ -22,60 +23,57 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
     private final Authenticator authenticator;
     @Getter
     private SocksUser user = SocksUser.ANONYMOUS;
-    private DateTime onlineTime;
-
-    public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
-        this.user = user;
-        InetSocketAddress realEp = (InetSocketAddress) SocksSupport.ENDPOINT_TRACER.head(ctx.channel());
-        AtomicInteger refCnt = user.getLoginIps().computeIfAbsent(realEp.getAddress(), k -> new AtomicInteger());
-        refCnt.incrementAndGet();
-        if (user.getMaxIpCount() != -1 && user.getLoginIps().size() > user.getMaxIpCount()) {
-            log.error("SocksUser {} maxIpCount={}\nconnectedIps={} incomingIp={}", user.getUsername(), user.getMaxIpCount(), user.getLoginIps().keySet(), realEp);
-            if (refCnt.decrementAndGet() <= 0) {
-                user.getLoginIps().remove(realEp.getAddress());
-            }
-            Sockets.closeOnFlushed(ctx.channel());
-        }
-    }
+    private SocksUser.LoginInfo info;
+    private long activeTime;
 
     public ProxyManageHandler(Authenticator authenticator, long checkInterval) {
         super(checkInterval);
         this.authenticator = authenticator;
     }
 
+    public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
+        this.user = user;
+        InetSocketAddress realEp = (InetSocketAddress) SocksSupport.ENDPOINT_TRACER.head(ctx.channel());
+        info = user.getLoginIps().computeIfAbsent(realEp.getAddress(), SocksUser.LoginInfo::new);
+        if (user.getMaxIpCount() != -1 && user.getLoginIps().size() > user.getMaxIpCount()) {
+            log.error("SocksUser {} maxIpCount={}\nconnectedIps={} incomingIp={}", user.getUsername(), user.getMaxIpCount(), user.getLoginIps().keySet(), realEp);
+            Sockets.closeOnFlushed(ctx.channel());
+            return;
+        }
+        info.refCnt++;
+    }
+
+    void save() {
+        if (authenticator instanceof DbAuthenticator) {
+            ((DbAuthenticator) authenticator).save(user);
+        }
+    }
+
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        onlineTime = DateTime.utcNow();
+        activeTime = System.nanoTime();
         super.channelActive(ctx);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        double elapsed = DateTime.utcNow().subtract(onlineTime).getTotalSeconds();
-
-        InetSocketAddress localAddress = (InetSocketAddress) ctx.channel().localAddress();
-        InetSocketAddress remoteAddress = (InetSocketAddress) ctx.channel().remoteAddress();
-
+        long elapsed = (System.nanoTime() - activeTime);
         TrafficCounter trafficCounter = trafficCounter();
-        long readByte = trafficCounter.cumulativeReadBytes();
-        long writeByte = trafficCounter.cumulativeWrittenBytes();
+        long readBytes = trafficCounter.cumulativeReadBytes();
+        long writeBytes = trafficCounter.cumulativeWrittenBytes();
 
-        if (remoteAddress != null) {
-            AtomicInteger refCnt = user.getLoginIps().get(remoteAddress.getAddress());
-            if (refCnt != null && refCnt.decrementAndGet() <= 0) {
-                user.getLoginIps().remove(remoteAddress.getAddress());
-            }
+        if (info != null) {
+            info.refCnt--;
+            info.totalActiveSeconds.addAndGet(elapsed / Constants.NANO_TO_MILLIS / 1000);
+            info.totalReadBytes.addAndGet(readBytes);
+            info.totalWriteBytes.addAndGet(writeBytes);
         }
-        user.getTotalReadBytes().addAndGet(readByte);
-        user.getTotalWriteBytes().addAndGet(writeByte);
+        save();
 
-        log.info("user={} elapsed={}s\tlocal={}:{} remote={}\treadBytes={} writeBytes={}",
-                user.getUsername(), elapsed,
-                Sockets.getLocalAddress(), localAddress.getPort(), remoteAddress,
-                readByte, writeByte);
-        if (authenticator instanceof DbAuthenticator) {
-            ((DbAuthenticator) authenticator).save(user);
-        }
+        InetSocketAddress remoteAddress = (InetSocketAddress) ctx.channel().remoteAddress();
+        log.info("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",
+                user.getUsername(), remoteAddress, Sys.formatNanosElapsed(elapsed),
+                Bytes.readableByteSize(readBytes), Bytes.readableByteSize(writeBytes));
         super.channelInactive(ctx);
     }
 }

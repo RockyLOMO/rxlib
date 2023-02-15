@@ -123,7 +123,7 @@ public final class NetEventWait extends Disposable implements WaitHandle {
 
     public boolean await(long timeoutMillis, long intervalMillis, PredicateFunc<Integer> isTrue) {
         if (intervalMillis >= 0 && isTrue != null) {
-            long deadline = System.nanoTime() + timeoutMillis * 1000000;
+            long deadline = System.nanoTime() + timeoutMillis * Constants.NANO_TO_MILLIS;
             synchronized (wait) {
                 wait.reset();
                 int i = 1;

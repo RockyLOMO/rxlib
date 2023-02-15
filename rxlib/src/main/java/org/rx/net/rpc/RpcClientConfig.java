@@ -1,6 +1,9 @@
 package org.rx.net.rpc;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import org.rx.net.Sockets;
 import org.rx.net.transport.StatefulTcpClient;
 import org.rx.net.transport.TcpClientConfig;
@@ -8,7 +11,10 @@ import org.rx.util.function.TripleAction;
 
 import java.net.InetSocketAddress;
 
-@Data
+@RequiredArgsConstructor
+@Getter
+@Setter
+@ToString
 public class RpcClientConfig<T> {
     private static final long serialVersionUID = -4952694662640163676L;
     public static final int NON_POOL_SIZE = -1;

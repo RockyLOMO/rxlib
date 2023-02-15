@@ -1,9 +1,6 @@
 package org.rx.net.socks;
 
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
@@ -14,8 +11,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @RequiredArgsConstructor
-@Data
-@EqualsAndHashCode(callSuper = true)
+@Getter
+@Setter
+@ToString
 public class SocksConfig extends SocketConfig {
     private static final long serialVersionUID = 3526543718065617052L;
     private final int listenPort;

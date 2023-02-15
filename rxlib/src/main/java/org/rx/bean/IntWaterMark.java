@@ -1,17 +1,16 @@
 package org.rx.bean;
 
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.io.Serializable;
 
 import static org.rx.core.Extends.require;
 
-@Data
-@AllArgsConstructor
+@Getter
+@Setter
+@ToString
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor
 public class IntWaterMark implements Serializable {
     private static final long serialVersionUID = -6996645790082139283L;
     private int low, high;

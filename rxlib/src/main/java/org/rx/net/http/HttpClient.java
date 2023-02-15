@@ -436,7 +436,7 @@ public class HttpClient {
 
     @SneakyThrows
     private synchronized ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
-        ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method, content.toString()}, false);
+        ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method.toString(), content.toString()}, false);
         try {
             Request.Builder request = createRequest(url);
             RequestBody requestBody = content.toBody();

@@ -1,15 +1,14 @@
 package org.rx.net.shadowsocks;
 
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import org.rx.net.SocketConfig;
 
 import java.net.InetSocketAddress;
 
 @RequiredArgsConstructor
-@Data
-@EqualsAndHashCode(callSuper = true)
+@Getter
+@Setter
+@ToString
 public class ShadowsocksConfig extends SocketConfig {
     private static final long serialVersionUID = 9144214925505451056L;
     private final InetSocketAddress serverEndpoint;

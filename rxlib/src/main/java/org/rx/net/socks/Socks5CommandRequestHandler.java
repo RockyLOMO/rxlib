@@ -146,8 +146,6 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
             log.info("socks5[{}] {} => {} connected, dstEp={}[{}] {}", config.getListenPort(),
                     inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination, extMsg.toString());
-
-//            SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
         });
     }
 }
