@@ -6,7 +6,8 @@ import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Constants;
+import org.rx.core.Tasks;
+import org.rx.core.TimeoutFlag;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
@@ -59,7 +60,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
             size.set(in.readInt());
         }
 
-        private transient WALFileStream fileStream;
+        private transient WALFileStream owner;
         private long _logPosition = HEADER_SIZE;
         private AtomicInteger size = new AtomicInteger();
         Object extra;
@@ -97,32 +98,30 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         }
 
         private void writeBack() {
-            if (fileStream == null) {
+            if (owner == null) {
                 return;
             }
-
-            fileStream.queue.offer(0L, this, x -> fileStream.saveMeta());
+            owner.saveMeta();
         }
     }
 
     static final float GROW_FACTOR = 0.75f;
     static final int HEADER_SIZE = 256;
     static final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
-    private final FileStream main;
+    private final FileStream file;
     final CompositeLock lock;
-    private final long growSize;
-    private final int readerCount;
-    @Setter
-    private boolean autoFlush;
+    final long growSize;
+    final int readerCount;
     private IOStream<?, ?> writer;
     private final LinkedTransferQueue<IOStream<?, ?>> readers = new LinkedTransferQueue<>();
     private final Serializer serializer;
     final MetaHeader meta;
-    private final WriteBehindQueue<Long, MetaHeader> queue = new WriteBehindQueue<>(Constants.DEFAULT_INTERVAL, 2);
+    @Setter
+    long flushDelayMillis = 1000;
 
     @Override
     public String getName() {
-        return main.getName();
+        return file.getName();
     }
 
     @Override
@@ -186,7 +185,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
 
     @Override
     public long getLength() {
-        return lock.readInvoke(main::getLength);
+        return lock.readInvoke(file::getLength);
     }
 
     public WALFileStream(File file, long growSize, int readerCount, @NonNull Serializer serializer) {
@@ -194,21 +193,20 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         this.readerCount = readerCount;
         this.serializer = serializer;
 
-        main = new FileStream(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.NON_BUF);
-        lock = main.getLock();
+        this.file = new FileStream(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.NON_BUF);
+        lock = this.file.getLock();
         if (!ensureGrow()) {
             createReaderAndWriter();
         }
 
         meta = loadMeta();
-        meta.fileStream = this;
+        meta.owner = this;
     }
 
     @Override
     protected void freeObjects() {
-        queue.close();
         releaseReaderAndWriter();
-        main.close();
+        file.close();
     }
 
     public void clear() {
@@ -224,9 +222,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         lock.writeInvoke(() -> {
             writer.setPosition(0);
             serializer.serialize(meta, writer);
-            if (autoFlush) {
-                writer.flush();
-            }
+            _flush();
         }, 0, HEADER_SIZE);
     }
 
@@ -254,10 +250,11 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     private void createReaderAndWriter() {
         lock.writeInvoke(() -> {
             long length = getLength();
-            writer = main.mmap(FileChannel.MapMode.READ_WRITE, 0, length);
+            writer = file.mmap(FileChannel.MapMode.READ_WRITE, 0, length);
 
+            readers.clear();
             for (int i = 0; i < readerCount; i++) {
-                readers.add(main.mmap(FileChannel.MapMode.READ_ONLY, 0, length));
+                readers.add(file.mmap(FileChannel.MapMode.READ_ONLY, 0, length));
             }
             if (readers.isEmpty()) {
                 readers.add(writer);
@@ -280,7 +277,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
 
     private boolean ensureGrow() {
         return lock.writeInvoke(() -> {
-            long length = main.getLength();
+            long length = file.getLength();
             if (length < growSize
                     || (meta != null && meta.getLogPosition() / (float) length > GROW_FACTOR)) {
                 long resize = length + growSize;
@@ -295,7 +292,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
 
     private void _setLength(long length) {
         releaseReaderAndWriter();
-        main.setLength(length);
+        file.setLength(length);
         createReaderAndWriter();
     }
 
@@ -363,12 +360,19 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
 
             writer.setPosition(logPosition);
             action.invoke(writer);
-            if (autoFlush) {
-                writer.flush();
-            }
+            _flush();
             meta.setLogPosition(writer.getPosition());
 //        }, HEADER_SIZE);
         }, logPosition);
+    }
+
+    private void _flush() {
+        long delay = flushDelayMillis;
+        if (delay <= 0) {
+            writer.flush();
+            return;
+        }
+        Tasks.setTimeout(this::flush, delay, writer, TimeoutFlag.SINGLE.flags());
     }
 
     @Override
