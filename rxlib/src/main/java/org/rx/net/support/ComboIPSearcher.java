@@ -10,7 +10,6 @@ import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.io.KeyValueStore;
-import org.rx.io.KeyValueStoreConfig;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
 import org.rx.util.function.BiFunc;
@@ -26,7 +25,7 @@ class ComboIPSearcher implements IPSearcher {
     static final int TIMEOUT_SECONDS = 10000;
     final RandomList<BiFunc<String, IPAddress>> apis = new RandomList<>(),
             dApis = new RandomList<>();
-    final KeyValueStore<String, IPAddress> store = new KeyValueStore<>(KeyValueStoreConfig.defaultConfig(KeyValueStoreConfig.DirPaths.HOST));
+    final KeyValueStore<String, IPAddress> store = KeyValueStore.getInstance(String.class, IPAddress.class);
 
     public ComboIPSearcher() {
 //        apis.add(this::ip_Api, 240);

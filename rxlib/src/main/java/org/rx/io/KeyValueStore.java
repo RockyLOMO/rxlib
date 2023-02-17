@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.bean.$;
 import org.rx.bean.AbstractMap;
+import org.rx.codec.CodecUtil;
 import org.rx.core.Disposable;
 import org.rx.core.Reflects;
 import org.rx.core.Strings;
@@ -18,6 +19,7 @@ import org.rx.third.guava.AbstractSequentialIterator;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
@@ -40,9 +42,9 @@ import static org.rx.core.Sys.toJsonObject;
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK, TV>, Iterable<Map.Entry<TK, TV>> {
     @AllArgsConstructor
-    @EqualsAndHashCode
-    @ToString
     @Getter
+    @ToString
+    @EqualsAndHashCode
     static class Entry<TK, TV> implements Map.Entry<TK, TV>, Compressible {
         private static final long serialVersionUID = -2218602651671401557L;
 
@@ -97,8 +99,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     static final int TOMB_MARK = -1;
     static final int DEFAULT_ITERATOR_SIZE = 50;
     static final String KEY_TYPE_FIELD = "_KEY_TYPE", VALUE_TYPE_FIELD = "_VAL_TYPE";
-    @Getter(lazy = true)
-    private static final KeyValueStore instance = new KeyValueStore<>();
+    static final Map<Class<?>, KeyValueStore> instances = new ConcurrentHashMap<>();
+
+    public static <TK, TV> KeyValueStore<TK, TV> getInstance(Class<TK> keyType, Class<TV> valueType) {
+        return instances.computeIfAbsent(keyType, k -> new KeyValueStore<>(KeyValueStoreConfig.newConfig(keyType, valueType)));
+    }
 
     final KeyValueStoreConfig config;
     final File parentDirectory;
@@ -106,7 +111,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     final WALFileStream wal;
     final HashKeyIndexer<TK> indexer;
     final Serializer serializer;
-    final WriteBehindQueue<TK, TV> queue;
     final HttpServer apiServer;
 
     File getIndexDirectory() {
@@ -115,26 +119,23 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         return dir;
     }
 
-    private KeyValueStore() {
-        this(KeyValueStoreConfig.defaultConfig(), Serializer.DEFAULT);
-    }
-
     public KeyValueStore(KeyValueStoreConfig config) {
         this(config, Serializer.DEFAULT);
     }
 
+    @SneakyThrows
     public KeyValueStore(@NonNull KeyValueStoreConfig config, @NonNull Serializer serializer) {
+        require(config.getKeyType());
+        require(config.getValueType());
         this.config = config;
-        filename = Files.getName(config.getFilePath());
-        if (Strings.isEmpty(filename)) {
-            throw new InvalidException("Empty file name");
-        }
-
-        parentDirectory = new File(Files.createDirectory(config.getFilePath()));
-        this.serializer = serializer;
-
-        File logFile = new File(Files.changeExtension(config.getFilePath(), "log"));
+        parentDirectory = new File(Files.createDirectory(config.getDirectoryPath()));
+        String name = config.getKeyType().getSimpleName() + config.getValueType().getSimpleName();
+        filename = String.format("%s.log", CodecUtil.hashUnsigned64(name));
+        File logFile = new File(String.format("%s/%s", config.getDirectoryPath(), filename));
         wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
+        wal.setFlushDelayMillis(config.getFlushDelayMillis());
+        java.nio.file.Files.setAttribute(logFile.toPath(), "kvName", name);
+        this.serializer = serializer;
 
         indexer = new HashKeyIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexGrowSize());
 
@@ -171,8 +172,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         if (wal.meta.extra == null) {
             wal.meta.extra = new AtomicInteger();
         }
-
-        queue = new WriteBehindQueue<>(config.getWriteBehindDelayed(), config.getWriteBehindHighWaterMark());
 
         if (config.getApiPort() > 0) {
             apiServer = new HttpServer(config.getApiPort(), config.isApiSsl())
@@ -476,10 +475,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
                     Entry<TK, TV> val = serializer.deserialize(reader, true);
                     log.debug("read {}", val);
-                    TV v = queue.peek(val.key);
-                    if (v != null) {
-                        val.value = v;
-                    }
                     if (!ctx.filter.add(val.key)) {
                         log.debug("skip read {}", val.key);
                         val = null;
@@ -505,20 +500,12 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     @Override
     public boolean containsKey(Object key) {
         TK k = (TK) key;
-        TV v = queue.peek(k);
-        if (v != null) {
-            return true;
-        }
-        return indexer.findKey((TK) key) != null;
+        return indexer.findKey(k) != null;
     }
 
     @Override
     public TV get(Object key) {
         TK k = (TK) key;
-        TV v = queue.peek(k);
-        if (v != null) {
-            return v;
-        }
         return read(k);
     }
 
@@ -531,21 +518,15 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         return old;
     }
 
-    public void putBehind(TK key, TV value) {
-        queue.offer(key, value, v -> put(key, v));
-    }
-
     @Override
     public TV remove(Object key) {
         TK k = (TK) key;
-        queue.remove(k);
         return delete(k);
     }
 
     @Override
     public void clear() {
         wal.lock.writeInvoke(() -> {
-            queue.clear();
             indexer.clear();
             wal.clear();
         });

@@ -342,19 +342,19 @@ public class IOTester extends AbstractTester {
         log.info("remove {} {}", mk2, kv.remove(mk2, "a"));
 
         assert kv.get(mk3) == null;
-        kv.putBehind(mk3, "1");
+        kv.put(mk3, "1");
         sleep(2000);
         assert kv.get(mk3).equals("1");
-        kv.putBehind(mk3, "2");
+        kv.put(mk3, "2");
         assert kv.get(mk3).equals("2");
-        kv.putBehind(mk3, "3");
+        kv.put(mk3, "3");
         sleep(2000);
 
         kv.close();
     }
 
     private KeyValueStoreConfig tstConf() {
-        KeyValueStoreConfig conf = KeyValueStoreConfig.defaultConfig();
+        KeyValueStoreConfig conf = KeyValueStoreConfig.newConfig(Object.class, Object.class);
         conf.setLogGrowSize(1024 * 1024);
         conf.setIndexGrowSize(1024 * 32);
         return conf;
