@@ -31,7 +31,7 @@ public interface Serializer {
     default <T> HybridStream serialize(T obj, int maxMemorySize, boolean directMemory) {
         HybridStream stream = new HybridStream(maxMemorySize, directMemory, null);
         serialize(obj, stream);
-        return (HybridStream) stream.rewind();
+        return stream.rewind();
     }
 
     <T> void serialize(T obj, IOStream<?, ?> stream);

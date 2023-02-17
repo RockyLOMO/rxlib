@@ -96,7 +96,7 @@ final class HashKeyIndexer<TK> extends Disposable {
 
         public synchronized void incrementWroteBytes() {
             _wroteBytes += KEY_SIZE;
-            owner.queue.offer(main.getName(), 0, x -> saveSize());
+            saveSize();
         }
 
         public synchronized void resetWroteBytes() {
@@ -147,7 +147,6 @@ final class HashKeyIndexer<TK> extends Disposable {
     private final File directory;
     private final int growSize;
     private final Slot[] slots;
-    private final WriteBehindQueue<String, Integer> queue;
     private final Cache<TK, KeyData<TK>> cache = new MemoryCache<>(b -> MemoryCache.weightBuilder(b, 0.2f, 16 * 2 + 8 + 8 + 8));
 
     public HashKeyIndexer(@NonNull File directory, long slotSize, int growSize) {
@@ -157,7 +156,6 @@ final class HashKeyIndexer<TK> extends Disposable {
 
         int slotCount = (int) Math.ceil((double) Integer.MAX_VALUE * KEY_SIZE / slotSize);
         slots = new Slot[slotCount];
-        queue = new WriteBehindQueue<>(Constants.DEFAULT_INTERVAL, slotCount + 1);
     }
 
     @Override
