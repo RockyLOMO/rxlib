@@ -246,7 +246,7 @@ public class IOTester extends AbstractTester {
         assert kv.size() == c;
 //        assert kv.size() == c * 2;
         int j = c - 1;
-        for (Map.Entry<Integer, String> entry : kv) {
+        for (Map.Entry<Integer, String> entry : kv.entrySet()) {
             System.out.println(entry.getKey() + ": " + entry.getValue());
             assert j == entry.getKey();
             assert entry.getValue().startsWith(j + " ");

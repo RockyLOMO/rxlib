@@ -184,7 +184,7 @@ public class ObjectPool<T> extends Disposable {
             }
         }
 //        }
-        log.info("ObjPool doRetire[{}] {} -> {}", action, wrapper, ok);
+        log.debug("ObjPool doRetire[{}] {} -> {}", action, wrapper, ok);
         return ok;
     }
 

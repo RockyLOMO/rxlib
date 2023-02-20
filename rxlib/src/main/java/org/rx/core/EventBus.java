@@ -98,6 +98,7 @@ public class EventBus implements EventPublisher<EventBus> {
     }
 
     public <T, TT extends Serializable> void publish(@NonNull T event, TT topic) {
+        log.debug("publish[{}] {}", topic, event);
         Class<?> type = event.getClass();
         List<Class<?>> eventTypes = ClassUtils.getAllSuperclasses(type);
         eventTypes.add(type);

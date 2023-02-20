@@ -572,7 +572,12 @@ public class CoreTester extends AbstractTester {
 
     @Subscribe
     static void onEvent(Integer obj) {
-        System.out.println(obj);
+        log.info("onEvent {}", obj);
+    }
+
+    @Subscribe(topicClass = CoreTester.class)
+    static void onEventWithTopic(Integer obj) {
+        log.info("onEventWithTopic {}", obj);
     }
 
     @SneakyThrows
