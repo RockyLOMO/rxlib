@@ -466,7 +466,7 @@ public class IOTester extends AbstractTester {
         assert buf.readInt() == 512;
     }
 
-    private void testMmapStream(IOStream<?, ?> stream) {
+    private void testMmapStream(IOStream stream) {
         stream.write(content);
         assert stream.getPosition() == content.length;
         stream.setPosition(0L);
@@ -477,7 +477,7 @@ public class IOTester extends AbstractTester {
         assert Arrays.equals(content, data);
 
 //        long pos = stream.getPosition();
-//        IOStream<?, ?> newStream = App.deepClone(stream);
+//        IOStream newStream = App.deepClone(stream);
 //        assert pos == newStream.getPosition();
     }
 
@@ -528,7 +528,7 @@ public class IOTester extends AbstractTester {
         stream.setPosition(0L);
         System.out.println(stream.read());
 
-        IOStream<?, ?> serializeStream = Serializer.DEFAULT.serialize(stream);
+        IOStream serializeStream = Serializer.DEFAULT.serialize(stream);
         MemoryStream newStream = Serializer.DEFAULT.deserialize(serializeStream);
         newStream.setPosition(0L);
         byte[] bytes = newStream.toArray();
@@ -537,7 +537,7 @@ public class IOTester extends AbstractTester {
         }
     }
 
-    private void testSeekStream(IOStream<?, ?> stream) {
+    private void testSeekStream(IOStream stream) {
         stream.write(content);
         assert stream.getPosition() == content.length && stream.getLength() == content.length;
         stream.setPosition(0L);
@@ -549,7 +549,7 @@ public class IOTester extends AbstractTester {
 
         long pos = stream.getPosition();
         long len = stream.getLength();
-        IOStream<?, ?> newStream = stream.deepClone();
+        IOStream newStream = stream.deepClone();
         assert pos == newStream.getPosition() && len == newStream.getLength();
     }
 
@@ -557,7 +557,7 @@ public class IOTester extends AbstractTester {
     public void serialize() {
         GirlBean girlBean = new GirlBean();
         girlBean.setAge(8);
-        IOStream<?, ?> serialize = Serializer.DEFAULT.serialize(girlBean);
+        IOStream serialize = Serializer.DEFAULT.serialize(girlBean);
         GirlBean deGirl = Serializer.DEFAULT.deserialize(serialize);
         assert girlBean.equals(deGirl);
     }

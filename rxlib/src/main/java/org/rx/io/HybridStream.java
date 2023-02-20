@@ -9,7 +9,7 @@ import java.io.OutputStream;
 import java.io.Serializable;
 
 @Slf4j
-public final class HybridStream extends IOStream<InputStream, OutputStream> implements Serializable {
+public final class HybridStream extends IOStream implements Serializable {
     private static final long serialVersionUID = 2137331266386948293L;
     private final int maxMemorySize;
     private final String tempFilePath;
@@ -18,7 +18,7 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
     @Setter
     private String name;
 
-    private synchronized IOStream<?, ?> getStream() {
+    private synchronized IOStream getStream() {
         if (fileStream != null) {
             return fileStream;
         }
@@ -39,16 +39,6 @@ public final class HybridStream extends IOStream<InputStream, OutputStream> impl
             return getStream().getName();
         }
         return name;
-    }
-
-    @Override
-    protected InputStream initReader() {
-        return null;
-    }
-
-    @Override
-    protected OutputStream initWriter() {
-        return null;
     }
 
     @Override

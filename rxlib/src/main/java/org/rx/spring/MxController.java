@@ -156,7 +156,7 @@ public class MxController {
 //    public void directPoll(String appName, String socksId, String endpoint, HttpServletResponse response) {
 //        ReceivePack pack = server.frontendPoll(new SendPack(appName, socksId, Sockets.parseEndpoint(endpoint)));
 //        ServletOutputStream out = response.getOutputStream();
-//        for (IOStream<?, ?> binary : pack.getBinaries()) {
+//        for (IOStream binary : pack.getBinaries()) {
 //            binary.read(out);
 //        }
 //    }

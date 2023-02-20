@@ -14,7 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 
 @Slf4j
-public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
+public class FileStream extends IOStream implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
 
     @RequiredArgsConstructor
@@ -37,6 +37,8 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @Getter(AccessLevel.PROTECTED)
     private transient BufferedRandomAccessFile randomAccessFile;
     private transient final Lazy<CompositeLock> lock = new Lazy<>(() -> new CompositeLock(this, lockFlags));
+    private transient InputStream reader;
+    private transient OutputStream writer;
 
     public CompositeLock getLock() {
         return lock.getValue();
@@ -85,43 +87,49 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     @Override
-    protected InputStream initReader() {
-        return new InputStream() {
-            @Override
-            public int available() {
-                return safeRemaining(FileStream.this.available());
-            }
+    public InputStream getReader() {
+        if (reader == null) {
+            reader = new InputStream() {
+                @Override
+                public int available() {
+                    return safeRemaining(FileStream.this.available());
+                }
 
-            @Override
-            public int read(byte[] b, int off, int len) throws IOException {
-                return randomAccessFile.read(b, off, len);
-            }
+                @Override
+                public int read(byte[] b, int off, int len) throws IOException {
+                    return randomAccessFile.read(b, off, len);
+                }
 
-            @Override
-            public int read() throws IOException {
-                return randomAccessFile.read();
-            }
-        };
+                @Override
+                public int read() throws IOException {
+                    return randomAccessFile.read();
+                }
+            };
+        }
+        return reader;
     }
 
     @Override
-    protected OutputStream initWriter() {
-        return new OutputStream() {
-            @Override
-            public void write(byte[] b, int off, int len) throws IOException {
-                randomAccessFile.write(b, off, len);
-            }
+    public OutputStream getWriter() {
+        if (writer == null) {
+            writer = new OutputStream() {
+                @Override
+                public void write(byte[] b, int off, int len) throws IOException {
+                    randomAccessFile.write(b, off, len);
+                }
 
-            @Override
-            public void write(int b) throws IOException {
-                randomAccessFile.write(b);
-            }
+                @Override
+                public void write(int b) throws IOException {
+                    randomAccessFile.write(b);
+                }
 
-            @Override
-            public void flush() {
-                FileStream.this.flush();
-            }
-        };
+                @Override
+                public void flush() {
+                    FileStream.this.flush();
+                }
+            };
+        }
+        return writer;
     }
 
     @Override

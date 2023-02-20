@@ -14,7 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 
-public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
+public final class CompositeMmap extends IOStream {
     private static final long serialVersionUID = -3293392999599916L;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
@@ -30,6 +30,8 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     final FileStream.Block block;
     final Tuple<MappedByteBuffer, DataRange<Long>>[] buffers;
     long position;
+    private transient InputStream reader;
+    private transient OutputStream writer;
 
     @Override
     public String getName() {
@@ -37,74 +39,80 @@ public final class CompositeMmap extends IOStream<InputStream, OutputStream> {
     }
 
     @Override
-    protected InputStream initReader() {
-        return new InputStream() {
-            @Override
-            public int available() {
-                return safeRemaining(CompositeMmap.this.available());
-            }
-
-            @Override
-            public int read(byte[] b, int off, int len) {
-                ByteBuf buf = Bytes.wrap(b, off, len);
-                buf.clear();
-                try {
-                    int read = CompositeMmap.this.read(position, buf);
-                    if (read > -1) {
-                        position += read;
-                    }
-                    return read;
-                } finally {
-                    buf.release();
+    public InputStream getReader() {
+        if (reader == null) {
+            reader = new InputStream() {
+                @Override
+                public int available() {
+                    return safeRemaining(CompositeMmap.this.available());
                 }
-            }
 
-            @Override
-            public int read() {
-                ByteBuf buf = Bytes.directBuffer(1);
-                try {
-                    int read = CompositeMmap.this.read(position, buf, 1);
-                    if (read == Constants.IO_EOF) {
+                @Override
+                public int read(byte[] b, int off, int len) {
+                    ByteBuf buf = Bytes.wrap(b, off, len);
+                    buf.clear();
+                    try {
+                        int read = CompositeMmap.this.read(position, buf);
+                        if (read > -1) {
+                            position += read;
+                        }
                         return read;
+                    } finally {
+                        buf.release();
                     }
-                    position += read;
-                    return buf.readByte() & 0xff;
-                } finally {
-                    buf.release();
                 }
-            }
-        };
+
+                @Override
+                public int read() {
+                    ByteBuf buf = Bytes.directBuffer(1);
+                    try {
+                        int read = CompositeMmap.this.read(position, buf, 1);
+                        if (read == Constants.IO_EOF) {
+                            return read;
+                        }
+                        position += read;
+                        return buf.readByte() & 0xff;
+                    } finally {
+                        buf.release();
+                    }
+                }
+            };
+        }
+        return reader;
     }
 
     @Override
-    protected OutputStream initWriter() {
-        return new OutputStream() {
-            @Override
-            public void write(byte[] b, int off, int len) {
-                ByteBuf buf = Bytes.wrap(b, off, len);
-                try {
-                    position += CompositeMmap.this.write(position, buf);
-                } finally {
-                    buf.release();
+    public OutputStream getWriter() {
+        if (writer == null) {
+            writer = new OutputStream() {
+                @Override
+                public void write(byte[] b, int off, int len) {
+                    ByteBuf buf = Bytes.wrap(b, off, len);
+                    try {
+                        position += CompositeMmap.this.write(position, buf);
+                    } finally {
+                        buf.release();
+                    }
                 }
-            }
 
-            @Override
-            public void write(int b) {
-                ByteBuf buf = Bytes.directBuffer(1);
-                buf.writeByte(b);
-                try {
-                    position += CompositeMmap.this.write(position, buf);
-                } finally {
-                    buf.release();
+                @Override
+                public void write(int b) {
+                    ByteBuf buf = Bytes.directBuffer(1);
+                    buf.writeByte(b);
+                    try {
+                        position += CompositeMmap.this.write(position, buf);
+                    } finally {
+                        buf.release();
+                    }
                 }
-            }
 
-            @Override
-            public void flush() {
-                CompositeMmap.this.flush();
-            }
-        };
+                @Override
+                public void flush() {
+                    CompositeMmap.this.flush();
+                }
+            };
+        }
+        return writer;
     }
 
     @Override

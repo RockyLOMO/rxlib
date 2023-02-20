@@ -9,10 +9,12 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 @RequiredArgsConstructor
-public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
+public class GZIPStream extends IOStream {
     private static final long serialVersionUID = 5949731591101041212L;
-    private final IOStream<?, ?> baseStream;
+    private final IOStream baseStream;
     private final boolean leaveOpen;
+    private transient GZIPInputStream reader;
+    private transient GZIPOutputStream writer;
 
     @Override
     public String getName() {
@@ -21,14 +23,20 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
 
     @SneakyThrows
     @Override
-    protected GZIPInputStream initReader() {
-        return new GZIPInputStream(baseStream.getReader(), Constants.HEAP_BUF_SIZE);
+    public GZIPInputStream getReader() {
+        if (reader == null) {
+            reader = new GZIPInputStream(baseStream.getReader(), Constants.HEAP_BUF_SIZE);
+        }
+        return reader;
     }
 
     @SneakyThrows
     @Override
-    protected GZIPOutputStream initWriter() {
-        return new GZIPOutputStream(baseStream.getWriter(), Constants.HEAP_BUF_SIZE);
+    public GZIPOutputStream getWriter() {
+        if (writer == null) {
+            writer = new GZIPOutputStream(baseStream.getWriter(), Constants.HEAP_BUF_SIZE);
+        }
+        return writer;
     }
 
     @Override
@@ -56,7 +64,7 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
         return baseStream.getLength();
     }
 
-    public GZIPStream(IOStream<?, ?> stream) {
+    public GZIPStream(IOStream stream) {
         this(stream, false);
     }
 

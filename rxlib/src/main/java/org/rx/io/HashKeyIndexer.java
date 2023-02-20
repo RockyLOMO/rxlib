@@ -46,7 +46,7 @@ final class HashKeyIndexer<TK> extends Disposable {
         private final FileStream main;
         private final CompositeLock lock;
         private long _wroteBytes = HEADER_SIZE;
-        private IOStream<?, ?> writer, reader;
+        private IOStream writer, reader;
 
         Slot(HashKeyIndexer<?> owner, File indexFile) {
             this.owner = owner;
@@ -203,7 +203,7 @@ final class HashKeyIndexer<TK> extends Disposable {
         slot.lock.writeInvoke(() -> {
             slot.ensureGrow();
 
-            IOStream<?, ?> out = slot.writer;
+            IOStream out = slot.writer;
             long pos = key.position == Constants.IO_EOF ? slot.getWroteBytes() : key.position;
             out.setPosition(pos);
 
@@ -238,7 +238,7 @@ final class HashKeyIndexer<TK> extends Disposable {
             Slot slot = slot(hashId);
 
             return slot.lock.readInvoke(() -> {
-                IOStream<?, ?> in = slot.reader;
+                IOStream in = slot.reader;
 
                 in.setPosition(HEADER_SIZE);
                 long pos = in.getPosition();

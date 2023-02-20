@@ -34,7 +34,7 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
 
     @SneakyThrows
     @Override
-    public <T> void serialize(@NonNull T obj, @NonNull IOStream<?, ?> stream) {
+    public <T> void serialize(@NonNull T obj, @NonNull IOStream stream) {
         Object obj0 = obj instanceof Serializable ? obj : new JsonWrapper(obj.getClass(), toJsonString(obj));
 
         Compressible c0 = as(obj0, Compressible.class);
@@ -56,7 +56,7 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
 
     @SneakyThrows
     @Override
-    public <T> T deserialize(@NonNull IOStream<?, ?> stream, boolean leveOpen) {
+    public <T> T deserialize(@NonNull IOStream stream, boolean leveOpen) {
         try {
             Object obj0;
 

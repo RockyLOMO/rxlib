@@ -16,33 +16,32 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.util.Objects;
 import java.util.zip.CRC32;
 import java.util.zip.CheckedInputStream;
 
 import static org.rx.core.Extends.*;
 
 @Slf4j
-public abstract class IOStream<TI extends InputStream, TO extends OutputStream> extends Disposable implements Closeable, Flushable, Extends {
+public abstract class IOStream extends Disposable implements Closeable, Flushable, Extends {
     private static final long serialVersionUID = 3204673656139586437L;
     public static final int NON_READ_FULLY = -1;
 
-    public static IOStream<?, ?> wrap(String filePath) {
+    public static IOStream wrap(String filePath) {
         return wrap(new File(filePath));
     }
 
-    public static IOStream<?, ?> wrap(@NonNull File file) {
+    public static IOStream wrap(@NonNull File file) {
         return new FileStream(file);
     }
 
-    public static IOStream<?, ?> wrap(String name, byte[] data) {
+    public static IOStream wrap(String name, byte[] data) {
         HybridStream stream = new HybridStream();
         stream.setName(ifNull(name, Strings.EMPTY));
         stream.write(data);
         return stream.rewind();
     }
 
-    public static IOStream<?, ?> wrap(String name, InputStream in) {
+    public static IOStream wrap(String name, InputStream in) {
         HybridStream stream = new HybridStream();
         stream.setName(ifNull(name, Strings.EMPTY));
         stream.write(in);
@@ -154,26 +153,9 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         }
     }
 
-    private transient TI reader;
-    private transient TO writer;
+    public abstract InputStream getReader();
 
-    public TI getReader() {
-        if (reader == null) {
-            reader = require(initReader());
-        }
-        return reader;
-    }
-
-    public TO getWriter() {
-        if (writer == null) {
-            writer = require(initWriter());
-        }
-        return writer;
-    }
-
-    protected abstract TI initReader();
-
-    protected abstract TO initWriter();
+    public abstract OutputStream getWriter();
 
     public abstract String getName();
 
@@ -243,11 +225,11 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return getReader().read(buffer, offset, length);
     }
 
-    public long read(IOStream<?, ?> stream) {
+    public long read(IOStream stream) {
         return read(stream, NON_READ_FULLY);
     }
 
-    public long read(@NonNull IOStream<?, ?> stream, long length) {
+    public long read(@NonNull IOStream stream, long length) {
         return read(stream.getWriter(), length);
     }
 
@@ -318,11 +300,11 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         getWriter().write(buffer, offset, length);
     }
 
-    public long write(IOStream<?, ?> stream) {
+    public long write(IOStream stream) {
         return write(stream, NON_READ_FULLY);
     }
 
-    public long write(@NonNull IOStream<?, ?> stream, long length) {
+    public long write(@NonNull IOStream stream, long length) {
         return write(stream.getReader(), length);
     }
 
@@ -384,7 +366,7 @@ public abstract class IOStream<TI extends InputStream, TO extends OutputStream> 
         return data;
     }
 
-    public final <T extends IOStream<TI, TO>> T rewind() {
+    public final <T extends IOStream> T rewind() {
         setPosition(0);
         return (T) this;
     }

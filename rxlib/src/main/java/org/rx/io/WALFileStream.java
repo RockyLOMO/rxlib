@@ -35,7 +35,7 @@ import static org.rx.core.Extends.require;
  * This leads to the 'real world' answer: If your app is like 99% out there, set the cache size to 8192 and move on (even better, choose encapsulation over performance and use BufferedInputStream to hide the details). If you are in the 1% of apps that are highly dependent on disk throughput, craft your implementation so you can swap out different disk interaction strategies, and provide the knobs and dials to allow your users to test and optimize (or come up with some self optimizing system).
  */
 @Slf4j
-public final class WALFileStream extends IOStream<InputStream, OutputStream> {
+public final class WALFileStream extends IOStream {
     private static final long serialVersionUID = 1414441456982833443L;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
@@ -112,12 +112,14 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     final CompositeLock lock;
     final long growSize;
     final int readerCount;
-    private IOStream<?, ?> writer;
-    private final LinkedTransferQueue<IOStream<?, ?>> readers = new LinkedTransferQueue<>();
+    private IOStream writer;
+    private final LinkedTransferQueue<IOStream> readers = new LinkedTransferQueue<>();
     private final Serializer serializer;
     final MetaHeader meta;
     @Setter
     long flushDelayMillis = 1000;
+    private transient InputStream _reader;
+    private transient OutputStream _writer;
 
     @Override
     public String getName() {
@@ -125,43 +127,49 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     }
 
     @Override
-    protected InputStream initReader() {
-        return new InputStream() {
-            @Override
-            public int available() {
-                return safeRemaining(WALFileStream.this.available());
-            }
+    public InputStream getReader() {
+        if (_reader == null) {
+            _reader = new InputStream() {
+                @Override
+                public int available() {
+                    return safeRemaining(WALFileStream.this.available());
+                }
 
-            @Override
-            public int read(byte[] b, int off, int len) {
-                return ensureRead(reader -> reader.read(b, off, len));
-            }
+                @Override
+                public int read(byte[] b, int off, int len) {
+                    return ensureRead(reader -> reader.read(b, off, len));
+                }
 
-            @Override
-            public int read() {
-                return ensureRead(IOStream::read);
-            }
-        };
+                @Override
+                public int read() {
+                    return ensureRead(IOStream::read);
+                }
+            };
+        }
+        return _reader;
     }
 
     @Override
-    protected OutputStream initWriter() {
-        return new OutputStream() {
-            @Override
-            public void write(byte[] b, int off, int len) {
-                ensureWrite(writer -> writer.write(b, off, len));
-            }
+    public OutputStream getWriter() {
+        if (_writer == null) {
+            _writer = new OutputStream() {
+                @Override
+                public void write(byte[] b, int off, int len) {
+                    ensureWrite(writer -> writer.write(b, off, len));
+                }
 
-            @Override
-            public void write(int b) {
-                ensureWrite(writer -> writer.write(b));
-            }
+                @Override
+                public void write(int b) {
+                    ensureWrite(writer -> writer.write(b));
+                }
 
-            @Override
-            public void flush() {
-                WALFileStream.this.flush();
-            }
-        };
+                @Override
+                public void flush() {
+                    WALFileStream.this.flush();
+                }
+            };
+        }
+        return _writer;
     }
 
     public long getReaderPosition() {
@@ -228,7 +236,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
 
     @SneakyThrows
     private MetaHeader loadMeta() {
-        IOStream<?, ?> reader = readers.take();
+        IOStream reader = readers.take();
         try {
             return lock.readInvoke(() -> {
                 reader.setPosition(0);
@@ -268,7 +276,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
                 writer.close();
             }
 
-            IOStream<?, ?> tmp;
+            IOStream tmp;
             while ((tmp = readers.poll()) != null) {
                 tmp.close();
             }
@@ -299,7 +307,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     @SneakyThrows
     @Override
     public long available() {
-        IOStream<?, ?> reader = readers.take();
+        IOStream reader = readers.take();
         try {
             return lock.readInvoke(reader::available);
         } finally {
@@ -313,8 +321,8 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     }
 
     @SneakyThrows
-    private int ensureRead(BiFunc<IOStream<?, ?>, Integer> action) {
-        IOStream<?, ?> reader = readers.take();
+    private int ensureRead(BiFunc<IOStream, Integer> action) {
+        IOStream reader = readers.take();
         try {
             long readerPosition = getReaderPosition();
             return lock.readInvoke(() -> {
@@ -329,8 +337,8 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
     }
 
     @SneakyThrows
-    public <T> T backwardReadObject(BiFunc<IOStream<?, ?>, T> action) {
-        IOStream<?, ?> reader = readers.take();
+    public <T> T backwardReadObject(BiFunc<IOStream, T> action) {
+        IOStream reader = readers.take();
         try {
             long readerPosition = getReaderPosition();
             return lock.readInvoke(() -> {
@@ -349,7 +357,7 @@ public final class WALFileStream extends IOStream<InputStream, OutputStream> {
         ensureWrite(writer -> writer.write(src, length));
     }
 
-    private void ensureWrite(BiAction<IOStream<?, ?>> action) {
+    private void ensureWrite(BiAction<IOStream> action) {
         long logPosition = meta.getLogPosition();
         lock.writeInvoke(() -> {
             if (logPosition != meta.getLogPosition()) {

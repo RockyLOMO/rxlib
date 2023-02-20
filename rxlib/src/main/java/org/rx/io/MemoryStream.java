@@ -10,12 +10,14 @@ import org.rx.util.Snowflake;
 
 import java.io.*;
 
-public final class MemoryStream extends IOStream<InputStream, OutputStream> implements Serializable {
+public final class MemoryStream extends IOStream implements Serializable {
     private static final long serialVersionUID = 6209361024929311435L;
     @Setter
     private String name;
     private boolean directBuffer;
     private transient ByteBuf buffer;
+    private transient InputStream reader;
+    private transient OutputStream writer;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
@@ -44,52 +46,58 @@ public final class MemoryStream extends IOStream<InputStream, OutputStream> impl
     }
 
     @Override
-    protected InputStream initReader() {
-        return new InputStream() {
-            @Override
-            public int available() {
-                return buffer.readableBytes();
-            }
-
-            @Override
-            public int read(byte[] b, int off, int len) {
-                int readableBytes = buffer.readableBytes();
-                if (readableBytes == 0) {
-                    return -1;
+    public InputStream getReader() {
+        if (reader == null) {
+            reader = new InputStream() {
+                @Override
+                public int available() {
+                    return buffer.readableBytes();
                 }
-                int len0 = Math.min(readableBytes, len);
-                buffer.readBytes(b, off, len0);
-                return len0;
-            }
 
-            @Override
-            public int read() {
-                if (buffer.readableBytes() == 0) {
-                    return -1;
+                @Override
+                public int read(byte[] b, int off, int len) {
+                    int readableBytes = buffer.readableBytes();
+                    if (readableBytes == 0) {
+                        return -1;
+                    }
+                    int len0 = Math.min(readableBytes, len);
+                    buffer.readBytes(b, off, len0);
+                    return len0;
                 }
-                // java has no unsigned byte
-                return buffer.readByte() & 0xff;
-            }
-        };
+
+                @Override
+                public int read() {
+                    if (buffer.readableBytes() == 0) {
+                        return -1;
+                    }
+                    // java has no unsigned byte
+                    return buffer.readByte() & 0xff;
+                }
+            };
+        }
+        return reader;
     }
 
     @Override
-    protected OutputStream initWriter() {
-        return new OutputStream() {
-            @Override
-            public void write(byte[] b, int off, int len) {
-                buffer.writerIndex(buffer.readerIndex());
-                buffer.writeBytes(b, off, len);
-                buffer.readerIndex(buffer.writerIndex());
-            }
+    public OutputStream getWriter() {
+        if (writer == null) {
+            writer = new OutputStream() {
+                @Override
+                public void write(byte[] b, int off, int len) {
+                    buffer.writerIndex(buffer.readerIndex());
+                    buffer.writeBytes(b, off, len);
+                    buffer.readerIndex(buffer.writerIndex());
+                }
 
-            @Override
-            public void write(int b) {
-                buffer.writerIndex(buffer.readerIndex());
-                buffer.writeByte(b);
-                buffer.readerIndex(buffer.writerIndex());
-            }
-        };
+                @Override
+                public void write(int b) {
+                    buffer.writerIndex(buffer.readerIndex());
+                    buffer.writeByte(b);
+                    buffer.readerIndex(buffer.writerIndex());
+                }
+            };
+        }
+        return writer;
     }
 
     @Override

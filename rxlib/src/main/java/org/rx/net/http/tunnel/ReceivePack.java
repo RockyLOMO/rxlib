@@ -11,5 +11,5 @@ import java.util.List;
 @Getter
 public class ReceivePack {
     private final String socksId;
-    private final List<IOStream<?, ?>> binaries = new ArrayList<>();
+    private final List<IOStream> binaries = new ArrayList<>();
 }

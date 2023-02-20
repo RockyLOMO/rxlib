@@ -87,12 +87,12 @@ public class Servlets extends ServletRequestUtils {
         }
     }
 
-    public static void responseFile(IOStream<?, ?> stream) {
+    public static void responseFile(IOStream stream) {
         responseFile(stream, MediaType.APPLICATION_OCTET_STREAM_VALUE);
     }
 
     @SneakyThrows
-    public static void responseFile(@NonNull IOStream<?, ?> stream, String contentType) {
+    public static void responseFile(@NonNull IOStream stream, String contentType) {
         HttpServletResponse response = currentRequest().right;
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(contentType);

@@ -87,7 +87,7 @@ public class HttpClient {
     @RequiredArgsConstructor
     static class FormContent implements RequestContent {
         final Map<String, Object> forms;
-        final Map<String, IOStream<?, ?>> files;
+        final Map<String, IOStream> files;
 
         @Override
         public RequestBody toBody() {
@@ -108,8 +108,8 @@ public class HttpClient {
                 }
             }
             if (!MapUtils.isEmpty(files)) {
-                for (Map.Entry<String, IOStream<?, ?>> entry : files.entrySet()) {
-                    IOStream<?, ?> stream = entry.getValue();
+                for (Map.Entry<String, IOStream> entry : files.entrySet()) {
+                    IOStream stream = entry.getValue();
                     if (stream == null) {
                         continue;
                     }
@@ -481,7 +481,7 @@ public class HttpClient {
         return post(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent post(@NonNull String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
+    public ResponseContent post(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
         return invoke(url, HttpMethod.POST, new FormContent(forms, files));
     }
 
@@ -493,7 +493,7 @@ public class HttpClient {
         return put(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent put(@NonNull String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
+    public ResponseContent put(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
         return invoke(url, HttpMethod.PUT, new FormContent(forms, files));
     }
 
@@ -505,7 +505,7 @@ public class HttpClient {
         return patch(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent patch(@NonNull String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
+    public ResponseContent patch(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
         return invoke(url, HttpMethod.PATCH, new FormContent(forms, files));
     }
 
@@ -517,7 +517,7 @@ public class HttpClient {
         return delete(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent delete(@NonNull String url, Map<String, Object> forms, Map<String, IOStream<?, ?>> files) {
+    public ResponseContent delete(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
         return invoke(url, HttpMethod.DELETE, new FormContent(forms, files));
     }
 
