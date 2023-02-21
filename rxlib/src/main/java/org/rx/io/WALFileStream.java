@@ -50,29 +50,29 @@ public final class WALFileStream extends IOStream {
         private static final long serialVersionUID = 3894764623767567837L;
 
         private void writeObject(ObjectOutputStream out) throws IOException {
-            out.writeLong(_logPosition);
+            out.writeLong(logPos);
             out.writeInt(size.get());
         }
 
         private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-            _logPosition = in.readLong();
+            logPos = in.readLong();
             size = new AtomicInteger();
             size.set(in.readInt());
         }
 
         private transient WALFileStream owner;
-        private long _logPosition = HEADER_SIZE;
+        private volatile long logPos = HEADER_SIZE;
         private AtomicInteger size = new AtomicInteger();
         Object extra;
 
-        public synchronized long getLogPosition() {
-            return _logPosition;
+        public long getLogPosition() {
+            return logPos;
         }
 
-        public synchronized void setLogPosition(long logPosition) {
+        public void setLogPosition(long logPosition) {
             require(logPosition, logPosition >= HEADER_SIZE);
 
-            _logPosition = logPosition;
+            logPos = logPosition;
             writeBack();
         }
 
@@ -190,6 +190,11 @@ public final class WALFileStream extends IOStream {
     public void setReaderPosition(long position) {
         readerPosition.set(position);
     }
+
+//    @Override
+//    public void setPosition(long position) {
+//        writer.setPosition(position);
+//    }
 
     @Override
     public long getLength() {

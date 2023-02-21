@@ -245,8 +245,6 @@ public class UtilTester extends AbstractTester {
         log.info("changeWithTopic {} ->\n{}", e.getSource(), toJson(e.getChangedMap()));
         String newName = e.readValue("tb.name");
         System.out.println(newName);
-//        sleep(10000);
-//        _notify();
     }
 
     @Test

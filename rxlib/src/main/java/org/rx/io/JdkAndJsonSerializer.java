@@ -3,13 +3,11 @@ package org.rx.io;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.core.JsonTypeInvoker;
 import org.rx.core.Strings;
 
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
-import java.io.StreamCorruptedException;
+import java.io.*;
 import java.lang.reflect.Type;
 
 import static org.rx.core.Extends.as;
@@ -18,6 +16,7 @@ import static org.rx.core.Sys.fromJson;
 import static org.rx.core.Sys.toJsonString;
 
 //https://github.com/RuedigerMoeller/fast-serialization
+@Slf4j
 public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
     @RequiredArgsConstructor
     static class JsonWrapper implements Compressible {
@@ -50,7 +49,12 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
         }
 
         ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
-        out.writeObject(obj0);
+        try {
+            out.writeObject(obj0);
+        } catch (NotSerializableException e) {
+            log.info("NotSerializable {} <- {}", obj instanceof Serializable, obj);
+            throw e;
+        }
 //        out.flush();
     }
 

@@ -32,6 +32,9 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
@@ -234,17 +237,16 @@ public class IOTester extends AbstractTester {
     @Test
     public void kvIterator() {
         int c = 20;
-//        int c = 10;
         KeyValueStoreConfig conf = tstConf();
         conf.setIteratorPrefetchCount(4);
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
+//        kv.clear();
 
         for (int i = 0; i < c; i++) {
-            kv.put(i, i + " " + DateTime.now().toString());
+            kv.put(i, i + " " + DateTime.now());
         }
 
         assert kv.size() == c;
-//        assert kv.size() == c * 2;
         int j = c - 1;
         for (Map.Entry<Integer, String> entry : kv.entrySet()) {
             System.out.println(entry.getKey() + ": " + entry.getValue());
@@ -254,7 +256,7 @@ public class IOTester extends AbstractTester {
         }
 
         System.out.println("done");
-        System.in.read();
+//        System.in.read();
     }
 
     @Test

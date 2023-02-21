@@ -18,6 +18,8 @@ import org.rx.net.http.ServerRequest;
 import org.rx.third.guava.AbstractSequentialIterator;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.attribute.UserDefinedFileAttributeView;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -91,7 +93,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         int remaining;
     }
 
-    static final byte TOMB_MARK = -1;
+    static final byte TOMB_MARK = 1;
     static final int DEFAULT_ITERATOR_SIZE = 50;
     static final String KEY_TYPE_FIELD = "_KEY_TYPE", VALUE_TYPE_FIELD = "_VAL_TYPE";
     static final Map<Class<?>, KeyValueStore> instances = new ConcurrentHashMap<>();
@@ -109,6 +111,10 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     //    transient EntrySetView entrySet;
     transient HttpServer apiServer;
 
+    String getTypeId() {
+        return String.format("%s:%s", config.getKeyType().getName(), config.getValueType().getName());
+    }
+
     File getIndexDirectory() {
         File dir = new File(parentDirectory, Files.changeExtension(filename, "idx"));
         dir.mkdirs();
@@ -125,20 +131,25 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         require(config.getValueType());
         this.config = config;
         parentDirectory = new File(Files.createDirectory(config.getDirectoryPath()));
-        String name = config.getKeyType().getSimpleName() + config.getValueType().getSimpleName();
-        filename = String.format("%s.log", CodecUtil.hashUnsigned64(name));
+        String typeId = getTypeId();
+        filename = String.format("%s.log", CodecUtil.hashUnsigned64(typeId));
         File logFile = new File(String.format("%s/%s", config.getDirectoryPath(), filename));
         wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
         wal.setFlushDelayMillis(config.getFlushDelayMillis());
-        java.nio.file.Files.setAttribute(logFile.toPath(), "kvName", name);
+        UserDefinedFileAttributeView view = java.nio.file.Files.getFileAttributeView(logFile.toPath(), UserDefinedFileAttributeView.class);
+        view.write("typeId", StandardCharsets.UTF_8.encode(typeId));
+
+//        String name = "user.mimetype";
+//        ByteBuffer buf = ByteBuffer.allocate(view.size(name));
+//        view.read(name, buf);
+//        buf.flip();
+//        String value = StandardCharsets.UTF_8.decode(buf).toString();
         this.serializer = serializer;
 
         indexer = new HashKeyIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexGrowSize());
 
         wal.lock.writeInvoke(() -> {
             long pos = wal.meta.getLogPosition();
-            log.debug("init logPos={}", pos);
-//            pos = WALFileStream.HEADER_SIZE;
             Entry<TK, TV> val;
             $<Long> endPos = $();
             while ((val = findValue(pos, null, endPos)) != null) {
@@ -194,16 +205,24 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
 
         Entry<TK, TV> val = new Entry<>(k, v);
-        HashKeyIndexer.KeyData<TK> fk = key;
+        HashKeyIndexer.KeyData<TK> fKey = key;
         wal.lock.writeInvoke(() -> {
-            fk.logPosition = wal.meta.getLogPosition();
+            long pos = wal.meta.getLogPosition();
+            if (fKey.logPosition >= WALFileStream.HEADER_SIZE) {
+                wal.meta.setLogPosition(fKey.logPosition);
+                wal.write(TOMB_MARK);
+                wal.meta.setLogPosition(pos);
+                log.debug("fastPut mark TOMB {} <- {}", fKey.logPosition, pos);
+            }
+
+            fKey.logPosition = pos;
             wal.write(0);
             serializer.serialize(val, wal);
-            int size = (int) (wal.meta.getLogPosition() - fk.logPosition);
+            int size = (int) (wal.meta.getLogPosition() - fKey.logPosition);
             wal.writeInt(size);
-            log.debug("fastPut {} {}", fk, val);
+            log.debug("fastPut {} {}", fKey, val);
 
-            indexer.saveKey(fk);
+            indexer.saveKey(fKey);
         });
         if (incr) {
             wal.meta.incrementSize();
@@ -214,15 +233,15 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         checkNotClosed();
 
         HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
-        if (key == null || key.logPosition == TOMB_MARK) {
+        if (key == null || key.logPosition < WALFileStream.HEADER_SIZE) {
             return;
         }
 
         wal.lock.writeInvoke(() -> {
-            long logPosition = wal.meta.getLogPosition();
-            wal.setPosition(key.logPosition);
+            long pos = wal.meta.getLogPosition();
+            wal.meta.setLogPosition(key.logPosition);
             wal.write(TOMB_MARK);
-            wal.setPosition(logPosition);
+            wal.meta.setLogPosition(pos);
             log.debug("fastRemove {}", key);
 
             key.logPosition = TOMB_MARK;
@@ -236,8 +255,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         if (key == null || key.logPosition == TOMB_MARK) {
             return null;
         }
-        if (key.logPosition > wal.meta.getLogPosition()) {
-            log.warn("LogPosError {} > {}", key, wal.meta.getLogPosition());
+        long pos = wal.meta.getLogPosition();
+        if (key.logPosition > pos) {
+            log.warn("LogPosError {} > {}", key, pos);
             key.logPosition = TOMB_MARK;
             indexer.saveKey(key);
             return null;
@@ -259,10 +279,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                 }
                 return serializer.deserialize(wal, true);
             } catch (Exception e) {
-                if (e instanceof StreamCorruptedException
-//                    | e instanceof EOFException
-                ) {
-                    log.error("findValue {} {}", k, logPosition, e);
+                if (e instanceof StreamCorruptedException) {
+                    log.warn("findValue {} {} {}", k == null ? "[INIT]" : k, logPosition, e.getMessage());
                     return null;
                 } else {
                     throw e;
@@ -291,33 +309,42 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         wal.setReaderPosition(ctx.logPos); //4 lock
         return wal.backwardReadObject(reader -> {
             ctx.writePos = ctx.readPos = 0;
-            for (int i = 0; i < prefetchCount; i++) {
-                if (ctx.logPos <= WALFileStream.HEADER_SIZE) {
+            for (int i = 0; i < prefetchCount; ) {
+                long logPos = ctx.logPos - 4;
+                if (logPos < WALFileStream.HEADER_SIZE) {
                     ctx.remaining = 0;
                     return false;
                 }
 
-                ctx.logPos -= 4;
-                reader.setPosition(ctx.logPos);
+                long p1 = 0, p2 = 0;
+                int size = 0, status = 0;
                 try {
-                    int size = reader.readInt();
-                    log.debug("contentLength: {}", size);
-                    ctx.logPos -= size + 1;
+                    p1 = logPos;
+                    reader.setPosition(logPos);
+                    size = reader.readInt();
 
-                    reader.setPosition(ctx.logPos);
-                    int status = reader.read();
+                    logPos -= size;
+                    p2 = logPos;
+                    reader.setPosition(logPos);
+                    status = reader.read();
                     if (status == TOMB_MARK) {
                         continue;
                     }
+
                     Entry<TK, TV> val = serializer.deserialize(reader, true);
                     log.debug("read {}", val);
                     ctx.buf[ctx.writePos++] = val;
+                    i++;
                 } catch (Exception e) {
                     if (e instanceof StreamCorruptedException | e instanceof EOFException) {
+                        log.warn("backwardFindValue {}", e.getMessage());
                         ctx.remaining = 0;
                         return false;
                     }
                     throw e;
+                } finally {
+                    ctx.logPos = logPos;
+                    log.debug("backwardFindValue prev[{}] status[{}]={} len[{}]={}", logPos, p2, status, p1, size);
                 }
             }
             return true;
