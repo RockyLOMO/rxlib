@@ -25,18 +25,16 @@ import static org.rx.core.Extends.tryClose;
  * @param <TK>
  */
 @Slf4j
-final class HashKeyIndexer<TK> extends Disposable {
-    @EqualsAndHashCode
+final class HashKeyIndexer<TK> extends Disposable implements KeyIndexer<TK> {
+    @EqualsAndHashCode(callSuper = true)
     @ToString
-    static class KeyData<TK> {
-        final TK key;
+    static class KeyData<TK> extends KeyEntity<TK> {
         private long position = Constants.IO_EOF;
-
         final long hashId;
-        long logPosition;
 
         public KeyData(TK key) {
-            hashId = CodecUtil.hash64(Serializer.DEFAULT.serializeToBytes(this.key = key));
+            super(key);
+            hashId = CodecUtil.hash64(Serializer.DEFAULT.serializeToBytes(key));
         }
     }
 
@@ -195,8 +193,15 @@ final class HashKeyIndexer<TK> extends Disposable {
         }
     }
 
-    public void saveKey(KeyData<TK> key) {
+    @Override
+    public KeyEntity<TK> newKey(TK key) {
+        return new KeyData<>(key);
+    }
+
+    @Override
+    public void save(@NonNull KeyEntity<TK> k) {
         checkNotClosed();
+        KeyData<TK> key = (KeyData<TK>) k;
         require(key, key.position >= Constants.IO_EOF);
 
         Slot slot = slot(key.hashId);
@@ -231,7 +236,8 @@ final class HashKeyIndexer<TK> extends Disposable {
         }, HEADER_SIZE);
     }
 
-    public KeyData<TK> findKey(@NonNull TK k) {
+    @Override
+    public KeyData<TK> find(@NonNull TK k) {
         return cache.get(k, x -> {
             KeyData<TK> keyData = new KeyData<>(k);
             long hashId = keyData.hashId;

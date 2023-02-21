@@ -33,13 +33,8 @@ import static org.rx.core.Sys.toJsonObject;
  * meta
  * logPosition + size
  *
- * <p>index
- * crc64(8) + pos(8)
- *
  * <p>log
- * key + value + size(4)
- *
- * <p>减少文件，二分查找
+ * status(1) + key + value + size(4)
  */
 @Slf4j
 public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK, TV> {
@@ -106,7 +101,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     final File parentDirectory;
     final String filename;
     final WALFileStream wal;
-    final HashKeyIndexer<TK> indexer;
+    final KeyIndexer<TK> indexer;
     final Serializer serializer;
     //    transient EntrySetView entrySet;
     transient HttpServer apiServer;
@@ -155,9 +150,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             while ((val = findValue(pos, null, endPos)) != null) {
                 boolean incr = false;
                 TK k = val.key;
-                HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
+                KeyIndexer.KeyEntity<TK> key = indexer.find(k);
                 if (key == null) {
-                    key = new HashKeyIndexer.KeyData<>(k);
+                    key = indexer.newKey(k);
                     incr = true;
                 }
                 if (key.logPosition == TOMB_MARK) {
@@ -166,7 +161,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
                 key.logPosition = pos;
                 wal.meta.setLogPosition(endPos.v);
-                indexer.saveKey(key);
+                indexer.save(key);
 
                 if (incr) {
                     wal.meta.incrementSize();
@@ -185,6 +180,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
     }
 
+    @SneakyThrows
     @Override
     protected void freeObjects() {
         indexer.close();
@@ -195,9 +191,9 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         checkNotClosed();
 
         boolean incr = false;
-        HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
+        KeyIndexer.KeyEntity<TK> key = indexer.find(k);
         if (key == null) {
-            key = new HashKeyIndexer.KeyData<>(k);
+            key = indexer.newKey(k);
             incr = true;
         }
         if (key.logPosition == TOMB_MARK) {
@@ -205,7 +201,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
 
         Entry<TK, TV> val = new Entry<>(k, v);
-        HashKeyIndexer.KeyData<TK> fKey = key;
+        KeyIndexer.KeyEntity<TK> fKey = key;
         wal.lock.writeInvoke(() -> {
             long pos = wal.meta.getLogPosition();
             if (fKey.logPosition >= WALFileStream.HEADER_SIZE) {
@@ -222,7 +218,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             wal.writeInt(size);
             log.debug("fastPut {} {}", fKey, val);
 
-            indexer.saveKey(fKey);
+            indexer.save(fKey);
         });
         if (incr) {
             wal.meta.incrementSize();
@@ -232,7 +228,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     public void fastRemove(@NonNull TK k) {
         checkNotClosed();
 
-        HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
+        KeyIndexer.KeyEntity<TK> key = indexer.find(k);
         if (key == null || key.logPosition < WALFileStream.HEADER_SIZE) {
             return;
         }
@@ -245,13 +241,13 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             log.debug("fastRemove {}", key);
 
             key.logPosition = TOMB_MARK;
-            indexer.saveKey(key);
+            indexer.save(key);
         });
         wal.meta.decrementSize();
     }
 
     protected TV read(@NonNull TK k) {
-        HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
+        KeyIndexer.KeyEntity<TK> key = indexer.find(k);
         if (key == null || key.logPosition == TOMB_MARK) {
             return null;
         }
@@ -259,7 +255,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         if (key.logPosition > pos) {
             log.warn("LogPosError {} > {}", key, pos);
             key.logPosition = TOMB_MARK;
-            indexer.saveKey(key);
+            indexer.save(key);
             return null;
         }
 
@@ -467,7 +463,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     @Override
     public boolean containsKey(Object key) {
         TK k = (TK) key;
-        return indexer.findKey(k) != null;
+        return indexer.find(k) != null;
     }
 
     @Override
