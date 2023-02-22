@@ -206,7 +206,7 @@ public final class WALFileStream extends IOStream {
         this.readerCount = readerCount;
         this.serializer = serializer;
 
-        this.file = new FileStream(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.NON_BUF);
+        this.file = new FileStream(file, FileMode.READ_WRITE, BufferedRandomAccessFile.NON_BUF);
         lock = this.file.getLock();
         if (!ensureGrow()) {
             createReaderAndWriter();

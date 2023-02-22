@@ -52,11 +52,6 @@ public final class HybridStream extends IOStream implements Serializable {
     }
 
     @Override
-    public boolean canSeek() {
-        return getStream().canSeek();
-    }
-
-    @Override
     public boolean canWrite() {
         return getStream().canWrite();
     }

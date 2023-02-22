@@ -40,11 +40,6 @@ public class GZIPStream extends IOStream {
     }
 
     @Override
-    public boolean canSeek() {
-        return baseStream.canSeek();
-    }
-
-    @Override
     public boolean canWrite() {
         return baseStream.canWrite();
     }

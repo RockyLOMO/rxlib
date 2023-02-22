@@ -163,10 +163,6 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         return !isClosed();
     }
 
-    public boolean canSeek() {
-        return false;
-    }
-
     @ErrorCode
     public long getPosition() {
         throw new ApplicationException(values());

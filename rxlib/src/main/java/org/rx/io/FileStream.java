@@ -62,10 +62,10 @@ public class FileStream extends IOStream implements Serializable {
             file = createTempFile();
         }
         try {
-            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.MEDIUM_DATA);
+            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.MEDIUM_BUF);
         } catch (Exception e) {
             log.warn("readObject", e);
-            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, BufferedRandomAccessFile.BufSize.MEDIUM_DATA);
+            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, BufferedRandomAccessFile.MEDIUM_BUF);
         }
         long pos = in.readLong();
         write(in);
@@ -133,11 +133,6 @@ public class FileStream extends IOStream implements Serializable {
     }
 
     @Override
-    public boolean canSeek() {
-        return true;
-    }
-
-    @Override
     public synchronized boolean canWrite() {
         return super.canWrite() && fileMode != FileMode.READ_ONLY;
     }
@@ -174,16 +169,16 @@ public class FileStream extends IOStream implements Serializable {
     }
 
     public FileStream(File file) {
-        this(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.MEDIUM_DATA);
+        this(file, FileMode.READ_WRITE, BufferedRandomAccessFile.MEDIUM_BUF);
     }
 
-    public FileStream(File file, FileMode mode, BufferedRandomAccessFile.BufSize size) {
-        this(file, mode, size, CompositeLock.Flags.READ_WRITE_LOCK.flags());
+    public FileStream(File file, FileMode mode, int bufSize) {
+        this(file, mode, bufSize, CompositeLock.Flags.READ_WRITE_LOCK.flags());
     }
 
     @SneakyThrows
-    public FileStream(@NonNull File file, FileMode mode, BufferedRandomAccessFile.BufSize size, @NonNull FlagsEnum<CompositeLock.Flags> lockFlags) {
-        this.randomAccessFile = new BufferedRandomAccessFile(file, this.fileMode = mode, size);
+    public FileStream(@NonNull File file, FileMode mode, int bufSize, @NonNull FlagsEnum<CompositeLock.Flags> lockFlags) {
+        this.randomAccessFile = new BufferedRandomAccessFile(file, this.fileMode = mode, bufSize);
         this.lockFlags = lockFlags;
     }
 
@@ -218,7 +213,7 @@ public class FileStream extends IOStream implements Serializable {
         ch.position(pos);
 
         int totalRead = 0;
-        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, BufferedRandomAccessFile.BufSize.MEDIUM_DATA.value));
+        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, BufferedRandomAccessFile.MEDIUM_BUF));
         TripleFunc<ByteBuffer, Integer, ByteBuffer> resetFunc = (b, c) -> {
             b.clear();
             if (c < b.limit()) {

@@ -116,11 +116,6 @@ public final class CompositeMmap extends IOStream {
     }
 
     @Override
-    public boolean canSeek() {
-        return true;
-    }
-
-    @Override
     public synchronized long getPosition() {
         return position;
     }
@@ -130,7 +125,6 @@ public final class CompositeMmap extends IOStream {
         this.position = position;
     }
 
-    @SneakyThrows
     @Override
     public long getLength() {
         return block.position + block.size;
@@ -198,7 +192,7 @@ public final class CompositeMmap extends IOStream {
 
         int writerIndex = byteBuf.writerIndex();
         int finalReadCount = readCount;
-        Lazy<byte[]> buffer = new Lazy<>(() -> new byte[Math.min(finalReadCount, BufferedRandomAccessFile.BufSize.MEDIUM_DATA.value)]);
+        Lazy<byte[]> buffer = new Lazy<>(() -> new byte[Math.min(finalReadCount, BufferedRandomAccessFile.MEDIUM_BUF)]);
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             DataRange<Long> range = tuple.right;
             if (!range.has(position)) {
