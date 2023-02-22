@@ -2,8 +2,6 @@ package org.rx.net.socks;
 
 import lombok.NonNull;
 import org.apache.commons.collections4.CollectionUtils;
-import org.rx.bean.DateTime;
-import org.rx.core.Tasks;
 import org.rx.io.KeyValueStore;
 import org.rx.io.KeyValueStoreConfig;
 
@@ -19,8 +17,7 @@ final class DbAuthenticator implements Authenticator {
     }
 
     public DbAuthenticator(List<SocksUser> initUsers, Integer apiPort) {
-        KeyValueStoreConfig config = KeyValueStoreConfig.defaultConfig(KeyValueStoreConfig.DirPaths.SOCKS);
-        config.setWriteBehindDelayed(15000);
+        KeyValueStoreConfig config = KeyValueStoreConfig.newConfig(String.class, SocksUser.class);
         if (apiPort != null) {
             config.setApiPort(apiPort);
             config.setApiReturnJson(true);
@@ -32,7 +29,7 @@ final class DbAuthenticator implements Authenticator {
                 SocksUser user = store.computeIfAbsent(usr.getUsername(), SocksUser::new);
                 user.setPassword(usr.getPassword());
                 user.setMaxIpCount(usr.getMaxIpCount());
-                store.putBehind(user.getUsername(), user);
+                store.fastPut(user.getUsername(), user);
             }
         }
 
@@ -57,19 +54,23 @@ final class DbAuthenticator implements Authenticator {
     }
 
     public void save(@NonNull SocksUser user) {
-        store.putBehind(user.getUsername(), user);
+        store.fastPut(user.getUsername(), user);
     }
 
     public void delete(@NonNull SocksUser user) {
         store.remove(user.getUsername());
     }
 
-//    public void resetData() {
+    public void resetIp() {
+
+    }
+
+    public void resetData() {
 //        DateTime firstDay = DateTime.valueOf(DateTime.now().toString("yyyy-MM-01 00:00:00"));
 //        if (user.lastResetTime == null || user.lastResetTime.before(firstDay)) {
 //            user.getTotalReadBytes().set(0);
 //            user.getTotalWriteBytes().set(0);
 //        }
 //        user.lastResetTime = DateTime.now();
-//    }
+    }
 }

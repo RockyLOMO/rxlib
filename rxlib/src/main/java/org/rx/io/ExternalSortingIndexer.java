@@ -33,6 +33,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         long hashId;
         long keyPos = Constants.IO_EOF;
 
+        //todo lazy key
         private HashKey() {
             super(null);
         }
@@ -53,6 +54,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
     class Partition extends FileStream.Block {
         final long endPos;
+        volatile HashKey<TK> min, max;
         volatile WeakReference<HashKey<TK>[]> ref;
 
         public Partition(long position, long size) {
@@ -94,7 +96,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
             return ks;
         }
 
-        public HashKey<TK> find(TK k) {
+        HashKey<TK> find(TK k) {
             HashKey<TK> ktf = new HashKey<>(k);
             HashKey<TK>[] keys = load(false);
             int i = Arrays.binarySearch(keys, ktf);
