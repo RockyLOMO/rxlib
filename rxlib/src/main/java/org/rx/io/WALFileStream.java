@@ -6,8 +6,7 @@ import lombok.NonNull;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Tasks;
-import org.rx.core.TimeoutFlag;
+import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
@@ -35,7 +34,7 @@ import static org.rx.core.Extends.require;
  * This leads to the 'real world' answer: If your app is like 99% out there, set the cache size to 8192 and move on (even better, choose encapsulation over performance and use BufferedInputStream to hide the details). If you are in the 1% of apps that are highly dependent on disk throughput, craft your implementation so you can swap out different disk interaction strategies, and provide the knobs and dials to allow your users to test and optimize (or come up with some self optimizing system).
  */
 @Slf4j
-public final class WALFileStream extends IOStream {
+public final class WALFileStream extends IOStream implements EventPublisher<WALFileStream> {
     private static final long serialVersionUID = 1414441456982833443L;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
@@ -108,6 +107,7 @@ public final class WALFileStream extends IOStream {
     static final float GROW_FACTOR = 0.75f;
     static final int HEADER_SIZE = 256;
     static final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
+    public transient final Delegate<WALFileStream, EventArgs> onGrow = Delegate.create();
     private final FileStream file;
     final CompositeLock lock;
     final long growSize;
@@ -191,10 +191,13 @@ public final class WALFileStream extends IOStream {
         readerPosition.set(position);
     }
 
-//    @Override
-//    public void setPosition(long position) {
-//        writer.setPosition(position);
-//    }
+    public long getWriterPosition() {
+        return meta.getLogPosition();
+    }
+
+    public void setWriterPosition(long position) {
+        meta.setLogPosition(position);
+    }
 
     @Override
     public long getLength() {
@@ -206,7 +209,7 @@ public final class WALFileStream extends IOStream {
         this.readerCount = readerCount;
         this.serializer = serializer;
 
-        this.file = new FileStream(file, FileMode.READ_WRITE, BufferedRandomAccessFile.NON_BUF);
+        this.file = new FileStream(file, FileMode.READ_WRITE, Constants.NON_BUF);
         lock = this.file.getLock();
         if (!ensureGrow()) {
             createReaderAndWriter();
@@ -296,6 +299,7 @@ public final class WALFileStream extends IOStream {
                 long resize = length + growSize;
                 log.info("growSize {} {}->{}", getName(), length, resize);
                 _setLength(resize);
+                raiseEvent(onGrow, EventArgs.EMPTY);
                 return true;
             }
 
@@ -375,7 +379,6 @@ public final class WALFileStream extends IOStream {
             action.invoke(writer);
             _flush();
             meta.setLogPosition(writer.getPosition());
-//        }, HEADER_SIZE);
         }, logPosition);
     }
 

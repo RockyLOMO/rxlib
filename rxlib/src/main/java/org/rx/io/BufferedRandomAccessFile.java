@@ -1,7 +1,5 @@
 package org.rx.io;
 
-import org.rx.core.Constants;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -19,11 +17,6 @@ import java.io.RandomAccessFile;
  * superclass.
  */
 public class BufferedRandomAccessFile extends RandomAccessFile {
-    public static final int NON_BUF = 0;
-    public static final int SMALL_BUF = 1024;
-    public static final int MEDIUM_BUF = Constants.SIZE_4K;
-    public static final int LARGE_BUF = 1 << 16; //64K buffer
-
     private final String path_;
     /*
      * This implementation is based on the buffer implementation in Modula-3's

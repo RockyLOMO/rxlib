@@ -48,7 +48,7 @@ final class HashKeyIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
         Slot(HashKeyIndexer<?> owner, File indexFile) {
             this.owner = owner;
-            main = new FileStream(indexFile, FileMode.READ_WRITE, BufferedRandomAccessFile.NON_BUF);
+            main = new FileStream(indexFile, FileMode.READ_WRITE, Constants.NON_BUF);
             lock = main.getLock();
             if (!ensureGrow()) {
                 createStream();

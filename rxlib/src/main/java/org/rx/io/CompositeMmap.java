@@ -192,7 +192,7 @@ public final class CompositeMmap extends IOStream {
 
         int writerIndex = byteBuf.writerIndex();
         int finalReadCount = readCount;
-        Lazy<byte[]> buffer = new Lazy<>(() -> new byte[Math.min(finalReadCount, BufferedRandomAccessFile.MEDIUM_BUF)]);
+        Lazy<byte[]> buffer = new Lazy<>(() -> new byte[Math.min(finalReadCount, Constants.MEDIUM_BUF)]);
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             DataRange<Long> range = tuple.right;
             if (!range.has(position)) {

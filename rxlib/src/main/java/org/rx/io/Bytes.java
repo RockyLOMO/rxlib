@@ -45,7 +45,7 @@ public class Bytes {
     }
 
     public static ByteBuf directBuffer() {
-        return directBuffer(BufferedRandomAccessFile.SMALL_BUF);
+        return directBuffer(Constants.SMALL_BUF);
     }
 
     public static ByteBuf directBuffer(int initialCapacity) {

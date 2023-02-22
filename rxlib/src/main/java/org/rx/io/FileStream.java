@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
+import org.rx.core.Constants;
 import org.rx.util.Lazy;
 import org.rx.util.Snowflake;
 import org.rx.util.function.TripleFunc;
@@ -62,10 +63,10 @@ public class FileStream extends IOStream implements Serializable {
             file = createTempFile();
         }
         try {
-            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.MEDIUM_BUF);
+            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, Constants.MEDIUM_BUF);
         } catch (Exception e) {
             log.warn("readObject", e);
-            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, BufferedRandomAccessFile.MEDIUM_BUF);
+            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, Constants.MEDIUM_BUF);
         }
         long pos = in.readLong();
         write(in);
@@ -169,7 +170,7 @@ public class FileStream extends IOStream implements Serializable {
     }
 
     public FileStream(File file) {
-        this(file, FileMode.READ_WRITE, BufferedRandomAccessFile.MEDIUM_BUF);
+        this(file, FileMode.READ_WRITE, Constants.MEDIUM_BUF);
     }
 
     public FileStream(File file, FileMode mode, int bufSize) {
@@ -213,7 +214,7 @@ public class FileStream extends IOStream implements Serializable {
         ch.position(pos);
 
         int totalRead = 0;
-        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, BufferedRandomAccessFile.MEDIUM_BUF));
+        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, Constants.MEDIUM_BUF));
         TripleFunc<ByteBuffer, Integer, ByteBuffer> resetFunc = (b, c) -> {
             b.clear();
             if (c < b.limit()) {
