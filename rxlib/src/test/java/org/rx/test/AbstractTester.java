@@ -14,8 +14,8 @@ import java.util.concurrent.CountDownLatch;
 
 @Slf4j
 public class AbstractTester {
-    static final String BASE_DIR = "./target/";
-    static final int LOOP_COUNT = 10000;
+    public static final String BASE_DIR = "./target/";
+    public static final int LOOP_COUNT = 10000;
 
     public static String path(String... paths) {
         Files.createDirectory(BASE_DIR);

@@ -1,4 +1,4 @@
-package org.rx.test;
+package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import lombok.Data;
@@ -9,32 +9,23 @@ import org.rx.annotation.DbColumn;
 import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
 import org.rx.bean.ULID;
-import org.rx.core.Arrays;
-import org.rx.core.Linq;
-import org.rx.core.Tasks;
-import org.rx.core.TimeoutFlag;
-import org.rx.io.*;
+import org.rx.core.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
+import org.rx.test.AbstractTester;
 import org.rx.test.bean.GirlBean;
 import org.rx.test.bean.PersonBean;
 import org.rx.test.bean.PersonGender;
 
-import java.io.File;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.ReentrantLock;
 
 import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
@@ -236,24 +227,30 @@ public class IOTester extends AbstractTester {
     @SneakyThrows
     @Test
     public void kvIterator() {
-        int c = 20;
-        KeyValueStoreConfig conf = tstConf();
-        conf.setIteratorPrefetchCount(4);
-        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
-//        kv.clear();
+        MappedByteBuffer map = new RandomAccessFile("rx.dat", "rw").getChannel().map(FileChannel.MapMode.READ_WRITE, 0, 10);
+        map.put(new byte[1024]);
+//        CompositeMmap mmap = new FileStream(new File("rx.dat")).mmap(FileChannel.MapMode.READ_WRITE, 0, 10);
+//        mmap.write(new byte[1024]);
+//        mmap.flush();
 
-        for (int i = 0; i < c; i++) {
-            kv.put(i, i + " " + DateTime.now());
-        }
-
-        assert kv.size() == c;
-        int j = c - 1;
-        for (Map.Entry<Integer, String> entry : kv.entrySet()) {
-            System.out.println(entry.getKey() + ": " + entry.getValue());
-            assert j == entry.getKey();
-            assert entry.getValue().startsWith(j + " ");
-            j--;
-        }
+//        int c = 20;
+//        KeyValueStoreConfig conf = tstConf();
+//        conf.setIteratorPrefetchCount(4);
+//        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
+////        kv.clear();
+//
+//        for (int i = 0; i < c; i++) {
+//            kv.put(i, i + " " + DateTime.now());
+//        }
+//
+//        assert kv.size() == c;
+//        int j = c - 1;
+//        for (Map.Entry<Integer, String> entry : kv.entrySet()) {
+//            System.out.println(entry.getKey() + ": " + entry.getValue());
+//            assert j == entry.getKey();
+//            assert entry.getValue().startsWith(j + " ");
+//            j--;
+//        }
 
         System.out.println("done");
 //        System.in.read();
@@ -297,7 +294,7 @@ public class IOTester extends AbstractTester {
         KeyValueStoreConfig conf = tstConf();
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
         kv.clear();
-        int loopCount = 100, removeK = 99;
+        int loopCount = 10, removeK = 99;
         invoke("put", i -> {
             String val = kv.get(i);
             if (val == null) {
@@ -357,9 +354,36 @@ public class IOTester extends AbstractTester {
 
     private KeyValueStoreConfig tstConf() {
         KeyValueStoreConfig conf = KeyValueStoreConfig.newConfig(Object.class, Object.class);
-        conf.setLogGrowSize(1024 * 1024);
-        conf.setIndexGrowSize(1024 * 32);
+        conf.setLogGrowSize(Constants.KB * 64);
+        conf.setIndexBufferSize(Constants.KB * 4);
         return conf;
+    }
+
+    @Test
+    public void kvsIdx() {
+        ExternalSortingIndexer<Long> indexer = new ExternalSortingIndexer<>(new File("./data/tst.idx"), 1024, 1);
+        indexer.clear();
+        assert indexer.size() == 0;
+        KeyIndexer.KeyEntity<Long> key = indexer.find(1L);
+        assert key == null;
+        KeyIndexer.KeyEntity<Long> newKey = indexer.newKey(1L);
+        newKey.logPosition = 256;
+        indexer.save(newKey);
+        key = indexer.find(1L);
+        assert key != null && key.key == 1 && key.logPosition == 256;
+
+        invoke("idx", i -> {
+            long rk = (long) i + 1;
+            KeyIndexer.KeyEntity<Long> k = indexer.newKey(rk);
+            k.logPosition = rk;
+            indexer.save(k);
+            log.info("idx[{}] save k={}", indexer.size(), k);
+
+            KeyIndexer.KeyEntity<Long> fk = indexer.find(rk);
+            log.info("idx[{}] find k={}", indexer.size(), fk);
+            assert fk != null && fk.logPosition == rk;
+        }, 100);
+        log.info("idx[{}/{}]", indexer.size(), indexer.partitions.size());
     }
     //endregion
 

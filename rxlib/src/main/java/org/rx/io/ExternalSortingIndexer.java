@@ -4,6 +4,7 @@ import lombok.NonNull;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Constants;
 import org.rx.core.Disposable;
+import org.rx.core.Linq;
 
 import java.io.EOFException;
 import java.io.File;
@@ -11,9 +12,8 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
-
-import static org.rx.core.Extends.eq;
 
 /**
  * <p>index
@@ -44,36 +44,53 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
 
         @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            HashKey<?> hashKey = (HashKey<?>) o;
+            return hashId == hashKey.hashId;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(hashId);
+        }
+
+        @Override
         public int compareTo(HashKey<TK> o) {
-//            if (o == null) {
-//                return -1;
-//            }
             return Long.compare(hashId, o.hashId);
         }
     }
 
     class Partition extends FileStream.Block {
         final long endPos;
+        volatile int keySize;
         volatile HashKey<TK> min, max;
         volatile WeakReference<HashKey<TK>[]> ref;
 
-        public Partition(long position, long size) {
+        Partition(long position, long size) {
             super(position, size);
             endPos = position + size;
         }
 
-        HashKey<TK>[] load(boolean forWrite) {
+        void clear() {
+            keySize = 0;
+            min = max = null;
+            ref = null;
+        }
+
+        HashKey<TK>[] load() {
             WeakReference<HashKey<TK>[]> r = ref;
-            HashKey<TK>[] ks = r.get();
+            HashKey<TK>[] ks = r != null ? r.get() : null;
             if (ks == null) {
-                ks = (HashKey<TK>[]) fs.lock.readInvoke(() -> {
-                    int size = fs.meta.getSize();
-                    List<HashKey<TK>> keys = new ArrayList<>(forWrite ? size + 1 : size);
+                ks = fs.lock.readInvoke(() -> {
+                    int kSize = keySize;
+                    List<HashKey<TK>> keys = new ArrayList<>(kSize);
 
                     fs.setReaderPosition(position);
                     int b = HashKey.BYTES;
                     byte[] buf = new byte[b];
-                    for (long i = 0; i < this.size; i += b) {
+                    for (long i = 0; i < this.size && keys.size() < kSize; i += b) {
                         if (fs.read(buf, 0, buf.length) != b) {
                             throw new EOFException();
                         }
@@ -86,11 +103,8 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         k.keyPos = Bytes.getLong(buf, 16);
                         keys.add(k);
                     }
-                    if (forWrite) {
-                        keys.add(null);
-                    }
                     return keys;
-                }, position, size).toArray();
+                }, position, size).toArray(ARR_TYPE);
                 ref = new WeakReference<>(ks);
             }
             return ks;
@@ -98,9 +112,9 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
         HashKey<TK> find(TK k) {
             HashKey<TK> ktf = new HashKey<>(k);
-            HashKey<TK>[] keys = load(false);
+            HashKey<TK>[] keys = load();
             int i = Arrays.binarySearch(keys, ktf);
-            if (i == -1) {
+            if (i < 0) {
                 return null;
             }
             HashKey<TK> fk = keys[i];
@@ -118,6 +132,12 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     fs.setWriterPosition(ktf.keyPos + 8);
                     fs.write(Bytes.getBytes(ktf.logPosition));
                     fs.setWriterPosition(wPos);
+
+                    HashKey<TK>[] ks;
+                    if (ref != null && (ks = ref.get()) != null) {
+                        int i = (int) (ktf.keyPos - position) / HashKey.BYTES;
+                        ks[i] = ktf;
+                    }
                 }, position, size);
                 return true;
             }
@@ -125,20 +145,26 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
             long wPos = fs.getWriterPosition();
             if (wPos < endPos) {
                 fs.lock.writeInvoke(() -> {
-                    HashKey<TK>[] ks = load(true);
-                    ks[ks.length - 1] = key;
-                    Arrays.parallelSort(ks);
+                    HashKey<TK>[] ks = load();
+                    HashKey<TK>[] nks = new HashKey[ks.length + 1];
+                    System.arraycopy(ks, 0, nks, 0, ks.length);
+                    nks[nks.length - 1] = key;
+                    Arrays.parallelSort(nks);
+
+                    keySize = nks.length;
+                    min = nks[0];
+                    max = nks[keySize - 1];
+                    ref = new WeakReference<>(nks);
 
                     fs.setWriterPosition(position);
                     byte[] buf = new byte[HashKey.BYTES];
-                    for (HashKey<TK> fk : ks) {
+                    for (HashKey<TK> fk : nks) {
                         fk.keyPos = fs.getWriterPosition();
                         Bytes.getBytes(fk.hashId, buf, 0);
                         Bytes.getBytes(fk.logPosition, buf, 8);
                         Bytes.getBytes(fk.keyPos, buf, 16);
                         fs.write(buf);
                     }
-                    ref = new WeakReference<>(ks);
                 }, wPos, endPos - wPos);
                 return true;
             }
@@ -146,13 +172,14 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
     }
 
+    static final HashKey[] ARR_TYPE = new HashKey[0];
     final WALFileStream fs;
-    final int bufKeyCount;
     final long bufSize;
     final List<Partition> partitions = new CopyOnWriteArrayList<>();
 
     public ExternalSortingIndexer(File file, long bufSize, int readerCount) {
-        this.bufSize = bufSize = (bufKeyCount = (int) (bufSize / 16)) * 16;
+        int b = HashKey.BYTES;
+        this.bufSize = bufSize = (bufSize / b) * b;
         fs = new WALFileStream(file, bufSize, readerCount, Serializer.DEFAULT);
         fs.onGrow.combine((s, e) -> ensureGrow());
         ensureGrow();
@@ -172,6 +199,10 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         for (int i = 0; i < rc; i++) {
             partitions.remove(partitions.size() - 1);
         }
+    }
+
+    public long size() {
+        return (long) Linq.from(partitions).sum(p -> p.keySize);
     }
 
     @Override
@@ -201,7 +232,10 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     }
 
     @Override
-    public void clear() {
+    public synchronized void clear() {
         fs.clear();
+        for (Partition partition : partitions) {
+            partition.clear();
+        }
     }
 }

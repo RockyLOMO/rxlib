@@ -99,7 +99,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     final KeyValueStoreConfig config;
     final File parentDirectory;
-    final String filename;
+    final String logName;
     final WALFileStream wal;
     final KeyIndexer<TK> indexer;
     final Serializer serializer;
@@ -108,12 +108,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     String getTypeId() {
         return String.format("%s:%s", config.getKeyType().getName(), config.getValueType().getName());
-    }
-
-    File getIndexDirectory() {
-        File dir = new File(parentDirectory, Files.changeExtension(filename, "idx"));
-        dir.mkdirs();
-        return dir;
     }
 
     public KeyValueStore(KeyValueStoreConfig config) {
@@ -127,8 +121,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         this.config = config;
         parentDirectory = new File(Files.createDirectory(config.getDirectoryPath()));
         String typeId = getTypeId();
-        filename = String.format("%s.log", CodecUtil.hashUnsigned64(typeId));
-        File logFile = new File(String.format("%s/%s", config.getDirectoryPath(), filename));
+        logName = String.format("%s.log", CodecUtil.hashUnsigned64(typeId));
+        File logFile = new File(String.format("%s/%s", config.getDirectoryPath(), logName));
         wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
         wal.setFlushDelayMillis(config.getFlushDelayMillis());
         UserDefinedFileAttributeView view = java.nio.file.Files.getFileAttributeView(logFile.toPath(), UserDefinedFileAttributeView.class);
@@ -141,7 +135,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 //        String value = StandardCharsets.UTF_8.decode(buf).toString();
         this.serializer = serializer;
 
-        indexer = new HashKeyIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexGrowSize());
+        String idxName = Files.changeExtension(logName, "idx");
+        indexer = new ExternalSortingIndexer<>(new File(String.format("%s/%s", config.getDirectoryPath(), idxName)), config.getIndexBufferSize(), config.getIndexReaderCount());
 
         wal.lock.writeInvoke(() -> {
             long pos = wal.meta.getLogPosition();

@@ -14,9 +14,8 @@ import org.rx.core.Constants;
 public class KeyValueStoreConfig {
     public static <TK, TV> KeyValueStoreConfig newConfig(Class<TK> keyType, Class<TV> valueType) {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(keyType, valueType);
-        conf.setLogGrowSize(Constants.MB * 32);
-        conf.setIndexSlotSize(Constants.MB * 512);
-        conf.setIndexGrowSize(Constants.MB * 2);
+        conf.setLogGrowSize(Constants.MB * 64);
+        conf.setIndexBufferSize(Constants.MB * 4);
         return conf;
     }
 
@@ -26,7 +25,7 @@ public class KeyValueStoreConfig {
     /**
      * init big file for sequential write
      */
-    private long logGrowSize = Constants.MB * 512;
+    private long logGrowSize = Constants.MB * 1024;
     /**
      * The magnetic hard disk head needs to seek the next read position (taking about 5ms) for each thread.
      * Thus, reading with multiple threads effectively bounces the disk between seeks, slowing it down.
@@ -34,10 +33,10 @@ public class KeyValueStoreConfig {
      */
     private int logReaderCount = 1;
     private long flushDelayMillis = 1000;
-
     private int iteratorPrefetchCount = 2;
-    private int indexSlotSize = Constants.MB * 128; //128M
-    private int indexGrowSize = Constants.MB * 32; //32M
+
+    private int indexBufferSize = Constants.MB * 64;
+    private int indexReaderCount = 1;
 
     private int apiPort = -1;
     private String apiPassword;
