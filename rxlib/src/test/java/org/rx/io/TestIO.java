@@ -224,12 +224,37 @@ public class TestIO extends AbstractTester {
 
     @SneakyThrows
     @Test
+    public void kvIterator2() {
+        int c = 20;
+        KeyValueStoreConfig conf = kvConf();
+        conf.setIteratorPrefetchCount(4);
+        KeyValueStore<String, String> kv = new KeyValueStore<>(conf);
+//        kv.clear();
+
+        for (int i = 0; i < c; i++) {
+            kv.put(String.valueOf(i), i + " " + DateTime.now());
+        }
+
+        assert kv.size() == c;
+        int j = c - 1;
+        for (Map.Entry<String, String> entry : kv.entrySet()) {
+            System.out.println(entry.getKey() + ": " + entry.getValue());
+            assert j == Integer.parseInt(entry.getKey());
+            assert entry.getValue().startsWith(j + " ");
+            j--;
+        }
+
+        System.out.println("done");
+    }
+
+    @SneakyThrows
+    @Test
     public void kvIterator() {
         int c = 20;
         KeyValueStoreConfig conf = kvConf();
         conf.setIteratorPrefetchCount(4);
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
-        kv.clear();
+//        kv.clear();
 
         for (int i = 0; i < c; i++) {
             kv.put(i, i + " " + DateTime.now());
@@ -352,6 +377,33 @@ public class TestIO extends AbstractTester {
         conf.setLogGrowSize(Constants.KB * 64);
         conf.setIndexBufferSize(Constants.KB * 4);
         return conf;
+    }
+
+    @Test
+    public void kvsIdx2() {
+        ExternalSortingIndexer<String> indexer = new ExternalSortingIndexer<>(new File("./data/tst2.idx"), 1024, 1);
+//        indexer.clear();
+//        assert indexer.size() == 0;
+//        KeyIndexer.KeyEntity<Long> key = indexer.find(1L);
+//        assert key == null;
+//        KeyIndexer.KeyEntity<Long> newKey = indexer.newKey(1L);
+//        newKey.logPosition = 256;
+//        indexer.save(newKey);
+//        key = indexer.find(1L);
+//        assert key != null && key.key == 1 && key.logPosition == 256;
+
+        invoke("kvsIdx", i -> {
+            String rk = String.valueOf(i + 1);
+            KeyIndexer.KeyEntity<String> k = indexer.newKey(rk);
+            k.logPosition = Long.parseLong(rk);
+            indexer.save(k);
+            log.info("{} save k={}", indexer, k);
+
+            KeyIndexer.KeyEntity<String> fk = indexer.find(rk);
+            log.info("{} find k={}", indexer, fk);
+            assert fk != null && fk.logPosition == Long.parseLong(rk);
+        }, 100);
+        log.info("{}", indexer);
     }
 
     @Test
