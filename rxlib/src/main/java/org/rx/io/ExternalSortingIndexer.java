@@ -2,13 +2,13 @@ package org.rx.io;
 
 import lombok.NonNull;
 import org.rx.codec.CodecUtil;
+import org.rx.core.Cache;
 import org.rx.core.Constants;
 import org.rx.core.Disposable;
 import org.rx.core.Linq;
 
 import java.io.EOFException;
 import java.io.File;
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -66,7 +66,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         final long endPos;
         volatile int keySize = Constants.IO_EOF;
         volatile HashKey<TK> min, max;
-        volatile WeakReference<HashKey<TK>[]> ref;
+//        volatile WeakReference<HashKey<TK>[]> ref;
 
         Partition(long position, long size) {
             super(position, size);
@@ -76,12 +76,14 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         void clear() {
             keySize = 0;
             min = max = null;
-            ref = null;
+//            ref = null;
+            cache.remove(this);
         }
 
         HashKey<TK>[] load() {
-            WeakReference<HashKey<TK>[]> r = ref;
-            HashKey<TK>[] ks = r != null ? r.get() : null;
+//            WeakReference<HashKey<TK>[]> r = ref;
+//            HashKey<TK>[] ks = r != null ? r.get() : null;
+            HashKey<TK>[] ks = cache.get(this);
             if (ks == null) {
                 ks = fs.lock.readInvoke(() -> {
                     int keySize = this.keySize;
@@ -111,28 +113,28 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     }
                     return keys;
                 }, position, size).toArray(ARR_TYPE);
-                ref = new WeakReference<>(ks);
+//                ref = new WeakReference<>(ks);
+                cache.put(this, ks);
             }
             return ks;
         }
 
-        HashKey<TK> find(TK k) {
-            HashKey<TK> ktf = new HashKey<>(k);
+        boolean find(HashKey<TK> ktf) {
             HashKey<TK>[] keys = load();
             int i = Arrays.binarySearch(keys, ktf);
             if (i < 0) {
-                return null;
+                return false;
             }
-            HashKey<TK> fk = keys[i];
-            ktf.logPosition = fk.logPosition;
-            ktf.keyPos = fk.keyPos;
-            return ktf;
+            HashKey<TK> t = keys[i];
+            ktf.logPosition = t.logPosition;
+            ktf.keyPos = t.keyPos;
+            return true;
         }
 
-        boolean save(HashKey<TK> key) {
-            HashKey<TK> ktf = find(key.key);
-            if (ktf != null) {
-                ktf.logPosition = key.logPosition;
+        boolean save(HashKey<TK> t) {
+            HashKey<TK> ktf = new HashKey<>(t.key);
+            if (find(ktf)) {
+                ktf.logPosition = t.logPosition;
                 fs.lock.writeInvoke(() -> {
                     long wPos = fs.getWriterPosition();
                     fs.setWriterPosition(ktf.keyPos + 8);
@@ -140,7 +142,8 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     fs.setWriterPosition(wPos);
 
                     HashKey<TK>[] ks;
-                    if (ref != null && (ks = ref.get()) != null) {
+//                    if (ref != null && (ks = ref.get()) != null) {
+                    if ((ks = cache.get(this)) != null) {
                         int i = (int) (ktf.keyPos - position) / HashKey.BYTES;
                         ks[i] = ktf;
                     }
@@ -154,13 +157,14 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     HashKey<TK>[] ks = load();
                     HashKey<TK>[] nks = new HashKey[ks.length + 1];
                     System.arraycopy(ks, 0, nks, 0, ks.length);
-                    nks[nks.length - 1] = key;
+                    nks[nks.length - 1] = t;
                     Arrays.parallelSort(nks);
 
                     keySize = nks.length;
                     min = nks[0];
                     max = nks[keySize - 1];
-                    ref = new WeakReference<>(nks);
+//                    ref = new WeakReference<>(nks);
+                    cache.put(this, nks);
 
                     fs.setWriterPosition(position);
                     byte[] buf = new byte[HashKey.BYTES];
@@ -181,6 +185,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     static final HashKey[] ARR_TYPE = new HashKey[0];
     final WALFileStream fs;
     final long bufSize;
+    final Cache<Partition, HashKey<TK>[]> cache = Cache.getInstance(Cache.MEMORY_CACHE);
     final List<Partition> partitions = new CopyOnWriteArrayList<>();
 
     public ExternalSortingIndexer(File file, long bufSize, int readerCount) {
@@ -219,7 +224,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     @Override
     public void save(@NonNull KeyEntity<TK> key) {
         HashKey<TK> fk = (HashKey<TK>) key;
-        for (Partition partition : partitions) {
+        for (Partition partition : route(fk)) {
             if (partition.save(fk)) {
                 break;
             }
@@ -228,13 +233,27 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
     @Override
     public KeyEntity<TK> find(@NonNull TK k) {
-        for (Partition partition : partitions) {
-            HashKey<TK> key = partition.find(k);
-            if (key != null) {
-                return key;
+        HashKey<TK> fk = new HashKey<>(k);
+        for (Partition partition : route(fk)) {
+            if (partition.find(fk)) {
+                return fk;
             }
         }
         return null;
+    }
+
+    Iterable<Partition> route(HashKey<TK> fk) {
+        return Linq.from(partitions).orderBy(p -> {
+            HashKey<TK> min = p.min;
+            HashKey<TK> max = p.max;
+            if (min == null || max == null) {
+                return 2;
+            }
+            if (min.hashId <= fk.hashId && fk.hashId <= max.hashId) {
+                return 0;
+            }
+            return 1;
+        });
     }
 
     @Override
