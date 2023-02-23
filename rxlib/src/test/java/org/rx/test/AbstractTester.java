@@ -2,9 +2,7 @@ package org.rx.test;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.ResetEventWait;
-import org.rx.core.Sys;
-import org.rx.core.Tasks;
+import org.rx.core.*;
 import org.rx.io.Files;
 import org.rx.net.Sockets;
 import org.rx.util.function.BiAction;
@@ -27,30 +25,31 @@ public class AbstractTester {
     }
 
     @SneakyThrows
-    public static void invoke(String name, BiAction<Integer> action, int count) {
+    public static void invoke(String name, BiAction<Integer> action, int loopCount) {
         long start = System.nanoTime();
         try {
-            for (int i = 0; i < count; i++) {
+            for (int i = 0; i < loopCount; i++) {
                 action.invoke(i);
             }
         } finally {
             long elapsed = System.nanoTime() - start;
-            log.info("Invoke {} times={} elapsed={} avg={}", name, count, Sys.formatNanosElapsed(elapsed), Sys.formatNanosElapsed(elapsed / count));
+            log.info("Invoke {} times={} elapsed={} avg={}", name, loopCount, Sys.formatNanosElapsed(elapsed), Sys.formatNanosElapsed(elapsed / loopCount));
         }
     }
 
     public static void invokeAsync(String name, BiAction<Integer> action) {
-        invoke(name, action, LOOP_COUNT);
+        invokeAsync(name, action, LOOP_COUNT, Constants.CPU_THREADS * 2);
     }
 
     @SneakyThrows
-    public static void invokeAsync(String name, BiAction<Integer> action, int count) {
+    public static void invokeAsync(String name, BiAction<Integer> action, int loopCount, int threadSize) {
+        ThreadPool pool = new ThreadPool(threadSize, 256, "dev");
         long start = System.nanoTime();
         try {
-            CountDownLatch latch = new CountDownLatch(count);
-            for (int i = 0; i < count; i++) {
+            CountDownLatch latch = new CountDownLatch(loopCount);
+            for (int i = 0; i < loopCount; i++) {
                 int finalI = i;
-                Tasks.run(() -> {
+                pool.run(() -> {
                     try {
                         action.invoke(finalI);
                     } finally {
@@ -61,7 +60,7 @@ public class AbstractTester {
             latch.await();
         } finally {
             long elapsed = System.nanoTime() - start;
-            log.info("Invoke {} times={} elapsed={}", name, count, Sys.formatNanosElapsed(elapsed));
+            log.info("Invoke {} times={} elapsed={}", name, loopCount, Sys.formatNanosElapsed(elapsed));
         }
     }
 

@@ -31,6 +31,8 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
         }
     }
 
+    static final String GZIP_HEX = String.format("%04X%04X", Compressible.STREAM_MAGIC, Compressible.STREAM_VERSION);
+
     @SneakyThrows
     @Override
     public <T> void serialize(@NonNull T obj, @NonNull IOStream stream) {
@@ -40,7 +42,7 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
         if (c0 != null && c0.enableCompress()) {
             stream.writeShort(Compressible.STREAM_MAGIC);
             stream.writeShort(Compressible.STREAM_VERSION);
-//            App.log("switch gzip serialize {}", obj0);
+//            log.debug("switch gzip serialize {}", obj0);
             try (GZIPStream gzip = new GZIPStream(stream, true)) {
                 ObjectOutputStream out = new ObjectOutputStream(gzip.getWriter());
                 out.writeObject(obj0);
@@ -55,7 +57,6 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
             log.info("NotSerializable {} <- {}", obj instanceof Serializable, obj);
             throw e;
         }
-//        out.flush();
     }
 
     @SneakyThrows
@@ -68,12 +69,11 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
                 ObjectInputStream in = new ObjectInputStream(stream.getReader());
                 obj0 = in.readObject();
             } catch (StreamCorruptedException e) {
-                String hex = String.format("%04X%04X", Compressible.STREAM_MAGIC, Compressible.STREAM_VERSION);
-                if (!Strings.endsWith(e.getMessage(), hex)) {
+                if (!Strings.endsWith(e.getMessage(), GZIP_HEX)) {
                     throw e;
                 }
 
-//                App.log("switch gzip deserialize, reason={}", e.getMessage());
+//                log.debug("switch gzip deserialize, reason={}", e.getMessage());
                 try (GZIPStream gzip = new GZIPStream(stream, true)) {
                     ObjectInputStream in = new ObjectInputStream(gzip.getReader());
                     obj0 = in.readObject();

@@ -211,7 +211,7 @@ public class IOTester extends AbstractTester {
     @SneakyThrows
     @Test
     public void kvApi() {
-        KeyValueStoreConfig conf = tstConf();
+        KeyValueStoreConfig conf = kvConf();
         conf.setApiPort(8070);
         conf.setApiPassword("wyf");
         conf.setApiReturnJson(true);
@@ -257,22 +257,25 @@ public class IOTester extends AbstractTester {
     }
 
     @Test
-    public void kvZip() {
-        KeyValueStoreConfig conf = tstConf();
+    public void kvsZip() {
+        KeyValueStoreConfig conf = kvConf();
         KeyValueStore<Integer, PersonBean> kv = new KeyValueStore<>(conf);
+        kv.clear();
+
         kv.put(0, PersonBean.YouFan);
         kv.put(1, PersonBean.LeZhi);
-
         assert kv.get(0).equals(PersonBean.YouFan);
         assert kv.get(1).equals(PersonBean.LeZhi);
+
+        kv.close();
     }
 
     @Test
-    public void kvDbAsync() {
-        KeyValueStoreConfig conf = tstConf();
+    public void kvsAsync() {
+        KeyValueStoreConfig conf = kvConf();
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
-        int loopCount = 10000;
-        invokeAsync("kvdb", i -> {
+        int loopCount = 10000, threadSize = 16;
+        invokeAsync("kvsAsync", i -> {
 //                int k = ThreadLocalRandom.current().nextInt(0, loopCount);
             int k = i;
             String val = kv.get(k);
@@ -284,18 +287,19 @@ public class IOTester extends AbstractTester {
                 log.error("check: {} == {}", val, newGet);
             }
             assert val.equals(newGet);
-        }, loopCount);
+        }, loopCount, threadSize);
 
         kv.close();
     }
 
     @Test
-    public void kvDb() {
-        KeyValueStoreConfig conf = tstConf();
+    public void kvs() {
+        KeyValueStoreConfig conf = kvConf();
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
         kv.clear();
-        int loopCount = 10, removeK = 99;
-        invoke("put", i -> {
+
+        int loopCount = 100, removeK = 99;
+        invoke("kvs", i -> {
             String val = kv.get(i);
             if (val == null) {
                 val = DateTime.now().toString();
@@ -352,7 +356,7 @@ public class IOTester extends AbstractTester {
         kv.close();
     }
 
-    private KeyValueStoreConfig tstConf() {
+    private KeyValueStoreConfig kvConf() {
         KeyValueStoreConfig conf = KeyValueStoreConfig.newConfig(Object.class, Object.class);
         conf.setLogGrowSize(Constants.KB * 64);
         conf.setIndexBufferSize(Constants.KB * 4);
@@ -372,18 +376,18 @@ public class IOTester extends AbstractTester {
 //        key = indexer.find(1L);
 //        assert key != null && key.key == 1 && key.logPosition == 256;
 
-        invoke("idx", i -> {
+        invoke("kvsIdx", i -> {
             long rk = (long) i + 1;
             KeyIndexer.KeyEntity<Long> k = indexer.newKey(rk);
             k.logPosition = rk;
             indexer.save(k);
-            log.info("idx[{}] save k={}", indexer, k);
+            log.info("{} save k={}", indexer, k);
 
             KeyIndexer.KeyEntity<Long> fk = indexer.find(rk);
-            log.info("idx[{}] find k={}", indexer, fk);
+            log.info("{} find k={}", indexer, fk);
             assert fk != null && fk.logPosition == rk;
         }, 100);
-        log.info("idx[{}]", indexer);
+        log.info("{}", indexer);
     }
     //endregion
 

@@ -63,9 +63,15 @@ public class GZIPStream extends IOStream {
         this(stream, false);
     }
 
+    @SneakyThrows
     @Override
     protected void freeObjects() {
-        finish();
+        if (reader != null) {
+            reader.close();
+        }
+        if (writer != null) {
+            writer.close();
+        }
         if (!leaveOpen) {
             baseStream.close();
         }
@@ -73,7 +79,9 @@ public class GZIPStream extends IOStream {
 
     @SneakyThrows
     public void finish() {
-        getWriter().finish();
+        if (writer != null) {
+            writer.finish();
+        }
     }
 
     @Override

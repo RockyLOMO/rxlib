@@ -267,10 +267,9 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     @Override
     public String toString() {
         return "ExternalSortingIndexer{" +
-                "fs=" + fs.getName() +
+                "name=" + fs.getName() +
                 ", bufSize=" + bufSize +
-                ", partitions=" + Linq.from(partitions).select(p -> p.keySize).toList() +
-                ", size=" + size() +
+                ", partitions=" + Linq.from(partitions).select(p -> p.keySize).toList() + " / " + size() +
                 '}';
     }
 }

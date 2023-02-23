@@ -25,6 +25,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -177,6 +178,15 @@ public class Files extends FilenameUtils {
     @SneakyThrows
     public static Stream<String> readLines(String filePath, Charset charset) {
         return java.nio.file.Files.lines(Paths.get(filePath), charset);
+    }
+
+    public static void writeLines(String filePath, Iterable<CharSequence> lines) {
+        writeLines(filePath, lines, StandardCharsets.UTF_8);
+    }
+
+    @SneakyThrows
+    public static void writeLines(String filePath, Iterable<CharSequence> lines, Charset charset, StandardOpenOption... options) {
+        java.nio.file.Files.write(Paths.get(filePath), lines, charset, options);
     }
 
     public static void zip(String zipFile, String srcPath) {

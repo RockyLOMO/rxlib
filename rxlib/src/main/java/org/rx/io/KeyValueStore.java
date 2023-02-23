@@ -7,8 +7,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.bean.$;
 import org.rx.bean.AbstractMap;
+import org.rx.bean.DateTime;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Disposable;
+import org.rx.core.Linq;
 import org.rx.core.Reflects;
 import org.rx.core.Strings;
 import org.rx.exception.ExceptionLevel;
@@ -19,6 +21,7 @@ import org.rx.third.guava.AbstractSequentialIterator;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.UserDefinedFileAttributeView;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,14 +49,12 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         private static final long serialVersionUID = -2218602651671401557L;
 
         private void writeObject(ObjectOutputStream out) throws IOException {
-//            out.writeByte(status);
             out.writeObject(key);
             out.writeObject(value);
         }
 
         private void readObject(ObjectInputStream in) throws IOException {
             try {
-//                status = in.readByte();
                 key = (TK) in.readObject();
                 value = (TV) in.readObject();
             } catch (ClassNotFoundException e) {
@@ -61,8 +62,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             }
         }
 
-        //0 NORMAL, 1 DELETE
-//        byte status;
         TK key;
         TV value;
 
@@ -88,6 +87,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         int remaining;
     }
 
+    //0 NORMAL, 1 DELETE
     static final byte TOMB_MARK = 1;
     static final int DEFAULT_ITERATOR_SIZE = 50;
     static final String KEY_TYPE_FIELD = "_KEY_TYPE", VALUE_TYPE_FIELD = "_VAL_TYPE";
@@ -290,7 +290,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             AtomicInteger counter = (AtomicInteger) wal.meta.extra;
             int total = counter == null ? -1 : counter.incrementAndGet();
             log.warn("LogPosError hash collision {} total={}", k, total);
-            Files.createDirectory("./hc.err");
+            Files.writeLines("./hc_err.log", Linq.from(String.format("%s %s hc=%s total=%s", DateTime.now(), logName
+                    , k, total)), StandardCharsets.UTF_8, StandardOpenOption.APPEND);
             return null;
         }
         return val;
