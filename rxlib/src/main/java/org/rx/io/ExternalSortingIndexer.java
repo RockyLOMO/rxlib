@@ -64,7 +64,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
     class Partition extends FileStream.Block {
         final long endPos;
-        volatile int keySize;
+        volatile int keySize = Constants.IO_EOF;
         volatile HashKey<TK> min, max;
         volatile WeakReference<HashKey<TK>[]> ref;
 
@@ -84,12 +84,14 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
             HashKey<TK>[] ks = r != null ? r.get() : null;
             if (ks == null) {
                 ks = fs.lock.readInvoke(() -> {
-                    int kSize = keySize;
-                    List<HashKey<TK>> keys = new ArrayList<>(kSize);
+                    int keySize = this.keySize;
+                    boolean setSize = keySize == Constants.IO_EOF;
+                    List<HashKey<TK>> keys = new ArrayList<>(setSize ? 10 : keySize);
 
                     fs.setReaderPosition(position);
                     int b = HashKey.BYTES;
                     byte[] buf = new byte[b];
+                    int kSize = setSize ? Integer.MAX_VALUE : keySize;
                     for (long i = 0; i < this.size && keys.size() < kSize; i += b) {
                         if (fs.read(buf, 0, buf.length) != b) {
                             throw new EOFException();
@@ -102,6 +104,10 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         k.logPosition = Bytes.getLong(buf, 8);
                         k.keyPos = Bytes.getLong(buf, 16);
                         keys.add(k);
+                    }
+
+                    if (setSize) {
+                        this.keySize = keys.size();
                     }
                     return keys;
                 }, position, size).toArray(ARR_TYPE);
@@ -202,7 +208,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     }
 
     public long size() {
-        return (long) Linq.from(partitions).sum(p -> p.keySize);
+        return (long) Linq.from(partitions).where(p -> p.keySize != Constants.IO_EOF).sum(p -> p.keySize);
     }
 
     @Override
@@ -237,5 +243,15 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         for (Partition partition : partitions) {
             partition.clear();
         }
+    }
+
+    @Override
+    public String toString() {
+        return "ExternalSortingIndexer{" +
+                "fs=" + fs.getName() +
+                ", bufSize=" + bufSize +
+                ", partitions=" + Linq.from(partitions).select(p -> p.keySize).toList() +
+                ", size=" + size() +
+                '}';
     }
 }

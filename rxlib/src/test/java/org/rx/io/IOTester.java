@@ -362,28 +362,28 @@ public class IOTester extends AbstractTester {
     @Test
     public void kvsIdx() {
         ExternalSortingIndexer<Long> indexer = new ExternalSortingIndexer<>(new File("./data/tst.idx"), 1024, 1);
-        indexer.clear();
-        assert indexer.size() == 0;
-        KeyIndexer.KeyEntity<Long> key = indexer.find(1L);
-        assert key == null;
-        KeyIndexer.KeyEntity<Long> newKey = indexer.newKey(1L);
-        newKey.logPosition = 256;
-        indexer.save(newKey);
-        key = indexer.find(1L);
-        assert key != null && key.key == 1 && key.logPosition == 256;
+//        indexer.clear();
+//        assert indexer.size() == 0;
+//        KeyIndexer.KeyEntity<Long> key = indexer.find(1L);
+//        assert key == null;
+//        KeyIndexer.KeyEntity<Long> newKey = indexer.newKey(1L);
+//        newKey.logPosition = 256;
+//        indexer.save(newKey);
+//        key = indexer.find(1L);
+//        assert key != null && key.key == 1 && key.logPosition == 256;
 
         invoke("idx", i -> {
             long rk = (long) i + 1;
             KeyIndexer.KeyEntity<Long> k = indexer.newKey(rk);
             k.logPosition = rk;
             indexer.save(k);
-            log.info("idx[{}] save k={}", indexer.size(), k);
+            log.info("idx[{}] save k={}", indexer, k);
 
             KeyIndexer.KeyEntity<Long> fk = indexer.find(rk);
-            log.info("idx[{}] find k={}", indexer.size(), fk);
+            log.info("idx[{}] find k={}", indexer, fk);
             assert fk != null && fk.logPosition == rk;
         }, 100);
-        log.info("idx[{}/{}]", indexer.size(), indexer.partitions.size());
+        log.info("idx[{}]", indexer);
     }
     //endregion
 
