@@ -1,4 +1,4 @@
-package org.rx.test;
+package org.rx;
 
 import org.junit.jupiter.api.Test;
 import org.openjdk.jmh.annotations.*;

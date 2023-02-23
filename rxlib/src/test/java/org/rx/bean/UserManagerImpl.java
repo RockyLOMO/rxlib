@@ -1,4 +1,4 @@
-package org.rx.test.bean;
+package org.rx.bean;
 
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;

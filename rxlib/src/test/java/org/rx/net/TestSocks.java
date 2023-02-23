@@ -1,4 +1,4 @@
-package org.rx.test;
+package org.rx.net;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.netty.buffer.ByteBuf;
@@ -11,17 +11,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.Main;
-import org.rx.bean.LogStrategy;
-import org.rx.bean.MultiValueMap;
-import org.rx.bean.RandomList;
-import org.rx.bean.ULID;
+import org.rx.bean.*;
 import org.rx.codec.AESUtil;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
-import org.rx.net.*;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
@@ -46,7 +42,7 @@ import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.*;
-import org.rx.test.bean.*;
+import org.rx.AbstractTester;
 import org.rx.third.apache.ntp.*;
 import org.rx.util.function.TripleAction;
 
@@ -71,7 +67,7 @@ import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
-public class SocksTester extends AbstractTester {
+public class TestSocks extends AbstractTester {
     final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";

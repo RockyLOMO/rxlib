@@ -1,4 +1,4 @@
-package org.rx.test;
+package org.rx;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +8,7 @@ import org.rx.net.Sockets;
 import org.rx.util.function.BiAction;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 
 @Slf4j
@@ -64,14 +65,15 @@ public class AbstractTester {
         }
     }
 
-    final String host_devops = "devops.f-li.cn";
-    final String host_cloud = "cloud.f-li.cn";
-    final InetSocketAddress endpoint_3307 = Sockets.parseEndpoint("127.0.0.1:3307");
-    final InetSocketAddress endpoint_3308 = Sockets.parseEndpoint("127.0.0.1:3308");
-    final long oneSecond = 1000;
-    final String str_name_wyf = "王湵范 wyf520";
-    final String str_content = "youfan1024码农";
-    final ResetEventWait wait = new ResetEventWait();
+    public final String host_devops = "devops.f-li.cn";
+    public final String host_cloud = "cloud.f-li.cn";
+    public final InetSocketAddress endpoint_3307 = Sockets.parseEndpoint("127.0.0.1:3307");
+    public final InetSocketAddress endpoint_3308 = Sockets.parseEndpoint("127.0.0.1:3308");
+    public final long oneSecond = 1000;
+    public final String str_name_wyf = "王湵范 wyf520";
+    public final String str_content = "youfan1024码农";
+    public final byte[] bytes_content = str_content.getBytes(StandardCharsets.UTF_8);
+    public final ResetEventWait wait = new ResetEventWait();
 
     @SneakyThrows
     protected synchronized void _wait() {

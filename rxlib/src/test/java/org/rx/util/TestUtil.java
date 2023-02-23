@@ -1,4 +1,4 @@
-package org.rx.test;
+package org.rx.util;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
@@ -7,26 +7,26 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
+import org.rx.AbstractTester;
 import org.rx.annotation.Mapping;
 import org.rx.annotation.Metadata;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.core.*;
-import org.rx.test.bean.GirlBean;
-import org.rx.test.bean.PersonBean;
-import org.rx.test.bean.PersonGender;
+import org.rx.bean.GirlBean;
+import org.rx.bean.PersonBean;
+import org.rx.bean.PersonGender;
 import org.rx.util.*;
 import org.rx.third.guava.CaseFormat;
 
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.Arrays;
 
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
-public class UtilTester extends AbstractTester {
+public class TestUtil extends AbstractTester {
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
         PersonMapper INSTANCE = BeanMapper.DEFAULT.define(PersonMapper.class);

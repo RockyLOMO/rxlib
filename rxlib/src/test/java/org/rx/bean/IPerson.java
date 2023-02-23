@@ -1,4 +1,4 @@
-package org.rx.test.bean;
+package org.rx.bean;
 
 import org.rx.io.Compressible;
 

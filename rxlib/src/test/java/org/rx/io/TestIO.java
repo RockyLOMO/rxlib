@@ -12,26 +12,26 @@ import org.rx.bean.ULID;
 import org.rx.core.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
-import org.rx.test.AbstractTester;
-import org.rx.test.bean.GirlBean;
-import org.rx.test.bean.PersonBean;
-import org.rx.test.bean.PersonGender;
+import org.rx.AbstractTester;
+import org.rx.bean.GirlBean;
+import org.rx.bean.PersonBean;
+import org.rx.bean.PersonGender;
 
 import java.io.*;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
-public class IOTester extends AbstractTester {
+public class TestIO extends AbstractTester {
     //region h2db
     static final String h2Db = "~/h2/test";
 
@@ -206,8 +206,6 @@ public class IOTester extends AbstractTester {
     //endregion
 
     //region kvstore
-    final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
-
     @SneakyThrows
     @Test
     public void kvApi() {
@@ -227,33 +225,26 @@ public class IOTester extends AbstractTester {
     @SneakyThrows
     @Test
     public void kvIterator() {
-        MappedByteBuffer map = new RandomAccessFile("rx.dat", "rw").getChannel().map(FileChannel.MapMode.READ_WRITE, 0, 10);
-        map.put(new byte[1024]);
-//        CompositeMmap mmap = new FileStream(new File("rx.dat")).mmap(FileChannel.MapMode.READ_WRITE, 0, 10);
-//        mmap.write(new byte[1024]);
-//        mmap.flush();
+        int c = 20;
+        KeyValueStoreConfig conf = kvConf();
+        conf.setIteratorPrefetchCount(4);
+        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
+        kv.clear();
 
-//        int c = 20;
-//        KeyValueStoreConfig conf = tstConf();
-//        conf.setIteratorPrefetchCount(4);
-//        KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
-////        kv.clear();
-//
-//        for (int i = 0; i < c; i++) {
-//            kv.put(i, i + " " + DateTime.now());
-//        }
-//
-//        assert kv.size() == c;
-//        int j = c - 1;
-//        for (Map.Entry<Integer, String> entry : kv.entrySet()) {
-//            System.out.println(entry.getKey() + ": " + entry.getValue());
-//            assert j == entry.getKey();
-//            assert entry.getValue().startsWith(j + " ");
-//            j--;
-//        }
+        for (int i = 0; i < c; i++) {
+            kv.put(i, i + " " + DateTime.now());
+        }
+
+        assert kv.size() == c;
+        int j = c - 1;
+        for (Map.Entry<Integer, String> entry : kv.entrySet()) {
+            System.out.println(entry.getKey() + ": " + entry.getValue());
+            assert j == entry.getKey();
+            assert entry.getValue().startsWith(j + " ");
+            j--;
+        }
 
         System.out.println("done");
-//        System.in.read();
     }
 
     @Test
@@ -405,11 +396,11 @@ public class IOTester extends AbstractTester {
         MemoryStream stream = new MemoryStream();
         GZIPStream out = new GZIPStream(stream);
         for (int i = 0; i < loopCount; i++) {
-            out.write(content);
+            out.write(bytes_content);
         }
         out.finish();
 
-        System.out.println(content.length * loopCount);
+        System.out.println(bytes_content.length * loopCount);
         System.out.println(stream.toArray().length);
 
         byte[] outBytes = out.toArray();
@@ -426,8 +417,8 @@ public class IOTester extends AbstractTester {
 
             long position = stream.getPosition();
             System.out.println(position);
-            stream.write(content);
-            assert stream.getPosition() == position + content.length && stream.getLength() == stream.getPosition();
+            stream.write(bytes_content);
+            assert stream.getPosition() == position + bytes_content.length && stream.getLength() == stream.getPosition();
             byte[] data = new byte[(int) stream.getLength()];
             stream.setPosition(0L);
             stream.read(data);
@@ -445,7 +436,7 @@ public class IOTester extends AbstractTester {
         OutputStream writer = stream.getWriter();
 
         long len = stream.getLength();
-        writer.write(content);
+        writer.write(bytes_content);
         writer.flush();
         stream.setPosition(0L);
         System.out.println(IOStream.readString(reader, StandardCharsets.UTF_8));
@@ -456,7 +447,7 @@ public class IOTester extends AbstractTester {
 
         stream.setPosition(0L);
         ByteBuf buf = Bytes.directBuffer();
-        buf.writeBytes(content);
+        buf.writeBytes(bytes_content);
         long write = stream.write0(buf);
         assert buf.readerIndex() == stream.getPosition();
         assert stream.getPosition() == write && write == buf.writerIndex();
@@ -497,14 +488,14 @@ public class IOTester extends AbstractTester {
     }
 
     private void testMmapStream(IOStream stream) {
-        stream.write(content);
-        assert stream.getPosition() == content.length;
+        stream.write(bytes_content);
+        assert stream.getPosition() == bytes_content.length;
         stream.setPosition(0L);
 //        assert stream.available() == 0;
-        byte[] data = new byte[content.length];
+        byte[] data = new byte[bytes_content.length];
         int count = stream.read(data);
         assert stream.getPosition() == count;
-        assert Arrays.equals(content, data);
+        assert Arrays.equals(bytes_content, data);
 
 //        long pos = stream.getPosition();
 //        IOStream newStream = App.deepClone(stream);
@@ -568,14 +559,14 @@ public class IOTester extends AbstractTester {
     }
 
     private void testSeekStream(IOStream stream) {
-        stream.write(content);
-        assert stream.getPosition() == content.length && stream.getLength() == content.length;
+        stream.write(bytes_content);
+        assert stream.getPosition() == bytes_content.length && stream.getLength() == bytes_content.length;
         stream.setPosition(0L);
         assert stream.available() == stream.getLength();
-        byte[] data = new byte[content.length];
+        byte[] data = new byte[bytes_content.length];
         int count = stream.read(data);
         assert stream.getPosition() == count && stream.getLength() == data.length;
-        assert Arrays.equals(content, data);
+        assert Arrays.equals(bytes_content, data);
 
         long pos = stream.getPosition();
         long len = stream.getLength();

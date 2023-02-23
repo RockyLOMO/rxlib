@@ -1,15 +1,16 @@
-package org.rx.test;
+package org.rx.bean;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.rx.AbstractTester;
 import org.rx.bean.*;
 import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
-import org.rx.test.bean.PersonBean;
-import org.rx.test.bean.PersonGender;
+import org.rx.bean.PersonBean;
+import org.rx.bean.PersonGender;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -21,7 +22,7 @@ import static org.rx.core.Sys.fromJson;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
-public class BeanTester extends AbstractTester {
+public class TestBean extends AbstractTester {
     @SneakyThrows
     @Test
     public void randomList() {

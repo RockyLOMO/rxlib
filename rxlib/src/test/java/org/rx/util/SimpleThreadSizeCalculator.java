@@ -1,4 +1,4 @@
-package org.rx.test.common;
+package org.rx.util;
 
 import org.rx.net.http.HttpClient;
 
