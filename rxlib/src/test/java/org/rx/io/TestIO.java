@@ -1,4 +1,4 @@
-package org.rx.test;
+package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import lombok.Data;
@@ -9,21 +9,15 @@ import org.rx.annotation.DbColumn;
 import org.rx.bean.DataTable;
 import org.rx.bean.DateTime;
 import org.rx.bean.ULID;
-import org.rx.core.Arrays;
-import org.rx.core.Linq;
-import org.rx.core.Tasks;
-import org.rx.core.TimeoutFlag;
-import org.rx.io.*;
+import org.rx.core.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
-import org.rx.test.bean.GirlBean;
-import org.rx.test.bean.PersonBean;
-import org.rx.test.bean.PersonGender;
+import org.rx.AbstractTester;
+import org.rx.bean.GirlBean;
+import org.rx.bean.PersonBean;
+import org.rx.bean.PersonGender;
 
-import java.io.File;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -37,7 +31,7 @@ import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
-public class IOTester extends AbstractTester {
+public class TestIO extends AbstractTester {
     //region h2db
     static final String h2Db = "~/h2/test";
 
@@ -212,12 +206,10 @@ public class IOTester extends AbstractTester {
     //endregion
 
     //region kvstore
-    final byte[] content = "Hello world, 王湵范 & wanglezhi!".getBytes();
-
     @SneakyThrows
     @Test
     public void kvApi() {
-        KeyValueStoreConfig conf = tstConf();
+        KeyValueStoreConfig conf = kvConf();
         conf.setApiPort(8070);
         conf.setApiPassword("wyf");
         conf.setApiReturnJson(true);
@@ -234,19 +226,18 @@ public class IOTester extends AbstractTester {
     @Test
     public void kvIterator() {
         int c = 20;
-//        int c = 10;
-        KeyValueStoreConfig conf = tstConf();
+        KeyValueStoreConfig conf = kvConf();
         conf.setIteratorPrefetchCount(4);
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
+        kv.clear();
 
         for (int i = 0; i < c; i++) {
-            kv.put(i, i + " " + DateTime.now().toString());
+            kv.put(i, i + " " + DateTime.now());
         }
 
         assert kv.size() == c;
-//        assert kv.size() == c * 2;
         int j = c - 1;
-        for (Map.Entry<Integer, String> entry : kv) {
+        for (Map.Entry<Integer, String> entry : kv.entrySet()) {
             System.out.println(entry.getKey() + ": " + entry.getValue());
             assert j == entry.getKey();
             assert entry.getValue().startsWith(j + " ");
@@ -254,26 +245,28 @@ public class IOTester extends AbstractTester {
         }
 
         System.out.println("done");
-        System.in.read();
     }
 
     @Test
-    public void kvZip() {
-        KeyValueStoreConfig conf = tstConf();
+    public void kvsZip() {
+        KeyValueStoreConfig conf = kvConf();
         KeyValueStore<Integer, PersonBean> kv = new KeyValueStore<>(conf);
+        kv.clear();
+
         kv.put(0, PersonBean.YouFan);
         kv.put(1, PersonBean.LeZhi);
-
         assert kv.get(0).equals(PersonBean.YouFan);
         assert kv.get(1).equals(PersonBean.LeZhi);
+
+        kv.close();
     }
 
     @Test
-    public void kvDbAsync() {
-        KeyValueStoreConfig conf = tstConf();
+    public void kvsAsync() {
+        KeyValueStoreConfig conf = kvConf();
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
-        int loopCount = 10000;
-        invokeAsync("kvdb", i -> {
+        int loopCount = 10000, threadSize = 16;
+        invokeAsync("kvsAsync", i -> {
 //                int k = ThreadLocalRandom.current().nextInt(0, loopCount);
             int k = i;
             String val = kv.get(k);
@@ -285,18 +278,19 @@ public class IOTester extends AbstractTester {
                 log.error("check: {} == {}", val, newGet);
             }
             assert val.equals(newGet);
-        }, loopCount);
+        }, loopCount, threadSize);
 
         kv.close();
     }
 
     @Test
-    public void kvDb() {
-        KeyValueStoreConfig conf = tstConf();
+    public void kvs() {
+        KeyValueStoreConfig conf = kvConf();
         KeyValueStore<Integer, String> kv = new KeyValueStore<>(conf);
         kv.clear();
+
         int loopCount = 100, removeK = 99;
-        invoke("put", i -> {
+        invoke("kvs", i -> {
             String val = kv.get(i);
             if (val == null) {
                 val = DateTime.now().toString();
@@ -342,22 +336,49 @@ public class IOTester extends AbstractTester {
         log.info("remove {} {}", mk2, kv.remove(mk2, "a"));
 
         assert kv.get(mk3) == null;
-        kv.putBehind(mk3, "1");
+        kv.put(mk3, "1");
         sleep(2000);
         assert kv.get(mk3).equals("1");
-        kv.putBehind(mk3, "2");
+        kv.put(mk3, "2");
         assert kv.get(mk3).equals("2");
-        kv.putBehind(mk3, "3");
+        kv.put(mk3, "3");
         sleep(2000);
 
         kv.close();
     }
 
-    private KeyValueStoreConfig tstConf() {
-        KeyValueStoreConfig conf = KeyValueStoreConfig.defaultConfig();
-        conf.setLogGrowSize(1024 * 1024);
-        conf.setIndexGrowSize(1024 * 32);
+    private KeyValueStoreConfig kvConf() {
+        KeyValueStoreConfig conf = KeyValueStoreConfig.newConfig(Object.class, Object.class);
+        conf.setLogGrowSize(Constants.KB * 64);
+        conf.setIndexBufferSize(Constants.KB * 4);
         return conf;
+    }
+
+    @Test
+    public void kvsIdx() {
+        ExternalSortingIndexer<Long> indexer = new ExternalSortingIndexer<>(new File("./data/tst.idx"), 1024, 1);
+//        indexer.clear();
+//        assert indexer.size() == 0;
+//        KeyIndexer.KeyEntity<Long> key = indexer.find(1L);
+//        assert key == null;
+//        KeyIndexer.KeyEntity<Long> newKey = indexer.newKey(1L);
+//        newKey.logPosition = 256;
+//        indexer.save(newKey);
+//        key = indexer.find(1L);
+//        assert key != null && key.key == 1 && key.logPosition == 256;
+
+        invoke("kvsIdx", i -> {
+            long rk = (long) i + 1;
+            KeyIndexer.KeyEntity<Long> k = indexer.newKey(rk);
+            k.logPosition = rk;
+            indexer.save(k);
+            log.info("{} save k={}", indexer, k);
+
+            KeyIndexer.KeyEntity<Long> fk = indexer.find(rk);
+            log.info("{} find k={}", indexer, fk);
+            assert fk != null && fk.logPosition == rk;
+        }, 100);
+        log.info("{}", indexer);
     }
     //endregion
 
@@ -375,11 +396,11 @@ public class IOTester extends AbstractTester {
         MemoryStream stream = new MemoryStream();
         GZIPStream out = new GZIPStream(stream);
         for (int i = 0; i < loopCount; i++) {
-            out.write(content);
+            out.write(bytes_content);
         }
         out.finish();
 
-        System.out.println(content.length * loopCount);
+        System.out.println(bytes_content.length * loopCount);
         System.out.println(stream.toArray().length);
 
         byte[] outBytes = out.toArray();
@@ -396,8 +417,8 @@ public class IOTester extends AbstractTester {
 
             long position = stream.getPosition();
             System.out.println(position);
-            stream.write(content);
-            assert stream.getPosition() == position + content.length && stream.getLength() == stream.getPosition();
+            stream.write(bytes_content);
+            assert stream.getPosition() == position + bytes_content.length && stream.getLength() == stream.getPosition();
             byte[] data = new byte[(int) stream.getLength()];
             stream.setPosition(0L);
             stream.read(data);
@@ -415,7 +436,7 @@ public class IOTester extends AbstractTester {
         OutputStream writer = stream.getWriter();
 
         long len = stream.getLength();
-        writer.write(content);
+        writer.write(bytes_content);
         writer.flush();
         stream.setPosition(0L);
         System.out.println(IOStream.readString(reader, StandardCharsets.UTF_8));
@@ -426,7 +447,7 @@ public class IOTester extends AbstractTester {
 
         stream.setPosition(0L);
         ByteBuf buf = Bytes.directBuffer();
-        buf.writeBytes(content);
+        buf.writeBytes(bytes_content);
         long write = stream.write0(buf);
         assert buf.readerIndex() == stream.getPosition();
         assert stream.getPosition() == write && write == buf.writerIndex();
@@ -466,18 +487,18 @@ public class IOTester extends AbstractTester {
         assert buf.readInt() == 512;
     }
 
-    private void testMmapStream(IOStream<?, ?> stream) {
-        stream.write(content);
-        assert stream.getPosition() == content.length;
+    private void testMmapStream(IOStream stream) {
+        stream.write(bytes_content);
+        assert stream.getPosition() == bytes_content.length;
         stream.setPosition(0L);
 //        assert stream.available() == 0;
-        byte[] data = new byte[content.length];
+        byte[] data = new byte[bytes_content.length];
         int count = stream.read(data);
         assert stream.getPosition() == count;
-        assert Arrays.equals(content, data);
+        assert Arrays.equals(bytes_content, data);
 
 //        long pos = stream.getPosition();
-//        IOStream<?, ?> newStream = App.deepClone(stream);
+//        IOStream newStream = App.deepClone(stream);
 //        assert pos == newStream.getPosition();
     }
 
@@ -528,7 +549,7 @@ public class IOTester extends AbstractTester {
         stream.setPosition(0L);
         System.out.println(stream.read());
 
-        IOStream<?, ?> serializeStream = Serializer.DEFAULT.serialize(stream);
+        IOStream serializeStream = Serializer.DEFAULT.serialize(stream);
         MemoryStream newStream = Serializer.DEFAULT.deserialize(serializeStream);
         newStream.setPosition(0L);
         byte[] bytes = newStream.toArray();
@@ -537,19 +558,19 @@ public class IOTester extends AbstractTester {
         }
     }
 
-    private void testSeekStream(IOStream<?, ?> stream) {
-        stream.write(content);
-        assert stream.getPosition() == content.length && stream.getLength() == content.length;
+    private void testSeekStream(IOStream stream) {
+        stream.write(bytes_content);
+        assert stream.getPosition() == bytes_content.length && stream.getLength() == bytes_content.length;
         stream.setPosition(0L);
         assert stream.available() == stream.getLength();
-        byte[] data = new byte[content.length];
+        byte[] data = new byte[bytes_content.length];
         int count = stream.read(data);
         assert stream.getPosition() == count && stream.getLength() == data.length;
-        assert Arrays.equals(content, data);
+        assert Arrays.equals(bytes_content, data);
 
         long pos = stream.getPosition();
         long len = stream.getLength();
-        IOStream<?, ?> newStream = stream.deepClone();
+        IOStream newStream = stream.deepClone();
         assert pos == newStream.getPosition() && len == newStream.getLength();
     }
 
@@ -557,7 +578,7 @@ public class IOTester extends AbstractTester {
     public void serialize() {
         GirlBean girlBean = new GirlBean();
         girlBean.setAge(8);
-        IOStream<?, ?> serialize = Serializer.DEFAULT.serialize(girlBean);
+        IOStream serialize = Serializer.DEFAULT.serialize(girlBean);
         GirlBean deGirl = Serializer.DEFAULT.deserialize(serialize);
         assert girlBean.equals(deGirl);
     }

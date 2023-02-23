@@ -7,7 +7,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.bean.$;
 import org.rx.bean.AbstractMap;
+import org.rx.bean.DateTime;
+import org.rx.codec.CodecUtil;
 import org.rx.core.Disposable;
+import org.rx.core.Linq;
 import org.rx.core.Reflects;
 import org.rx.core.Strings;
 import org.rx.exception.ExceptionLevel;
@@ -17,7 +20,11 @@ import org.rx.net.http.ServerRequest;
 import org.rx.third.guava.AbstractSequentialIterator;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.UserDefinedFileAttributeView;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
@@ -29,20 +36,15 @@ import static org.rx.core.Sys.toJsonObject;
  * meta
  * logPosition + size
  *
- * <p>index
- * crc64(8) + pos(8)
- *
  * <p>log
- * key + value + size(4)
- *
- * <p>减少文件，二分查找
+ * status(1) + key + value + size(4)
  */
 @Slf4j
-public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK, TV>, Iterable<Map.Entry<TK, TV>> {
+public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK, TV> {
     @AllArgsConstructor
-    @EqualsAndHashCode
-    @ToString
     @Getter
+    @ToString
+    @EqualsAndHashCode
     static class Entry<TK, TV> implements Map.Entry<TK, TV>, Compressible {
         private static final long serialVersionUID = -2218602651671401557L;
 
@@ -77,88 +79,84 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     }
 
     @RequiredArgsConstructor
-    enum EntryStatus {
-        NORMAL((byte) 0),
-        DELETE((byte) 1);
-
-        final byte value;
-    }
-
-    @RequiredArgsConstructor
     class IteratorContext {
-        long logPos = wal.meta.getLogPosition();
-        final Set<TK> filter;
         final Entry<TK, TV>[] buf;
+        long logPos = wal.meta.getLogPosition();
         int writePos;
         int readPos;
         int remaining;
     }
 
-    static final int TOMB_MARK = -1;
+    //0 NORMAL, 1 DELETE
+    static final byte TOMB_MARK = 1;
     static final int DEFAULT_ITERATOR_SIZE = 50;
     static final String KEY_TYPE_FIELD = "_KEY_TYPE", VALUE_TYPE_FIELD = "_VAL_TYPE";
-    @Getter(lazy = true)
-    private static final KeyValueStore instance = new KeyValueStore<>();
+    static final Map<Class<?>, KeyValueStore> instances = new ConcurrentHashMap<>();
+
+    public static <TK, TV> KeyValueStore<TK, TV> getInstance(Class<TK> keyType, Class<TV> valueType) {
+        return instances.computeIfAbsent(keyType, k -> new KeyValueStore<>(KeyValueStoreConfig.newConfig(keyType, valueType)));
+    }
 
     final KeyValueStoreConfig config;
     final File parentDirectory;
-    final String filename;
+    final String logName;
     final WALFileStream wal;
-    final HashKeyIndexer<TK> indexer;
+    final KeyIndexer<TK> indexer;
     final Serializer serializer;
-    final WriteBehindQueue<TK, TV> queue;
-    final HttpServer apiServer;
+    //    transient EntrySetView entrySet;
+    transient HttpServer apiServer;
 
-    File getIndexDirectory() {
-        File dir = new File(parentDirectory, Files.changeExtension(filename, "idx"));
-        dir.mkdirs();
-        return dir;
-    }
-
-    private KeyValueStore() {
-        this(KeyValueStoreConfig.defaultConfig(), Serializer.DEFAULT);
+    String getTypeId() {
+        return String.format("%s:%s", config.getKeyType().getName(), config.getValueType().getName());
     }
 
     public KeyValueStore(KeyValueStoreConfig config) {
         this(config, Serializer.DEFAULT);
     }
 
+    @SneakyThrows
     public KeyValueStore(@NonNull KeyValueStoreConfig config, @NonNull Serializer serializer) {
+        require(config.getKeyType());
+        require(config.getValueType());
         this.config = config;
-        filename = Files.getName(config.getFilePath());
-        if (Strings.isEmpty(filename)) {
-            throw new InvalidException("Empty file name");
-        }
+        parentDirectory = new File(Files.createDirectory(config.getDirectoryPath()));
+        String typeId = getTypeId();
+        logName = String.format("%s.log", CodecUtil.hashUnsigned64(typeId));
+        File logFile = new File(String.format("%s/%s", config.getDirectoryPath(), logName));
+        wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
+        wal.setFlushDelayMillis(config.getFlushDelayMillis());
+        UserDefinedFileAttributeView view = java.nio.file.Files.getFileAttributeView(logFile.toPath(), UserDefinedFileAttributeView.class);
+        view.write("typeId", StandardCharsets.UTF_8.encode(typeId));
 
-        parentDirectory = new File(Files.createDirectory(config.getFilePath()));
+//        String name = "user.mimetype";
+//        ByteBuffer buf = ByteBuffer.allocate(view.size(name));
+//        view.read(name, buf);
+//        buf.flip();
+//        String value = StandardCharsets.UTF_8.decode(buf).toString();
         this.serializer = serializer;
 
-        File logFile = new File(Files.changeExtension(config.getFilePath(), "log"));
-        wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
-
-        indexer = new HashKeyIndexer<>(getIndexDirectory(), config.getIndexSlotSize(), config.getIndexGrowSize());
+        String idxName = Files.changeExtension(logName, "idx");
+        indexer = new ExternalSortingIndexer<>(new File(String.format("%s/%s", config.getDirectoryPath(), idxName)), config.getIndexBufferSize(), config.getIndexReaderCount());
 
         wal.lock.writeInvoke(() -> {
             long pos = wal.meta.getLogPosition();
-            log.debug("init logPos={}", pos);
-//            pos = WALFileStream.HEADER_SIZE;
             Entry<TK, TV> val;
             $<Long> endPos = $();
             while ((val = findValue(pos, null, endPos)) != null) {
                 boolean incr = false;
                 TK k = val.key;
-                HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
+                KeyIndexer.KeyEntity<TK> key = indexer.find(k);
                 if (key == null) {
-                    key = new HashKeyIndexer.KeyData<>(k);
+                    key = indexer.newKey(k);
                     incr = true;
                 }
                 if (key.logPosition == TOMB_MARK) {
                     incr = true;
                 }
 
-                key.logPosition = val.value == null ? TOMB_MARK : pos;
+                key.logPosition = pos;
                 wal.meta.setLogPosition(endPos.v);
-                indexer.saveKey(key);
+                indexer.save(key);
 
                 if (incr) {
                     wal.meta.incrementSize();
@@ -172,101 +170,254 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             wal.meta.extra = new AtomicInteger();
         }
 
-        queue = new WriteBehindQueue<>(config.getWriteBehindDelayed(), config.getWriteBehindHighWaterMark());
-
         if (config.getApiPort() > 0) {
-            apiServer = new HttpServer(config.getApiPort(), config.isApiSsl())
-                    .requestMapping("/get", ((request, response) -> {
-                        apiCheck(request);
-                        JSONObject reqJson = toJsonObject(request.jsonBody());
-                        JSONObject resJson = new JSONObject();
-
-                        Object key = reqJson.get("key");
-                        if (key == null) {
-                            JSONArray keys = reqJson.getJSONArray("keys");
-                            if (keys != null) {
-                                Map<TK, TV> map = new LinkedHashMap<>();
-                                for (int i = 0; i < keys.size(); i++) {
-                                    TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, keys.get(i));
-                                    map.put(k, get(k));
-                                }
-                                resJson.put("code", 0);
-                                resJson.put("entry", map);
-                            } else {
-                                resJson.put("code", 1);
-                                resJson.put("top", iterator());
-                            }
-                            response.jsonBody(resJson);
-                            return;
-                        }
-
-                        TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, key);
-                        apiSerialize(resJson, VALUE_TYPE_FIELD, get(k));
-                        response.jsonBody(resJson);
-                    })).requestMapping("/set", (request, response) -> {
-                        apiCheck(request);
-                        JSONObject reqJson = toJsonObject(request.jsonBody());
-                        JSONObject resJson = new JSONObject();
-
-                        Object key = reqJson.get("key");
-                        if (key == null) {
-                            resJson.put("code", 1);
-                            response.jsonBody(resJson);
-                            return;
-                        }
-                        TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, key);
-
-                        Object value = reqJson.get("value"), concurrentValue = reqJson.get("concurrentValue");
-                        if (value == null) {
-                            if (concurrentValue == null) {
-                                apiSerialize(resJson, VALUE_TYPE_FIELD, remove(k));
-                            } else {
-                                apiSerialize(resJson, VALUE_TYPE_FIELD, remove(k, apiDeserialize(reqJson, VALUE_TYPE_FIELD, concurrentValue)));
-                            }
-                            response.jsonBody(resJson);
-                            return;
-                        }
-
-                        TV v = apiDeserialize(reqJson, VALUE_TYPE_FIELD, value);
-                        if (concurrentValue == null) {
-                            byte flag = ifNull(reqJson.getByte("flag"), (byte) 0);
-                            switch (flag) {
-                                case 1:
-                                    apiSerialize(resJson, VALUE_TYPE_FIELD, putIfAbsent(k, v));
-                                    break;
-                                case 2:
-                                    apiSerialize(resJson, VALUE_TYPE_FIELD, replace(k, v));
-                                    break;
-                                default:
-                                    apiSerialize(resJson, VALUE_TYPE_FIELD, put(k, v));
-                                    break;
-                            }
-                        } else {
-                            apiSerialize(resJson, VALUE_TYPE_FIELD, replace(k, apiDeserialize(reqJson, VALUE_TYPE_FIELD, concurrentValue), v));
-                        }
-                        response.jsonBody(resJson);
-                    });
-        } else {
-            apiServer = null;
+            startApiServer(config.getApiPort());
         }
     }
 
+    @SneakyThrows
     @Override
     protected void freeObjects() {
         indexer.close();
         wal.close();
     }
 
-    private void apiCheck(ServerRequest req) {
-        if (Strings.isEmpty(config.getApiPassword())) {
-            return;
+    public void fastPut(@NonNull TK k, TV v) {
+        checkNotClosed();
+
+        boolean incr = false;
+        KeyIndexer.KeyEntity<TK> key = indexer.find(k);
+        if (key == null) {
+            key = indexer.newKey(k);
+            incr = true;
         }
-        if (!eq(config.getApiPassword(), req.getHeaders().get("apiPassword"))) {
-            throw new InvalidException(ExceptionLevel.USER_OPERATION, "{} auth fail", req.getRemoteEndpoint());
+        if (key.logPosition == TOMB_MARK) {
+            incr = true;
+        }
+
+        Entry<TK, TV> val = new Entry<>(k, v);
+        KeyIndexer.KeyEntity<TK> fKey = key;
+        wal.lock.writeInvoke(() -> {
+            long pos = wal.meta.getLogPosition();
+            if (fKey.logPosition >= WALFileStream.HEADER_SIZE) {
+                wal.meta.setLogPosition(fKey.logPosition);
+                wal.write(TOMB_MARK);
+                wal.meta.setLogPosition(pos);
+                log.debug("fastPut mark TOMB {} <- {}", fKey.logPosition, pos);
+            }
+
+            fKey.logPosition = pos;
+            wal.write(0);
+            serializer.serialize(val, wal);
+            int size = (int) (wal.meta.getLogPosition() - fKey.logPosition);
+            wal.writeInt(size);
+            log.debug("fastPut {} {}", fKey, val);
+
+            indexer.save(fKey);
+        });
+        if (incr) {
+            wal.meta.incrementSize();
         }
     }
 
+    public void fastRemove(@NonNull TK k) {
+        checkNotClosed();
+
+        KeyIndexer.KeyEntity<TK> key = indexer.find(k);
+        if (key == null || key.logPosition < WALFileStream.HEADER_SIZE) {
+            return;
+        }
+
+        wal.lock.writeInvoke(() -> {
+            long pos = wal.meta.getLogPosition();
+            wal.meta.setLogPosition(key.logPosition);
+            wal.write(TOMB_MARK);
+            wal.meta.setLogPosition(pos);
+            log.debug("fastRemove {}", key);
+
+            key.logPosition = TOMB_MARK;
+            indexer.save(key);
+        });
+        wal.meta.decrementSize();
+    }
+
+    protected TV read(@NonNull TK k) {
+        KeyIndexer.KeyEntity<TK> key = indexer.find(k);
+        if (key == null || key.logPosition == TOMB_MARK) {
+            return null;
+        }
+        long pos = wal.meta.getLogPosition();
+        if (key.logPosition > pos) {
+            log.warn("LogPosError {} > {}", key, pos);
+            key.logPosition = TOMB_MARK;
+            indexer.save(key);
+            return null;
+        }
+
+        Entry<TK, TV> val = findValue(key.logPosition, key.key, null);
+        return val != null ? val.value : null;
+    }
+
     @SneakyThrows
+    private Entry<TK, TV> findValue(long logPosition, TK k, $<Long> position) {
+        log.debug("findValue {} {}", k, logPosition);
+        Entry<TK, TV> val = wal.lock.readInvoke(() -> {
+            wal.setReaderPosition(logPosition);
+            try {
+                int status = wal.read();
+                if (status == TOMB_MARK) {
+                    return null;
+                }
+                return serializer.deserialize(wal, true);
+            } catch (Exception e) {
+                if (e instanceof StreamCorruptedException) {
+                    log.warn("findValue {} {} {}", k == null ? "[INIT]" : k, logPosition, e.getMessage());
+                    return null;
+                } else {
+                    throw e;
+                }
+            } finally {
+                long readerPosition = wal.getReaderPosition(true);
+                if (position != null) {
+                    position.v = readerPosition;
+                }
+            }
+        });
+        if (val == null) {
+            return null;
+        }
+        if (k != null && !k.equals(val.key)) {
+            AtomicInteger counter = (AtomicInteger) wal.meta.extra;
+            int total = counter == null ? -1 : counter.incrementAndGet();
+            log.warn("LogPosError hash collision {} total={}", k, total);
+            Files.writeLines("./hc_err.log", Linq.from(String.format("%s %s hc=%s total=%s", DateTime.now(), logName
+                    , k, total)), StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+            return null;
+        }
+        return val;
+    }
+
+    private boolean backwardFindValue(IteratorContext ctx, int prefetchCount) {
+        wal.setReaderPosition(ctx.logPos); //4 lock
+        return wal.backwardReadObject(reader -> {
+            ctx.writePos = ctx.readPos = 0;
+            for (int i = 0; i < prefetchCount; ) {
+                long logPos = ctx.logPos - 4;
+                if (logPos < WALFileStream.HEADER_SIZE) {
+                    ctx.remaining = 0;
+                    return false;
+                }
+
+                long p1 = 0, p2 = 0;
+                int size = 0, status = 0;
+                try {
+                    p1 = logPos;
+                    reader.setPosition(logPos);
+                    size = reader.readInt();
+
+                    logPos -= size;
+                    p2 = logPos;
+                    reader.setPosition(logPos);
+                    status = reader.read();
+                    if (status == TOMB_MARK) {
+                        continue;
+                    }
+
+                    Entry<TK, TV> val = serializer.deserialize(reader, true);
+                    log.debug("read {}", val);
+                    ctx.buf[ctx.writePos++] = val;
+                    i++;
+                } catch (Exception e) {
+                    if (e instanceof StreamCorruptedException | e instanceof EOFException) {
+                        log.warn("backwardFindValue {}", e.getMessage());
+                        ctx.remaining = 0;
+                        return false;
+                    }
+                    throw e;
+                } finally {
+                    ctx.logPos = logPos;
+                    log.debug("backwardFindValue prev[{}] status[{}]={} len[{}]={}", logPos, p2, status, p1, size);
+                }
+            }
+            return true;
+        });
+    }
+
+    //region api
+    void startApiServer(int port) {
+        apiServer = new HttpServer(port, config.isApiSsl())
+                .requestMapping("/get", ((request, response) -> {
+                    apiCheck(request);
+                    JSONObject reqJson = toJsonObject(request.jsonBody());
+                    JSONObject resJson = new JSONObject();
+
+                    Object key = reqJson.get("key");
+                    if (key == null) {
+                        JSONArray keys = reqJson.getJSONArray("keys");
+                        if (keys != null) {
+                            Map<TK, TV> map = new LinkedHashMap<>();
+                            for (int i = 0; i < keys.size(); i++) {
+                                TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, keys.get(i));
+                                map.put(k, get(k));
+                            }
+                            resJson.put("code", 0);
+                            resJson.put("entry", map);
+                        } else {
+                            resJson.put("code", 1);
+                            resJson.put("top", entrySet());
+                        }
+                        response.jsonBody(resJson);
+                        return;
+                    }
+
+                    TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, key);
+                    apiSerialize(resJson, VALUE_TYPE_FIELD, get(k));
+                    response.jsonBody(resJson);
+                })).requestMapping("/set", (request, response) -> {
+                    apiCheck(request);
+                    JSONObject reqJson = toJsonObject(request.jsonBody());
+                    JSONObject resJson = new JSONObject();
+
+                    Object key = reqJson.get("key");
+                    if (key == null) {
+                        resJson.put("code", 1);
+                        response.jsonBody(resJson);
+                        return;
+                    }
+                    TK k = apiDeserialize(reqJson, KEY_TYPE_FIELD, key);
+
+                    Object value = reqJson.get("value"), concurrentValue = reqJson.get("concurrentValue");
+                    if (value == null) {
+                        if (concurrentValue == null) {
+                            apiSerialize(resJson, VALUE_TYPE_FIELD, remove(k));
+                        } else {
+                            apiSerialize(resJson, VALUE_TYPE_FIELD, remove(k, apiDeserialize(reqJson, VALUE_TYPE_FIELD, concurrentValue)));
+                        }
+                        response.jsonBody(resJson);
+                        return;
+                    }
+
+                    TV v = apiDeserialize(reqJson, VALUE_TYPE_FIELD, value);
+                    if (concurrentValue == null) {
+                        byte flag = ifNull(reqJson.getByte("flag"), (byte) 0);
+                        switch (flag) {
+                            case 1:
+                                apiSerialize(resJson, VALUE_TYPE_FIELD, putIfAbsent(k, v));
+                                break;
+                            case 2:
+                                apiSerialize(resJson, VALUE_TYPE_FIELD, replace(k, v));
+                                break;
+                            default:
+                                apiSerialize(resJson, VALUE_TYPE_FIELD, put(k, v));
+                                break;
+                        }
+                    } else {
+                        apiSerialize(resJson, VALUE_TYPE_FIELD, replace(k, apiDeserialize(reqJson, VALUE_TYPE_FIELD, concurrentValue), v));
+                    }
+                    response.jsonBody(resJson);
+                });
+    }
+
     private <T> T apiDeserialize(JSONObject reqJson, String typeField, Object obj) {
         if (obj instanceof byte[]) {
             byte[] bytes = (byte[]) obj;
@@ -289,214 +440,17 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
     }
 
-    protected void write(TK k, TV v) {
-        boolean incr = false;
-        HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
-        if (key == null) {
-            key = new HashKeyIndexer.KeyData<>(k);
-            incr = true;
+    private void apiCheck(ServerRequest req) {
+        if (Strings.isEmpty(config.getApiPassword())) {
+            return;
         }
-        if (key.logPosition == TOMB_MARK) {
-            if (v == null) {
-                return;
-            }
-            incr = true;
-        }
-
-        Entry<TK, TV> val = new Entry<>(k, v);
-        HashKeyIndexer.KeyData<TK> finalKey = key;
-        wal.lock.writeInvoke(() -> {
-            saveValue(finalKey, val);
-            indexer.saveKey(finalKey);
-        });
-        if (incr) {
-            wal.meta.incrementSize();
+        if (!eq(config.getApiPassword(), req.getHeaders().get("apiPassword"))) {
+            throw new InvalidException(ExceptionLevel.USER_OPERATION, "{} auth fail", req.getRemoteEndpoint());
         }
     }
+    //endregion
 
-    protected TV delete(TK k) {
-        HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
-        if (key == null || key.logPosition == TOMB_MARK) {
-            return null;
-        }
-        Entry<TK, TV> val = findValue(key);
-        if (val == null) {
-            return null;
-        }
-
-        val.value = null;
-        wal.lock.writeInvoke(() -> {
-            saveValue(key, val);
-            indexer.saveKey(key);
-        });
-        wal.meta.decrementSize();
-        return val.value;
-    }
-
-    protected TV read(TK k) {
-        HashKeyIndexer.KeyData<TK> key = indexer.findKey(k);
-        if (key == null || key.logPosition == TOMB_MARK) {
-            return null;
-        }
-
-        Entry<TK, TV> val = findValue(key);
-        return val != null ? val.value : null;
-    }
-
-    private void saveValue(HashKeyIndexer.KeyData<TK> key, Entry<TK, TV> value) {
-        checkNotClosed();
-        require(key, !(key.logPosition == TOMB_MARK && value.value == null));
-
-        key.logPosition = wal.meta.getLogPosition();
-        serializer.serialize(value, wal);
-        int size = (int) (wal.meta.getLogPosition() - key.logPosition);
-        wal.writeInt(size);
-        if (value.value == null) {
-            log.debug("LogPos auto set TOMB_MARK {}", key);
-            key.logPosition = TOMB_MARK;
-        }
-        log.debug("saveValue {} {}", key, value);
-    }
-
-    private Entry<TK, TV> findValue(HashKeyIndexer.KeyData<TK> key) {
-//        require(key, key.logPosition >= 0);
-        if (key.logPosition == TOMB_MARK) {
-            log.warn("LogPosError {} == TOMB_MARK", key);
-            return null;
-        }
-        if (key.logPosition > wal.meta.getLogPosition()) {
-            log.warn("LogPosError {} > {}", key, wal.meta.getLogPosition());
-            key.logPosition = TOMB_MARK;
-            indexer.saveKey(key);
-            return null;
-        }
-
-        return findValue(key.logPosition, key.key, null);
-    }
-
-    @SneakyThrows
-    private Entry<TK, TV> findValue(long logPosition, TK k, $<Long> position) {
-        String kStr = k == null ? "NULL" : k.toString();
-        log.debug("findValue {} {}", kStr, logPosition);
-        Entry<TK, TV> val = null;
-        try {
-            wal.setReaderPosition(logPosition);
-            val = serializer.deserialize(wal, true);
-        } catch (Exception e) {
-            if (e instanceof StreamCorruptedException
-//                    | e instanceof EOFException
-            ) {
-                log.error("findValue {} {}", kStr, logPosition, e);
-            } else {
-                throw e;
-            }
-        } finally {
-            long readerPosition = wal.getReaderPosition(true);
-            if (position != null) {
-                position.v = readerPosition;
-            }
-        }
-        if (val == null || val.value == null) {
-            return null;
-        }
-        if (k != null && !k.equals(val.key)) {
-            AtomicInteger counter = (AtomicInteger) wal.meta.extra;
-            int total = counter == null ? -1 : counter.incrementAndGet();
-            log.warn("LogPosError hash collision {} total={}", k, total);
-            Files.createDirectory("./hc.err");
-            return null;
-        }
-        return val;
-    }
-
-    @Override
-    public Iterator<Map.Entry<TK, TV>> iterator() {
-        return iterator(0, DEFAULT_ITERATOR_SIZE);
-    }
-
-    public Iterator<Map.Entry<TK, TV>> iterator(int offset, int size) {
-        require(offset, offset >= 0);
-        require(size, size >= 0);
-
-        int total = size();
-        if (total <= offset) {
-            return IteratorUtils.emptyIterator();
-        }
-
-        IteratorContext ctx = new IteratorContext(new HashSet<>(offset + size), new Entry[config.getIteratorPrefetchCount()]);
-        if (offset > 0 && !backwardFindValue(ctx, offset)) {
-            return IteratorUtils.emptyIterator();
-        }
-        backwardFindValue(ctx, ctx.buf.length);
-        if (ctx.writePos == 0) {
-            return IteratorUtils.emptyIterator();
-        }
-        ctx.remaining = size;
-        return new AbstractSequentialIterator<Map.Entry<TK, TV>>(ctx.buf[ctx.readPos]) {
-            @Override
-            protected Map.Entry<TK, TV> computeNext(Map.Entry<TK, TV> current) {
-                if (--ctx.remaining <= 0) {
-                    return null;
-                }
-                while (true) {
-                    if (++ctx.readPos == ctx.buf.length) {
-                        backwardFindValue(ctx, Math.min(ctx.buf.length, ctx.remaining));
-                        if (ctx.writePos == 0) {
-                            return null;
-                        }
-                    }
-                    Entry<TK, TV> entry = ctx.buf[ctx.readPos];
-                    if (entry == null) {
-                        continue;
-                    }
-                    return entry;
-                }
-            }
-        };
-    }
-
-    private boolean backwardFindValue(IteratorContext ctx, int prefetchCount) {
-        wal.setReaderPosition(ctx.logPos); //4 lock
-        return wal.backwardReadObject(reader -> {
-            ctx.writePos = ctx.readPos = 0;
-            for (int i = 0; i < prefetchCount; i++) {
-                if (ctx.logPos <= WALFileStream.HEADER_SIZE) {
-                    ctx.remaining = 0;
-                    return false;
-                }
-
-                ctx.logPos -= 4;
-                reader.setPosition(ctx.logPos);
-                try {
-                    int size = reader.readInt();
-                    log.debug("contentLength: {}", size);
-                    ctx.logPos -= size;
-
-                    reader.setPosition(ctx.logPos);
-
-                    Entry<TK, TV> val = serializer.deserialize(reader, true);
-                    log.debug("read {}", val);
-                    TV v = queue.peek(val.key);
-                    if (v != null) {
-                        val.value = v;
-                    }
-                    if (!ctx.filter.add(val.key)) {
-                        log.debug("skip read {}", val.key);
-                        val = null;
-                    }
-                    ctx.buf[ctx.writePos++] = val;
-                } catch (Exception e) {
-                    if (e instanceof StreamCorruptedException | e instanceof EOFException) {
-                        ctx.remaining = 0;
-                        return false;
-                    }
-                    throw e;
-                }
-            }
-            return true;
-        });
-    }
-
+    //region map
     @Override
     public int size() {
         return wal.meta.getSize();
@@ -505,20 +459,12 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     @Override
     public boolean containsKey(Object key) {
         TK k = (TK) key;
-        TV v = queue.peek(k);
-        if (v != null) {
-            return true;
-        }
-        return indexer.findKey((TK) key) != null;
+        return indexer.find(k) != null;
     }
 
     @Override
     public TV get(Object key) {
         TK k = (TK) key;
-        TV v = queue.peek(k);
-        if (v != null) {
-            return v;
-        }
         return read(k);
     }
 
@@ -526,26 +472,22 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     public TV put(TK key, TV value) {
         TV old = read(key);
         if (!eq(old, value)) {
-            write(key, value);
+            fastPut(key, value);
         }
         return old;
-    }
-
-    public void putBehind(TK key, TV value) {
-        queue.offer(key, value, v -> put(key, v));
     }
 
     @Override
     public TV remove(Object key) {
         TK k = (TK) key;
-        queue.remove(k);
-        return delete(k);
+        TV old = read(k);
+        fastRemove(k);
+        return old;
     }
 
     @Override
     public void clear() {
         wal.lock.writeInvoke(() -> {
-            queue.clear();
             indexer.clear();
             wal.clear();
         });
@@ -557,6 +499,75 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     }
 
     public Set<Map.Entry<TK, TV>> entrySet(int offset, int size) {
-        return new LinkedHashSet<>(IteratorUtils.toList(iterator(offset, size)));
+        require(offset, offset >= 0);
+        require(size, size >= 0);
+
+        return new EntrySetView(offset, size);
+//        EntrySetView<TK, TV> es;
+//        return (es = entrySet) != null ? es : (entrySet = new EntrySetView<>(this, offset, size));
+    }
+    //endregion
+
+    @RequiredArgsConstructor
+    class EntrySetView extends AbstractSet<Map.Entry<TK, TV>> {
+        final int offset;
+        final int size;
+
+        @Override
+        public int size() {
+            return KeyValueStore.this.size();
+        }
+
+        @Override
+        public void clear() {
+            KeyValueStore.this.clear();
+        }
+
+        @Override
+        public Iterator<Map.Entry<TK, TV>> iterator() {
+            int total = KeyValueStore.this.size();
+            if (total <= offset) {
+                return IteratorUtils.emptyIterator();
+            }
+
+            IteratorContext ctx = new IteratorContext(new Entry[config.getIteratorPrefetchCount()]);
+            if (offset > 0 && !backwardFindValue(ctx, offset)) {
+                return IteratorUtils.emptyIterator();
+            }
+            backwardFindValue(ctx, ctx.buf.length);
+            if (ctx.writePos == 0) {
+                return IteratorUtils.emptyIterator();
+            }
+            ctx.remaining = size;
+            return new AbstractSequentialIterator<Map.Entry<TK, TV>>(ctx.buf[ctx.readPos]) {
+                Map.Entry<TK, TV> current;
+
+                @Override
+                protected Map.Entry<TK, TV> computeNext(Map.Entry<TK, TV> current) {
+                    this.current = current;
+                    if (--ctx.remaining <= 0) {
+                        return null;
+                    }
+                    while (true) {
+                        if (++ctx.readPos == ctx.buf.length) {
+                            backwardFindValue(ctx, Math.min(ctx.buf.length, ctx.remaining));
+                            if (ctx.writePos == 0) {
+                                return null;
+                            }
+                        }
+                        Entry<TK, TV> entry = ctx.buf[ctx.readPos];
+                        if (entry == null) {
+                            continue;
+                        }
+                        return entry;
+                    }
+                }
+
+                @Override
+                public void remove() {
+                    KeyValueStore.this.fastRemove(current.getKey());
+                }
+            };
+        }
     }
 }

@@ -25,6 +25,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -179,16 +180,25 @@ public class Files extends FilenameUtils {
         return java.nio.file.Files.lines(Paths.get(filePath), charset);
     }
 
+    public static void writeLines(String filePath, Iterable<CharSequence> lines) {
+        writeLines(filePath, lines, StandardCharsets.UTF_8);
+    }
+
+    @SneakyThrows
+    public static void writeLines(String filePath, Iterable<CharSequence> lines, Charset charset, StandardOpenOption... options) {
+        java.nio.file.Files.write(Paths.get(filePath), lines, charset, options);
+    }
+
     public static void zip(String zipFile, String srcPath) {
         zip(new File(zipFile), null, Collections.singletonList(new File(srcPath)), Collections.emptyList());
     }
 
-    public static void zip(String zipFile, IOStream<?, ?> srcStream) {
+    public static void zip(String zipFile, IOStream srcStream) {
         zip(new File(zipFile), null, Collections.emptyList(), Collections.singletonList(srcStream));
     }
 
     @SneakyThrows
-    public static <T extends IOStream<?, ?>> void zip(File zipFile, String password, List<File> srcPaths, List<T> srcStreams) {
+    public static <T extends IOStream> void zip(File zipFile, String password, List<File> srcPaths, List<T> srcStreams) {
         try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
             ZipParameters zipParameters = new ZipParameters();
             zipParameters.setCompressionLevel(CompressionLevel.HIGHER);
@@ -208,7 +218,7 @@ public class Files extends FilenameUtils {
             }
 
             if (!CollectionUtils.isEmpty(srcStreams)) {
-                for (IOStream<?, ?> srcStream : srcStreams) {
+                for (IOStream srcStream : srcStreams) {
                     zipParameters.setFileNameInZip(srcStream.getName());
                     zip.addStream(srcStream.getReader(), zipParameters);
                 }

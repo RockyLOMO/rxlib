@@ -8,6 +8,7 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.springframework.cglib.proxy.Enhancer;
 
+import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
@@ -18,6 +19,7 @@ import static org.rx.core.Extends.*;
 @Slf4j
 public class ObjectChangeTracker {
     @RequiredArgsConstructor
+    @Getter
     @ToString
     public static class ChangedValue {
         final Object oldValue;
@@ -211,7 +213,14 @@ public class ObjectChangeTracker {
         log.info("Tracker {} ->\n\t{}\n\t{}\n-> {}", target, oldMap, newMap, Sys.toJsonString(changedValues));
         sources.put(target, newMap);
 
-        bus.publish(new ObjectChangedEvent(target, changedValues), Extends.metadata(target.getClass()));
+        Serializable topic = null;
+        Metadata m = target.getClass().getAnnotation(Metadata.class);
+        if (m.topicClass() != Object.class) {
+            topic = m.topicClass();
+        } else if (!m.topic().isEmpty()) {
+            topic = m.topic();
+        }
+        bus.publish(new ObjectChangedEvent(target, changedValues), topic);
     }
 
     public <T> ObjectChangeTracker watch(T source) {

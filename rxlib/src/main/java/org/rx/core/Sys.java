@@ -498,6 +498,14 @@ public final class Sys extends SystemUtils {
     public static <T> T readJsonValue(@NonNull Map<String, ?> json, String path,
                                       BiFunc<Object, ?> childSelect,
                                       boolean throwOnEmptyChild) {
+        Object child = json.get(path);
+        if (child != null) {
+            if (childSelect != null) {
+                child = childSelect.apply(child);
+            }
+            return (T) child;
+        }
+
         String[] paths = Strings.split(path, ".");
         if (paths.length == 0) {
             return null;
@@ -506,7 +514,7 @@ public final class Sys extends SystemUtils {
         int last = paths.length - 1;
         Map<String, ?> tmp = json;
         for (int i = 0; i < last; i++) {
-            Object child = tmp.get(paths[i]);
+            child = tmp.get(paths[i]);
             if (childSelect != null) {
                 child = childSelect.apply(child);
             }
@@ -517,7 +525,11 @@ public final class Sys extends SystemUtils {
                 return null;
             }
         }
-        return (T) tmp.get(paths[last]);
+        child = tmp.get(paths[last]);
+        if (childSelect != null) {
+            child = childSelect.apply(child);
+        }
+        return (T) child;
     }
 
     //TypeReference

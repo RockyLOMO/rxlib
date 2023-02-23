@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
+import org.rx.core.Constants;
 import org.rx.util.Lazy;
 import org.rx.util.Snowflake;
 import org.rx.util.function.TripleFunc;
@@ -14,7 +15,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 
 @Slf4j
-public class FileStream extends IOStream<InputStream, OutputStream> implements Serializable {
+public class FileStream extends IOStream implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
 
     @RequiredArgsConstructor
@@ -37,6 +38,8 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     @Getter(AccessLevel.PROTECTED)
     private transient BufferedRandomAccessFile randomAccessFile;
     private transient final Lazy<CompositeLock> lock = new Lazy<>(() -> new CompositeLock(this, lockFlags));
+    private transient InputStream reader;
+    private transient OutputStream writer;
 
     public CompositeLock getLock() {
         return lock.getValue();
@@ -60,10 +63,10 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
             file = createTempFile();
         }
         try {
-            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, BufferedRandomAccessFile.BufSize.MEDIUM_DATA);
+            randomAccessFile = new BufferedRandomAccessFile(file, fileMode, Constants.MEDIUM_BUF);
         } catch (Exception e) {
             log.warn("readObject", e);
-            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, BufferedRandomAccessFile.BufSize.MEDIUM_DATA);
+            randomAccessFile = new BufferedRandomAccessFile(createTempFile(), fileMode, Constants.MEDIUM_BUF);
         }
         long pos = in.readLong();
         write(in);
@@ -85,48 +88,49 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     @Override
-    protected InputStream initReader() {
-        return new InputStream() {
-            @Override
-            public int available() {
-                return safeRemaining(FileStream.this.available());
-            }
+    public InputStream getReader() {
+        if (reader == null) {
+            reader = new InputStream() {
+                @Override
+                public int available() {
+                    return safeRemaining(FileStream.this.available());
+                }
 
-            @Override
-            public int read(byte[] b, int off, int len) throws IOException {
-                return randomAccessFile.read(b, off, len);
-            }
+                @Override
+                public int read(byte[] b, int off, int len) throws IOException {
+                    return randomAccessFile.read(b, off, len);
+                }
 
-            @Override
-            public int read() throws IOException {
-                return randomAccessFile.read();
-            }
-        };
+                @Override
+                public int read() throws IOException {
+                    return randomAccessFile.read();
+                }
+            };
+        }
+        return reader;
     }
 
     @Override
-    protected OutputStream initWriter() {
-        return new OutputStream() {
-            @Override
-            public void write(byte[] b, int off, int len) throws IOException {
-                randomAccessFile.write(b, off, len);
-            }
+    public OutputStream getWriter() {
+        if (writer == null) {
+            writer = new OutputStream() {
+                @Override
+                public void write(byte[] b, int off, int len) throws IOException {
+                    randomAccessFile.write(b, off, len);
+                }
 
-            @Override
-            public void write(int b) throws IOException {
-                randomAccessFile.write(b);
-            }
+                @Override
+                public void write(int b) throws IOException {
+                    randomAccessFile.write(b);
+                }
 
-            @Override
-            public void flush() {
-                FileStream.this.flush();
-            }
-        };
-    }
-
-    @Override
-    public boolean canSeek() {
-        return true;
+                @Override
+                public void flush() {
+                    FileStream.this.flush();
+                }
+            };
+        }
+        return writer;
     }
 
     @Override
@@ -166,16 +170,16 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
     }
 
     public FileStream(File file) {
-        this(file, FileMode.READ_WRITE, BufferedRandomAccessFile.BufSize.MEDIUM_DATA);
+        this(file, FileMode.READ_WRITE, Constants.MEDIUM_BUF);
     }
 
-    public FileStream(File file, FileMode mode, BufferedRandomAccessFile.BufSize size) {
-        this(file, mode, size, CompositeLock.Flags.READ_WRITE_LOCK.flags());
+    public FileStream(File file, FileMode mode, int bufSize) {
+        this(file, mode, bufSize, CompositeLock.Flags.READ_WRITE_LOCK.flags());
     }
 
     @SneakyThrows
-    public FileStream(@NonNull File file, FileMode mode, BufferedRandomAccessFile.BufSize size, @NonNull FlagsEnum<CompositeLock.Flags> lockFlags) {
-        this.randomAccessFile = new BufferedRandomAccessFile(file, this.fileMode = mode, size);
+    public FileStream(@NonNull File file, FileMode mode, int bufSize, @NonNull FlagsEnum<CompositeLock.Flags> lockFlags) {
+        this.randomAccessFile = new BufferedRandomAccessFile(file, this.fileMode = mode, bufSize);
         this.lockFlags = lockFlags;
     }
 
@@ -210,7 +214,7 @@ public class FileStream extends IOStream<InputStream, OutputStream> implements S
         ch.position(pos);
 
         int totalRead = 0;
-        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, BufferedRandomAccessFile.BufSize.MEDIUM_DATA.value));
+        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, Constants.MEDIUM_BUF));
         TripleFunc<ByteBuffer, Integer, ByteBuffer> resetFunc = (b, c) -> {
             b.clear();
             if (c < b.limit()) {

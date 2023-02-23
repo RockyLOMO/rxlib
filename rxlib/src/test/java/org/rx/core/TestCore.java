@@ -1,4 +1,4 @@
-package org.rx.test;
+package org.rx.core;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.TypeReference;
@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.ResponseBody;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
+import org.rx.AbstractTester;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Subscribe;
@@ -15,8 +16,6 @@ import org.rx.bean.*;
 import org.rx.net.Sockets;
 import org.rx.third.open.CrcModel;
 import org.rx.codec.RSAUtil;
-import org.rx.core.Arrays;
-import org.rx.core.*;
 import org.rx.core.cache.DiskCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.ExceptionLevel;
@@ -25,7 +24,6 @@ import org.rx.exception.TraceHandler;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
 import org.rx.io.MemoryStream;
-import org.rx.test.bean.*;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 import org.slf4j.MDC;
@@ -46,7 +44,7 @@ import static org.rx.core.Extends.*;
 import static org.rx.core.Sys.*;
 
 @Slf4j
-public class CoreTester extends AbstractTester {
+public class TestCore extends AbstractTester {
     //region thread pool
     @SneakyThrows
     @Test
@@ -554,7 +552,7 @@ public class CoreTester extends AbstractTester {
         assert eventBusTopicCounter.get() == 8;
         assert deadEventCounter.get() == 4;
 
-        bus.register(CoreTester.class);
+        bus.register(TestCore.class);
         bus.publish(1);
     }
 
@@ -572,7 +570,12 @@ public class CoreTester extends AbstractTester {
 
     @Subscribe
     static void onEvent(Integer obj) {
-        System.out.println(obj);
+        log.info("onEvent {}", obj);
+    }
+
+    @Subscribe(topicClass = TestCore.class)
+    static void onEventWithTopic(Integer obj) {
+        log.info("onEventWithTopic {}", obj);
     }
 
     @SneakyThrows

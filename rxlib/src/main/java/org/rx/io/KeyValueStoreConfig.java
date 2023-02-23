@@ -12,42 +12,31 @@ import org.rx.core.Constants;
 @Setter
 @ToString
 public class KeyValueStoreConfig {
-    public interface DirPaths {
-        String DEFAULT = "./data/def";
-        String SOCKS = "./data/socks";
-        String HOST = "./data/host";
-    }
-
-    public static KeyValueStoreConfig defaultConfig() {
-        return defaultConfig(DirPaths.DEFAULT);
-    }
-
-    public static KeyValueStoreConfig defaultConfig(String directoryPath) {
-        KeyValueStoreConfig conf = new KeyValueStoreConfig(directoryPath);
+    public static <TK, TV> KeyValueStoreConfig newConfig(Class<TK> keyType, Class<TV> valueType) {
+        KeyValueStoreConfig conf = new KeyValueStoreConfig(keyType, valueType);
         conf.setLogGrowSize(Constants.MB * 64);
-        conf.setIndexSlotSize(Constants.MB * 512);
-        conf.setIndexGrowSize(Constants.MB * 2);
+        conf.setIndexBufferSize(Constants.MB * 4);
         return conf;
     }
 
-    private final String filePath;
+    private final Class<?> keyType;
+    private final Class<?> valueType;
+    private String directoryPath = "./data/";
     /**
      * init big file for sequential write
      */
-    private long logGrowSize = Constants.MB * 512;
+    private long logGrowSize = Constants.MB * 1024;
     /**
      * The magnetic hard disk head needs to seek the next read position (taking about 5ms) for each thread.
      * Thus, reading with multiple threads effectively bounces the disk between seeks, slowing it down.
      * The only recommended way to read a file from a single disk is to read sequentially with one thread.
      */
     private int logReaderCount = 1;
+    private long flushDelayMillis = 1000;
     private int iteratorPrefetchCount = 2;
 
-    private int indexSlotSize = Constants.MB * 128; //128M
-    private int indexGrowSize = Constants.MB * 32; //32M
-
-    private long writeBehindDelayed = 1000;
-    private int writeBehindHighWaterMark = 8;
+    private int indexBufferSize = Constants.MB * 64;
+    private int indexReaderCount = 1;
 
     private int apiPort = -1;
     private String apiPassword;

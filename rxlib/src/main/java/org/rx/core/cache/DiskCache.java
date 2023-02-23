@@ -6,7 +6,6 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.rx.core.*;
 import org.rx.io.KeyValueStore;
-import org.rx.io.KeyValueStoreConfig;
 
 import java.io.Serializable;
 import java.util.*;
@@ -24,12 +23,12 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     final KeyValueStore<TK, DiskCacheItem<TV>> store;
 
     public DiskCache() {
-        this(1000, null);
+        this(1000);
     }
 
-    public DiskCache(int cacheSize, KeyValueStoreConfig config) {
+    public DiskCache(int cacheSize) {
         cache = new MemoryCache<>(b -> b.maximumSize(cacheSize).removalListener(this::onRemoval));
-        store = config == null ? KeyValueStore.getInstance() : new KeyValueStore<>(config);
+        store = (KeyValueStore) KeyValueStore.getInstance(Object.class, DiskCacheItem.class);
     }
 
     void onRemoval(@Nullable TK key, DiskCacheItem<TV> item, @NonNull RemovalCause removalCause) {

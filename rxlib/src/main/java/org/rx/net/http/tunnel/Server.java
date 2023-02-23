@@ -27,7 +27,7 @@
 //    class SocksContext {
 //        private final String appName;
 //        private final String inboundSocksId;
-//        private final LinkedBlockingQueue<IOStream<?, ?>> inboundQueue = new LinkedBlockingQueue<>();
+//        private final LinkedBlockingQueue<IOStream> inboundQueue = new LinkedBlockingQueue<>();
 //        private volatile boolean outboundReady;
 //        private volatile Channel outboundChannel;
 //        private final LinkedBlockingQueue<MultipartFile> outboundQueue = new LinkedBlockingQueue<>();
@@ -138,7 +138,7 @@
 //        SocksContext socksContext = getSocksContext(pack);
 //        socksContext.inboundQueue.drainTo(receivePack.getBinaries());
 //        if (receivePack.getBinaries().isEmpty()) {
-//            IOStream<?, ?> stream = quietly(() -> socksContext.inboundQueue.poll(timeWaitSeconds, TimeUnit.SECONDS));
+//            IOStream stream = quietly(() -> socksContext.inboundQueue.poll(timeWaitSeconds, TimeUnit.SECONDS));
 //            if (stream != null) {
 //                receivePack.getBinaries().add(stream);
 //                socksContext.inboundQueue.drainTo(receivePack.getBinaries());

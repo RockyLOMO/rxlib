@@ -29,7 +29,7 @@ public class Client {
             Tasks.schedulePeriod(this::backendPoll, 100);
         }
 
-        public void backendOffer(IOStream<?, ?> binary) {
+        public void backendOffer(IOStream binary) {
             outboundOfferClient.post(String.format("%s/apix/directOffer", serverUrl),
                     outboundForms, Collections.singletonMap("binary", binary)).toString();
         }

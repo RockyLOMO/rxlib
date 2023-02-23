@@ -9,10 +9,12 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 @RequiredArgsConstructor
-public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
+public class GZIPStream extends IOStream {
     private static final long serialVersionUID = 5949731591101041212L;
-    private final IOStream<?, ?> baseStream;
+    private final IOStream baseStream;
     private final boolean leaveOpen;
+    private transient GZIPInputStream reader;
+    private transient GZIPOutputStream writer;
 
     @Override
     public String getName() {
@@ -21,19 +23,20 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
 
     @SneakyThrows
     @Override
-    protected GZIPInputStream initReader() {
-        return new GZIPInputStream(baseStream.getReader(), Constants.HEAP_BUF_SIZE);
+    public GZIPInputStream getReader() {
+        if (reader == null) {
+            reader = new GZIPInputStream(baseStream.getReader(), Constants.HEAP_BUF_SIZE);
+        }
+        return reader;
     }
 
     @SneakyThrows
     @Override
-    protected GZIPOutputStream initWriter() {
-        return new GZIPOutputStream(baseStream.getWriter(), Constants.HEAP_BUF_SIZE);
-    }
-
-    @Override
-    public boolean canSeek() {
-        return baseStream.canSeek();
+    public GZIPOutputStream getWriter() {
+        if (writer == null) {
+            writer = new GZIPOutputStream(baseStream.getWriter(), Constants.HEAP_BUF_SIZE);
+        }
+        return writer;
     }
 
     @Override
@@ -56,13 +59,19 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
         return baseStream.getLength();
     }
 
-    public GZIPStream(IOStream<?, ?> stream) {
+    public GZIPStream(IOStream stream) {
         this(stream, false);
     }
 
+    @SneakyThrows
     @Override
     protected void freeObjects() {
-        finish();
+        if (reader != null) {
+            reader.close();
+        }
+        if (writer != null) {
+            writer.close();
+        }
         if (!leaveOpen) {
             baseStream.close();
         }
@@ -70,7 +79,9 @@ public class GZIPStream extends IOStream<GZIPInputStream, GZIPOutputStream> {
 
     @SneakyThrows
     public void finish() {
-        getWriter().finish();
+        if (writer != null) {
+            writer.finish();
+        }
     }
 
     @Override

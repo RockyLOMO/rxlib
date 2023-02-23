@@ -1,4 +1,4 @@
-package org.rx.test;
+package org.rx.util;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
@@ -7,27 +7,26 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
+import org.rx.AbstractTester;
 import org.rx.annotation.Mapping;
+import org.rx.annotation.Metadata;
 import org.rx.annotation.Subscribe;
-import org.rx.bean.DateTime;
-import org.rx.bean.FlagsEnum;
-import org.rx.bean.ULID;
-import org.rx.bean.WeakIdentityMap;
+import org.rx.bean.*;
 import org.rx.core.*;
-import org.rx.test.bean.GirlBean;
-import org.rx.test.bean.PersonBean;
-import org.rx.test.bean.PersonGender;
+import org.rx.bean.GirlBean;
+import org.rx.bean.PersonBean;
+import org.rx.bean.PersonGender;
 import org.rx.util.*;
 import org.rx.third.guava.CaseFormat;
 
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.Arrays;
 
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
-public class UtilTester extends AbstractTester {
+public class TestUtil extends AbstractTester {
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
         PersonMapper INSTANCE = BeanMapper.DEFAULT.define(PersonMapper.class);
@@ -156,58 +155,67 @@ public class UtilTester extends AbstractTester {
 
     @Test
     public void objectChangeTracker() {
-        Sys.mxInfo();
+        ObjectChangeTracker tracker = ObjectChangeTracker.DEFAULT;
         Map<String, Object> valueMap1, valueMap2;
         Map<String, ObjectChangeTracker.ChangedValue> changedMap;
 
-//        List<PersonBean> arr1 = Collections.singletonList(PersonBean.YouFan);
-//        List<PersonBean> arr2 = Arrays.asList(PersonBean.YouFan, PersonBean.LeZhi);
-//        Map<String, PersonBean> map1 = Collections.singletonMap("one", PersonBean.LeZhi);
-//        Map<String, PersonBean> map2 = new HashMap<>();
-//        map2.put("one", PersonBean.LeZhi);
-//        map2.put("two", PersonBean.YouFan);
-//
-//        valueMap1 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.YouFan, arr1, map1), false);
-//        System.out.println(valueMap1);
-//        System.out.println(toJsonString(valueMap1));
-//
-//        valueMap2 = ObjectChangeTracker.getValueMap(BiTuple.of(PersonBean.LeZhi, arr2, map2), false);
-//        System.out.println(toJsonString(valueMap2));
-//
-//        valueMap1 = ObjectChangeTracker.getValueMap(PersonBean.YouFan, false);
-//        valueMap2 = ObjectChangeTracker.getValueMap(PersonBean.LeZhi, false);
-//        changedMap = ObjectChangeTracker.getChangedMap(valueMap1, valueMap2);
-//        log.info("changedMap\n{}", toJsonString(changedMap));
+        List<PersonBean> arr1 = Collections.singletonList(PersonBean.YouFan);
+        List<PersonBean> arr2 = Arrays.asList(PersonBean.YouFan, PersonBean.LeZhi);
+        Map<String, PersonBean> map1 = Collections.singletonMap("one", PersonBean.LeZhi);
+        Map<String, PersonBean> map2 = new HashMap<>();
+        map2.put("one", PersonBean.LeZhi);
+        map2.put("two", PersonBean.YouFan);
 
-        GirlBean girl = GirlBean.YouFan;
-
-        valueMap1 = ObjectChangeTracker.getSnapshotMap(girl, false);
-        girl.setIndex(1);
-        girl.setObj(1);
-        girl.setFlags(new int[]{0, 1});
-        girl.setSister(new GirlBean());
-        valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
+        valueMap1 = ObjectChangeTracker.getSnapshotMap(BiTuple.of(PersonBean.YouFan, arr1, map1), false);
+        System.out.println(valueMap1);
+        System.out.println(toJsonString(valueMap1));
+        valueMap2 = ObjectChangeTracker.getSnapshotMap(BiTuple.of(PersonBean.LeZhi, arr2, map2), false);
+        System.out.println(toJsonString(valueMap2));
         changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
-        log.info("changedMap\n{}", toJson(changedMap));
+        log.info("changedMap\n{}", toJsonString(changedMap));
 
-        valueMap1 = valueMap2;
-        girl.setIndex(64);
-        girl.setObj("a");
-        girl.setFlags(new int[]{0, 2, 3});
-        girl.getSister().setAge(5);
-        valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
-        changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
-        log.info("changedMap\n{}", toJson(changedMap));
+//        GirlBean girl = GirlBean.YouFan;
+//
+//        valueMap1 = ObjectChangeTracker.getSnapshotMap(girl, false);
+//        girl.setIndex(1);
+//        girl.setObj(1);
+//        girl.setFlags(new int[]{0, 1});
+//        girl.setSister(new GirlBean());
+//        valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
+//        changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
+//        log.info("changedMap\n{}", toJson(changedMap));
+//
+//        valueMap1 = valueMap2;
+//        girl.setIndex(64);
+//        girl.setObj("a");
+//        girl.setFlags(new int[]{0, 2, 3});
+//        girl.getSister().setAge(5);
+//        valueMap2 = ObjectChangeTracker.getSnapshotMap(girl, false);
+//        changedMap = ObjectChangeTracker.compareSnapshotMap(valueMap1, valueMap2);
+//        log.info("changedMap\n{}", toJson(changedMap));
+//
+//        ObjectChangeTracker tracker = new ObjectChangeTracker(2000);
+////        tracker.watch(RxConfig.INSTANCE,true);
+//        tracker.watch(girl).register(this);
+//        Tasks.setTimeout(() -> {
+//            girl.setIndex(128);
+//            girl.setObj(new ArrayList<>());
+//            girl.setFlags(new int[]{0});
+//            girl.getSister().setAge(3);
+//        }, 5000);
 
-        ObjectChangeTracker tracker = new ObjectChangeTracker(2000);
-//        tracker.watch(RxConfig.INSTANCE,true);
-        tracker.watch(girl).register(this);
+        TopicBean b1 = new TopicBean();
+        b1.setName("张三");
+        b1.setGender(1);
+        b1.setAge(10);
+        b1.tb = new TopicBean();
+        tracker.register(this).watch(b1);
         Tasks.setTimeout(() -> {
-            girl.setIndex(128);
-            girl.setObj(new ArrayList<>());
-            girl.setFlags(new int[]{0});
-            girl.getSister().setAge(3);
-        }, 5000);
+            b1.setName("李四");
+//            b1.tb = new TopicBean();
+            b1.tb.setName("老王");
+//            log.info("", b1);
+        }, 1000);
         _wait();
     }
 
@@ -215,11 +223,28 @@ public class UtilTester extends AbstractTester {
         return JSON.toJSONString(source, JSONWriter.Feature.WriteNulls);
     }
 
+    @Metadata(topicClass = TopicBean.class)
+    @Data
+    public static class TopicBean {
+        String name;
+        int gender;
+        int age;
+
+        TopicBean tb;
+    }
+
     @Subscribe
     void onChange(ObjectChangedEvent e) {
         log.info("change {} ->\n{}", e.getSource(), toJson(e.getChangedMap()));
 //        sleep(10000);
 //        _notify();
+    }
+
+    @Subscribe(topicClass = TopicBean.class)
+    void onChangeWithTopic(ObjectChangedEvent e) {
+        log.info("changeWithTopic {} ->\n{}", e.getSource(), toJson(e.getChangedMap()));
+        String newName = e.readValue("tb.name");
+        System.out.println(newName);
     }
 
     @Test

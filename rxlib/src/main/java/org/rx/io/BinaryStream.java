@@ -8,11 +8,13 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 
 @RequiredArgsConstructor
-public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
+public class BinaryStream extends IOStream {
     private static final long serialVersionUID = 7204373912624988890L;
     @Getter
-    private final IOStream<?, ?> baseStream;
+    private final IOStream baseStream;
     private final boolean leaveOpen;
+    private transient DataInputStream reader;
+    private transient DataOutputStream writer;
     private transient BufferedReader reader2;
 
     @Override
@@ -21,18 +23,19 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     @Override
-    protected DataInputStream initReader() {
-        return new DataInputStream(baseStream.getReader());
+    public DataInputStream getReader() {
+        if (reader == null) {
+            reader = new DataInputStream(baseStream.getReader());
+        }
+        return reader;
     }
 
     @Override
-    protected DataOutputStream initWriter() {
-        return new DataOutputStream(baseStream.getWriter());
-    }
-
-    @Override
-    public boolean canSeek() {
-        return baseStream.canSeek();
+    public DataOutputStream getWriter() {
+        if (writer == null) {
+            writer = new DataOutputStream(baseStream.getWriter());
+        }
+        return writer;
     }
 
     @Override
@@ -55,7 +58,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
         return baseStream.getLength();
     }
 
-    public BinaryStream(IOStream<?, ?> stream) {
+    public BinaryStream(IOStream stream) {
         this(stream, false);
     }
 
@@ -181,7 +184,7 @@ public class BinaryStream extends IOStream<DataInputStream, DataOutputStream> {
     }
 
     public <T extends Serializable> void writeObject(T value) {
-        try (IOStream<?, ?> stream = Serializer.DEFAULT.serialize(value)) {
+        try (IOStream stream = Serializer.DEFAULT.serialize(value)) {
             writeLong(stream.getLength());
             write(stream);
         }

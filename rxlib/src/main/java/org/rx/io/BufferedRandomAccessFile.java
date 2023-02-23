@@ -1,8 +1,5 @@
 package org.rx.io;
 
-import lombok.RequiredArgsConstructor;
-import org.rx.core.Constants;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -20,16 +17,6 @@ import java.io.RandomAccessFile;
  * superclass.
  */
 public class BufferedRandomAccessFile extends RandomAccessFile {
-    @RequiredArgsConstructor
-    public enum BufSize {
-        NON_BUF(0),
-        SMALL_DATA(1024),
-        MEDIUM_DATA(Constants.SIZE_4K),
-        LARGE_DATA(1 << 16);// 64K buffer
-
-        final int value;
-    }
-
     private final String path_;
     /*
      * This implementation is based on the buffer implementation in Modula-3's
@@ -98,8 +85,8 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
      * operation.
      */
 
-    public BufferedRandomAccessFile(String name, FileMode mode, BufSize size) throws IOException {
-        this(new File(name), mode, size);
+    public BufferedRandomAccessFile(String name, FileMode mode, int bufSize) throws IOException {
+        this(new File(name), mode, bufSize);
     }
 
     /**
@@ -107,10 +94,10 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
      * in mode <code>mode</code>, which should be "r" for reading only, or
      * "rw" for reading and writing.
      */
-    public BufferedRandomAccessFile(File file, FileMode mode, BufSize size) throws IOException {
+    public BufferedRandomAccessFile(File file, FileMode mode, int bufSize) throws IOException {
         super(file, mode.value);
         path_ = file.getAbsolutePath();
-        this.init(size.value, mode.value);
+        this.init(bufSize, mode.value);
     }
 
     private void init(int size, String mode) throws IOException {

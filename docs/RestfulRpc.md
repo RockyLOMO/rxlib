@@ -97,7 +97,7 @@ public void httpServer() {
     f.put("a", "1");
     f.put("b", "乐之");
 
-    Map<String, IOStream<?, ?>> fi = new HashMap<>();
+    Map<String, IOStream> fi = new HashMap<>();
     fi.put("a", IOStream.wrap("1.dat", new byte[]{1, 2, 3, 4, 5, 6, 7, 8}));
 
     String j = "{\"a\":1,\"b\":\"乐之\"}";
@@ -118,7 +118,7 @@ public void httpServer() {
         }
 
         MultiValueMap<String, FileUpload> files = request.getFiles();
-        for (Map.Entry<String, IOStream<?, ?>> entry : fi.entrySet()) {
+        for (Map.Entry<String, IOStream> entry : fi.entrySet()) {
             FileUpload fileUpload = files.getFirst(entry.getKey());
             try {
                 Arrays.equals(fileUpload.get(), entry.getValue().toArray());

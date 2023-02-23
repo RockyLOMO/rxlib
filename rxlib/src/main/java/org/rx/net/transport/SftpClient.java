@@ -135,7 +135,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
 
     @Override
     public void saveFile(String remotePath, InputStream in) {
-        try (IOStream<?, ?> stream = IOStream.wrap(FilenameUtils.getName(remotePath), in)) {
+        try (IOStream stream = IOStream.wrap(FilenameUtils.getName(remotePath), in)) {
             uploadFile(stream, remotePath);
         }
     }
@@ -190,7 +190,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     }
 
     @SneakyThrows
-    public void uploadFile(@NonNull IOStream<?, ?> stream, @NonNull String remotePath) {
+    public void uploadFile(@NonNull IOStream stream, @NonNull String remotePath) {
         if (Files.isDirectory(remotePath)) {
             if (Strings.isEmpty(stream.getName())) {
                 throw new InvalidException("Empty stream name");
@@ -209,7 +209,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     }
 
     @SneakyThrows
-    public void downloadFile(@NonNull String remotePath, @NonNull IOStream<?, ?> stream) {
+    public void downloadFile(@NonNull String remotePath, @NonNull IOStream stream) {
         channel.get(remotePath, stream.getWriter());
     }
 }
