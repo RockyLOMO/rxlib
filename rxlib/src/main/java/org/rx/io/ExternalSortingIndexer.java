@@ -243,17 +243,18 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     }
 
     Iterable<Partition> route(HashKey<TK> fk) {
-        return Linq.from(partitions).orderBy(p -> {
-            HashKey<TK> min = p.min;
-            HashKey<TK> max = p.max;
-            if (min == null || max == null) {
-                return 2;
-            }
-            if (min.hashId <= fk.hashId && fk.hashId <= max.hashId) {
-                return 0;
-            }
-            return 1;
-        });
+        return partitions;
+//        return Linq.from(partitions).orderBy(p -> {
+//            HashKey<TK> min = p.min;
+//            HashKey<TK> max = p.max;
+//            if (min == null || max == null) {
+//                return 2;
+//            }
+//            if (min.hashId <= fk.hashId && fk.hashId <= max.hashId) {
+//                return 0;
+//            }
+//            return 1;
+//        });
     }
 
     @Override
