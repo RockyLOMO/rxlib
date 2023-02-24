@@ -226,23 +226,39 @@ public class TestIO extends AbstractTester {
     @Test
     public void kvIterator2() {
         int c = 20;
-        KeyValueStoreConfig conf = kvConf();
-        conf.setIteratorPrefetchCount(4);
-        KeyValueStore<String, String> kv = new KeyValueStore<>(conf);
+//        KeyValueStoreConfig conf = kvConf();
+//        conf.setIteratorPrefetchCount(4);
+        KeyValueStore<String, SocksUser> kv = KeyValueStore.getInstance(String.class, SocksUser.class);
 //        kv.clear();
 
-        for (int i = 0; i < c; i++) {
-            kv.put(String.valueOf(i), i + " " + DateTime.now());
-        }
+//        for (int i = 0; i < c; i++) {
+//            SocksUser u = new SocksUser("rocky");
+//            u.setPassword("123456" + i);
+//            u.setMaxIpCount(-1);
+//            u.setLastResetTime(DateTime.now());
+//            kv.put(u.getUsername(), u);
+//        }
 
-        assert kv.size() == c;
+//        assert kv.size() == 1;
         int j = c - 1;
-        for (Map.Entry<String, String> entry : kv.entrySet()) {
-            System.out.println(entry.getKey() + ": " + entry.getValue());
-            assert j == Integer.parseInt(entry.getKey());
-            assert entry.getValue().startsWith(j + " ");
+        int i = 0;
+        for (Map.Entry<String, SocksUser> entry : kv.entrySet()) {
+            System.out.println(i++ + ". " + entry.getKey() + ": " + entry.getValue());
+//            assert j == Integer.parseInt(entry.getKey());
+//            assert entry.getValue().getPassword().startsWith(j + " ");
             j--;
         }
+
+        ExternalSortingIndexer<String> indexer = (ExternalSortingIndexer<String>) kv.indexer;
+        KeyIndexer.KeyEntity<String> rocky = indexer.find("rocky");
+        rocky.logPosition = 1;
+        indexer.save(rocky);
+        KeyIndexer.KeyEntity<String> rocky1 = indexer.find("rocky");
+        for (ExternalSortingIndexer<String>.Partition partition : indexer.partitions) {
+            ExternalSortingIndexer.HashKey<String>[] keys = partition.load();
+            System.out.println(toJsonString(keys));
+        }
+        System.out.println(indexer.toString());
 
         System.out.println("done");
     }

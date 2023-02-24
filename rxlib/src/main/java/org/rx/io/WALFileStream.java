@@ -112,7 +112,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     final CompositeLock lock;
     final long growSize;
     final int readerCount;
-    private IOStream writer;
+    private CompositeMmap writer;
     private final LinkedTransferQueue<IOStream> readers = new LinkedTransferQueue<>();
     private final Serializer serializer;
     final MetaHeader meta;

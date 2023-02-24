@@ -72,9 +72,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
         @Override
         public boolean enableCompress() {
-            Compressible k = as(key, Compressible.class);
             Compressible v = as(value, Compressible.class);
-            return (k != null && k.enableCompress()) || (v != null && v.enableCompress());
+            return v != null && v.enableCompress();
         }
     }
 
