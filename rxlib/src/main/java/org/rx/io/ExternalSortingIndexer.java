@@ -81,11 +81,11 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
 
         HashKey<TK>[] load() {
+            return fs.lock.readInvoke(() -> {
 //            WeakReference<HashKey<TK>[]> r = ref;
 //            HashKey<TK>[] ks = r != null ? r.get() : null;
-            HashKey<TK>[] ks = cache.get(this);
-            if (ks == null) {
-                ks = fs.lock.readInvoke(() -> {
+                HashKey<TK>[] ks = cache.get(this);
+                if (ks == null) {
                     int keySize = this.keySize;
                     boolean setSize = keySize == Constants.IO_EOF;
                     List<HashKey<TK>> keys = new ArrayList<>(setSize ? 10 : keySize);
@@ -111,12 +111,12 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     if (setSize) {
                         this.keySize = keys.size();
                     }
-                    return keys;
-                }, position, size).toArray(ARR_TYPE);
+                    ks = keys.toArray(ARR_TYPE);
 //                ref = new WeakReference<>(ks);
-                cache.put(this, ks);
-            }
-            return ks;
+                    cache.put(this, ks);
+                }
+                return ks;
+            }, position, size);
         }
 
         boolean find(HashKey<TK> ktf) {
