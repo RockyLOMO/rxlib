@@ -249,7 +249,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             }
 
             return unsafeRead(key.logPosition, key.key, null);
-        }, WALFileStream.HEADER_SIZE); //todo read lock size
+        }, WALFileStream.HEADER_SIZE, wal.meta.getLogPosition()); //todo read lock size
         return val != null ? val.value : null;
     }
 
@@ -290,7 +290,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
     private boolean readBackwards(IteratorContext ctx, int prefetchCount) {
         wal.setReaderPosition(ctx.logPos); //4 lock
-        return wal.backwardReadObject(reader -> {
+        return wal.readObjectBackwards(reader -> {
             ctx.writePos = ctx.readPos = 0;
             for (int i = 0; i < prefetchCount; ) {
                 long logPos = ctx.logPos - 4;
