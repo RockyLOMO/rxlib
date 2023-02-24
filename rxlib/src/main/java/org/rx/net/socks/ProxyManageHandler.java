@@ -44,7 +44,10 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             return;
         }
         info.refCnt++;
-        info.latestTime = DateTime.now();
+        DateTime now = DateTime.now();
+        if (info.latestTime == null || info.latestTime.before(now)) {
+            info.latestTime = now;
+        }
     }
 
     @Override
