@@ -1,6 +1,7 @@
 package org.rx.net.rpc;
 
 import lombok.RequiredArgsConstructor;
+import org.rx.core.Sys;
 import org.rx.exception.InvalidException;
 import org.rx.net.transport.StatefulTcpClient;
 import org.rx.net.transport.TcpClientConfig;
@@ -13,7 +14,7 @@ class NonClientPool implements TcpClientPool {
 
     @Override
     public StatefulTcpClient borrowClient() {
-        TcpClientConfig config = template.deepClone();
+        TcpClientConfig config = Sys.deepClone(template);
         StatefulTcpClient client = new StatefulTcpClient(config);
         try {
             client.connect(config.getServerEndpoint());

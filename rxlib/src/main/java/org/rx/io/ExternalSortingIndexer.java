@@ -3,10 +3,8 @@ package org.rx.io;
 import lombok.NonNull;
 import lombok.ToString;
 import org.rx.codec.CodecUtil;
-import org.rx.core.Cache;
-import org.rx.core.Constants;
-import org.rx.core.Disposable;
-import org.rx.core.Linq;
+import org.rx.core.*;
+import org.rx.exception.InvalidException;
 
 import java.io.EOFException;
 import java.io.File;
@@ -75,9 +73,16 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
 
         void clear() {
-            keySize = 0;
-            min = max = null;
-            cache.remove(this);
+            fs.lock.writeInvoke(() -> {
+                fs.setWriterPosition(position);
+                for (int i = 0; i < size; i++) {
+                    fs.write(0);
+                }
+
+                keySize = 0;
+                min = max = null;
+                cache.remove(this);
+            }, position, size);
         }
 
         HashKey<TK>[] load() {
@@ -106,11 +111,15 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         keys.add(k);
                     }
 
-                    if (setSize) {
-                        this.keySize = keys.size();
-                    }
                     ks = keys.toArray(ARR_TYPE);
-//                    cache.put(this, ks);
+                    if (setSize) {
+                        this.keySize = ks.length;
+                        min = ks[0];
+                        max = ks[ks.length - 1];
+                    }
+                    if (enableCache) {
+                        cache.put(this, ks);
+                    }
                 }
                 return ks;
             }, position, size);
@@ -128,39 +137,40 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
             return true;
         }
 
-        boolean save(HashKey<TK> t) {
-            HashKey<TK> ktf = new HashKey<>(t.key);
+        boolean save(HashKey<TK> ktf) {
+            long newLogPos = ktf.logPosition;
             return fs.lock.writeInvoke(() -> {
                 if (find(ktf)) {
 //                    if (ktf.logPosition > t.logPosition) {
 //                        return true;
 //                    }
-                    ktf.logPosition = t.logPosition;
-
-                    long wPos = fs.getWriterPosition();
+                    ktf.logPosition = newLogPos;
                     fs.setWriterPosition(ktf.keyPos + 8);
                     fs.write(Bytes.getBytes(ktf.logPosition));
-                    fs.setWriterPosition(wPos);
 
-//                    HashKey<TK>[] ks;
-//                    if ((ks = cache.get(this)) != null) {
-//                        int i = (int) (ktf.keyPos - position) / HashKey.BYTES;
-//                        ks[i] = ktf;
-//                    }
-//                    cache.remove(this);
+                    HashKey<TK>[] ks;
+                    if ((ks = cache.get(this)) != null) {
+                        int i = (int) (ktf.keyPos - position) / HashKey.BYTES;
+                        HashKey<TK> k = ks[i];
+                        if (k.hashId != ktf.hashId) {
+                            throw new InvalidException("compute index error");
+                        }
+//                            System.out.println(k + ":" + ktf);
+                        ks[i].logPosition = ktf.logPosition;
+                    }
                     return true;
                 }
 
                 long wPos = fs.getWriterPosition();
                 if (wPos < endPos) {
-                    HashKey<TK>[] ks = load();
-                    HashKey<TK>[] nks = new HashKey[ks.length + 1];
-                    System.arraycopy(ks, 0, nks, 0, ks.length);
-                    nks[nks.length - 1] = t;
-                    Arrays.parallelSort(nks);
+                    HashKey<TK>[] oks = load();
+                    HashKey<TK>[] ks = new HashKey[oks.length + 1];
+                    System.arraycopy(oks, 0, ks, 0, oks.length);
+                    ks[ks.length - 1] = Sys.deepClone(ktf);
+                    Arrays.parallelSort(ks);
                     fs.setWriterPosition(position);
                     byte[] buf = new byte[HashKey.BYTES];
-                    for (HashKey<TK> fk : nks) {
+                    for (HashKey<TK> fk : ks) {
                         fk.keyPos = fs.getWriterPosition();
                         Bytes.getBytes(fk.hashId, buf, 0);
                         Bytes.getBytes(fk.logPosition, buf, 8);
@@ -168,10 +178,12 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         fs.write(buf);
                     }
 
-                    keySize = nks.length;
-                    min = nks[0];
-                    max = nks[keySize - 1];
-//                    cache.put(this, nks);
+                    keySize = ks.length;
+                    min = ks[0];
+                    max = ks[keySize - 1];
+                    if (enableCache) {
+                        cache.put(this, ks);
+                    }
                     return true;
                 }
                 return false;
@@ -179,6 +191,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
     }
 
+    static final boolean enableCache = true;
     static final HashKey[] ARR_TYPE = new HashKey[0];
     final WALFileStream fs;
     final long bufSize;

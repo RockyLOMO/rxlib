@@ -5,6 +5,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.ObjectPool;
+import org.rx.core.Sys;
 import org.rx.net.transport.StatefulTcpClient;
 import org.rx.net.transport.TcpClientConfig;
 
@@ -19,7 +20,7 @@ class RpcClientPool extends Disposable implements TcpClientPool {
         int minSize = Math.max(2, template.getMinPoolSize());
         int maxSize = Math.max(minSize, template.getMaxPoolSize());
         pool = new ObjectPool<>(minSize, maxSize, () -> {
-            TcpClientConfig config = template.getTcpConfig().deepClone();
+            TcpClientConfig config = Sys.deepClone(template.getTcpConfig());
             StatefulTcpClient c = new StatefulTcpClient(config);
 //            try {
             c.connect(config.getServerEndpoint());
