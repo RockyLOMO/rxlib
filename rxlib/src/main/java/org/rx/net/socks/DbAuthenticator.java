@@ -2,6 +2,8 @@ package org.rx.net.socks;
 
 import lombok.NonNull;
 import org.apache.commons.collections4.CollectionUtils;
+import org.rx.core.Tasks;
+import org.rx.core.TimeoutFlag;
 import org.rx.io.KeyValueStore;
 import org.rx.io.KeyValueStoreConfig;
 
@@ -54,11 +56,11 @@ final class DbAuthenticator implements Authenticator {
     }
 
     public void save(@NonNull SocksUser user) {
-        store.fastPut(user.getUsername(), user);
+        Tasks.setTimeout(() -> store.fastPut(user.getUsername(), user), 1000, user, TimeoutFlag.REPLACE.flags());
     }
 
     public void delete(@NonNull SocksUser user) {
-        store.remove(user.getUsername());
+        store.fastRemove(user.getUsername());
     }
 
     public void resetIp() {
