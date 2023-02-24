@@ -110,7 +110,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         this.keySize = keys.size();
                     }
                     ks = keys.toArray(ARR_TYPE);
-//                    cache.put(this, ks);
+                    cache.put(this, ks);
                 }
                 return ks;
             }, position, size);
@@ -142,11 +142,12 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     fs.write(Bytes.getBytes(ktf.logPosition));
                     fs.setWriterPosition(wPos);
 
-                    HashKey<TK>[] ks;
-                    if ((ks = cache.get(this)) != null) {
-                        int i = (int) (ktf.keyPos - position) / HashKey.BYTES;
-                        ks[i] = ktf;
-                    }
+//                    HashKey<TK>[] ks;
+//                    if ((ks = cache.get(this)) != null) {
+//                        int i = (int) (ktf.keyPos - position) / HashKey.BYTES;
+//                        ks[i] = ktf;
+//                    }
+                    cache.remove(this);
                     return true;
                 }
 
@@ -157,12 +158,6 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     System.arraycopy(ks, 0, nks, 0, ks.length);
                     nks[nks.length - 1] = t;
                     Arrays.parallelSort(nks);
-
-                    keySize = nks.length;
-                    min = nks[0];
-                    max = nks[keySize - 1];
-//                    cache.put(this, nks);
-
                     fs.setWriterPosition(position);
                     byte[] buf = new byte[HashKey.BYTES];
                     for (HashKey<TK> fk : nks) {
@@ -172,6 +167,11 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         Bytes.getBytes(fk.keyPos, buf, 16);
                         fs.write(buf);
                     }
+
+                    keySize = nks.length;
+                    min = nks[0];
+                    max = nks[keySize - 1];
+                    cache.put(this, nks);
                     return true;
                 }
                 return false;
