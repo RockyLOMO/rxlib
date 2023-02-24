@@ -44,10 +44,6 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             return;
         }
         info.refCnt++;
-        DateTime now = DateTime.now();
-        if (info.latestTime == null || info.latestTime.before(now)) {
-            info.latestTime = now;
-        }
     }
 
     @Override
@@ -64,6 +60,10 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         long writeBytes = trafficCounter.cumulativeWrittenBytes();
 
         if (info != null) {
+            DateTime now = DateTime.now();
+            if (info.latestTime == null || info.latestTime.before(now)) {
+                info.latestTime = now;
+            }
             info.refCnt--;
             info.totalActiveSeconds.addAndGet(elapsed / Constants.NANO_TO_MILLIS / 1000);
             info.totalReadBytes.addAndGet(readBytes);
