@@ -314,7 +314,7 @@ public class TestIO extends AbstractTester {
 //            String rk = String.valueOf(i + 1);
             String rk = "rocky";
 
-            String val = kv.get(rk);
+            String val;// = kv.get(rk);
 //            if (val == null) {
                 val = String.valueOf(pos);
                 String finalVal = val;

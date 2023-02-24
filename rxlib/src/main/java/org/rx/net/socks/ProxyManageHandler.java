@@ -6,6 +6,7 @@ import io.netty.handler.traffic.TrafficCounter;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.DateTime;
 import org.rx.core.Constants;
 import org.rx.core.Sys;
 import org.rx.io.Bytes;
@@ -13,6 +14,8 @@ import org.rx.net.Sockets;
 import org.rx.net.support.SocksSupport;
 
 import java.net.InetSocketAddress;
+
+import static org.rx.core.Extends.tryAs;
 
 @Slf4j
 public class ProxyManageHandler extends ChannelTrafficShapingHandler {
@@ -41,12 +44,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             return;
         }
         info.refCnt++;
-    }
-
-    void save() {
-        if (authenticator instanceof DbAuthenticator) {
-            ((DbAuthenticator) authenticator).save(user);
-        }
+        info.latestTime = DateTime.now();
     }
 
     @Override
@@ -68,7 +66,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             info.totalReadBytes.addAndGet(readBytes);
             info.totalWriteBytes.addAndGet(writeBytes);
         }
-        save();
+        tryAs(authenticator, DbAuthenticator.class, p -> p.save(user));
 
         InetSocketAddress remoteAddress = (InetSocketAddress) ctx.channel().remoteAddress();
         log.info("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",
