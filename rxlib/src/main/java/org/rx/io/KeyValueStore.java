@@ -198,12 +198,12 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             long pos = wal.meta.getLogPosition();
             if (key.logPosition >= WALFileStream.HEADER_SIZE) {
                 KeyIndexer.KeyEntity<TK> finalKey = key;
-                wal.lock.writeInvoke(() -> {
-                    wal.meta.setLogPosition(finalKey.logPosition);
-                    wal.write(TOMB_MARK);
-                    wal.meta.setLogPosition(pos);
-                    log.debug("fastPut mark TOMB {} <- {}", finalKey.logPosition, pos);
-                }, key.logPosition, 1);
+//                wal.lock.writeInvoke(() -> {
+                wal.meta.setLogPosition(finalKey.logPosition);
+                wal.write(TOMB_MARK);
+                wal.meta.setLogPosition(pos);
+                log.debug("fastPut mark TOMB {} <- {}", finalKey.logPosition, pos);
+//                }, key.logPosition, 1);
             }
 
             key.logPosition = pos;
@@ -217,7 +217,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             if (incr) {
                 wal.meta.incrementSize();
             }
-        }, wal.meta.getLogPosition());
+//        }, wal.meta.getLogPosition());
+        });
     }
 
     public void fastRemove(@NonNull TK k) {
