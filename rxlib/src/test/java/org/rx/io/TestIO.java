@@ -225,42 +225,32 @@ public class TestIO extends AbstractTester {
     @SneakyThrows
     @Test
     public void kvIterator2() {
-        int c = 20;
-//        KeyValueStoreConfig conf = kvConf();
-//        conf.setIteratorPrefetchCount(4);
         KeyValueStore<String, SocksUser> kv = KeyValueStore.getInstance(String.class, SocksUser.class);
-//        kv.clear();
 
-//        for (int i = 0; i < c; i++) {
-//            SocksUser u = new SocksUser("rocky");
-//            u.setPassword("123456" + i);
-//            u.setMaxIpCount(-1);
-//            u.setLastResetTime(DateTime.now());
-//            kv.put(u.getUsername(), u);
-//        }
-
-//        assert kv.size() == 1;
-        int j = c - 1;
         int i = 0;
         for (Map.Entry<String, SocksUser> entry : kv.entrySet()) {
             System.out.println(i++ + ". " + entry.getKey() + ": " + entry.getValue());
-//            assert j == Integer.parseInt(entry.getKey());
-//            assert entry.getValue().getPassword().startsWith(j + " ");
-            j--;
         }
+        System.out.println("----");
 
         ExternalSortingIndexer<String> indexer = (ExternalSortingIndexer<String>) kv.indexer;
-        KeyIndexer.KeyEntity<String> rocky = indexer.find("rocky");
-        rocky.logPosition = 1;
-        indexer.save(rocky);
-        KeyIndexer.KeyEntity<String> rocky1 = indexer.find("rocky");
+        i = 0;
         for (ExternalSortingIndexer<String>.Partition partition : indexer.partitions) {
+            System.out.println("idx" + i + ":");
             ExternalSortingIndexer.HashKey<String>[] keys = partition.load();
-            System.out.println(toJsonString(keys));
+            for (int i1 = 0; i1 < keys.length; i1++) {
+                System.out.println("\t" + i1 + ". " + keys[i1]);
+            }
+            System.out.println();
         }
-        System.out.println(indexer.toString());
+        System.out.println(indexer);
+        System.out.println("----");
 
-        System.out.println("done");
+        KeyIndexer.KeyEntity<String> rocky = indexer.find("rocky");
+        System.out.println("rkey:" + rocky);
+//        rocky.logPosition = 1;
+//        indexer.save(rocky);
+//        KeyIndexer.KeyEntity<String> rocky1 = indexer.find("rocky");
     }
 
     @SneakyThrows
@@ -316,14 +306,14 @@ public class TestIO extends AbstractTester {
 
             String val;// = kv.get(rk);
 //            if (val == null) {
-                val = String.valueOf(pos);
-                String finalVal = val;
+            val = String.valueOf(pos);
+            String finalVal = val;
 //                pool.runSerial(() -> {
-                    kv.fastPut(rk, finalVal);
+            kv.fastPut(rk, finalVal);
 //                    return null;
 //                }, this).get();
 
-                log.info("put {}={}", rk, val);
+            log.info("put {}={}", rk, val);
 //            }
 
             String newGet = kv.get(rk);

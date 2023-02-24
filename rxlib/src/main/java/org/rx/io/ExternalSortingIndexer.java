@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import lombok.NonNull;
+import lombok.ToString;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Cache;
 import org.rx.core.Constants;
@@ -22,6 +23,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * @param <TK>
  */
 class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
+    @ToString(callSuper = true)
     static class HashKey<TK> extends KeyIndexer.KeyEntity<TK> implements Comparable<HashKey<TK>> {
         static final int BYTES = 24;
 
@@ -130,9 +132,9 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
             HashKey<TK> ktf = new HashKey<>(t.key);
             return fs.lock.writeInvoke(() -> {
                 if (find(ktf)) {
-                    if (ktf.logPosition > t.logPosition) {
-                        return true;
-                    }
+//                    if (ktf.logPosition > t.logPosition) {
+//                        return true;
+//                    }
                     ktf.logPosition = t.logPosition;
 
                     long wPos = fs.getWriterPosition();
