@@ -75,7 +75,6 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         void clear() {
             keySize = 0;
             min = max = null;
-//            ref = null;
             cache.remove(this);
         }
 

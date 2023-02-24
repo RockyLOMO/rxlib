@@ -304,24 +304,27 @@ public class TestIO extends AbstractTester {
 
     @Test
     public void kvsAsync() {
-//        KeyValueStoreConfig conf = kvConf();
-//        KeyValueStore<String, String> kv = new KeyValueStore<>(conf);
-//        int loopCount = 100, threadSize = 8;
-//        invokeAsync("kvsAsync", i -> {
+        KeyValueStoreConfig conf = kvConf();
+        KeyValueStore<String, String> kv = new KeyValueStore<>(conf);
+        kv.clear();
+
+        invokeAsync("kvsAsync", i -> {
+            long pos = i + 1;
 //            String rk = String.valueOf(i + 1);
-//            int k = i;
-//            String val = kv.get(k);
-//            if (val == null) {
-//                kv.put(k, val = String.valueOf(k));
-//            }
-//            String newGet = kv.get(k);
-//            if (!val.equals(newGet)) {
-//                log.error("check: {} == {}", val, newGet);
-//            }
-//            assert val.equals(newGet);
-//        }, loopCount, threadSize);
-//
-//        kv.close();
+            String rk = "rocky";
+
+            String val = kv.get(rk);
+            if (val == null) {
+                kv.put(rk, val = String.valueOf(pos));
+                log.info("put {}={}", rk, val);
+            }
+
+            String newGet = kv.get(rk);
+            log.info("get {}={}", rk, newGet);
+            assert newGet != null;
+        }, 100, 8);
+        log.info("kvs {}", kv.size());
+        assert kv.size() == 1;
     }
 
     @Test
