@@ -110,7 +110,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         this.keySize = keys.size();
                     }
                     ks = keys.toArray(ARR_TYPE);
-                    cache.put(this, ks);
+//                    cache.put(this, ks);
                 }
                 return ks;
             }, position, size);
@@ -161,7 +161,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     keySize = nks.length;
                     min = nks[0];
                     max = nks[keySize - 1];
-                    cache.put(this, nks);
+//                    cache.put(this, nks);
 
                     fs.setWriterPosition(position);
                     byte[] buf = new byte[HashKey.BYTES];
