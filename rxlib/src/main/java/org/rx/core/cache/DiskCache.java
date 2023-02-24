@@ -46,7 +46,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
         if (!(key instanceof Serializable && item.value instanceof Serializable)) {
             return;
         }
-        store.put(key, item);
+        store.fastPut(key, item);
         log.info("onRemoval copy to store {} -> {}ms", key, item.getExpiration() - System.currentTimeMillis());
     }
 

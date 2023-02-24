@@ -34,10 +34,13 @@ public final class CompositeLock {
     private <T> T lock(FileStream.Block block, boolean shared, @NonNull Func<T> fn) {
         Lock lock = null;
         if (flags.has(Flags.READ_WRITE_LOCK)) {
-            ReentrantReadWriteLock rwLock = overlaps(block.position, block.size);
-            if (rwLock == null) {
-                rwLock = rwLocks.computeIfAbsent(block, k -> new ReentrantReadWriteLock());
-            }
+            ReentrantReadWriteLock rwLock = rwLocks.computeIfAbsent(block, k -> {
+                ReentrantReadWriteLock t = overlaps(k.position, k.size);
+                if (t == null) {
+                    t = new ReentrantReadWriteLock();
+                }
+                return t;
+            });
             lock = shared ? rwLock.readLock() : rwLock.writeLock();
             lock.lock();
         }
