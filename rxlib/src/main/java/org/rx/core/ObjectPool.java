@@ -141,7 +141,7 @@ public class ObjectPool<T> extends Disposable {
             }
         });
 
-        log.info("ObjPool state: {}", this);
+//        log.info("ObjPool state: {}", this);
         insureMinSize();
     }
 
