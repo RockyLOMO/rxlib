@@ -346,7 +346,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     }
 
     @SneakyThrows
-    public <T> T backwardReadObject(BiFunc<IOStream, T> action) {
+    public <T> T readObjectBackwards(BiFunc<IOStream, T> action) {
         IOStream reader = readers.take();
         try {
             long readerPosition = getReaderPosition();

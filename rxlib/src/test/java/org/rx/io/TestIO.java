@@ -308,23 +308,37 @@ public class TestIO extends AbstractTester {
         KeyValueStore<String, String> kv = new KeyValueStore<>(conf);
         kv.clear();
 
+        ThreadPool pool = Tasks.nextPool();
         invokeAsync("kvsAsync", i -> {
             long pos = i + 1;
 //            String rk = String.valueOf(i + 1);
             String rk = "rocky";
 
             String val = kv.get(rk);
-            if (val == null) {
-                kv.put(rk, val = String.valueOf(pos));
+//            if (val == null) {
+                val = String.valueOf(pos);
+                String finalVal = val;
+//                pool.runSerial(() -> {
+                    kv.fastPut(rk, finalVal);
+//                    return null;
+//                }, this).get();
+
                 log.info("put {}={}", rk, val);
-            }
+//            }
 
             String newGet = kv.get(rk);
             log.info("get {}={}", rk, newGet);
             assert newGet != null;
-        }, 100, 8);
+        }, 1000, 12);
         log.info("kvs {}", kv.size());
         assert kv.size() == 1;
+
+        int i = 0;
+        for (Map.Entry<String, String> entry : kv.entrySet()) {
+            log.info("kvs {}", entry);
+            i++;
+        }
+        assert i == 1;
     }
 
     @Test

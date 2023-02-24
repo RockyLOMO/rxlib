@@ -1,8 +1,49 @@
 package org.rx.bean;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentMap;
 
-public interface AbstractMap<K, V> extends Map<K, V> {
+public interface AbstractMap<K, V> extends ConcurrentMap<K, V> {
+    @Override
+    default V putIfAbsent(K key, V value) {
+        synchronized (this) {
+            V v = get(key);
+            return v == null ? put(key, value) : v;
+        }
+    }
+
+    @Override
+    default boolean remove(Object key, Object value) {
+        synchronized (this) {
+            V v = get(key);
+            if (v != null && Objects.equals(v, value)) {
+                remove(key);
+                return true;
+            }
+            return false;
+        }
+    }
+
+    @Override
+    default boolean replace(K key, V oldValue, V newValue) {
+        synchronized (this) {
+            V v = get(key);
+            if (v != null && Objects.equals(v, oldValue)) {
+                put(key, newValue);
+                return true;
+            }
+            return false;
+        }
+    }
+
+    @Override
+    default V replace(K key, V value) {
+        synchronized (this) {
+            V v = get(key);
+            return v != null ? put(key, value) : null;
+        }
+    }
+
     @Override
     default boolean isEmpty() {
         return size() == 0;
