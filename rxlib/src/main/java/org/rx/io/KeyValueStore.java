@@ -217,7 +217,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             if (incr) {
                 wal.meta.incrementSize();
             }
-//        }, wal.meta.getLogPosition());
+//        }, wal.meta.getLogPosition()); // concurrent issue
         });
     }
 
@@ -250,7 +250,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             }
 
             return unsafeRead(key.logPosition, key.key, null);
-        }, WALFileStream.HEADER_SIZE, wal.meta.getLogPosition()); //todo read lock size
+//        }, WALFileStream.HEADER_SIZE, wal.meta.getLogPosition());
+        });
         return val != null ? val.value : null;
     }
 
@@ -271,7 +272,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                 int total = counter == null ? -1 : counter.incrementAndGet();
                 log.warn("LogPosError hash collision {} total={}", k, total);
                 Files.writeLines("./hc_err.log", Linq.from(String.format("%s %s hc=%s total=%s", DateTime.now(), logName
-                        , k, total)), StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+                        , k, total)), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 return null;
             }
             return val;

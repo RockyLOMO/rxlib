@@ -56,7 +56,8 @@ final class DbAuthenticator implements Authenticator {
     }
 
     public void save(@NonNull SocksUser user) {
-        Tasks.setTimeout(() -> store.fastPut(user.getUsername(), user), 1000, user, TimeoutFlag.REPLACE.flags());
+        store.fastPut(user.getUsername(), user);
+//        Tasks.setTimeout(() -> store.fastPut(user.getUsername(), user), 1000, user.getUsername(), TimeoutFlag.REPLACE.flags());
     }
 
     public void delete(@NonNull SocksUser user) {
