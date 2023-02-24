@@ -75,7 +75,6 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         void clear() {
             keySize = 0;
             min = max = null;
-//            ref = null;
             cache.remove(this);
         }
 
@@ -129,9 +128,13 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
         boolean save(HashKey<TK> t) {
             HashKey<TK> ktf = new HashKey<>(t.key);
-            if (find(ktf)) {
-                ktf.logPosition = t.logPosition;
-                fs.lock.writeInvoke(() -> {
+            return fs.lock.writeInvoke(() -> {
+                if (find(ktf)) {
+                    if (ktf.logPosition > t.logPosition) {
+                        return true;
+                    }
+                    ktf.logPosition = t.logPosition;
+
                     long wPos = fs.getWriterPosition();
                     fs.setWriterPosition(ktf.keyPos + 8);
                     fs.write(Bytes.getBytes(ktf.logPosition));
@@ -142,13 +145,11 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         int i = (int) (ktf.keyPos - position) / HashKey.BYTES;
                         ks[i] = ktf;
                     }
-                }, position, size);
-                return true;
-            }
+                    return true;
+                }
 
-            long wPos = fs.getWriterPosition();
-            if (wPos < endPos) {
-                fs.lock.writeInvoke(() -> {
+                long wPos = fs.getWriterPosition();
+                if (wPos < endPos) {
                     HashKey<TK>[] ks = load();
                     HashKey<TK>[] nks = new HashKey[ks.length + 1];
                     System.arraycopy(ks, 0, nks, 0, ks.length);
@@ -169,10 +170,10 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         Bytes.getBytes(fk.keyPos, buf, 16);
                         fs.write(buf);
                     }
-                }, wPos, endPos - wPos);
-                return true;
-            }
-            return false;
+                    return true;
+                }
+                return false;
+            }, position, size);
         }
     }
 
@@ -220,26 +221,22 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     @Override
     public void save(@NonNull KeyEntity<TK> key) {
         HashKey<TK> fk = (HashKey<TK>) key;
-        fs.lock.writeInvoke(() -> {
-            for (Partition partition : route(fk)) {
-                if (partition.save(fk)) {
-                    break;
-                }
+        for (Partition partition : route(fk)) {
+            if (partition.save(fk)) {
+                break;
             }
-        });
+        }
     }
 
     @Override
     public KeyEntity<TK> find(@NonNull TK k) {
         HashKey<TK> fk = new HashKey<>(k);
-        return fs.lock.readInvoke(() -> {
-            for (Partition partition : route(fk)) {
-                if (partition.find(fk)) {
-                    return fk;
-                }
+        for (Partition partition : route(fk)) {
+            if (partition.find(fk)) {
+                return fk;
             }
-            return null;
-        });
+        }
+        return null;
     }
 
     Iterable<Partition> route(HashKey<TK> fk) {

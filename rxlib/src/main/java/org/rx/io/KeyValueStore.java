@@ -141,7 +141,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             long pos = wal.meta.getLogPosition();
             Entry<TK, TV> val;
             $<Long> endPos = $();
-            while ((val = findValue(pos, null, endPos)) != null) {
+            while ((val = unsafeRead(pos, null, endPos)) != null) {
                 boolean incr = false;
                 TK k = val.key;
                 KeyIndexer.KeyEntity<TK> key = indexer.find(k);
@@ -164,7 +164,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                 pos = endPos.v;
             }
         });
-
         if (wal.meta.extra == null) {
             wal.meta.extra = new AtomicInteger();
         }
@@ -184,39 +183,41 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     public void fastPut(@NonNull TK k, TV v) {
         checkNotClosed();
 
-        boolean incr = false;
-        KeyIndexer.KeyEntity<TK> key = indexer.find(k);
-        if (key == null) {
-            key = indexer.newKey(k);
-            incr = true;
-        }
-        if (key.logPosition == TOMB_MARK) {
-            incr = true;
-        }
-
         Entry<TK, TV> val = new Entry<>(k, v);
-        KeyIndexer.KeyEntity<TK> fKey = key;
         wal.lock.writeInvoke(() -> {
-            long pos = wal.meta.getLogPosition();
-            if (fKey.logPosition >= WALFileStream.HEADER_SIZE) {
-                wal.meta.setLogPosition(fKey.logPosition);
-                wal.write(TOMB_MARK);
-                wal.meta.setLogPosition(pos);
-                log.debug("fastPut mark TOMB {} <- {}", fKey.logPosition, pos);
+            boolean incr = false;
+            KeyIndexer.KeyEntity<TK> key = indexer.find(k);
+            if (key == null) {
+                key = indexer.newKey(k);
+                incr = true;
+            }
+            if (key.logPosition == TOMB_MARK) {
+                incr = true;
             }
 
-            fKey.logPosition = pos;
+            long pos = wal.meta.getLogPosition();
+            if (key.logPosition >= WALFileStream.HEADER_SIZE) {
+                KeyIndexer.KeyEntity<TK> finalKey = key;
+                wal.lock.writeInvoke(() -> {
+                    wal.meta.setLogPosition(finalKey.logPosition);
+                    wal.write(TOMB_MARK);
+                    wal.meta.setLogPosition(pos);
+                    log.debug("fastPut mark TOMB {} <- {}", finalKey.logPosition, pos);
+                }, key.logPosition, 1);
+            }
+
+            key.logPosition = pos;
             wal.write(0);
             serializer.serialize(val, wal);
-            int size = (int) (wal.meta.getLogPosition() - fKey.logPosition);
+            int size = (int) (wal.meta.getLogPosition() - key.logPosition);
             wal.writeInt(size);
-            log.debug("fastPut {} {}", fKey, val);
+//            log.debug("fastPut {} {}", key, val);
 
-            indexer.save(fKey);
-        });
-        if (incr) {
-            wal.meta.incrementSize();
-        }
+            indexer.save(key);
+            if (incr) {
+                wal.meta.incrementSize();
+            }
+        }, wal.meta.getLogPosition());
     }
 
     public void fastRemove(@NonNull TK k) {
@@ -236,67 +237,58 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
             key.logPosition = TOMB_MARK;
             indexer.save(key);
-        });
+        }, key.logPosition, 1);
         wal.meta.decrementSize();
     }
 
     protected TV read(@NonNull TK k) {
-        KeyIndexer.KeyEntity<TK> key = indexer.find(k);
-        if (key == null || key.logPosition == TOMB_MARK) {
-            return null;
-        }
-        long pos = wal.meta.getLogPosition();
-        if (key.logPosition > pos) {
-            log.warn("LogPosError {} > {}", key, pos);
-            key.logPosition = TOMB_MARK;
-            indexer.save(key);
-            return null;
-        }
+        Entry<TK, TV> val = wal.lock.readInvoke(() -> {
+            KeyIndexer.KeyEntity<TK> key = indexer.find(k);
+            if (key == null || key.logPosition == TOMB_MARK) {
+                return null;
+            }
 
-        Entry<TK, TV> val = findValue(key.logPosition, key.key, null);
+            return unsafeRead(key.logPosition, key.key, null);
+        }, WALFileStream.HEADER_SIZE); //todo read lock size
         return val != null ? val.value : null;
     }
 
     @SneakyThrows
-    private Entry<TK, TV> findValue(long logPosition, TK k, $<Long> position) {
-        log.debug("findValue {} {}", k, logPosition);
-        Entry<TK, TV> val = wal.lock.readInvoke(() -> {
-            wal.setReaderPosition(logPosition);
-            try {
-                int status = wal.read();
-                if (status == TOMB_MARK) {
-                    return null;
-                }
-                return serializer.deserialize(wal, true);
-            } catch (Exception e) {
-                if (e instanceof StreamCorruptedException) {
-                    log.warn("findValue {} {} {}", k == null ? "[INIT]" : k, logPosition, e.getMessage());
-                    return null;
-                } else {
-                    throw e;
-                }
-            } finally {
-                long readerPosition = wal.getReaderPosition(true);
-                if (position != null) {
-                    position.v = readerPosition;
-                }
+    private Entry<TK, TV> unsafeRead(long logPosition, TK k, $<Long> position) {
+//        log.debug("readValue {} {}", k, logPosition);
+        Entry<TK, TV> val;
+        wal.setReaderPosition(logPosition);
+        try {
+            int status = wal.read();
+            if (status == TOMB_MARK) {
+                return null;
             }
-        });
-        if (val == null) {
-            return null;
+            val = serializer.deserialize(wal, true);
+
+            if (k != null && !k.equals(val.key)) {
+                AtomicInteger counter = (AtomicInteger) wal.meta.extra;
+                int total = counter == null ? -1 : counter.incrementAndGet();
+                log.warn("LogPosError hash collision {} total={}", k, total);
+                Files.writeLines("./hc_err.log", Linq.from(String.format("%s %s hc=%s total=%s", DateTime.now(), logName
+                        , k, total)), StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+                return null;
+            }
+            return val;
+        } catch (Exception e) {
+            if (e instanceof StreamCorruptedException) {
+                log.warn("readValue {} {} {}", k == null ? "[INIT]" : k, logPosition, e.getMessage());
+                return null;
+            }
+            throw e;
+        } finally {
+            long readerPosition = wal.getReaderPosition(true);
+            if (position != null) {
+                position.v = readerPosition;
+            }
         }
-        if (k != null && !k.equals(val.key)) {
-            AtomicInteger counter = (AtomicInteger) wal.meta.extra;
-            int total = counter == null ? -1 : counter.incrementAndGet();
-            log.warn("LogPosError hash collision {} total={}", k, total);
-            Files.writeLines("./hc_err.log", Linq.from(String.format("%s %s hc=%s total=%s", DateTime.now(), logName
-                    , k, total)), StandardCharsets.UTF_8, StandardOpenOption.APPEND);
-            return null;
-        }
-        return val;
     }
 
-    private boolean backwardFindValue(IteratorContext ctx, int prefetchCount) {
+    private boolean readBackwards(IteratorContext ctx, int prefetchCount) {
         wal.setReaderPosition(ctx.logPos); //4 lock
         return wal.backwardReadObject(reader -> {
             ctx.writePos = ctx.readPos = 0;
@@ -323,19 +315,19 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                     }
 
                     Entry<TK, TV> val = serializer.deserialize(reader, true);
-                    log.debug("read {}", val);
+//                    log.debug("readBackwards {}", val);
                     ctx.buf[ctx.writePos++] = val;
                     i++;
                 } catch (Exception e) {
                     if (e instanceof StreamCorruptedException | e instanceof EOFException) {
-                        log.warn("backwardFindValue {}", e.getMessage());
+                        log.warn("readBackwards error {}", e.getMessage());
                         ctx.remaining = 0;
                         return false;
                     }
                     throw e;
                 } finally {
                     ctx.logPos = logPos;
-                    log.debug("backwardFindValue prev[{}] status[{}]={} len[{}]={}", logPos, p2, status, p1, size);
+                    log.debug("readBackwards prev[{}] status[{}]={} len[{}]={}", logPos, p2, status, p1, size);
                 }
             }
             return true;
@@ -530,10 +522,10 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             }
 
             IteratorContext ctx = new IteratorContext(new Entry[config.getIteratorPrefetchCount()]);
-            if (offset > 0 && !backwardFindValue(ctx, offset)) {
+            if (offset > 0 && !readBackwards(ctx, offset)) {
                 return IteratorUtils.emptyIterator();
             }
-            backwardFindValue(ctx, ctx.buf.length);
+            readBackwards(ctx, ctx.buf.length);
             if (ctx.writePos == 0) {
                 return IteratorUtils.emptyIterator();
             }
@@ -549,7 +541,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                     }
                     while (true) {
                         if (++ctx.readPos == ctx.buf.length) {
-                            backwardFindValue(ctx, Math.min(ctx.buf.length, ctx.remaining));
+                            readBackwards(ctx, Math.min(ctx.buf.length, ctx.remaining));
                             if (ctx.writePos == 0) {
                                 return null;
                             }
