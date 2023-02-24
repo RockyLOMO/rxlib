@@ -14,8 +14,8 @@ import org.rx.core.Constants;
 public class KeyValueStoreConfig {
     public static <TK, TV> KeyValueStoreConfig newConfig(Class<TK> keyType, Class<TV> valueType) {
         KeyValueStoreConfig conf = new KeyValueStoreConfig(keyType, valueType);
-        conf.setLogGrowSize(Constants.MB * 64);
-        conf.setIndexBufferSize(Constants.MB * 4);
+        conf.setLogGrowSize(Constants.MB * 16);
+        conf.setIndexBufferSize(Constants.MB);
         return conf;
     }
 
