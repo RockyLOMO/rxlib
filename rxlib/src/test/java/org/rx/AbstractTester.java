@@ -10,6 +10,8 @@ import org.rx.util.function.BiAction;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 public class AbstractTester {
@@ -44,15 +46,16 @@ public class AbstractTester {
 
     @SneakyThrows
     public static void invokeAsync(String name, BiAction<Integer> action, int loopCount, int threadSize) {
-        ThreadPool pool = new ThreadPool(threadSize, 256, "dev");
+//        ThreadPool pool = new ThreadPool(threadSize, 256, "dev");
+        ExecutorService pool = Executors.newFixedThreadPool(threadSize);
         long start = System.nanoTime();
         try {
             CountDownLatch latch = new CountDownLatch(loopCount);
             for (int i = 0; i < loopCount; i++) {
                 int finalI = i;
-                pool.run(() -> {
+                pool.execute(() -> {
                     try {
-                        action.invoke(finalI);
+                        action.accept(finalI);
                     } finally {
                         latch.countDown();
                     }
