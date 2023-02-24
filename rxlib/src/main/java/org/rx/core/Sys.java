@@ -21,6 +21,7 @@ import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
+import org.rx.io.Serializer;
 import org.rx.net.Sockets;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
@@ -462,6 +463,10 @@ public final class Sys extends SystemUtils {
     //endregion
 
     //region common
+    public static <T extends Serializable> T deepClone(T obj) {
+        return Serializer.DEFAULT.deserialize(Serializer.DEFAULT.serialize(obj));
+    }
+
     public static String fastCacheKey(String method, Object... args) {
         if (method == null) {
             method = Reflects.stackClass(1).getSimpleName();

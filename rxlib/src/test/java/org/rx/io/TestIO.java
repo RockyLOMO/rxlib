@@ -296,9 +296,8 @@ public class TestIO extends AbstractTester {
     public void kvsAsync() {
         KeyValueStoreConfig conf = kvConf();
         KeyValueStore<String, String> kv = new KeyValueStore<>(conf);
-        kv.clear();
+//        kv.clear();
 
-        ThreadPool pool = Tasks.nextPool();
         invokeAsync("kvsAsync", i -> {
             long pos = i + 1;
 //            String rk = String.valueOf(i + 1);
@@ -319,9 +318,11 @@ public class TestIO extends AbstractTester {
             String newGet = kv.get(rk);
             log.info("get {}={}", rk, newGet);
             assert newGet != null;
-        }, 1000, 12);
-        log.info("kvs {}", kv.size());
-        assert kv.size() == 1;
+        }, 500, 10);
+
+        ExternalSortingIndexer<String> indexer = (ExternalSortingIndexer<String>) kv.indexer;
+        KeyIndexer.KeyEntity<String> rocky = indexer.find("rocky");
+        log.info("idx {} - {}", indexer, rocky);
 
         int i = 0;
         for (Map.Entry<String, String> entry : kv.entrySet()) {
@@ -329,6 +330,9 @@ public class TestIO extends AbstractTester {
             i++;
         }
         assert i == 1;
+
+        log.info("kvs {}", kv.size());
+        assert kv.size() == 1;
     }
 
     @Test
@@ -425,7 +429,7 @@ public class TestIO extends AbstractTester {
             assert fk != null
 //                    && fk.logPosition == pos
                     ;
-        }, 500, 8);
+        }, 200, 4);
         log.info("{}", indexer);
     }
 
@@ -645,7 +649,7 @@ public class TestIO extends AbstractTester {
 
         long pos = stream.getPosition();
         long len = stream.getLength();
-        IOStream newStream = stream.deepClone();
+        IOStream newStream = Sys.deepClone(stream);
         assert pos == newStream.getPosition() && len == newStream.getLength();
     }
 

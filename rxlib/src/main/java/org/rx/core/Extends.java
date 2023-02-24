@@ -8,7 +8,6 @@ import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
-import org.rx.io.Serializer;
 import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
@@ -246,9 +245,5 @@ public interface Extends extends Serializable {
 
     default <TK, TV> void attr(TK key, TV value) {
         IOC.weakIdentityMap(this).put(key, value);
-    }
-
-    default <T> T deepClone() {
-        return Serializer.DEFAULT.deserialize(Serializer.DEFAULT.serialize(this));
     }
 }
