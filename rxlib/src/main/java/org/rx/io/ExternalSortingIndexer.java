@@ -92,8 +92,8 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
         @SneakyThrows
         HashKey<TK>[] unsafeLoad() {
-            WeakReference<HashKey<TK>[]> ref = this.ref;
-            HashKey<TK>[] ks = ref != null ? ref.get() : null;
+            WeakReference<HashKey<TK>[]> r = ref;
+            HashKey<TK>[] ks = r != null ? r.get() : null;
 //            HashKey<TK>[] ks = cache.get(this);
             if (ks == null) {
                 int keySize = this.keySize;
@@ -170,7 +170,6 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         if (k.hashId != ktf.hashId) {
                             throw new InvalidException("compute index error");
                         }
-//                            System.out.println(k + ":" + ktf);
                         ks[i].logPosition = ktf.logPosition;
                     }
                     return true;
