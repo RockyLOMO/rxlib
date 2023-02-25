@@ -121,7 +121,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         cache.put(this, ks);
                     }
                 }
-                return ks.clone();
+                return ks;
             }, position, size);
         }
 
@@ -159,6 +159,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         }
 //                            System.out.println(k + ":" + ktf);
                         ks[i].logPosition = ktf.logPosition;
+                        cache.put(this, ks);
                     }
                     return true;
                 }
