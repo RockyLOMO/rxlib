@@ -13,6 +13,9 @@ import javax.activation.MimetypesFileTypeMap;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Paths;
+import java.nio.file.attribute.UserDefinedFileAttributeView;
 
 @Slf4j
 public class FileStream extends IOStream implements Serializable {
@@ -159,6 +162,25 @@ public class FileStream extends IOStream implements Serializable {
     @SneakyThrows
     public synchronized void setLength(long length) {
         randomAccessFile.setLength(length);
+    }
+
+    @SneakyThrows
+    public synchronized String getAttribute(String attrName) {
+        UserDefinedFileAttributeView view = java.nio.file.Files.getFileAttributeView(Paths.get(randomAccessFile.getPath()), UserDefinedFileAttributeView.class);
+        ByteBuffer buf = ByteBuffer.allocate(view.size(attrName));
+        view.read(attrName, buf);
+        buf.flip();
+        return StandardCharsets.UTF_8.decode(buf).toString();
+    }
+
+    @SneakyThrows
+    public synchronized void setAttribute(String attrName, String attrValue) {
+        UserDefinedFileAttributeView view = java.nio.file.Files.getFileAttributeView(Paths.get(randomAccessFile.getPath()), UserDefinedFileAttributeView.class);
+        if (attrValue == null) {
+            view.delete(attrName);
+            return;
+        }
+        view.write(attrName, StandardCharsets.UTF_8.encode(attrValue));
     }
 
     public FileStream() {

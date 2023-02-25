@@ -216,11 +216,6 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
-    static class LockContext {
-        ReentrantLock lock;
-        AtomicInteger lockRefCnt;
-    }
-
     @RequiredArgsConstructor
     static class CompletableFutureWrapper<T> extends CompletableFuture<T> {
         final Executor pool;
@@ -502,6 +497,11 @@ public class ThreadPool extends ThreadPoolExecutor {
             return delegate.toString();
         }
         //endregion
+    }
+
+    static class LockContext {
+        final AtomicInteger refCnt = new AtomicInteger();
+        final ReentrantLock lock = new ReentrantLock();
     }
 
     static class DynamicSizer implements TimerTask {
@@ -996,11 +996,11 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (!ctx.lock.tryLock()) {
                 throw new InterruptedException(String.format("SingleScope %s locked by other thread", task.id));
             }
-            ctx.lockRefCnt.incrementAndGet();
+            ctx.refCnt.incrementAndGet();
             log.debug("CTX tryLock {} -> {}", task.id, flags.name());
         } else if (flags.has(RunFlag.SYNCHRONIZED)) {
             LockContext ctx = getContextForLock(task.id);
-            ctx.lockRefCnt.incrementAndGet();
+            ctx.refCnt.incrementAndGet();
             ctx.lock.lock();
             log.debug("CTX lock {} -> {}", task.id, flags.name());
         }
@@ -1049,7 +1049,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             LockContext ctx = taskLockMap.get(id);
             if (ctx != null) {
                 boolean doRemove = false;
-                if (ctx.lockRefCnt.decrementAndGet() <= 0) {
+                if (ctx.refCnt.decrementAndGet() <= 0) {
                     taskLockMap.remove(id);
                     doRemove = true;
                 }
@@ -1084,12 +1084,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             throw new InvalidException("SINGLE or SYNCHRONIZED flag require a taskId");
         }
 
-        return taskLockMap.computeIfAbsent(id, k -> {
-            LockContext ctx = new LockContext();
-            ctx.lock = new ReentrantLock();
-            ctx.lockRefCnt = new AtomicInteger();
-            return ctx;
-        });
+        return taskLockMap.computeIfAbsent(id, k -> new LockContext());
     }
 
     private Task<?> setTask(Runnable r) {

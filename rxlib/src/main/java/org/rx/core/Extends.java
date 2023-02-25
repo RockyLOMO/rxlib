@@ -15,7 +15,6 @@ import org.rx.util.function.Func;
 import java.io.Serializable;
 import java.lang.reflect.AnnotatedElement;
 import java.util.List;
-import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -236,11 +235,7 @@ public interface Extends extends Serializable {
     //endregion
 
     default <TK, TV> TV attr(TK key) {
-        Map<TK, TV> attrMap = IOC.weakIdentityMap(this);
-        if (attrMap == null) {
-            return null;
-        }
-        return attrMap.get(key);
+        return IOC.<TK, TV>weakIdentityMap(this).get(key);
     }
 
     default <TK, TV> void attr(TK key, TV value) {

@@ -22,7 +22,6 @@ import org.rx.third.guava.AbstractSequentialIterator;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.UserDefinedFileAttributeView;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -124,14 +123,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         File logFile = new File(String.format("%s/%s", config.getDirectoryPath(), logName));
         wal = new WALFileStream(logFile, config.getLogGrowSize(), config.getLogReaderCount(), serializer);
         wal.setFlushDelayMillis(config.getFlushDelayMillis());
-        UserDefinedFileAttributeView view = java.nio.file.Files.getFileAttributeView(logFile.toPath(), UserDefinedFileAttributeView.class);
-        view.write("typeId", StandardCharsets.UTF_8.encode(typeId));
-
-//        String name = "user.mimetype";
-//        ByteBuffer buf = ByteBuffer.allocate(view.size(name));
-//        view.read(name, buf);
-//        buf.flip();
-//        String value = StandardCharsets.UTF_8.decode(buf).toString();
+        wal.file.setAttribute("typeId", typeId);
         this.serializer = serializer;
 
         String idxName = Files.changeExtension(logName, "idx");

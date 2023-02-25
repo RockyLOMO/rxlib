@@ -108,7 +108,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     static final int HEADER_SIZE = 256;
     static final FastThreadLocal<Long> readerPosition = new FastThreadLocal<>();
     public transient final Delegate<WALFileStream, EventArgs> onGrow = Delegate.create();
-    private final FileStream file;
+    final FileStream file;
     final CompositeLock lock;
     final long growSize;
     final int readerCount;
