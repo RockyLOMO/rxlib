@@ -114,8 +114,12 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     ks = keys.toArray(ARR_TYPE);
                     if (setSize) {
                         this.keySize = ks.length;
-                        min = ks[0];
-                        max = ks[ks.length - 1];
+                        if (ks.length == 0) {
+                            min = max = null;
+                        } else {
+                            min = ks[0];
+                            max = ks[ks.length - 1];
+                        }
                     }
                     if (enableCache) {
                         cache.put(this, ks);
