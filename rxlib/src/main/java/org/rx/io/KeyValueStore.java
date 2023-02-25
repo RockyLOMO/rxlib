@@ -336,6 +336,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
                     Object key = reqJson.get("key");
                     if (key == null) {
+                        resJson.put("size", size());
                         JSONArray keys = reqJson.getJSONArray("keys");
                         if (keys != null) {
                             Map<TK, TV> map = new LinkedHashMap<>();
@@ -344,10 +345,10 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                                 map.put(k, get(k));
                             }
                             resJson.put("code", 0);
-                            resJson.put("entry", map);
+                            resJson.put("entrySet", map);
                         } else {
                             resJson.put("code", 1);
-                            resJson.put("top", entrySet());
+                            resJson.put("entrySet", entrySet());
                         }
                         response.jsonBody(resJson);
                         return;
