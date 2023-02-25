@@ -102,7 +102,7 @@ public class NameserverImpl implements Nameserver {
             for (InetSocketAddress ssAddr : serverEndpoints) {
                 ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), svrEps);
             }
-        }, syncDelay, svrEps, TimeoutFlag.REPLACE.flags());
+        }, syncDelay, svrEps, Constants.TIMER_REPLACE_FLAG);
     }
 
     public void syncDeregister(@NonNull DeregisterInfo deregisterInfo) {
@@ -110,7 +110,7 @@ public class NameserverImpl implements Nameserver {
             for (InetSocketAddress ssAddr : svrEps) {
                 ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), deregisterInfo);
             }
-        }, syncDelay, DeregisterInfo.class, TimeoutFlag.REPLACE.flags());
+        }, syncDelay, DeregisterInfo.class, Constants.TIMER_REPLACE_FLAG);
     }
 
     public void syncAttributes() {
@@ -118,7 +118,7 @@ public class NameserverImpl implements Nameserver {
             for (InetSocketAddress ssAddr : svrEps) {
                 ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), attrs);
             }
-        }, syncDelay, attrs, TimeoutFlag.REPLACE.flags());
+        }, syncDelay, attrs, Constants.TIMER_REPLACE_FLAG);
     }
 
     @Override

@@ -49,7 +49,7 @@ public final class NameserverClient extends Disposable {
             Sockets.injectNameService(ns);
             log.info("inject ns {}", toJsonString(ns));
             syncRoot.set();
-        }, Constants.DEFAULT_INTERVAL, NameserverClient.class, TimeoutFlag.REPLACE.flags());
+        }, Constants.DEFAULT_INTERVAL, NameserverClient.class, Constants.TIMER_REPLACE_FLAG);
     }
 
     public final Delegate<Nameserver, Nameserver.AppChangedEventArgs> onAppAddressChanged = Delegate.create();

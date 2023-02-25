@@ -344,7 +344,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     @Override
     public ScheduledFuture<?> scheduleWithFixedDelay(Runnable command, long initialDelay, long period, TimeUnit unit) {
-        return setTimeout(command::run, d -> d == 0 ? initialDelay : TimeUnit.MILLISECONDS.convert(period, unit), null, TimeoutFlag.PERIOD.flags());
+        return setTimeout(command::run, d -> d == 0 ? initialDelay : TimeUnit.MILLISECONDS.convert(period, unit), null, Constants.TIMER_PERIOD_FLAG);
     }
 
     @Override
