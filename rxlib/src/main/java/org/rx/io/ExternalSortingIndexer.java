@@ -1,7 +1,7 @@
 package org.rx.io;
 
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.ToString;
 import org.rx.codec.CodecUtil;
@@ -98,7 +98,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
             if (enableCache) {
                 ref = new WeakReference<>(ks);
-                Tasks.setTimeout(ks::getClass, 1, this, Constants.TIMER_REPLACE_FLAG);
+                Tasks.setTimeout(ks::getClass, cacheTtl, this, Constants.TIMER_REPLACE_FLAG);
 //            cache.put(this, ks);
             }
         }
@@ -136,7 +136,6 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     this.keySize = ks.length;
                     if (ks.length == 0) {
                         min = max = null;
-
                     } else {
                         min = ks[0];
                         max = ks[ks.length - 1];
@@ -214,14 +213,16 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
     }
 
-    static final boolean enableCache = true;
-    //    static final FastThreadLocal<HashKey[]> xx = new FastThreadLocal<>();
     static final HashKey[] ARR_TYPE = new HashKey[0];
     final WALFileStream fs;
     final long bufSize;
     //concurrent issue
     //    final Cache<Partition, HashKey<TK>[]> cache = Cache.getInstance(Cache.MEMORY_CACHE);
     final List<Partition> partitions = new CopyOnWriteArrayList<>();
+    @Setter
+    boolean enableCache = true;
+    @Setter
+    long cacheTtl = 60 * 1000;
 
     public ExternalSortingIndexer(File file, long bufSize, int readerCount) {
         int b = HashKey.BYTES;
