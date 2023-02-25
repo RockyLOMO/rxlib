@@ -1,6 +1,8 @@
 package org.rx.io;
 
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
+import lombok.SneakyThrows;
 import lombok.ToString;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
@@ -8,6 +10,7 @@ import org.rx.exception.InvalidException;
 
 import java.io.EOFException;
 import java.io.File;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -66,6 +69,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         final long endPos;
         volatile int keySize = Constants.IO_EOF;
         volatile HashKey<TK> min, max;
+        volatile WeakReference<HashKey<TK>[]> ref;
 
         Partition(long position, long size) {
             super(position, size);
@@ -81,57 +85,60 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
                 keySize = 0;
                 min = max = null;
-                cache.remove(this);
+                ref = null;
+//                cache.remove(this);
             }, position, size);
         }
 
-        HashKey<TK>[] load() {
-            return fs.lock.readInvoke(() -> {
-                HashKey<TK>[] ks = cache.get(this);
-                if (ks == null) {
-                    int keySize = this.keySize;
-                    boolean setSize = keySize == Constants.IO_EOF;
-                    List<HashKey<TK>> keys = new ArrayList<>(setSize ? 10 : keySize);
+        @SneakyThrows
+        HashKey<TK>[] unsafeLoad() {
+            WeakReference<HashKey<TK>[]> ref = this.ref;
+            HashKey<TK>[] ks = ref != null ? ref.get() : null;
+//            HashKey<TK>[] ks = cache.get(this);
+            if (ks == null) {
+                int keySize = this.keySize;
+                boolean setSize = keySize == Constants.IO_EOF;
+                List<HashKey<TK>> keys = new ArrayList<>(setSize ? 10 : keySize);
 
-                    fs.setReaderPosition(position);
-                    int b = HashKey.BYTES;
-                    byte[] buf = new byte[b];
-                    int kSize = setSize ? Integer.MAX_VALUE : keySize;
-                    for (long i = 0; i < this.size && keys.size() < kSize; i += b) {
-                        if (fs.read(buf, 0, buf.length) != b) {
-                            throw new EOFException();
-                        }
-                        HashKey<TK> k = new HashKey<>();
-                        k.hashId = Bytes.getLong(buf, 0);
-                        if (k.hashId == 0) {
-                            break;
-                        }
-                        k.logPosition = Bytes.getLong(buf, 8);
-                        k.keyPos = Bytes.getLong(buf, 16);
-                        keys.add(k);
+                fs.setReaderPosition(position);
+                int b = HashKey.BYTES;
+                byte[] buf = new byte[b];
+                int kSize = setSize ? Integer.MAX_VALUE : keySize;
+                for (long i = 0; i < this.size && keys.size() < kSize; i += b) {
+                    if (fs.read(buf, 0, buf.length) != b) {
+                        throw new EOFException();
                     }
+                    HashKey<TK> k = new HashKey<>();
+                    k.hashId = Bytes.getLong(buf, 0);
+                    if (k.hashId == 0) {
+                        break;
+                    }
+                    k.logPosition = Bytes.getLong(buf, 8);
+                    k.keyPos = Bytes.getLong(buf, 16);
+                    keys.add(k);
+                }
 
-                    ks = keys.toArray(ARR_TYPE);
-                    if (setSize) {
-                        this.keySize = ks.length;
-                        if (ks.length == 0) {
-                            min = max = null;
-                        } else {
-                            min = ks[0];
-                            max = ks[ks.length - 1];
-                        }
-                    }
-                    if (enableCache) {
-                        cache.put(this, ks);
+                ks = keys.toArray(ARR_TYPE);
+                if (setSize) {
+                    this.keySize = ks.length;
+                    if (ks.length == 0) {
+                        min = max = null;
+                    } else {
+                        min = ks[0];
+                        max = ks[ks.length - 1];
                     }
                 }
-                return ks;
-            }, position, size);
+                if (enableCache) {
+                    ref = new WeakReference<>(ks);
+//                    cache.put(this, ks);
+                }
+            }
+            return ks;
         }
 
         boolean find(HashKey<TK> ktf) {
             return fs.lock.readInvoke(() -> {
-                HashKey<TK>[] keys = load();
+                HashKey<TK>[] keys = unsafeLoad();
                 int i = Arrays.binarySearch(keys, ktf);
                 if (i < 0) {
                     return false;
@@ -155,7 +162,9 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     fs.write(Bytes.getBytes(ktf.logPosition));
 
                     HashKey<TK>[] ks;
-                    if ((ks = cache.get(this)) != null) {
+                    WeakReference<HashKey<TK>[]> ref = this.ref;
+                    if ((ks = (ref != null ? ref.get() : null)) != null) {
+//                    if ((ks = cache.get(this)) != null) {
                         int i = (int) (ktf.keyPos - position) / HashKey.BYTES;
                         HashKey<TK> k = ks[i];
                         if (k.hashId != ktf.hashId) {
@@ -163,14 +172,13 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         }
 //                            System.out.println(k + ":" + ktf);
                         ks[i].logPosition = ktf.logPosition;
-                        cache.put(this, ks);
                     }
                     return true;
                 }
 
                 long wPos = fs.getWriterPosition();
                 if (wPos < endPos) {
-                    HashKey<TK>[] oks = load();
+                    HashKey<TK>[] oks = unsafeLoad();
                     HashKey<TK>[] ks = new HashKey[oks.length + 1];
                     System.arraycopy(oks, 0, ks, 0, oks.length);
                     ks[ks.length - 1] = Sys.deepClone(ktf);
@@ -189,7 +197,8 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     min = ks[0];
                     max = ks[keySize - 1];
                     if (enableCache) {
-                        cache.put(this, ks);
+                        ref = new WeakReference<>(ks);
+//                        cache.put(this, ks);
                     }
                     return true;
                 }
@@ -199,10 +208,11 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     }
 
     static final boolean enableCache = true;
+    //    static final FastThreadLocal<HashKey[]> xx = new FastThreadLocal<>();
     static final HashKey[] ARR_TYPE = new HashKey[0];
     final WALFileStream fs;
     final long bufSize;
-    final Cache<Partition, HashKey<TK>[]> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+    //    final Cache<Partition, HashKey<TK>[]> cache = Cache.getInstance(Cache.MEMORY_CACHE);
     final List<Partition> partitions = new CopyOnWriteArrayList<>();
 
     public ExternalSortingIndexer(File file, long bufSize, int readerCount) {
