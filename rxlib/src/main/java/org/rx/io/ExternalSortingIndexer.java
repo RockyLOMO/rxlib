@@ -121,7 +121,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         cache.put(this, ks);
                     }
                 }
-                return ks;
+                return ks.clone();
             }, position, size);
         }
 
