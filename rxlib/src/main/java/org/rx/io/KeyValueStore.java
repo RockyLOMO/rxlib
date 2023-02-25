@@ -209,19 +209,18 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             if (incr) {
                 wal.meta.incrementSize();
             }
-//        }, wal.meta.getLogPosition()); // concurrent issue
-        });
+        }, WALFileStream.HEADER_SIZE);
     }
 
     public void fastRemove(@NonNull TK k) {
         checkNotClosed();
 
-        KeyIndexer.KeyEntity<TK> key = indexer.find(k);
-        if (key == null || key.logPosition < WALFileStream.HEADER_SIZE) {
-            return;
-        }
-
         wal.lock.writeInvoke(() -> {
+            KeyIndexer.KeyEntity<TK> key = indexer.find(k);
+            if (key == null || key.logPosition == TOMB_MARK) {
+                return;
+            }
+
             long pos = wal.meta.getLogPosition();
             wal.meta.setLogPosition(key.logPosition);
             wal.write(TOMB_MARK);
@@ -230,8 +229,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
 
             key.logPosition = TOMB_MARK;
             indexer.save(key);
-        }, key.logPosition, 1);
-        wal.meta.decrementSize();
+            wal.meta.decrementSize();
+        }, WALFileStream.HEADER_SIZE);
     }
 
     protected TV read(@NonNull TK k) {
@@ -242,8 +241,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             }
 
             return unsafeRead(key.logPosition, key.key, null);
-//        }, WALFileStream.HEADER_SIZE, wal.meta.getLogPosition());
-        });
+        }, WALFileStream.HEADER_SIZE);
         return val != null ? val.value : null;
     }
 
