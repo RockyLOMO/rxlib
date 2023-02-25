@@ -126,15 +126,17 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
 
         boolean find(HashKey<TK> ktf) {
-            HashKey<TK>[] keys = load();
-            int i = Arrays.binarySearch(keys, ktf);
-            if (i < 0) {
-                return false;
-            }
-            HashKey<TK> t = keys[i];
-            ktf.logPosition = t.logPosition;
-            ktf.keyPos = t.keyPos;
-            return true;
+            return fs.lock.readInvoke(() -> {
+                HashKey<TK>[] keys = load();
+                int i = Arrays.binarySearch(keys, ktf);
+                if (i < 0) {
+                    return false;
+                }
+                HashKey<TK> t = keys[i];
+                ktf.logPosition = t.logPosition;
+                ktf.keyPos = t.keyPos;
+                return true;
+            });
         }
 
         boolean save(HashKey<TK> ktf) {
