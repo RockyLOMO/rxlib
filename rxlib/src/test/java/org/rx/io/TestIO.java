@@ -237,7 +237,7 @@ public class TestIO extends AbstractTester {
         i = 0;
         for (ExternalSortingIndexer<String>.Partition partition : indexer.partitions) {
             System.out.println("idx" + i + ":");
-            ExternalSortingIndexer.HashKey<String>[] keys = partition.load();
+            ExternalSortingIndexer.HashKey<String>[] keys = partition.unsafeLoad();
             for (int i1 = 0; i1 < keys.length; i1++) {
                 System.out.println("\t" + i1 + ". " + keys[i1]);
             }
