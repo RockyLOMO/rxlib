@@ -109,7 +109,7 @@ public class ObjectPool<T> extends Disposable {
         this.passivateHandler = passivateHandler;
 
         insureMinSize();
-        Tasks.timer.setTimeout(this::validNow, d -> validationTime, this, TimeoutFlag.PERIOD.flags());
+        Tasks.timer.setTimeout(this::validNow, d -> validationTime, this, Constants.TIMER_PERIOD_FLAG);
     }
 
     @Override

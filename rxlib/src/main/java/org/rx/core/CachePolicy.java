@@ -51,7 +51,7 @@ public class CachePolicy implements Serializable {
     public long ttl(boolean slidingRenew) {
         long ttl = Math.max(0, expiration - System.currentTimeMillis());
         if (ttl > 0 && slidingRenew) {
-            Tasks.setTimeout(this::slidingRenew, 100, this, TimeoutFlag.REPLACE.flags());
+            Tasks.setTimeout(this::slidingRenew, 100, this, Constants.TIMER_REPLACE_FLAG);
 //            slidingRenew();
         }
         return ttl;

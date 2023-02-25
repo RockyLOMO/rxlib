@@ -265,6 +265,6 @@ public final class Tasks {
     }
 
     public static ScheduledFuture<?> schedulePeriod(@NonNull Action task, long initialDelay, long period) {
-        return timer.setTimeout(task, d -> d == 0 ? initialDelay : period, null, TimeoutFlag.PERIOD.flags());
+        return timer.setTimeout(task, d -> d == 0 ? initialDelay : period, null, Constants.TIMER_PERIOD_FLAG);
     }
 }

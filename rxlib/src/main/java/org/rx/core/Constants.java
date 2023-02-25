@@ -1,5 +1,7 @@
 package org.rx.core;
 
+import org.rx.bean.FlagsEnum;
+
 public interface Constants {
     enum MetricName {
         THREAD_QUEUE_SIZE_ERROR,
@@ -35,4 +37,11 @@ public interface Constants {
 
     String NON_UNCHECKED = "unchecked";
     String NON_RAW_TYPES = "unchecked,rawtypes";
+
+    /**
+     * do not edit
+     */
+    FlagsEnum<TimeoutFlag> TIMER_PERIOD_FLAG = TimeoutFlag.PERIOD.flags();
+    FlagsEnum<TimeoutFlag> TIMER_SINGLE_FLAG = TimeoutFlag.SINGLE.flags();
+    FlagsEnum<TimeoutFlag> TIMER_REPLACE_FLAG = TimeoutFlag.REPLACE.flags();
 }

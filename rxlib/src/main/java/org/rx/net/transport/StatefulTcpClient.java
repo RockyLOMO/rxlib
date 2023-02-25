@@ -258,7 +258,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                         long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
                         log.warn("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);
                         return delay;
-                    }, this, TimeoutFlag.SINGLE.flags());
+                    }, this, Constants.TIMER_SINGLE_FLAG);
                 } else {
                     log.warn("{} {} fail", reconnect ? "reconnect" : "connect", ep);
                 }
@@ -283,7 +283,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     }
 
     void reconnectAsync() {
-        Tasks.setTimeout(() -> doConnect(true, null), 1000, bootstrap, TimeoutFlag.REPLACE.flags());
+        Tasks.setTimeout(() -> doConnect(true, null), 1000, bootstrap, Constants.TIMER_REPLACE_FLAG);
     }
 
     ChannelId channelId() {

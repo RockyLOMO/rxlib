@@ -388,7 +388,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
             writer.flush();
             return;
         }
-        Tasks.setTimeout(this::flush, delay, writer, TimeoutFlag.SINGLE.flags());
+        Tasks.setTimeout(this::flush, delay, writer, Constants.TIMER_SINGLE_FLAG);
     }
 
     @Override
