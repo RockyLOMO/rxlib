@@ -64,10 +64,11 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             if (info.latestTime == null || info.latestTime.before(now)) {
                 info.latestTime = now;
             }
-            info.refCnt--;
+//            info.refCnt--;
             info.totalActiveSeconds.addAndGet(elapsed / Constants.NANO_TO_MILLIS / 1000);
-            info.totalReadBytes.addAndGet(readBytes);
-            info.totalWriteBytes.addAndGet(writeBytes);
+            //svr write = client read
+            info.totalReadBytes.addAndGet(writeBytes);
+            info.totalWriteBytes.addAndGet(readBytes);
         }
         tryAs(authenticator, DbAuthenticator.class, p -> p.save(user));
 

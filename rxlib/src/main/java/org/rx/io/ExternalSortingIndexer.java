@@ -77,10 +77,10 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
 
         void clear() {
-            fs.lock.writeInvoke(() -> {
-                fs.setWriterPosition(position);
+            wal.lock.writeInvoke(() -> {
+                wal.setWriterPosition(position);
                 for (int i = 0; i < size; i++) {
-                    fs.write(0);
+                    wal.write(0);
                 }
 
                 keySize = 0;
@@ -113,12 +113,12 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                 boolean setSize = keySize == Constants.IO_EOF;
                 List<HashKey<TK>> keys = new ArrayList<>(setSize ? 10 : keySize);
 
-                fs.setReaderPosition(position);
+                wal.setReaderPosition(position);
                 int b = HashKey.BYTES;
                 byte[] buf = new byte[b];
                 int kSize = setSize ? Integer.MAX_VALUE : keySize;
                 for (long i = 0; i < this.size && keys.size() < kSize; i += b) {
-                    if (fs.read(buf, 0, buf.length) != b) {
+                    if (wal.read(buf, 0, buf.length) != b) {
                         throw new EOFException();
                     }
                     HashKey<TK> k = new HashKey<>();
@@ -147,7 +147,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
 
         boolean find(HashKey<TK> ktf) {
-            return fs.lock.readInvoke(() -> {
+            return wal.lock.readInvoke(() -> {
                 HashKey<TK>[] keys = unsafeLoad();
                 int i = Arrays.binarySearch(keys, ktf);
                 if (i < 0) {
@@ -162,14 +162,14 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
         boolean save(HashKey<TK> ktf) {
             long newLogPos = ktf.logPosition;
-            return fs.lock.writeInvoke(() -> {
+            return wal.lock.writeInvoke(() -> {
                 if (find(ktf)) {
 //                    if (ktf.logPosition > t.logPosition) {
 //                        return true;
 //                    }
                     ktf.logPosition = newLogPos;
-                    fs.setWriterPosition(ktf.keyPos + 8);
-                    fs.write(Bytes.getBytes(ktf.logPosition));
+                    wal.setWriterPosition(ktf.keyPos + 8);
+                    wal.write(Bytes.getBytes(ktf.logPosition));
 
                     HashKey<TK>[] ks;
                     WeakReference<HashKey<TK>[]> ref = this.ref;
@@ -185,21 +185,21 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     return true;
                 }
 
-                long wPos = fs.getWriterPosition();
+                long wPos = wal.getWriterPosition();
                 if (wPos < endPos) {
                     HashKey<TK>[] oks = unsafeLoad();
                     HashKey<TK>[] ks = new HashKey[oks.length + 1];
                     System.arraycopy(oks, 0, ks, 0, oks.length);
                     ks[ks.length - 1] = Sys.deepClone(ktf);
                     Arrays.parallelSort(ks);
-                    fs.setWriterPosition(position);
+                    wal.setWriterPosition(position);
                     byte[] buf = new byte[HashKey.BYTES];
                     for (HashKey<TK> fk : ks) {
-                        fk.keyPos = fs.getWriterPosition();
+                        fk.keyPos = wal.getWriterPosition();
                         Bytes.getBytes(fk.hashId, buf, 0);
                         Bytes.getBytes(fk.logPosition, buf, 8);
                         Bytes.getBytes(fk.keyPos, buf, 16);
-                        fs.write(buf);
+                        wal.write(buf);
                     }
 
                     keySize = ks.length;
@@ -213,12 +213,13 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         }
     }
 
+    static final int DEF_SORT_VAL = Integer.MAX_VALUE - 1;
     static final HashKey[] ARR_TYPE = new HashKey[0];
-    final WALFileStream fs;
+    final WALFileStream wal;
     final long bufSize;
     //concurrent issue
     //    final Cache<Partition, HashKey<TK>[]> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-    final List<Partition> partitions = new CopyOnWriteArrayList<>();
+    final CopyOnWriteArrayList<Partition> partitions = new CopyOnWriteArrayList<>();
     @Setter
     boolean enableCache = true;
     @Setter
@@ -227,19 +228,19 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     public ExternalSortingIndexer(File file, long bufSize, int readerCount) {
         int b = HashKey.BYTES;
         this.bufSize = bufSize = (bufSize / b) * b;
-        fs = new WALFileStream(file, bufSize, readerCount, Serializer.DEFAULT);
-        fs.onGrow.combine((s, e) -> ensureGrow());
+        wal = new WALFileStream(file, bufSize, readerCount, Serializer.DEFAULT);
+        wal.onGrow.combine((s, e) -> ensureGrow());
         ensureGrow();
     }
 
     @Override
     protected void freeObjects() {
-        fs.close();
+        wal.close();
     }
 
     void ensureGrow() {
-        fs.lock.writeInvoke(() -> {
-            int count = (int) (fs.getLength() / bufSize);
+        wal.lock.writeInvoke(() -> {
+            int count = (int) (wal.getLength() / bufSize);
             for (int i = partitions.size(); i < count; i++) {
                 partitions.add(new Partition(WALFileStream.HEADER_SIZE + i * bufSize, bufSize));
             }
@@ -247,7 +248,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
             for (int i = 0; i < rc; i++) {
                 partitions.remove(partitions.size() - 1);
             }
-        });
+        }, WALFileStream.HEADER_SIZE);
     }
 
     public long size() {
@@ -281,34 +282,36 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     }
 
     Iterable<Partition> route(HashKey<TK> fk) {
-        return partitions;
-//        return Linq.from(partitions).orderBy(p -> {
-//            HashKey<TK> min = p.min;
-//            HashKey<TK> max = p.max;
-//            if (min == null || max == null) {
-//                return 2;
-//            }
-//            if (min.hashId <= fk.hashId && fk.hashId <= max.hashId) {
-//                return 0;
-//            }
-//            return 1;
-//        });
+        if (partitions.size() <= 5) {
+            return partitions;
+        }
+        return wal.lock.readInvoke(() -> Linq.from(partitions).orderBy(p -> {
+            HashKey<TK> min = p.min;
+            HashKey<TK> max = p.max;
+            if (min == null || max == null) {
+                return Integer.MAX_VALUE;
+            }
+            if (min.hashId <= fk.hashId && fk.hashId <= max.hashId) {
+                return p.keySize;
+            }
+            return DEF_SORT_VAL;
+        }), WALFileStream.HEADER_SIZE);
     }
 
     @Override
     public void clear() {
-        fs.lock.writeInvoke(() -> {
+        wal.lock.writeInvoke(() -> {
             for (Partition partition : partitions) {
                 partition.clear();
             }
-            fs.clear();
+            wal.clear();
         });
     }
 
     @Override
     public String toString() {
         return "ExternalSortingIndexer{" +
-                "name=" + fs.getName() +
+                "name=" + wal.getName() +
                 ", bufSize=" + bufSize +
                 ", partitions=" + Linq.from(partitions).select(p -> p.keySize).toList() + " / " + size() +
                 '}';
