@@ -531,7 +531,7 @@ public final class Sys extends SystemUtils {
             }
         }
         child = tmp.get(paths[last]);
-        if (childSelect != null) {
+        if (childSelect != null && !Reflects.isBasicType(child.getClass())) {
             child = childSelect.apply(child);
         }
         return (T) child;
