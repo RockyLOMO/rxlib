@@ -2,10 +2,14 @@ package org.rx.net.socks;
 
 import lombok.NonNull;
 import org.apache.commons.collections4.CollectionUtils;
+import org.rx.bean.DateTime;
+import org.rx.core.Tasks;
 import org.rx.io.KeyValueStore;
 import org.rx.io.KeyValueStoreConfig;
 
+import java.net.InetAddress;
 import java.util.List;
+import java.util.Map;
 
 import static org.rx.core.Extends.eq;
 
@@ -33,12 +37,13 @@ final class DbAuthenticator implements Authenticator {
             }
         }
 
-//        Tasks.scheduleDaily(() -> {
-//            if (DateTime.now().getDay() != 1) {
-//                return;
-//            }
-//            resetData();
-//        }, "00:01:00");
+        Tasks.scheduleDaily(() -> {
+            resetIp();
+
+            if (DateTime.now().getDay() == 1) {
+                resetData();
+            }
+        }, "01:00:00");
     }
 
     @Override
@@ -62,15 +67,24 @@ final class DbAuthenticator implements Authenticator {
     }
 
     public void resetIp() {
-
+        for (Map.Entry<String, SocksUser> entry : store.entrySet()) {
+            Map<InetAddress, SocksUser.LoginInfo> loginIps = entry.getValue().getLoginIps();
+            for (Map.Entry<InetAddress, SocksUser.LoginInfo> lEntry : loginIps.entrySet()) {
+                DateTime latestTime = lEntry.getValue().latestTime;
+                if (latestTime != null && latestTime.before(DateTime.now().addDays(-2))) {
+                    loginIps.remove(lEntry.getKey());
+                }
+            }
+        }
     }
 
     public void resetData() {
-//        DateTime firstDay = DateTime.valueOf(DateTime.now().toString("yyyy-MM-01 00:00:00"));
-//        if (user.lastResetTime == null || user.lastResetTime.before(firstDay)) {
-//            user.getTotalReadBytes().set(0);
-//            user.getTotalWriteBytes().set(0);
-//        }
-//        user.lastResetTime = DateTime.now();
+        for (SocksUser usr : store.values()) {
+            for (SocksUser.LoginInfo l : usr.getLoginIps().values()) {
+                l.totalReadBytes.set(0);
+                l.totalWriteBytes.set(0);
+            }
+            usr.lastResetTime = DateTime.now();
+        }
     }
 }
