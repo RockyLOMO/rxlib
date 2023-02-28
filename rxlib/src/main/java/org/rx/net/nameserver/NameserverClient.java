@@ -55,26 +55,26 @@ public final class NameserverClient extends Disposable {
     public final Delegate<Nameserver, Nameserver.AppChangedEventArgs> onAppAddressChanged = Delegate.create();
     @Getter
     final String appName;
-    final RandomList<NsInfo> hold = new RandomList<>();
+    final RandomList<NsInfo> holder = new RandomList<>();
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
 
     public Set<InetSocketAddress> registerEndpoints() {
-        return Linq.from(hold).select(p -> p.registerEndpoint).toSet();
+        return Linq.from(holder).select(p -> p.registerEndpoint).toSet();
     }
 
     public Set<InetSocketAddress> discoveryEndpoints() {
-        return Linq.from(hold).where(p -> p.dnsPort != null).select(p -> Sockets.newEndpoint(p.registerEndpoint, p.dnsPort)).toSet();
+        return Linq.from(holder).where(p -> p.dnsPort != null).select(p -> Sockets.newEndpoint(p.registerEndpoint, p.dnsPort)).toSet();
     }
 
     public NameserverClient(String appName) {
         this.appName = appName;
-        group.add(hold);
+        group.add(holder);
     }
 
     @Override
     protected void freeObjects() {
-        group.remove(hold);
-        for (NsInfo tuple : hold) {
+        group.remove(holder);
+        for (NsInfo tuple : holder) {
             tryClose(tuple.ns);
         }
     }
@@ -105,13 +105,13 @@ public final class NameserverClient extends Disposable {
         svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::newAllEndpoints).toSet());
 
         return Tasks.runAsync(() -> each(svrEps, regEp -> {
-            synchronized (hold) {
-                if (Linq.from(hold).any(p -> eq(p.registerEndpoint, regEp))) {
+            synchronized (holder) {
+                if (Linq.from(holder).any(p -> eq(p.registerEndpoint, regEp))) {
                     return;
                 }
 
                 NsInfo tuple = new NsInfo(regEp);
-                hold.add(tuple);
+                holder.add(tuple);
                 Action handshake = () -> {
                     try {
                         Integer lastDp = tuple.dnsPort;
@@ -135,11 +135,11 @@ public final class NameserverClient extends Disposable {
                 RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(regEp, 0);
                 config.setInitHandler((ns, rc) -> {
                     rc.onConnected.combine((s, e) -> {
-                        hold.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
+                        holder.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
                         reInject();
                     });
                     rc.onDisconnected.combine((s, e) -> {
-                        hold.setWeight(tuple, 0);
+                        holder.setWeight(tuple, 0);
                         reInject();
                     });
                     rc.onReconnecting.combine((s, e) -> {
@@ -173,22 +173,22 @@ public final class NameserverClient extends Disposable {
     }
 
     public CompletableFuture<?> deregisterAsync() {
-        return Tasks.runAsync(() -> each(hold, p -> quietly(() -> p.ns.deregister(), DEFAULT_RETRY)));
+        return Tasks.runAsync(() -> each(holder, p -> quietly(() -> p.ns.deregister(), DEFAULT_RETRY)));
     }
 
     public List<InetAddress> discover(@NonNull String appName) {
-        return hold.next().ns.discover(appName);
+        return holder.next().ns.discover(appName);
     }
 
     public List<InetAddress> discoverAll(@NonNull String appName, boolean exceptCurrent) {
-        return hold.next().ns.discoverAll(appName, exceptCurrent);
+        return holder.next().ns.discoverAll(appName, exceptCurrent);
     }
 
     public List<Nameserver.InstanceInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
-        return hold.next().ns.discover(appName, instanceAttrKeys);
+        return holder.next().ns.discover(appName, instanceAttrKeys);
     }
 
     public List<Nameserver.InstanceInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
-        return hold.next().ns.discoverAll(appName, exceptCurrent, instanceAttrKeys);
+        return holder.next().ns.discoverAll(appName, exceptCurrent, instanceAttrKeys);
     }
 }

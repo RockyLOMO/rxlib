@@ -505,7 +505,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class DynamicSizer implements TimerTask {
-        final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> hold = new WeakIdentityMap<>(8);
+        final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> holder = new WeakIdentityMap<>(8);
 
         DynamicSizer() {
             timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
@@ -515,7 +515,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         public void run(Timeout timeout) throws Exception {
             try {
                 Decimal cpuLoad = Decimal.valueOf(Sys.osMx.getSystemCpuLoad() * 100);
-                for (Map.Entry<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> entry : hold.entrySet()) {
+                for (Map.Entry<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> entry : holder.entrySet()) {
                     ThreadPoolExecutor pool = entry.getKey();
                     if (pool instanceof ScheduledExecutorService) {
                         scheduledThread(cpuLoad, pool, entry.getValue());
@@ -609,7 +609,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                 return;
             }
 
-            hold.put(pool, BiTuple.of(cpuWaterMark, 0, 0));
+            holder.put(pool, BiTuple.of(cpuWaterMark, 0, 0));
         }
     }
 
