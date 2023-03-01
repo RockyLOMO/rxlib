@@ -75,19 +75,19 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
             }
 
             if (maxRandomValue == 0) {
-                WeightElement<T> hold = null;
+                WeightElement<T> holder = null;
                 for (int i = 0; i < elements.size(); i++) {
                     WeightElement<T> element = elements.get(i);
                     if (i == 0) {
                         element.threshold.start = 0;
                         element.threshold.end = element.weight;
                     } else {
-                        element.threshold.start = hold.threshold.end;
+                        element.threshold.start = holder.threshold.end;
                         element.threshold.end = element.threshold.start + element.weight;
                     }
-                    hold = element;
+                    holder = element;
                 }
-                maxRandomValue = hold.threshold.end;
+                maxRandomValue = holder.threshold.end;
             }
 
             int v = ThreadLocalRandom.current().nextInt(maxRandomValue);

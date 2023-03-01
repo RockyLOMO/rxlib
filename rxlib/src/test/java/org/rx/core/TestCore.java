@@ -977,6 +977,12 @@ public class TestCore extends AbstractTester {
         assert Reflects.defaultValue(int.class) == 0;
         assert Reflects.defaultValue(List.class) == Collections.emptyList();
         assert Reflects.defaultValue(Map.class) == Collections.emptyMap();
+
+        assert Reflects.isBasicType(int.class)
+                && Reflects.isBasicType(Integer.class)
+                && Reflects.isBasicType(boolean.class)
+                && Reflects.isBasicType(Boolean.class)
+                && Reflects.isBasicType(BigDecimal.class);
     }
 
     @ErrorCode

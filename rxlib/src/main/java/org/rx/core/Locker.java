@@ -12,10 +12,10 @@ import java.util.concurrent.locks.ReentrantLock;
 public class Locker {
     public static final Locker INSTANCE = new Locker();
     //key1: ref, key2: key
-    final Map<Object, Map<Object, ReentrantLock>> hold = new WeakIdentityMap<>();
+    final Map<Object, Map<Object, ReentrantLock>> holder = new WeakIdentityMap<>();
 
     public ReentrantLock getLock(Object ref, Object key) {
-        return hold.computeIfAbsent(ref, k -> new ConcurrentHashMap<>())
+        return holder.computeIfAbsent(ref, k -> new ConcurrentHashMap<>())
                 .computeIfAbsent(key, k -> new ReentrantLock());
     }
 }

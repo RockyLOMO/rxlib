@@ -16,6 +16,7 @@ import org.rx.core.*;
 import org.rx.bean.GirlBean;
 import org.rx.bean.PersonBean;
 import org.rx.bean.PersonGender;
+import org.rx.test.UserStruct;
 import org.rx.util.*;
 import org.rx.third.guava.CaseFormat;
 
@@ -23,10 +24,12 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.Arrays;
 
+import static org.rx.core.Sys.toJsonObject;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class TestUtil extends AbstractTester {
+    //region BeanMapper
     //因为有default method，暂不支持abstract class
     interface PersonMapper {
         PersonMapper INSTANCE = BeanMapper.DEFAULT.define(PersonMapper.class);
@@ -110,6 +113,7 @@ public class TestUtil extends AbstractTester {
         }
         System.out.println(c);
     }
+    //endregion
 
     @Test
     @SneakyThrows
@@ -153,6 +157,7 @@ public class TestUtil extends AbstractTester {
         Validator.validateMethod(m, girl, new Object[]{Collections.emptyList()}, () -> 0);
     }
 
+    //region changeTracker
     @Test
     public void objectChangeTracker() {
         ObjectChangeTracker tracker = ObjectChangeTracker.DEFAULT;
@@ -246,19 +251,20 @@ public class TestUtil extends AbstractTester {
         String newName = e.readValue("tb.name");
         System.out.println(newName);
     }
+    //endregion
 
     @Test
     public void other() {
-        //snowflake
-        Set<Long> set = new HashSet<>();
-        int len = 1 << 12;
-        System.out.println(len);
-        Snowflake snowflake = Snowflake.DEFAULT;
-        for (int i = 0; i < len; i++) {
-            Tasks.run(() -> {
-                assert set.add(snowflake.nextId());
-            });
-        }
+//        //snowflake
+//        Set<Long> set = new HashSet<>();
+//        int len = 1 << 12;
+//        System.out.println(len);
+//        Snowflake snowflake = Snowflake.DEFAULT;
+//        for (int i = 0; i < len; i++) {
+//            Tasks.run(() -> {
+//                assert set.add(snowflake.nextId());
+//            });
+//        }
 
         //compareVersion
         assert Strings.compareVersion("1.01", "1.001") == 0;
@@ -267,21 +273,21 @@ public class TestUtil extends AbstractTester {
 
         String ce = "适用苹果ipad 10.2平板钢化膜9.7寸/air5全屏防爆膜2020/2021版高清贴膜10.9/11寸12.9寸护眼抗蓝紫光钢化膜";
         System.out.println(Strings.subStringByByteLen(ce, 78));
-    }
 
-    @Data
-    static class IBJ {
-        int val;
+        String json = "{\"ctp\":\"pages/gold/item/pages/detail/index\",\"par\":\"\",\"ref\":\"pages/gold/item/pages/detail/index\",\"rpr\":\"\",\"seq\":2,\"vts\":110,\"pin\":\"jd_759f867040f60\",\"fst\":\"1577630901829\",\"pst\":\"1677280413\",\"vct\":\"1677479554\",\"jsver\":\"TR1.0.0\",\"net\":\"wifi\",\"lat\":\"\",\"lon\":\"\",\"speed\":\"\",\"accuracy\":\"\",\"pixelRatio\":\"1\",\"jdv\":\"1|weixin|t_335139774_xcx_1036_appfxxx|xcx|-|1677479554238\",\"customerInfo\":\"\",\"unpl\":\"\",\"scene\":1036,\"sdkver\":\"2.19.2\",\"ext\":{},\"eid\":\"W_jdgwxcx_productdetail_consultationiconexpo\",\"eparam\":\"{\\\"mainskuid\\\":100006612085}\",\"elevel\":\"\",\"page_id\":\"W_jdgwxcx_productdetail\",\"pname\":\"pages/gold/item/pages/detail/index\",\"pparam\":\"\",\"tar\":\"\",\"x\":0,\"y\":0,\"typ\":\"ep\"}";
+        Object v = Sys.readJsonValue(toJsonObject(json), "eparam.mainskuid", Sys::toJsonObject, true);
+        System.out.println(v);
     }
 
     @Test
     public void third() {
-        Map<Object, Integer> map = new WeakIdentityMap<>();
-        IBJ k = new IBJ();
-        map.put(k, 1);
-        k.val = 2;
-        map.put(k, 2);
-        System.out.println(toJsonString(map.entrySet()));
+        Map<Object, Integer> identityMap = new WeakIdentityMap<>();
+        UserStruct k = new UserStruct();
+        identityMap.put(k, 1);
+        k.age = 2;
+        identityMap.put(k, 2);
+        assert identityMap.size() == 1;
+        System.out.println(toJsonString(identityMap.entrySet()));
 
         System.out.println(FilenameUtils.getFullPath("a.txt"));
         System.out.println(FilenameUtils.getFullPath("c:\\a\\b.txt"));

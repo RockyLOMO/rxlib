@@ -83,7 +83,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                         if (ThreadPool.asyncContinueFlag(doContinue)) {
                             newTimeout(this, delay, timeout.timer());
                         } else if (id != null) {
-                            hold.remove(id);
+                            holder.remove(id);
                         }
                     }
                 });
@@ -216,7 +216,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     static final long TICK_DURATION = 100;
-    static final Map<Object, TimeoutFuture> hold = new ConcurrentHashMap<>();
+    static final Map<Object, TimeoutFuture> holder = new ConcurrentHashMap<>();
     final ExecutorService executor;
     final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
@@ -265,13 +265,13 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
         FlagsEnum<TimeoutFlag> flags = task.flags;
         if (flags.has(TimeoutFlag.SINGLE)) {
-            TimeoutFuture<T> ot = hold.get(task.id);
+            TimeoutFuture<T> ot = holder.get(task.id);
             if (ot != null) {
                 return ot;
             }
         }
 
-        TimeoutFuture<T> ot = hold.put(task.id, task);
+        TimeoutFuture<T> ot = holder.put(task.id, task);
         newTimeout(task, 0, timer);
         if (flags.has(TimeoutFlag.REPLACE) && ot != null) {
             ot.cancel();
