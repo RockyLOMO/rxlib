@@ -1,4 +1,4 @@
-package org.rx.util;
+package org.rx;
 
 import org.rx.net.http.HttpClient;
 

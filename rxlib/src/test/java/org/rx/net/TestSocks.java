@@ -932,6 +932,13 @@ public class TestSocks extends AbstractTester {
     }
 
     @Test
+    public void httpClient(){
+        HttpClient c = new HttpClient();
+        c.getRequestHeaders().add("Connection", "close");
+        System.out.println(c.get("").toString());
+    }
+
+    @Test
     public void restfulRpc() {
         String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
         Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
