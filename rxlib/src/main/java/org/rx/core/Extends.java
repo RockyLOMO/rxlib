@@ -15,6 +15,7 @@ import org.rx.util.function.Func;
 import java.io.Serializable;
 import java.lang.reflect.AnnotatedElement;
 import java.util.List;
+import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -239,6 +240,11 @@ public interface Extends extends Serializable {
     }
 
     default <TK, TV> void attr(TK key, TV value) {
-        IOC.weakIdentityMap(this).put(key, value);
+        Map<TK, TV> map = IOC.weakIdentityMap(this);
+        if (value == null) {
+            map.remove(key);
+        } else {
+            map.put(key, value);
+        }
     }
 }
