@@ -67,13 +67,18 @@ final class DbAuthenticator implements Authenticator {
     }
 
     public void resetIp() {
-        for (Map.Entry<String, SocksUser> entry : store.entrySet()) {
-            Map<InetAddress, SocksUser.LoginInfo> loginIps = entry.getValue().getLoginIps();
+        for (SocksUser user : store.values()) {
+            boolean changed = false;
+            Map<InetAddress, SocksUser.LoginInfo> loginIps = user.getLoginIps();
             for (Map.Entry<InetAddress, SocksUser.LoginInfo> lEntry : loginIps.entrySet()) {
                 DateTime latestTime = lEntry.getValue().latestTime;
                 if (latestTime != null && latestTime.before(DateTime.now().addDays(-2))) {
                     loginIps.remove(lEntry.getKey());
+                    changed = true;
                 }
+            }
+            if (changed) {
+                save(user);
             }
         }
     }
