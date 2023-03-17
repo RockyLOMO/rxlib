@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.PostConstruct;
+import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.lang.management.ManagementFactory;
@@ -82,6 +83,18 @@ public class MxController {
         }
         try {
             switch (Integer.parseInt(x)) {
+                case 0:
+                    StringBuilder buf = new StringBuilder();
+                    buf.appendLine("%s %s", request.getMethod(), request.getRequestURL().toString());
+                    for (String n : Collections.list(request.getHeaderNames())) {
+                        buf.appendLine("%s: %s", n, request.getHeader(n));
+                    }
+                    ServletInputStream inStream = request.getInputStream();
+                    if (inStream != null) {
+                        buf.appendLine(IOStream.readString(inStream, StandardCharsets.UTF_8));
+                    }
+                    TraceHandler.INSTANCE.log("rx replay {}", buf);
+                    return buf.toString();
                 case 1:
                     String type = request.getParameter("type");
                     String jsonVal = request.getParameter("jsonVal");

@@ -541,7 +541,7 @@ public class HttpClient {
         log.info("Forward request: {}\nheaders {}", forwardUrl, toJsonString(requestHeaders));
         Request.Builder request = createRequest(forwardUrl);
         RequestBody requestBody = null;
-        if (!servletRequest.getMethod().equalsIgnoreCase(HttpMethod.GET.name())) {
+//        if (!servletRequest.getMethod().equalsIgnoreCase(HttpMethod.GET.name())) {
             ServletInputStream inStream = servletRequest.getInputStream();
             if (inStream != null) {
                 if (servletRequest.getContentType() != null) {
@@ -550,7 +550,7 @@ public class HttpClient {
                     requestBody = RequestBody.create(IOStream.wrap(Strings.EMPTY, inStream).toArray());
                 }
             }
-        }
+//        }
         Response response = getClient().newCall(request.method(servletRequest.getMethod(), requestBody).build()).execute();
         servletResponse.setStatus(response.code());
         for (Pair<? extends String, ? extends String> header : response.headers()) {
