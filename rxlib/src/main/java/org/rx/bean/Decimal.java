@@ -83,6 +83,10 @@ public class Decimal extends Number implements Comparable<Decimal> {
         return valueOf(expr, DEFAULT_SCALE, DEFAULT_MODE);
     }
 
+    public static Decimal valueOf(String expr, int scale) {
+        return valueOf(expr, scale, DEFAULT_MODE);
+    }
+
     public static Decimal valueOf(@NonNull String expr, int scale, RoundingMode mode) {
         BigDecimal d = BigDecimal.ONE;
         if (expr.endsWith(PERCENT_SYMBOL)) {
