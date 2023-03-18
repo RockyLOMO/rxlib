@@ -77,7 +77,7 @@ public final class DateTime extends Date {
     }
 
     public DateTime setDatePart(String date) {
-        return DateTime.valueOf(date + " " + toTimeString(), DATE_TIME_FORMAT);
+        return DateTime.valueOf(toString(date + " HH:mm:ss"), DATE_TIME_FORMAT);
     }
 
     public DateTime getTimePart() {
@@ -85,7 +85,7 @@ public final class DateTime extends Date {
     }
 
     public DateTime setTimePart(String time) {
-        return DateTime.valueOf(toDateString() + " " + time, DATE_TIME_FORMAT);
+        return DateTime.valueOf(toString("yyy-MM-dd " + time), DATE_TIME_FORMAT);
     }
 
     public boolean isToday() {
