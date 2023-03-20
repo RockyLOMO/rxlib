@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.PostConstruct;
+import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.lang.management.ManagementFactory;
@@ -74,11 +75,23 @@ public class MxController {
         return result;
     }
 
+    @SneakyThrows
     @RequestMapping("health")
     public Object health(HttpServletRequest request, HttpServletResponse response) {
         String x = request.getParameter("x");
         if (!check(request) || x == null) {
-            return null;
+            StringBuilder buf = new StringBuilder();
+            buf.appendLine("%s %s", request.getMethod(), request.getRequestURL().toString());
+            for (String n : Collections.list(request.getHeaderNames())) {
+                buf.appendLine("%s: %s", n, request.getHeader(n));
+            }
+            ServletInputStream inStream = request.getInputStream();
+            if (inStream != null) {
+                buf.appendLine(IOStream.readString(inStream, StandardCharsets.UTF_8));
+            }
+            TraceHandler.INSTANCE.log("rx replay {}", buf);
+            response.setContentType("text/plain;charset=UTF-8");
+            return buf.toString();
         }
         try {
             switch (Integer.parseInt(x)) {

@@ -227,6 +227,14 @@ public class Strings extends StringUtils {
         return a.equals(b);
     }
 
+    public static boolean equalsTrim(String a, String b) {
+        return equals(trim(a), trim(b));
+    }
+
+    public static boolean equalsTrimIgnoreCase(String a, String b) {
+        return equalsIgnoreCase(trim(a), trim(b));
+    }
+
     public static boolean containsAll(String str, CharSequence... searches) {
         return str != null && Linq.from(searches).all(str::contains);
     }
