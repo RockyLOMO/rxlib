@@ -91,7 +91,7 @@ public class MxController {
             }
             TraceHandler.INSTANCE.log("rx replay {}", buf);
             response.setContentType("text/plain;charset=UTF-8");
-            return buf.toString();
+            return buf;
         }
         try {
             switch (Integer.parseInt(x)) {

@@ -20,6 +20,7 @@ import java.io.LineNumberReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.StringTokenizer;
 import java.util.concurrent.Future;
@@ -108,10 +109,10 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
      * @param toProcess the command line to process
      * @return the command line broken into strings. An empty or null toProcess parameter results in a zero sized array
      */
-    private static String[] translateCommandline(final String toProcess) {
+    static List<String> translateCommandline(final String toProcess) {
         if (toProcess == null || toProcess.isEmpty()) {
             // no command? no string
-            return new String[0];
+            return Collections.emptyList();
         }
 
         // parse with a simple finite state machine
@@ -169,18 +170,16 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         if (state == inQuote || state == inDoubleQuote) {
             throw new IllegalArgumentException("Unbalanced quotes in " + toProcess);
         }
-
-        final String[] args = new String[list.size()];
-        return list.toArray(args);
+        return list;
     }
 
     public final Delegate<ShellCommander, PrintOutEventArgs> onPrintOut = Delegate.create();
     public final Delegate<ShellCommander, ExitedEventArgs> onExited = Delegate.create();
 
-    final File workspace;
     final long daemonPeriod;
     @Getter
     String shell;
+    File workspace;
     Process process;
     Future<Void> daemonFuture;
 
@@ -213,10 +212,7 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
     }
 
     public ShellCommander(@NonNull String shell, String workspace, long daemonPeriod, boolean killOnExited) {
-        this.shell = shell = shell.trim();
-        if (Files.isPath(shell)) {
-            workspace = FilenameUtils.getFullPathNoEndSeparator(shell);
-        }
+        this.shell = shell.trim();
         this.workspace = workspace == null ? null : new File(workspace);
 
         this.daemonPeriod = Math.max(1, daemonPeriod);
@@ -239,9 +235,11 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         }
 
         log.debug("start {}", shell);
-        Process tmp = process = new ProcessBuilder(translateCommandline(shell))
-                .directory(workspace)
-                .redirectErrorStream(true)  //combine inputStream and errorStream
+        List<String> command = translateCommandline(shell);
+        if (!command.isEmpty() && Files.isPath(command.get(0))) {
+            workspace = new File(FilenameUtils.getFullPathNoEndSeparator(command.get(0)));
+        }
+        Process tmp = process = new ProcessBuilder(command).directory(workspace).redirectErrorStream(true)  //combine inputStream and errorStream
                 .start();
 
         if (daemonFuture != null) {
