@@ -33,11 +33,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.io.FilenameUtils;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.util.function.BiAction;
@@ -449,7 +449,7 @@ public final class Sockets {
             return false;
         }
         for (String regex : bypassList) {
-            if (FilenameUtils.wildcardMatch(host, regex)) {
+            if (Files.wildcardMatch(host, regex)) {
                 return true;
             }
         }

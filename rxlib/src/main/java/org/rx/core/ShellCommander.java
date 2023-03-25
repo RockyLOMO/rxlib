@@ -6,7 +6,6 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FilenameUtils;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
@@ -237,7 +236,7 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         log.debug("start {}", shell);
         List<String> command = translateCommandline(shell);
         if (!command.isEmpty() && Files.isPath(command.get(0))) {
-            workspace = new File(FilenameUtils.getFullPathNoEndSeparator(command.get(0)));
+            workspace = new File(Files.getFullPathNoEndSeparator(command.get(0)));
         }
         Process tmp = process = new ProcessBuilder(command).directory(workspace).redirectErrorStream(true)  //combine inputStream and errorStream
                 .start();
