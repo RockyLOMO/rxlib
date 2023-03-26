@@ -122,8 +122,7 @@ public class ObjectChangeTracker {
         }
         if (Map.class.isAssignableFrom(type)) {
             Map<?, ?> x = (Map<?, ?>) val;
-            parent.put(name, Linq.from(x.entrySet()).select(p -> new AbstractMap.SimpleEntry<>(resolveValue(name, concatName, p.getKey(), recursionDepth),
-                    resolveValue(name, concatName, p.getValue(), recursionDepth))).toMap());
+            parent.put(name, Linq.from(x.entrySet()).select(p -> new AbstractMap.SimpleEntry<>(resolveValue(name, concatName, p.getKey(), recursionDepth), resolveValue(name, concatName, p.getValue(), recursionDepth))).toMap());
             return;
         }
         parent.put(name, resolveValue(name, concatName, val, recursionDepth));
@@ -137,8 +136,7 @@ public class ObjectChangeTracker {
         Class<?> type = val.getClass();
         if (!Reflects.isBasicType(type)) {
             if (++recursionDepth > 128) {
-                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_TRACK_OVERFLOW.name(),
-                        String.format("%s recursion overflow", type));
+                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_TRACK_OVERFLOW.name(), String.format("%s recursion overflow", type));
                 return val;
             }
             log.debug("recursion {} -> {}", type, recursionDepth);
@@ -215,10 +213,12 @@ public class ObjectChangeTracker {
 
         Serializable topic = null;
         Metadata m = target.getClass().getAnnotation(Metadata.class);
-        if (m.topicClass() != Object.class) {
-            topic = m.topicClass();
-        } else if (!m.topic().isEmpty()) {
-            topic = m.topic();
+        if (m != null) {
+            if (m.topicClass() != Object.class) {
+                topic = m.topicClass();
+            } else if (!m.topic().isEmpty()) {
+                topic = m.topic();
+            }
         }
         bus.publish(new ObjectChangedEvent(target, changedValues), topic);
     }

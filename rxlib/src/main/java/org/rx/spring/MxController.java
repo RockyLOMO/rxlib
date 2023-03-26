@@ -280,6 +280,7 @@ public class MxController {
 
     @Subscribe(topicClass = RxConfig.class)
     void onChanged(ObjectChangedEvent event) {
+        //todo all topic
         Tasks.setTimeout(() -> {
             String omega = event.<RxConfig>source().getOmega();
             if (omega != null) {
