@@ -211,16 +211,7 @@ public class ObjectChangeTracker {
         log.info("Tracker {} ->\n\t{}\n\t{}\n-> {}", target, oldMap, newMap, Sys.toJsonString(changedValues));
         sources.put(target, newMap);
 
-        Serializable topic = null;
-        Metadata m = target.getClass().getAnnotation(Metadata.class);
-        if (m != null) {
-            if (m.topicClass() != Object.class) {
-                topic = m.topicClass();
-            } else if (!m.topic().isEmpty()) {
-                topic = m.topic();
-            }
-        }
-        bus.publish(new ObjectChangedEvent(target, changedValues), topic);
+        bus.publish(new ObjectChangedEvent(target, changedValues), EventBus.getTopic(target));
     }
 
     public <T> ObjectChangeTracker watch(T source) {

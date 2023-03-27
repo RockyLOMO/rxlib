@@ -19,6 +19,20 @@ import java.util.concurrent.CopyOnWriteArraySet;
 public class EventBus implements EventPublisher<EventBus> {
     public static final EventBus DEFAULT = new EventBus();
     static final int TOPIC_MAP_INITIAL_CAPACITY = 4;
+
+    static <T> Serializable getTopic(T event) {
+        Serializable topic = null;
+        Metadata m = event.getClass().getAnnotation(Metadata.class);
+        if (m != null) {
+            if (m.topicClass() != Object.class) {
+                topic = m.topicClass();
+            } else if (!m.topic().isEmpty()) {
+                topic = m.topic();
+            }
+        }
+        return topic;
+    }
+
     public final Delegate<EventBus, NEventArgs<?>> onDeadEvent = Delegate.create();
     //eventType -> topic -> eventMethodsInListener
     final Map<Class<?>, Map<Serializable, Set<Tuple<Object, Method>>>> subscribers = new ConcurrentHashMap<>();
@@ -73,8 +87,7 @@ public class EventBus implements EventPublisher<EventBus> {
 
     Map<Class<?>, Set<Tuple<Object, Method>>> findAllSubscribers(Object listener) {
         Map<Class<?>, Set<Tuple<Object, Method>>> methodsInListener = new HashMap<>();
-        for (Method method : Linq.from(Reflects.getMethodMap(listener instanceof Class ? (Class<?>) listener : listener.getClass()).values()).selectMany(p -> p)
-                .where(p -> p.isAnnotationPresent(Subscribe.class) && !p.isSynthetic())) {
+        for (Method method : Linq.from(Reflects.getMethodMap(listener instanceof Class ? (Class<?>) listener : listener.getClass()).values()).selectMany(p -> p).where(p -> p.isAnnotationPresent(Subscribe.class) && !p.isSynthetic())) {
             if (method.getParameterCount() != 1) {
                 throw new InvalidException("Subscriber method %s has @Subscribe annotation must have exactly 1 parameter.", method);
             }
@@ -85,16 +98,7 @@ public class EventBus implements EventPublisher<EventBus> {
     }
 
     public <T> void publish(T event) {
-        Serializable topic = null;
-        Metadata m = event.getClass().getAnnotation(Metadata.class);
-        if (m != null) {
-            if (m.topicClass() != Object.class) {
-                topic = m.topicClass();
-            } else if (!m.topic().isEmpty()) {
-                topic = m.topic();
-            }
-        }
-        publish(event, topic);
+        publish(event, getTopic(event));
     }
 
     public <T, TT extends Serializable> void publish(@NonNull T event, TT topic) {
@@ -104,12 +108,9 @@ public class EventBus implements EventPublisher<EventBus> {
         eventTypes.add(type);
 
         Linq<Class<?>> q = Linq.from(eventTypes);
-        Set<Tuple<Object, Method>> eventSubscribers = topic == null
-                ? q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).values()).selectMany(p -> p).toSet()
-                : q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).getOrDefault(topic, Collections.emptySet())).toSet();
+        Set<Tuple<Object, Method>> eventSubscribers = topic == null ? q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).values()).selectMany(p -> p).toSet() : q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).getOrDefault(topic, Collections.emptySet())).toSet();
         if (eventSubscribers.isEmpty()) {
-            TraceHandler.INSTANCE.saveMetric(Constants.MetricName.DEAD_EVENT.name(),
-                    String.format("The event %s[%s] had no subscribers", event, topic));
+            TraceHandler.INSTANCE.saveMetric(Constants.MetricName.DEAD_EVENT.name(), String.format("The event %s[%s] had no subscribers", event, topic));
             raiseEvent(onDeadEvent, new NEventArgs<>(event));
             return;
         }
