@@ -91,7 +91,7 @@ public class MxController {
             }
             TraceHandler.INSTANCE.log("rx replay {}", buf);
             response.setContentType("text/plain;charset=UTF-8");
-            return buf.toString();
+            return buf;
         }
         try {
             switch (Integer.parseInt(x)) {
@@ -280,6 +280,7 @@ public class MxController {
 
     @Subscribe(topicClass = RxConfig.class)
     void onChanged(ObjectChangedEvent event) {
+        //todo all topic
         Tasks.setTimeout(() -> {
             String omega = event.<RxConfig>source().getOmega();
             if (omega != null) {

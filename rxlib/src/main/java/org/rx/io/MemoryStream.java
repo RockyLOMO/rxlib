@@ -49,6 +49,23 @@ public final class MemoryStream extends IOStream implements Serializable {
     public InputStream getReader() {
         if (reader == null) {
             reader = new InputStream() {
+                int mark;
+
+                @Override
+                public boolean markSupported() {
+                    return true;
+                }
+
+                @Override
+                public synchronized void mark(int readlimit) {
+                    mark = buffer.readerIndex();
+                }
+
+                @Override
+                public synchronized void reset() throws IOException {
+                    buffer.readerIndex(mark);
+                }
+
                 @Override
                 public int available() {
                     return buffer.readableBytes();
