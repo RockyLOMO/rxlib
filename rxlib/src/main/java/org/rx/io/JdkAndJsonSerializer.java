@@ -6,6 +6,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.JsonTypeInvoker;
 import org.rx.core.Strings;
+import org.rx.exception.TraceHandler;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -54,8 +55,8 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
         try {
             out.writeObject(obj0);
         } catch (NotSerializableException e) {
-            log.info("NotSerializable {} <- {}", obj instanceof Serializable, obj);
-            throw e;
+            TraceHandler.INSTANCE.log("NotSerializable {}", obj, e);
+            out.writeObject(new JsonWrapper(obj.getClass(), toJsonString(obj)));
         }
     }
 
