@@ -68,11 +68,15 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
             return;
         }
 
-        long pos = stream.getPosition();
+        long pos = stream.canSeek() ? stream.getPosition() : -1;
         ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
         try {
             out.writeObject(obj0);
         } catch (NotSerializableException e) {
+            if (pos == -1) {
+                throw e;
+            }
+
             TraceHandler.INSTANCE.log("NotSerializable {}", obj, e);
             cache.put(skipNS, this);
 

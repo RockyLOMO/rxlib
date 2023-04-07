@@ -191,11 +191,26 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         readerPosition.set(position);
     }
 
-    public long getWriterPosition() {
+//    public long getWriterPosition() {
+//        return meta.getLogPosition();
+//    }
+//
+//    public void setWriterPosition(long position) {
+//        meta.setLogPosition(position);
+//    }
+
+    @Override
+    public boolean canSeek() {
+        return true;
+    }
+
+    @Override
+    public long getPosition() {
         return meta.getLogPosition();
     }
 
-    public void setWriterPosition(long position) {
+    @Override
+    public void setPosition(long position) {
         meta.setLogPosition(position);
     }
 

@@ -136,9 +136,13 @@ public class FileStream extends IOStream implements Serializable {
         return writer;
     }
 
-    @Override
     public synchronized boolean canWrite() {
-        return super.canWrite() && fileMode != FileMode.READ_ONLY;
+        return !isClosed() && fileMode != FileMode.READ_ONLY;
+    }
+
+    @Override
+    public boolean canSeek() {
+        return true;
     }
 
     @SneakyThrows

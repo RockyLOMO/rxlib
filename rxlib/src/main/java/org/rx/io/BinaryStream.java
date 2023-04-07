@@ -39,8 +39,8 @@ public class BinaryStream extends IOStream {
     }
 
     @Override
-    public boolean canWrite() {
-        return baseStream.canWrite();
+    public boolean canSeek() {
+        return baseStream.canSeek();
     }
 
     @Override
