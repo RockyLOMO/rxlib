@@ -16,6 +16,7 @@ import java.text.MessageFormat;
 import java.util.Map;
 
 import static org.rx.core.Extends.as;
+import static org.rx.core.Sys.fastCacheKey;
 
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
@@ -71,7 +72,7 @@ public class YamlCodeHandler {
             if (messageSource == null) {
                 continue;
             }
-            Tuple<Class<?>, Method[]> caller = as(cache.get(stack.getClassName(), p -> {
+            Tuple<Class<?>, Method[]> caller = as(cache.get(fastCacheKey("trace", stack.getClassName()), p -> {
                 Class<?> type = Reflects.loadClass(p, false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }), Tuple.class);

@@ -17,6 +17,10 @@ import org.rx.net.NetEventWait;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapper;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -48,11 +52,7 @@ public class MxController {
     }
 
     @RequestMapping("queryTraces")
-    public Map<String, Object> queryTraces(Boolean newest, String level,
-                                           Boolean methodOccurMost, String methodNamePrefix,
-                                           String metricsName,
-                                           Integer take,
-                                           HttpServletRequest request) {
+    public Map<String, Object> queryTraces(Boolean newest, String level, Boolean methodOccurMost, String methodNamePrefix, String metricsName, Integer take, HttpServletRequest request) {
         if (!check(request)) {
             return null;
         }
@@ -63,13 +63,12 @@ public class MxController {
         }
         result.put("errorTraces", TraceHandler.INSTANCE.queryTraces(newest, el, take));
 
-        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take))
-                .select(p -> {
-                    Map<String, Object> t = Sys.toJsonObject(p);
-                    t.remove("elapsedMicros");
-                    t.put("elapsed", Sys.formatNanosElapsed(p.getElapsedMicros(), 1));
-                    return t;
-                }));
+        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take)).select(p -> {
+            Map<String, Object> t = Sys.toJsonObject(p);
+            t.remove("elapsedMicros");
+            t.put("elapsed", Sys.formatNanosElapsed(p.getElapsedMicros(), 1));
+            return t;
+        }));
 
         result.put("metrics", TraceHandler.INSTANCE.queryMetrics(metricsName, take));
         return result;
@@ -93,6 +92,8 @@ public class MxController {
             response.setContentType("text/plain;charset=UTF-8");
             return buf;
         }
+        final HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.TEXT_PLAIN);
         try {
             switch (Integer.parseInt(x)) {
                 case 1:
@@ -117,8 +118,7 @@ public class MxController {
                     }
                     return source != null ? BeanMapper.DEFAULT.map(source, target) : target;
                 case 2: {
-                    String k = request.getParameter("k"),
-                            v = request.getParameter("v");
+                    String k = request.getParameter("k"), v = request.getParameter("v");
                     Sys.diagnosticMx.setVMOption(k, v);
                     return "ok";
                 }
@@ -131,8 +131,7 @@ public class MxController {
                     String host = request.getParameter("host");
                     return Linq.from(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
                 case 5:
-                    response.setContentType("text/plain;charset=UTF-8");
-                    return exec(request);
+                    return new ResponseEntity<>(exec(request), headers, HttpStatus.OK);
                 case 6:
                     return invoke(request);
                 case 7:
@@ -152,8 +151,7 @@ public class MxController {
             }
             return svrState(request);
         } catch (Throwable e) {
-            response.setContentType("text/plain;charset=UTF-8");
-            return String.format("%s\n%s", e, ExceptionUtils.getStackTrace(e));
+            return new ResponseEntity<>(String.format("%s\n%s", e, ExceptionUtils.getStackTrace(e)), headers, HttpStatus.OK);
         }
     }
 
@@ -198,7 +196,7 @@ public class MxController {
     Object exec(HttpServletRequest request) {
         Map<String, Object> params = getParams(request);
         StringBuilder echo = new StringBuilder();
-        ShellCommander cmd = new ShellCommander((String) params.get("cmd"), String.valueOf(params.get("workspace")))
+        ShellCommander cmd = new ShellCommander((String) params.get("cmd"), (String) params.get("workspace"))
 //                            .setReadFullyThenExit()
                 ;
         cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
@@ -250,19 +248,14 @@ public class MxController {
         j.put("deadlockedThreads", Sys.findDeadlockedThreads());
         Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
         int take = Reflects.convertQuietly(request.getParameter("take"), Integer.class, 5);
-        j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos)
-                .take(take).select(Sys.ThreadInfo::toString));
-        j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos)
-                .take(take).select(Sys.ThreadInfo::toString));
-        j.put("topBlockedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getBlockedTime())
-                .take(take).select(Sys.ThreadInfo::toString));
-        j.put("topWaitedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getWaitedTime())
-                .take(take).select(Sys.ThreadInfo::toString));
+        j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos).take(take).select(Sys.ThreadInfo::toString));
+        j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos).take(take).select(Sys.ThreadInfo::toString));
+        j.put("topBlockedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getBlockedTime()).take(take).select(Sys.ThreadInfo::toString));
+        j.put("topWaitedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getWaitedTime()).take(take).select(Sys.ThreadInfo::toString));
         j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
         j.put("rxConfig", RxConfig.INSTANCE);
-        j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames()))
-                .select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
+        j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames())).select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
         j.putAll(queryTraces(null, null, null, null, null, take, request));
         return j;
     }
