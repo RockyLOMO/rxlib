@@ -86,6 +86,10 @@ org:
       YamlConfig:
         readAs[keyError]: Not found key {0} with type {1}
         readAs[partialKeyError]: Not found partial key {0} with type {1}
+      #test
+      TestCore:
+        exceptionHandle: Test error code, value={0}
+        exceptionHandle<IllegalArgumentException>: Test IAException, value={0}
     io:
       IOStream:
         getPosition: The stream does not support seeking
@@ -96,13 +100,9 @@ org:
         valueOf<ParseException>: Only supported {0} date formats, current date string is {1}
       SUID:
         valueOf: Invalid SUID value {0}
-    util.BeanMapper:
-      define: Invalid define method {0}
-
-    test:
-      CoreTester:
-        exceptionHandle: Test error code, value={0}
-        exceptionHandle<IllegalArgumentException>: Test IAException, value={0}
-      bean.UserManager$BizCode:
+      #test
+      UserManager$BizCode:
         USER_NOT_FOUND: User {0} not found
         COMPUTE_FAIL: Compute user level error {0}
+    util.BeanMapper:
+      define: Invalid define method {0}
