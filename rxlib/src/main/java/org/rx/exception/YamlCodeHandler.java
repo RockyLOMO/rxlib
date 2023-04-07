@@ -72,7 +72,7 @@ public class YamlCodeHandler {
             if (messageSource == null) {
                 continue;
             }
-            Tuple<Class<?>, Method[]> caller = as(cache.get(fastCacheKey("trace", stack.getClassName()), p -> {
+            Tuple<Class<?>, Method[]> caller = as(cache.get(fastCacheKey("STrace", stack.getClassName()), p -> {
                 Class<?> type = Reflects.loadClass(stack.getClassName(), false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }), Tuple.class);
