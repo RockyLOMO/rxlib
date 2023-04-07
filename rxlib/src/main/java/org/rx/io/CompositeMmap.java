@@ -116,6 +116,11 @@ public final class CompositeMmap extends IOStream {
     }
 
     @Override
+    public boolean canSeek() {
+        return true;
+    }
+
+    @Override
     public synchronized long getPosition() {
         return position;
     }

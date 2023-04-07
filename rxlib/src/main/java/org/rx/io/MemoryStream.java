@@ -118,6 +118,11 @@ public final class MemoryStream extends IOStream implements Serializable {
     }
 
     @Override
+    public boolean canSeek() {
+        return true;
+    }
+
+    @Override
     public long getPosition() {
         return buffer.readerIndex();
     }

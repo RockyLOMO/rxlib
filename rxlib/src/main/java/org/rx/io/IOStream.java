@@ -159,8 +159,8 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
 
     public abstract String getName();
 
-    public boolean canWrite() {
-        return !isClosed();
+    public boolean canSeek() {
+        return false;
     }
 
     @ErrorCode

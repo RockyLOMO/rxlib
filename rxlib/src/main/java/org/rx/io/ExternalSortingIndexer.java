@@ -78,7 +78,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 
         void clear() {
             wal.lock.writeInvoke(() -> {
-                wal.setWriterPosition(position);
+                wal.setPosition(position);
                 for (int i = 0; i < size; i++) {
                     wal.write(0);
                 }
@@ -168,7 +168,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 //                        return true;
 //                    }
                     ktf.logPosition = newLogPos;
-                    wal.setWriterPosition(ktf.keyPos + 8);
+                    wal.setPosition(ktf.keyPos + 8);
                     wal.write(Bytes.getBytes(ktf.logPosition));
 
                     HashKey<TK>[] ks;
@@ -185,17 +185,17 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     return true;
                 }
 
-                long wPos = wal.getWriterPosition();
+                long wPos = wal.getPosition();
                 if (wPos < endPos) {
                     HashKey<TK>[] oks = unsafeLoad();
                     HashKey<TK>[] ks = new HashKey[oks.length + 1];
                     System.arraycopy(oks, 0, ks, 0, oks.length);
                     ks[ks.length - 1] = Sys.deepClone(ktf);
                     Arrays.parallelSort(ks);
-                    wal.setWriterPosition(position);
+                    wal.setPosition(position);
                     byte[] buf = new byte[HashKey.BYTES];
                     for (HashKey<TK> fk : ks) {
-                        fk.keyPos = wal.getWriterPosition();
+                        fk.keyPos = wal.getPosition();
                         Bytes.getBytes(fk.hashId, buf, 0);
                         Bytes.getBytes(fk.logPosition, buf, 8);
                         Bytes.getBytes(fk.keyPos, buf, 16);
