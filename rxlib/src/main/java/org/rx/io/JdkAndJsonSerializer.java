@@ -14,8 +14,7 @@ import java.lang.reflect.Type;
 
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
-import static org.rx.core.Sys.fromJson;
-import static org.rx.core.Sys.toJsonString;
+import static org.rx.core.Sys.*;
 
 //https://github.com/RuedigerMoeller/fast-serialization
 @Slf4j
@@ -52,8 +51,10 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
 
     @SneakyThrows
     public <T> void serialize(@NonNull T obj, @NonNull Type type, @NonNull IOStream stream) {
-        Cache<Object, Object> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-        Object obj0 = obj instanceof Serializable ? obj : new JsonWrapper(type, obj);
+        Cache<String, Object> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+        Class<?> objKls = obj.getClass();
+        String skipNS = fastCacheKey("skipNS", objKls);
+        Object obj0 = !cache.containsKey(skipNS) && Serializable.class.isAssignableFrom(objKls) ? obj : new JsonWrapper(type, obj);
 
         Compressible c0 = as(obj0, Compressible.class);
         if (c0 != null && c0.enableCompress()) {
@@ -73,6 +74,8 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
             out.writeObject(obj0);
         } catch (NotSerializableException e) {
             TraceHandler.INSTANCE.log("NotSerializable {}", obj, e);
+            cache.put(skipNS, this);
+
             stream.setPosition(pos);
             out = new ObjectOutputStream(stream.getWriter());
             out.writeObject(new JsonWrapper(type, obj));

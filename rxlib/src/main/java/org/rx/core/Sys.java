@@ -475,7 +475,6 @@ public final class Sys extends SystemUtils {
             region += java.util.Arrays.hashCode(args);
         }
         return region;
-//        return method.intern();
     }
 
     public static String cacheKey(String region, Object... args) {

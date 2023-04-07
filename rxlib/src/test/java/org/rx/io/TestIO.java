@@ -663,9 +663,11 @@ public class TestIO extends AbstractTester {
         JsonTypeInvoker.JSON_TYPE.set(null);
         System.out.println(result);
 
-        stream = serializer.serialize(param, type);
-        result = serializer.deserialize(stream);
-        System.out.println(result);
+//        Tasks.setTimeout(() -> {
+            IOStream s = serializer.serialize(param, type);
+            Tuple<GirlBean, Integer> r = serializer.deserialize(s);
+            System.out.println(r);
+//        }, 1000).get();
     }
 
     //    @Data
