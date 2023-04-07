@@ -1,29 +1,30 @@
 package org.rx.io;
 
+import com.alibaba.fastjson2.TypeReference;
 import io.netty.buffer.ByteBuf;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ClassUtils;
+import org.apache.commons.lang3.reflect.TypeUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.annotation.DbColumn;
-import org.rx.bean.DataTable;
-import org.rx.bean.DateTime;
-import org.rx.bean.ULID;
+import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
 import org.rx.AbstractTester;
-import org.rx.bean.GirlBean;
-import org.rx.bean.PersonBean;
-import org.rx.bean.PersonGender;
 
 import java.io.*;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -167,9 +168,7 @@ public class TestIO extends AbstractTester {
         PersonBean entity = PersonBean.LeZhi;
         db.save(entity);
 
-        EntityQueryLambda<PersonBean> queryLambda = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之")
-                .orderBy(PersonBean::getId)
-                .limit(1, 10);
+        EntityQueryLambda<PersonBean> queryLambda = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "乐之").orderBy(PersonBean::getId).limit(1, 10);
         assert db.exists(queryLambda);
         db.commit();
 
@@ -185,18 +184,8 @@ public class TestIO extends AbstractTester {
 
         db.delete(new EntityQueryLambda<>(PersonBean.class).lt(PersonBean::getId, null));
 
-        EntityQueryLambda<PersonBean> q = new EntityQueryLambda<>(PersonBean.class)
-                .eq(PersonBean::getName, "张三")
-                .in(PersonBean::getIndex, 1, 2, 3)
-                .between(PersonBean::getAge, 6, 14)
-                .notLike(PersonBean::getName, "王%");
-        q.and(q.newClause()
-                        .ne(PersonBean::getAge, 10)
-                        .ne(PersonBean::getAge, 11))
-                .or(q.newClause()
-                        .ne(PersonBean::getAge, 12)
-                        .ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getCash)).orderBy(PersonBean::getAge)
-                .limit(100);
+        EntityQueryLambda<PersonBean> q = new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getName, "张三").in(PersonBean::getIndex, 1, 2, 3).between(PersonBean::getAge, 6, 14).notLike(PersonBean::getName, "王%");
+        q.and(q.newClause().ne(PersonBean::getAge, 10).ne(PersonBean::getAge, 11)).or(q.newClause().ne(PersonBean::getAge, 12).ne(PersonBean::getAge, 13).orderByDescending(PersonBean::getCash)).orderBy(PersonBean::getAge).limit(100);
         System.out.println(q);
         List<Object> params = new ArrayList<>();
         System.out.println(q.toString(params));
@@ -622,8 +611,7 @@ public class TestIO extends AbstractTester {
         for (int i = 0; i < 40; i++) {
             stream.write(i);
         }
-        System.out.printf("Position=%s, Length=%s, Capacity=%s%n", stream.getPosition(),
-                stream.getLength(), stream.getBuffer().writerIndex());
+        System.out.printf("Position=%s, Length=%s, Capacity=%s%n", stream.getPosition(), stream.getLength(), stream.getBuffer().writerIndex());
 
         stream.setPosition(0L);
         System.out.println(stream.read());
@@ -653,19 +641,70 @@ public class TestIO extends AbstractTester {
         assert pos == newStream.getPosition() && len == newStream.getLength();
     }
 
+    @SneakyThrows
     @Test
     public void serialize() {
+        JdkAndJsonSerializer serializer = (JdkAndJsonSerializer) Serializer.DEFAULT;
+
         GirlBean girlBean = new GirlBean();
+        girlBean.setName(str_name_wyf);
         girlBean.setAge(8);
-        IOStream serialize = Serializer.DEFAULT.serialize(girlBean);
-        GirlBean deGirl = Serializer.DEFAULT.deserialize(serialize);
+        IOStream serialize = serializer.serialize(girlBean);
+        GirlBean deGirl = serializer.deserialize(serialize);
         assert girlBean.equals(deGirl);
+
+        Type type = new TypeReference<Tuple<GirlBean, Map<Integer, List<String>>>>() {
+        }.getType();
+
+        Tuple<GirlBean, Map<Integer, List<String>>> param = Tuple.of(girlBean, Collections.singletonMap(1024, Collections.singletonList("abc")));
+        IOStream stream = serializer.serialize(param);
+        JsonTypeInvoker.JSON_TYPE.set(type);
+        Tuple<GirlBean, Integer> result = serializer.deserialize(stream);
+        JsonTypeInvoker.JSON_TYPE.set(null);
+        System.out.println(result);
+
+//        Tasks.setTimeout(() -> {
+            IOStream s = serializer.serialize(param, type);
+            Tuple<GirlBean, Integer> r = serializer.deserialize(s);
+            System.out.println(r);
+//        }, 1000).get();
+    }
+
+    //    @Data
+    static class R<T1, T2, T3, T4> extends BiTuple<T1, T2, T3> {
+        T4 last;
+    }
+
+    @SneakyThrows
+    @Test
+    public void parameterizedType() {
+        ParameterizedType pType = (ParameterizedType) new TypeReference<R<Byte, int[], Integer[], Map<String, List<Integer>>>>() {
+        }.getType();
+        System.out.println(pType.getTypeName());
+        System.out.println(TypeUtils.toString(pType));
+        assert ClassUtils.getClass("int") == int.class;
+        Class<?> arrType = ClassUtils.getClass("[I");
+        assert arrType == Arrays.EMPTY_INT_ARRAY.getClass();
+
+        testType(pType);
+        testType(new TypeReference<List<Byte>>() {
+        }.getType());
+        testType(new TypeReference<byte[]>() {
+        }.getType());
+        testType(new TypeReference<Byte>() {
+        }.getType());
+    }
+
+    void testType(Type type) {
+        String desc = Reflects.getTypeDescriptor(type);
+        log.info("td {} -> {}", type, desc);
+        Type nt = Reflects.fromTypeDescriptor(desc);
+        log.info("ntd {} <- {}", nt, desc);
     }
 
     @Test
     public void downloadAndZip() {
-        List<String> fileUrls = Arrays.toList("https://cloud.f-li.cn:6400/static0/img/qrcode.jpg",
-                "https://cloud.f-li.cn:6400/static0/img/qrcode3.jpg");
+        List<String> fileUrls = Arrays.toList("https://cloud.f-li.cn:6400/static0/img/qrcode.jpg", "https://cloud.f-li.cn:6400/static0/img/qrcode3.jpg");
         String zipFilePath = String.format("./%s.zip", System.currentTimeMillis());
 
         Files.zip(new File(zipFilePath), null, null, Linq.from(fileUrls).select(p -> {

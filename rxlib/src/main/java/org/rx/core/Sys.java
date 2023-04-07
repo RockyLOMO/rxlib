@@ -467,34 +467,30 @@ public final class Sys extends SystemUtils {
         return Serializer.DEFAULT.deserialize(Serializer.DEFAULT.serialize(obj));
     }
 
-    public static String fastCacheKey(String method, Object... args) {
-        if (method == null) {
-            method = Reflects.stackClass(1).getSimpleName();
+    public static String fastCacheKey(String region, Object... args) {
+        if (region == null) {
+            region = Reflects.stackClass(1).getSimpleName();
         }
         if (!Arrays.isEmpty(args)) {
-            method += java.util.Arrays.hashCode(args);
+            region += java.util.Arrays.hashCode(args);
         }
-        return method;
-//        return method.intern();
+        return region;
     }
 
-    public static String cacheKey(String method, Object... args) {
-        return cacheKey(null, method, args);
-    }
-
-    public static String cacheKey(String region, String method, Object... args) {
-        if (method == null) {
-            method = Reflects.stackClass(1).getSimpleName();
+    public static String cacheKey(String region, Object... args) {
+        if (region == null) {
+            region = Reflects.stackClass(1).getSimpleName();
         }
 
         StringBuilder buf = new StringBuilder();
-        if (region != null) {
-            buf.append(region).append(Constants.CACHE_KEY_SUFFIX);
-        }
-        buf.append(method);
+        buf.append(region);
         if (!Arrays.isEmpty(args)) {
-            Object p = args.length == 1 ? args[0] : args;
-            buf.append(Constants.CACHE_KEY_SUFFIX).append(p instanceof String ? p : CodecUtil.hash64(p));
+            buf.append(Constants.CACHE_KEY_SUFFIX);
+            if (args.length == 1 && args[0] instanceof String) {
+                buf.append(args[0]);
+            } else {
+                buf.append(CodecUtil.hash64(args));
+            }
         }
         return buf.toString();
     }

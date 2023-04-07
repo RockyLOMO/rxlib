@@ -2,17 +2,18 @@ package org.rx.net.support;
 
 import io.netty.channel.Channel;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.Tuple;
 import org.rx.core.Cache;
 
 import java.net.SocketAddress;
 
+import static org.rx.core.Sys.fastCacheKey;
+
 @Slf4j
 public final class EndpointTracer {
-    final Cache<Tuple<String, SocketAddress>, SocketAddress> index = Cache.getInstance(Cache.MEMORY_CACHE);
+    final Cache<String, SocketAddress> index = Cache.getInstance(Cache.MEMORY_CACHE);
 
-    Tuple<String, SocketAddress> key(SocketAddress sa) {
-        return Tuple.of("EpTracer", sa);
+    String key(SocketAddress sa) {
+        return fastCacheKey("EpTrace", sa);
     }
 
     public void link(Channel inbound, Channel outbound) {

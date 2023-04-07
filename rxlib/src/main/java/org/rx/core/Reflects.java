@@ -35,7 +35,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.*;
-import static org.rx.core.Sys.fastCacheKey;
+import static org.rx.core.Sys.*;
 
 @SuppressWarnings(NON_UNCHECKED)
 @Slf4j
@@ -186,6 +186,35 @@ public class Reflects extends ClassUtils {
             throw new IllegalArgumentException(implMethodName + " is not a GETTER");
         }
         return lambda;
+    }
+
+    public static String getTypeDescriptor(@NonNull Type type) {
+        if (type instanceof Class) {
+            return ((Class<?>) type).getName();
+        }
+        return toJsonString(type);
+    }
+
+    @SneakyThrows
+    public static Type fromTypeDescriptor(@NonNull String descriptor) {
+        if (descriptor.startsWith("{")) {
+            Map<String, Object> typeJson = fromJson(descriptor, Map.class);
+            return fromParameterizedType(typeJson);
+        }
+        return ClassUtils.getClass(descriptor);
+    }
+
+    @SneakyThrows
+    static ParameterizedType fromParameterizedType(Map<String, Object> typeJson) {
+        String ownerType = (String) typeJson.get("ownerType");
+        String rawType = (String) typeJson.get("rawType");
+        List<Object> actualTypeArguments = (List<Object>) typeJson.get("actualTypeArguments");
+        return TypeUtils.parameterizeWithOwner((ownerType == null ? null : ClassUtils.getClass(ownerType)), ClassUtils.getClass(rawType), Linq.from(actualTypeArguments).select(p -> {
+            if (p instanceof Map) {
+                return fromParameterizedType((Map<String, Object>) p);
+            }
+            return ClassUtils.getClass((String) p);
+        }).toArray(Type.class));
     }
 
     //region methods
@@ -357,7 +386,7 @@ public class Reflects extends ClassUtils {
     //region fields
     public static Linq<PropertyNode> getProperties(Class<?> to) {
         Cache<String, Linq<PropertyNode>> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-        return cache.get(fastCacheKey("properties", to), k -> {
+        return cache.get(fastCacheKey("prop", to), k -> {
             Method getClass = Object.class.getDeclaredMethod("getClass");
             Linq<Method> q = Linq.from(to.getMethods());
             Linq<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));

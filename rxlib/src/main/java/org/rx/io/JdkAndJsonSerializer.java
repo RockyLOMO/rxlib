@@ -1,42 +1,60 @@
 package org.rx.io;
 
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Cache;
 import org.rx.core.JsonTypeInvoker;
+import org.rx.core.Reflects;
 import org.rx.core.Strings;
+import org.rx.exception.TraceHandler;
 
 import java.io.*;
 import java.lang.reflect.Type;
 
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
-import static org.rx.core.Sys.fromJson;
-import static org.rx.core.Sys.toJsonString;
+import static org.rx.core.Sys.*;
 
 //https://github.com/RuedigerMoeller/fast-serialization
 @Slf4j
 public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
-    @RequiredArgsConstructor
     static class JsonWrapper implements Compressible {
         private static final long serialVersionUID = 8279878386622487781L;
 
-        final Class<?> type;
+        final String typeDescriptor;
         final String json;
 
         @Override
         public boolean enableCompress() {
             return Strings.length(json) >= MIN_LENGTH;
         }
+
+        public JsonWrapper(Type type, Object obj) {
+            typeDescriptor = Reflects.getTypeDescriptor(type);
+            json = toJsonString(obj);
+        }
     }
 
     static final String GZIP_HEX = String.format("%04X%04X", Compressible.STREAM_MAGIC, Compressible.STREAM_VERSION);
 
-    @SneakyThrows
+    public <T> IOStream serialize(@NonNull T obj, @NonNull Type type) {
+        HybridStream stream = new HybridStream();
+        serialize(obj, type, stream);
+        return stream.rewind();
+    }
+
     @Override
-    public <T> void serialize(@NonNull T obj, @NonNull IOStream stream) {
-        Object obj0 = obj instanceof Serializable ? obj : new JsonWrapper(obj.getClass(), toJsonString(obj));
+    public <T> void serialize(@NonNull T obj, IOStream stream) {
+        serialize(obj, obj.getClass(), stream);
+    }
+
+    @SneakyThrows
+    public <T> void serialize(@NonNull T obj, @NonNull Type type, @NonNull IOStream stream) {
+        Cache<String, Object> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+        Class<?> objKls = obj.getClass();
+        String skipNS = fastCacheKey("skipNS", objKls);
+        Object obj0 = !cache.containsKey(skipNS) && Serializable.class.isAssignableFrom(objKls) ? obj : new JsonWrapper(type, obj);
 
         Compressible c0 = as(obj0, Compressible.class);
         if (c0 != null && c0.enableCompress()) {
@@ -50,12 +68,17 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
             return;
         }
 
+        long pos = stream.getPosition();
         ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
         try {
             out.writeObject(obj0);
         } catch (NotSerializableException e) {
-            log.info("NotSerializable {} <- {}", obj instanceof Serializable, obj);
-            throw e;
+            TraceHandler.INSTANCE.log("NotSerializable {}", obj, e);
+            cache.put(skipNS, this);
+
+            stream.setPosition(pos);
+            out = new ObjectOutputStream(stream.getWriter());
+            out.writeObject(new JsonWrapper(type, obj));
         }
     }
 
@@ -72,7 +95,6 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
                 if (!Strings.endsWith(e.getMessage(), GZIP_HEX)) {
                     throw e;
                 }
-
 //                log.debug("switch gzip deserialize, reason={}", e.getMessage());
                 try (GZIPStream gzip = new GZIPStream(stream, true)) {
                     ObjectInputStream in = new ObjectInputStream(gzip.getReader());
@@ -82,8 +104,7 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
 
             JsonWrapper wrapper;
             if ((wrapper = as(obj0, JsonWrapper.class)) != null) {
-                Type type = ifNull(JSON_TYPE.getIfExists(), wrapper.type);
-                return fromJson(wrapper.json, type);
+                return fromJson(wrapper.json, ifNull(JSON_TYPE.getIfExists(), () -> Reflects.fromTypeDescriptor(wrapper.typeDescriptor)));
             }
             return (T) obj0;
         } finally {
