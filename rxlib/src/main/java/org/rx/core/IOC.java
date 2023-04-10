@@ -6,8 +6,10 @@ import org.apache.commons.lang3.ClassUtils;
 import org.rx.bean.WeakIdentityMap;
 import org.rx.exception.InvalidException;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
@@ -15,6 +17,7 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 @SuppressWarnings(NON_UNCHECKED)
 public final class IOC {
     static final Map<Class<?>, Object> container = new ConcurrentHashMap<>(8);
+    static final Map WEAK_MAP = Collections.synchronizedMap(new WeakHashMap<>());
     //不要放值类型
     static final Map WEAK_IDENTITY_MAP = new WeakIdentityMap<>();
 
@@ -57,7 +60,11 @@ public final class IOC {
         container.remove(type);
     }
 
-    static <K, V> Map<K, V> weakIdentityMap(Object ref) {
-        return (Map<K, V>) WEAK_IDENTITY_MAP.computeIfAbsent(ref, k -> new ConcurrentHashMap<>(4));
+    public static <K, V> Map<K, V> weakMap(boolean identity) {
+        return identity ? WEAK_IDENTITY_MAP : WEAK_MAP;
+    }
+
+    static <K, V> Map<K, V> weakMap(Object ref, boolean identity) {
+        return (Map<K, V>) (identity ? WEAK_IDENTITY_MAP : WEAK_MAP).computeIfAbsent(ref, k -> new ConcurrentHashMap<>(4));
     }
 }
