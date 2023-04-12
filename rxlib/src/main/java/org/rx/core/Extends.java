@@ -236,11 +236,11 @@ public interface Extends extends Serializable {
     //endregion
 
     default <TK, TV> TV attr(TK key) {
-        return IOC.<TK, TV>weakIdentityMap(this).get(key);
+        return IOC.<TK, TV>weakMap(this, false).get(key);
     }
 
     default <TK, TV> void attr(TK key, TV value) {
-        Map<TK, TV> map = IOC.weakIdentityMap(this);
+        Map<TK, TV> map = IOC.weakMap(this, false);
         if (value == null) {
             map.remove(key);
         } else {

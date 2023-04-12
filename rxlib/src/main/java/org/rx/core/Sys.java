@@ -243,7 +243,7 @@ public final class Sys extends SystemUtils {
     }
 
     public static <T> T targetObject(Object proxyObject) {
-        return IOC.<String, T>weakIdentityMap(proxyObject).get(DPT);
+        return IOC.<String, T>weakMap(proxyObject, false).get(DPT);
     }
 
     public static <T> T proxy(Class<?> type, TripleFunc<Method, DynamicProxyBean, Object> func) {
@@ -262,7 +262,7 @@ public final class Sys extends SystemUtils {
             proxyObj = (T) Enhancer.create(type, new DynamicProxyBean(func));
         }
         if (rawObject != null) {
-            IOC.weakIdentityMap(proxyObj).put(DPT, rawObject);
+            IOC.weakMap(proxyObj, false).put(DPT, rawObject);
         }
         return proxyObj;
     }

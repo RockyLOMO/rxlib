@@ -1,16 +1,13 @@
 package org.rx.net.http;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.annotation.JSONField;
-import io.netty.handler.codec.http.DefaultHttpHeaders;
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.*;
 import kotlin.Pair;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import okhttp3.Cookie;
 import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.ProceedEventArgs;
@@ -32,6 +29,7 @@ import javax.servlet.ServletInputStream;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.Part;
 import java.io.File;
 import java.io.InputStream;
 import java.io.Serializable;
@@ -51,18 +49,8 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class HttpClient {
-    interface RequestContent {
-        RequestContent NONE = new RequestContent() {
-            @Override
-            public RequestBody toBody() {
-                return RequestBody.create(FORM_TYPE, Strings.EMPTY);
-            }
-
-            @Override
-            public String toString() {
-                return Strings.EMPTY;
-            }
-        };
+    public interface RequestContent {
+        RequestContent NONE = new EmptyContent(null);
 
         RequestBody toBody();
     }
@@ -131,10 +119,22 @@ public class HttpClient {
 
         @Override
         public String toString() {
-            return "FormContent{" +
-                    "forms=" + forms +
-                    ", files=" + files +
-                    '}';
+            return "FormContent{" + "forms=" + forms + ", files=" + files + '}';
+        }
+    }
+
+    @RequiredArgsConstructor
+    static class EmptyContent implements RequestContent {
+        final MediaType contentType;
+
+        @Override
+        public RequestBody toBody() {
+            return RequestBody.create(contentType, Strings.EMPTY);
+        }
+
+        @Override
+        public String toString() {
+            return Strings.EMPTY;
         }
     }
 
@@ -281,8 +281,7 @@ public class HttpClient {
             if (val == null) {
                 continue;
             }
-            sb.append(sb.length() == url.length() ? "?" : "&")
-                    .append(encodeUrl(entry.getKey())).append("=").append(encodeUrl(val.toString()));
+            sb.append(sb.length() == url.length() ? "?" : "&").append(encodeUrl(entry.getKey())).append("=").append(encodeUrl(val.toString()));
         }
         return sb.toString();
     }
@@ -302,9 +301,7 @@ public class HttpClient {
         for (String pair : pairs) {
             int idx = pair.indexOf("=");
             String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name()) : pair;
-            String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name())
-                    : null;
+            String value = idx > 0 && pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name()) : null;
             params.put(key, value);
         }
         return params;
@@ -321,9 +318,7 @@ public class HttpClient {
         for (String pair : pairs) {
             int idx = pair.indexOf(Pattern.quote(":"));
             String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name()) : pair;
-            String value = idx > 0 && pair.length() > idx + 1
-                    ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name()).trim()
-                    : Strings.EMPTY;
+            String value = idx > 0 && pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name()).trim() : Strings.EMPTY;
             map.put(key, value);
         }
         return map;
@@ -357,16 +352,9 @@ public class HttpClient {
         SSLContext sslContext = SSLContext.getInstance("TLS");
         sslContext.init(null, new TrustManager[]{TRUST_MANAGER}, new SecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
-        OkHttpClient.Builder builder = new OkHttpClient.Builder().connectionPool(POOL)
-                .retryOnConnectionFailure(false)
-                .sslSocketFactory(sslContext.getSocketFactory(), TRUST_MANAGER).hostnameVerifier((s, sslSession) -> true)
-                .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
-                .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
-                .writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
-                .proxy(proxy)
-                .proxyAuthenticator(authenticator);
+        OkHttpClient.Builder builder = new OkHttpClient.Builder().connectionPool(POOL).retryOnConnectionFailure(false).sslSocketFactory(sslContext.getSocketFactory(), TRUST_MANAGER).hostnameVerifier((s, sslSession) -> true).connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS).readTimeout(timeoutMillis, TimeUnit.MILLISECONDS).writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS).proxy(proxy).proxyAuthenticator(authenticator);
         if (enableCookie) {
-            builder = builder.cookieJar(COOKIES);
+            builder.cookieJar(COOKIES);
         }
         return builder.build();
     }
@@ -528,7 +516,7 @@ public class HttpClient {
     @SneakyThrows
     public synchronized void forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
         for (String n : Collections.list(servletRequest.getHeaderNames())) {
-            if ("host".equals(n)) {
+            if (Strings.equalsIgnoreCase(n, HttpHeaderNames.HOST)) {
                 continue;
             }
             getRequestHeaders().set(n, servletRequest.getHeader(n));
@@ -540,17 +528,30 @@ public class HttpClient {
         }
         log.info("Forward request: {}\nheaders {}", forwardUrl, toJsonString(requestHeaders));
         Request.Builder request = createRequest(forwardUrl);
-        RequestBody requestBody = null;
-//        if (!servletRequest.getMethod().equalsIgnoreCase(HttpMethod.GET.name())) {
-            ServletInputStream inStream = servletRequest.getInputStream();
-            if (inStream != null) {
-                if (servletRequest.getContentType() != null) {
-                    requestBody = RequestBody.create(IOStream.wrap(Strings.EMPTY, inStream).toArray(), MediaType.parse(servletRequest.getContentType()));
+        RequestBody requestBody;
+        String contentType = servletRequest.getContentType();
+        ServletInputStream inStream = servletRequest.getInputStream();
+        byte[] inBytes;
+        if (inStream != null && (inBytes = IOStream.wrap(Strings.EMPTY, inStream).toArray()).length > 0) {
+            requestBody = RequestBody.create(inBytes, contentType != null ? MediaType.parse(contentType) : null);
+        } else {
+            if (contentType != null) {
+                if (Strings.startsWithIgnoreCase(contentType, HttpHeaderValues.APPLICATION_X_WWW_FORM_URLENCODED)) {
+                    Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
+                    requestBody = new FormContent(forms, Collections.emptyMap()).toBody();
+                } else if (Strings.startsWithIgnoreCase(contentType, "multipart/")) {
+                    Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
+                    Map<String, IOStream> files = Linq.from(servletRequest.getParts()).toMap(Part::getName, p -> IOStream.wrap(p.getSubmittedFileName(), p.getInputStream()));
+                    requestBody = new FormContent(forms, files).toBody();
                 } else {
-                    requestBody = RequestBody.create(IOStream.wrap(Strings.EMPTY, inStream).toArray());
+//                    throw new InvalidException("Not support {}", contentType);
+                    log.warn("Not support {}", contentType);
+                    requestBody = new EmptyContent(MediaType.parse(contentType)).toBody();
                 }
+            } else {
+                requestBody = RequestContent.NONE.toBody();
             }
-//        }
+        }
         Response response = getClient().newCall(request.method(servletRequest.getMethod(), requestBody).build()).execute();
         servletResponse.setStatus(response.code());
         for (Pair<? extends String, ? extends String> header : response.headers()) {
