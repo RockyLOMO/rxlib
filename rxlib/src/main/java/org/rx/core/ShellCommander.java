@@ -94,9 +94,9 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         return new ShellCommander(shell, workspace).start().waitFor();
     }
 
-    public static int exec(String shell, String workspace, int timeoutSeconds) {
+    public static int exec(String shell, String workspace, long timeoutMillis) {
         ShellCommander cmd = new ShellCommander(shell, workspace).start();
-        if (!cmd.waitFor(timeoutSeconds)) {
+        if (!cmd.waitFor(timeoutMillis)) {
             cmd.kill();
         }
         return cmd.exitValue();
