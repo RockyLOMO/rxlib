@@ -94,9 +94,9 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         return new ShellCommander(shell, workspace).start().waitFor();
     }
 
-    public static int exec(String shell, String workspace, int timeoutSeconds) {
+    public static int exec(String shell, String workspace, long timeoutMillis) {
         ShellCommander cmd = new ShellCommander(shell, workspace).start();
-        if (!cmd.waitFor(timeoutSeconds)) {
+        if (!cmd.waitFor(timeoutMillis)) {
             cmd.kill();
         }
         return cmd.exitValue();
@@ -297,11 +297,11 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
     }
 
     @SneakyThrows
-    public synchronized boolean waitFor(int timeoutSeconds) {
+    public synchronized boolean waitFor(long timeoutMillis) {
         if (!isRunning()) {
             return true;
         }
-        return process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        return process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS);
     }
 
     @SneakyThrows

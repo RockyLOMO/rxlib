@@ -200,7 +200,7 @@ public class MxController {
 //                            .setReadFullyThenExit()
                 ;
         cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
-        cmd.start().waitFor(30);
+        cmd.start().waitFor(30000);
         return echo.toString();
     }
 
