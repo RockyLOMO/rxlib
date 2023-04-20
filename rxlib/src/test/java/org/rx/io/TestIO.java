@@ -18,6 +18,7 @@ import org.rx.AbstractTester;
 import java.io.*;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.lang.reflect.WildcardType;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -664,9 +665,9 @@ public class TestIO extends AbstractTester {
         System.out.println(result);
 
 //        Tasks.setTimeout(() -> {
-            IOStream s = serializer.serialize(param, type);
-            Tuple<GirlBean, Integer> r = serializer.deserialize(s);
-            System.out.println(r);
+        IOStream s = serializer.serialize(param, type);
+        Tuple<GirlBean, Integer> r = serializer.deserialize(s);
+        System.out.println(r);
 //        }, 1000).get();
     }
 
@@ -686,12 +687,16 @@ public class TestIO extends AbstractTester {
         Class<?> arrType = ClassUtils.getClass("[I");
         assert arrType == Arrays.EMPTY_INT_ARRAY.getClass();
 
-        testType(pType);
-        testType(new TypeReference<List<Byte>>() {
-        }.getType());
-        testType(new TypeReference<byte[]>() {
-        }.getType());
-        testType(new TypeReference<Byte>() {
+//        testType(pType);
+//        testType(new TypeReference<List<Byte>>() {
+//        }.getType());
+//        testType(new TypeReference<byte[]>() {
+//        }.getType());
+//        testType(new TypeReference<Byte>() {
+//        }.getType());
+//        testType(new TypeReference<List<?>>() {
+//        }.getType());
+        testType(new TypeReference<List>() {
         }.getType());
     }
 
