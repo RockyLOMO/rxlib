@@ -1,9 +1,6 @@
 package org.rx.core;
 
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.NEnum;
 import org.rx.util.function.TripleAction;
@@ -14,6 +11,10 @@ import java.util.concurrent.CompletableFuture;
 import static org.rx.core.Constants.NON_UNCHECKED;
 
 public interface EventPublisher<TSender extends EventPublisher<TSender>> extends EventListener {
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    class StaticEventPublisher implements EventPublisher<StaticEventPublisher> {
+    }
+
     @RequiredArgsConstructor
     enum EventFlags implements NEnum<EventFlags> {
         NONE(0),
@@ -23,6 +24,8 @@ public interface EventPublisher<TSender extends EventPublisher<TSender>> extends
         @Getter
         final int value;
     }
+
+    StaticEventPublisher STATIC_EVENT_INSTANCE = new StaticEventPublisher();
 
     default FlagsEnum<EventFlags> eventFlags() {
         return EventFlags.DYNAMIC_ATTACH.flags();
