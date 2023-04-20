@@ -77,6 +77,8 @@ public class MxController {
     @SneakyThrows
     @RequestMapping("health")
     public Object health(HttpServletRequest request, HttpServletResponse response) {
+        final HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.valueOf("text/plain;charset=UTF-8"));
         String x = request.getParameter("x");
         if (!check(request) || x == null) {
             StringBuilder buf = new StringBuilder();
@@ -89,11 +91,8 @@ public class MxController {
                 buf.appendLine(IOStream.readString(inStream, StandardCharsets.UTF_8));
             }
             TraceHandler.INSTANCE.log("rx replay {}", buf);
-            response.setContentType("text/plain;charset=UTF-8");
-            return buf;
+            return new ResponseEntity<>(buf, headers, HttpStatus.OK);
         }
-        final HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.TEXT_PLAIN);
         try {
             switch (Integer.parseInt(x)) {
                 case 1:
@@ -196,9 +195,7 @@ public class MxController {
     Object exec(HttpServletRequest request) {
         Map<String, Object> params = getParams(request);
         StringBuilder echo = new StringBuilder();
-        ShellCommander cmd = new ShellCommander((String) params.get("cmd"), (String) params.get("workspace"))
-//                            .setReadFullyThenExit()
-                ;
+        ShellCommander cmd = new ShellCommander((String) params.get("cmd"), (String) params.get("workspace")).setReadFullyThenExit();
         cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
         cmd.start().waitFor(30000);
         return echo.toString();
