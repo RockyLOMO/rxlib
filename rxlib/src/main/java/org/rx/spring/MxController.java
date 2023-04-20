@@ -78,7 +78,8 @@ public class MxController {
     @RequestMapping("health")
     public Object health(HttpServletRequest request, HttpServletResponse response) {
         final HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.valueOf("text/plain;charset=UTF-8"));
+//        headers.setContentType(MediaType.valueOf("text/plain;charset=UTF-8"));
+        headers.setContentType(MediaType.TEXT_PLAIN);
         String x = request.getParameter("x");
         if (!check(request) || x == null) {
             StringBuilder buf = new StringBuilder();
