@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         APP_NAME = 'socks-client'
-        JAR_NAME = 'rxlib-2.19.3-SNAPSHOT.jar'
+        JAR_NAME = 'rxlib-2.19.4-SNAPSHOT.jar'
         RENAME = 'rxlib-latest.jar'
 
         APP_HOST = 's.f-li.cn'
