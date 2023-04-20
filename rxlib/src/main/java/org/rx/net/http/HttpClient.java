@@ -352,7 +352,12 @@ public class HttpClient {
         SSLContext sslContext = SSLContext.getInstance("TLS");
         sslContext.init(null, new TrustManager[]{TRUST_MANAGER}, new SecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
-        OkHttpClient.Builder builder = new OkHttpClient.Builder().connectionPool(POOL).retryOnConnectionFailure(false).sslSocketFactory(sslContext.getSocketFactory(), TRUST_MANAGER).hostnameVerifier((s, sslSession) -> true).connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS).readTimeout(timeoutMillis, TimeUnit.MILLISECONDS).writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS).proxy(proxy).proxyAuthenticator(authenticator);
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+                .sslSocketFactory(sslContext.getSocketFactory(), TRUST_MANAGER).hostnameVerifier((s, sslSession) -> true)
+                .connectionPool(POOL).retryOnConnectionFailure(true) //unexpected end of stream
+                .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+                .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS).writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+                .proxy(proxy).proxyAuthenticator(authenticator);
         if (enableCookie) {
             builder.cookieJar(COOKIES);
         }

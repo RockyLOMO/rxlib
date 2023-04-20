@@ -615,7 +615,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     //region static members
     public static volatile Func<String> traceIdGenerator;
-    public static volatile BiAction<String> traceIdChanger;
+    public static final Delegate<EventPublisher.StaticEventPublisher, NEventArgs<String>> onTraceIdChanged = Delegate.create();
     static final ThreadLocal<Queue<String>> CTX_PARENT_TRACE_ID = new InheritableThreadLocal<>();
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
     static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
@@ -657,10 +657,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
         }
 //        log.info("trace start {}", tid);
-        BiAction<String> fn = traceIdChanger;
-        if (fn != null) {
-            fn.invoke(tid);
-        }
+        onTraceIdChanged.invoke(EventPublisher.STATIC_EVENT_INSTANCE, new NEventArgs<>(tid));
         return tid;
     }
 
@@ -682,10 +679,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             parentTid = null;
             CTX_TRACE_ID.remove();
         }
-        BiAction<String> fn = traceIdChanger;
-        if (fn != null) {
-            fn.invoke(parentTid);
-        }
+        onTraceIdChanged.invoke(EventPublisher.STATIC_EVENT_INSTANCE, new NEventArgs<>(parentTid));
     }
 
     public static <T> T completionReturnedValue() {
