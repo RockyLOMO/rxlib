@@ -11,6 +11,7 @@ import java.nio.channels.FileLock;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @RequiredArgsConstructor(access = AccessLevel.MODULE)
@@ -29,7 +30,7 @@ public final class CompositeLock {
 
     private final FileStream owner;
     private final FlagsEnum<Flags> flags;
-    private final ConcurrentHashMap<FileStream.Block, RefCounter<ReentrantReadWriteLock>> rwLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<FileStream.Block, RefCounter<ReadWriteLock>> rwLocks = new ConcurrentHashMap<>();
 
     @SneakyThrows
     private <T> T lock(FileStream.Block block, boolean shared, @NonNull Func<T> fn) {
