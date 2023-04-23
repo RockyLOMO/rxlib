@@ -91,15 +91,26 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
     }
 
     public static int exec(String shell, String workspace) {
-        return new ShellCommander(shell, workspace).start().waitFor();
+        return exec(shell, workspace, Constants.TIMEOUT_INFINITE);
     }
 
     public static int exec(String shell, String workspace, long timeoutMillis) {
-        ShellCommander cmd = new ShellCommander(shell, workspace).start();
-        if (!cmd.waitFor(timeoutMillis)) {
-            cmd.kill();
+        return exec(shell, workspace, timeoutMillis, CONSOLE_OUT_HANDLER);
+    }
+
+    public static int exec(String shell, String workspace, long timeoutMillis, TripleAction<ShellCommander, PrintOutEventArgs> outHandler) {
+        try (ShellCommander cmd = new ShellCommander(shell, workspace)) {
+            cmd.onPrintOut.combine(outHandler);
+            cmd.start();
+            if (timeoutMillis == Constants.TIMEOUT_INFINITE) {
+                return cmd.waitFor();
+            }
+
+            if (!cmd.waitFor(timeoutMillis)) {
+                cmd.kill();
+            }
+            return cmd.exitValue();
         }
-        return cmd.exitValue();
     }
 
     /**

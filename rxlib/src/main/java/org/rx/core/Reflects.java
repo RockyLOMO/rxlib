@@ -209,12 +209,24 @@ public class Reflects extends ClassUtils {
         String ownerType = (String) typeJson.get("ownerType");
         String rawType = (String) typeJson.get("rawType");
         List<Object> actualTypeArguments = (List<Object>) typeJson.get("actualTypeArguments");
-        return TypeUtils.parameterizeWithOwner((ownerType == null ? null : ClassUtils.getClass(ownerType)), ClassUtils.getClass(rawType), Linq.from(actualTypeArguments).select(p -> {
+        return TypeUtils.parameterizeWithOwner((ownerType == null ? null : ClassUtils.getClass(ownerType)), ClassUtils.getClass(rawType), fromTypeArguments(actualTypeArguments));
+    }
+
+    static Type[] fromTypeArguments(List<Object> typeArguments) {
+        return Linq.from(typeArguments).select(p -> {
             if (p instanceof Map) {
-                return fromParameterizedType((Map<String, Object>) p);
+                Map<String, Object> typeArg = (Map<String, Object>) p;
+                List<Object> lowerBounds = (List<Object>) typeArg.get("lowerBounds");
+                List<Object> upperBounds = (List<Object>) typeArg.get("upperBounds");
+                if (lowerBounds != null && upperBounds != null) {
+                    return TypeUtils.wildcardType()
+                            .withLowerBounds(fromTypeArguments(lowerBounds))
+                            .withUpperBounds(fromTypeArguments(upperBounds)).build();
+                }
+                return fromParameterizedType(typeArg);
             }
             return ClassUtils.getClass((String) p);
-        }).toArray(Type.class));
+        }).toArray(Type.class);
     }
 
     //region methods
