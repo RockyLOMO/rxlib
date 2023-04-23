@@ -9,6 +9,23 @@ import io.netty.handler.codec.http.multipart.FileUpload;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory;
+import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
+import org.apache.sshd.common.keyprovider.FileHostKeyCertificateProvider;
+import org.apache.sshd.common.util.threads.CloseableExecutorService;
+import org.apache.sshd.common.util.threads.ThreadUtils;
+import org.apache.sshd.scp.server.ScpCommandFactory;
+import org.apache.sshd.server.SshServer;
+import org.apache.sshd.server.auth.password.AcceptAllPasswordAuthenticator;
+import org.apache.sshd.server.auth.password.StaticPasswordAuthenticator;
+import org.apache.sshd.server.auth.pubkey.AcceptAllPublickeyAuthenticator;
+import org.apache.sshd.server.channel.ChannelSession;
+import org.apache.sshd.server.command.Command;
+import org.apache.sshd.server.command.CommandFactory;
+import org.apache.sshd.server.config.keys.DefaultAuthorizedKeysAuthenticator;
+import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
+import org.apache.sshd.server.shell.*;
+import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 import org.junit.jupiter.api.Test;
 import org.rx.Main;
 import org.rx.bean.*;
@@ -53,6 +70,8 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -646,6 +665,29 @@ public class TestSocks extends AbstractTester {
 
     @SneakyThrows
     @Test
+    public void ssh() {
+        SshServer sshd = SshServer.setUpDefaultServer();
+        sshd.setPort(22);
+        sshd.setPasswordAuthenticator(AcceptAllPasswordAuthenticator.INSTANCE);
+        sshd.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(Paths.get("hostkey.ser")));
+//        sshd.setPublickeyAuthenticator(new DefaultAuthorizedKeysAuthenticator(false));
+        sshd.setPublickeyAuthenticator(AcceptAllPublickeyAuthenticator.INSTANCE);
+
+        sshd.setShellFactory(InteractiveProcessShellFactory.INSTANCE);
+        sshd.setFileSystemFactory(NativeFileSystemFactory.INSTANCE);
+        sshd.setSubsystemFactories(Collections.singletonList(new SftpSubsystemFactory()));
+        sshd.setCommandFactory(new ScpCommandFactory());
+
+////        CloseableExecutorService e;
+////        ThreadUtils.noClose();
+////        EndlessTarpitSenderSupportDevelopment e;
+        sshd.start();
+
+        _wait();
+    }
+
+    @SneakyThrows
+    @Test
     public void dns() {
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:853");
@@ -932,7 +974,7 @@ public class TestSocks extends AbstractTester {
     }
 
     @Test
-    public void httpClient(){
+    public void httpClient() {
         HttpClient c = new HttpClient();
         c.getRequestHeaders().add("Connection", "close");
         System.out.println(c.get("").toString());

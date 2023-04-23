@@ -94,6 +94,7 @@ public class MxController {
             TraceHandler.INSTANCE.log("rx replay {}", buf);
             return new ResponseEntity<>(buf, headers, HttpStatus.OK);
         }
+        final String rt = "1";
         try {
             switch (Integer.parseInt(x)) {
                 case 1:
@@ -117,24 +118,24 @@ public class MxController {
                         target = RxConfig.INSTANCE;
                     }
                     return source != null ? BeanMapper.DEFAULT.map(source, target) : target;
-                case 2: {
-                    String k = request.getParameter("k"), v = request.getParameter("v");
-                    Sys.diagnosticMx.setVMOption(k, v);
-                    return "ok";
-                }
+                case 2:
+                    Sys.diagnosticMx.setVMOption(request.getParameter("k"), request.getParameter("v"));
+                    return rt;
                 case 3:
                     boolean enable = Boolean.parseBoolean(request.getParameter("v"));
                     Sys.threadMx.setThreadContentionMonitoringEnabled(enable);
                     Sys.threadMx.setThreadCpuTimeEnabled(enable);
-                    return "ok";
+                    return rt;
                 case 4:
-                    String host = request.getParameter("host");
-                    return Linq.from(InetAddress.getAllByName(host)).select(p -> p.getHostAddress()).toArray();
-                case 5:
-                    return new ResponseEntity<>(exec(request), headers, HttpStatus.OK);
-                case 6:
                     return invoke(request);
-                case 7:
+                case 10:
+                    return Linq.from(InetAddress.getAllByName(request.getParameter("host"))).select(p -> p.getHostAddress()).toArray();
+                case 11:
+                    return new ResponseEntity<>(exec(request), headers, HttpStatus.OK);
+                case 12:
+                    SocksContext.omegax(Reflects.convertQuietly(request.getParameter("p"), Integer.class, 22));
+                    return rt;
+                case 13:
                     Class<?> ft = Class.forName(request.getParameter("ft"));
                     String fn = request.getParameter("fn");
                     String fu = request.getParameter("fu");
