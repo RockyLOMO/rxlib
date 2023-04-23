@@ -3,6 +3,7 @@ package org.rx.io;
 import lombok.*;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.NEnum;
+import org.rx.bean.RefCounter;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -28,20 +29,24 @@ public final class CompositeLock {
 
     private final FileStream owner;
     private final FlagsEnum<Flags> flags;
-    private final ConcurrentHashMap<FileStream.Block, ReentrantReadWriteLock> rwLocks = new ConcurrentHashMap<>(8);
+    private final ConcurrentHashMap<FileStream.Block, RefCounter<ReentrantReadWriteLock>> rwLocks = new ConcurrentHashMap<>();
 
     @SneakyThrows
     private <T> T lock(FileStream.Block block, boolean shared, @NonNull Func<T> fn) {
+        RefCounter<ReadWriteLock> rwLock = null;
         Lock lock = null;
         if (flags.has(Flags.READ_WRITE_LOCK)) {
-            ReentrantReadWriteLock rwLock = rwLocks.computeIfAbsent(block, k -> {
-                ReentrantReadWriteLock t = overlaps(k.position, k.size);
-                if (t == null) {
-                    t = new ReentrantReadWriteLock();
-                }
-                return t;
-            });
-            lock = shared ? rwLock.readLock() : rwLock.writeLock();
+            synchronized (rwLocks) {
+                rwLock = rwLocks.computeIfAbsent(block, k -> {
+                    RefCounter<ReadWriteLock> t = overlaps(k.position, k.size);
+                    if (t == null) {
+                        t = new RefCounter<>(new ReentrantReadWriteLock());
+                    }
+                    return t;
+                });
+                rwLock.incrementRefCnt();
+            }
+            lock = shared ? rwLock.ref.readLock() : rwLock.ref.writeLock();
             lock.lock();
         }
 
@@ -56,14 +61,19 @@ public final class CompositeLock {
             if (fLock != null) {
                 fLock.release();
             }
-            if (lock != null) {
+            if (rwLock != null) {
                 lock.unlock();
+                synchronized (rwLocks) {
+                    if (rwLock.decrementRefCnt() == 0) {
+                        rwLocks.remove(block);
+                    }
+                }
             }
         }
     }
 
-    private ReentrantReadWriteLock overlaps(long position, long size) {
-        for (Map.Entry<FileStream.Block, ReentrantReadWriteLock> entry : rwLocks.entrySet()) {
+    private RefCounter<ReadWriteLock> overlaps(long position, long size) {
+        for (Map.Entry<FileStream.Block, RefCounter<ReadWriteLock>> entry : rwLocks.entrySet()) {
             FileStream.Block block = entry.getKey();
             if (position + size <= block.position)
                 continue;               // That is below this
