@@ -3,7 +3,9 @@ package org.rx.net.transport;
 import io.netty.handler.codec.serialization.ClassResolver;
 import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectEncoder;
-import lombok.*;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import org.rx.net.SocketConfig;
 import org.rx.net.rpc.RpcClientConfig;
 

@@ -63,9 +63,8 @@ public class GZIPStream extends IOStream {
         this(stream, false);
     }
 
-    @SneakyThrows
     @Override
-    protected void freeObjects() {
+    protected void freeObjects() throws Throwable {
         if (reader != null) {
             reader.close();
         }

@@ -8,13 +8,13 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.springframework.cglib.proxy.Enhancer;
 
-import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.util.*;
 
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.eachQuietly;
+import static org.rx.core.Extends.eq;
 
 @Slf4j
 public class ObjectChangeTracker {

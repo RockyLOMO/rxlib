@@ -74,9 +74,8 @@ public class FileWatcher extends Disposable implements EventPublisher<FileWatche
         });
     }
 
-    @SneakyThrows
     @Override
-    protected void freeObjects() {
+    protected void freeObjects() throws Throwable {
         future.cancel(true);
         service.close();
     }

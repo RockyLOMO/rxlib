@@ -2,7 +2,10 @@ package org.rx.net;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.*;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.http.multipart.FileUpload;
@@ -10,30 +13,24 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory;
-import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
-import org.apache.sshd.common.keyprovider.FileHostKeyCertificateProvider;
-import org.apache.sshd.common.util.threads.CloseableExecutorService;
-import org.apache.sshd.common.util.threads.ThreadUtils;
 import org.apache.sshd.scp.server.ScpCommandFactory;
 import org.apache.sshd.server.SshServer;
 import org.apache.sshd.server.auth.password.AcceptAllPasswordAuthenticator;
-import org.apache.sshd.server.auth.password.StaticPasswordAuthenticator;
 import org.apache.sshd.server.auth.pubkey.AcceptAllPublickeyAuthenticator;
-import org.apache.sshd.server.channel.ChannelSession;
-import org.apache.sshd.server.command.Command;
-import org.apache.sshd.server.command.CommandFactory;
-import org.apache.sshd.server.config.keys.DefaultAuthorizedKeysAuthenticator;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
-import org.apache.sshd.server.shell.*;
+import org.apache.sshd.server.shell.InteractiveProcessShellFactory;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 import org.junit.jupiter.api.Test;
+import org.rx.AbstractTester;
 import org.rx.Main;
 import org.rx.bean.*;
 import org.rx.codec.AESUtil;
-import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
+import org.rx.io.Files;
+import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
@@ -58,19 +55,21 @@ import org.rx.net.support.IPSearcher;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
-import org.rx.net.transport.*;
-import org.rx.AbstractTester;
+import org.rx.net.transport.SftpClient;
+import org.rx.net.transport.TcpServer;
+import org.rx.net.transport.TcpServerConfig;
+import org.rx.net.transport.UdpClient;
 import org.rx.third.apache.ntp.*;
 import org.rx.util.function.TripleAction;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigInteger;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.util.*;
@@ -996,22 +995,28 @@ public class TestSocks extends AbstractTester {
 
     @Test
     public void sftp() {
-        SftpClient client = new SftpClient(AuthenticEndpoint.valueOf("rocky:@k8s.f-li.cn:22"));
-        for (SftpFile directory : client.listDirectories("/home/rocky/df/", true)) {
-            System.out.println(directory.getPath());
+        SftpClient client = new SftpClient(AuthenticEndpoint.valueOf("root:Rxfli824@192.168.31.5:22"));
+        String dir = "/home/rxlib/";
+        if (client.exists(dir)) {
+            client.delete(dir);
         }
-        for (SftpFile file : client.listFiles("/home/rocky/df/", true)) {
-            System.out.println(file.getPath());
-        }
-        System.out.println(client.exists("/home/rocky/df/scpx.sh"));
-        System.out.println(client.exists("/home/rocky/df/scpx2.sh"));
-        System.out.println(client.exists("/home/rocky/df/"));
-        System.out.println(client.exists("/home/rocky/df"));
+        assert !client.exists(dir);
+        client.createDirectory(dir);
+        assert client.exists(dir);
+        assert client.listDirectories("/home/", false).any(p -> p.getName().equals("rxlib"));
+        InputStream f = Reflects.getResource("hosts.txt");
+        client.saveFile(Files.concatPath(dir, "1.txt"), f);
+        assert client.listFiles(dir, false).any(p -> p.getName().equals("1.txt"));
+        HybridStream stream = new HybridStream();
+        client.downloadFile(Files.concatPath(dir, "1.txt"), stream);
+        System.out.println(IOStream.readString(stream.rewind().getReader(), StandardCharsets.UTF_8));
 
-//        String p = "E:\\Photo\\养生\\f0.jpg";
-//        client.uploadFile(p,"/test/");
-//        client.downloadFile("/test/f0.jpg","F:\\test\\1.jpg");
-//        client.delete("/test/");
+//        for (SftpFile dir : client.listDirectories("/home", true)) {
+//            System.out.println(dir.getPath());
+//        }
+//        for (SftpFile file : client.listFiles("/home/rxsocks", true)) {
+//            System.out.println(file.getPath());
+//        }
     }
 
     @Test

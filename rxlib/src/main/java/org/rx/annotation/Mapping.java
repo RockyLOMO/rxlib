@@ -5,7 +5,7 @@ import org.rx.util.BeanMapNullValueStrategy;
 
 import java.lang.annotation.*;
 
-import static java.lang.annotation.ElementType.*;
+import static java.lang.annotation.ElementType.METHOD;
 
 @Target({METHOD})
 @Retention(RetentionPolicy.RUNTIME)

@@ -178,9 +178,8 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         throw new ApplicationException(values(this.getClass().getSimpleName()));
     }
 
-    @SneakyThrows
     @Override
-    protected void freeObjects() {
+    protected void freeObjects() throws Throwable {
         flush();
         tryClose(getWriter());
         tryClose(getReader());

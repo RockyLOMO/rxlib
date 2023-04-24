@@ -1,6 +1,9 @@
 package org.rx.net;
 
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.Tuple;
 import org.rx.core.StringBuilder;

@@ -13,16 +13,12 @@ import org.rx.annotation.Metadata;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.core.*;
-import org.rx.bean.GirlBean;
-import org.rx.bean.PersonBean;
-import org.rx.bean.PersonGender;
 import org.rx.test.UserStruct;
-import org.rx.util.*;
 import org.rx.third.guava.CaseFormat;
 
 import java.lang.reflect.Method;
-import java.util.*;
 import java.util.Arrays;
+import java.util.*;
 
 import static org.rx.core.Sys.toJsonObject;
 import static org.rx.core.Sys.toJsonString;

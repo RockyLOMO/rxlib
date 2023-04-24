@@ -1,6 +1,9 @@
 package org.rx.net.support;
 
-import lombok.*;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import org.rx.core.Strings;
 
 import java.io.Serializable;

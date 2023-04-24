@@ -209,9 +209,8 @@ public class FileStream extends IOStream implements Serializable {
         this.lockFlags = lockFlags;
     }
 
-    @SneakyThrows
     @Override
-    protected void freeObjects() {
+    protected void freeObjects() throws Throwable {
         randomAccessFile.close();
     }
 

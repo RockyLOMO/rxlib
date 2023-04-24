@@ -40,7 +40,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.ifNull;
-import static org.rx.core.Sys.*;
+import static org.rx.core.Sys.fromJson;
+import static org.rx.core.Sys.toJsonObject;
 
 @RequiredArgsConstructor
 @RestController
@@ -98,6 +99,14 @@ public class MxController {
         try {
             switch (Integer.parseInt(x)) {
                 case 1:
+                    Sys.diagnosticMx.setVMOption(request.getParameter("k"), request.getParameter("v"));
+                    return rt;
+                case 2:
+                    boolean enable = Boolean.parseBoolean(request.getParameter("v"));
+                    Sys.threadMx.setThreadContentionMonitoringEnabled(enable);
+                    Sys.threadMx.setThreadCpuTimeEnabled(enable);
+                    return rt;
+                case 3:
                     String type = request.getParameter("type");
                     String jsonVal = request.getParameter("jsonVal");
                     Object source = null, target;
@@ -118,14 +127,6 @@ public class MxController {
                         target = RxConfig.INSTANCE;
                     }
                     return source != null ? BeanMapper.DEFAULT.map(source, target) : target;
-                case 2:
-                    Sys.diagnosticMx.setVMOption(request.getParameter("k"), request.getParameter("v"));
-                    return rt;
-                case 3:
-                    boolean enable = Boolean.parseBoolean(request.getParameter("v"));
-                    Sys.threadMx.setThreadContentionMonitoringEnabled(enable);
-                    Sys.threadMx.setThreadCpuTimeEnabled(enable);
-                    return rt;
                 case 4:
                     return invoke(request);
                 case 10:

@@ -2,8 +2,6 @@ package org.rx.bean;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
-import org.rx.core.CachePolicy;
 
 @RequiredArgsConstructor
 @Getter

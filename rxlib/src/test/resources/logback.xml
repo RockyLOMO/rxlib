@@ -32,6 +32,7 @@
     </appender>
 
     <logger name="io.netty" level="INFO"/>
+    <logger name="org.apache.sshd" level="INFO"/>
     <logger name="org.rx.core.ThreadPool" level="INFO"/>
     <logger name="org.rx.io.EntityDatabaseImpl" level="INFO"/>
     <!--    <logger name="org.rx.net" level="DEBUG"/>-->

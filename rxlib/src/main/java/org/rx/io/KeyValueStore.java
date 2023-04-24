@@ -165,9 +165,8 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         }
     }
 
-    @SneakyThrows
     @Override
-    protected void freeObjects() {
+    protected void freeObjects() throws Throwable {
         indexer.close();
         wal.close();
     }
