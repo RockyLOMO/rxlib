@@ -1,13 +1,13 @@
 package org.rx.net.transport;
 
-import com.jcraft.jsch.ChannelSftp;
-import com.jcraft.jsch.JSch;
-import com.jcraft.jsch.Session;
-import com.jcraft.jsch.SftpException;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FilenameUtils;
+import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier;
+import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.sftp.client.SftpClient.DirEntry;
+import org.apache.sshd.sftp.client.SftpClientFactory;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.CrudFile;
@@ -15,58 +15,18 @@ import org.rx.io.Files;
 import org.rx.io.IOStream;
 import org.rx.net.AuthenticEndpoint;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
 
-import static org.rx.core.Extends.quietly;
-
-/**
- * "cd remotePath                       Change remote directory to 'remotePath'\n"+
- * "lcd remotePath                      Change local directory to 'remotePath'\n"+
- * "chgrp grp remotePath                Change group of file 'remotePath' to 'grp'\n"+
- * "chmod mode remotePath               Change permissions of file 'remotePath' to 'mode'\n"+
- * "chown own remotePath                Change owner of file 'remotePath' to 'own'\n"+
- * "df [remotePath]                     Display statistics for current directory or\n"+
- * "                              filesystem containing 'remotePath'\n"+
- * "help                          Display this help text\n"+
- * "get remote-remotePath [local-remotePath]  Download file\n"+
- * "get-resume remote-remotePath [local-remotePath]  Resume to download file.\n"+
- * "get-append remote-remotePath [local-remotePath]  Append remote file to local file\n"+
- * "hardlink oldpath newpath      Hardlink remote file\n"+
- * "*lls [ls-options [remotePath]]      Display local directory listing\n"+
- * "ln oldpath newpath            Symlink remote file\n"+
- * "*lmkdir remotePath                  Create local directory\n"+
- * "lpwd                          Print local working directory\n"+
- * "ls [remotePath]                     Display remote directory listing\n"+
- * "*lumask umask                 Set local umask to 'umask'\n"+
- * "mkdir remotePath                    Create remote directory\n"+
- * "put local-remotePath [remote-remotePath]  Upload file\n"+
- * "put-resume local-remotePath [remote-remotePath]  Resume to upload file\n"+
- * "put-append local-remotePath [remote-remotePath]  Append local file to remote file.\n"+
- * "pwd                           Display remote working directory\n"+
- * "stat remotePath                     Display info about remotePath\n"+
- * "exit                          Quit sftp\n"+
- * "quit                          Quit sftp\n"+
- * "rename oldpath newpath        Rename remote file\n"+
- * "rmdir remotePath                    Remove remote directory\n"+
- * "rm remotePath                       Delete remote file\n"+
- * "symlink oldpath newpath       Symlink remote file\n"+
- * "readlink remotePath                 Check the target of a symbolic link\n"+
- * "realpath remotePath                 Canonicalize the remotePath\n"+
- * "rekey                         Key re-exchanging\n"+
- * "compression level             Packet compression will be enabled\n"+
- * "version                       Show SFTP version\n"+
- * "?                             Synonym for help";
- */
 @Slf4j
 public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     static final List<String> skipDirectories = Arrays.toList(".", "..");
 
-    private final JSch jsch = new JSch();
-    private final Session session;
-    private final ChannelSftp channel;
+    final SshClient client = SshClient.setUpDefaultClient();
+    final ClientSession session;
+    final org.apache.sshd.sftp.client.SftpClient channel;
 
     public SftpClient(AuthenticEndpoint endpoint) {
         this(endpoint, RxConfig.INSTANCE.getNet().getConnectTimeoutMillis());
@@ -74,20 +34,22 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
 
     @SneakyThrows
     public SftpClient(@NonNull AuthenticEndpoint endpoint, int timeoutMillis) {
-        session = jsch.getSession(endpoint.getUsername(), endpoint.getEndpoint().getHostString(), endpoint.getEndpoint().getPort());
-        Properties config = new Properties();
-        config.put("StrictHostKeyChecking", "no");
-        session.setConfig(config);
-        session.setPassword(endpoint.getPassword());
-        session.connect(timeoutMillis);
-        channel = (ChannelSftp) session.openChannel("sftp");
-        channel.connect(timeoutMillis);
+        client.setServerKeyVerifier(AcceptAllServerKeyVerifier.INSTANCE);
+        client.start();
+        session = client.connect(endpoint.getUsername(), endpoint.getEndpoint().getHostString(), endpoint.getEndpoint().getPort())
+                .verify(timeoutMillis)
+                .getSession();
+        session.addPasswordIdentity(endpoint.getPassword());
+        if (!session.auth().verify(timeoutMillis).isSuccess()) {
+            throw new InvalidException("auth failure");
+        }
+        channel = SftpClientFactory.instance().createSftpClient(session);
     }
 
     @Override
-    protected void freeObjects() {
-        channel.disconnect();
-        session.disconnect();
+    protected void freeObjects() throws Throwable {
+        channel.close();
+        session.close();
     }
 
     @Override
@@ -97,7 +59,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
         }
 
         char ch = remotePath.charAt(remotePath.length() - 1);
-        return ch == '/' || Strings.isEmpty(FilenameUtils.getExtension(remotePath));
+        return ch == '/' || Strings.isEmpty(Files.getExtension(remotePath));
     }
 
     @Override
@@ -105,7 +67,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
         try {
             channel.stat(path);
             return true;
-        } catch (SftpException e) {
+        } catch (IOException e) {
             log.warn("exists", e);
         }
         return false;
@@ -115,12 +77,12 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     public void delete(String remotePath) {
         if (isDirectoryPath(remotePath)) {
             for (SftpFile file : listFiles(remotePath, true)) {
-                channel.rm(file.getPath());
+                channel.remove(file.getPath());
             }
             channel.rmdir(remotePath);
             return;
         }
-        channel.rm(remotePath);
+        channel.remove(remotePath);
     }
 
     @SneakyThrows
@@ -135,7 +97,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
 
     @Override
     public void saveFile(String remotePath, InputStream in) {
-        try (IOStream stream = IOStream.wrap(FilenameUtils.getName(remotePath), in)) {
+        try (IOStream stream = IOStream.wrap(Files.getName(remotePath), in)) {
             uploadFile(stream, remotePath);
         }
     }
@@ -149,12 +111,11 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
 
     @SneakyThrows
     private void listDirectories(List<SftpFile> result, boolean recursive, String directory) {
-        List<ChannelSftp.LsEntry> list = channel.ls(directory);
-        for (ChannelSftp.LsEntry entry : list) {
-            if (skipDirectories.contains(entry.getFilename()) || !entry.getAttrs().isDir()) {
+        for (DirEntry entry : channel.readDir(directory)) {
+            if (skipDirectories.contains(entry.getFilename()) || !entry.getAttributes().isDirectory()) {
                 continue;
             }
-            result.add(new SftpFile(Files.concatPath(directory, entry.getFilename()), entry.getFilename(), entry.getLongname()));
+            result.add(new SftpFile(Files.concatPath(directory, entry.getFilename()), entry.getFilename(), entry.getLongFilename()));
             if (recursive) {
                 listDirectories(result, recursive, Files.concatPath(directory, entry.getFilename()));
             }
@@ -170,18 +131,17 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
 
     @SneakyThrows
     private void listFiles(List<SftpFile> result, boolean recursive, String directory) {
-        List<ChannelSftp.LsEntry> list = channel.ls(directory);
-        for (ChannelSftp.LsEntry entry : list) {
+        for (DirEntry entry : channel.readEntries(directory)) {
             if (skipDirectories.contains(entry.getFilename())) {
                 continue;
             }
-            if (entry.getAttrs().isDir()) {
+            if (entry.getAttributes().isDirectory()) {
                 if (recursive) {
-                    quietly(() -> listFiles(result, recursive, Files.concatPath(directory, entry.getFilename())));
+                    listFiles(result, recursive, Files.concatPath(directory, entry.getFilename()));
                 }
                 continue;
             }
-            result.add(new SftpFile(Files.concatPath(directory, entry.getFilename()), entry.getFilename(), entry.getLongname()));
+            result.add(new SftpFile(Files.concatPath(directory, entry.getFilename()), entry.getFilename(), entry.getLongFilename()));
         }
     }
 
@@ -199,7 +159,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
         }
 
         createDirectory(remotePath);
-        channel.put(stream.getReader(), remotePath);
+        stream.read(channel.write(remotePath));
     }
 
     public void downloadFile(String remotePath, String localPath) {
@@ -210,6 +170,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
 
     @SneakyThrows
     public void downloadFile(@NonNull String remotePath, @NonNull IOStream stream) {
-        channel.get(remotePath, stream.getWriter());
+        stream.write(channel.read(remotePath));
     }
 }
+

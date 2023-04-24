@@ -10,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.bean.DynamicProxyBean;
-import org.rx.util.IdGenerator;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
@@ -22,6 +21,7 @@ import org.rx.net.rpc.protocol.MethodMessage;
 import org.rx.net.transport.*;
 import org.rx.net.transport.protocol.ErrorPacket;
 import org.rx.util.BeanMapper;
+import org.rx.util.IdGenerator;
 import org.rx.util.Snowflake;
 import org.rx.util.function.TripleAction;
 

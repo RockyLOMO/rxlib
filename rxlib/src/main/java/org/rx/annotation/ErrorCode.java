@@ -2,7 +2,8 @@ package org.rx.annotation;
 
 import java.lang.annotation.*;
 
-import static java.lang.annotation.ElementType.*;
+import static java.lang.annotation.ElementType.FIELD;
+import static java.lang.annotation.ElementType.METHOD;
 
 @Target({METHOD, FIELD})
 @Retention(RetentionPolicy.RUNTIME)

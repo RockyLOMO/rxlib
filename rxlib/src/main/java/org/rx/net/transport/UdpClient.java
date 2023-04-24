@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.util.IdGenerator;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
 import org.rx.io.MemoryStream;
@@ -19,6 +18,7 @@ import org.rx.net.Sockets;
 import org.rx.net.transport.protocol.Ack;
 import org.rx.net.transport.protocol.AckSync;
 import org.rx.net.transport.protocol.UdpMessage;
+import org.rx.util.IdGenerator;
 
 import java.net.InetSocketAddress;
 import java.util.Map;

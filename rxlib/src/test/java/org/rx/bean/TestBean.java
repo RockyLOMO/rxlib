@@ -4,13 +4,10 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
-import org.rx.bean.*;
 import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
-import org.rx.bean.PersonBean;
-import org.rx.bean.PersonGender;
 
 import java.util.HashSet;
 import java.util.Set;

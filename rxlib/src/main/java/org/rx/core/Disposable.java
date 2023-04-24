@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import lombok.SneakyThrows;
 import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 
@@ -12,21 +13,7 @@ public abstract class Disposable implements AutoCloseable {
         return closed;
     }
 
-    @Override
-    protected void finalize() throws Throwable {
-        super.finalize();
-        dispose();
-    }
-
-    private synchronized void dispose() {
-        if (closed) {
-            return;
-        }
-        freeObjects();
-        closed = true;
-    }
-
-    protected abstract void freeObjects();
+    protected abstract void freeObjects() throws Throwable;
 
     @ErrorCode
     protected void checkNotClosed() {
@@ -35,8 +22,19 @@ public abstract class Disposable implements AutoCloseable {
         }
     }
 
+    @SneakyThrows
     @Override
-    public void close() {
-        dispose();
+    public synchronized void close() {
+        if (closed) {
+            return;
+        }
+        freeObjects();
+        closed = true;
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        super.finalize();
+        close();
     }
 }

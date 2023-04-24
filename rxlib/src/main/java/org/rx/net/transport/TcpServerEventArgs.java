@@ -1,6 +1,8 @@
 package org.rx.net.transport;
 
-import lombok.*;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import org.rx.core.NEventArgs;
 
 import java.io.Serializable;

@@ -1,6 +1,9 @@
 package org.rx.net.socks;
 
-import lombok.*;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 

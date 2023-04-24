@@ -9,8 +9,6 @@ import org.rx.core.Sys;
 import org.rx.net.transport.StatefulTcpClient;
 import org.rx.net.transport.TcpClientConfig;
 
-import java.util.concurrent.TimeoutException;
-
 @Slf4j
 @RequiredArgsConstructor
 class RpcClientPool extends Disposable implements TcpClientPool {

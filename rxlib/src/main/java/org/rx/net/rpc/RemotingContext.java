@@ -9,8 +9,6 @@ import org.rx.net.transport.TcpClient;
 import org.rx.net.transport.TcpServer;
 import org.rx.util.function.Func;
 
-import java.util.Objects;
-
 import static org.rx.core.Extends.require;
 
 @Getter

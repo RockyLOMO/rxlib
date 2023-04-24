@@ -4,7 +4,6 @@ import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.bean.DateTime;
-import org.rx.core.NtpClock;
 
 public class TestAgent extends AbstractTester {
     int total = 10000;

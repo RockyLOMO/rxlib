@@ -16,7 +16,6 @@ import org.rx.bean.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
-import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 
 import java.util.*;

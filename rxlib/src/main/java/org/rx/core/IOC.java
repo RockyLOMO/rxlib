@@ -21,6 +21,10 @@ public final class IOC {
     //不要放值类型
     static final Map WEAK_IDENTITY_MAP = new WeakIdentityMap<>();
 
+    public static <T> boolean isInit(Class<T> type) {
+        return container.containsKey(type);
+    }
+
     public static <T> T get(Class<T> type, Class<? extends T> defType) {
         T bean = innerGet(type);
         if (bean == null) {
