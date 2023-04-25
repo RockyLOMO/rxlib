@@ -591,7 +591,7 @@ public final class Sockets {
     }
 
     public static Linq<SocketInfo> socketInfos(SocketProtocol protocol) {
-        try (ShellCommander cmd = new ShellCommander("netstat -aon")) {
+        try (ShellCommand cmd = new ShellCommand("netstat -aon")) {
             List<SocketInfo> list = new ArrayList<>();
             cmd.onPrintOut.combine((s, e) -> {
                 String line = e.getLine();
@@ -626,7 +626,7 @@ public final class Sockets {
     static String processName(long pid) {
         return Cache.getOrSet(fastCacheKey("processName", pid), k -> {
             $<String> name = $();
-            try (ShellCommander cmd = new ShellCommander(String.format("tasklist /fi \"pid eq %s\"", pid))) {
+            try (ShellCommand cmd = new ShellCommand(String.format("tasklist /fi \"pid eq %s\"", pid))) {
                 String t = String.format(" %s", pid);
                 cmd.onPrintOut.combine((s, e) -> {
                     int i = e.getLine().indexOf(t);
