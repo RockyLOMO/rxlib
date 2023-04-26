@@ -197,7 +197,12 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
         return process != null && process.isAlive();
     }
 
-    public synchronized ShellCommand setAutoRestart() {
+    public synchronized ShellCommand withCloseFlag() {
+        shell = (Sys.IS_OS_WINDOWS ? WIN_CMD : LINUX_BASH) + shell;
+        return this;
+    }
+
+    public synchronized ShellCommand withAutoRestart() {
         onExited.last((s, e) -> restart());
         return this;
     }
@@ -233,7 +238,6 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
             throw new InvalidException("Already started");
         }
 
-        String shell = (Sys.IS_OS_WINDOWS ? WIN_CMD : LINUX_BASH) + this.shell;
         log.debug("start {}", shell);
         List<String> command = translateCommandline(shell);
         if (!command.isEmpty() && Files.isPath(command.get(0))) {
