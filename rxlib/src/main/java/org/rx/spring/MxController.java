@@ -140,7 +140,7 @@ public class MxController {
                     Class<?> ft = Class.forName(request.getParameter("ft"));
                     String fn = request.getParameter("fn");
                     String fu = request.getParameter("fu");
-                    Map<Class<?>, Map<String, String>> fms = Interceptors.ControllerInterceptor.fms;
+                    Map<Class<?>, Map<String, String>> fms = RxConfig.INSTANCE.getHttpForwards();
                     if (fu == null) {
                         Map<String, String> fts = fms.get(ft);
                         if (fts != null) {
@@ -198,7 +198,7 @@ public class MxController {
     Object exec(HttpServletRequest request) {
         Map<String, Object> params = getParams(request);
         StringBuilder echo = new StringBuilder();
-        ShellCommander cmd = new ShellCommander((String) params.get("cmd"), (String) params.get("workspace")).setReadFullyThenExit();
+        ShellCommand cmd = new ShellCommand((String) params.get("cmd"), (String) params.get("workspace"));
         cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
         cmd.start().waitFor(30000);
         return echo.toString();

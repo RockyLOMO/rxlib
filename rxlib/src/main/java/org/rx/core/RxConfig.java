@@ -13,6 +13,7 @@ import org.rx.net.Sockets;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -182,6 +183,8 @@ public final class RxConfig {
     CacheConfig cache = new CacheConfig();
     DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
+    //key1: controller, key2: method, value: url
+    Map<Class<?>, Map<String, String>> httpForwards = new ConcurrentHashMap<>(8);
 
     public int getIntId() {
         Integer v = Integer.getInteger(id);

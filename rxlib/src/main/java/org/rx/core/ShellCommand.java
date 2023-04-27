@@ -29,7 +29,7 @@ import static org.rx.core.Extends.newConcurrentList;
 import static org.rx.core.Extends.tryClose;
 
 @Slf4j
-public class ShellCommander extends Disposable implements EventPublisher<ShellCommander> {
+public class ShellCommand extends Disposable implements EventPublisher<ShellCommand> {
     @RequiredArgsConstructor
     @Getter
     public static class PrintOutEventArgs extends EventArgs {
@@ -43,7 +43,7 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         }
     }
 
-    public static class FileOutHandler extends Disposable implements TripleAction<ShellCommander, PrintOutEventArgs> {
+    public static class FileOutHandler extends Disposable implements TripleAction<ShellCommand, PrintOutEventArgs> {
         final FileStream fileStream;
 
         public FileOutHandler(String filePath) {
@@ -57,7 +57,7 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         }
 
         @Override
-        public void invoke(ShellCommander s, PrintOutEventArgs e) throws Throwable {
+        public void invoke(ShellCommand s, PrintOutEventArgs e) throws Throwable {
             ByteBuf buf = Bytes.directBuffer();
             buf.writeInt(e.lineNumber);
             buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
@@ -78,13 +78,13 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         final int exitValue;
     }
 
-    public static final TripleAction<ShellCommander, PrintOutEventArgs> CONSOLE_OUT_HANDLER = (s, e) -> System.out.print(e.toString());
+    public static final TripleAction<ShellCommand, PrintOutEventArgs> CONSOLE_OUT_HANDLER = (s, e) -> System.out.print(e.toString());
     static final String LINUX_BASH = "bash -c ", WIN_CMD = "cmd /c ";
-    static final List<ShellCommander> KILL_LIST = newConcurrentList(true);
+    static final List<ShellCommand> KILL_LIST = newConcurrentList(true);
 
     static {
         Tasks.addShutdownHook(() -> {
-            for (ShellCommander executor : KILL_LIST) {
+            for (ShellCommand executor : KILL_LIST) {
                 executor.kill();
             }
         });
@@ -98,8 +98,8 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         return exec(shell, workspace, timeoutMillis, CONSOLE_OUT_HANDLER);
     }
 
-    public static int exec(String shell, String workspace, long timeoutMillis, TripleAction<ShellCommander, PrintOutEventArgs> outHandler) {
-        try (ShellCommander cmd = new ShellCommander(shell, workspace)) {
+    public static int exec(String shell, String workspace, long timeoutMillis, TripleAction<ShellCommand, PrintOutEventArgs> outHandler) {
+        try (ShellCommand cmd = new ShellCommand(shell, workspace)) {
             cmd.onPrintOut.combine(outHandler);
             cmd.start();
             if (timeoutMillis == Constants.TIMEOUT_INFINITE) {
@@ -183,8 +183,8 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         return list;
     }
 
-    public final Delegate<ShellCommander, PrintOutEventArgs> onPrintOut = Delegate.create();
-    public final Delegate<ShellCommander, ExitedEventArgs> onExited = Delegate.create();
+    public final Delegate<ShellCommand, PrintOutEventArgs> onPrintOut = Delegate.create();
+    public final Delegate<ShellCommand, ExitedEventArgs> onExited = Delegate.create();
 
     final long daemonPeriod;
     @Getter
@@ -197,31 +197,25 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
         return process != null && process.isAlive();
     }
 
-    public synchronized ShellCommander setReadFullyThenExit() {
-        if (!Files.isPath(shell)) {
-            if (Sys.IS_OS_WINDOWS && !Strings.startsWithIgnoreCase(shell, WIN_CMD)) {
-                shell = WIN_CMD + shell;
-            } else {
-                shell = LINUX_BASH + shell;
-            }
-        }
+    public synchronized ShellCommand withCloseFlag() {
+        shell = (Sys.IS_OS_WINDOWS ? WIN_CMD : LINUX_BASH) + shell;
         return this;
     }
 
-    public synchronized ShellCommander setAutoRestart() {
+    public synchronized ShellCommand withAutoRestart() {
         onExited.last((s, e) -> restart());
         return this;
     }
 
-    public ShellCommander(String shell) {
+    public ShellCommand(String shell) {
         this(shell, null);
     }
 
-    public ShellCommander(String shell, String workspace) {
+    public ShellCommand(String shell, String workspace) {
         this(shell, workspace, Constants.DEFAULT_INTERVAL, true);
     }
 
-    public ShellCommander(@NonNull String shell, String workspace, long daemonPeriod, boolean killOnExited) {
+    public ShellCommand(@NonNull String shell, String workspace, long daemonPeriod, boolean killOnExited) {
         this.shell = shell.trim();
         this.workspace = workspace == null ? null : new File(workspace);
 
@@ -239,7 +233,7 @@ public class ShellCommander extends Disposable implements EventPublisher<ShellCo
     }
 
     @SneakyThrows
-    public synchronized ShellCommander start() {
+    public synchronized ShellCommand start() {
         if (isRunning()) {
             throw new InvalidException("Already started");
         }

@@ -873,17 +873,17 @@ public class TestCore extends AbstractTester {
 
     @Test
     public void shellExec() {
-        ShellCommander executor = new ShellCommander("ping www.baidu.com", null);
-        executor.onPrintOut.combine(ShellCommander.CONSOLE_OUT_HANDLER);
+        ShellCommand executor = new ShellCommand("ping www.baidu.com", null);
+        executor.onPrintOut.combine(ShellCommand.CONSOLE_OUT_HANDLER);
         executor.start().waitFor();
 
-        executor = new ShellCommander("ping f-li.cn", null);
-        ShellCommander finalExecutor = executor;
+        executor = new ShellCommand("ping f-li.cn", null);
+        ShellCommand finalExecutor = executor;
         executor.onPrintOut.combine((s, e) -> {
             System.out.println("K: " + e.getLine());
             finalExecutor.kill();
         });
-        executor.onPrintOut.combine(new ShellCommander.FileOutHandler(AbstractTester.path("out.txt")));
+        executor.onPrintOut.combine(new ShellCommand.FileOutHandler(AbstractTester.path("out.txt")));
         executor.onExited.combine((s, e) -> System.out.println("shell exit"));
         executor.start().waitFor();
 

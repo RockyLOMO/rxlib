@@ -50,6 +50,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     protected void freeObjects() throws Throwable {
         channel.close();
         session.close();
+        client.close();
     }
 
     @Override
