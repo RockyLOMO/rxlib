@@ -1,6 +1,7 @@
 package org.rx.io;
 
 import lombok.*;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.NEnum;
 import org.rx.bean.RefCounter;
@@ -14,6 +15,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+@Slf4j
 @RequiredArgsConstructor(access = AccessLevel.MODULE)
 public final class CompositeLock {
     @RequiredArgsConstructor
@@ -45,7 +47,8 @@ public final class CompositeLock {
                     }
                     return t;
                 });
-                rwLock.incrementRefCnt();
+                int refCnt = rwLock.incrementRefCnt();
+                log.info("Lock incrementRefCnt {}[{}] - {}", rwLock, refCnt, block);
             }
             lock = shared ? rwLock.ref.readLock() : rwLock.ref.writeLock();
             lock.lock();
@@ -65,7 +68,9 @@ public final class CompositeLock {
             if (rwLock != null) {
                 lock.unlock();
                 synchronized (rwLocks) {
-                    if (rwLock.decrementRefCnt() == 0) {
+                    int refCnt = rwLock.decrementRefCnt();
+                    log.info("Lock decrementRefCnt {}[{}] - {}", rwLock, refCnt, block);
+                    if (refCnt == 0) {
                         rwLocks.remove(block);
                     }
                 }
