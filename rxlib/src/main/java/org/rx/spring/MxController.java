@@ -140,7 +140,7 @@ public class MxController {
                     Class<?> ft = Class.forName(request.getParameter("ft"));
                     String fn = request.getParameter("fn");
                     String fu = request.getParameter("fu");
-                    Map<Class<?>, Map<String, String>> fms = Interceptors.ControllerInterceptor.fms;
+                    Map<Class<?>, Map<String, String>> fms = RxConfig.INSTANCE.getHttpForwards();
                     if (fu == null) {
                         Map<String, String> fts = fms.get(ft);
                         if (fts != null) {

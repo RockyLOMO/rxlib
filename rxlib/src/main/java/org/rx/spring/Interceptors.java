@@ -34,7 +34,6 @@ import javax.servlet.http.HttpServletResponse;
 import java.lang.reflect.Executable;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.rx.core.Extends.as;
@@ -47,7 +46,6 @@ public class Interceptors {
     @ControllerAdvice
     public static class ControllerInterceptor extends BaseInterceptor {
         final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
-        static final Map<Class<?>, Map<String, String>> fms = new ConcurrentHashMap<>();
 
         @SneakyThrows
         protected Object methodAround(ProceedingJoinPoint joinPoint, Tuple<HttpServletRequest, HttpServletResponse> httpEnv) {
@@ -91,7 +89,7 @@ public class Interceptors {
             if (ms == null || skipMethods.contains(signature.getName())) {
                 return joinPoint.proceed();
             }
-            Map<String, String> fts = fms.get(ms.getDeclaringType());
+            Map<String, String> fts = RxConfig.INSTANCE.getHttpForwards().get(ms.getDeclaringType());
             if (fts != null) {
                 String fu = fts.get(ms.getName());
                 if (fu != null) {
