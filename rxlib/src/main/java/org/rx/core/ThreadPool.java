@@ -215,6 +215,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
+    //todo CompletableFuture.allOf 会hang住
     @RequiredArgsConstructor
     static class CompletableFutureWrapper<T> extends CompletableFuture<T> {
         final Executor pool;
@@ -231,8 +232,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         Executor uniPool(Executor executor) {
 //            return ForkJoinPool.commonPool();
-//            return executor != null ? executor : pool;
-            return pool;
+            return executor != null ? executor : pool;
         }
 
         @Override
@@ -492,6 +492,16 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         @Override
+        public int hashCode() {
+            return delegate.hashCode();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            return delegate.equals(obj);
+        }
+
+        @Override
         public String toString() {
             return delegate.toString();
         }
@@ -621,6 +631,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final DynamicSizer sizer = new DynamicSizer();
     static final Map<Object, RefCounter<ReentrantLock>> taskLockMap = new ConcurrentHashMap<>(8);
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
+    static boolean wrapCompletableFuture;
 
     public static String startTrace(String traceId) {
         return startTrace(traceId, false);
@@ -955,7 +966,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public <T> MultiTaskFuture<Void, T> runAllAsync(Collection<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
             Task<T> t = new Task<>(task, null, null);
-            //allOfFuture.join() will hang
+            //allOf().join() will hang
 //            return wrap(CompletableFuture.supplyAsync(t, this), t.traceId);
             return CompletableFuture.supplyAsync(t, asyncExecutor);
         }).toArray();
@@ -964,9 +975,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     private <T> CompletableFuture<T> wrap(CompletableFuture<T> delegate, boolean reuseOnUni) {
         //pool will use this::execute to wrap thenXXAynsc() task
-        CompletableFutureWrapper<T> wrapper = new CompletableFutureWrapper<>(this, reuseOnUni);
-        wrapper.delegate = delegate;
-        return wrapper;
+        if (wrapCompletableFuture) {
+            CompletableFutureWrapper<T> wrapper = new CompletableFutureWrapper<>(this, reuseOnUni);
+            wrapper.delegate = delegate;
+            return wrapper;
+        }
+        return delegate;
     }
     //endregion
 

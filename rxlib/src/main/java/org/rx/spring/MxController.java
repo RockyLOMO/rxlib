@@ -16,6 +16,7 @@ import org.rx.io.IOStream;
 import org.rx.net.NetEventWait;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksContext;
+import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -126,7 +127,7 @@ public class MxController {
                         }
                         target = RxConfig.INSTANCE;
                     }
-                    return source != null ? BeanMapper.DEFAULT.map(source, target) : target;
+                    return source != null ? BeanMapper.DEFAULT.map(source, target, BeanMapFlag.SKIP_NULL.flags()) : target;
                 case 4:
                     return invoke(request);
                 case 10:

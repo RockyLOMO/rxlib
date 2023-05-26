@@ -262,32 +262,61 @@ public class TestCore extends AbstractTester {
 //        }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
 //        sleep(2000);
 //
-        log.info("--ExecutorService--");
+//        log.info("--ExecutorService--");
+//        ThreadPool.startTrace(null);
+////        ExecutorService es = pool;
+////        es.submit(() -> {
+////            log.info("submit..");
+////            return 1024;
+////        });
+////        es.execute(() -> {
+////            log.info("exec..");
+////        });
+////        sleep(1000);
+//
+//        log.info("test scope1 start");
+//        ThreadPool.startTrace("newScope1", true);
+//        log.info("test scope2 start");
+//
+//        ThreadPool.startTrace("newScope2", true);
+//        log.info("test scope3");
+//        ThreadPool.endTrace();
+//
+//        log.info("test scope2 end");
+//        ThreadPool.endTrace();
+//
+//        log.info("test scope1 end");
+//        ThreadPool.endTrace();
+//        log.info("--done--");
+
+        log.info("--TestService--");
+//        Reflects.writeStaticField(CompletableFuture.class, "asyncPool", pool);
+        Class.forName(Tasks.class.getName());
         ThreadPool.startTrace(null);
-//        ExecutorService es = pool;
-//        es.submit(() -> {
-//            log.info("submit..");
-//            return 1024;
-//        });
-//        es.execute(() -> {
-//            log.info("exec..");
-//        });
-//        sleep(1000);
+        Func<Integer> f1 = () -> {
+            log.info("1-0");
+            Thread.sleep(3000);
+            log.info("1-1");
+            return 1;
+        };
+        CompletableFuture<Integer> cf1 = pool.runAsync(f1);
 
-        log.info("test scope1 start");
-        ThreadPool.startTrace("newScope1", true);
-        log.info("test scope2 start");
+        Func<Integer> f2 = () -> {
+            log.info("2-0");
+            Thread.sleep(1000);
+            log.info("2-1");
+            return 2;
+        };
+        CompletableFuture<Integer> cf2 = pool.runAsync(f2);
 
-        ThreadPool.startTrace("newScope2", true);
-        log.info("test scope3");
-        ThreadPool.endTrace();
+        Tasks.schedulePeriod(() -> {
+            log.info("stat: {} {}", cf1.isDone(), cf2.isDone());
+        }, 500);
 
-        log.info("test scope2 end");
-        ThreadPool.endTrace();
-
-        log.info("test scope1 end");
-        ThreadPool.endTrace();
-        log.info("--done--");
+        CompletableFuture.allOf(cf1, cf2).whenCompleteAsync((r, e) -> {
+            log.info("r {}", r);
+        }, pool).get(8, TimeUnit.SECONDS);
+//        pool.runAllAsync(org.rx.core.Arrays.toList(f1, f2)).getFuture().get(5, TimeUnit.SECONDS);
     }
 
     @SneakyThrows
