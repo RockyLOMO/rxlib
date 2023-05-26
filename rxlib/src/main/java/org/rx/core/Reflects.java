@@ -487,6 +487,11 @@ public class Reflects extends ClassUtils {
             return;
         }
         try {
+            if (member instanceof Field) {
+                Field field = (Field) member;
+                FieldUtils.removeFinalModifier(field);
+            }
+
             if (System.getSecurityManager() == null) {
                 member.setAccessible(true); // <~ Dragons
             } else {

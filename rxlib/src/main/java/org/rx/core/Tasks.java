@@ -89,6 +89,12 @@ public final class Tasks {
                 }
             }
         }));
+
+        try {
+            Reflects.writeStaticField(CompletableFuture.class, "asyncPool", executor);
+        } catch (Throwable e) {
+            log.warn("setAsyncPool", e);
+        }
     }
 
     @Subscribe(topicClass = RxConfig.class)

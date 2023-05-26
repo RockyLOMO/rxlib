@@ -254,7 +254,7 @@ public class Strings extends StringUtils {
     @ErrorCode("lengthError")
     public static String[] split(String str, String delimiter, int fixedLength) {
         String[] result;
-        if (isEmpty(str)) {
+        if (str == null) { //"" split result length is 1
             result = Arrays.EMPTY_STRING_ARRAY;
         } else {
             result = str.split(Pattern.quote(delimiter));
