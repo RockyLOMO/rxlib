@@ -631,6 +631,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final DynamicSizer sizer = new DynamicSizer();
     static final Map<Object, RefCounter<ReentrantLock>> taskLockMap = new ConcurrentHashMap<>(8);
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
+    @Deprecated
     static boolean wrapCompletableFuture;
 
     public static String startTrace(String traceId) {
