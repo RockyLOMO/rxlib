@@ -111,9 +111,9 @@ public class TestAgent extends AbstractTester {
 //        Arrays.parallelSort();
         ThreadPool.traceIdGenerator = () -> UUID.randomUUID().toString().replace("-", "");
         ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e.getValue()));
-        ForkJoinPool r = ForkJoinPool.commonPool();
+        ForkJoinPool pool = ForkJoinPool.commonPool();
         ThreadPool.startTrace(null);
-        r.execute(() -> {
+        pool.execute(() -> {
             log.info("async task");
         });
         Thread.sleep(5000);
@@ -202,69 +202,28 @@ public class TestAgent extends AbstractTester {
 
     public static class BootstrapAdvice {
         @Advice.OnMethodEnter
-        public static void before(
+        public static void enter(
                 @Advice.This Object self,
                 @Advice.Origin Method method,
                 @Advice.AllArguments(readOnly = false, typing = Assigner.Typing.DYNAMIC) Object[] arguments
         ) throws Exception {
-            System.out.println("==============================>before");
+            System.out.println("Advice enter");
 
             Object task = arguments[0];
-            System.out.println(task);
 
             String tn = "org.rx.core.ForkJoinPoolWrapper";
 //            Class<?> t = Class.forName("org.rx.core.ForkJoinPoolWrapper");
 //            Class<?> t = Thread.currentThread().getContextClassLoader().loadClass(tn);
             Class<?> t = ClassLoader.getSystemClassLoader().loadClass(tn);
             Method m = t.getDeclaredMethod("wrap", Object.class);
-            System.out.println("method: " + m);
 
             Object[] newArgs = new Object[1];
             newArgs[0] = task;
             Object r = m.invoke(null, newArgs);
-            System.out.println("adapt: " + r);
+            System.out.printf("Advice adapt %s(%s) -> %s%n", m, task, r);
             newArgs[0] = r;
 
             arguments = newArgs;
-        }
-
-//        @Advice.OnMethodExit
-//        public static void after(@Advice.This Object thisObj, @Advice.AllArguments Object[] allArguments,
-//                                 @Advice.Return Object ret, @Advice.Origin Method method) throws Exception {
-//            System.out.println("==============================>after");
-//        }
-    }
-
-    public static class InlineInterceptor {
-//        @Advice.OnMethodEnter(skipOn = Advice.OnNonDefaultValue.class)
-//        public static Object enter(
-//                @Advice.This Object self,
-//                @Advice.Origin Method method,
-//                @Advice.AllArguments Object[] arguments) throws Throwable {
-//            System.out.println("enter " + method);
-////            return method.invoke(self, arguments);
-////            arguments[0] = (Runnable) () -> {
-////                System.out.println("enter task");
-////            };
-//            try {
-//                Class<?> t = Class.forName("org.rx.core.ForkJoinPoolWrapper");
-////                Method m = t.getDeclaredMethod("wrap", Object.class);
-//            } catch (Throwable e) {
-//                System.out.println("error:");
-//                e.printStackTrace();
-////                log.info("s", e);
-//            }
-//
-////            System.out.println(arguments[0]);
-//            return null;
-//        }
-
-        @RuntimeType
-        public static Object intercept(@This Object thisObj, @AllArguments Object[] allArguments,
-                                       @Origin Method method, @SuperCall Callable<?> callable) throws Exception {
-            // intercept any method of any signature
-            System.out.println("===============================GeneralInterceptor");
-            return callable.call();
         }
     }
 
@@ -272,7 +231,7 @@ public class TestAgent extends AbstractTester {
         @RuntimeType
         public static Object intercept(
                 @Origin Method method
-                , @AllArguments Object[] allArguments
+                , @AllArguments Object[] arguments
                 , @SuperCall Callable<?> callable
         ) throws Exception {
             long start = System.currentTimeMillis();
