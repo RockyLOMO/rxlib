@@ -8,6 +8,7 @@ import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.NamedElement;
 import net.bytebuddy.description.type.TypeDefinition;
+import net.bytebuddy.dynamic.ClassFileLocator;
 import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
 import net.bytebuddy.dynamic.loading.ClassReloadingStrategy;
 import net.bytebuddy.implementation.MethodDelegation;
@@ -15,6 +16,7 @@ import net.bytebuddy.implementation.bind.annotation.*;
 import net.bytebuddy.implementation.bytecode.assign.Assigner;
 import net.bytebuddy.matcher.ElementMatcher;
 import net.bytebuddy.matcher.ElementMatchers;
+import net.bytebuddy.pool.TypePool;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.bean.DateTime;
@@ -30,6 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
+import java.util.jar.JarFile;
 
 @Slf4j
 public class TestAgent extends AbstractTester {
@@ -78,16 +81,17 @@ public class TestAgent extends AbstractTester {
 
     static void fjp() throws Throwable {
         Instrumentation install = ByteBuddyAgent.install();
+        String jar = "D:\\projs\\rxlib\\rxlib\\target\\rxlib-2.19.5-SNAPSHOT.jar";
+//        install.appendToBootstrapClassLoaderSearch(new JarFile(jar));
+        install.appendToSystemClassLoaderSearch(new JarFile(jar));
 //        ElementMatcher.Junction<NamedElement> fjp = ElementMatchers.named("java.util.concurrent.ForkJoinPool");
 //        ElementMatcher.Junction<TypeDefinition> fjp = ElementMatchers.is(ForkJoinPool.class);
         ElementMatcher.Junction<NamedElement> externalPush = ElementMatchers.named("externalPush");
 
 //        TypePool typePool = TypePool.Default.ofSystemLoader();
-//        new ByteBuddy()
-//////                .with(Implementation.Context.Disabled.Factory.INSTANCE)
-//                .redefine(typePool.describe("java.util.concurrent.ForkJoinPool").resolve(), ClassFileLocator.ForClassLoader.ofSystemLoader())
         new ByteBuddy()
                 .redefine(ForkJoinPool.class)
+//                .redefine(typePool.describe("java.util.concurrent.ForkJoinPool").resolve(), ClassFileLocator.ForClassLoader.ofSystemLoader())
 //                .method(externalPush).intercept(MethodDelegation.to(TimingInterceptor.class))
                 .visit(Advice.to(BootstrapAdvice.class).on(externalPush))
                 .make()
@@ -203,8 +207,8 @@ public class TestAgent extends AbstractTester {
     public static class BootstrapAdvice {
         @Advice.OnMethodEnter
         public static void enter(
-                @Advice.This Object self,
-                @Advice.Origin Method method,
+//                @Advice.This Object self,
+//                @Advice.Origin Method method,
                 @Advice.AllArguments(readOnly = false, typing = Assigner.Typing.DYNAMIC) Object[] arguments
         ) throws Exception {
             System.out.println("Advice enter");
@@ -219,7 +223,8 @@ public class TestAgent extends AbstractTester {
 
             Object[] newArgs = new Object[1];
             newArgs[0] = task;
-            Object r = m.invoke(null, newArgs);
+//            Object r = m.invoke(null, newArgs);
+            Object r = ForkJoinPoolWrapper.wrap(task);
             System.out.printf("Advice adapt %s(%s) -> %s%n", m, task, r);
             newArgs[0] = r;
 
