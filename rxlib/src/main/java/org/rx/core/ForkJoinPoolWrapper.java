@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import lombok.extern.slf4j.Slf4j;
+import org.rx.exception.InvalidException;
 
 import java.util.Collection;
 import java.util.List;
@@ -8,6 +9,19 @@ import java.util.concurrent.*;
 
 @Slf4j
 public class ForkJoinPoolWrapper extends ForkJoinPool {
+    public static Object wrap(Object task) {
+        if (task instanceof ForkJoinTask) {
+            return wrap((ForkJoinTask<?>) task);
+        }
+        if (task instanceof Runnable) {
+            return wrap((Runnable) task);
+        }
+        if (task instanceof Callable) {
+            return wrap((Callable<?>) task);
+        }
+        throw new InvalidException("Error task type {}", task);
+    }
+
     static Runnable wrap(Runnable task) {
         String traceId = ThreadPool.CTX_TRACE_ID.get();
 //        log.info("wrap Runnable {}", traceId);
@@ -39,8 +53,11 @@ public class ForkJoinPoolWrapper extends ForkJoinPool {
 //        log.info("wrap ForkJoinTask {}", traceId);
         return ForkJoinTask.adapt(() -> {
             ThreadPool.startTrace(traceId);
+//            String tid = ThreadPool.startTrace(traceId);
+//            log.info("wrap ForkJoinTask fn {}", tid);
             try {
-                return task.join();
+                //join() will hang
+                return task.invoke();
             } finally {
                 ThreadPool.endTrace();
             }
@@ -49,13 +66,10 @@ public class ForkJoinPoolWrapper extends ForkJoinPool {
 
     final ForkJoinPool delegate;
 
+    //ForkJoinPool.externalPush
     public ForkJoinPoolWrapper() {
         delegate = ForkJoinPool.commonPool();
     }
-
-    //todo ForkJoinPool.externalPush
-//    public void externalPush(ForkJoinTask<?> task) {
-//    }
 
     @Override
     public <T> T invoke(ForkJoinTask<T> task) {
