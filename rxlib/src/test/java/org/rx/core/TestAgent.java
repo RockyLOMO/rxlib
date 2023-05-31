@@ -62,7 +62,7 @@ public class TestAgent extends AbstractTester {
 
     @Test
     public void agentTime2() {
-        NtpClock.TimeAdvice.transform();
+        NtpClock.transform();
         System.out.println(System.currentTimeMillis());
         for (int i = 0; i < time; i++) {
             invoke("agent2", x -> System.currentTimeMillis(), total);
@@ -75,7 +75,7 @@ public class TestAgent extends AbstractTester {
         System.out.println(new DateTime(ts));
 
         //inject
-        NtpClock.TimeAdvice.transform();
+        NtpClock.transform();
         NtpClock.sync();
         ts = System.currentTimeMillis();
         System.out.println(ts);
@@ -87,7 +87,7 @@ public class TestAgent extends AbstractTester {
     static void fjp() throws Throwable {
         ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e.getValue()));
 
-        ForkJoinPoolWrapper.TaskAdvice.transform();
+        ForkJoinPoolWrapper.transform();
         ForkJoinPool pool = ForkJoinPool.commonPool();
         ThreadPool.startTrace(null);
         pool.execute(() -> {

@@ -156,6 +156,7 @@ public final class Sys extends SystemUtils {
     };
     static final String[] seconds = {"ns", "µs", "ms", "s"};
     static Timeout samplingTimeout;
+    static byte transformedFlags;
 
     static {
         RxConfig conf = RxConfig.INSTANCE;
@@ -194,7 +195,7 @@ public final class Sys extends SystemUtils {
 
         v = share[ADVICE_SHARE_FORK_JOIN_FUNC_INDEX];
         if (!(v instanceof Function)) {
-            share[ADVICE_SHARE_FORK_JOIN_FUNC_INDEX] = (Function<Object, Object>) ForkJoinPoolWrapper::wrap;
+            share[ADVICE_SHARE_FORK_JOIN_FUNC_INDEX] = ForkJoinPoolWrapper.ADVICE_FN;
         }
 
         if (changed) {
@@ -229,7 +230,7 @@ public final class Sys extends SystemUtils {
         if ((enableFlags & 2) == 2) {
             Tasks.setTimeout(() -> {
                 log.info("TimeAdvice inject..");
-                NtpClock.TimeAdvice.transform();
+                NtpClock.transform();
             }, 60000);
         }
     }

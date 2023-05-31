@@ -17,19 +17,43 @@ import java.util.function.Function;
 
 @Slf4j
 public class ForkJoinPoolWrapper extends ForkJoinPool {
-    public static class TaskAdvice {
+    static class TaskAdvice {
         @Advice.OnMethodEnter
         public static void enter(@Advice.AllArguments(readOnly = false, typing = Assigner.Typing.DYNAMIC) Object[] arguments) throws Throwable {
             final String sk = "";
             final int sl = 2, idx = 1;
             Properties props = System.getProperties();
             Object v = props.get(sk);
-            Object[] share;
+            Object[] share = null;
             Function<Object, Object> fn;
             if (!(v instanceof Object[]) || (share = (Object[]) v).length != sl
                     || (fn = (Function<Object, Object>) share[idx]) == null) {
-                System.err.println("Advice empty fn");
-                return;
+                System.err.println("TaskAdvice empty fn");
+                synchronized (props) {
+                    v = props.get(sk);
+                    if (!(v instanceof Object[]) || (share = (Object[]) v).length != sl
+                            || (fn = (Function<Object, Object>) share[idx]) == null) {
+                        try {
+                            final String t = "org.rx.core.ForkJoinPoolWrapper";
+                            final String f = "ADVICE_FN";
+                            fn = (Function<Object, Object>) ClassLoader.getSystemClassLoader()
+                                    .loadClass(t).getDeclaredField(f).get(null);
+
+                            boolean changed = share == null;
+                            if (changed) {
+                                share = new Object[sl];
+                            }
+                            share[idx] = fn;
+                            if (changed) {
+                                props.put(sk, share);
+                            }
+                            System.out.println("TaskAdvice get fn");
+                        } catch (Throwable e) {
+                            e.printStackTrace();
+                            return;
+                        }
+                    }
+                }
             }
 
             Object task = arguments[0];
@@ -37,25 +61,24 @@ public class ForkJoinPoolWrapper extends ForkJoinPool {
             newArgs[0] = fn.apply(task);
             arguments = newArgs;
         }
-
-        static boolean transformed;
-
-        public synchronized static void transform() {
-            if (transformed) {
-                return;
-            }
-            transformed = true;
-            Sys.checkAdviceShare(true);
-            ByteBuddyAgent.install();
-            new ByteBuddy()
-                    .redefine(ForkJoinPool.class)
-                    .visit(Advice.to(TaskAdvice.class).on(ElementMatchers.named("externalPush")))
-                    .make()
-                    .load(ClassLoader.getSystemClassLoader(), ClassReloadingStrategy.fromInstalledAgent());
-        }
     }
 
-    static Object wrap(Object task) {
+    public synchronized static void transform() {
+        final byte flag = 2;
+        if ((Sys.transformedFlags & flag) == flag) {
+            return;
+        }
+        Sys.transformedFlags |= flag;
+        Sys.checkAdviceShare(true);
+        ByteBuddyAgent.install();
+        new ByteBuddy()
+                .redefine(ForkJoinPool.class)
+                .visit(Advice.to(TaskAdvice.class).on(ElementMatchers.named("externalPush")))
+                .make()
+                .load(ClassLoader.getSystemClassLoader(), ClassReloadingStrategy.fromInstalledAgent());
+    }
+
+    public static final Function<Object, Object> ADVICE_FN = task -> {
         if (task instanceof ForkJoinTask) {
             return wrap((ForkJoinTask<?>) task);
         }
@@ -66,7 +89,7 @@ public class ForkJoinPoolWrapper extends ForkJoinPool {
             return wrap((Callable<?>) task);
         }
         throw new InvalidException("Error task type {}", task);
-    }
+    };
 
     static Runnable wrap(Runnable task) {
         String traceId = ThreadPool.CTX_TRACE_ID.get();
