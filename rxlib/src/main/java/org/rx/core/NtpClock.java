@@ -29,70 +29,80 @@ import static org.rx.core.Extends.*;
 public class NtpClock extends Clock implements Serializable {
     private static final long serialVersionUID = -242102888494125L;
 
-    public static class TimeAdvice {
-        //    static final int SHARE_KEY = 0;
-        static final String SHARE_KEY = "";
-        static boolean transformed;
-
+    static class TimeAdvice {
         @Advice.OnMethodExit
         static void exit(@Advice.Return(readOnly = false) long r) throws Throwable {
-//        final int k = 0;
-            final String k = "";
+            final String sk = "";
+            final int sl = 2, idx = 0;
             Properties props = System.getProperties();
-            long[] arr = (long[]) props.get(k);
-            if (arr == null) {
+            Object v = props.get(sk);
+            Object[] share = null;
+            long[] time;
+            if (!(v instanceof Object[]) || (share = (Object[]) v).length != sl
+                    || (time = (long[]) share[idx]) == null) {
+                System.err.println("TimeAdvice empty time");
                 synchronized (props) {
-                    arr = (long[]) props.get(k);
-                    if (arr == null) {
-                        arr = new long[2];
-                        Process proc = Runtime.getRuntime().exec("java -cp rxdaemon-1.0.jar org.rx.daemon.Application");
-                        byte[] buf = new byte[128];
-                        int len = proc.getInputStream().read(buf);
-                        String[] pair = new String(buf, 0, len).split(",");
-                        System.out.println("[Agent] new timestamp: " + pair[0]);
-                        arr[1] = Long.parseLong(pair[0]);
-                        arr[0] = Long.parseLong(pair[1]);
-                        props.put(k, arr);
+                    v = props.get(sk);
+                    if (!(v instanceof Object[]) || (share = (Object[]) v).length != sl
+                            || (time = (long[]) share[idx]) == null) {
+                        time = new long[2];
+                        try {
+                            Process proc = Runtime.getRuntime().exec("java -cp rxdaemon-1.0.jar org.rx.daemon.Application");
+                            byte[] buf = new byte[128];
+                            int len = proc.getInputStream().read(buf);
+                            String[] pair = new String(buf, 0, len).split(",");
+                            time[1] = Long.parseLong(pair[0]);
+                            time[0] = Long.parseLong(pair[1]);
+
+                            boolean changed = share == null;
+                            if (changed) {
+                                share = new Object[sl];
+                            }
+                            share[idx] = time;
+                            if (changed) {
+                                props.put(sk, share);
+                            }
+                            System.out.println("TimeAdvice new timestamp: " + pair[0]);
+                        } catch (Throwable e) {
+                            e.printStackTrace();
+                        }
                     }
                 }
             }
-            long x = System.nanoTime() - arr[0];
+            long x = System.nanoTime() - time[0];
             long y = 1000000L;
             if (x <= y) {
-                r = arr[1];
+                r = time[1];
                 return;
             }
-            r = x / y + arr[1];
-        }
-
-        public synchronized static void transform() {
-            if (transformed) {
-                return;
-            }
-            transformed = true;
-            String djar = "rxdaemon-1.0.jar";
-            Files.saveFile(djar, Reflects.getResource(djar));
-            Properties props = System.getProperties();
-            long[] arr = new long[2];
-            arr[1] = System.currentTimeMillis();
-            arr[0] = System.nanoTime();
-            props.put(SHARE_KEY, arr);
-            new AgentBuilder.Default()
-                    .enableNativeMethodPrefix("wmsnative")
-                    .with(new ByteBuddy().with(Implementation.Context.Disabled.Factory.INSTANCE))
-                    .with(AgentBuilder.InitializationStrategy.NoOp.INSTANCE)
-                    .with(AgentBuilder.RedefinitionStrategy.REDEFINITION)
-                    .with(AgentBuilder.TypeStrategy.Default.REDEFINE)
-                    .ignore(ElementMatchers.none())
-                    .type(ElementMatchers.named("java.lang.System"))
-                    .transform((builder, typeDescription, classLoader, javaModule, protectionDomain) -> builder.method(ElementMatchers.named("currentTimeMillis")).intercept(Advice.to(TimeAdvice.class).wrap(StubMethod.INSTANCE)))
-                    .installOn(ByteBuddyAgent.install());
+            r = x / y + time[1];
         }
     }
 
     public static final NtpClock UTC = new NtpClock(ZoneOffset.UTC);
     static long offset;
     static boolean injected;
+
+    public synchronized static void transform() {
+        final byte flag = 1;
+        if ((Sys.transformedFlags & flag) == flag) {
+            return;
+        }
+        Sys.transformedFlags |= flag;
+        Sys.checkAdviceShare(true);
+        String djar = "rxdaemon-1.0.jar";
+        Files.saveFile(djar, Reflects.getResource(djar));
+        new AgentBuilder.Default()
+                .enableNativeMethodPrefix("wmsnative")
+                .with(new ByteBuddy().with(Implementation.Context.Disabled.Factory.INSTANCE))
+                .with(AgentBuilder.InitializationStrategy.NoOp.INSTANCE)
+                .with(AgentBuilder.RedefinitionStrategy.REDEFINITION)
+                .with(AgentBuilder.TypeStrategy.Default.REDEFINE)
+                .ignore(ElementMatchers.none())
+                .type(ElementMatchers.named("java.lang.System"))
+                .transform((builder, typeDescription, classLoader, javaModule, protectionDomain) -> builder.method(ElementMatchers.named("currentTimeMillis")).intercept(Advice.to(TimeAdvice.class).wrap(StubMethod.INSTANCE)))
+                .installOn(ByteBuddyAgent.install());
+    }
 
     public static void scheduleTask() {
         Tasks.timer.setTimeout(NtpClock::sync, d -> RxConfig.INSTANCE.net.ntp.syncPeriod, NtpClock.class, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
@@ -109,7 +119,7 @@ public class NtpClock extends Clock implements Serializable {
             info.computeDetails();
             offset = ifNull(info.getOffset(), 0L);
             log.debug("ntp sync with {} -> {}", p, offset);
-            long[] tsAgent = (long[]) System.getProperties().get(TimeAdvice.SHARE_KEY);
+            long[] tsAgent = Sys.getAdviceShareTime();
             if (injected = tsAgent != null) {
                 tsAgent[1] += offset;
                 log.debug("ntp inject offset {}", offset);

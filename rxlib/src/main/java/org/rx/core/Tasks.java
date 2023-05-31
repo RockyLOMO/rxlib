@@ -24,8 +24,9 @@ import static org.rx.core.Extends.circuitContinue;
 @Slf4j
 public final class Tasks {
     //Random load balance, if methodA wait methodA, methodA is executing wait and methodB is in ThreadPoolQueue, then there will be a false death.
-    static final List<ThreadPool> replicas = new CopyOnWriteArrayList<>();
+    static final List<ThreadPool> nodes = new CopyOnWriteArrayList<>();
     static final ExecutorService executor;
+//    static final ForkJoinPoolWrapper forkJoinPool;
     static final WheelTimer timer;
     static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
     static int poolCount;
@@ -77,6 +78,7 @@ public final class Tasks {
                 return shutdown;
             }
         };
+//        forkJoinPool = new ForkJoinPoolWrapper();
         timer = new WheelTimer(executor);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -92,6 +94,7 @@ public final class Tasks {
 
         try {
             Reflects.writeStaticField(CompletableFuture.class, "asyncPool", executor);
+//            Reflects.writeStaticField(ForkJoinPool.class, "common", forkJoinPool);
         } catch (Throwable e) {
             log.warn("setAsyncPool", e);
         }
@@ -106,27 +109,27 @@ public final class Tasks {
 
         log.info("RxMeta {} changed {} -> {}", RxConfig.ConfigNames.THREAD_POOL_REPLICAS, poolCount, newCount);
         for (int i = 0; i < newCount; i++) {
-            replicas.add(0, new ThreadPool(String.valueOf(i)));
+            nodes.add(0, new ThreadPool(String.format("N%s", i)));
         }
         poolCount = newCount;
 
-        if (replicas.size() > poolCount) {
+        if (nodes.size() > poolCount) {
             timer.setTimeout(() -> {
-                if (replicas.size() == poolCount) {
+                if (nodes.size() == poolCount) {
                     circuitContinue(false);
                     return;
                 }
-                for (int i = poolCount; i < replicas.size(); i++) {
-                    if (replicas.get(i).getActiveCount() == 0) {
-                        replicas.remove(i);
+                for (int i = poolCount; i < nodes.size(); i++) {
+                    if (nodes.get(i).getActiveCount() == 0) {
+                        nodes.remove(i);
                     }
                 }
-            }, 60000, replicas, TimeoutFlag.PERIOD.flags(TimeoutFlag.REPLACE));
+            }, 60000, nodes, TimeoutFlag.PERIOD.flags(TimeoutFlag.REPLACE));
         }
     }
 
     public static ThreadPool nextPool() {
-        return replicas.get(ThreadLocalRandom.current().nextInt(0, poolCount));
+        return nodes.get(ThreadLocalRandom.current().nextInt(0, poolCount));
     }
 
     public static ExecutorService executor() {

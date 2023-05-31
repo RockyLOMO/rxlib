@@ -550,7 +550,7 @@ public class HttpClient {
                     requestBody = new FormContent(forms, files).toBody();
                 } else {
 //                    throw new InvalidException("Not support {}", contentType);
-                    log.warn("Not support {}", contentType);
+                    log.warn("Not support {} {}", servletRequest, contentType);
                     requestBody = new EmptyContent(MediaType.parse(contentType)).toBody();
                 }
             } else {

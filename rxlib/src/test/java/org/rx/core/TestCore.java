@@ -38,6 +38,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Extends.*;
@@ -186,6 +187,7 @@ public class TestCore extends AbstractTester {
     @SneakyThrows
     @Test
     public void inheritThreadLocal() {
+        Class.forName(Tasks.class.getName());
         //线程trace，支持异步trace包括Executor(ThreadPool), ScheduledExecutorService(WheelTimer), CompletableFuture.xxAsync()系列方法。
         RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
         ThreadPool.traceIdGenerator = () -> UUID.randomUUID().toString().replace("-", "");
@@ -226,27 +228,44 @@ public class TestCore extends AbstractTester {
 //        }
 //        ThreadPool.endTrace();
 //        sleep(4000);
-//
-//        //CompletableFuture.xxAsync异步方法正确获取trace
-//        ThreadPool.startTrace(null);
-//        for (int i = 0; i < 2; i++) {
-//            int finalI = i;
-//            pool.runAsync(() -> {
-//                log.info("TRACE ASYNC-1 {}", finalI);
-//                pool.runAsync(() -> {
-//                    log.info("TRACE ASYNC-1_1 {}", finalI);
-//                    sleep(oneSecond);
-//                }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
-//                sleep(oneSecond);
-//            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
-//            log.info("TRACE ASYNC MAIN {}", finalI);
-//            pool.runAsync(() -> {
-//                log.info("TRACE ASYNC-2 {}", finalI);
-//                sleep(oneSecond);
-//            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
-//        }
+
+        //CompletableFuture.xxAsync异步方法正确获取trace
+        ThreadPool.startTrace(null);
+        CompletableFuture<Void> cf1 = null, cf2 = null;
+        for (int i = 0; i < 2; i++) {
+            int finalI = i;
+            cf1 = pool.runAsync(() -> {
+                log.info("TRACE ASYNC-1 {}", finalI);
+                pool.runAsync(() -> {
+                    log.info("TRACE ASYNC-1_1 {}", finalI);
+                    sleep(oneSecond);
+                }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
+                sleep(oneSecond);
+            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
+            log.info("TRACE ASYNC MAIN {}", finalI);
+            cf2 = pool.runAsync(() -> {
+                log.info("TRACE ASYNC-2 {}", finalI);
+                sleep(oneSecond);
+            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
+        }
+        //CompletableFuture.allOf
+//        pool.runAllAsync(org.rx.core.Arrays.toList(f1, f2)).getFuture().get(5, TimeUnit.SECONDS);
+        log.info("allOf start");
+        CompletableFuture.allOf(cf1, cf2).whenCompleteAsync((r, e) -> {
+            log.info("TRACE ALL-OF {}", r);
+        }).get(10, TimeUnit.SECONDS);
+        log.info("allOf end");
 //        ThreadPool.endTrace();
-//        sleep(10000);
+        sleep(5000);
+
+        //parallelStream
+//        ThreadPool.startTrace(null);
+        Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9).parallelStream().map(p -> {
+            log.info("parallelStream {}", p);
+            return p.toString();
+        }).collect(Collectors.toList());
+        ThreadPool.endTrace();
+
 //
 //        //netty FastThreadLocal 支持继承
 //        FastThreadLocal<Integer> ftl = new FastThreadLocal<>();
@@ -289,34 +308,8 @@ public class TestCore extends AbstractTester {
 //        ThreadPool.endTrace();
 //        log.info("--done--");
 
-        log.info("--TestService--");
-//        Reflects.writeStaticField(CompletableFuture.class, "asyncPool", pool);
-        Class.forName(Tasks.class.getName());
-        ThreadPool.startTrace(null);
-        Func<Integer> f1 = () -> {
-            log.info("1-0");
-            Thread.sleep(3000);
-            log.info("1-1");
-            return 1;
-        };
-        CompletableFuture<Integer> cf1 = pool.runAsync(f1);
-
-        Func<Integer> f2 = () -> {
-            log.info("2-0");
-            Thread.sleep(1000);
-            log.info("2-1");
-            return 2;
-        };
-        CompletableFuture<Integer> cf2 = pool.runAsync(f2);
-
-        Tasks.schedulePeriod(() -> {
-            log.info("stat: {} {}", cf1.isDone(), cf2.isDone());
-        }, 500);
-
-        CompletableFuture.allOf(cf1, cf2).whenCompleteAsync((r, e) -> {
-            log.info("r {}", r);
-        }, pool).get(8, TimeUnit.SECONDS);
-//        pool.runAllAsync(org.rx.core.Arrays.toList(f1, f2)).getFuture().get(5, TimeUnit.SECONDS);
+//        log.info("--TestService--");
+//        ThreadPool.startTrace(null);
     }
 
     @SneakyThrows
@@ -494,7 +487,7 @@ public class TestCore extends AbstractTester {
         }
 
         //注入System.currentTimeMillis()方法，全局代码无入侵
-        NtpClock.TimeAdvice.transform();
+        NtpClock.transform();
     }
 
     @Test
