@@ -1,15 +1,61 @@
 package org.rx.core;
 
 import lombok.extern.slf4j.Slf4j;
+import net.bytebuddy.ByteBuddy;
+import net.bytebuddy.agent.ByteBuddyAgent;
+import net.bytebuddy.asm.Advice;
+import net.bytebuddy.dynamic.loading.ClassReloadingStrategy;
+import net.bytebuddy.implementation.bytecode.assign.Assigner;
+import net.bytebuddy.matcher.ElementMatchers;
 import org.rx.exception.InvalidException;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.*;
+import java.util.function.Function;
 
 @Slf4j
 public class ForkJoinPoolWrapper extends ForkJoinPool {
-    public static Object wrap(Object task) {
+    public static class TaskAdvice {
+        @Advice.OnMethodEnter
+        public static void enter(@Advice.AllArguments(readOnly = false, typing = Assigner.Typing.DYNAMIC) Object[] arguments) throws Throwable {
+            final String sk = "";
+            final int sl = 2, idx = 1;
+            Properties props = System.getProperties();
+            Object v = props.get(sk);
+            Object[] share;
+            Function<Object, Object> fn;
+            if (!(v instanceof Object[]) || (share = (Object[]) v).length != sl
+                    || (fn = (Function<Object, Object>) share[idx]) == null) {
+                System.err.println("Advice empty fn");
+                return;
+            }
+
+            Object task = arguments[0];
+            Object[] newArgs = new Object[1];
+            newArgs[0] = fn.apply(task);
+            arguments = newArgs;
+        }
+
+        static boolean transformed;
+
+        public synchronized static void transform() {
+            if (transformed) {
+                return;
+            }
+            transformed = true;
+            Sys.checkAdviceShare(true);
+            ByteBuddyAgent.install();
+            new ByteBuddy()
+                    .redefine(ForkJoinPool.class)
+                    .visit(Advice.to(TaskAdvice.class).on(ElementMatchers.named("externalPush")))
+                    .make()
+                    .load(ClassLoader.getSystemClassLoader(), ClassReloadingStrategy.fromInstalledAgent());
+        }
+    }
+
+    static Object wrap(Object task) {
         if (task instanceof ForkJoinTask) {
             return wrap((ForkJoinTask<?>) task);
         }
@@ -67,7 +113,7 @@ public class ForkJoinPoolWrapper extends ForkJoinPool {
     final ForkJoinPool delegate;
 
     //ForkJoinPool.externalPush
-    public ForkJoinPoolWrapper() {
+    ForkJoinPoolWrapper() {
         delegate = ForkJoinPool.commonPool();
     }
 

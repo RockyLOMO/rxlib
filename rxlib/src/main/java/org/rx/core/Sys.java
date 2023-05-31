@@ -40,13 +40,14 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static com.alibaba.fastjson2.JSONReader.Feature.AllowUnQuotedFieldNames;
 import static com.alibaba.fastjson2.JSONReader.Feature.SupportClassForName;
 import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
-import static org.rx.core.Constants.PERCENT;
+import static org.rx.core.Constants.*;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
 import static org.rx.core.RxConfig.ConfigNames.NTP_ENABLE_FLAGS;
@@ -166,6 +167,51 @@ public final class Sys extends SystemUtils {
                 .register(Tasks.class)
                 .register(TraceHandler.INSTANCE);
         IOC.register(Cache.class, IOC.get(conf.cache.mainCache));
+    }
+
+    static void checkAdviceShare(boolean isInit) {
+        Properties props = System.getProperties();
+        Object v = props.get(ADVICE_SHARE_KEY);
+        boolean changed = false;
+        Object[] share;
+        if (!(v instanceof Object[]) || (share = (Object[]) v).length != ADVICE_SHARE_LEN) {
+            share = new Object[ADVICE_SHARE_LEN];
+            changed = true;
+        }
+
+        v = share[ADVICE_SHARE_TIME_INDEX];
+        long[] time;
+        if (!(v instanceof long[]) || ((long[]) v).length != 2) {
+            if (isInit) {
+                time = new long[2];
+                time[1] = System.currentTimeMillis();
+                time[0] = System.nanoTime();
+                share[ADVICE_SHARE_TIME_INDEX] = time;
+            } else {
+                share[ADVICE_SHARE_TIME_INDEX] = null;
+            }
+        }
+
+        v = share[ADVICE_SHARE_FORK_JOIN_FUNC_INDEX];
+        if (!(v instanceof Function)) {
+            share[ADVICE_SHARE_FORK_JOIN_FUNC_INDEX] = (Function<Object, Object>) ForkJoinPoolWrapper::wrap;
+        }
+
+        if (changed) {
+            props.put(ADVICE_SHARE_KEY, share);
+        }
+    }
+
+    static long[] getAdviceShareTime() {
+        Properties props = System.getProperties();
+        Object v = props.get(ADVICE_SHARE_KEY);
+        Object[] share;
+        if (!(v instanceof Object[]) || (share = (Object[]) v).length != ADVICE_SHARE_LEN) {
+            return null;
+        }
+        v = share[ADVICE_SHARE_TIME_INDEX];
+        long[] time;
+        return !(v instanceof long[]) || (time = (long[]) v).length != 2 ? null : time;
     }
 
     @Subscribe(topicClass = RxConfig.class)

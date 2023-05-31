@@ -30,53 +30,55 @@ public class NtpClock extends Clock implements Serializable {
     private static final long serialVersionUID = -242102888494125L;
 
     public static class TimeAdvice {
-        //    static final int SHARE_KEY = 0;
-        static final String SHARE_KEY = "";
-        static boolean transformed;
-
         @Advice.OnMethodExit
         static void exit(@Advice.Return(readOnly = false) long r) throws Throwable {
-//        final int k = 0;
-            final String k = "";
+            final String sk = "";
+            final int sl = 2, idx = 0;
             Properties props = System.getProperties();
-            long[] arr = (long[]) props.get(k);
-            if (arr == null) {
+            Object[] share;
+            long[] time;
+            if ((share = (Object[]) props.get(sk)) == null || (time = (long[]) share[idx]) == null) {
                 synchronized (props) {
-                    arr = (long[]) props.get(k);
-                    if (arr == null) {
-                        arr = new long[2];
+                    if ((share = (Object[]) props.get(sk)) == null || (time = (long[]) share[idx]) == null) {
+                        boolean changed = false;
+                        if (share == null) {
+                            share = new Object[sl];
+                            changed = true;
+                        }
+                        time = new long[2];
                         Process proc = Runtime.getRuntime().exec("java -cp rxdaemon-1.0.jar org.rx.daemon.Application");
                         byte[] buf = new byte[128];
                         int len = proc.getInputStream().read(buf);
                         String[] pair = new String(buf, 0, len).split(",");
                         System.out.println("[Agent] new timestamp: " + pair[0]);
-                        arr[1] = Long.parseLong(pair[0]);
-                        arr[0] = Long.parseLong(pair[1]);
-                        props.put(k, arr);
+                        time[1] = Long.parseLong(pair[0]);
+                        time[0] = Long.parseLong(pair[1]);
+                        share[idx] = time;
+                        if (changed) {
+                            props.put(sk, share);
+                        }
                     }
                 }
             }
-            long x = System.nanoTime() - arr[0];
+            long x = System.nanoTime() - time[0];
             long y = 1000000L;
             if (x <= y) {
-                r = arr[1];
+                r = time[1];
                 return;
             }
-            r = x / y + arr[1];
+            r = x / y + time[1];
         }
+
+        static boolean transformed;
 
         public synchronized static void transform() {
             if (transformed) {
                 return;
             }
             transformed = true;
+            Sys.checkAdviceShare(true);
             String djar = "rxdaemon-1.0.jar";
             Files.saveFile(djar, Reflects.getResource(djar));
-            Properties props = System.getProperties();
-            long[] arr = new long[2];
-            arr[1] = System.currentTimeMillis();
-            arr[0] = System.nanoTime();
-            props.put(SHARE_KEY, arr);
             new AgentBuilder.Default()
                     .enableNativeMethodPrefix("wmsnative")
                     .with(new ByteBuddy().with(Implementation.Context.Disabled.Factory.INSTANCE))
@@ -109,7 +111,7 @@ public class NtpClock extends Clock implements Serializable {
             info.computeDetails();
             offset = ifNull(info.getOffset(), 0L);
             log.debug("ntp sync with {} -> {}", p, offset);
-            long[] tsAgent = (long[]) System.getProperties().get(TimeAdvice.SHARE_KEY);
+            long[] tsAgent = Sys.getAdviceShareTime();
             if (injected = tsAgent != null) {
                 tsAgent[1] += offset;
                 log.debug("ntp inject offset {}", offset);
