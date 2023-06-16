@@ -26,7 +26,7 @@ public final class Tasks {
     //Random load balance, if methodA wait methodA, methodA is executing wait and methodB is in ThreadPoolQueue, then there will be a false death.
     static final List<ThreadPool> nodes = new CopyOnWriteArrayList<>();
     static final ExecutorService executor;
-//    static final ForkJoinPoolWrapper forkJoinPool;
+    //    static final ForkJoinPoolWrapper forkJoinPool;
     static final WheelTimer timer;
     static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
     static int poolCount;
@@ -93,10 +93,14 @@ public final class Tasks {
         }));
 
         try {
-            Reflects.writeStaticField(CompletableFuture.class, "asyncPool", executor);
+            Reflects.writeStaticField(CompletableFuture.class, "asyncPool", executor); //jdk8
 //            Reflects.writeStaticField(ForkJoinPool.class, "common", forkJoinPool);
         } catch (Throwable e) {
-            log.warn("setAsyncPool", e);
+            try {
+                Reflects.writeStaticField(CompletableFuture.class, "ASYNC_POOL", executor); //jdk11
+            } catch (Throwable ie) {
+                log.warn("setAsyncPool {}", e, ie);
+            }
         }
     }
 
