@@ -23,6 +23,7 @@ public interface Constants {
     String CACHE_KEY_SUFFIX = ":";
     int ONE_DAY_TOTAL_SECONDS = 60 * 60 * 24;
     int HEAP_BUF_SIZE = 256;
+    int ARRAY_BUF_SIZE = HEAP_BUF_SIZE / 2;
     int MAX_HEAP_BUF_SIZE = MB * 16;
 
     int NON_BUF = 0;

@@ -371,7 +371,7 @@ public final class Sys extends SystemUtils {
         log(eventArgs, msg -> {
             msg.appendLine("Url:\t%s", url)
                     .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
-                    .appendLine("Response:\t%s", toJsonString(eventArgs.getReturnValue()));
+                    .appendLine("Response:\t%s\tElapsed=%s", toJsonString(eventArgs.getReturnValue()), formatNanosElapsed(eventArgs.getElapsedNanos()));
             if (eventArgs.getError() != null) {
                 msg.appendLine("Error:\t%s", eventArgs.getError());
             }
