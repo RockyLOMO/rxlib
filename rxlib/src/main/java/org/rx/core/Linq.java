@@ -296,45 +296,53 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public Linq<T> orderByRand() {
-        return me(stream().sorted(getComparator(p -> ThreadLocalRandom.current().nextInt(0, 100))));
+        return me(stream().sorted(getComparator(p -> ThreadLocalRandom.current().nextInt(0, 100), false)));
     }
 
     public <TK> Linq<T> orderBy(BiFunc<T, TK> keySelector) {
 //        return me(stream().sorted(Comparator.nullsLast(Comparator.comparing((Function) keySelector))));
-        return me(stream().sorted(getComparator(keySelector)));
+        return me(stream().sorted(getComparator(keySelector, false)));
     }
 
     @SuppressWarnings(NON_RAW_TYPES)
-    public static <T, TK> Comparator<T> getComparator(BiFunc<T, TK> keySelector) {
+    public static <T, TK> Comparator<T> getComparator(BiFunc<T, TK> keySelector, boolean descending) {
         return (p1, p2) -> {
-            Comparable c1 = as(keySelector.apply(p1), Comparable.class);
-            Comparable c2 = as(keySelector.apply(p2), Comparable.class);
-            if (c1 == null || c2 == null) {
-                return c1 == null ? (c2 == null ? 0 : 1) : -1;
+            Comparable a = as(keySelector.apply(p1), Comparable.class);
+            Comparable b = as(keySelector.apply(p2), Comparable.class);
+            boolean nullFirst = false;
+            if (a == null) {
+                return b == null ? 0 : (nullFirst ? -1 : 1);
             }
-            return c1.compareTo(c2);
+            if (b == null) {
+                return nullFirst ? 1 : -1;
+            }
+            return descending ? b.compareTo(a) : a.compareTo(b);
         };
     }
 
     public <TK> Linq<T> orderByDescending(BiFunc<T, TK> keySelector) {
-        return me(stream().sorted(getComparator(keySelector).reversed()));
+        return me(stream().sorted(getComparator(keySelector, true)));
     }
 
     public Linq<T> orderByMany(BiFunc<T, List<Object>> keySelector) {
-        return me(stream().sorted(getComparatorMany(keySelector)));
+        return me(stream().sorted(getComparatorMany(keySelector, false)));
     }
 
     @SuppressWarnings(NON_RAW_TYPES)
-    public static <T> Comparator<T> getComparatorMany(BiFunc<T, List<Object>> keySelector) {
+    public static <T> Comparator<T> getComparatorMany(BiFunc<T, List<Object>> keySelector, boolean descending) {
         return (p1, p2) -> {
             List<Object> k1s = keySelector.apply(p1), k2s = keySelector.apply(p2);
             for (int i = 0; i < k1s.size(); i++) {
-                Comparable c1 = as(k1s.get(i), Comparable.class);
-                Comparable c2 = as(k2s.get(i), Comparable.class);
-                if (c1 == null || c2 == null) {
-                    return c1 == null ? (c2 == null ? 0 : 1) : -1;
+                Comparable a = as(k1s.get(i), Comparable.class);
+                Comparable b = as(k2s.get(i), Comparable.class);
+                boolean nullFirst = false;
+                if (a == null) {
+                    return b == null ? 0 : (nullFirst ? -1 : 1);
                 }
-                int r = c1.compareTo(c2);
+                if (b == null) {
+                    return nullFirst ? 1 : -1;
+                }
+                int r = descending ? b.compareTo(a) : a.compareTo(b);
                 if (r == 0) {
                     continue;
                 }
@@ -345,7 +353,7 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public Linq<T> orderByDescendingMany(BiFunc<T, List<Object>> keySelector) {
-        return me(stream().sorted(getComparatorMany(keySelector).reversed()));
+        return me(stream().sorted(getComparatorMany(keySelector, true)));
     }
 
     @SuppressWarnings(NON_UNCHECKED)

@@ -5,7 +5,6 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
 
@@ -87,13 +86,26 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
             charset = StandardCharsets.UTF_8;
         }
 
-        StringBuilder result = new StringBuilder();
-        byte[] buffer = Bytes.arrayBuffer();
-        int read;
-        while ((read = in.read(buffer)) > 0) {
-            result.append(new String(buffer, 0, read, charset));
+        ByteBuf buf = Bytes.heapBuffer();
+        try {
+            byte[] sb = Bytes.arrayBuffer();
+            int r;
+            while ((r = in.read(sb)) != Constants.IO_EOF) {
+                buf.writeBytes(sb, 0, r);
+            }
+            return buf.toString(charset);
+        } finally {
+            buf.release();
         }
-        return result.toString();
+        //截断会出现乱码
+//        StringBuilder result = new StringBuilder();
+//        byte[] buffer = Bytes.arrayBuffer();
+//        int read;
+//        while ((read = in.read(buffer)) > 0) {
+//            String s = new String(buffer, 0, read, charset);
+//            result.append(s);
+//        }
+//        return result.toString();
     }
 
     @SneakyThrows

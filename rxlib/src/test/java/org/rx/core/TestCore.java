@@ -38,6 +38,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.rx.bean.$.$;
@@ -645,23 +646,37 @@ public class TestCore extends AbstractTester {
     //region Linq & NEvent
     @Test
     public void parallelLinq() {
-        Linq.from(Arrays.toList(1, 2, 3, 4), true).takeWhile((p) -> {
-            Thread.sleep(200);
-            System.out.println(Thread.currentThread().getName() + "=" + p);
-            return true;
-        });
+//        Linq.from(Arrays.toList(1, 2, 3, 4), true).takeWhile((p) -> {
+//            Thread.sleep(200);
+//            System.out.println(Thread.currentThread().getName() + "=" + p);
+//            return true;
+//        });
+//
+//        Linq<Integer> pq = Linq.from(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
+////                .groupBy(p -> p > 5, (p, x) -> x.first())
+//                ;
+//        //not work
+//        for (Integer p : pq) {
+//            log.info(p.toString());
+//        }
+//        pq.forEach(p -> {
+//            log.info(p.toString());
+//            throw new RuntimeException();
+//        });
 
-        Linq<Integer> pq = Linq.from(Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), true)
-//                .groupBy(p -> p > 5, (p, x) -> x.first())
-                ;
-        //not work
-        for (Integer p : pq) {
-            log.info(p.toString());
+        for (Integer integer : Linq.from(0, 1, null, 3, 2).orderBy(p -> p)) {
+            System.out.println("orderBy: " + integer);
         }
-        pq.forEach(p -> {
-            log.info(p.toString());
-            throw new RuntimeException();
-        });
+        for (Integer integer : Linq.from(0, 1, null, 3, 2).orderByDescending(p -> p)) {
+            System.out.println("orderByDescending: " + integer);
+        }
+        System.out.println("----");
+        for (Tuple<Integer, Integer> integer : Linq.from(Tuple.of(0, 2), Tuple.of(1, 3), Tuple.of((Integer) null, 4), Tuple.of(0, 1), Tuple.of(2, 2)).orderByMany(p -> Arrays.toList(p.left, p.right))) {
+            System.out.println("orderBy: " + integer);
+        }
+        for (Tuple<Integer, Integer> integer : Linq.from(Tuple.of(0, 2), Tuple.of(1, 3), Tuple.of((Integer) null, 4), Tuple.of(0, 1), Tuple.of(2, 2)).orderByDescendingMany(p -> Arrays.toList(p.left, p.right))) {
+            System.out.println("orderByDescending: " + integer);
+        }
     }
 
     @Test

@@ -32,7 +32,7 @@ public class Bytes {
     }
 
     public static byte[] arrayBuffer() {
-        return new byte[Constants.HEAP_BUF_SIZE];
+        return new byte[Constants.ARRAY_BUF_SIZE];
     }
 
     public static ByteBuf heapBuffer() {

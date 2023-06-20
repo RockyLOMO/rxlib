@@ -16,6 +16,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.MultiValueMap;
 import org.rx.core.Arrays;
+import org.rx.core.Constants;
 import org.rx.core.Disposable;
 import org.rx.core.Strings;
 import org.rx.io.Bytes;
@@ -124,7 +125,7 @@ public class HttpServer extends Disposable {
                 } else {
                     ByteBuf buf = req.getContent();
                     if (buf == null) {
-                        req.setContent(buf = Bytes.directBuffer());
+                        req.setContent(buf = Bytes.heapBuffer(Constants.HEAP_BUF_SIZE, true));
                     }
                     buf.writeBytes(content.content());
                 }
