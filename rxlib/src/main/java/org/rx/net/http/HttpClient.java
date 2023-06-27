@@ -390,12 +390,14 @@ public class HttpClient {
     final HttpHeaders requestHeaders = new DefaultHttpHeaders();
     @Setter
     boolean enableLog = RxConfig.INSTANCE.getNet().isEnableLog();
+    @Setter
+    boolean cachingStream = true;
     long timeoutMillis;
     boolean enableCookie;
     AuthenticProxy proxy;
     //Not thread safe
     OkHttpClient client;
-    ResponseContent responseContent;
+    ResponseContent resContent;
 
     public synchronized void setTimeoutMillis(long timeoutMillis) {
         this.timeoutMillis = timeoutMillis;
@@ -469,10 +471,14 @@ public class HttpClient {
             } else {
                 throw new UnsupportedOperationException();
             }
-            if (responseContent != null) {
-                responseContent.response.close();
+            if (resContent != null) {
+                resContent.response.close();
             }
-            return responseContent = args.proceed(() -> new ResponseContent(getClient().newCall(request.build()).execute()));
+            return resContent = args.proceed(() -> {
+                ResponseContent rc = new ResponseContent(getClient().newCall(request.build()).execute());
+                rc.cachingStream = cachingStream;
+                return rc;
+            });
         } catch (Throwable e) {
             args.setError(e);
             throw e;
