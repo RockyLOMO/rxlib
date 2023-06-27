@@ -12,7 +12,7 @@ public interface IPSearcher {
     static String godaddyDns(String ssoKey, String domain, String name, String ip) {
         String url = String.format("https://api.godaddy.com/v1/domains/%s/records/A/%s", domain, name);
         HttpClient client = new HttpClient();
-        client.getRequestHeaders().add("Authorization", "sso-key " + ssoKey);
+        client.requestHeaders().add("Authorization", "sso-key " + ssoKey);
         return client.putJson(url, String.format("[\n" +
                 "  {\n" +
                 "    \"data\": \"%s\",\n" +

@@ -386,8 +386,6 @@ public class HttpClient {
     }
     //endregion
 
-    @Getter
-    final HttpHeaders requestHeaders = new DefaultHttpHeaders();
     @Setter
     boolean enableLog = RxConfig.INSTANCE.getNet().isEnableLog();
     @Setter
@@ -397,6 +395,7 @@ public class HttpClient {
     AuthenticProxy proxy;
     //Not thread safe
     OkHttpClient client;
+    HttpHeaders reqHeaders;
     ResponseContent resContent;
 
     public synchronized void setTimeoutMillis(long timeoutMillis) {
@@ -414,11 +413,28 @@ public class HttpClient {
         client = null;
     }
 
-    OkHttpClient getClient() {
-        if (client == null) {
-            client = createClient(timeoutMillis, enableCookie, proxy);
+    public HttpClient withUserAgent() {
+        requestHeaders().set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
+        return this;
+    }
+
+    public HttpClient withRequestCookie(String rawCookie) {
+        requestHeaders().set(HttpHeaderNames.COOKIE, rawCookie);
+        return this;
+    }
+
+    public HttpHeaders requestHeaders() {
+        return requestHeaders(false);
+    }
+
+    public HttpHeaders requestHeaders(boolean readOnly) {
+        if (reqHeaders == null) {
+            if (readOnly) {
+                return EmptyHttpHeaders.INSTANCE;
+            }
+            reqHeaders = new DefaultHttpHeaders();
         }
-        return client;
+        return reqHeaders;
     }
 
     public HttpClient() {
@@ -426,25 +442,24 @@ public class HttpClient {
     }
 
     public HttpClient(long timeoutMillis) {
-        this(timeoutMillis, false, null);
+        this(timeoutMillis, false);
     }
 
-    public HttpClient(long timeoutMillis, String rawCookie) {
-        this(timeoutMillis, false, rawCookie);
-    }
-
-    public HttpClient(long timeoutMillis, boolean enableCookie, String rawCookie) {
+    public HttpClient(long timeoutMillis, boolean enableCookie) {
         this.timeoutMillis = timeoutMillis;
         this.enableCookie = enableCookie;
-        requestHeaders.set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
-        if (rawCookie != null) {
-            requestHeaders.set(HttpHeaderNames.COOKIE, rawCookie);
-        }
     }
 
-    private Request.Builder createRequest(String url) {
+    OkHttpClient getClient() {
+        if (client == null) {
+            client = createClient(timeoutMillis, enableCookie, proxy);
+        }
+        return client;
+    }
+
+    Request.Builder createRequest(String url) {
         Request.Builder builder = new Request.Builder().url(url);
-        for (Map.Entry<String, String> entry : requestHeaders) {
+        for (Map.Entry<String, String> entry : requestHeaders()) {
             builder.addHeader(entry.getKey(), entry.getValue());
         }
         return builder;
@@ -502,11 +517,11 @@ public class HttpClient {
     }
 
     public ResponseContent post(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
-        return invoke(url, HttpMethod.POST, new FormContent(forms, files, requestHeaders));
+        return invoke(url, HttpMethod.POST, new FormContent(forms, files, requestHeaders(true)));
     }
 
     public ResponseContent postJson(@NonNull String url, @NonNull Object json) {
-        return invoke(url, HttpMethod.POST, new JsonContent(json, requestHeaders));
+        return invoke(url, HttpMethod.POST, new JsonContent(json, requestHeaders(true)));
     }
 
     public ResponseContent put(String url, Map<String, Object> forms) {
@@ -514,11 +529,11 @@ public class HttpClient {
     }
 
     public ResponseContent put(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
-        return invoke(url, HttpMethod.PUT, new FormContent(forms, files, requestHeaders));
+        return invoke(url, HttpMethod.PUT, new FormContent(forms, files, requestHeaders(true)));
     }
 
     public ResponseContent putJson(@NonNull String url, @NonNull Object json) {
-        return invoke(url, HttpMethod.PUT, new JsonContent(json, requestHeaders));
+        return invoke(url, HttpMethod.PUT, new JsonContent(json, requestHeaders(true)));
     }
 
     public ResponseContent patch(String url, Map<String, Object> forms) {
@@ -526,11 +541,11 @@ public class HttpClient {
     }
 
     public ResponseContent patch(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
-        return invoke(url, HttpMethod.PATCH, new FormContent(forms, files, requestHeaders));
+        return invoke(url, HttpMethod.PATCH, new FormContent(forms, files, requestHeaders(true)));
     }
 
     public ResponseContent patchJson(@NonNull String url, @NonNull Object json) {
-        return invoke(url, HttpMethod.PATCH, new JsonContent(json, requestHeaders));
+        return invoke(url, HttpMethod.PATCH, new JsonContent(json, requestHeaders(true)));
     }
 
     public ResponseContent delete(String url, Map<String, Object> forms) {
@@ -538,11 +553,11 @@ public class HttpClient {
     }
 
     public ResponseContent delete(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
-        return invoke(url, HttpMethod.DELETE, new FormContent(forms, files, requestHeaders));
+        return invoke(url, HttpMethod.DELETE, new FormContent(forms, files, requestHeaders(true)));
     }
 
     public ResponseContent deleteJson(@NonNull String url, @NonNull Object json) {
-        return invoke(url, HttpMethod.DELETE, new JsonContent(json, requestHeaders));
+        return invoke(url, HttpMethod.DELETE, new JsonContent(json, requestHeaders(true)));
     }
 
     public Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
@@ -551,18 +566,19 @@ public class HttpClient {
 
     @SneakyThrows
     public synchronized Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl, boolean cachingStream) {
+        HttpHeaders reqHeaders = requestHeaders();
         for (String n : Collections.list(servletRequest.getHeaderNames())) {
             if (Strings.equalsIgnoreCase(n, HttpHeaderNames.HOST)) {
                 continue;
             }
-            requestHeaders.set(n, servletRequest.getHeader(n));
+            reqHeaders.set(n, servletRequest.getHeader(n));
         }
 
         String query = servletRequest.getQueryString();
         if (!Strings.isEmpty(query)) {
             forwardUrl += (forwardUrl.lastIndexOf("?") == -1 ? "?" : "&") + query;
         }
-        log.info("Forward request: {}\nheaders: {}", forwardUrl, toJsonString(requestHeaders));
+        log.info("Forward request: {}\nheaders: {}", forwardUrl, toJsonString(reqHeaders));
         RequestContent requestContent;
         String requestContentType = servletRequest.getContentType();
         ServletInputStream inStream = servletRequest.getInputStream();
@@ -571,7 +587,7 @@ public class HttpClient {
             requestContent = new RequestContent() {
                 @Override
                 public HttpHeaders getHeaders() {
-                    return requestHeaders;
+                    return reqHeaders;
                 }
 
                 @Override
@@ -583,11 +599,11 @@ public class HttpClient {
             if (requestContentType != null) {
                 if (Strings.startsWithIgnoreCase(requestContentType, HttpHeaderValues.APPLICATION_X_WWW_FORM_URLENCODED)) {
                     Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
-                    requestContent = new FormContent(forms, Collections.emptyMap(), requestHeaders);
+                    requestContent = new FormContent(forms, Collections.emptyMap(), reqHeaders);
                 } else if (Strings.startsWithIgnoreCase(requestContentType, "multipart/")) {
                     Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
                     Map<String, IOStream> files = Linq.from(servletRequest.getParts()).toMap(Part::getName, p -> IOStream.wrap(p.getSubmittedFileName(), p.getInputStream()));
-                    requestContent = new FormContent(forms, files, requestHeaders);
+                    requestContent = new FormContent(forms, files, reqHeaders);
                 } else {
 //                    throw new InvalidException("Not support {}", contentType);
                     log.warn("Not support {} {}", servletRequest, requestContentType);

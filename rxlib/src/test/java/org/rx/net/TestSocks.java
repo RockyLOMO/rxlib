@@ -975,7 +975,7 @@ public class TestSocks extends AbstractTester {
     @Test
     public void httpClient() {
         HttpClient c = new HttpClient();
-        c.getRequestHeaders().add("Connection", "close");
+        c.requestHeaders().add("Connection", "close");
         System.out.println(c.get("").toString());
     }
 
