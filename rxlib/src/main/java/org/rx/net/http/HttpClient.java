@@ -11,6 +11,7 @@ import okhttp3.*;
 import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.ProceedEventArgs;
+import org.rx.bean.Tuple;
 import org.rx.core.Linq;
 import org.rx.core.Reflects;
 import org.rx.core.RxConfig;
@@ -19,8 +20,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
-import org.rx.util.Lazy;
-import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -52,23 +52,29 @@ public class HttpClient {
     public interface RequestContent {
         RequestContent NONE = new EmptyContent(null);
 
+        HttpHeaders getHeaders();
+
         RequestBody toBody();
     }
 
     @RequiredArgsConstructor
     static class JsonContent implements RequestContent {
-        @Getter(value = AccessLevel.PRIVATE)
         final Object json;
-        final Lazy<String> body = new Lazy<>(() -> toJsonString(getJson()));
+        @Getter
+        final HttpHeaders headers;
+        String str;
 
         @Override
         public RequestBody toBody() {
-            return RequestBody.create(JSON_TYPE, body.getValue());
+            return RequestBody.create(JSON_TYPE, toString());
         }
 
         @Override
         public String toString() {
-            return body.getValue();
+            if (str == null) {
+                str = toJsonString(json);
+            }
+            return str;
         }
     }
 
@@ -76,6 +82,8 @@ public class HttpClient {
     static class FormContent implements RequestContent {
         final Map<String, Object> forms;
         final Map<String, IOStream> files;
+        @Getter
+        final HttpHeaders headers;
 
         @Override
         public RequestBody toBody() {
@@ -128,8 +136,13 @@ public class HttpClient {
         final MediaType contentType;
 
         @Override
+        public HttpHeaders getHeaders() {
+            return EmptyHttpHeaders.INSTANCE;
+        }
+
+        @Override
         public RequestBody toBody() {
-            return RequestBody.create(contentType, Strings.EMPTY);
+            return RequestBody.create(contentType, toString());
         }
 
         @Override
@@ -143,9 +156,10 @@ public class HttpClient {
         @Getter
         @JSONField(serialize = false)
         final Response response;
+        boolean cachingStream = true;
         HybridStream stream;
         File file;
-        String string;
+        String str;
 
         public String getResponseUrl() {
             return response.request().url().toString();
@@ -166,52 +180,59 @@ public class HttpClient {
         }
 
         @SneakyThrows
-        public synchronized void handle(BiAction<InputStream> action) {
-            if (stream != null) {
-                action.invoke(toStream().getReader());
-                return;
+        public synchronized <T> T handle(BiFunc<InputStream, T> fn) {
+            if (!cachingStream) {
+                ResponseBody body = response.body();
+                if (body == null) {
+                    throw new InvalidException("Empty response from url {}", getResponseUrl());
+                }
+                try {
+                    return fn.invoke(body.byteStream());
+                } finally {
+                    body.close();
+                }
             }
 
-            ResponseBody body = response.body();
-            if (body == null) {
-                throw new InvalidException("Empty response from url {}", getResponseUrl());
+            if (stream == null) {
+                ResponseBody body = response.body();
+                if (body == null) {
+                    throw new InvalidException("Empty response from url {}", getResponseUrl());
+                }
+                try {
+                    stream = new HybridStream();
+                    stream.write(body.byteStream());
+                } finally {
+                    body.close();
+                }
             }
-            try {
-                action.invoke(body.byteStream());
-            } finally {
-                body.close();
-            }
+            return fn.invoke(stream.rewind().getReader());
         }
 
         public synchronized HybridStream toStream() {
-            if (stream == null) {
-                //tmp 4 handle()
-                HybridStream tmp = new HybridStream();
-                handle(tmp::write);
-                stream = tmp;
-            }
-            stream.setPosition(0);
-            return stream;
+            cachingStream = true;
+            return handle(in -> stream);
         }
 
-        public synchronized File toFile(String filePath) {
+        public File toFile(String filePath) {
             if (file == null) {
-                handle(in -> Files.saveFile(filePath, in));
-                file = new File(filePath);
+                file = handle(in -> {
+                    Files.saveFile(filePath, in);
+                    return new File(filePath);
+                });
             }
             return file;
         }
 
-        public synchronized String toString() {
-            toStream();
-            if (string == null) {
-                handle(in -> string = IOStream.readString(in, getCharset()));
-            }
-            return string;
-        }
-
         public <T extends Serializable> T toJson() {
             return (T) JSON.parse(toString());
+        }
+
+        @Override
+        public String toString() {
+            if (str == null) {
+                str = handle(in -> IOStream.readString(in, getCharset()));
+            }
+            return str;
         }
     }
 
@@ -365,16 +386,17 @@ public class HttpClient {
     }
     //endregion
 
-    @Getter
-    final HttpHeaders requestHeaders = new DefaultHttpHeaders();
     @Setter
     boolean enableLog = RxConfig.INSTANCE.getNet().isEnableLog();
+    @Setter
+    boolean cachingStream = true;
     long timeoutMillis;
     boolean enableCookie;
     AuthenticProxy proxy;
     //Not thread safe
     OkHttpClient client;
-    ResponseContent responseContent;
+    HttpHeaders reqHeaders;
+    ResponseContent resContent;
 
     public synchronized void setTimeoutMillis(long timeoutMillis) {
         this.timeoutMillis = timeoutMillis;
@@ -391,11 +413,28 @@ public class HttpClient {
         client = null;
     }
 
-    OkHttpClient getClient() {
-        if (client == null) {
-            client = createClient(timeoutMillis, enableCookie, proxy);
+    public HttpClient withUserAgent() {
+        requestHeaders().set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
+        return this;
+    }
+
+    public HttpClient withRequestCookie(String rawCookie) {
+        requestHeaders().set(HttpHeaderNames.COOKIE, rawCookie);
+        return this;
+    }
+
+    public HttpHeaders requestHeaders() {
+        return requestHeaders(false);
+    }
+
+    public HttpHeaders requestHeaders(boolean readOnly) {
+        if (reqHeaders == null) {
+            if (readOnly) {
+                return EmptyHttpHeaders.INSTANCE;
+            }
+            reqHeaders = new DefaultHttpHeaders();
         }
-        return client;
+        return reqHeaders;
     }
 
     public HttpClient() {
@@ -403,25 +442,24 @@ public class HttpClient {
     }
 
     public HttpClient(long timeoutMillis) {
-        this(timeoutMillis, false, null);
+        this(timeoutMillis, false);
     }
 
-    public HttpClient(long timeoutMillis, String rawCookie) {
-        this(timeoutMillis, false, rawCookie);
-    }
-
-    public HttpClient(long timeoutMillis, boolean enableCookie, String rawCookie) {
+    public HttpClient(long timeoutMillis, boolean enableCookie) {
         this.timeoutMillis = timeoutMillis;
         this.enableCookie = enableCookie;
-        requestHeaders.set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
-        if (rawCookie != null) {
-            requestHeaders.set(HttpHeaderNames.COOKIE, rawCookie);
-        }
     }
 
-    private Request.Builder createRequest(String url) {
+    OkHttpClient getClient() {
+        if (client == null) {
+            client = createClient(timeoutMillis, enableCookie, proxy);
+        }
+        return client;
+    }
+
+    Request.Builder createRequest(String url) {
         Request.Builder builder = new Request.Builder().url(url);
-        for (Map.Entry<String, String> entry : requestHeaders) {
+        for (Map.Entry<String, String> entry : requestHeaders()) {
             builder.addHeader(entry.getKey(), entry.getValue());
         }
         return builder;
@@ -448,10 +486,14 @@ public class HttpClient {
             } else {
                 throw new UnsupportedOperationException();
             }
-            if (responseContent != null) {
-                responseContent.response.close();
+            if (resContent != null) {
+                resContent.response.close();
             }
-            return responseContent = args.proceed(() -> new ResponseContent(getClient().newCall(request.build()).execute()));
+            return resContent = args.proceed(() -> {
+                ResponseContent rc = new ResponseContent(getClient().newCall(request.build()).execute());
+                rc.cachingStream = cachingStream;
+                return rc;
+            });
         } catch (Throwable e) {
             args.setError(e);
             throw e;
@@ -475,11 +517,11 @@ public class HttpClient {
     }
 
     public ResponseContent post(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
-        return invoke(url, HttpMethod.POST, new FormContent(forms, files));
+        return invoke(url, HttpMethod.POST, new FormContent(forms, files, requestHeaders(true)));
     }
 
     public ResponseContent postJson(@NonNull String url, @NonNull Object json) {
-        return invoke(url, HttpMethod.POST, new JsonContent(json));
+        return invoke(url, HttpMethod.POST, new JsonContent(json, requestHeaders(true)));
     }
 
     public ResponseContent put(String url, Map<String, Object> forms) {
@@ -487,11 +529,11 @@ public class HttpClient {
     }
 
     public ResponseContent put(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
-        return invoke(url, HttpMethod.PUT, new FormContent(forms, files));
+        return invoke(url, HttpMethod.PUT, new FormContent(forms, files, requestHeaders(true)));
     }
 
     public ResponseContent putJson(@NonNull String url, @NonNull Object json) {
-        return invoke(url, HttpMethod.PUT, new JsonContent(json));
+        return invoke(url, HttpMethod.PUT, new JsonContent(json, requestHeaders(true)));
     }
 
     public ResponseContent patch(String url, Map<String, Object> forms) {
@@ -499,11 +541,11 @@ public class HttpClient {
     }
 
     public ResponseContent patch(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
-        return invoke(url, HttpMethod.PATCH, new FormContent(forms, files));
+        return invoke(url, HttpMethod.PATCH, new FormContent(forms, files, requestHeaders(true)));
     }
 
     public ResponseContent patchJson(@NonNull String url, @NonNull Object json) {
-        return invoke(url, HttpMethod.PATCH, new JsonContent(json));
+        return invoke(url, HttpMethod.PATCH, new JsonContent(json, requestHeaders(true)));
     }
 
     public ResponseContent delete(String url, Map<String, Object> forms) {
@@ -511,68 +553,89 @@ public class HttpClient {
     }
 
     public ResponseContent delete(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
-        return invoke(url, HttpMethod.DELETE, new FormContent(forms, files));
+        return invoke(url, HttpMethod.DELETE, new FormContent(forms, files, requestHeaders(true)));
     }
 
     public ResponseContent deleteJson(@NonNull String url, @NonNull Object json) {
-        return invoke(url, HttpMethod.DELETE, new JsonContent(json));
+        return invoke(url, HttpMethod.DELETE, new JsonContent(json, requestHeaders(true)));
+    }
+
+    public Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
+        return forward(servletRequest, servletResponse, forwardUrl, false);
     }
 
     @SneakyThrows
-    public synchronized void forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
+    public synchronized Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl, boolean cachingStream) {
+        HttpHeaders reqHeaders = requestHeaders();
         for (String n : Collections.list(servletRequest.getHeaderNames())) {
             if (Strings.equalsIgnoreCase(n, HttpHeaderNames.HOST)) {
                 continue;
             }
-            getRequestHeaders().set(n, servletRequest.getHeader(n));
+            reqHeaders.set(n, servletRequest.getHeader(n));
         }
 
         String query = servletRequest.getQueryString();
         if (!Strings.isEmpty(query)) {
             forwardUrl += (forwardUrl.lastIndexOf("?") == -1 ? "?" : "&") + query;
         }
-        log.info("Forward request: {}\nheaders {}", forwardUrl, toJsonString(requestHeaders));
-        Request.Builder request = createRequest(forwardUrl);
-        RequestBody requestBody;
-        String contentType = servletRequest.getContentType();
+        log.info("Forward request: {}\nheaders: {}", forwardUrl, toJsonString(reqHeaders));
+        RequestContent requestContent;
+        String requestContentType = servletRequest.getContentType();
         ServletInputStream inStream = servletRequest.getInputStream();
         byte[] inBytes;
         if (inStream != null && (inBytes = IOStream.wrap(Strings.EMPTY, inStream).toArray()).length > 0) {
-            requestBody = RequestBody.create(inBytes, contentType != null ? MediaType.parse(contentType) : null);
+            requestContent = new RequestContent() {
+                @Override
+                public HttpHeaders getHeaders() {
+                    return reqHeaders;
+                }
+
+                @Override
+                public RequestBody toBody() {
+                    return RequestBody.create(requestContentType != null ? MediaType.parse(requestContentType) : null, inBytes);
+                }
+            };
         } else {
-            if (contentType != null) {
-                if (Strings.startsWithIgnoreCase(contentType, HttpHeaderValues.APPLICATION_X_WWW_FORM_URLENCODED)) {
+            if (requestContentType != null) {
+                if (Strings.startsWithIgnoreCase(requestContentType, HttpHeaderValues.APPLICATION_X_WWW_FORM_URLENCODED)) {
                     Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
-                    requestBody = new FormContent(forms, Collections.emptyMap()).toBody();
-                } else if (Strings.startsWithIgnoreCase(contentType, "multipart/")) {
+                    requestContent = new FormContent(forms, Collections.emptyMap(), reqHeaders);
+                } else if (Strings.startsWithIgnoreCase(requestContentType, "multipart/")) {
                     Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
                     Map<String, IOStream> files = Linq.from(servletRequest.getParts()).toMap(Part::getName, p -> IOStream.wrap(p.getSubmittedFileName(), p.getInputStream()));
-                    requestBody = new FormContent(forms, files).toBody();
+                    requestContent = new FormContent(forms, files, reqHeaders);
                 } else {
 //                    throw new InvalidException("Not support {}", contentType);
-                    log.warn("Not support {} {}", servletRequest, contentType);
-                    requestBody = new EmptyContent(MediaType.parse(contentType)).toBody();
+                    log.warn("Not support {} {}", servletRequest, requestContentType);
+                    requestContent = new EmptyContent(MediaType.parse(requestContentType));
                 }
             } else {
-                requestBody = RequestContent.NONE.toBody();
+                requestContent = RequestContent.NONE;
             }
         }
-        Response response = getClient().newCall(request.method(servletRequest.getMethod(), requestBody).build()).execute();
-        servletResponse.setStatus(response.code());
-        for (Pair<? extends String, ? extends String> header : response.headers()) {
+
+        ResponseContent responseContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), requestContent.toBody()).build()).execute());
+        responseContent.cachingStream = cachingStream;
+        servletResponse.setStatus(responseContent.response.code());
+        for (Pair<? extends String, ? extends String> header : responseContent.getHeaders()) {
             servletResponse.setHeader(header.getFirst(), header.getSecond());
         }
 
-        ResponseBody responseBody = response.body();
-        log.info("Forward response: hasBody={}", requestBody != null);
-        if (responseBody != null) {
-            if (responseBody.contentType() != null) {
-                servletResponse.setContentType(responseBody.contentType().toString());
+        ResponseBody responseBody = responseContent.response.body();
+        boolean hasResBody = responseBody != null;
+        log.info("Forward response: {}\nheaders: {} hasBody: {}", responseContent.getResponseUrl(), toJsonString(responseContent.getHeaders()), hasResBody);
+        if (hasResBody) {
+            MediaType responseContentType = responseBody.contentType();
+            if (responseContentType != null) {
+                servletResponse.setContentType(responseContentType.toString());
             }
             servletResponse.setContentLength((int) responseBody.contentLength());
-            InputStream in = responseBody.byteStream();
             ServletOutputStream out = servletResponse.getOutputStream();
-            IOStream.copy(in, IOStream.NON_READ_FULLY, out);
+            responseContent.handle(in -> {
+                IOStream.copy(in, IOStream.NON_READ_FULLY, out);
+                return null;
+            });
         }
+        return Tuple.of(requestContent, responseContent);
     }
 }
