@@ -597,8 +597,9 @@ public class HttpClient {
                     Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
                     reqContent = new FormContent(forms, Collections.emptyMap(), reqHeaders);
                 } else if (Strings.startsWithIgnoreCase(requestContentType, "multipart/")) {
-                    Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
                     Map<String, IOStream> files = Linq.from(servletRequest.getParts()).toMap(Part::getName, p -> IOStream.wrap(p.getSubmittedFileName(), p.getInputStream()));
+                    Set<String> fileNames = files.keySet();
+                    Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).where(p -> !fileNames.contains(p)).toMap(p -> p, servletRequest::getParameter);
                     reqContent = new FormContent(forms, files, reqHeaders);
                 } else {
 //                    throw new InvalidException("Not support {}", contentType);
