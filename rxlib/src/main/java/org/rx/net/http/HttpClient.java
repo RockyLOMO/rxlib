@@ -58,7 +58,7 @@ public class HttpClient {
     }
 
     @RequiredArgsConstructor
-    static class JsonContent implements RequestContent {
+    public static class JsonContent implements RequestContent {
         final Object json;
         @Getter
         final HttpHeaders headers;
@@ -79,7 +79,7 @@ public class HttpClient {
     }
 
     @RequiredArgsConstructor
-    static class FormContent implements RequestContent {
+    public static class FormContent implements RequestContent {
         final Map<String, Object> forms;
         final Map<String, IOStream> files;
         @Getter
@@ -132,7 +132,7 @@ public class HttpClient {
     }
 
     @RequiredArgsConstructor
-    static class EmptyContent implements RequestContent {
+    public static class EmptyContent implements RequestContent {
         final MediaType contentType;
 
         @Override
@@ -560,8 +560,12 @@ public class HttpClient {
         return invoke(url, HttpMethod.DELETE, new JsonContent(json, requestHeaders(true)));
     }
 
+    public Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
+        return forward(servletRequest, servletResponse, forwardUrl, null);
+    }
+
     @SneakyThrows
-    public synchronized Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
+    public synchronized Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl, BiFunc<RequestContent, RequestContent> requestInterceptor) {
         HttpHeaders reqHeaders = requestHeaders();
         for (String n : Collections.list(servletRequest.getHeaderNames())) {
             if (Strings.equalsIgnoreCase(n, HttpHeaderNames.HOST)) {
@@ -608,6 +612,9 @@ public class HttpClient {
             } else {
                 reqContent = RequestContent.NONE;
             }
+        }
+        if (requestInterceptor != null) {
+            reqContent = requestInterceptor.invoke(reqContent);
         }
 
         ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), reqContent.toBody()).build()).execute());
