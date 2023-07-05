@@ -108,13 +108,12 @@ public class MxController {
                     }
                     return source != null ? BeanMapper.DEFAULT.map(source, target, BeanMapFlag.SKIP_NULL.flags()) : target;
                 case 4:
-                    JSONObject params = getParams(request);
-                    Boolean newest = params.getBoolean("newest");
-                    String level = params.getString("level");
-                    Boolean methodOccurMost = params.getBoolean("methodOccurMost");
-                    String methodNamePrefix = params.getString("methodNamePrefix");
-                    String metricsName = params.getString("metricsName");
-                    Integer take = params.getInteger("take");
+                    Boolean newest = Reflects.changeType(request.getParameter("newest"), Boolean.class);
+                    String level = request.getParameter("level");
+                    Boolean methodOccurMost = Reflects.changeType(request.getParameter("methodOccurMost"), Boolean.class);
+                    String methodNamePrefix = request.getParameter("methodNamePrefix");
+                    String metricsName = request.getParameter("metricsName");
+                    Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
                     return queryTraces(newest, level, methodOccurMost, methodNamePrefix, metricsName, take);
                 case 5:
                     return invoke(request);
