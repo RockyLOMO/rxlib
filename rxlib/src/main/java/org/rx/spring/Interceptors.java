@@ -13,6 +13,7 @@ import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.Tuple;
 import org.rx.core.Arrays;
 import org.rx.core.RxConfig;
+import org.rx.core.Strings;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
@@ -83,11 +84,17 @@ public class Interceptors {
             if (httpEnv == null) {
                 return super.doAround(joinPoint);
             }
-
             Signature signature = joinPoint.getSignature();
             MethodSignature ms = as(signature, MethodSignature.class);
             if (ms == null || skipMethods.contains(signature.getName())) {
                 return joinPoint.proceed();
+            }
+
+            if (Strings.equals(httpEnv.left.getParameter("rmx"), RxConfig.INSTANCE.getMxpwd())) {
+                MxController controller = SpringContext.getBean(MxController.class);
+                if (controller != null) {
+                    return controller.health(httpEnv.left);
+                }
             }
             Map<String, String> fts = RxConfig.INSTANCE.getHttpForwards().get(ms.getDeclaringType());
             if (fts != null) {

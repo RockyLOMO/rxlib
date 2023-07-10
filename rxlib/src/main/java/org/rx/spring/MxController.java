@@ -28,7 +28,6 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.annotation.PostConstruct;
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
@@ -48,37 +47,18 @@ import static org.rx.core.Sys.toJsonObject;
 @RestController
 @RequestMapping("mx")
 public class MxController {
-    @RequestMapping("httpSignal")
-    public void httpSignal(String multicast, String group, Integer mcId) {
-        NetEventWait.multicastLocal(Sockets.parseEndpoint(multicast), group, ifNull(mcId, 0));
-    }
-
-    @RequestMapping("queryTraces")
-    public Map<String, Object> queryTraces(Boolean newest, String level, Boolean methodOccurMost, String methodNamePrefix, String metricsName, Integer take, HttpServletRequest request) {
-        if (!check(request)) {
-            return null;
-        }
-        Map<String, Object> result = new LinkedHashMap<>(3);
-        ExceptionLevel el = null;
-        if (!Strings.isBlank(level)) {
-            el = ExceptionLevel.valueOf(level);
-        }
-        result.put("errorTraces", TraceHandler.INSTANCE.queryTraces(newest, el, take));
-
-        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take)).select(p -> {
-            Map<String, Object> t = Sys.toJsonObject(p);
-            t.remove("elapsedMicros");
-            t.put("elapsed", Sys.formatNanosElapsed(p.getElapsedMicros(), 1));
-            return t;
-        }));
-
-        result.put("metrics", TraceHandler.INSTANCE.queryMetrics(metricsName, take));
-        return result;
-    }
-
     @SneakyThrows
     @RequestMapping("health")
-    public Object health(HttpServletRequest request, HttpServletResponse response) {
+    public Object health(HttpServletRequest request) {
+        final String rt = "1";
+        String multicast = request.getParameter("multicast");
+        if (multicast != null) {
+            String group = request.getParameter("group");
+            Integer mcId = Reflects.changeType(request.getParameter("mcId"), Integer.class);
+            NetEventWait.multicastLocal(Sockets.parseEndpoint(multicast), group, ifNull(mcId, 0));
+            return rt;
+        }
+
         final HttpHeaders headers = new HttpHeaders();
 //        headers.setContentType(MediaType.valueOf("text/plain;charset=UTF-8"));
         headers.setContentType(MediaType.TEXT_PLAIN);
@@ -96,7 +76,6 @@ public class MxController {
             TraceHandler.INSTANCE.log("rx replay {}", buf);
             return new ResponseEntity<>(buf, headers, HttpStatus.OK);
         }
-        final String rt = "1";
         try {
             switch (Integer.parseInt(x)) {
                 case 1:
@@ -129,6 +108,14 @@ public class MxController {
                     }
                     return source != null ? BeanMapper.DEFAULT.map(source, target, BeanMapFlag.SKIP_NULL.flags()) : target;
                 case 4:
+                    Boolean newest = Reflects.changeType(request.getParameter("newest"), Boolean.class);
+                    String level = request.getParameter("level");
+                    Boolean methodOccurMost = Reflects.changeType(request.getParameter("methodOccurMost"), Boolean.class);
+                    String methodNamePrefix = request.getParameter("methodNamePrefix");
+                    String metricsName = request.getParameter("metricsName");
+                    Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
+                    return queryTraces(newest, level, methodOccurMost, methodNamePrefix, metricsName, take);
+                case 5:
                     return invoke(request);
                 case 10:
                     return Linq.from(InetAddress.getAllByName(request.getParameter("host"))).select(p -> p.getHostAddress()).toArray();
@@ -177,11 +164,11 @@ public class MxController {
 
     @SneakyThrows
     Object invoke(HttpServletRequest request) {
-        Map<String, Object> params = getParams(request);
-        Class<?> kls = Class.forName((String) params.get("bean"));
+        JSONObject params = getParams(request);
+        Class<?> kls = Class.forName(params.getString("bean"));
         Object bean = SpringContext.getBean(kls);
-        Method method = Reflects.getMethodMap(kls).get((String) params.get("method")).first();
-        List<Object> args = (List<Object>) params.get("args");
+        Method method = Reflects.getMethodMap(kls).get(params.getString("method")).first();
+        List<Object> args = params.getJSONArray("args");
         Class<?>[] parameterTypes = method.getParameterTypes();
         Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> {
             Object o = args.get(i);
@@ -197,16 +184,35 @@ public class MxController {
     }
 
     Object exec(HttpServletRequest request) {
-        Map<String, Object> params = getParams(request);
+        JSONObject params = getParams(request);
         StringBuilder echo = new StringBuilder();
-        ShellCommand cmd = new ShellCommand((String) params.get("cmd"), (String) params.get("workspace"));
+        ShellCommand cmd = new ShellCommand(params.getString("cmd"), params.getString("workspace"));
         cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
         cmd.start().waitFor(30000);
         return echo.toString();
     }
 
+    Map<String, Object> queryTraces(Boolean newest, String level, Boolean methodOccurMost, String methodNamePrefix, String metricsName, Integer take) {
+        Map<String, Object> result = new LinkedHashMap<>(3);
+        ExceptionLevel el = null;
+        if (!Strings.isBlank(level)) {
+            el = ExceptionLevel.valueOf(level);
+        }
+        result.put("errorTraces", TraceHandler.INSTANCE.queryTraces(newest, el, take));
+
+        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take)).select(p -> {
+            Map<String, Object> t = Sys.toJsonObject(p);
+            t.remove("elapsedMicros");
+            t.put("elapsed", Sys.formatNanosElapsed(p.getElapsedMicros(), 1));
+            return t;
+        }));
+
+        result.put("metrics", TraceHandler.INSTANCE.queryMetrics(metricsName, take));
+        return result;
+    }
+
     @SneakyThrows
-    Map<String, Object> getParams(HttpServletRequest request) {
+    JSONObject getParams(HttpServletRequest request) {
         String b = request.getParameter("body");
         if (b == null) {
             b = IOStream.readString(request.getInputStream(), StandardCharsets.UTF_8);
@@ -257,7 +263,7 @@ public class MxController {
 
         j.put("rxConfig", RxConfig.INSTANCE);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames())).select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.putAll(queryTraces(null, null, null, null, null, take, request));
+        j.putAll(queryTraces(null, null, null, null, null, take));
         return j;
     }
 

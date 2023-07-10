@@ -40,7 +40,7 @@ public final class NetEventWait extends Disposable implements WaitHandle {
         }
     }
 
-    public static final String DEFAULT_URL_SUFFIX = "/mx/httpSignal";
+    public static final String DEFAULT_URL_SUFFIX = "/mx/health?x=0";
     public static TripleFunc<InetSocketAddress, String, Set<String>> HTTP_SIGNAL_HANDLER;
     static final AttributeKey<Set<NetEventWait>> REF = AttributeKey.valueOf("Ref");
     static final Map<InetSocketAddress, NioDatagramChannel> channels = new ConcurrentHashMap<>(8);

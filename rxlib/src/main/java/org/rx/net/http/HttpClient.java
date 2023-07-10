@@ -58,7 +58,7 @@ public class HttpClient {
     }
 
     @RequiredArgsConstructor
-    static class JsonContent implements RequestContent {
+    public static class JsonContent implements RequestContent {
         final Object json;
         @Getter
         final HttpHeaders headers;
@@ -79,7 +79,7 @@ public class HttpClient {
     }
 
     @RequiredArgsConstructor
-    static class FormContent implements RequestContent {
+    public static class FormContent implements RequestContent {
         final Map<String, Object> forms;
         final Map<String, IOStream> files;
         @Getter
@@ -132,7 +132,7 @@ public class HttpClient {
     }
 
     @RequiredArgsConstructor
-    static class EmptyContent implements RequestContent {
+    public static class EmptyContent implements RequestContent {
         final MediaType contentType;
 
         @Override
@@ -561,11 +561,11 @@ public class HttpClient {
     }
 
     public Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
-        return forward(servletRequest, servletResponse, forwardUrl, false);
+        return forward(servletRequest, servletResponse, forwardUrl, null);
     }
 
     @SneakyThrows
-    public synchronized Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl, boolean cachingStream) {
+    public synchronized Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl, BiFunc<RequestContent, RequestContent> requestInterceptor) {
         HttpHeaders reqHeaders = requestHeaders();
         for (String n : Collections.list(servletRequest.getHeaderNames())) {
             if (Strings.equalsIgnoreCase(n, HttpHeaderNames.HOST)) {
@@ -579,12 +579,12 @@ public class HttpClient {
             forwardUrl += (forwardUrl.lastIndexOf("?") == -1 ? "?" : "&") + query;
         }
         log.info("Forward request: {}\nheaders: {}", forwardUrl, toJsonString(reqHeaders));
-        RequestContent requestContent;
+        RequestContent reqContent;
         String requestContentType = servletRequest.getContentType();
         ServletInputStream inStream = servletRequest.getInputStream();
         byte[] inBytes;
         if (inStream != null && (inBytes = IOStream.wrap(Strings.EMPTY, inStream).toArray()).length > 0) {
-            requestContent = new RequestContent() {
+            reqContent = new RequestContent() {
                 @Override
                 public HttpHeaders getHeaders() {
                     return reqHeaders;
@@ -599,31 +599,34 @@ public class HttpClient {
             if (requestContentType != null) {
                 if (Strings.startsWithIgnoreCase(requestContentType, HttpHeaderValues.APPLICATION_X_WWW_FORM_URLENCODED)) {
                     Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
-                    requestContent = new FormContent(forms, Collections.emptyMap(), reqHeaders);
+                    reqContent = new FormContent(forms, Collections.emptyMap(), reqHeaders);
                 } else if (Strings.startsWithIgnoreCase(requestContentType, "multipart/")) {
+                    Map<String, IOStream> files = Linq.from(servletRequest.getParts()).where(p -> p.getContentType() != null).toMap(Part::getName, p -> IOStream.wrap(p.getSubmittedFileName(), p.getInputStream()));
                     Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
-                    Map<String, IOStream> files = Linq.from(servletRequest.getParts()).toMap(Part::getName, p -> IOStream.wrap(p.getSubmittedFileName(), p.getInputStream()));
-                    requestContent = new FormContent(forms, files, reqHeaders);
+                    reqContent = new FormContent(forms, files, reqHeaders);
                 } else {
 //                    throw new InvalidException("Not support {}", contentType);
                     log.warn("Not support {} {}", servletRequest, requestContentType);
-                    requestContent = new EmptyContent(MediaType.parse(requestContentType));
+                    reqContent = new EmptyContent(MediaType.parse(requestContentType));
                 }
             } else {
-                requestContent = RequestContent.NONE;
+                reqContent = RequestContent.NONE;
             }
         }
+        if (requestInterceptor != null) {
+            reqContent = requestInterceptor.invoke(reqContent);
+        }
 
-        ResponseContent responseContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), requestContent.toBody()).build()).execute());
-        responseContent.cachingStream = cachingStream;
-        servletResponse.setStatus(responseContent.response.code());
-        for (Pair<? extends String, ? extends String> header : responseContent.getHeaders()) {
+        ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), reqContent.toBody()).build()).execute());
+        resContent.cachingStream = cachingStream;
+        servletResponse.setStatus(resContent.response.code());
+        for (Pair<? extends String, ? extends String> header : resContent.getHeaders()) {
             servletResponse.setHeader(header.getFirst(), header.getSecond());
         }
 
-        ResponseBody responseBody = responseContent.response.body();
+        ResponseBody responseBody = resContent.response.body();
         boolean hasResBody = responseBody != null;
-        log.info("Forward response: {}\nheaders: {} hasBody: {}", responseContent.getResponseUrl(), toJsonString(responseContent.getHeaders()), hasResBody);
+        log.info("Forward response: {}\nheaders: {} hasBody: {}", resContent.getResponseUrl(), toJsonString(resContent.getHeaders()), hasResBody);
         if (hasResBody) {
             MediaType responseContentType = responseBody.contentType();
             if (responseContentType != null) {
@@ -631,11 +634,11 @@ public class HttpClient {
             }
             servletResponse.setContentLength((int) responseBody.contentLength());
             ServletOutputStream out = servletResponse.getOutputStream();
-            responseContent.handle(in -> {
+            resContent.handle(in -> {
                 IOStream.copy(in, IOStream.NON_READ_FULLY, out);
                 return null;
             });
         }
-        return Tuple.of(requestContent, responseContent);
+        return Tuple.of(reqContent, resContent);
     }
 }
