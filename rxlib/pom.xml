@@ -23,11 +23,11 @@
         <commons-io.version>2.13.0</commons-io.version>
         <byte-buddy.version>1.14.5</byte-buddy.version>
         <zip4j.version>2.11.3</zip4j.version>
-        <h2.version>2.1.214</h2.version>
+        <h2.version>2.2.220</h2.version>
         <netty.version>4.1.92.Final</netty.version>
         <bcprov.version>1.70</bcprov.version>
         <okhttp.version>4.10.0</okhttp.version>
-        <sshd.version>2.9.2</sshd.version>
+        <sshd.version>2.10.0</sshd.version>
         <jsch.version>0.1.55</jsch.version>
 
         <spring.boot.version>2.5.14</spring.boot.version>

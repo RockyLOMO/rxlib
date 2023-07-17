@@ -31,12 +31,12 @@ public class CodecUtil {
         return Base64.getDecoder().decode(data);
     }
 
-    public static <T extends Serializable> String serializeToBase64(T obj) {
+    public static <T> String serializeToBase64(T obj) {
         byte[] data = Serializer.DEFAULT.serializeToBytes(obj);
         return convertToBase64(data);
     }
 
-    public static <T extends Serializable> T deserializeFromBase64(String base64) {
+    public static <T> T deserializeFromBase64(String base64) {
         byte[] data = convertFromBase64(base64);
         return Serializer.DEFAULT.deserialize(new MemoryStream(data, 0, data.length));
     }
