@@ -8,6 +8,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
+import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
@@ -56,6 +57,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         long id;
         String methodName;
         String parameters;
+        String returnValue;
         long elapsedMicros;
         int occurCount;
 
@@ -227,13 +229,17 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         return db.findBy(q);
     }
 
-    public void saveTrace(Class<?> declaringType, String methodName, Object[] parameters, long elapsedMicros) {
+    public void saveTrace(ProceedEventArgs pe, String methodName) {
         RxConfig conf = RxConfig.INSTANCE;
-        if (conf.getTraceKeepDays() <= 0 || elapsedMicros < conf.getTraceSlowElapsedMicros()) {
+        long elapsedMicros;
+        if (conf.getTraceKeepDays() <= 0 || (elapsedMicros = pe.getElapsedNanos() / 1000L) < conf.getTraceSlowElapsedMicros()) {
             return;
         }
 
-        String fullName = String.format("%s.%s(%s)", declaringType.getName(), methodName, parameters == null ? 0 : parameters.length);
+        Object[] parameters = pe.getParameters();
+        Throwable error = pe.getError();
+        Object returnValue = pe.getReturnValue();
+        String fullName = String.format("%s.%s(%s)", pe.getDeclaringType().getName(), methodName, parameters == null ? 0 : parameters.length);
         long pk = CodecUtil.hash64(fullName);
         Tasks.nextPool().runSerial(() -> {
             EntityDatabase db = EntityDatabase.DEFAULT;
@@ -248,6 +254,11 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 }
                 if (parameters != null) {
                     entity.setParameters(toJsonString(parameters));
+                }
+                if (error != null) {
+                    entity.setReturnValue(ExceptionUtils.getStackTrace(error));
+                } else if (returnValue != null) {
+                    entity.setReturnValue(toJsonString(returnValue));
                 }
                 entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
                 entity.occurCount++;
