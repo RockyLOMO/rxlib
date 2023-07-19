@@ -6,10 +6,8 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.BiTuple;
-import org.rx.bean.Decimal;
-import org.rx.bean.IntWaterMark;
-import org.rx.bean.WeakIdentityMap;
+import org.rx.bean.*;
+import org.rx.util.BeanMapper;
 
 import java.lang.management.ManagementFactory;
 import java.util.Map;
@@ -21,8 +19,33 @@ import java.util.concurrent.TimeUnit;
 public class CpuWatchman implements TimerTask {
     static final CpuWatchman INSTANCE = new CpuWatchman();
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
-//    static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+    static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     static final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("timer"), 800L, TimeUnit.MILLISECONDS, 8);
+
+    static void startWatch() {
+        threadMx.setThreadCpuTimeEnabled(true);
+        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
+        threadMx.setThreadContentionMonitoringEnabled(conf.watchThreadLock);
+    }
+
+    static void stopWatch() {
+        threadMx.setThreadCpuTimeEnabled(false);
+        threadMx.setThreadContentionMonitoringEnabled(false);
+    }
+
+    static Linq<ThreadEntity> dumpAllThreads() {
+        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
+        Linq<ThreadEntity> allThreads = Linq.from(threadMx.dumpAllThreads(conf.watchThreadLock, conf.watchThreadLock)).select(p -> BeanMapper.DEFAULT.map(p, new ThreadEntity()));
+        long[] tids = Arrays.toPrimitive(allThreads.select(ThreadEntity::getThreadId).toArray());
+        long[] threadUserTime = threadMx.getThreadUserTime(tids);
+        long[] threadCpuTime = threadMx.getThreadCpuTime(tids);
+        threadMx.findDeadlockedThreads()
+        return allThreads.select((p, i) -> {
+            p.setUserNanos(threadUserTime[i]);
+            p.setCpuNanos(threadCpuTime[i]);
+            return p;
+        });
+    }
 
     static int incrSize(ThreadPoolExecutor pool) {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;

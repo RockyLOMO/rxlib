@@ -11,12 +11,15 @@ import org.rx.bean.DateTime;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
+import org.rx.core.StringBuilder;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
 import org.slf4j.helpers.FormattingTuple;
 import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Serializable;
+import java.lang.management.LockInfo;
+import java.lang.management.MonitorInfo;
 import java.sql.Time;
 import java.util.Date;
 import java.util.List;
@@ -166,8 +169,8 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(Thread t, String msg, Throwable e) {
-        RxConfig conf = RxConfig.INSTANCE;
-        if (conf.getTraceKeepDays() <= 0) {
+        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
+        if (conf.getKeepDays() <= 0) {
             return;
         }
 
@@ -190,12 +193,12 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                     entity.setStackTrace(stackTrace);
                 }
                 Queue<String> queue = entity.getMessages();
-                if (queue.size() > conf.getTraceErrorMessageSize()) {
+                if (queue.size() > conf.getErrorMessageSize()) {
                     queue.poll();
                 }
                 queue.offer(String.format("%s\t%s", DateTime.now().toDateTimeString(), msg));
                 entity.occurCount++;
-                entity.setAppName(conf.getId());
+                entity.setAppName(RxConfig.INSTANCE.getId());
                 entity.setThreadName(t.getName());
                 entity.setModifyTime(DateTime.now());
                 db.save(entity, doInsert);
@@ -230,9 +233,9 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveTrace(ProceedEventArgs pe, String methodName) {
-        RxConfig conf = RxConfig.INSTANCE;
+        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         long elapsedMicros;
-        if (conf.getTraceKeepDays() <= 0 || (elapsedMicros = pe.getElapsedNanos() / 1000L) < conf.getTraceSlowElapsedMicros()) {
+        if (conf.getKeepDays() <= 0 || (elapsedMicros = pe.getElapsedNanos() / 1000L) < conf.getSlowMethodElapsedMicros()) {
             return;
         }
 
@@ -262,7 +265,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 }
                 entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
                 entity.occurCount++;
-                entity.setAppName(conf.getId());
+                entity.setAppName(RxConfig.INSTANCE.getId());
                 entity.setThreadName(Thread.currentThread().getName());
                 entity.setModifyTime(DateTime.now());
                 db.save(entity, doInsert);
