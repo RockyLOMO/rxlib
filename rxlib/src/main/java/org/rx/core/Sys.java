@@ -139,7 +139,6 @@ public final class Sys extends SystemUtils {
 
     public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
     public static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
-    static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final JSONReader.Feature[] JSON_READ_FLAGS = new JSONReader.Feature[]{SupportClassForName, AllowUnQuotedFieldNames};
@@ -445,7 +444,7 @@ public final class Sys extends SystemUtils {
         if (samplingTimeout != null) {
             samplingTimeout.cancel();
         }
-        samplingTimeout = ThreadPool.timer.newTimeout(t -> {
+        samplingTimeout = CpuWatchman.timer.newTimeout(t -> {
             try {
                 mxHandler.invoke(mxInfo());
             } catch (Throwable e) {
@@ -458,6 +457,7 @@ public final class Sys extends SystemUtils {
 
     public static Info mxInfo() {
         File bd = new File("/");
+        OperatingSystemMXBean osMx = CpuWatchman.osMx;
         return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), threadMx.getThreadCount(),
                 osMx.getFreePhysicalMemorySize(), osMx.getTotalPhysicalMemorySize(),
                 Linq.from(File.listRoots()).select(p -> new DiskInfo(p.getName(), p.getAbsolutePath(), p.getFreeSpace(), p.getTotalSpace(), bd.getAbsolutePath().equals(p.getAbsolutePath()))));
