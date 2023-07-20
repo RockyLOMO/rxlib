@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class CpuWatchman implements TimerTask {
+    @Getter
     @RequiredArgsConstructor
     public static class TopUsageView {
         final ThreadEntity first;
@@ -41,6 +42,21 @@ public class CpuWatchman implements TimerTask {
             }
             return last.userNanos - first.userNanos;
         }
+
+        public long getBlockedElapsed() {
+            return last.blockedTime - first.blockedTime;
+        }
+
+        public long getWaitedElapsed() {
+            return last.waitedTime - first.waitedTime;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("first:%s\nlast:%s\ncpuNanosElapsed=%s, userNanosElapsed=%s, blockedElapsed=%s, waitedElapsed=%s", first, last,
+                    Sys.formatNanosElapsed(getCpuNanosElapsed()), Sys.formatNanosElapsed(getUserNanosElapsed()),
+                    Sys.formatNanosElapsed(getBlockedElapsed()), Sys.formatNanosElapsed(getWaitedElapsed()));
+        }
     }
 
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
@@ -49,7 +65,6 @@ public class CpuWatchman implements TimerTask {
     //place after timer
     static final CpuWatchman INSTANCE = new CpuWatchman();
     static Timeout samplingCpuTimeout;
-    @Getter
     static long latestSnapshotId;
 
     public static synchronized Linq<ThreadEntity> getLatestSnapshot() {
