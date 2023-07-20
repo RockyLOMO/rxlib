@@ -5,7 +5,6 @@ import com.alibaba.fastjson2.*;
 import com.alibaba.fastjson2.filter.ValueFilter;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.OperatingSystemMXBean;
-import com.sun.management.ThreadMXBean;
 import io.netty.util.Timeout;
 import lombok.Getter;
 import lombok.NonNull;
@@ -119,27 +118,7 @@ public final class Sys extends SystemUtils {
         }
     }
 
-    @Getter
-    @RequiredArgsConstructor
-    public static class ThreadInfo {
-        private final java.lang.management.ThreadInfo thread;
-        private final long userNanos;
-        private final long cpuNanos;
-
-        @Override
-        public String toString() {
-            StringBuilder buf = new StringBuilder(thread.toString());
-            int i = buf.indexOf("\n");
-            buf.insert(i, String.format(" BlockedTime=%s WaitedTime=%s UserTime=%s CpuTime=%s",
-                    formatNanosElapsed(thread.getBlockedTime(), 2), formatNanosElapsed(thread.getWaitedTime(), 2),
-                    formatNanosElapsed(userNanos), formatNanosElapsed(cpuNanos)));
-            return buf.toString();
-        }
-    }
-
     public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
-    public static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
-    static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final JSONReader.Feature[] JSON_READ_FLAGS = new JSONReader.Feature[]{SupportClassForName, AllowUnQuotedFieldNames};
@@ -445,7 +424,7 @@ public final class Sys extends SystemUtils {
         if (samplingTimeout != null) {
             samplingTimeout.cancel();
         }
-        samplingTimeout = ThreadPool.timer.newTimeout(t -> {
+        samplingTimeout = CpuWatchman.timer.newTimeout(t -> {
             try {
                 mxHandler.invoke(mxInfo());
             } catch (Throwable e) {
@@ -458,32 +437,10 @@ public final class Sys extends SystemUtils {
 
     public static Info mxInfo() {
         File bd = new File("/");
-        return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), threadMx.getThreadCount(),
+        OperatingSystemMXBean osMx = CpuWatchman.osMx;
+        return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), CpuWatchman.threadMx.getThreadCount(),
                 osMx.getFreePhysicalMemorySize(), osMx.getTotalPhysicalMemorySize(),
                 Linq.from(File.listRoots()).select(p -> new DiskInfo(p.getName(), p.getAbsolutePath(), p.getFreeSpace(), p.getTotalSpace(), bd.getAbsolutePath().equals(p.getAbsolutePath()))));
-    }
-
-    public static List<ThreadInfo> findDeadlockedThreads() {
-        long[] deadlockedTids = Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads());
-        if (Arrays.isEmpty(deadlockedTids)) {
-            return Collections.emptyList();
-        }
-        return Linq.from(threadMx.getThreadInfo(deadlockedTids)).select((p, i) -> new ThreadInfo(p, -1, -1)).toList();
-    }
-
-    public static Linq<ThreadInfo> getAllThreads() {
-        if (!threadMx.isThreadContentionMonitoringEnabled()) {
-            threadMx.setThreadContentionMonitoringEnabled(true);
-        }
-        if (!threadMx.isThreadCpuTimeEnabled()) {
-            threadMx.setThreadCpuTimeEnabled(true);
-        }
-        boolean includeLock = false;
-        Linq<java.lang.management.ThreadInfo> allThreads = Linq.from(threadMx.dumpAllThreads(includeLock, includeLock));
-        long[] tids = Arrays.toPrimitive(allThreads.select(java.lang.management.ThreadInfo::getThreadId).toArray());
-        long[] threadUserTime = threadMx.getThreadUserTime(tids);
-        long[] threadCpuTime = threadMx.getThreadCpuTime(tids);
-        return allThreads.select((p, i) -> new ThreadInfo(p, threadUserTime[i], threadCpuTime[i]));
     }
 
     public static String formatCpuLoad(double val) {

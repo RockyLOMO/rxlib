@@ -1,4 +1,10 @@
 app:
+  trace:
+    keepDays: 1
+    errorMessageSize: 10
+    slowMethodElapsedMicros: 50000
+    watchThreadFlags: 1
+    samplingThreadPeriod: 30000
   threadPool:
     initSize: 0
     keepAliveSeconds: 600
@@ -58,9 +64,6 @@ app:
     - org.springframework.validation.BindingResult
     - org.rx.io.IOStream
   #  logStrategy:
-  traceKeepDays: 1
-  traceErrorMessageSize: 10
-  traceSlowElapsedMicros: 50000
 
 #ErrorCode
 default: Network error, please retry later.

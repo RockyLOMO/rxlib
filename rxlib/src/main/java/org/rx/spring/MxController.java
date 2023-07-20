@@ -83,8 +83,11 @@ public class MxController {
                     return rt;
                 case 2:
                     boolean enable = Boolean.parseBoolean(request.getParameter("v"));
-                    Sys.threadMx.setThreadContentionMonitoringEnabled(enable);
-                    Sys.threadMx.setThreadCpuTimeEnabled(enable);
+                    if (enable) {
+                        CpuWatchman.startWatch();
+                    } else {
+                        CpuWatchman.stopWatch();
+                    }
                     return rt;
                 case 3:
                     String type = request.getParameter("type");
@@ -252,13 +255,13 @@ public class MxController {
             i++;
         }
         j.put("sysInfo", infoJson);
-        j.put("deadlockedThreads", Sys.findDeadlockedThreads());
-        Linq<Sys.ThreadInfo> allThreads = Sys.getAllThreads();
+        Linq<ThreadEntity> ts = CpuWatchman.getLatestSnapshot();
+        j.put("deadlockedThreads", ts.where(ThreadEntity::isDeadlocked).select(p -> p.toString()));
         int take = Reflects.convertQuietly(request.getParameter("take"), Integer.class, 5);
-        j.put("topUserTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getUserNanos).take(take).select(Sys.ThreadInfo::toString));
-        j.put("topCpuTimeThreads", allThreads.orderByDescending(Sys.ThreadInfo::getCpuNanos).take(take).select(Sys.ThreadInfo::toString));
-        j.put("topBlockedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getBlockedTime()).take(take).select(Sys.ThreadInfo::toString));
-        j.put("topWaitedTimeThreads", allThreads.orderByDescending(p -> p.getThread().getWaitedTime()).take(take).select(Sys.ThreadInfo::toString));
+        j.put("topUserTimeThreads", ts.orderByDescending(ThreadEntity::getUserNanos).take(take).select(p -> p.toString()));
+        j.put("topCpuTimeThreads", ts.orderByDescending(ThreadEntity::getCpuNanos).take(take).select(p -> p.toString()));
+        j.put("topBlockedTimeThreads", ts.orderByDescending(ThreadEntity::getBlockedTime).take(take).select(p -> p.toString()));
+        j.put("topWaitedTimeThreads", ts.orderByDescending(ThreadEntity::getWaitedTime).take(take).select(p -> p.toString()));
         j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
         j.put("rxConfig", RxConfig.INSTANCE);

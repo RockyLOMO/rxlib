@@ -26,6 +26,11 @@ import static org.rx.core.Extends.newConcurrentList;
 @ToString
 public final class RxConfig {
     public interface ConfigNames {
+        String TRACE_KEEP_DAYS = "app.trace.keepDays";
+        String TRACE_ERROR_MESSAGE_SIZE = "app.trace.errorMessageSize";
+        String TRACE_SLOW_METHOD_ELAPSED_MICROS = "app.trace.slowMethodElapsedMicros";
+        String TRACE_WATCH_THREAD_FLAGS = "app.trace.watchThreadFlags";
+        String TRACE_SAMPLING_THREAD_PERIOD = "app.trace.samplingThreadPeriod";
         String THREAD_POOL_CPU_LOAD_WARNING = "app.threadPool.cpuLoadWarningThreshold";
         String THREAD_POOL_INIT_SIZE = "app.threadPool.initSize";
         String THREAD_POOL_KEEP_ALIVE_SECONDS = "app.threadPool.keepAliveSeconds";
@@ -65,9 +70,6 @@ public final class RxConfig {
 
         String APP_ID = "app.id";
         String MX_SAMPLING_PERIOD = "app.mxSamplingPeriod";
-        String TRACE_KEEP_DAYS = "app.traceKeepDays";
-        String TRACE_ERROR_MESSAGE_SIZE = "app.traceErrorMessageSize";
-        String TRACE_SLOW_ELAPSED_MICROS = "app.traceSlowElapsedMicros";
         String LOG_STRATEGY = "app.logStrategy";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String AES_KEY = "app.aesKey";
@@ -77,6 +79,19 @@ public final class RxConfig {
         static String getWithoutPrefix(String name) {
             return name.substring(4);
         }
+    }
+
+    @Getter
+    @Setter
+    @ToString
+    public static class TraceConfig {
+        int keepDays;
+        int errorMessageSize;
+        long slowMethodElapsedMicros;
+
+        //1 Lock, 2 UserTime
+        int watchThreadFlags;
+        long samplingThreadPeriod;
     }
 
     @Getter
@@ -176,9 +191,7 @@ public final class RxConfig {
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
     final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
-    int traceKeepDays;
-    int traceErrorMessageSize;
-    long traceSlowElapsedMicros;
+    TraceConfig trace = new TraceConfig();
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
     DiskConfig disk = new DiskConfig();
@@ -200,6 +213,11 @@ public final class RxConfig {
 
     @SneakyThrows
     public void refreshFromSystemProperty() {
+        trace.keepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, trace.keepDays);
+        trace.errorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, trace.errorMessageSize);
+        trace.slowMethodElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_METHOD_ELAPSED_MICROS, trace.slowMethodElapsedMicros);
+        trace.watchThreadFlags = SystemPropertyUtil.getInt(ConfigNames.TRACE_WATCH_THREAD_FLAGS, trace.watchThreadFlags);
+        trace.samplingThreadPeriod = SystemPropertyUtil.getLong(ConfigNames.TRACE_SAMPLING_THREAD_PERIOD, trace.samplingThreadPeriod);
         threadPool.initSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_INIT_SIZE, threadPool.initSize);
         threadPool.keepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_KEEP_ALIVE_SECONDS, threadPool.keepAliveSeconds);
         threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, threadPool.queueCapacity);
@@ -263,9 +281,6 @@ public final class RxConfig {
         if (v != null) {
             logStrategy = LogStrategy.valueOf(v);
         }
-        traceKeepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, traceKeepDays);
-        traceErrorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, traceErrorMessageSize);
-        traceSlowElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_ELAPSED_MICROS, traceSlowElapsedMicros);
     }
 
     void reset(Collection<String> conf, String propName) {

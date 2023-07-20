@@ -54,30 +54,29 @@ public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor>
             Signature signature = joinPoint.getSignature();
             MethodSignature methodSignature = as(signature, MethodSignature.class);
             boolean isVoid = methodSignature == null || methodSignature.getReturnType().equals(void.class);
-            ProceedEventArgs eventArgs = new ProceedEventArgs(signature.getDeclaringType(), joinPoint.getArgs(), isVoid);
-            raiseEvent(onProcessing, eventArgs);
-            if (eventArgs.isCancel()) {
+            ProceedEventArgs pe = new ProceedEventArgs(signature.getDeclaringType(), joinPoint.getArgs(), isVoid);
+            raiseEvent(onProcessing, pe);
+            if (pe.isCancel()) {
                 return joinPoint.proceed();
             }
 
             RxConfig conf = RxConfig.INSTANCE;
-            eventArgs.setLogStrategy(conf.getLogStrategy());
-            eventArgs.setLogTypeWhitelist(conf.getLogTypeWhitelist());
+            pe.setLogStrategy(conf.getLogStrategy());
+            pe.setLogTypeWhitelist(conf.getLogTypeWhitelist());
             try {
-                eventArgs.proceed(() -> joinPoint.proceed(eventArgs.getParameters()));
-                TraceHandler.INSTANCE.saveTrace(eventArgs.getDeclaringType(), signature.getName(), eventArgs.getParameters(), eventArgs.getElapsedNanos() / 1000L);
+                pe.proceed(() -> joinPoint.proceed(pe.getParameters()));
             } catch (Throwable e) {
-                eventArgs.setError(e);
-                raiseEvent(onError, eventArgs);
-                if (eventArgs.getError() != null) {
-                    throw eventArgs.getError();
+                pe.setError(e);
+                raiseEvent(onError, pe);
+                if (pe.getError() != null) {
+                    throw pe.getError();
                 }
-                eventArgs.setError(e);
             } finally {
-                raiseEvent(onProceed, eventArgs);
-                onLog(signature, eventArgs);
+                TraceHandler.INSTANCE.saveTrace(pe, signature.getName());
+                onLog(signature, pe);
+                raiseEvent(onProceed, pe);
             }
-            return eventArgs.getReturnValue();
+            return pe.getReturnValue();
         } finally {
             ThreadPool.endTrace();
             clearLogCtx();

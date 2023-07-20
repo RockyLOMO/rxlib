@@ -1,8 +1,5 @@
 package org.rx.core;
 
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.Timeout;
-import io.netty.util.TimerTask;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.FastThreadLocalThread;
@@ -215,115 +212,6 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
-    static class DynamicSizer implements TimerTask {
-        final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> holder = new WeakIdentityMap<>(8);
-
-        DynamicSizer() {
-            timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
-        }
-
-        @Override
-        public void run(Timeout timeout) throws Exception {
-            try {
-                Decimal cpuLoad = Decimal.valueOf(Sys.osMx.getSystemCpuLoad() * 100);
-                for (Map.Entry<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> entry : holder.entrySet()) {
-                    ThreadPoolExecutor pool = entry.getKey();
-                    if (pool instanceof ScheduledExecutorService) {
-                        scheduledThread(cpuLoad, pool, entry.getValue());
-                        continue;
-                    }
-                    thread(cpuLoad, pool, entry.getValue());
-                }
-            } finally {
-                timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
-            }
-        }
-
-        private void thread(Decimal cpuLoad, ThreadPoolExecutor pool, BiTuple<IntWaterMark, Integer, Integer> tuple) {
-            IntWaterMark waterMark = tuple.left;
-            int decrementCounter = tuple.middle;
-            int incrementCounter = tuple.right;
-
-            String prefix = pool.toString();
-            if (log.isDebugEnabled()) {
-                log.debug("{} PoolSize={}+[{}] Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
-                        pool.getPoolSize(), pool.getQueue().size(),
-                        cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
-            }
-
-            if (cpuLoad.gt(waterMark.getHigh())) {
-                if (++decrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
-                    log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% decrement to {}", prefix,
-                            pool.getPoolSize(), pool.getQueue().size(),
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrSize(pool));
-                    decrementCounter = 0;
-                }
-            } else {
-                decrementCounter = 0;
-            }
-
-            if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
-                if (++incrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
-                    log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% increment to {}", prefix,
-                            pool.getPoolSize(), pool.getQueue().size(),
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
-                    incrementCounter = 0;
-                }
-            } else {
-                incrementCounter = 0;
-            }
-
-            tuple.middle = decrementCounter;
-            tuple.right = incrementCounter;
-        }
-
-        private void scheduledThread(Decimal cpuLoad, ThreadPoolExecutor pool, BiTuple<IntWaterMark, Integer, Integer> tuple) {
-            IntWaterMark waterMark = tuple.left;
-            int decrementCounter = tuple.middle;
-            int incrementCounter = tuple.right;
-
-            String prefix = pool.toString();
-            int active = pool.getActiveCount();
-            int size = pool.getCorePoolSize();
-            float idle = (float) active / size * 100;
-            log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% idle={} de/incrementCounter={}/{}", prefix,
-                    pool.getCorePoolSize(), pool.getQueue().size(),
-                    cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
-
-            RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
-            if (size > conf.minDynamicSize && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
-                if (++decrementCounter >= conf.samplingTimes) {
-                    log.info("{} Threshold={}[{}-{}]% idle={} decrement to {}", prefix,
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrSize(pool));
-                    decrementCounter = 0;
-                }
-            } else {
-                decrementCounter = 0;
-            }
-
-            if (active >= size && cpuLoad.lt(waterMark.getLow())) {
-                if (++incrementCounter >= conf.samplingTimes) {
-                    log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
-                            cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
-                    incrementCounter = 0;
-                }
-            } else {
-                incrementCounter = 0;
-            }
-
-            tuple.middle = decrementCounter;
-            tuple.right = incrementCounter;
-        }
-
-        public void register(ThreadPoolExecutor pool, IntWaterMark cpuWaterMark) {
-            if (cpuWaterMark == null) {
-                return;
-            }
-
-            holder.put(pool, BiTuple.of(cpuWaterMark, 0, 0));
-        }
-    }
-
     //region static members
     public static volatile Func<String> traceIdGenerator;
     public static final Delegate<EventPublisher.StaticEventPublisher, NEventArgs<String>> onTraceIdChanged = Delegate.create();
@@ -334,8 +222,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
-    static final HashedWheelTimer timer = new HashedWheelTimer(newThreadFactory("timer"), 800L, TimeUnit.MILLISECONDS, 8);
-    static final DynamicSizer sizer = new DynamicSizer();
     static final Map<Object, RefCounter<ReentrantLock>> taskLockMap = new ConcurrentHashMap<>(8);
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
 
@@ -407,23 +293,6 @@ public class ThreadPool extends ThreadPoolExecutor {
         return new DefaultThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true
 //                , Thread.NORM_PRIORITY + 1
         );
-    }
-
-    static int incrSize(ThreadPoolExecutor pool) {
-        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
-        int poolSize = pool.getCorePoolSize() + conf.resizeQuantity;
-        if (poolSize > conf.maxDynamicSize) {
-            return conf.maxDynamicSize;
-        }
-        pool.setCorePoolSize(poolSize);
-        return poolSize;
-    }
-
-    static int decrSize(ThreadPoolExecutor pool) {
-        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
-        int poolSize = Math.max(conf.minDynamicSize, pool.getCorePoolSize() - conf.resizeQuantity);
-        pool.setCorePoolSize(poolSize);
-        return poolSize;
     }
 
     static boolean asyncContinueFlag(boolean def) {
@@ -505,7 +374,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         if (cpuWaterMark.getHigh() > 100) {
             cpuWaterMark.setHigh(100);
         }
-        sizer.register(this, cpuWaterMark);
+        CpuWatchman.INSTANCE.register(this, cpuWaterMark);
     }
     //endregion
 
@@ -702,7 +571,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             log.debug("CTX lock {} -> {}", task.id, flags.name());
         }
         if (flags.has(RunFlag.PRIORITY) && !getQueue().isEmpty()) {
-            incrSize(this);
+            CpuWatchman.incrSize(this);
         }
         //TransmittableThreadLocal
         if (task.parent != null) {
