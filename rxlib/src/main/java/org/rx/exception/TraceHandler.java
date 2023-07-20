@@ -11,15 +11,12 @@ import org.rx.bean.DateTime;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
-import org.rx.core.StringBuilder;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
 import org.slf4j.helpers.FormattingTuple;
 import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Serializable;
-import java.lang.management.LockInfo;
-import java.lang.management.MonitorInfo;
 import java.sql.Time;
 import java.util.Date;
 import java.util.List;
@@ -104,7 +101,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         try {
             Thread.setDefaultUncaughtExceptionHandler(this);
             EntityDatabase db = EntityDatabase.DEFAULT;
-            db.createMapping(ErrorEntity.class, MethodEntity.class, MetricsEntity.class);
+            db.createMapping(ErrorEntity.class, MethodEntity.class, MetricsEntity.class, ThreadEntity.class);
         } catch (Throwable e) {
             log.error("RxMeta init error", e);
         }
@@ -128,6 +125,8 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                             .lt(ErrorEntity::getModifyTime, d));
                     db.delete(new EntityQueryLambda<>(MethodEntity.class)
                             .lt(MethodEntity::getModifyTime, d));
+                    db.delete(new EntityQueryLambda<>(ThreadEntity.class)
+                            .lt(ThreadEntity::getSnapshotTime, d));
                     db.compact();
                 }, Time.valueOf("3:00:00"));
             }
@@ -166,6 +165,43 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         } catch (Throwable ie) {
             ie.printStackTrace();
         }
+    }
+
+    public void saveThreads(Linq<ThreadEntity> snapshot) {
+        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
+        if (conf.getKeepDays() <= 0) {
+            return;
+        }
+
+        Tasks.run(() -> {
+            EntityDatabase db = EntityDatabase.DEFAULT;
+            db.begin();
+            try {
+                for (ThreadEntity t : snapshot) {
+                    db.save(t, true);
+                }
+                db.commit();
+            } catch (Throwable ex) {
+                log.error("dbTrace", ex);
+                db.rollback();
+            }
+        });
+    }
+
+    public Linq<ThreadEntity> findThreads(Long snapshotId, Date startTime, Date endTime) {
+        EntityQueryLambda<ThreadEntity> q = new EntityQueryLambda<>(ThreadEntity.class);
+        if (snapshotId != null) {
+            q.eq(ThreadEntity::getSnapshotId, snapshotId);
+        }
+        if (startTime != null) {
+            q.ge(ThreadEntity::getSnapshotTime, startTime);
+        }
+        if (endTime != null) {
+            q.lt(ThreadEntity::getSnapshotTime, endTime);
+        }
+        q.orderBy(ThreadEntity::getSnapshotTime);
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        return Linq.from(db.findBy(q));
     }
 
     public void saveTrace(Thread t, String msg, Throwable e) {

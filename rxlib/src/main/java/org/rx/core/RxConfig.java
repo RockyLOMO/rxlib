@@ -89,6 +89,7 @@ public final class RxConfig {
         long slowMethodElapsedMicros;
 
         boolean watchThreadLock;
+        long samplingThreadPeriod;
     }
 
     @Getter

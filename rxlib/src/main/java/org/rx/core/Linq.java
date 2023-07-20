@@ -74,6 +74,10 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return null;
     }
 
+    public static <T> Linq<T> empty() {
+        return (Linq<T>) EMPTY;
+    }
+
     public static <T> Linq<T> fromIterable(Object iterable) {
         return from(asIterable(iterable, true));
     }

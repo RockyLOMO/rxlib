@@ -255,7 +255,7 @@ public class MxController {
             i++;
         }
         j.put("sysInfo", infoJson);
-        Linq<ThreadEntity> ts = CpuWatchman.dumpAllThreads(true);
+        Linq<ThreadEntity> ts = CpuWatchman.getLatestSnapshot();
         j.put("deadlockedThreads", ts.where(ThreadEntity::isDeadlocked).select(p -> p.toString()));
         int take = Reflects.convertQuietly(request.getParameter("take"), Integer.class, 5);
         j.put("topUserTimeThreads", ts.orderByDescending(ThreadEntity::getUserNanos).take(take).select(p -> p.toString()));

@@ -35,6 +35,7 @@ public class ThreadEntity implements Serializable {
     LockInfo[] lockedSynchronizers;
     boolean deadlocked;
 
+    long snapshotId;
     Date snapshotTime;
 
     @Override

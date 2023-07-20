@@ -5,9 +5,12 @@ import com.sun.management.ThreadMXBean;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.*;
+import org.rx.exception.TraceHandler;
 import org.rx.util.BeanMapper;
+import org.rx.util.Snowflake;
 
 import java.lang.management.ManagementFactory;
 import java.util.Map;
@@ -21,14 +24,43 @@ public class CpuWatchman implements TimerTask {
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     static final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("timer"), 800L, TimeUnit.MILLISECONDS, 8);
+    static Timeout samplingThreadTimeout;
+    @Getter
+    static long latestSnapshotId;
 
-    public static void startWatch() {
+    public static synchronized Linq<ThreadEntity> getLatestSnapshot() {
+        if (samplingThreadTimeout == null) {
+            startWatch();
+        }
+        if (latestSnapshotId == 0) {
+            return Linq.empty();
+        }
+        return TraceHandler.INSTANCE.findThreads(latestSnapshotId, null, null);
+    }
+
+    public static synchronized void startWatch() {
+        if (samplingThreadTimeout != null) {
+            samplingThreadTimeout.cancel();
+        }
         threadMx.setThreadCpuTimeEnabled(true);
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         threadMx.setThreadContentionMonitoringEnabled(conf.watchThreadLock);
+        samplingThreadTimeout = timer.newTimeout(t -> {
+            try {
+                TraceHandler.INSTANCE.saveThreads(dumpAllThreads(true));
+            } catch (Throwable e) {
+                TraceHandler.INSTANCE.log(e);
+            } finally {
+                t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getTrace().getSamplingThreadPeriod(), TimeUnit.MILLISECONDS);
+            }
+        }, conf.samplingThreadPeriod, TimeUnit.MILLISECONDS);
     }
 
     public static void stopWatch() {
+        if (samplingThreadTimeout != null) {
+            samplingThreadTimeout.cancel();
+            samplingThreadTimeout = null;
+        }
         threadMx.setThreadCpuTimeEnabled(false);
         threadMx.setThreadContentionMonitoringEnabled(false);
     }
@@ -36,14 +68,18 @@ public class CpuWatchman implements TimerTask {
     public static synchronized Linq<ThreadEntity> dumpAllThreads(boolean findDeadlock) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         Linq<ThreadEntity> allThreads = Linq.from(threadMx.dumpAllThreads(conf.watchThreadLock, conf.watchThreadLock)).select(p -> BeanMapper.DEFAULT.map(p, new ThreadEntity()));
+        long[] deadlockedTids = findDeadlock ? Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads()) : null;
+        DateTime st = DateTime.now();
         long[] tids = Arrays.toPrimitive(allThreads.select(ThreadEntity::getThreadId).toArray());
         long[] threadUserTime = threadMx.getThreadUserTime(tids);
         long[] threadCpuTime = threadMx.getThreadCpuTime(tids);
-        long[] deadlockedTids = findDeadlock ? Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads()) : null;
+        latestSnapshotId = Snowflake.DEFAULT.nextId();
         return allThreads.select((p, i) -> {
             p.setUserNanos(threadUserTime[i]);
             p.setCpuNanos(threadCpuTime[i]);
             p.setDeadlocked(Arrays.contains(deadlockedTids, p.threadId));
+            p.setSnapshotId(latestSnapshotId);
+            p.setSnapshotTime(st);
             return p;
         });
     }
