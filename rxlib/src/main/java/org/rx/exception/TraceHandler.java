@@ -167,7 +167,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
     }
 
-    public void saveThreads(Linq<ThreadEntity> snapshot) {
+    public void saveThreadTrace(Linq<ThreadEntity> snapshot) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         if (conf.getKeepDays() <= 0) {
             return;
@@ -188,7 +188,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         });
     }
 
-    public Linq<ThreadEntity> findThreads(Long snapshotId, Date startTime, Date endTime) {
+    public Linq<ThreadEntity> queryThreadTrace(Long snapshotId, Date startTime, Date endTime) {
         EntityQueryLambda<ThreadEntity> q = new EntityQueryLambda<>(ThreadEntity.class);
         if (snapshotId != null) {
             q.eq(ThreadEntity::getSnapshotId, snapshotId);
@@ -199,7 +199,6 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         if (endTime != null) {
             q.lt(ThreadEntity::getSnapshotTime, endTime);
         }
-        q.orderBy(ThreadEntity::getSnapshotTime);
         EntityDatabase db = EntityDatabase.DEFAULT;
         return Linq.from(db.findBy(q));
     }

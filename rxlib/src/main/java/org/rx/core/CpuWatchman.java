@@ -6,6 +6,7 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.*;
 import org.rx.exception.TraceHandler;
@@ -13,13 +14,35 @@ import org.rx.util.BeanMapper;
 import org.rx.util.Snowflake;
 
 import java.lang.management.ManagementFactory;
+import java.util.Date;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class CpuWatchman implements TimerTask {
+    @RequiredArgsConstructor
+    public static class TopUsageView {
+        final ThreadEntity first;
+        final ThreadEntity last;
+
+        public long getCpuNanosElapsed() {
+            if (last.cpuNanos == -1 || first.cpuNanos == -1) {
+                return -1;
+            }
+            return last.cpuNanos - first.cpuNanos;
+        }
+
+        public long getUserNanosElapsed() {
+            if (last.userNanos == -1 || first.userNanos == -1) {
+                return -1;
+            }
+            return last.userNanos - first.userNanos;
+        }
+    }
+
     static final CpuWatchman INSTANCE = new CpuWatchman();
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
@@ -35,7 +58,18 @@ public class CpuWatchman implements TimerTask {
         if (latestSnapshotId == 0) {
             return Linq.empty();
         }
-        return TraceHandler.INSTANCE.findThreads(latestSnapshotId, null, null);
+        return TraceHandler.INSTANCE.queryThreadTrace(latestSnapshotId, null, null);
+    }
+
+    public static Linq<TopUsageView> findTopUsage(Date startTime, Date endTime) {
+        return TraceHandler.INSTANCE.queryThreadTrace(null, startTime, endTime).groupBy(p -> p.threadId, (p, x) -> {
+            if (x.count() <= 1) {
+                return null;
+            }
+            ThreadEntity first = x.first();
+            ThreadEntity last = x.last();
+            return new TopUsageView(first, last);
+        }).where(Objects::nonNull);
     }
 
     public static synchronized void startWatch() {
@@ -44,10 +78,11 @@ public class CpuWatchman implements TimerTask {
         }
         threadMx.setThreadCpuTimeEnabled(true);
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
-        threadMx.setThreadContentionMonitoringEnabled(conf.watchThreadLock);
+        boolean watchLock = (conf.watchThreadFlags & 1) == 1;
+        threadMx.setThreadContentionMonitoringEnabled(watchLock);
         samplingThreadTimeout = timer.newTimeout(t -> {
             try {
-                TraceHandler.INSTANCE.saveThreads(dumpAllThreads(true));
+                TraceHandler.INSTANCE.saveThreadTrace(dumpAllThreads(true));
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log(e);
             } finally {
@@ -67,15 +102,18 @@ public class CpuWatchman implements TimerTask {
 
     public static synchronized Linq<ThreadEntity> dumpAllThreads(boolean findDeadlock) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
-        Linq<ThreadEntity> allThreads = Linq.from(threadMx.dumpAllThreads(conf.watchThreadLock, conf.watchThreadLock)).select(p -> BeanMapper.DEFAULT.map(p, new ThreadEntity()));
+        boolean watchLock = (conf.watchThreadFlags & 1) == 1;
+        boolean watchUserTime = (conf.watchThreadFlags & 2) == 2;
+
+        Linq<ThreadEntity> allThreads = Linq.from(threadMx.dumpAllThreads(watchLock, watchLock)).select(p -> BeanMapper.DEFAULT.map(p, new ThreadEntity()));
         long[] deadlockedTids = findDeadlock ? Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads()) : null;
         DateTime st = DateTime.now();
         long[] tids = Arrays.toPrimitive(allThreads.select(ThreadEntity::getThreadId).toArray());
-        long[] threadUserTime = threadMx.getThreadUserTime(tids);
+        long[] threadUserTime = watchUserTime ? threadMx.getThreadUserTime(tids) : null;
         long[] threadCpuTime = threadMx.getThreadCpuTime(tids);
         latestSnapshotId = Snowflake.DEFAULT.nextId();
         return allThreads.select((p, i) -> {
-            p.setUserNanos(threadUserTime[i]);
+            p.setUserNanos(watchUserTime ? threadUserTime[i] : -1);
             p.setCpuNanos(threadCpuTime[i]);
             p.setDeadlocked(Arrays.contains(deadlockedTids, p.threadId));
             p.setSnapshotId(latestSnapshotId);

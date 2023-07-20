@@ -3,7 +3,8 @@ app:
     keepDays: 1
     errorMessageSize: 10
     slowMethodElapsedMicros: 50000
-    watchThreadLock: true
+    watchThreadFlags: 1
+    samplingThreadPeriod: 30000
   threadPool:
     initSize: 0
     keepAliveSeconds: 600

@@ -29,7 +29,8 @@ public final class RxConfig {
         String TRACE_KEEP_DAYS = "app.trace.keepDays";
         String TRACE_ERROR_MESSAGE_SIZE = "app.trace.errorMessageSize";
         String TRACE_SLOW_METHOD_ELAPSED_MICROS = "app.trace.slowMethodElapsedMicros";
-        String TRACE_WATCH_THREAD_LOCK = "app.trace.watchThreadLock";
+        String TRACE_WATCH_THREAD_FLAGS = "app.trace.watchThreadFlags";
+        String TRACE_SAMPLING_THREAD_PERIOD = "app.trace.samplingThreadPeriod";
         String THREAD_POOL_CPU_LOAD_WARNING = "app.threadPool.cpuLoadWarningThreshold";
         String THREAD_POOL_INIT_SIZE = "app.threadPool.initSize";
         String THREAD_POOL_KEEP_ALIVE_SECONDS = "app.threadPool.keepAliveSeconds";
@@ -88,7 +89,8 @@ public final class RxConfig {
         int errorMessageSize;
         long slowMethodElapsedMicros;
 
-        boolean watchThreadLock;
+        //1 Lock, 2 UserTime
+        int watchThreadFlags;
         long samplingThreadPeriod;
     }
 
@@ -214,7 +216,8 @@ public final class RxConfig {
         trace.keepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, trace.keepDays);
         trace.errorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, trace.errorMessageSize);
         trace.slowMethodElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_METHOD_ELAPSED_MICROS, trace.slowMethodElapsedMicros);
-        trace.watchThreadLock = SystemPropertyUtil.getBoolean(ConfigNames.TRACE_WATCH_THREAD_LOCK, trace.watchThreadLock);
+        trace.watchThreadFlags = SystemPropertyUtil.getInt(ConfigNames.TRACE_WATCH_THREAD_FLAGS, trace.watchThreadFlags);
+        trace.samplingThreadPeriod = SystemPropertyUtil.getLong(ConfigNames.TRACE_SAMPLING_THREAD_PERIOD, trace.samplingThreadPeriod);
         threadPool.initSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_INIT_SIZE, threadPool.initSize);
         threadPool.keepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_KEEP_ALIVE_SECONDS, threadPool.keepAliveSeconds);
         threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, threadPool.queueCapacity);
