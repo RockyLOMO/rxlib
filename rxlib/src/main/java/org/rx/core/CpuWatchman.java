@@ -142,8 +142,8 @@ public class CpuWatchman implements TimerTask {
     final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> holder = new WeakIdentityMap<>(8);
 
     private CpuWatchman() {
-        RxConfig conf = RxConfig.INSTANCE;
-        timer.newTimeout(this, conf == null ? 60000 : conf.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
+        //RxConfig.INSTANCE.threadPool.samplingPeriod not init;
+        timer.newTimeout(this, 60000, TimeUnit.MILLISECONDS);
     }
 
     @Override
