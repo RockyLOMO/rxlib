@@ -22,27 +22,28 @@ public class CpuWatchman implements TimerTask {
     static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     static final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("timer"), 800L, TimeUnit.MILLISECONDS, 8);
 
-    static void startWatch() {
+    public static void startWatch() {
         threadMx.setThreadCpuTimeEnabled(true);
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         threadMx.setThreadContentionMonitoringEnabled(conf.watchThreadLock);
     }
 
-    static void stopWatch() {
+    public static void stopWatch() {
         threadMx.setThreadCpuTimeEnabled(false);
         threadMx.setThreadContentionMonitoringEnabled(false);
     }
 
-    static Linq<ThreadEntity> dumpAllThreads() {
+    public static synchronized Linq<ThreadEntity> dumpAllThreads(boolean findDeadlock) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         Linq<ThreadEntity> allThreads = Linq.from(threadMx.dumpAllThreads(conf.watchThreadLock, conf.watchThreadLock)).select(p -> BeanMapper.DEFAULT.map(p, new ThreadEntity()));
         long[] tids = Arrays.toPrimitive(allThreads.select(ThreadEntity::getThreadId).toArray());
         long[] threadUserTime = threadMx.getThreadUserTime(tids);
         long[] threadCpuTime = threadMx.getThreadCpuTime(tids);
-        threadMx.findDeadlockedThreads()
+        long[] deadlockedTids = findDeadlock ? Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads()) : null;
         return allThreads.select((p, i) -> {
             p.setUserNanos(threadUserTime[i]);
             p.setCpuNanos(threadCpuTime[i]);
+            p.setDeadlocked(Arrays.contains(deadlockedTids, p.threadId));
             return p;
         });
     }

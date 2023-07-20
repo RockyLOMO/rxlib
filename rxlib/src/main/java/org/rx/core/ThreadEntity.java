@@ -33,6 +33,7 @@ public class ThreadEntity implements Serializable {
     StackTraceElement[] stackTrace;
     MonitorInfo[] lockedMonitors;
     LockInfo[] lockedSynchronizers;
+    boolean deadlocked;
 
     Date snapshotTime;
 

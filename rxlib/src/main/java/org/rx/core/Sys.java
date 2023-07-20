@@ -5,7 +5,6 @@ import com.alibaba.fastjson2.*;
 import com.alibaba.fastjson2.filter.ValueFilter;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.OperatingSystemMXBean;
-import com.sun.management.ThreadMXBean;
 import io.netty.util.Timeout;
 import lombok.Getter;
 import lombok.NonNull;
@@ -120,7 +119,6 @@ public final class Sys extends SystemUtils {
     }
 
     public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
-    public static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final JSONReader.Feature[] JSON_READ_FLAGS = new JSONReader.Feature[]{SupportClassForName, AllowUnQuotedFieldNames};
@@ -440,17 +438,9 @@ public final class Sys extends SystemUtils {
     public static Info mxInfo() {
         File bd = new File("/");
         OperatingSystemMXBean osMx = CpuWatchman.osMx;
-        return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), threadMx.getThreadCount(),
+        return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), CpuWatchman.threadMx.getThreadCount(),
                 osMx.getFreePhysicalMemorySize(), osMx.getTotalPhysicalMemorySize(),
                 Linq.from(File.listRoots()).select(p -> new DiskInfo(p.getName(), p.getAbsolutePath(), p.getFreeSpace(), p.getTotalSpace(), bd.getAbsolutePath().equals(p.getAbsolutePath()))));
-    }
-
-    public static List<ThreadInfo> findDeadlockedThreads() {
-        long[] deadlockedTids = Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads());
-        if (Arrays.isEmpty(deadlockedTids)) {
-            return Collections.emptyList();
-        }
-        return Linq.from(threadMx.getThreadInfo(deadlockedTids)).select((p, i) -> new ThreadInfo(p, -1, -1)).toList();
     }
 
     public static String formatCpuLoad(double val) {
