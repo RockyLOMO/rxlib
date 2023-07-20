@@ -4,7 +4,7 @@ app:
     errorMessageSize: 10
     slowMethodElapsedMicros: 50000
     watchThreadFlags: 1
-    samplingThreadPeriod: 30000
+    samplingCpuPeriod: 30000
   threadPool:
     initSize: 0
     keepAliveSeconds: 600

@@ -30,7 +30,7 @@ public final class RxConfig {
         String TRACE_ERROR_MESSAGE_SIZE = "app.trace.errorMessageSize";
         String TRACE_SLOW_METHOD_ELAPSED_MICROS = "app.trace.slowMethodElapsedMicros";
         String TRACE_WATCH_THREAD_FLAGS = "app.trace.watchThreadFlags";
-        String TRACE_SAMPLING_THREAD_PERIOD = "app.trace.samplingThreadPeriod";
+        String TRACE_SAMPLING_CPU_PERIOD = "app.trace.samplingCpuPeriod";
         String THREAD_POOL_CPU_LOAD_WARNING = "app.threadPool.cpuLoadWarningThreshold";
         String THREAD_POOL_INIT_SIZE = "app.threadPool.initSize";
         String THREAD_POOL_KEEP_ALIVE_SECONDS = "app.threadPool.keepAliveSeconds";
@@ -91,7 +91,7 @@ public final class RxConfig {
 
         //1 Lock, 2 UserTime
         int watchThreadFlags;
-        long samplingThreadPeriod;
+        long samplingCpuPeriod;
     }
 
     @Getter
@@ -217,7 +217,7 @@ public final class RxConfig {
         trace.errorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, trace.errorMessageSize);
         trace.slowMethodElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_METHOD_ELAPSED_MICROS, trace.slowMethodElapsedMicros);
         trace.watchThreadFlags = SystemPropertyUtil.getInt(ConfigNames.TRACE_WATCH_THREAD_FLAGS, trace.watchThreadFlags);
-        trace.samplingThreadPeriod = SystemPropertyUtil.getLong(ConfigNames.TRACE_SAMPLING_THREAD_PERIOD, trace.samplingThreadPeriod);
+        trace.samplingCpuPeriod = SystemPropertyUtil.getLong(ConfigNames.TRACE_SAMPLING_CPU_PERIOD, trace.samplingCpuPeriod);
         threadPool.initSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_INIT_SIZE, threadPool.initSize);
         threadPool.keepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_KEEP_ALIVE_SECONDS, threadPool.keepAliveSeconds);
         threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, threadPool.queueCapacity);
