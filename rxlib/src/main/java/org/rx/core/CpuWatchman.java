@@ -43,10 +43,11 @@ public class CpuWatchman implements TimerTask {
         }
     }
 
-    static final CpuWatchman INSTANCE = new CpuWatchman();
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     static final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("timer"), 800L, TimeUnit.MILLISECONDS, 8);
+    //place after timer
+    static final CpuWatchman INSTANCE = new CpuWatchman();
     static Timeout samplingCpuTimeout;
     @Getter
     static long latestSnapshotId;
@@ -142,8 +143,7 @@ public class CpuWatchman implements TimerTask {
     final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> holder = new WeakIdentityMap<>(8);
 
     private CpuWatchman() {
-        //RxConfig.INSTANCE.threadPool.samplingPeriod not init;
-        timer.newTimeout(this, 60000, TimeUnit.MILLISECONDS);
+        timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
     }
 
     @Override
