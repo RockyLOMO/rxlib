@@ -43,16 +43,17 @@ public class CpuWatchman implements TimerTask {
         }
     }
 
-    static final CpuWatchman INSTANCE = new CpuWatchman();
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     static final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("timer"), 800L, TimeUnit.MILLISECONDS, 8);
-    static Timeout samplingThreadTimeout;
+    //place after timer
+    static final CpuWatchman INSTANCE = new CpuWatchman();
+    static Timeout samplingCpuTimeout;
     @Getter
     static long latestSnapshotId;
 
     public static synchronized Linq<ThreadEntity> getLatestSnapshot() {
-        if (samplingThreadTimeout == null) {
+        if (samplingCpuTimeout == null) {
             startWatch();
         }
         if (latestSnapshotId == 0) {
@@ -73,28 +74,28 @@ public class CpuWatchman implements TimerTask {
     }
 
     public static synchronized void startWatch() {
-        if (samplingThreadTimeout != null) {
-            samplingThreadTimeout.cancel();
+        if (samplingCpuTimeout != null) {
+            samplingCpuTimeout.cancel();
         }
         threadMx.setThreadCpuTimeEnabled(true);
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         boolean watchLock = (conf.watchThreadFlags & 1) == 1;
         threadMx.setThreadContentionMonitoringEnabled(watchLock);
-        samplingThreadTimeout = timer.newTimeout(t -> {
+        samplingCpuTimeout = timer.newTimeout(t -> {
             try {
                 TraceHandler.INSTANCE.saveThreadTrace(dumpAllThreads(true));
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log(e);
             } finally {
-                t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getTrace().getSamplingThreadPeriod(), TimeUnit.MILLISECONDS);
+                t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getTrace().getSamplingCpuPeriod(), TimeUnit.MILLISECONDS);
             }
-        }, conf.samplingThreadPeriod, TimeUnit.MILLISECONDS);
+        }, conf.samplingCpuPeriod, TimeUnit.MILLISECONDS);
     }
 
     public static void stopWatch() {
-        if (samplingThreadTimeout != null) {
-            samplingThreadTimeout.cancel();
-            samplingThreadTimeout = null;
+        if (samplingCpuTimeout != null) {
+            samplingCpuTimeout.cancel();
+            samplingCpuTimeout = null;
         }
         threadMx.setThreadCpuTimeEnabled(false);
         threadMx.setThreadContentionMonitoringEnabled(false);
@@ -142,8 +143,7 @@ public class CpuWatchman implements TimerTask {
     final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> holder = new WeakIdentityMap<>(8);
 
     private CpuWatchman() {
-        //RxConfig.INSTANCE.threadPool.samplingPeriod not init;
-        timer.newTimeout(this, 60000, TimeUnit.MILLISECONDS);
+        timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
     }
 
     @Override
