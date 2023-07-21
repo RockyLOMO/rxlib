@@ -25,35 +25,35 @@ import java.util.concurrent.TimeUnit;
 public class CpuWatchman implements TimerTask {
     @Getter
     @RequiredArgsConstructor
-    public static class TopUsageView {
-        final ThreadEntity first;
-        final ThreadEntity last;
+    public static class ThreadUsageView {
+        final ThreadEntity begin;
+        final ThreadEntity end;
 
         public long getCpuNanosElapsed() {
-            if (last.cpuNanos == -1 || first.cpuNanos == -1) {
+            if (end.cpuNanos == -1 || begin.cpuNanos == -1) {
                 return -1;
             }
-            return last.cpuNanos - first.cpuNanos;
+            return end.cpuNanos - begin.cpuNanos;
         }
 
         public long getUserNanosElapsed() {
-            if (last.userNanos == -1 || first.userNanos == -1) {
+            if (end.userNanos == -1 || begin.userNanos == -1) {
                 return -1;
             }
-            return last.userNanos - first.userNanos;
+            return end.userNanos - begin.userNanos;
         }
 
         public long getBlockedElapsed() {
-            return last.blockedTime - first.blockedTime;
+            return end.blockedTime - begin.blockedTime;
         }
 
         public long getWaitedElapsed() {
-            return last.waitedTime - first.waitedTime;
+            return end.waitedTime - begin.waitedTime;
         }
 
         @Override
         public String toString() {
-            return String.format("first:%s\nlast:%s\ncpuNanosElapsed=%s, userNanosElapsed=%s, blockedElapsed=%s, waitedElapsed=%s", first, last,
+            return String.format("begin: %s\nend: %s\ncpuNanosElapsed=%s, userNanosElapsed=%s, blockedElapsed=%s, waitedElapsed=%s", begin, end,
                     Sys.formatNanosElapsed(getCpuNanosElapsed()), Sys.formatNanosElapsed(getUserNanosElapsed()),
                     Sys.formatNanosElapsed(getBlockedElapsed()), Sys.formatNanosElapsed(getWaitedElapsed()));
         }
@@ -77,14 +77,14 @@ public class CpuWatchman implements TimerTask {
         return TraceHandler.INSTANCE.queryThreadTrace(latestSnapshotId, null, null);
     }
 
-    public static Linq<TopUsageView> findTopUsage(Date startTime, Date endTime) {
+    public static Linq<ThreadUsageView> findTopUsage(Date startTime, Date endTime) {
         return TraceHandler.INSTANCE.queryThreadTrace(null, startTime, endTime).groupBy(p -> p.threadId, (p, x) -> {
             if (x.count() <= 1) {
                 return null;
             }
             ThreadEntity first = x.first();
             ThreadEntity last = x.last();
-            return new TopUsageView(first, last);
+            return new ThreadUsageView(first, last);
         }).where(Objects::nonNull);
     }
 

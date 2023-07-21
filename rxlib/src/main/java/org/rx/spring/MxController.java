@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.Subscribe;
+import org.rx.bean.DateTime;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.ExceptionLevel;
@@ -137,7 +138,9 @@ public class MxController {
                     Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
                     return queryTraces(newest, level, methodOccurMost, methodNamePrefix, metricsName, take);
                 case 11:
-                    return findTopUsage(null,null);
+                    DateTime begin = Reflects.changeType(request.getParameter("begin"), DateTime.class);
+                    DateTime end = Reflects.changeType(request.getParameter("end"), DateTime.class);
+                    return findTopUsage(begin, end);
                 case 12:
                     return invoke(request);
             }
@@ -194,18 +197,18 @@ public class MxController {
         return Reflects.invokeMethod(method, bean, a);
     }
 
-    Map<String, Object> findTopUsage(Date start, Date end) {
+    Map<String, Object> findTopUsage(Date begin, Date end) {
         Map<String, Object> result = new LinkedHashMap<>(5);
-        Linq<CpuWatchman.TopUsageView> topUsage = CpuWatchman.findTopUsage(start, end);
-        result.put("deadlocked", topUsage.where(p -> p.getFirst().isDeadlocked() || p.getLast().isDeadlocked()).select(CpuWatchman.TopUsageView::toString));
+        Linq<CpuWatchman.ThreadUsageView> topUsage = CpuWatchman.findTopUsage(begin, end);
+        result.put("deadlocked", topUsage.where(p -> p.getBegin().isDeadlocked() || p.getEnd().isDeadlocked()).select(CpuWatchman.ThreadUsageView::toString));
 
-        result.put("topCpuTime", topUsage.orderByDescending(CpuWatchman.TopUsageView::getCpuNanosElapsed).select(CpuWatchman.TopUsageView::toString));
+        result.put("topCpuTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getCpuNanosElapsed).select(CpuWatchman.ThreadUsageView::toString));
 
-        result.put("topUserTime", topUsage.orderByDescending(CpuWatchman.TopUsageView::getUserNanosElapsed).select(CpuWatchman.TopUsageView::toString));
+        result.put("topUserTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getUserNanosElapsed).select(CpuWatchman.ThreadUsageView::toString));
 
-        result.put("topBlockedTime", topUsage.orderByDescending(CpuWatchman.TopUsageView::getBlockedElapsed).select(CpuWatchman.TopUsageView::toString));
+        result.put("topBlockedTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getBlockedElapsed).select(CpuWatchman.ThreadUsageView::toString));
 
-        result.put("topWaitedTime", topUsage.orderByDescending(CpuWatchman.TopUsageView::getWaitedElapsed).select(CpuWatchman.TopUsageView::toString));
+        result.put("topWaitedTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getWaitedElapsed).select(CpuWatchman.ThreadUsageView::toString));
         return result;
     }
 
@@ -269,13 +272,15 @@ public class MxController {
             i++;
         }
         j.put("sysInfo", infoJson);
+        Map<String, Object> threadInfo = new LinkedHashMap<>(5);
+        j.put("threadInfo", threadInfo);
         Linq<ThreadEntity> ts = CpuWatchman.getLatestSnapshot();
-        j.put("deadlockedThreads", ts.where(ThreadEntity::isDeadlocked).select(p -> p.toString()));
         int take = Reflects.convertQuietly(request.getParameter("take"), Integer.class, 5);
-        j.put("topUserTimeThreads", ts.orderByDescending(ThreadEntity::getUserNanos).take(take).select(p -> p.toString()));
-        j.put("topCpuTimeThreads", ts.orderByDescending(ThreadEntity::getCpuNanos).take(take).select(p -> p.toString()));
-        j.put("topBlockedTimeThreads", ts.orderByDescending(ThreadEntity::getBlockedTime).take(take).select(p -> p.toString()));
-        j.put("topWaitedTimeThreads", ts.orderByDescending(ThreadEntity::getWaitedTime).take(take).select(p -> p.toString()));
+        threadInfo.put("deadlocked", ts.where(ThreadEntity::isDeadlocked).select(p -> p.toString()));
+        threadInfo.put("topUserTime", ts.orderByDescending(ThreadEntity::getUserNanos).take(take).select(p -> p.toString()));
+        threadInfo.put("topCpuTime", ts.orderByDescending(ThreadEntity::getCpuNanos).take(take).select(p -> p.toString()));
+        threadInfo.put("topBlockedTime", ts.orderByDescending(ThreadEntity::getBlockedTime).take(take).select(p -> p.toString()));
+        threadInfo.put("topWaitedTime", ts.orderByDescending(ThreadEntity::getWaitedTime).take(take).select(p -> p.toString()));
         j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
         j.put("rxConfig", RxConfig.INSTANCE);
