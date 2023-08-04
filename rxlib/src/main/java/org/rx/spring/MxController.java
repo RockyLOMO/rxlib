@@ -130,13 +130,16 @@ public class MxController {
                     SocksContext.omegax(Reflects.convertQuietly(request.getParameter("p"), Integer.class, 22));
                     return rt;
                 case 10:
-                    Boolean newest = Reflects.changeType(request.getParameter("newest"), Boolean.class);
+                    DateTime st = DateTime.valueOf(request.getParameter("startTime"));
+                    DateTime et = DateTime.valueOf(request.getParameter("endTime"));
                     String level = request.getParameter("level");
+                    String kw = request.getParameter("keyword");
+                    Boolean newest = Reflects.changeType(request.getParameter("newest"), Boolean.class);
                     Boolean methodOccurMost = Reflects.changeType(request.getParameter("methodOccurMost"), Boolean.class);
                     String methodNamePrefix = request.getParameter("methodNamePrefix");
                     String metricsName = request.getParameter("metricsName");
                     Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
-                    return queryTraces(newest, level, methodOccurMost, methodNamePrefix, metricsName, take);
+                    return queryTraces(st, et, level, kw, newest, methodOccurMost, methodNamePrefix, metricsName, take);
                 case 11:
                     DateTime begin = Reflects.changeType(request.getParameter("begin"), DateTime.class);
                     DateTime end = Reflects.changeType(request.getParameter("end"), DateTime.class);
@@ -212,15 +215,17 @@ public class MxController {
         return result;
     }
 
-    Map<String, Object> queryTraces(Boolean newest, String level, Boolean methodOccurMost, String methodNamePrefix, String metricsName, Integer take) {
+    Map<String, Object> queryTraces(Date startTime, Date endTime, String level, String keyword, Boolean newest,
+                                    Boolean methodOccurMost, String methodNamePrefix, String metricsName,
+                                    Integer take) {
         Map<String, Object> result = new LinkedHashMap<>(3);
         ExceptionLevel el = null;
         if (!Strings.isBlank(level)) {
             el = ExceptionLevel.valueOf(level);
         }
-        result.put("errorTraces", TraceHandler.INSTANCE.queryTraces(newest, el, take));
+        result.put("errorTraces", TraceHandler.INSTANCE.queryExceptionTraces(startTime, endTime, el, keyword, newest, take));
 
-        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take)).select(p -> {
+        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryMethodTraces(methodNamePrefix, methodOccurMost, take)).select(p -> {
             Map<String, Object> t = Sys.toJsonObject(p);
             t.remove("elapsedMicros");
             t.put("elapsed", Sys.formatNanosElapsed(p.getElapsedMicros(), 1));
@@ -285,7 +290,9 @@ public class MxController {
 
         j.put("rxConfig", RxConfig.INSTANCE);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames())).select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.putAll(queryTraces(null, null, null, null, null, take));
+        j.putAll(queryTraces(null, null, null, null, null,
+                null, null, null,
+                take));
         return j;
     }
 

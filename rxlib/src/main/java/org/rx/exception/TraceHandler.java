@@ -34,7 +34,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     @Getter
     @Setter
     @ToString
-    public static class ErrorEntity implements Serializable {
+    public static class ExceptionEntity implements Serializable {
         private static final long serialVersionUID = 8387064071982888474L;
         @DbColumn(primaryKey = true)
         long id;
@@ -101,7 +101,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         try {
             Thread.setDefaultUncaughtExceptionHandler(this);
             EntityDatabase db = EntityDatabase.DEFAULT;
-            db.createMapping(ErrorEntity.class, MethodEntity.class, MetricsEntity.class, ThreadEntity.class);
+            db.createMapping(ExceptionEntity.class, MethodEntity.class, MetricsEntity.class, ThreadEntity.class);
         } catch (Throwable e) {
             log.error("RxMeta init error", e);
         }
@@ -121,8 +121,8 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 future = Tasks.scheduleDaily(() -> {
                     EntityDatabase db = EntityDatabase.DEFAULT;
                     DateTime d = DateTime.now().addDays(-keepDays - 1);
-                    db.delete(new EntityQueryLambda<>(ErrorEntity.class)
-                            .lt(ErrorEntity::getModifyTime, d));
+                    db.delete(new EntityQueryLambda<>(ExceptionEntity.class)
+                            .lt(ExceptionEntity::getModifyTime, d));
                     db.delete(new EntityQueryLambda<>(MethodEntity.class)
                             .lt(MethodEntity::getModifyTime, d));
                     db.delete(new EntityQueryLambda<>(ThreadEntity.class)
@@ -147,7 +147,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             }
 
             log.error(format, args);
-            saveTrace(Thread.currentThread(), tuple.getMessage(), tuple.getThrowable());
+            saveExceptionTrace(Thread.currentThread(), tuple.getMessage(), tuple.getThrowable());
         } catch (Throwable ie) {
             ie.printStackTrace();
         }
@@ -161,7 +161,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     public void uncaughtException(Thread t, Throwable e) {
         try {
             log.error("Thread[{}] uncaught", t.getId(), e);
-            saveTrace(t, null, e);
+            saveExceptionTrace(t, null, e);
         } catch (Throwable ie) {
             ie.printStackTrace();
         }
@@ -203,7 +203,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         return Linq.from(db.findBy(q));
     }
 
-    public void saveTrace(Thread t, String msg, Throwable e) {
+    public void saveExceptionTrace(Thread t, String msg, Throwable e) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         if (conf.getKeepDays() <= 0) {
             return;
@@ -215,10 +215,10 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             EntityDatabase db = EntityDatabase.DEFAULT;
             db.begin();
             try {
-                ErrorEntity entity = db.findById(ErrorEntity.class, pk);
+                ExceptionEntity entity = db.findById(ExceptionEntity.class, pk);
                 boolean doInsert = entity == null;
                 if (doInsert) {
-                    entity = new ErrorEntity();
+                    entity = new ExceptionEntity();
                     entity.setId(pk);
                     InvalidException invalidException = as(e, InvalidException.class);
                     ExceptionLevel level = invalidException != null && invalidException.getLevel() != null ? invalidException.getLevel()
@@ -246,7 +246,8 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }, pk);
     }
 
-    public List<ErrorEntity> queryTraces(Boolean newest, ExceptionLevel level, Integer limit) {
+    public List<ExceptionEntity> queryExceptionTraces(Date startTime, Date endTime, ExceptionLevel level, String keyword,
+                                                      Boolean newest, Integer limit) {
         if (newest == null) {
             newest = Boolean.FALSE;
         }
@@ -254,20 +255,29 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             limit = 20;
         }
 
-        EntityQueryLambda<ErrorEntity> q = new EntityQueryLambda<>(ErrorEntity.class).limit(limit);
-        if (newest) {
-            q.orderByDescending(ErrorEntity::getModifyTime);
-        } else {
-            q.orderByDescending(ErrorEntity::getOccurCount);
+        EntityQueryLambda<ExceptionEntity> q = new EntityQueryLambda<>(ExceptionEntity.class).limit(limit);
+        if (startTime != null) {
+            q.ge(ExceptionEntity::getModifyTime, startTime);
+        }
+        if (endTime != null) {
+            q.lt(ExceptionEntity::getModifyTime, endTime);
         }
         if (level != null) {
-            q.eq(ErrorEntity::getLevel, level);
+            q.eq(ExceptionEntity::getLevel, level);
+        }
+        if (!Strings.isBlank(keyword)) {
+            q.like(ExceptionEntity::getStackTrace, "%" + keyword.trim() + "%");
+        }
+        if (newest) {
+            q.orderByDescending(ExceptionEntity::getModifyTime);
+        } else {
+            q.orderByDescending(ExceptionEntity::getOccurCount);
         }
         EntityDatabase db = EntityDatabase.DEFAULT;
         return db.findBy(q);
     }
 
-    public void saveTrace(ProceedEventArgs pe, String methodName) {
+    public void saveMethodTrace(ProceedEventArgs pe, String methodName) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         long elapsedMicros;
         if (conf.getKeepDays() <= 0 || (elapsedMicros = pe.getElapsedNanos() / 1000L) < conf.getSlowMethodElapsedMicros()) {
@@ -313,7 +323,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }, pk);
     }
 
-    public List<MethodEntity> queryTraces(Boolean methodOccurMost, String methodNamePrefix, Integer limit) {
+    public List<MethodEntity> queryMethodTraces(String methodNamePrefix, Boolean methodOccurMost, Integer limit) {
         if (methodOccurMost == null) {
             methodOccurMost = Boolean.FALSE;
         }
@@ -322,13 +332,13 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
 
         EntityQueryLambda<MethodEntity> q = new EntityQueryLambda<>(MethodEntity.class).limit(limit);
+        if (methodNamePrefix != null) {
+            q.like(MethodEntity::getMethodName, String.format("%s%%", methodNamePrefix));
+        }
         if (methodOccurMost) {
             q.orderByDescending(MethodEntity::getOccurCount);
         } else {
             q.orderByDescending(MethodEntity::getElapsedMicros);
-        }
-        if (methodNamePrefix != null) {
-            q.like(MethodEntity::getMethodName, String.format("%s%%", methodNamePrefix));
         }
         EntityDatabase db = EntityDatabase.DEFAULT;
         return db.findBy(q);
