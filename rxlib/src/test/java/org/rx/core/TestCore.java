@@ -38,7 +38,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.rx.bean.$.$;
@@ -1028,7 +1027,7 @@ public class TestCore extends AbstractTester {
     public void exceptionHandle() {
         TraceHandler handler = TraceHandler.INSTANCE;
         handler.log(new InvalidException("test error"));
-        System.out.println(handler.queryTraces(null, (ExceptionLevel) null, null));
+        System.out.println(handler.queryMethodTraces(null, null, null));
 
 
         String err = "ERR";

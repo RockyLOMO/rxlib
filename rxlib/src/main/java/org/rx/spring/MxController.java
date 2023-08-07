@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.Subscribe;
+import org.rx.bean.DateTime;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.ExceptionLevel;
@@ -32,10 +33,7 @@ import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
@@ -111,23 +109,6 @@ public class MxController {
                     }
                     return source != null ? BeanMapper.DEFAULT.map(source, target, BeanMapFlag.SKIP_NULL.flags()) : target;
                 case 4:
-                    Boolean newest = Reflects.changeType(request.getParameter("newest"), Boolean.class);
-                    String level = request.getParameter("level");
-                    Boolean methodOccurMost = Reflects.changeType(request.getParameter("methodOccurMost"), Boolean.class);
-                    String methodNamePrefix = request.getParameter("methodNamePrefix");
-                    String metricsName = request.getParameter("metricsName");
-                    Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
-                    return queryTraces(newest, level, methodOccurMost, methodNamePrefix, metricsName, take);
-                case 5:
-                    return invoke(request);
-                case 10:
-                    return Linq.from(InetAddress.getAllByName(request.getParameter("host"))).select(p -> p.getHostAddress()).toArray();
-                case 11:
-                    return new ResponseEntity<>(exec(request), headers, HttpStatus.OK);
-                case 12:
-                    SocksContext.omegax(Reflects.convertQuietly(request.getParameter("p"), Integer.class, 22));
-                    return rt;
-                case 13:
                     Class<?> ft = Class.forName(request.getParameter("ft"));
                     String fn = request.getParameter("fn");
                     String fu = request.getParameter("fu");
@@ -141,6 +122,30 @@ public class MxController {
                         fms.computeIfAbsent(ft, k -> new ConcurrentHashMap<>(8)).put(fn, fu);
                     }
                     return fms;
+                case 5:
+                    return Linq.from(InetAddress.getAllByName(request.getParameter("host"))).select(p -> p.getHostAddress()).toArray();
+                case 6:
+                    return new ResponseEntity<>(exec(request), headers, HttpStatus.OK);
+                case 7:
+                    SocksContext.omegax(Reflects.convertQuietly(request.getParameter("p"), Integer.class, 22));
+                    return rt;
+                case 10:
+                    DateTime st = DateTime.valueOf(request.getParameter("startTime"));
+                    DateTime et = DateTime.valueOf(request.getParameter("endTime"));
+                    String level = request.getParameter("level");
+                    String kw = request.getParameter("keyword");
+                    Boolean newest = Reflects.changeType(request.getParameter("newest"), Boolean.class);
+                    Boolean methodOccurMost = Reflects.changeType(request.getParameter("methodOccurMost"), Boolean.class);
+                    String methodNamePrefix = request.getParameter("methodNamePrefix");
+                    String metricsName = request.getParameter("metricsName");
+                    Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
+                    return queryTraces(st, et, level, kw, newest, methodOccurMost, methodNamePrefix, metricsName, take);
+                case 11:
+                    DateTime begin = Reflects.changeType(request.getParameter("begin"), DateTime.class);
+                    DateTime end = Reflects.changeType(request.getParameter("end"), DateTime.class);
+                    return findTopUsage(begin, end);
+                case 12:
+                    return invoke(request);
             }
             return svrState(request);
         } catch (Throwable e) {
@@ -148,7 +153,7 @@ public class MxController {
         }
     }
 
-//    @PostMapping("directOffer")
+    //    @PostMapping("directOffer")
 //    public void directOffer(String appName, String socksId, String endpoint, MultipartFile binary) {
 //        SendPack pack = new SendPack(appName, socksId, Sockets.parseEndpoint(endpoint));
 //        pack.setBinary(binary);
@@ -164,6 +169,15 @@ public class MxController {
 //            binary.read(out);
 //        }
 //    }
+
+    Object exec(HttpServletRequest request) {
+        JSONObject params = getParams(request);
+        StringBuilder echo = new StringBuilder();
+        ShellCommand cmd = new ShellCommand(params.getString("cmd"), params.getString("workspace"));
+        cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
+        cmd.start().waitFor(30000);
+        return echo.toString();
+    }
 
     @SneakyThrows
     Object invoke(HttpServletRequest request) {
@@ -186,24 +200,32 @@ public class MxController {
         return Reflects.invokeMethod(method, bean, a);
     }
 
-    Object exec(HttpServletRequest request) {
-        JSONObject params = getParams(request);
-        StringBuilder echo = new StringBuilder();
-        ShellCommand cmd = new ShellCommand(params.getString("cmd"), params.getString("workspace"));
-        cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
-        cmd.start().waitFor(30000);
-        return echo.toString();
+    Map<String, Object> findTopUsage(Date begin, Date end) {
+        Map<String, Object> result = new LinkedHashMap<>(5);
+        Linq<CpuWatchman.ThreadUsageView> topUsage = CpuWatchman.findTopUsage(begin, end);
+        result.put("deadlocked", topUsage.where(p -> p.getBegin().isDeadlocked() || p.getEnd().isDeadlocked()).select(CpuWatchman.ThreadUsageView::toString));
+
+        result.put("topCpuTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getCpuNanosElapsed).select(CpuWatchman.ThreadUsageView::toString));
+
+        result.put("topUserTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getUserNanosElapsed).select(CpuWatchman.ThreadUsageView::toString));
+
+        result.put("topBlockedTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getBlockedElapsed).select(CpuWatchman.ThreadUsageView::toString));
+
+        result.put("topWaitedTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getWaitedElapsed).select(CpuWatchman.ThreadUsageView::toString));
+        return result;
     }
 
-    Map<String, Object> queryTraces(Boolean newest, String level, Boolean methodOccurMost, String methodNamePrefix, String metricsName, Integer take) {
+    Map<String, Object> queryTraces(Date startTime, Date endTime, String level, String keyword, Boolean newest,
+                                    Boolean methodOccurMost, String methodNamePrefix, String metricsName,
+                                    Integer take) {
         Map<String, Object> result = new LinkedHashMap<>(3);
         ExceptionLevel el = null;
         if (!Strings.isBlank(level)) {
             el = ExceptionLevel.valueOf(level);
         }
-        result.put("errorTraces", TraceHandler.INSTANCE.queryTraces(newest, el, take));
+        result.put("errorTraces", TraceHandler.INSTANCE.queryExceptionTraces(startTime, endTime, el, keyword, newest, take));
 
-        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryTraces(methodOccurMost, methodNamePrefix, take)).select(p -> {
+        result.put("methodTraces", Linq.from(TraceHandler.INSTANCE.queryMethodTraces(methodNamePrefix, methodOccurMost, take)).select(p -> {
             Map<String, Object> t = Sys.toJsonObject(p);
             t.remove("elapsedMicros");
             t.put("elapsed", Sys.formatNanosElapsed(p.getElapsedMicros(), 1));
@@ -255,18 +277,22 @@ public class MxController {
             i++;
         }
         j.put("sysInfo", infoJson);
+        Map<String, Object> threadInfo = new LinkedHashMap<>(5);
+        j.put("threadInfo", threadInfo);
         Linq<ThreadEntity> ts = CpuWatchman.getLatestSnapshot();
-        j.put("deadlockedThreads", ts.where(ThreadEntity::isDeadlocked).select(p -> p.toString()));
         int take = Reflects.convertQuietly(request.getParameter("take"), Integer.class, 5);
-        j.put("topUserTimeThreads", ts.orderByDescending(ThreadEntity::getUserNanos).take(take).select(p -> p.toString()));
-        j.put("topCpuTimeThreads", ts.orderByDescending(ThreadEntity::getCpuNanos).take(take).select(p -> p.toString()));
-        j.put("topBlockedTimeThreads", ts.orderByDescending(ThreadEntity::getBlockedTime).take(take).select(p -> p.toString()));
-        j.put("topWaitedTimeThreads", ts.orderByDescending(ThreadEntity::getWaitedTime).take(take).select(p -> p.toString()));
+        threadInfo.put("deadlocked", ts.where(ThreadEntity::isDeadlocked).select(p -> p.toString()));
+        threadInfo.put("topUserTime", ts.orderByDescending(ThreadEntity::getUserNanos).take(take).select(p -> p.toString()));
+        threadInfo.put("topCpuTime", ts.orderByDescending(ThreadEntity::getCpuNanos).take(take).select(p -> p.toString()));
+        threadInfo.put("topBlockedTime", ts.orderByDescending(ThreadEntity::getBlockedTime).take(take).select(p -> p.toString()));
+        threadInfo.put("topWaitedTime", ts.orderByDescending(ThreadEntity::getWaitedTime).take(take).select(p -> p.toString()));
         j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
         j.put("rxConfig", RxConfig.INSTANCE);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames())).select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.putAll(queryTraces(null, null, null, null, null, take));
+        j.putAll(queryTraces(null, null, null, null, null,
+                null, null, null,
+                take));
         return j;
     }
 
