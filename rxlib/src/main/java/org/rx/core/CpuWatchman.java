@@ -61,6 +61,7 @@ public class CpuWatchman implements TimerTask {
 
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+//    static final HotspotThreadMBean internalThreadMx = ManagementFactoryHelper.getHotspotThreadMBean();
     static final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("timer"), 800L, TimeUnit.MILLISECONDS, 8);
     //place after timer
     static final CpuWatchman INSTANCE = new CpuWatchman();
@@ -117,6 +118,7 @@ public class CpuWatchman implements TimerTask {
     }
 
     public static synchronized Linq<ThreadEntity> dumpAllThreads(boolean findDeadlock) {
+//        internalThreadMx.getInternalThreadCpuTimes()
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         boolean watchLock = (conf.watchThreadFlags & 1) == 1;
         boolean watchUserTime = (conf.watchThreadFlags & 2) == 2;
