@@ -130,8 +130,10 @@ public class MxController {
                     SocksContext.omegax(Reflects.convertQuietly(request.getParameter("p"), Integer.class, 22));
                     return rt;
                 case 10:
-                    DateTime st = DateTime.valueOf(request.getParameter("startTime"));
-                    DateTime et = DateTime.valueOf(request.getParameter("endTime"));
+                    String startTime = request.getParameter("startTime");
+                    DateTime st = startTime == null ? null : DateTime.valueOf(startTime);
+                    String endTime = request.getParameter("endTime");
+                    DateTime et = endTime == null ? null : DateTime.valueOf(endTime);
                     String level = request.getParameter("level");
                     String kw = request.getParameter("keyword");
                     Boolean newest = Reflects.changeType(request.getParameter("newest"), Boolean.class);
