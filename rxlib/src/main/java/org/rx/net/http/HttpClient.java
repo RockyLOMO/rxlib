@@ -198,7 +198,7 @@ public class HttpClient {
                 }
                 try {
                     Long len = Reflects.changeType(response.header(HttpHeaderNames.CONTENT_LENGTH.toString()), Long.class);
-                    stream = new HybridStream(len != null && len > Constants.MAX_HEAP_BUF_SIZE ? 0 : Constants.MAX_HEAP_BUF_SIZE, false);
+                    stream = new HybridStream(len != null && len > Constants.MAX_HEAP_BUF_SIZE ? HybridStream.NON_MEMORY_SIZE : Constants.MAX_HEAP_BUF_SIZE, false);
                     stream.write(body.byteStream());
                 } finally {
                     body.close();

@@ -11,6 +11,8 @@ import java.io.Serializable;
 @Slf4j
 public final class HybridStream extends IOStream implements Serializable {
     private static final long serialVersionUID = 2137331266386948293L;
+
+    public static final int NON_MEMORY_SIZE = 0;
     private final int maxMemorySize;
     private final String tempFilePath;
     private IOStream stream;
@@ -66,11 +68,10 @@ public final class HybridStream extends IOStream implements Serializable {
     }
 
     public HybridStream(int maxMemorySize, boolean directMemory, String tempFilePath) {
-        if ((this.maxMemorySize = maxMemorySize) > Constants.MAX_HEAP_BUF_SIZE) {
-            log.warn("maxMemorySize gt {}", Constants.MAX_HEAP_BUF_SIZE);
-        }
+        this.maxMemorySize = Math.min(maxMemorySize, Constants.MAX_HEAP_BUF_SIZE);
         this.tempFilePath = tempFilePath;
-        stream = maxMemorySize <= 0 ? newFileStream() : new MemoryStream(maxMemorySize, directMemory);
+        //todo when memStream write len > MAX_HEAP_BUF_SIZE
+        stream = maxMemorySize <= NON_MEMORY_SIZE ? newFileStream() : new MemoryStream(maxMemorySize, directMemory);
     }
 
     @Override
