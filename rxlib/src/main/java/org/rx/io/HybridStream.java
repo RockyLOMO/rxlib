@@ -13,76 +13,85 @@ public final class HybridStream extends IOStream implements Serializable {
     private static final long serialVersionUID = 2137331266386948293L;
     private final int maxMemorySize;
     private final String tempFilePath;
-    private MemoryStream memoryStream;
-    private FileStream fileStream;
+    private IOStream stream;
     @Setter
     private String name;
-
-    private synchronized IOStream getStream() {
-        if (fileStream != null) {
-            return fileStream;
-        }
-        if (memoryStream.getLength() > maxMemorySize) {
-            log.info("Arrival MaxMemorySize[{}] threshold, switch FileStream", maxMemorySize);
-            fileStream = tempFilePath == null ? new FileStream() : new FileStream(tempFilePath);
-            fileStream.write(memoryStream.rewind());
-            memoryStream.close();
-            memoryStream = null;
-            return fileStream;
-        }
-        return memoryStream;
-    }
 
     @Override
     public String getName() {
         if (name == null) {
-            return getStream().getName();
+            return stream.getName();
         }
         return name;
     }
 
     @Override
-    public InputStream getReader() {
-        return getStream().getReader();
+    public synchronized InputStream getReader() {
+        return stream.getReader();
     }
 
     @Override
-    public OutputStream getWriter() {
-        return getStream().getWriter();
+    public synchronized OutputStream getWriter() {
+        checkCapacity();
+        return stream.getWriter();
     }
 
     @Override
-    public boolean canSeek() {
-        return getStream().canSeek();
+    public synchronized boolean canSeek() {
+        return stream.canSeek();
     }
 
     @Override
-    public long getPosition() {
-        return getStream().getPosition();
+    public synchronized long getPosition() {
+        return stream.getPosition();
     }
 
     @Override
-    public void setPosition(long position) {
-        getStream().setPosition(position);
+    public synchronized void setPosition(long position) {
+        checkCapacity();
+        stream.setPosition(position);
     }
 
     @Override
-    public long getLength() {
-        return getStream().getLength();
+    public synchronized long getLength() {
+        return stream.getLength();
     }
 
     public HybridStream() {
-        this(Constants.MAX_HEAP_BUF_SIZE, false, null);
+        this(Constants.MAX_HEAP_BUF_SIZE, false);
+    }
+
+    public HybridStream(int maxMemorySize, boolean directMemory) {
+        this(maxMemorySize, directMemory, null);
     }
 
     public HybridStream(int maxMemorySize, boolean directMemory, String tempFilePath) {
-        this.maxMemorySize = maxMemorySize;
+        if ((this.maxMemorySize = maxMemorySize) > Constants.MAX_HEAP_BUF_SIZE) {
+            log.warn("maxMemorySize gt {}", Constants.MAX_HEAP_BUF_SIZE);
+        }
         this.tempFilePath = tempFilePath;
-        memoryStream = new MemoryStream(Constants.HEAP_BUF_SIZE, directMemory);
+        stream = maxMemorySize <= 0 ? newFileStream() : new MemoryStream(maxMemorySize, directMemory);
     }
 
     @Override
     protected void freeObjects() {
-        getStream().close();
+        stream.close();
+    }
+
+    FileStream newFileStream() {
+        return tempFilePath == null ? new FileStream() : new FileStream(tempFilePath);
+    }
+
+    synchronized void checkCapacity() {
+        if (stream instanceof FileStream) {
+            return;
+        }
+        if (stream.getLength() > maxMemorySize) {
+            log.info("Arrival MaxMemorySize[{}] threshold, switch FileStream", maxMemorySize);
+            FileStream fs = newFileStream();
+            fs.write(stream.rewind());
+            stream.close();
+            stream = fs;
+        }
     }
 }

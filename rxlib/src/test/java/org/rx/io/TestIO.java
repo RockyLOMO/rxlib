@@ -481,10 +481,11 @@ public class TestIO extends AbstractTester {
 
     @Test
     public void hybridStream() {
-        int[] maxSizes = new int[]{35, 70};
-        for (int max : maxSizes) {
-            HybridStream stream = new HybridStream(max, true, null);
+        int[] maxMemSizes = new int[]{20, 70};
+        for (int memSize : maxMemSizes) {
+            HybridStream stream = new HybridStream(memSize, true, null);
             testSeekStream(stream);
+//            stream.write(new byte[Constants.MAX_HEAP_BUF_SIZE]);
 
             long position = stream.getPosition();
             System.out.println(position);
