@@ -12,10 +12,7 @@ import okio.BufferedSink;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.Tuple;
-import org.rx.core.Linq;
-import org.rx.core.Reflects;
-import org.rx.core.RxConfig;
-import org.rx.core.Strings;
+import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
@@ -33,6 +30,7 @@ import javax.servlet.http.Part;
 import java.io.File;
 import java.io.InputStream;
 import java.io.Serializable;
+import java.lang.StringBuilder;
 import java.net.Proxy;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -199,7 +197,8 @@ public class HttpClient {
                     throw new InvalidException("Empty response from url {}", getResponseUrl());
                 }
                 try {
-                    stream = new HybridStream();
+                    Long len = Reflects.changeType(response.header(HttpHeaderNames.CONTENT_LENGTH.toString()), Long.class);
+                    stream = new HybridStream(len != null && len > Constants.MAX_HEAP_BUF_SIZE ? 0 : Constants.MAX_HEAP_BUF_SIZE, false);
                     stream.write(body.byteStream());
                 } finally {
                     body.close();
