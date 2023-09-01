@@ -15,6 +15,10 @@ public class AuthenticProxy extends Proxy {
     @Setter
     private boolean directOnFail;
 
+    public AuthenticProxy(Type type, SocketAddress sa) {
+        this(type, sa, null, null);
+    }
+
     public AuthenticProxy(Type type, SocketAddress sa, String username, String password) {
         super(type, sa);
         authenticator = (route, response) -> {

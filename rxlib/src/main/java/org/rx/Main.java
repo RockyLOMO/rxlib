@@ -12,6 +12,7 @@ import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.http.AuthenticProxy;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
@@ -31,6 +32,7 @@ import org.rx.util.function.TripleAction;
 import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -79,6 +81,7 @@ public final class Main implements SocksSupport {
         public int waitIpInfoMillis = 1000;
         public int ddnsSeconds;
         public List<String> ddnsDomains;
+        public String godaddyProxy;
         public String godaddyKey;
 
         public boolean pcap2socks;
@@ -337,7 +340,10 @@ public final class Main implements SocksSupport {
                 int i = ddns.indexOf(".");
                 String domain = ddns.substring(i + 1), name = ddns.substring(0, i);
                 log.info("ddns-{}.{}: {}->{}", name, domain, currentIps, wanIp);
-                IPSearcher.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress());
+                AuthenticProxy p = conf.godaddyProxy != null
+                        ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
+                        : null;
+                IPSearcher.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress(), p);
             }
         }, conf.ddnsSeconds * 1000L);
     }
