@@ -610,8 +610,14 @@ public final class Linq<T> implements Iterable<T>, Serializable {
             if (t == null) {
                 continue;
             }
-            type = t.getClass();
-            break;
+            if (type == null) {
+                type = t.getClass();
+                continue;
+            }
+            if (type != t.getClass()) {
+                type = null;
+                break;
+            }
         }
         if (type == null) {
             type = Object.class;
