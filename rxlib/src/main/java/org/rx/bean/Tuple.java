@@ -3,8 +3,10 @@ package org.rx.bean;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.commons.collections4.keyvalue.DefaultMapEntry;
 
 import java.io.Serializable;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -23,4 +25,8 @@ public class Tuple<T1, T2> implements Serializable {
 
     public T1 left;
     public T2 right;
+
+    public DefaultMapEntry<T1, T2> toMapEntry() {
+        return new DefaultMapEntry<>(left, right);
+    }
 }
