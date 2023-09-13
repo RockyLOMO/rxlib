@@ -28,7 +28,7 @@ public final class DateTime extends Date {
     static final String TIME_FORMAT = "HH:mm:ss";
     public static final String DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
     public static final String FULL_FORMAT = "yyyy-MM-dd HH:mm:ss,SSSZ";
-    public static final Linq<String> FORMATS = Linq.from(DATE_TIME_FORMAT, "yyyy-MM-dd HH:mm:ss,SSS", FULL_FORMAT, "yyyyMMddHHmmssSSS");
+    public static final Linq<String> FORMATS = Linq.from(FULL_FORMAT, "yyyy-MM-dd HH:mm:ss,SSS", DATE_TIME_FORMAT, "yyyy-MM-dd'T'HH:mm:ss,SSSZ", "yyyyMMddHHmmssSSS");
     static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
 
     public static DateTime now() {

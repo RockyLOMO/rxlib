@@ -171,13 +171,13 @@ public class Interceptors {
         }
 
         @Override
-        protected void onLog(Signature signature, ProceedEventArgs eventArgs) {
+        protected void onLog(Signature signature, ProceedEventArgs eventArgs, String paramSnapshot) {
             Executable r = signature instanceof ConstructorSignature
                     ? ((ConstructorSignature) signature).getConstructor()
                     : ((MethodSignature) signature).getMethod();
             EnableTrace a = r.getAnnotation(EnableTrace.class);
             if (a == null || a.doLog()) {
-                super.onLog(signature, eventArgs);
+                super.onLog(signature, eventArgs, paramSnapshot);
             }
         }
 
