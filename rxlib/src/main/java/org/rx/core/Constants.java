@@ -43,6 +43,8 @@ public interface Constants {
     int ADVICE_SHARE_TIME_INDEX = 0;
     int ADVICE_SHARE_FORK_JOIN_FUNC_INDEX = 1;
 
+    String ENABLE_FLAG = "1";
+
     /**
      * do not edit
      */
