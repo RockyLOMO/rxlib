@@ -70,6 +70,7 @@ public final class RxConfig {
 
         String APP_ID = "app.id";
         String MX_SAMPLING_PERIOD = "app.mxSamplingPeriod";
+        String DATE_FORMAT = "app.dateFormat";
         String LOG_STRATEGY = "app.logStrategy";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String AES_KEY = "app.aesKey";
@@ -188,6 +189,7 @@ public final class RxConfig {
     String aesKey;
     String mxpwd;
     long mxSamplingPeriod;
+    String dateFormat;
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
     final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
@@ -271,6 +273,7 @@ public final class RxConfig {
         aesKey = SystemPropertyUtil.get(ConfigNames.AES_KEY, aesKey);
         mxpwd = SystemPropertyUtil.get(ConfigNames.MXPWD, mxpwd);
         mxSamplingPeriod = SystemPropertyUtil.getLong(ConfigNames.MX_SAMPLING_PERIOD, mxSamplingPeriod);
+        dateFormat = SystemPropertyUtil.get(ConfigNames.DATE_FORMAT, dateFormat);
         String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
         if (v != null) {
             jsonSkipTypes.clear();
