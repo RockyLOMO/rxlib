@@ -50,7 +50,7 @@ public final class DateTime extends Date {
     public static DateTime valueOf(@NonNull String dateString) {
         Throwable lastEx = null;
         int offset = dateString.length() >= 23 ? 0 : 3;
-        int len = 3, fb = 6;
+        int len = offset + 3, fb = 6;
         for (int i = offset; i < len; i++) {
             try {
                 return valueOf(dateString, FORMATS[i]);

@@ -857,6 +857,10 @@ public class TestCore extends AbstractTester {
 
     @Test
     public void json() {
+        System.out.println(DateTime.valueOf("2020-02-04 00:00:00"));
+        System.out.println(DateTime.valueOf("2020-02-05 00:00:00.000"));
+        System.out.println(DateTime.valueOf("20200206000000000"));
+
 //        RxConfig.INSTANCE.getJsonSkipTypes().add(ErrorBean.class);
         Object[] args = new Object[]{str_name_wyf, proxy(HttpServletResponse.class, (m, i) -> {
             throw new InvalidException("wont reach");
