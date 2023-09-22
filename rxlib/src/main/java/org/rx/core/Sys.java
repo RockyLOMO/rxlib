@@ -467,7 +467,7 @@ public final class Sys extends SystemUtils {
     //endregion
 
     //region common
-    public static <T extends Serializable> T deepClone(T obj) {
+    public static <T> T deepClone(T obj) {
         return Serializer.DEFAULT.deserialize(Serializer.DEFAULT.serialize(obj));
     }
 

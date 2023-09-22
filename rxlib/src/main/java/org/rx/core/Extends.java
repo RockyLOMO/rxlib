@@ -67,6 +67,7 @@ public interface Extends extends Serializable {
                 TraceHandler.INSTANCE.log("quietly retry={}/{}", i, retryCount, e);
                 last = e;
             }
+            sleep(0);
         }
         if (last != null && throwOnLast) {
             throw InvalidException.sneaky(last);

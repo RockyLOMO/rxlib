@@ -12,6 +12,7 @@ import org.rx.annotation.EnableTrace;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.Tuple;
 import org.rx.core.Arrays;
+import org.rx.core.Constants;
 import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.exception.ApplicationException;
@@ -90,7 +91,7 @@ public class Interceptors {
                 return joinPoint.proceed();
             }
 
-            if (Strings.equals(httpEnv.left.getParameter("rmx"), RxConfig.INSTANCE.getMxpwd())) {
+            if (Strings.equals(httpEnv.left.getParameter("rmx"), Constants.ENABLE_FLAG)) {
                 MxController controller = SpringContext.getBean(MxController.class);
                 if (controller != null) {
                     return controller.health(httpEnv.left);
@@ -171,13 +172,13 @@ public class Interceptors {
         }
 
         @Override
-        protected void onLog(Signature signature, ProceedEventArgs eventArgs) {
+        protected void onLog(Signature signature, ProceedEventArgs eventArgs, String paramSnapshot) {
             Executable r = signature instanceof ConstructorSignature
                     ? ((ConstructorSignature) signature).getConstructor()
                     : ((MethodSignature) signature).getMethod();
             EnableTrace a = r.getAnnotation(EnableTrace.class);
             if (a == null || a.doLog()) {
-                super.onLog(signature, eventArgs);
+                super.onLog(signature, eventArgs, paramSnapshot);
             }
         }
 

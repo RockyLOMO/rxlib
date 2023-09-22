@@ -168,13 +168,16 @@ public class HttpClient {
         }
 
         @JSONField(serialize = false)
-        public Headers getHeaders() {
+        public Charset getCharset() {
+            return response.body() != null ? Reflects.invokeMethod(response.body(), "charset") : StandardCharsets.UTF_8;
+        }
+
+        public Headers responseHeaders() {
             return response.headers();
         }
 
-        @JSONField(serialize = false)
-        public Charset getCharset() {
-            return Reflects.invokeMethod(response.body(), "charset");
+        public InputStream responseStream() {
+            return response.body() != null ? response.body().byteStream() : null;
         }
 
         @SneakyThrows
@@ -619,13 +622,13 @@ public class HttpClient {
         ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), reqContent.toBody()).build()).execute());
         resContent.cachingStream = cachingStream;
         servletResponse.setStatus(resContent.response.code());
-        for (Pair<? extends String, ? extends String> header : resContent.getHeaders()) {
+        for (Pair<? extends String, ? extends String> header : resContent.responseHeaders()) {
             servletResponse.setHeader(header.getFirst(), header.getSecond());
         }
 
         ResponseBody responseBody = resContent.response.body();
         boolean hasResBody = responseBody != null;
-        log.info("Forward response: {}\nheaders: {} hasBody: {}", resContent.getResponseUrl(), toJsonString(resContent.getHeaders()), hasResBody);
+        log.info("Forward response: {}\nheaders: {} hasBody: {}", resContent.getResponseUrl(), toJsonString(resContent.responseHeaders()), hasResBody);
         if (hasResBody) {
             MediaType responseContentType = responseBody.contentType();
             if (responseContentType != null) {

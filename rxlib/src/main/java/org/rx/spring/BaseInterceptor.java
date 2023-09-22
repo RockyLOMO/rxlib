@@ -63,6 +63,7 @@ public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor>
             RxConfig conf = RxConfig.INSTANCE;
             pe.setLogStrategy(conf.getLogStrategy());
             pe.setLogTypeWhitelist(conf.getLogTypeWhitelist());
+            String paramSnapshot = jsonString(signature, pe.getParameters());
             try {
                 pe.proceed(() -> joinPoint.proceed(pe.getParameters()));
             } catch (Throwable e) {
@@ -73,7 +74,7 @@ public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor>
                 }
             } finally {
                 TraceHandler.INSTANCE.saveMethodTrace(pe, signature.getName());
-                onLog(signature, pe);
+                onLog(signature, pe, paramSnapshot);
                 raiseEvent(onProceed, pe);
             }
             return pe.getReturnValue();
@@ -84,10 +85,10 @@ public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor>
         }
     }
 
-    protected void onLog(Signature signature, ProceedEventArgs eventArgs) {
+    protected void onLog(Signature signature, ProceedEventArgs eventArgs, String paramSnapshot) {
         log(eventArgs, msg -> {
             msg.appendLine("Call:\t%s", signature.getName());
-            msg.appendLine("Parameters:\t%s", jsonString(signature, eventArgs.getParameters()))
+            msg.appendLine("Parameters:\t%s", paramSnapshot)
                     .appendLine("ReturnValue:\t%s\tElapsed=%s", jsonString(signature, eventArgs.getReturnValue()), Sys.formatNanosElapsed(eventArgs.getElapsedNanos()));
             if (eventArgs.getError() != null) {
                 msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());

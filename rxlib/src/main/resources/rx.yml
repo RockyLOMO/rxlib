@@ -56,6 +56,7 @@ app:
   aesKey: ℞FREEDOM
   mxpwd: rxlib
   mxSamplingPeriod: 60000
+  dateFormat: yyyy-MM-dd HH:mm:ss
   jsonSkipTypes:
     - javax.servlet.ServletRequest
     - javax.servlet.ServletResponse

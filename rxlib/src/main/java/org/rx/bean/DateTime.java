@@ -4,8 +4,7 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
-import org.rx.core.Arrays;
-import org.rx.core.Linq;
+import org.rx.core.RxConfig;
 import org.rx.exception.ApplicationException;
 
 import java.text.ParseException;
@@ -15,6 +14,7 @@ import java.util.Date;
 import java.util.TimeZone;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.values;
 
 /**
@@ -24,11 +24,14 @@ import static org.rx.core.Extends.values;
 public final class DateTime extends Date {
     private static final long serialVersionUID = 414744178681347341L;
     public static final DateTime MIN = new DateTime(2000, 1, 1, 0, 0, 0), MAX = new DateTime(9999, 12, 31, 0, 0, 0);
-    static final String DATE_FORMAT = "yyy-MM-dd";
-    static final String TIME_FORMAT = "HH:mm:ss";
+    public static final String DATE_FORMAT = "yyy-MM-dd";
+    public static final String TIME_FORMAT = "HH:mm:ss";
     public static final String DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
-    public static final String FULL_FORMAT = "yyyy-MM-dd HH:mm:ss,SSSZ";
-    public static final Linq<String> FORMATS = Linq.from(DATE_TIME_FORMAT, "yyyy-MM-dd HH:mm:ss,SSS", FULL_FORMAT, "yyyyMMddHHmmssSSS");
+    public static final String ISO_DATE_TIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSSZ";
+    //2020-02-02 14:00:00.001 会适配 yyyy-MM-dd HH:mm:ss
+    public static final String[] FORMATS = new String[]{ISO_DATE_TIME_FORMAT, "yyyy-MM-dd HH:mm:ss.SSSZ", "yyyy-MM-dd HH:mm:ss.SSS",
+            DATE_TIME_FORMAT, DATE_FORMAT, TIME_FORMAT,
+            "yyyyMMddHHmmssSSS"};
     static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
 
     public static DateTime now() {
@@ -44,11 +47,20 @@ public final class DateTime extends Date {
     }
 
     @ErrorCode(cause = ParseException.class)
-    public static DateTime valueOf(String dateString) {
+    public static DateTime valueOf(@NonNull String dateString) {
         Throwable lastEx = null;
-        for (String format : Arrays.toList(DATE_TIME_FORMAT, "yyyy-MM-dd HH:mm:ss,SSS", FULL_FORMAT, "yyyyMMddHHmmssSSS")) {
+        int offset = dateString.length() >= 23 ? 0 : 3;
+        int len = offset + 3, fb = 6;
+        for (int i = offset; i < len; i++) {
             try {
-                return valueOf(dateString, format);
+                return valueOf(dateString, FORMATS[i]);
+            } catch (Throwable ex) {
+                lastEx = ex;
+            }
+        }
+        for (int i = fb; i < FORMATS.length; i++) {
+            try {
+                return valueOf(dateString, FORMATS[i]);
             } catch (Throwable ex) {
                 lastEx = ex;
             }
@@ -260,7 +272,7 @@ public final class DateTime extends Date {
 
     @Override
     public String toString() {
-        return toString(FULL_FORMAT);
+        return toString(ifNull(RxConfig.INSTANCE.getDateFormat(), DATE_TIME_FORMAT));
     }
 
     public String toString(@NonNull String format) {
