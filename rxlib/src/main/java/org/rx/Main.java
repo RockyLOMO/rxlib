@@ -84,7 +84,8 @@ public final class Main implements SocksSupport {
         public String godaddyProxy;
         public String godaddyKey;
 
-        public boolean pcap2socks;
+        public String pcapSourceIp;
+        public boolean pcapUdpDirect;
         public String udp2rawEndpoint;
     }
 
@@ -210,6 +211,10 @@ public final class Main implements SocksSupport {
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
+            if (conf.pcapSourceIp != null
+                    && InetAddress.getByName(conf.pcapSourceIp).equals(e.getSource().getAddress())) {
+                log.info("pcap pack {}", e.getSource());
+            }
 //          if (conf.pcap2socks && e.getSource().getAddress().isLoopbackAddress()) {
 //              Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
 //              if (cache.get(hashKey("pcap", e.getSource().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
