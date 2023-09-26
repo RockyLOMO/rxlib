@@ -55,13 +55,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             server.raiseEvent(server.onRoute, e);
             connect(inbound.channel(), msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
-            log.info("socks5[{}] UDP_ASSOCIATE {}", server.getConfig().getListenPort(), msg);
+            log.info("socks5[{}] UdpAssociate {}", server.getConfig().getListenPort(), msg);
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
-            int max = Math.max(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds());
             Tasks.setTimeout(() -> {
                 log.info("UdpAssociate client close");
                 Sockets.closeOnFlushed(inbound.channel());
-            }, max * 1000L);
+            }, server.config.getUdpAssociateMaxLifeSeconds() * 1000L);
             pipeline.addLast(Socks5UdpAssociateHandler.DEFAULT);
 
             InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
