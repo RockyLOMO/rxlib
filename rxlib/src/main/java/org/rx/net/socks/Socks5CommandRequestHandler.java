@@ -30,7 +30,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
         SocksProxyServer server = SocksContext.server(inbound.channel());
-        log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
+//        log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FORBIDDEN, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
@@ -55,6 +55,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             server.raiseEvent(server.onRoute, e);
             connect(inbound.channel(), msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
+            log.info("socks5[{}] UDP_ASSOCIATE {}", server.getConfig().getListenPort(), msg);
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
             int max = Math.max(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds());
             Tasks.setTimeout(() -> {
@@ -65,6 +66,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
             Socks5AddressType bindAddrType = bindEp.getAddress() instanceof Inet6Address ? Socks5AddressType.IPv6 : Socks5AddressType.IPv4;
+//            Socks5AddressType bindAddrType = msg.dstAddrType();
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, bindAddrType, bindEp.getHostString(), bindEp.getPort()));
 //            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, msg.dstAddrType(), msg.dstAddr(), msg.dstPort()));
         } else {
