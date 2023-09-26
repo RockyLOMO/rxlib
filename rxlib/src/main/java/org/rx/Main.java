@@ -214,6 +214,10 @@ public final class Main implements SocksSupport {
             if (conf.pcapSourceIp != null
                     && InetAddress.getByName(conf.pcapSourceIp).equals(e.getSource().getAddress())) {
                 log.info("pcap pack {}", e.getSource());
+                if (conf.pcapUdpDirect) {
+                    e.setUpstream(new Upstream(dstEp));
+                    return;
+                }
             }
 //          if (conf.pcap2socks && e.getSource().getAddress().isLoopbackAddress()) {
 //              Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
