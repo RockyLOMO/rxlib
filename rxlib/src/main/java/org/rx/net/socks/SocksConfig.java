@@ -23,6 +23,7 @@ public class SocksConfig extends SocketConfig {
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = 60 * 4;
     private int writeTimeoutSeconds;
+    private int udpAssociateMaxLifeSeconds = 60 * 60 * 12;
     private int udpReadTimeoutSeconds = 60 * 20;
     private int udpWriteTimeoutSeconds;
     private boolean enableUdp2raw;
