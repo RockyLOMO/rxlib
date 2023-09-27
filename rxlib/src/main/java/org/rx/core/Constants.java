@@ -45,6 +45,10 @@ public interface Constants {
 
     String ENABLE_FLAG = "1";
 
+    String CACHE_REGION_ERROR_CODE = "ERR";
+    String CACHE_REGION_BEAN_PROPERTIES = "PROP";
+    String CACHE_REGION_INTERFACE_METHOD = "IM";
+    String CACHE_REGION_SKIP_SERIALIZE = "SS";
     /**
      * do not edit
      */

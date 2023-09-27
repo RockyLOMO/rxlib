@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
+import org.rx.core.cache.MemoryCache;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AccessibleObject;
@@ -66,13 +67,13 @@ public class YamlCodeHandler {
             return;
         }
 
-        Cache<String, Tuple<Class<?>, Method[]>> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+        Cache<String, Tuple<Class<?>, Method[]>> cache = Cache.getInstance(MemoryCache.class);
         for (StackTraceElement stack : e.getStacks()) {
             Map<String, Object> messageSource = getMessageSource().readAs(stack.getClassName(), Map.class);
             if (messageSource == null) {
                 continue;
             }
-            Tuple<Class<?>, Method[]> caller = as(cache.get(fastCacheKey("STrace", stack.getClassName()), p -> {
+            Tuple<Class<?>, Method[]> caller = as(cache.get(fastCacheKey(Constants.CACHE_REGION_ERROR_CODE, stack.getClassName()), p -> {
                 Class<?> type = Reflects.loadClass(stack.getClassName(), false);
                 return Tuple.of(type, type.getDeclaredMethods());
             }), Tuple.class);

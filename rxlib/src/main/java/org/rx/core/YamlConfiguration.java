@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONReader;
 import lombok.Getter;
 import lombok.NonNull;
@@ -17,6 +18,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
 import java.io.InputStream;
+import java.lang.reflect.Type;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -159,17 +161,17 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         return val != null ? (T) val : defaultVal;
     }
 
-    public <T> T readAs(Class<T> type) {
+    public <T> T readAs(Type type) {
         return readAs(null, type, false);
     }
 
-    public <T> T readAs(String key, Class<T> type) {
+    public <T> T readAs(String key, Type type) {
         return readAs(key, type, false);
     }
 
     @ErrorCode("keyError")
     @ErrorCode("partialKeyError")
-    public synchronized <T> T readAs(String key, Class<T> type, boolean throwOnEmpty) {
+    public synchronized <T> T readAs(String key, Type type, boolean throwOnEmpty) {
         Map<String, Object> tmp = yaml;
         if (key == null) {
             return convert(tmp, type);
@@ -206,19 +208,21 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         return null;
     }
 
-    <T> T convert(Object p, Class<T> type) {
+    <T> T convert(Object p, Type type) {
         if (type == null) {
             return null;
         }
         Map<String, Object> map = as(p, Map.class);
-        if (map != null) {
-            if (type.equals(Map.class)) {
-                return (T) map;
-            }
-//            new Yaml().loadAs()
-//            return new JSONObject(map).to(type, JSONReader.Feature.SupportClassForName);
-            return JSON.parseObject(JSON.toJSONString(map), type, JSONReader.Feature.SupportClassForName);
+        boolean isProp = map != null;
+        if (isProp && type.equals(Map.class)) {
+            return (T) map;
         }
-        return Reflects.changeType(p, type);
+        Class<T> clz = as(type, Class.class);
+        if (isProp || clz == null) {
+            //new Yaml().loadAs() 不支持嵌套泛型
+//            return new JSONObject(map).to(type, JSONReader.Feature.SupportClassForName);
+            return JSON.parseObject(JSON.toJSONString(p), type, JSONReader.Feature.SupportClassForName);
+        }
+        return Reflects.changeType(p, clz);
     }
 }

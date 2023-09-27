@@ -184,6 +184,9 @@ public class Interceptors {
 
         protected boolean doValidate(Executable r) {
             EnableTrace a = r.getAnnotation(EnableTrace.class);
+            if (a == null) {
+                a = r.getDeclaringClass().getAnnotation(EnableTrace.class);
+            }
             return a != null && a.doValidate();
         }
     }

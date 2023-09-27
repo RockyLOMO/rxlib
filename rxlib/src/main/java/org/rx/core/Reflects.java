@@ -307,7 +307,7 @@ public class Reflects extends ClassUtils {
 
         Class<?> declaringClass = method.getDeclaringClass();
         MethodHandle methodHandle;
-//        if (App.IS_JAVA_11) {
+//        if (Sys.IS_JAVA_11) {
 //            methodHandle = MethodHandles.lookup()
 //                    .findSpecial(
 //                            method.getDeclaringClass(),
@@ -371,9 +371,32 @@ public class Reflects extends ClassUtils {
         return (T) method.invoke(instance, args);
     }
 
+    public static Method getInterfaceMethod(Method method) {
+        Cache<Method, Object> cache = Cache.getInstance(MemoryCache.class);
+        Object v = cache.get(method, k -> {
+            Class<?> type = method.getDeclaringClass();
+            NoSuchMethodException lastEx = null;
+            for (Class<?> i : type.getInterfaces()) {
+                try {
+                    return i.getMethod(method.getName(), method.getParameterTypes());
+                } catch (NoSuchMethodException e) {
+                    lastEx = e;
+                }
+            }
+            if (lastEx != null) {
+                log.warn("getInterfaceMethod", lastEx);
+            }
+            return Cache.NULL_VALUE;
+        });
+        if (v == Cache.NULL_VALUE) {
+            return null;
+        }
+        return (Method) v;
+    }
+
     public static Map<String, Linq<Method>> getMethodMap(Class<?> type) {
         return methodCache.getValue().get(type, k -> {
-            List<Method> all = new ArrayList<>();
+            Set<Method> all = new HashSet<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
                 Method[] declared = type.getDeclaredMethods(); //can't get kotlin private methods
                 for (Method method : declared) {
@@ -397,8 +420,8 @@ public class Reflects extends ClassUtils {
 
     //region fields
     public static Linq<PropertyNode> getProperties(Class<?> to) {
-        Cache<String, Linq<PropertyNode>> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-        return cache.get(fastCacheKey("prop", to), k -> {
+        Cache<String, Linq<PropertyNode>> cache = Cache.getInstance(MemoryCache.class);
+        return cache.get(fastCacheKey(Constants.CACHE_REGION_BEAN_PROPERTIES, to), k -> {
             Method getClass = Object.class.getDeclaredMethod("getClass");
             Linq<Method> q = Linq.from(to.getMethods());
             Linq<Tuple<String, Method>> setters = q.where(p -> p.getParameterCount() == 1 && p.getName().startsWith(SET_PROPERTY)).select(p -> Tuple.of(propertyName(p.getName()), p));

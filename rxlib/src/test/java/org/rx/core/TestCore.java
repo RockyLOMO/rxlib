@@ -608,7 +608,7 @@ public class TestCore extends AbstractTester {
 //        BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
 //        testCache(new MemoryCache<>(dump));
 
-        DiskCache<Tuple<?, ?>, Integer> diskCache = (DiskCache) Cache.getInstance(Cache.DISK_CACHE);
+        DiskCache<Tuple<?, ?>, Integer> diskCache = (DiskCache) Cache.getInstance(DiskCache.class);
         testCache(diskCache);
 
         System.in.read();
