@@ -540,6 +540,9 @@ public final class Sys extends SystemUtils {
 
     //TypeReference
     public static <T> T fromJson(Object src, Type type) {
+//        if (src == null) {
+//            return null;
+//        }
         String js = toJsonString(src);
         try {
             return JSON.parseObject(js, type, JSON_READ_FLAGS);
