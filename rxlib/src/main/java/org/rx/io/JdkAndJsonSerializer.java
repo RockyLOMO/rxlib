@@ -3,10 +3,8 @@ package org.rx.io;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Cache;
-import org.rx.core.JsonTypeInvoker;
-import org.rx.core.Reflects;
-import org.rx.core.Strings;
+import org.rx.core.*;
+import org.rx.core.cache.MemoryCache;
 import org.rx.exception.TraceHandler;
 
 import java.io.*;
@@ -51,9 +49,9 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
 
     @SneakyThrows
     public <T> void serialize(@NonNull T obj, @NonNull Type type, @NonNull IOStream stream) {
-        Cache<String, Object> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+        Cache<String, Object> cache = Cache.getInstance(MemoryCache.class);
         Class<?> objKls = obj.getClass();
-        String skipNS = fastCacheKey("skipNS", objKls);
+        String skipNS = fastCacheKey(Constants.CACHE_REGION_SKIP_SERIALIZE, objKls);
         Object obj0 = !cache.containsKey(skipNS) && Serializable.class.isAssignableFrom(objKls) ? obj : new JsonWrapper(type, obj);
 
         Compressible c0 = as(obj0, Compressible.class);

@@ -10,8 +10,7 @@ import org.rx.util.function.BiFunc;
 import static org.rx.core.Constants.NON_RAW_TYPES;
 
 public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
-    Class<MemoryCache> MEMORY_CACHE = MemoryCache.class;
-    Class<DiskCache> DISK_CACHE = DiskCache.class;
+    Object NULL_VALUE = new Object();
 
     static <TK, TV> TV getOrSet(TK key, BiFunc<TK, TV> loadingFunc) {
         return getOrSet(key, loadingFunc, null);
@@ -25,6 +24,12 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
         return IOC.get(Cache.class);
     }
 
+    /**
+     * @param cacheType MEMORY_CACHE, DISK_CACHE
+     * @param <TK>
+     * @param <TV>
+     * @return
+     */
     @SuppressWarnings(NON_RAW_TYPES)
     static <TK, TV> Cache<TK, TV> getInstance(Class<? extends Cache> cacheType) {
         return IOC.get(cacheType, (Class) MemoryCache.class);

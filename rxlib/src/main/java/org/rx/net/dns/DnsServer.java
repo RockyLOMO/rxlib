@@ -54,7 +54,7 @@ public class DnsServer extends Disposable {
             return;
         }
 
-        DiskCache<Object, Object> cache = (DiskCache<Object, Object>) Cache.getInstance(Cache.DISK_CACHE);
+        DiskCache<Object, Object> cache = (DiskCache<Object, Object>) Cache.getInstance(DiskCache.class);
         if (ENABLE_AUTO_RENEW) {
             cache.onExpired.combine((s, e) -> {
                 Map.Entry<Object, Object> entry = e.getValue();

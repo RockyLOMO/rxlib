@@ -7,6 +7,7 @@ import lombok.Setter;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.Linq;
+import org.rx.core.cache.MemoryCache;
 import org.rx.util.function.BiFunc;
 
 import java.io.Serializable;
@@ -63,7 +64,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     }
 
     public <S> T next(S steeringKey, int ttl, boolean isSliding) {
-        Cache<S, T> cache = Cache.getInstance(Cache.MEMORY_CACHE);
+        Cache<S, T> cache = Cache.getInstance(MemoryCache.class);
         return cache.get(steeringKey, k -> next(), isSliding ? CachePolicy.sliding(ttl) : CachePolicy.absolute(ttl));
     }
 

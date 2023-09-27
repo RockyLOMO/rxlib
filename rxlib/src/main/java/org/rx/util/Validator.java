@@ -2,6 +2,7 @@ package org.rx.util;
 
 import org.rx.annotation.ValidRegex;
 import org.rx.core.Linq;
+import org.rx.core.Reflects;
 import org.rx.util.function.Func;
 
 import javax.validation.ConstraintValidator;
@@ -102,6 +103,13 @@ public class Validator {
         for (ConstraintViolation<Object> violation : executableValidator.validateParameters(instance, member, parameterValues)) {
             doThrow(violation);
         }
+//        Method interfaceMethod = Reflects.getInterfaceMethod(member);
+//        boolean hasIM = interfaceMethod != null;
+//        if (hasIM) {
+//            for (ConstraintViolation<Object> violation : executableValidator.validateParameters(instance, interfaceMethod, parameterValues)) {
+//                doThrow(violation);
+//            }
+//        }
 
         if (proceed == null) {
             return null;
@@ -110,6 +118,11 @@ public class Validator {
         for (ConstraintViolation<Object> violation : executableValidator.validateReturnValue(instance, member, retVal = proceed.get())) {
             doThrow(violation);
         }
+//        if (hasIM) {
+//            for (ConstraintViolation<Object> violation : executableValidator.validateReturnValue(instance, interfaceMethod, retVal)) {
+//                doThrow(violation);
+//            }
+//        }
         return retVal;
     }
 

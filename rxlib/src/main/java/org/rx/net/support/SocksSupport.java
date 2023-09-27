@@ -2,6 +2,7 @@ package org.rx.net.support;
 
 import org.rx.core.Arrays;
 import org.rx.core.Cache;
+import org.rx.core.cache.DiskCache;
 import org.rx.net.dns.DnsServer;
 
 import java.math.BigInteger;
@@ -20,7 +21,7 @@ public interface SocksSupport extends AutoCloseable, DnsServer.ResolveIntercepto
     EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
     static Cache<BigInteger, UnresolvedEndpoint> fakeDict() {
-        return Cache.getInstance(Cache.DISK_CACHE);
+        return Cache.getInstance(DiskCache.class);
     }
 
     void fakeEndpoint(BigInteger hash, String realEndpoint);

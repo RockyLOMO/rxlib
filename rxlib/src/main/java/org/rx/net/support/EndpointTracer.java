@@ -3,6 +3,7 @@ package org.rx.net.support;
 import io.netty.channel.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Cache;
+import org.rx.core.cache.MemoryCache;
 
 import java.net.SocketAddress;
 
@@ -10,7 +11,7 @@ import static org.rx.core.Sys.fastCacheKey;
 
 @Slf4j
 public final class EndpointTracer {
-    final Cache<String, SocketAddress> index = Cache.getInstance(Cache.MEMORY_CACHE);
+    final Cache<String, SocketAddress> index = Cache.getInstance(MemoryCache.class);
 
     String key(SocketAddress sa) {
         return fastCacheKey("EpTrace", sa);
