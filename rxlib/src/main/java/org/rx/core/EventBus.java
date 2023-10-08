@@ -89,7 +89,7 @@ public class EventBus implements EventPublisher<EventBus> {
         Map<Class<?>, Set<Tuple<Object, Method>>> methodsInListener = new HashMap<>();
         for (Method method : Linq.from(Reflects.getMethodMap(listener instanceof Class ? (Class<?>) listener : listener.getClass()).values()).selectMany(p -> p).where(p -> p.isAnnotationPresent(Subscribe.class) && !p.isSynthetic())) {
             if (method.getParameterCount() != 1) {
-                throw new InvalidException("Subscriber method %s has @Subscribe annotation must have exactly 1 parameter.", method);
+                throw new InvalidException("Subscriber method {} has @Subscribe annotation must have exactly 1 parameter.", method);
             }
             Class<?> eventType = method.getParameterTypes()[0];
             methodsInListener.computeIfAbsent(eventType, k -> new HashSet<>()).add(Tuple.of(listener, method));
