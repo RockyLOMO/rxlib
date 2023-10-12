@@ -3,6 +3,7 @@ package org.rx.bean;
 import com.alibaba.fastjson2.annotation.JSONField;
 import lombok.Getter;
 import lombok.NonNull;
+import org.rx.core.Arrays;
 import org.rx.core.Constants;
 import org.rx.core.Extends;
 import org.rx.core.Reflects;
@@ -30,8 +31,19 @@ public class DataRow implements Extends {
         return items.toArray();
     }
 
-    public void setArray(@NonNull Object... array) {
-        require(array, array.length == table.columns.size());
+    public void setArray(Object... array) {
+        if (array == null) {
+            array = Arrays.EMPTY_OBJECT_ARRAY;
+        }
+        int colSize = table.columns.size();
+        if (array.length != colSize) {
+            if (table.checkCellsSize) {
+                throw new InvalidException("Array length does not match {}", colSize);
+            }
+            Object[] tmp = new Object[colSize];
+            System.arraycopy(array, 0, tmp, 0, Math.min(array.length, colSize));
+            array = tmp;
+        }
 
         items.clear();
         for (int i = 0; i < array.length; i++) {
