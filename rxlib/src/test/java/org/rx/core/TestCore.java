@@ -968,7 +968,7 @@ public class TestCore extends AbstractTester {
     @SneakyThrows
     @Test
     public void reflect() {
-        for (InputStream resource : Reflects.getResources(Constants.DEFAULT_CONFIG_FILE)) {
+        for (InputStream resource : Reflects.getResources(Constants.DEFAULT_CONFIG_FILES[0])) {
             System.out.println(resource);
             assert resource != null;
         }

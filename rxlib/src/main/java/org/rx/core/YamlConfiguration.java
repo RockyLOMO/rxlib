@@ -35,8 +35,7 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         final String filePath;
     }
 
-    static final String APP_CONFIG_FILE = "application.yml";
-    public static final YamlConfiguration RX_CONF = new YamlConfiguration(Constants.DEFAULT_CONFIG_FILE, APP_CONFIG_FILE);
+    public static final YamlConfiguration RX_CONF = new YamlConfiguration(Constants.DEFAULT_CONFIG_FILES);
 
     public static Map<String, Object> loadYaml(String... fileNames) {
         return loadYaml(Linq.from(fileNames).selectMany(p -> {
