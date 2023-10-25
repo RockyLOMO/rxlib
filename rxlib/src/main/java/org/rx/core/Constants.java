@@ -15,7 +15,7 @@ public interface Constants {
     long TB = GB * 1024L;
     int SIZE_4K = KB * 4;
 
-    String DEFAULT_CONFIG_FILE = "rx.yml";
+    String[] DEFAULT_CONFIG_FILES = {"rx.yml", "application.yml", "bootstrap.yml"};
     int CPU_THREADS = Runtime.getRuntime().availableProcessors();
     String DEFAULT_TRACE_NAME = "rx-traceId";
 

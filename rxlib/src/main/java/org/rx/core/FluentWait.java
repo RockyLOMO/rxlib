@@ -42,6 +42,7 @@ public class FluentWait implements WaitHandle {
     private BiFunc<FluentWait, Object> resultFunc;
     private List<Class<? extends Throwable>> ignoredExceptions;
     private String message;
+    private boolean initialDelay;
     private long retryMillis = TIMEOUT_INFINITE;
     private BiAction<FluentWait> retryFunc;
     private boolean retryOnStart;
@@ -60,6 +61,11 @@ public class FluentWait implements WaitHandle {
 
     public synchronized FluentWait withMessage(String message) {
         this.message = message;
+        return this;
+    }
+
+    public synchronized FluentWait withInitialDelay() {
+        this.initialDelay = true;
         return this;
     }
 
@@ -135,6 +141,9 @@ public class FluentWait implements WaitHandle {
             boolean doRetry = retryCount > TIMEOUT_INFINITE;
             Throwable cause;
             T result = null;
+            if (initialDelay) {
+                sleep(interval);
+            }
             do {
                 try {
                     if ((result = resultFunc.invoke(this)) != null) {

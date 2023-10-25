@@ -16,6 +16,7 @@ import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 
+import java.lang.reflect.Type;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.util.ArrayList;
@@ -120,20 +121,22 @@ public class DataTable implements Extends {
         })) ;
     }
 
+    final List<DataColumn> columns = new ArrayList<>();
+    final List<DataRow> rows = new ArrayList<>();
     @Getter
     @Setter
     String tableName;
-    final List<DataColumn> columns = new ArrayList<>();
-    List<DataColumn> readOnlyColumns;
-    final List<DataRow> rows = new ArrayList<>();
+    @Setter
+    boolean checkCellsSize = true;
     @Setter
     Iterator<DataRow> fluentRows;
+    List<DataColumn> readOnlyCols;
 
     public List<DataColumn<?>> getColumns() {
-        if (readOnlyColumns == null) {
-            readOnlyColumns = Collections.unmodifiableList(columns);
+        if (readOnlyCols == null) {
+            readOnlyCols = Collections.unmodifiableList(columns);
         }
-        return (List) readOnlyColumns;
+        return (List) readOnlyCols;
     }
 
     public FluentIterable<DataRow> getRows() {
@@ -164,16 +167,17 @@ public class DataTable implements Extends {
         this.tableName = tableName;
     }
 
-    public <T> List<T> toList(@NonNull Class<T> type) {
+    public <T> List<T> toList(@NonNull Type type) {
         List<T> list = new ArrayList<>();
+        int colSize = columns.size();
         Iterator<DataRow> rows = getRows();
         while (rows.hasNext()) {
-            JSONObject item = new JSONObject(columns.size());
             List<Object> cells = rows.next().items;
-            for (int i = 0; i < columns.size(); i++) {
-                item.put(columns.get(i).columnName, cells.get(i));
+            JSONObject j = new JSONObject(colSize);
+            for (int i = 0; i < colSize; i++) {
+                j.put(columns.get(i).columnName, cells.get(i));
             }
-            list.add(fromJson(item, type));
+            list.add(fromJson(j, type));
         }
         return list;
     }

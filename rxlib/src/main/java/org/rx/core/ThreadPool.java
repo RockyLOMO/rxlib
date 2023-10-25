@@ -362,7 +362,8 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     private static int checkCapacity(int capacity) {
         if (capacity <= 0) {
-            capacity = Constants.CPU_THREADS * 32;
+            //todo set with memorysize
+            capacity = Constants.CPU_THREADS * 64;
         }
         return capacity;
     }
