@@ -12,11 +12,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.IterableUtils;
+import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DynamicProxyBean;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.ProceedEventArgs;
+import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -32,6 +35,7 @@ import org.springframework.cglib.proxy.Enhancer;
 import java.io.File;
 import java.io.Serializable;
 import java.lang.management.ManagementFactory;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
@@ -39,6 +43,7 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -511,31 +516,114 @@ public final class Sys extends SystemUtils {
             return (T) child;
         }
 
-        String[] paths = Strings.split(path, ".");
-        if (paths.length == 0) {
-            return null;
+        Object cur = json;
+        int max = path.length() - 1;
+
+        AtomicInteger i = new AtomicInteger();
+        StringBuilder buf = new StringBuilder();
+        for (; i.get() <= max; i.incrementAndGet()) {
+            char c = path.charAt(i.get());
+            if (c != objKey && c != arrBeginKey) {
+                buf.append(c);
+                continue;
+            }
+
+            cur = visitJson(cur, path, i, c, buf, max, childSelect, throwOnEmptyChild);
+            buf.setLength(0);
+        }
+        if (!buf.isEmpty()) {
+            cur = visitJson(cur, path, i, objKey, buf, max, childSelect, throwOnEmptyChild);
+        }
+        return (T) cur;
+
+//        String[] paths = Strings.split(path, ".");
+//        if (paths.length == 0) {
+//            return null;
+//        }
+//
+//        int last = paths.length - 1;
+//        Map<String, ?> tmp = json;
+//        for (int i = 0; i < last; i++) {
+//            child = tmp.get(paths[i]);
+//            if (childSelect != null) {
+//                child = childSelect.apply(child);
+//            }
+//            if ((tmp = as(child, Map.class)) == null) {
+//                if (throwOnEmptyChild) {
+//                    throw new InvalidException("Get empty sub object by path {}", paths[i]);
+//                }
+//                return null;
+//            }
+//        }
+//        child = tmp.get(paths[last]);
+//        if (child != null
+//                && childSelect != null && !Reflects.isBasicType(child.getClass())) {
+//            child = childSelect.apply(child);
+//        }
+//        return (T) child;
+    }
+
+    static final char objKey = '.', arrBeginKey = '[', arrEndKey = ']';
+
+    static Object visitJson(Object cur, String path, AtomicInteger i, char c, StringBuilder buf,
+                            int max, BiFunc<Object, ?> childSelect, boolean throwOnEmptyChild) {
+        String visitor = buf.toString();
+        if (cur instanceof Map) {
+            Map<String, ?> obj = (Map<String, ?>) cur;
+            cur = obj.get(visitor);
+        } else {
+            try {
+                cur = Reflects.readField(cur, visitor);
+            } catch (Throwable e) {
+                throw new InvalidException("Object {} is not a map type or not found field with path {}", cur, visitor, e);
+            }
         }
 
-        int last = paths.length - 1;
-        Map<String, ?> tmp = json;
-        for (int i = 0; i < last; i++) {
-            child = tmp.get(paths[i]);
-            if (childSelect != null) {
-                child = childSelect.apply(child);
-            }
-            if ((tmp = as(child, Map.class)) == null) {
-                if (throwOnEmptyChild) {
-                    throw new InvalidException("Get empty sub object by path {}", paths[i]);
+        if (c == arrBeginKey) {
+            StringBuilder idxBuf = new StringBuilder();
+            for (i.incrementAndGet(); i.get() < path.length(); i.incrementAndGet()) {
+                char ic = path.charAt(i.get());
+                if (ic != arrEndKey) {
+                    idxBuf.append(ic);
+                    continue;
                 }
-                return null;
+                i.incrementAndGet();
+                break;
+            }
+            int idx;
+            try {
+                idx = Integer.parseInt(idxBuf.toString());
+                visitor = String.format("%s[%s]", visitor, idxBuf);
+            } catch (Throwable e) {
+                throw new InvalidException("Index {} is not a int type", idxBuf, e);
+            }
+
+            if (cur instanceof Iterable) {
+                try {
+                    cur = IterableUtils.get((Iterable<?>) cur, idx);
+                } catch (IndexOutOfBoundsException e) {
+                    throw new InvalidException("Array {} is index out of bounds with path {}", cur, visitor, e);
+                }
+            } else if (cur != null && cur.getClass().isArray()) {
+                try {
+                    cur = Array.get(cur, idx);
+                } catch (ArrayIndexOutOfBoundsException e) {
+                    throw new InvalidException("Array {} is index out of bounds with path {}", cur, visitor, e);
+                }
+            } else {
+                throw new InvalidException("Object {} is not a array type with path {}", cur, visitor);
             }
         }
-        child = tmp.get(paths[last]);
-        if (child != null
-                && childSelect != null && !Reflects.isBasicType(child.getClass())) {
-            child = childSelect.apply(child);
+        if (childSelect != null) {
+            cur = childSelect.apply(cur);
         }
-        return (T) child;
+        if (i.get() < max && cur == null) {
+            if (throwOnEmptyChild) {
+                throw new InvalidException("Get empty sub object by path {}", visitor);
+            }
+            return null;
+        }
+        return cur;
     }
 
     //TypeReference

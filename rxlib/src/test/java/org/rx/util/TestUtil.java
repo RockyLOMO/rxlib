@@ -1,6 +1,8 @@
 package org.rx.util;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -20,8 +22,8 @@ import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.*;
 
-import static org.rx.core.Sys.toJsonObject;
-import static org.rx.core.Sys.toJsonString;
+import static org.rx.core.Extends.eq;
+import static org.rx.core.Sys.*;
 
 @Slf4j
 public class TestUtil extends AbstractTester {
@@ -270,9 +272,105 @@ public class TestUtil extends AbstractTester {
         String ce = "适用苹果ipad 10.2平板钢化膜9.7寸/air5全屏防爆膜2020/2021版高清贴膜10.9/11寸12.9寸护眼抗蓝紫光钢化膜";
         System.out.println(Strings.subStringByByteLen(ce, 78));
 
-        String json = "{\"ctp\":\"pages/gold/item/pages/detail/index\",\"par\":\"\",\"ref\":\"pages/gold/item/pages/detail/index\",\"rpr\":\"\",\"seq\":2,\"vts\":110,\"pin\":\"jd_759f867040f60\",\"fst\":\"1577630901829\",\"pst\":\"1677280413\",\"vct\":\"1677479554\",\"jsver\":\"TR1.0.0\",\"net\":\"wifi\",\"lat\":\"\",\"lon\":\"\",\"speed\":\"\",\"accuracy\":\"\",\"pixelRatio\":\"1\",\"jdv\":\"1|weixin|t_335139774_xcx_1036_appfxxx|xcx|-|1677479554238\",\"customerInfo\":\"\",\"unpl\":\"\",\"scene\":1036,\"sdkver\":\"2.19.2\",\"ext\":{},\"eid\":\"W_jdgwxcx_productdetail_consultationiconexpo\",\"eparam\":\"{\\\"mainskuid\\\":100006612085}\",\"elevel\":\"\",\"page_id\":\"W_jdgwxcx_productdetail\",\"pname\":\"pages/gold/item/pages/detail/index\",\"pparam\":\"\",\"tar\":\"\",\"x\":0,\"y\":0,\"typ\":\"ep\"}";
-        Object v = Sys.readJsonValue(toJsonObject(json), "eparam.mainskuid", Sys::toJsonObject, true);
+        String json = "{\n" +
+                "  \"data\": [\n" +
+                "    {\n" +
+                "      \"peoNo\": \"229527513620001\",\n" +
+                "      \"skuAndSpus\": [\n" +
+                "        {\n" +
+                "          \"resSku\": {\n" +
+                "            \"appId\": \"GJHY\",\n" +
+                "            \"createBy\": \"linxi\",\n" +
+                "            \"customData\": \"\",\n" +
+                "            \"enable\": 1,\n" +
+                "            \"extendMap\": {\n" +
+                "              \"inquiryDuration\": 0.5,\n" +
+                "              \"activityId\": 35497,\n" +
+                "              \"itemId\": 22486569827767537,\n" +
+                "              \"couponIds\": [\n" +
+                "                9169767537\n" +
+                "              ]\n" +
+                "            },\n" +
+                "            \"gmtCreate\": \"2023-10-31 14:54:07\",\n" +
+                "            \"gmtUpdate\": \"2023-10-31 14:54:07\",\n" +
+                "            \"intro\": \"社医付费问诊场景\",\n" +
+                "            \"name\": \"复诊续方\",\n" +
+                "            \"peoId\": 1548942540449906736,\n" +
+                "            \"price\": 0,\n" +
+                "            \"priceTypeCode\": \"GJHIS\",\n" +
+                "            \"providerId\": \"1548952654418411543\",\n" +
+                "            \"skuCode\": \"22488697939067537\",\n" +
+                "            \"skuId\": 1719246353046908962,\n" +
+                "            \"spuId\": 1542023119361933110,\n" +
+                "            \"status\": 0,\n" +
+                "            \"stock\": 9999,\n" +
+                "            \"updateBy\": \"linxi\",\n" +
+                "            \"version\": 0\n" +
+                "          },\n" +
+                "          \"resSpu\": {\n" +
+                "            \"appId\": \"GJHY\",\n" +
+                "            \"createBy\": \"多牌照管理员\",\n" +
+                "            \"enable\": 1,\n" +
+                "            \"extendMap\": {\n" +
+                "              \"goodsNo\": 8400003,\n" +
+                "              \"inquiryType\": 0,\n" +
+                "              \"pricingMethod\": \"platform\",\n" +
+                "              \"responseTime\": 2880,\n" +
+                "              \"listingPermission\": \"user\",\n" +
+                "              \"price\": 0,\n" +
+                "              \"showPriceSwitch\": true,\n" +
+                "              \"minPrice\": 0,\n" +
+                "              \"serviceDuration\": 2880,\n" +
+                "              \"imUserPermission\": \"1\",\n" +
+                "              \"maxPrice\": 0,\n" +
+                "              \"iconUrl\": \"https://gj-prod-1256038144.cos.ap-beijing.myqcloud.com/common/1619404699492/video.png\",\n" +
+                "              \"showUpLoSwitch\": true,\n" +
+                "              \"showService\": true\n" +
+                "            },\n" +
+                "            \"gmtCreate\": \"2023-06-09 11:34:25\",\n" +
+                "            \"gmtUpdate\": \"2023-11-09 15:07:46\",\n" +
+                "            \"intro\": \"社医付费问诊场景\",\n" +
+                "            \"name\": \"复诊续方\",\n" +
+                "            \"serviceCode\": \"A006\",\n" +
+                "            \"spuCategory\": \"1\",\n" +
+                "            \"spuCategoryName\": \"图文问诊\",\n" +
+                "            \"spuCode\": \"38792\",\n" +
+                "            \"spuId\": 1542023119361933110,\n" +
+                "            \"spuOrgCategory\": 1542348617615015958,\n" +
+                "            \"status\": 0,\n" +
+                "            \"updateBy\": \"卢昭\",\n" +
+                "            \"version\": 0\n" +
+                "          }\n" +
+                "        }\n" +
+                "      ]\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"status\": 0\n" +
+                "  \"arr\": [0,1]" +
+                "}";
+        JSONObject jObj = toJsonObject(json);
+        Object v;
+        v = Sys.readJsonValue(jObj, "data", null, true);
         System.out.println(v);
+        assert v instanceof JSONArray;
+
+        v = Sys.readJsonValue(jObj, "data[0].peoNo", null, true);
+        System.out.println(v);
+        assert eq(v, "229527513620001");
+
+        v = Sys.readJsonValue(jObj, "data[0].skuAndSpus", null, true);
+        System.out.println(v);
+        assert v instanceof JSONArray;
+
+        v = Sys.readJsonValue(jObj, "data[0].skuAndSpus[0].resSpu.createBy", null, true);
+        System.out.println(v);
+        assert eq(v, "多牌照管理员");
+
+        v = Sys.readJsonValue(jObj, "status", null, true);
+        System.out.println(v);
+        assert eq(v, 0);
+
+        v = Sys.readJsonValue(toJsonArray("[0,1]"),"[1]",null,true);
     }
 
     @Test
