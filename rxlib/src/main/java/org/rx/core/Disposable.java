@@ -28,6 +28,7 @@ public abstract class Disposable implements AutoCloseable {
         if (closed) {
             return;
         }
+        //todo fields may be null
         freeObjects();
         closed = true;
     }
