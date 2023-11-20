@@ -1,6 +1,8 @@
 package org.rx.util;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -20,8 +22,8 @@ import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.*;
 
-import static org.rx.core.Sys.toJsonObject;
-import static org.rx.core.Sys.toJsonString;
+import static org.rx.core.Extends.eq;
+import static org.rx.core.Sys.*;
 
 @Slf4j
 public class TestUtil extends AbstractTester {
@@ -270,9 +272,98 @@ public class TestUtil extends AbstractTester {
         String ce = "适用苹果ipad 10.2平板钢化膜9.7寸/air5全屏防爆膜2020/2021版高清贴膜10.9/11寸12.9寸护眼抗蓝紫光钢化膜";
         System.out.println(Strings.subStringByByteLen(ce, 78));
 
-        String json = "{\"ctp\":\"pages/gold/item/pages/detail/index\",\"par\":\"\",\"ref\":\"pages/gold/item/pages/detail/index\",\"rpr\":\"\",\"seq\":2,\"vts\":110,\"pin\":\"jd_759f867040f60\",\"fst\":\"1577630901829\",\"pst\":\"1677280413\",\"vct\":\"1677479554\",\"jsver\":\"TR1.0.0\",\"net\":\"wifi\",\"lat\":\"\",\"lon\":\"\",\"speed\":\"\",\"accuracy\":\"\",\"pixelRatio\":\"1\",\"jdv\":\"1|weixin|t_335139774_xcx_1036_appfxxx|xcx|-|1677479554238\",\"customerInfo\":\"\",\"unpl\":\"\",\"scene\":1036,\"sdkver\":\"2.19.2\",\"ext\":{},\"eid\":\"W_jdgwxcx_productdetail_consultationiconexpo\",\"eparam\":\"{\\\"mainskuid\\\":100006612085}\",\"elevel\":\"\",\"page_id\":\"W_jdgwxcx_productdetail\",\"pname\":\"pages/gold/item/pages/detail/index\",\"pparam\":\"\",\"tar\":\"\",\"x\":0,\"y\":0,\"typ\":\"ep\"}";
-        Object v = Sys.readJsonValue(toJsonObject(json), "eparam.mainskuid", Sys::toJsonObject, true);
+        String json = "{\n" +
+                "  \"data\": {\n" +
+                "    \"name\": \"张三\",\n" +
+                "    \"age\": 10,\n" +
+                "    \"mark\": [\n" +
+                "      0,1,2,3,4,5,6,7,8,9,10,11,\n" +
+                "      [\n" +
+                "        2,\n" +
+                "        3,\n" +
+                "        {\n" +
+                "          \"name\": \"李四\",\n" +
+                "          \"mark\": [\n" +
+                "            0,\n" +
+                "            [\n" +
+                "              1\n" +
+                "            ]\n" +
+                "          ]\n" +
+                "        }\n" +
+                "      ]\n" +
+                "    ]\n" +
+                "  },\n" +
+                "  \"status\": 200\n" +
+                "}";
+        JSONObject jObj = toJsonObject(json);
+        Object v;
+//        v = Sys.readJsonValue(jObj, "data", null, true);
+//        System.out.println(v);
+//        assert v instanceof JSONObject;
+//
+//        v = Sys.readJsonValue(jObj, "data.mark", null, true);
+//        System.out.println(v);
+//        assert v instanceof JSONArray;
+//
+//        v = Sys.readJsonValue(jObj, "status", null, true);
+//        System.out.println(v);
+//        assert eq(v, 200);
+//
+//        v = Sys.readJsonValue(jObj, "data.name", null, true);
+//        System.out.println(v);
+//        assert eq(v, "张三");
+//
+//        v = Sys.readJsonValue(jObj, "data.mark[1]", null, true);
+//        System.out.println(v);
+//        assert eq(v, 1);
+//
+//        v = Sys.readJsonValue(jObj, "data.mark[11]", null, true);
+//        System.out.println(v);
+//        assert eq(v, 11);
+//
+//        v = Sys.readJsonValue(jObj, "data.mark[12][1]", null, true);
+//        System.out.println(v);
+//        assert eq(v, 3);
+
+        v = Sys.readJsonValue(jObj, "data.mark[12][2].name", null, true);
         System.out.println(v);
+        assert eq(v, "李四");
+
+        v = Sys.readJsonValue(jObj, "data.mark[12][2].mark[1][0]", null, true);
+        System.out.println(v);
+        assert eq(v, 1);
+
+        JSONArray jArr = toJsonArray("[\n" +
+                "  0,1,2,3,4,5,6,7,8,9,10,11,\n" +
+                "  [\n" +
+                "    2,\n" +
+                "    3,\n" +
+                "    {\n" +
+                "      \"name\": \"李四\",\n" +
+                "      \"mark\": [\n" +
+                "        0,\n" +
+                "        [\n" +
+                "          1\n" +
+                "        ]\n" +
+                "      ]\n" +
+                "    }\n" +
+                "  ]\n" +
+                "]");
+        v = Sys.readJsonValue(jArr, "[1]", null, true);
+        System.out.println(v);
+        assert eq(v, 1);
+
+        v = Sys.readJsonValue(jArr, "[12][0]", null, true);
+        System.out.println(v);
+        assert eq(v, 2);
+
+        v = Sys.readJsonValue(jArr, "[12][2].name", null, true);
+        System.out.println(v);
+        assert eq(v, "李四");
+
+        v = Sys.readJsonValue(jArr, "[12][2].mark[1][0]", null, true);
+        System.out.println(v);
+        assert eq(v, 1);
     }
 
     @Test

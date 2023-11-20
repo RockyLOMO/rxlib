@@ -12,11 +12,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.IterableUtils;
+import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DynamicProxyBean;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.ProceedEventArgs;
+import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -32,6 +35,7 @@ import org.springframework.cglib.proxy.Enhancer;
 import java.io.File;
 import java.io.Serializable;
 import java.lang.management.ManagementFactory;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
@@ -39,6 +43,7 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -500,42 +505,113 @@ public final class Sys extends SystemUtils {
     }
 
     //region json
-    public static <T> T readJsonValue(@NonNull Map<String, ?> json, String path,
+
+    /**
+     * @param json
+     * @param path
+     * @param childSelect       !Reflects.isBasicType(cur.getClass())
+     * @param throwOnEmptyChild
+     * @param <T>
+     * @return
+     */
+    public static <T> T readJsonValue(@NonNull Object json, String path,
                                       BiFunc<Object, ?> childSelect,
                                       boolean throwOnEmptyChild) {
-        Object child = json.get(path);
-        if (child != null) {
-            if (childSelect != null) {
-                child = childSelect.apply(child);
+        if (json instanceof Map) {
+            Map<String, Object> jObj = (Map<String, Object>) json;
+            Object cur = jObj.get(path);
+            if (cur != null) {
+                if (childSelect != null) {
+                    cur = childSelect.apply(cur);
+                }
+                return (T) cur;
             }
-            return (T) child;
         }
 
-        String[] paths = Strings.split(path, ".");
-        if (paths.length == 0) {
+        Object cur = json;
+        int max = path.length() - 1;
+
+        AtomicInteger i = new AtomicInteger();
+        StringBuilder buf = new StringBuilder();
+        for (; i.get() <= max; i.incrementAndGet()) {
+            char c = path.charAt(i.get());
+            if (c != objKey && c != arrBeginKey) {
+                buf.append(c);
+                continue;
+            }
+
+            cur = visitJson(cur, path, i, c, buf.isEmpty() ? null : buf.toString(), max, childSelect, throwOnEmptyChild);
+            buf.setLength(0);
+        }
+        if (!buf.isEmpty()) {
+            cur = visitJson(cur, path, i, objKey, buf.toString(), max, childSelect, throwOnEmptyChild);
+        }
+        return (T) cur;
+    }
+
+    static final char objKey = '.', arrBeginKey = '[', arrEndKey = ']';
+
+    static Object visitJson(Object cur, String path, AtomicInteger i, char c, String visitor,
+                            int max, BiFunc<Object, ?> childSelect, boolean throwOnEmptyChild) {
+        if (visitor != null) {
+            if (cur instanceof Map) {
+                Map<String, ?> obj = (Map<String, ?>) cur;
+                cur = obj.get(visitor);
+            } else if (cur instanceof Iterable) {
+                System.out.println(cur);
+            } else {
+                try {
+                    cur = Reflects.readField(cur, visitor);
+                } catch (Throwable e) {
+                    throw new InvalidException("Object {} is not a map type or not found field with path {}", cur, visitor, e);
+                }
+            }
+        }
+
+        if (c == arrBeginKey) {
+            StringBuilder idxBuf = new StringBuilder();
+            for (i.incrementAndGet(); i.get() < path.length(); i.incrementAndGet()) {
+                char ic = path.charAt(i.get());
+                if (ic != arrEndKey) {
+                    idxBuf.append(ic);
+                    continue;
+                }
+                break;
+            }
+            int idx;
+            try {
+                idx = Integer.parseInt(idxBuf.toString());
+                visitor = String.format("%s[%s]", visitor, idxBuf);
+            } catch (Throwable e) {
+                throw new InvalidException("Index {} is not a int type", idxBuf, e);
+            }
+
+            if (cur instanceof Iterable) {
+                try {
+                    cur = IterableUtils.get((Iterable<?>) cur, idx);
+                } catch (IndexOutOfBoundsException e) {
+                    throw new InvalidException("Array {} is index out of bounds with path {}", cur, visitor, e);
+                }
+            } else if (cur != null && cur.getClass().isArray()) {
+                try {
+                    cur = Array.get(cur, idx);
+                } catch (ArrayIndexOutOfBoundsException e) {
+                    throw new InvalidException("Array {} is index out of bounds with path {}", cur, visitor, e);
+                }
+            } else {
+                throw new InvalidException("Object {} is not a array type with path {}", cur, visitor);
+            }
+        }
+        if (cur != null && childSelect != null) {
+            cur = childSelect.apply(cur);
+        }
+        if (i.get() < max && cur == null) {
+            if (throwOnEmptyChild) {
+                throw new InvalidException("Get empty sub object by path {}", visitor);
+            }
             return null;
         }
-
-        int last = paths.length - 1;
-        Map<String, ?> tmp = json;
-        for (int i = 0; i < last; i++) {
-            child = tmp.get(paths[i]);
-            if (childSelect != null) {
-                child = childSelect.apply(child);
-            }
-            if ((tmp = as(child, Map.class)) == null) {
-                if (throwOnEmptyChild) {
-                    throw new InvalidException("Get empty sub object by path {}", paths[i]);
-                }
-                return null;
-            }
-        }
-        child = tmp.get(paths[last]);
-        if (child != null
-                && childSelect != null && !Reflects.isBasicType(child.getClass())) {
-            child = childSelect.apply(child);
-        }
-        return (T) child;
+        return cur;
     }
 
     //TypeReference

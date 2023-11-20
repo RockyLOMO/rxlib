@@ -3,10 +3,13 @@ package org.rx.io;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
+import org.rx.core.Extends;
 
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
+
+import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public final class HybridStream extends IOStream implements Serializable {
@@ -76,7 +79,7 @@ public final class HybridStream extends IOStream implements Serializable {
 
     @Override
     protected void freeObjects() {
-        stream.close();
+        tryClose(stream);
     }
 
     FileStream newFileStream() {

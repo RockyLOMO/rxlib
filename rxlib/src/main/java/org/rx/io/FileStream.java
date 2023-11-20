@@ -5,6 +5,7 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.Constants;
+import org.rx.core.Extends;
 import org.rx.util.Lazy;
 import org.rx.util.Snowflake;
 import org.rx.util.function.TripleFunc;
@@ -16,6 +17,8 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.nio.file.attribute.UserDefinedFileAttributeView;
+
+import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class FileStream extends IOStream implements Serializable {
@@ -211,7 +214,7 @@ public class FileStream extends IOStream implements Serializable {
 
     @Override
     protected void freeObjects() throws Throwable {
-        randomAccessFile.close();
+        tryClose(randomAccessFile);
     }
 
     @Override
