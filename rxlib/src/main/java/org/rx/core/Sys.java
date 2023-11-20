@@ -505,15 +505,27 @@ public final class Sys extends SystemUtils {
     }
 
     //region json
-    public static <T> T readJsonValue(@NonNull Map<String, ?> json, String path,
+
+    /**
+     * @param json
+     * @param path
+     * @param childSelect       !Reflects.isBasicType(cur.getClass())
+     * @param throwOnEmptyChild
+     * @param <T>
+     * @return
+     */
+    public static <T> T readJsonValue(@NonNull Object json, String path,
                                       BiFunc<Object, ?> childSelect,
                                       boolean throwOnEmptyChild) {
-        Object child = json.get(path);
-        if (child != null) {
-            if (childSelect != null) {
-                child = childSelect.apply(child);
+        if (json instanceof Map) {
+            Map<String, Object> jObj = (Map<String, Object>) json;
+            Object cur = jObj.get(path);
+            if (cur != null) {
+                if (childSelect != null) {
+                    cur = childSelect.apply(cur);
+                }
+                return (T) cur;
             }
-            return (T) child;
         }
 
         Object cur = json;
@@ -528,54 +540,31 @@ public final class Sys extends SystemUtils {
                 continue;
             }
 
-            cur = visitJson(cur, path, i, c, buf, max, childSelect, throwOnEmptyChild);
+            cur = visitJson(cur, path, i, c, buf.isEmpty() ? null : buf.toString(), max, childSelect, throwOnEmptyChild);
             buf.setLength(0);
         }
         if (!buf.isEmpty()) {
-            cur = visitJson(cur, path, i, objKey, buf, max, childSelect, throwOnEmptyChild);
+            cur = visitJson(cur, path, i, objKey, buf.toString(), max, childSelect, throwOnEmptyChild);
         }
         return (T) cur;
-
-//        String[] paths = Strings.split(path, ".");
-//        if (paths.length == 0) {
-//            return null;
-//        }
-//
-//        int last = paths.length - 1;
-//        Map<String, ?> tmp = json;
-//        for (int i = 0; i < last; i++) {
-//            child = tmp.get(paths[i]);
-//            if (childSelect != null) {
-//                child = childSelect.apply(child);
-//            }
-//            if ((tmp = as(child, Map.class)) == null) {
-//                if (throwOnEmptyChild) {
-//                    throw new InvalidException("Get empty sub object by path {}", paths[i]);
-//                }
-//                return null;
-//            }
-//        }
-//        child = tmp.get(paths[last]);
-//        if (child != null
-//                && childSelect != null && !Reflects.isBasicType(child.getClass())) {
-//            child = childSelect.apply(child);
-//        }
-//        return (T) child;
     }
 
     static final char objKey = '.', arrBeginKey = '[', arrEndKey = ']';
 
-    static Object visitJson(Object cur, String path, AtomicInteger i, char c, StringBuilder buf,
+    static Object visitJson(Object cur, String path, AtomicInteger i, char c, String visitor,
                             int max, BiFunc<Object, ?> childSelect, boolean throwOnEmptyChild) {
-        String visitor = buf.toString();
-        if (cur instanceof Map) {
-            Map<String, ?> obj = (Map<String, ?>) cur;
-            cur = obj.get(visitor);
-        } else {
-            try {
-                cur = Reflects.readField(cur, visitor);
-            } catch (Throwable e) {
-                throw new InvalidException("Object {} is not a map type or not found field with path {}", cur, visitor, e);
+        if (visitor != null) {
+            if (cur instanceof Map) {
+                Map<String, ?> obj = (Map<String, ?>) cur;
+                cur = obj.get(visitor);
+            } else if (cur instanceof Iterable) {
+                System.out.println(cur);
+            } else {
+                try {
+                    cur = Reflects.readField(cur, visitor);
+                } catch (Throwable e) {
+                    throw new InvalidException("Object {} is not a map type or not found field with path {}", cur, visitor, e);
+                }
             }
         }
 
@@ -587,7 +576,6 @@ public final class Sys extends SystemUtils {
                     idxBuf.append(ic);
                     continue;
                 }
-                i.incrementAndGet();
                 break;
             }
             int idx;
@@ -614,7 +602,7 @@ public final class Sys extends SystemUtils {
                 throw new InvalidException("Object {} is not a array type with path {}", cur, visitor);
             }
         }
-        if (childSelect != null) {
+        if (cur != null && childSelect != null) {
             cur = childSelect.apply(cur);
         }
         if (i.get() < max && cur == null) {

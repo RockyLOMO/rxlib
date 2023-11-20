@@ -273,104 +273,97 @@ public class TestUtil extends AbstractTester {
         System.out.println(Strings.subStringByByteLen(ce, 78));
 
         String json = "{\n" +
-                "  \"data\": [\n" +
-                "    {\n" +
-                "      \"peoNo\": \"229527513620001\",\n" +
-                "      \"skuAndSpus\": [\n" +
+                "  \"data\": {\n" +
+                "    \"name\": \"张三\",\n" +
+                "    \"age\": 10,\n" +
+                "    \"mark\": [\n" +
+                "      0,1,2,3,4,5,6,7,8,9,10,11,\n" +
+                "      [\n" +
+                "        2,\n" +
+                "        3,\n" +
                 "        {\n" +
-                "          \"resSku\": {\n" +
-                "            \"appId\": \"GJHY\",\n" +
-                "            \"createBy\": \"linxi\",\n" +
-                "            \"customData\": \"\",\n" +
-                "            \"enable\": 1,\n" +
-                "            \"extendMap\": {\n" +
-                "              \"inquiryDuration\": 0.5,\n" +
-                "              \"activityId\": 35497,\n" +
-                "              \"itemId\": 22486569827767537,\n" +
-                "              \"couponIds\": [\n" +
-                "                9169767537\n" +
-                "              ]\n" +
-                "            },\n" +
-                "            \"gmtCreate\": \"2023-10-31 14:54:07\",\n" +
-                "            \"gmtUpdate\": \"2023-10-31 14:54:07\",\n" +
-                "            \"intro\": \"社医付费问诊场景\",\n" +
-                "            \"name\": \"复诊续方\",\n" +
-                "            \"peoId\": 1548942540449906736,\n" +
-                "            \"price\": 0,\n" +
-                "            \"priceTypeCode\": \"GJHIS\",\n" +
-                "            \"providerId\": \"1548952654418411543\",\n" +
-                "            \"skuCode\": \"22488697939067537\",\n" +
-                "            \"skuId\": 1719246353046908962,\n" +
-                "            \"spuId\": 1542023119361933110,\n" +
-                "            \"status\": 0,\n" +
-                "            \"stock\": 9999,\n" +
-                "            \"updateBy\": \"linxi\",\n" +
-                "            \"version\": 0\n" +
-                "          },\n" +
-                "          \"resSpu\": {\n" +
-                "            \"appId\": \"GJHY\",\n" +
-                "            \"createBy\": \"多牌照管理员\",\n" +
-                "            \"enable\": 1,\n" +
-                "            \"extendMap\": {\n" +
-                "              \"goodsNo\": 8400003,\n" +
-                "              \"inquiryType\": 0,\n" +
-                "              \"pricingMethod\": \"platform\",\n" +
-                "              \"responseTime\": 2880,\n" +
-                "              \"listingPermission\": \"user\",\n" +
-                "              \"price\": 0,\n" +
-                "              \"showPriceSwitch\": true,\n" +
-                "              \"minPrice\": 0,\n" +
-                "              \"serviceDuration\": 2880,\n" +
-                "              \"imUserPermission\": \"1\",\n" +
-                "              \"maxPrice\": 0,\n" +
-                "              \"iconUrl\": \"https://gj-prod-1256038144.cos.ap-beijing.myqcloud.com/common/1619404699492/video.png\",\n" +
-                "              \"showUpLoSwitch\": true,\n" +
-                "              \"showService\": true\n" +
-                "            },\n" +
-                "            \"gmtCreate\": \"2023-06-09 11:34:25\",\n" +
-                "            \"gmtUpdate\": \"2023-11-09 15:07:46\",\n" +
-                "            \"intro\": \"社医付费问诊场景\",\n" +
-                "            \"name\": \"复诊续方\",\n" +
-                "            \"serviceCode\": \"A006\",\n" +
-                "            \"spuCategory\": \"1\",\n" +
-                "            \"spuCategoryName\": \"图文问诊\",\n" +
-                "            \"spuCode\": \"38792\",\n" +
-                "            \"spuId\": 1542023119361933110,\n" +
-                "            \"spuOrgCategory\": 1542348617615015958,\n" +
-                "            \"status\": 0,\n" +
-                "            \"updateBy\": \"卢昭\",\n" +
-                "            \"version\": 0\n" +
-                "          }\n" +
+                "          \"name\": \"李四\",\n" +
+                "          \"mark\": [\n" +
+                "            0,\n" +
+                "            [\n" +
+                "              1\n" +
+                "            ]\n" +
+                "          ]\n" +
                 "        }\n" +
                 "      ]\n" +
-                "    }\n" +
-                "  ],\n" +
-                "  \"status\": 0\n" +
-                "  \"arr\": [0,1]" +
+                "    ]\n" +
+                "  },\n" +
+                "  \"status\": 200\n" +
                 "}";
         JSONObject jObj = toJsonObject(json);
         Object v;
-        v = Sys.readJsonValue(jObj, "data", null, true);
-        System.out.println(v);
-        assert v instanceof JSONArray;
+//        v = Sys.readJsonValue(jObj, "data", null, true);
+//        System.out.println(v);
+//        assert v instanceof JSONObject;
+//
+//        v = Sys.readJsonValue(jObj, "data.mark", null, true);
+//        System.out.println(v);
+//        assert v instanceof JSONArray;
+//
+//        v = Sys.readJsonValue(jObj, "status", null, true);
+//        System.out.println(v);
+//        assert eq(v, 200);
+//
+//        v = Sys.readJsonValue(jObj, "data.name", null, true);
+//        System.out.println(v);
+//        assert eq(v, "张三");
+//
+//        v = Sys.readJsonValue(jObj, "data.mark[1]", null, true);
+//        System.out.println(v);
+//        assert eq(v, 1);
+//
+//        v = Sys.readJsonValue(jObj, "data.mark[11]", null, true);
+//        System.out.println(v);
+//        assert eq(v, 11);
+//
+//        v = Sys.readJsonValue(jObj, "data.mark[12][1]", null, true);
+//        System.out.println(v);
+//        assert eq(v, 3);
 
-        v = Sys.readJsonValue(jObj, "data[0].peoNo", null, true);
+        v = Sys.readJsonValue(jObj, "data.mark[12][2].name", null, true);
         System.out.println(v);
-        assert eq(v, "229527513620001");
+        assert eq(v, "李四");
 
-        v = Sys.readJsonValue(jObj, "data[0].skuAndSpus", null, true);
+        v = Sys.readJsonValue(jObj, "data.mark[12][2].mark[1][0]", null, true);
         System.out.println(v);
-        assert v instanceof JSONArray;
+        assert eq(v, 1);
 
-        v = Sys.readJsonValue(jObj, "data[0].skuAndSpus[0].resSpu.createBy", null, true);
+        JSONArray jArr = toJsonArray("[\n" +
+                "  0,1,2,3,4,5,6,7,8,9,10,11,\n" +
+                "  [\n" +
+                "    2,\n" +
+                "    3,\n" +
+                "    {\n" +
+                "      \"name\": \"李四\",\n" +
+                "      \"mark\": [\n" +
+                "        0,\n" +
+                "        [\n" +
+                "          1\n" +
+                "        ]\n" +
+                "      ]\n" +
+                "    }\n" +
+                "  ]\n" +
+                "]");
+        v = Sys.readJsonValue(jArr, "[1]", null, true);
         System.out.println(v);
-        assert eq(v, "多牌照管理员");
+        assert eq(v, 1);
 
-        v = Sys.readJsonValue(jObj, "status", null, true);
+        v = Sys.readJsonValue(jArr, "[12][0]", null, true);
         System.out.println(v);
-        assert eq(v, 0);
+        assert eq(v, 2);
 
-        v = Sys.readJsonValue(toJsonArray("[0,1]"),"[1]",null,true);
+        v = Sys.readJsonValue(jArr, "[12][2].name", null, true);
+        System.out.println(v);
+        assert eq(v, "李四");
+
+        v = Sys.readJsonValue(jArr, "[12][2].mark[1][0]", null, true);
+        System.out.println(v);
+        assert eq(v, 1);
     }
 
     @Test
