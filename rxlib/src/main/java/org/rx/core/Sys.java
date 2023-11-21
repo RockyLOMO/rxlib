@@ -560,7 +560,7 @@ public final class Sys extends SystemUtils {
                 Map<String, ?> obj = (Map<String, ?>) cur;
                 cur = obj.get(visitor);
             } else if (cur instanceof Iterable) {
-//                System.out.println(cur);
+                //ignore
             } else {
                 try {
                     cur = Reflects.readField(cur, visitor);
