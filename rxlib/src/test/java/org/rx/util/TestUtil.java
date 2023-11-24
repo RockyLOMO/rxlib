@@ -298,33 +298,33 @@ public class TestUtil extends AbstractTester {
                 "}";
         JSONObject jObj = toJsonObject(json);
         Object v;
-//        v = Sys.readJsonValue(jObj, "data", null, true);
-//        System.out.println(v);
-//        assert v instanceof JSONObject;
-//
-//        v = Sys.readJsonValue(jObj, "data.mark", null, true);
-//        System.out.println(v);
-//        assert v instanceof JSONArray;
-//
-//        v = Sys.readJsonValue(jObj, "status", null, true);
-//        System.out.println(v);
-//        assert eq(v, 200);
-//
-//        v = Sys.readJsonValue(jObj, "data.name", null, true);
-//        System.out.println(v);
-//        assert eq(v, "张三");
-//
-//        v = Sys.readJsonValue(jObj, "data.mark[1]", null, true);
-//        System.out.println(v);
-//        assert eq(v, 1);
-//
-//        v = Sys.readJsonValue(jObj, "data.mark[11]", null, true);
-//        System.out.println(v);
-//        assert eq(v, 11);
-//
-//        v = Sys.readJsonValue(jObj, "data.mark[12][1]", null, true);
-//        System.out.println(v);
-//        assert eq(v, 3);
+        v = Sys.readJsonValue(jObj, "data", null, true);
+        System.out.println(v);
+        assert v instanceof JSONObject;
+
+        v = Sys.readJsonValue(jObj, "data.mark", null, true);
+        System.out.println(v);
+        assert v instanceof JSONArray;
+
+        v = Sys.readJsonValue(jObj, "status", null, true);
+        System.out.println(v);
+        assert eq(v, 200);
+
+        v = Sys.readJsonValue(jObj, "data.name", null, true);
+        System.out.println(v);
+        assert eq(v, "张三");
+
+        v = Sys.readJsonValue(jObj, "data.mark[1]", null, true);
+        System.out.println(v);
+        assert eq(v, 1);
+
+        v = Sys.readJsonValue(jObj, "data.mark[11]", null, true);
+        System.out.println(v);
+        assert eq(v, 11);
+
+        v = Sys.readJsonValue(jObj, "data.mark[12][1]", null, true);
+        System.out.println(v);
+        assert eq(v, 3);
 
         v = Sys.readJsonValue(jObj, "data.mark[12][2].name", null, true);
         System.out.println(v);
@@ -376,6 +376,27 @@ public class TestUtil extends AbstractTester {
         } catch (InvalidException e) {
             e.printStackTrace();
         }
+
+        TestDemo demo = new TestDemo();
+        demo.user = new UserDemo();
+        demo.user.name = "张三";
+        demo.user.age = 10;
+        demo.group = org.rx.core.Arrays.toList(1, 0, 2, 4);
+
+        assert eq(Sys.readJsonValue(demo, "user.name"), "张三");
+        assert eq(Sys.readJsonValue(demo, "group[3]"), 4);
+    }
+
+    @Data
+    public static class TestDemo {
+        private UserDemo user;
+        private List<Integer> group;
+    }
+
+    @Data
+    public static class UserDemo {
+        private String name;
+        private int age;
     }
 
     @Test
