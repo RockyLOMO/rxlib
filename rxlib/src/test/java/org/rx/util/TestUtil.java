@@ -15,6 +15,7 @@ import org.rx.annotation.Metadata;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.core.*;
+import org.rx.exception.InvalidException;
 import org.rx.test.UserStruct;
 import org.rx.third.guava.CaseFormat;
 
@@ -297,33 +298,33 @@ public class TestUtil extends AbstractTester {
                 "}";
         JSONObject jObj = toJsonObject(json);
         Object v;
-//        v = Sys.readJsonValue(jObj, "data", null, true);
-//        System.out.println(v);
-//        assert v instanceof JSONObject;
-//
-//        v = Sys.readJsonValue(jObj, "data.mark", null, true);
-//        System.out.println(v);
-//        assert v instanceof JSONArray;
-//
-//        v = Sys.readJsonValue(jObj, "status", null, true);
-//        System.out.println(v);
-//        assert eq(v, 200);
-//
-//        v = Sys.readJsonValue(jObj, "data.name", null, true);
-//        System.out.println(v);
-//        assert eq(v, "张三");
-//
-//        v = Sys.readJsonValue(jObj, "data.mark[1]", null, true);
-//        System.out.println(v);
-//        assert eq(v, 1);
-//
-//        v = Sys.readJsonValue(jObj, "data.mark[11]", null, true);
-//        System.out.println(v);
-//        assert eq(v, 11);
-//
-//        v = Sys.readJsonValue(jObj, "data.mark[12][1]", null, true);
-//        System.out.println(v);
-//        assert eq(v, 3);
+        v = Sys.readJsonValue(jObj, "data", null, true);
+        System.out.println(v);
+        assert v instanceof JSONObject;
+
+        v = Sys.readJsonValue(jObj, "data.mark", null, true);
+        System.out.println(v);
+        assert v instanceof JSONArray;
+
+        v = Sys.readJsonValue(jObj, "status", null, true);
+        System.out.println(v);
+        assert eq(v, 200);
+
+        v = Sys.readJsonValue(jObj, "data.name", null, true);
+        System.out.println(v);
+        assert eq(v, "张三");
+
+        v = Sys.readJsonValue(jObj, "data.mark[1]", null, true);
+        System.out.println(v);
+        assert eq(v, 1);
+
+        v = Sys.readJsonValue(jObj, "data.mark[11]", null, true);
+        System.out.println(v);
+        assert eq(v, 11);
+
+        v = Sys.readJsonValue(jObj, "data.mark[12][1]", null, true);
+        System.out.println(v);
+        assert eq(v, 3);
 
         v = Sys.readJsonValue(jObj, "data.mark[12][2].name", null, true);
         System.out.println(v);
@@ -349,21 +350,53 @@ public class TestUtil extends AbstractTester {
                 "    }\n" +
                 "  ]\n" +
                 "]");
-        v = Sys.readJsonValue(jArr, "[1]", null, true);
+        v = Sys.readJsonValue(jArr, "[1]");
         System.out.println(v);
         assert eq(v, 1);
 
-        v = Sys.readJsonValue(jArr, "[12][0]", null, true);
+        v = Sys.readJsonValue(jArr, "[12][0]");
         System.out.println(v);
         assert eq(v, 2);
 
-        v = Sys.readJsonValue(jArr, "[12][2].name", null, true);
+        v = Sys.readJsonValue(jArr, "[12][2].name");
         System.out.println(v);
         assert eq(v, "李四");
 
-        v = Sys.readJsonValue(jArr, "[12][2].mark[1][0]", null, true);
+        v = Sys.readJsonValue(jArr, "[12][2].mark[1][0]");
         System.out.println(v);
         assert eq(v, 1);
+
+        try {
+            Sys.readJsonValue(jArr, "[12][2].mark2[1][0]");
+        } catch (InvalidException e) {
+            e.printStackTrace();
+        }
+        try {
+            Sys.readJsonValue(jArr, "[12][3].mark2[1][0]");
+        } catch (InvalidException e) {
+            e.printStackTrace();
+        }
+
+        TestDemo demo = new TestDemo();
+        demo.user = new UserDemo();
+        demo.user.name = "张三";
+        demo.user.age = 10;
+        demo.group = org.rx.core.Arrays.toList(1, 0, 2, 4);
+
+        assert eq(Sys.readJsonValue(demo, "user.name"), "张三");
+        assert eq(Sys.readJsonValue(demo, "group[3]"), 4);
+    }
+
+    @Data
+    public static class TestDemo {
+        private UserDemo user;
+        private List<Integer> group;
+    }
+
+    @Data
+    public static class UserDemo {
+        private String name;
+        private int age;
     }
 
     @Test

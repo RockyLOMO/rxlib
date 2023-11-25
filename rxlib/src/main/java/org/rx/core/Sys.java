@@ -505,6 +505,9 @@ public final class Sys extends SystemUtils {
     }
 
     //region json
+    public static <T> T readJsonValue(Object json, String path) {
+        return readJsonValue(json, path, null, true);
+    }
 
     /**
      * @param json
@@ -514,9 +517,8 @@ public final class Sys extends SystemUtils {
      * @param <T>
      * @return
      */
-    public static <T> T readJsonValue(@NonNull Object json, String path,
-                                      BiFunc<Object, ?> childSelect,
-                                      boolean throwOnEmptyChild) {
+    public static <T> T readJsonValue(@NonNull Object json, @NonNull String path,
+                                      BiFunc<Object, ?> childSelect, boolean throwOnEmptyChild) {
         if (json instanceof Map) {
             Map<String, Object> jObj = (Map<String, Object>) json;
             Object cur = jObj.get(path);
@@ -540,7 +542,7 @@ public final class Sys extends SystemUtils {
                 continue;
             }
 
-            cur = visitJson(cur, path, i, c, buf.isEmpty() ? null : buf.toString(), max, childSelect, throwOnEmptyChild);
+            cur = visitJson(cur, path, i, c, buf.toString(), max, childSelect, throwOnEmptyChild);
             buf.setLength(0);
         }
         if (!buf.isEmpty()) {
@@ -553,17 +555,17 @@ public final class Sys extends SystemUtils {
 
     static Object visitJson(Object cur, String path, AtomicInteger i, char c, String visitor,
                             int max, BiFunc<Object, ?> childSelect, boolean throwOnEmptyChild) {
-        if (visitor != null) {
+        if (!visitor.isEmpty()) {
             if (cur instanceof Map) {
                 Map<String, ?> obj = (Map<String, ?>) cur;
                 cur = obj.get(visitor);
             } else if (cur instanceof Iterable) {
-                System.out.println(cur);
+                //ignore
             } else {
                 try {
                     cur = Reflects.readField(cur, visitor);
                 } catch (Throwable e) {
-                    throw new InvalidException("Object {} is not a map type or not found field with path {}", cur, visitor, e);
+                    throw new InvalidException("Object \"{}\" is not a map or not found field with path {}", cur, visitor, e);
                 }
             }
         }
@@ -583,23 +585,25 @@ public final class Sys extends SystemUtils {
                 idx = Integer.parseInt(idxBuf.toString());
                 visitor = String.format("%s[%s]", visitor, idxBuf);
             } catch (Throwable e) {
-                throw new InvalidException("Index {} is not a int type", idxBuf, e);
+                throw new InvalidException("Index \"{}\" is not a number", idxBuf, e);
             }
 
-            if (cur instanceof Iterable) {
-                try {
-                    cur = IterableUtils.get((Iterable<?>) cur, idx);
-                } catch (IndexOutOfBoundsException e) {
-                    throw new InvalidException("Array {} is index out of bounds with path {}", cur, visitor, e);
+            if (cur != null) {
+                if (cur instanceof Iterable) {
+                    try {
+                        cur = IterableUtils.get((Iterable<?>) cur, idx);
+                    } catch (IndexOutOfBoundsException e) {
+                        throw new InvalidException("Array \"{}\" is index out of bounds with path {}", cur, visitor, e);
+                    }
+                } else if (cur.getClass().isArray()) {
+                    try {
+                        cur = Array.get(cur, idx);
+                    } catch (ArrayIndexOutOfBoundsException e) {
+                        throw new InvalidException("Array \"{}\" is index out of bounds with path {}", cur, visitor, e);
+                    }
+                } else {
+                    throw new InvalidException("Object \"{}\" is not a array with path {}", cur, visitor);
                 }
-            } else if (cur != null && cur.getClass().isArray()) {
-                try {
-                    cur = Array.get(cur, idx);
-                } catch (ArrayIndexOutOfBoundsException e) {
-                    throw new InvalidException("Array {} is index out of bounds with path {}", cur, visitor, e);
-                }
-            } else {
-                throw new InvalidException("Object {} is not a array type with path {}", cur, visitor);
             }
         }
         if (cur != null && childSelect != null) {
@@ -607,7 +611,7 @@ public final class Sys extends SystemUtils {
         }
         if (i.get() < max && cur == null) {
             if (throwOnEmptyChild) {
-                throw new InvalidException("Get empty sub object by path {}", visitor);
+                throw new InvalidException("Get empty child by path {}", visitor);
             }
             return null;
         }

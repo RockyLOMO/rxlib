@@ -8,7 +8,7 @@
 <dependency>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rxlib</artifactId>
-    <version>2.19.9</version>
+    <version>2.19.11</version>
 </dependency>
 ```
 ### FEATURE

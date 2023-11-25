@@ -141,7 +141,7 @@ public class TestCore extends AbstractTester {
         }
         List<Future<Integer>> futures = pool.runAll(tasks, 0);
         for (Future<Integer> future : futures) {
-            System.out.println(future.get());
+            log.info("runAll get {}", future.get());
         }
 
         ThreadPool.MultiTaskFuture<Integer, Integer> anyMf = pool.runAnyAsync(tasks);
@@ -188,7 +188,8 @@ public class TestCore extends AbstractTester {
     @Test
     public void inheritThreadLocal() {
         Class.forName(Tasks.class.getName());
-        //线程trace，支持异步trace包括Executor(ThreadPool), ScheduledExecutorService(WheelTimer), CompletableFuture.xxAsync()系列方法。
+        ForkJoinPoolWrapper.transform();
+        //线程trace，支持异步trace包括Executor(ThreadPool), ScheduledExecutorService(WheelTimer), CompletableFuture.xxAsync(), parallelStream()系列方法。
         RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
         ThreadPool.traceIdGenerator = () -> UUID.randomUUID().toString().replace("-", "");
         ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e.getValue()));
@@ -230,42 +231,67 @@ public class TestCore extends AbstractTester {
 //        sleep(4000);
 
         //CompletableFuture.xxAsync异步方法正确获取trace
-        ThreadPool.startTrace(null);
-        CompletableFuture<Void> cf1 = null, cf2 = null;
-        for (int i = 0; i < 2; i++) {
-            int finalI = i;
-            cf1 = pool.runAsync(() -> {
-                log.info("TRACE ASYNC-1 {}", finalI);
-                pool.runAsync(() -> {
-                    log.info("TRACE ASYNC-1_1 {}", finalI);
-                    sleep(oneSecond);
-                }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
-                sleep(oneSecond);
-            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
-            log.info("TRACE ASYNC MAIN {}", finalI);
-            cf2 = pool.runAsync(() -> {
-                log.info("TRACE ASYNC-2 {}", finalI);
-                sleep(oneSecond);
-            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
-        }
-        //CompletableFuture.allOf
-//        pool.runAllAsync(org.rx.core.Arrays.toList(f1, f2)).getFuture().get(5, TimeUnit.SECONDS);
-        log.info("allOf start");
-        CompletableFuture.allOf(cf1, cf2).whenCompleteAsync((r, e) -> {
-            log.info("TRACE ALL-OF {}", r);
-        }).get(10, TimeUnit.SECONDS);
-        log.info("allOf end");
+//        ThreadPool.startTrace(null);
+//        for (int i = 0; i < 2; i++) {
+//            int finalI = i;
+//            CompletableFuture<Void> cf1 = pool.runAsync(() -> {
+//                log.info("TRACE ASYNC-1 {}", finalI);
+//                pool.runAsync(() -> {
+//                    log.info("TRACE ASYNC-1_1 {}", finalI);
+//                    sleep(oneSecond);
+//                }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
+//                sleep(oneSecond);
+//            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
+//            log.info("TRACE ASYNC MAIN {}", finalI);
+//            CompletableFuture<Void> cf2 = pool.runAsync(() -> {
+//                log.info("TRACE ASYNC-2 {}", finalI);
+//                sleep(oneSecond);
+//            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
+//        }
 //        ThreadPool.endTrace();
-        sleep(5000);
+//
+//        ThreadPool.startTrace(null);
+//        log.info("TRACE ALL_OF start");
+//        CompletableFuture.allOf(pool.runAsync(() -> {
+//            log.info("TRACE ALL_OF ASYNC-1");
+//            pool.runAsync(() -> {
+//                log.info("TRACE ALL_OF ASYNC-1_1");
+//                sleep(oneSecond);
+//            }).whenCompleteAsync((r, e) -> log.info("TRACE ALL_OF ASYNC-1_1 uni {}", r));
+//            sleep(oneSecond);
+//        }).whenCompleteAsync((r, e) -> log.info("TRACE ALL_OF ASYNC-1 uni {}", r)), pool.runAsync(() -> {
+//            log.info("TRACE ALL_OF ASYNC-2");
+//            sleep(oneSecond);
+//        }).whenCompleteAsync((r, e) -> log.info("TRACE ALL_OF ASYNC-2 uni {}", r))).whenCompleteAsync((r, e) -> {
+//            log.info("TRACE ALL-OF {}", r);
+//        }).get(10, TimeUnit.SECONDS);
+//        log.info("TRACE ALL_OF end");
+//        ThreadPool.endTrace();
+//        sleep(5000);
 
         //parallelStream
-//        ThreadPool.startTrace(null);
+        ThreadPool.startTrace(null);
         Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9).parallelStream().map(p -> {
+            //todo
+            Arrays.toList("a", "b", "c").parallelStream().map(x -> {
+                log.info("parallelStream {} -> {}", p, x);
+                return x.toString();
+            }).collect(Collectors.toList());
             log.info("parallelStream {}", p);
             return p.toString();
         }).collect(Collectors.toList());
         ThreadPool.endTrace();
 
+        //timer
+        ThreadPool.startTrace(null);
+        Tasks.timer().setTimeout(() -> {
+            log.info("TIMER 1");
+            pool.run(() -> {
+                log.info("TIMER 2");
+            });
+        }, d -> d > 5000 ? -1 : Math.max(d * 2, 1000), null, TimeoutFlag.PERIOD.flags());
+        ThreadPool.endTrace();
+        sleep(8000);
 //
 //        //netty FastThreadLocal 支持继承
 //        FastThreadLocal<Integer> ftl = new FastThreadLocal<>();
