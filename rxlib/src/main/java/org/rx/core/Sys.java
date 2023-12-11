@@ -562,6 +562,12 @@ public final class Sys extends SystemUtils {
             } else if (cur instanceof Iterable) {
                 //ignore
             } else {
+                if (cur == null) {
+                    if (throwOnEmptyChild) {
+                        throw new InvalidException("Get empty child by path {}", visitor);
+                    }
+                    return null;
+                }
                 try {
                     cur = Reflects.readField(cur, visitor);
                 } catch (Throwable e) {
