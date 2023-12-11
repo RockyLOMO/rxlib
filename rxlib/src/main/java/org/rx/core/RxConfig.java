@@ -251,7 +251,7 @@ public final class RxConfig {
         net.connectTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_CONNECT_TIMEOUT_MILLIS, net.connectTimeoutMillis);
         net.poolMaxSize = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_MAX_SIZE, net.poolMaxSize);
         if (net.poolMaxSize <= 0) {
-            net.poolMaxSize = Constants.CPU_THREADS * 2;
+            net.poolMaxSize = Math.max(10, Constants.CPU_THREADS * 2);
         }
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, net.poolKeepAliveSeconds);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, net.userAgent);
