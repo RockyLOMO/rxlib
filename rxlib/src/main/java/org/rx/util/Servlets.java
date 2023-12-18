@@ -69,7 +69,7 @@ public class Servlets extends ServletRequestUtils {
         String[] ips = Strings.split(ip, ",");
         if (ips.length > 1) {
             ip = ips[0];
-                    //.trim();
+            //.trim();
         }
         return ip;
     }
@@ -80,9 +80,8 @@ public class Servlets extends ServletRequestUtils {
         } catch (Throwable e) {
             if (throwOnEmpty) {
                 throw InvalidException.sneaky(e);
-            } else {
-                TraceHandler.INSTANCE.log(e);
             }
+            TraceHandler.INSTANCE.log(e);
             return "0.0.0.0";
         }
     }

@@ -122,12 +122,13 @@ public class Interceptors {
             return null;
         }
 
-        @SneakyThrows
-        @ExceptionHandler({Exception.class})
+        @ExceptionHandler({Throwable.class})
         @ResponseStatus(HttpStatus.OK)
         @ResponseBody
-        public Object onException(Exception e, HttpServletRequest request) {
-            TraceHandler.INSTANCE.log(request.getRequestURL().toString(), e);
+        public Object onException(Throwable e, HttpServletRequest request) {
+            if (!Boolean.TRUE.equals(request.getAttribute("_skipGlobalLog"))) {
+                TraceHandler.INSTANCE.log(request.getRequestURL().toString(), e);
+            }
             String msg = null;
             if (e instanceof MethodArgumentNotValidException) {
                 FieldError fieldError = ((MethodArgumentNotValidException) e).getBindingResult().getFieldError();
@@ -140,7 +141,7 @@ public class Interceptors {
             }
 
             if (SpringContext.controllerExceptionHandler != null) {
-                return SpringContext.controllerExceptionHandler.invoke(e, msg);
+                return SpringContext.controllerExceptionHandler.apply(e, msg);
             }
             return new ResponseEntity<>(msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
