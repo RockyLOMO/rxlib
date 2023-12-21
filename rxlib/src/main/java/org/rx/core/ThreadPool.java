@@ -453,13 +453,13 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     @SneakyThrows
-    public <T> T runAny(Collection<Func<T>> tasks, long timeoutMillis) {
+    public <T> T runAny(Iterable<Func<T>> tasks, long timeoutMillis) {
         List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) new Task<>(p, null, null)).toList();
         return timeoutMillis > 0 ? super.invokeAny(callables, timeoutMillis, TimeUnit.MILLISECONDS) : super.invokeAny(callables);
     }
 
     @SneakyThrows
-    public <T> List<Future<T>> runAll(Collection<Func<T>> tasks, long timeoutMillis) {
+    public <T> List<Future<T>> runAll(Iterable<Func<T>> tasks, long timeoutMillis) {
         List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) new Task<>(p, null, null)).toList();
         return timeoutMillis > 0 ? super.invokeAll(callables, timeoutMillis, TimeUnit.MILLISECONDS) : super.invokeAll(callables);
     }
@@ -530,7 +530,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         return f;
     }
 
-    public <T> MultiTaskFuture<T, T> runAnyAsync(Collection<Func<T>> tasks) {
+    public <T> MultiTaskFuture<T, T> runAnyAsync(Iterable<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
             Task<T> t = new Task<>(task, null, null);
             return CompletableFuture.supplyAsync(t, asyncExecutor);
@@ -538,7 +538,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         return new MultiTaskFuture<>((CompletableFuture<T>) CompletableFuture.anyOf(futures), futures);
     }
 
-    public <T> MultiTaskFuture<Void, T> runAllAsync(Collection<Func<T>> tasks) {
+    public <T> MultiTaskFuture<Void, T> runAllAsync(Iterable<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
             Task<T> t = new Task<>(task, null, null);
             //allOf().join() will hang

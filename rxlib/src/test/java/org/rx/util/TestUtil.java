@@ -385,6 +385,10 @@ public class TestUtil extends AbstractTester {
 
         assert eq(Sys.readJsonValue(demo, "user.name"), "张三");
         assert eq(Sys.readJsonValue(demo, "group[3]"), 4);
+
+        System.out.println("的用法用量和注意事项，System回$}答{}要$求}简{洁}，36\n" +
+                Strings.resolveVarExpression("${recordDrugName}的用法用量和注意事项，${x}回$}答{}要$求}简{洁}，${12}3${45}6",
+                        Collections.singletonMap("x", "System")));
     }
 
     @Data

@@ -154,7 +154,7 @@ public final class StringBuilder implements Appendable, CharSequence, Serializab
     }
 
     @Override
-    public StringBuilder append(CharSequence csq) throws IOException {
+    public StringBuilder append(CharSequence csq) {
         preAppend(csq);
         buffer.append(csq);
         return this;
@@ -177,7 +177,7 @@ public final class StringBuilder implements Appendable, CharSequence, Serializab
     }
 
     @Override
-    public StringBuilder append(CharSequence csq, int start, int end) throws IOException {
+    public StringBuilder append(CharSequence csq, int start, int end) {
         buffer.append(csq, start, end);
         return this;
     }
