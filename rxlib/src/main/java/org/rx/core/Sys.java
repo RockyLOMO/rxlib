@@ -599,13 +599,19 @@ public final class Sys extends SystemUtils {
                     try {
                         cur = IterableUtils.get((Iterable<?>) cur, idx);
                     } catch (IndexOutOfBoundsException e) {
-                        throw new InvalidException("Array \"{}\" is index out of bounds with path {}", cur, visitor, e);
+                        if (throwOnEmptyChild) {
+                            throw new InvalidException("Array \"{}\" is index out of bounds with path {}", cur, visitor, e);
+                        }
+                        cur = null;
                     }
                 } else if (cur.getClass().isArray()) {
                     try {
                         cur = Array.get(cur, idx);
                     } catch (ArrayIndexOutOfBoundsException e) {
-                        throw new InvalidException("Array \"{}\" is index out of bounds with path {}", cur, visitor, e);
+                        if (throwOnEmptyChild) {
+                            throw new InvalidException("Array \"{}\" is index out of bounds with path {}", cur, visitor, e);
+                        }
+                        cur = null;
                     }
                 } else {
                     throw new InvalidException("Object \"{}\" is not a array with path {}", cur, visitor);

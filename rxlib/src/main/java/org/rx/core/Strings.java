@@ -8,6 +8,7 @@ import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -49,23 +50,71 @@ public class Strings extends StringUtils {
         return list;
     }
 
-    public static String resolveVarExpression(String expr, Map<String, Object> vars) {
-        return resolveVarExpression(new StringBuilder(expr), vars);
-    }
-
     /**
      * 替换变量
-     * 变量格式: %{变量名}
      *
      * @param expr This is ${name}
-     * @param vars {\"${name}\": \"xf\"}
+     * @param vars {\"name\": \"xf\"}
      * @return This is xf
      */
-    public static String resolveVarExpression(@NonNull StringBuilder expr, @NonNull Map<String, Object> vars) {
-        for (Map.Entry<String, Object> var : vars.entrySet()) {
-            expr.replace(var.getKey(), ifNull(var.getValue(), Strings.EMPTY).toString());
+    public static String resolveVarExpression(@NonNull CharSequence expr, Map<String, Object> vars) {
+        if (vars == null) {
+            vars = Collections.emptyMap();
         }
-        return expr.toString();
+        final char begin0 = '$', begin1 = '{', end = '}';
+        final byte inExpr = 2;
+        int len = expr.length(), mark = -1;
+        StringBuilder buf = new StringBuilder(len), pBuf = new StringBuilder();
+        byte stat = 0;
+        for (int i = 0; i < len; i++) {
+            char c = expr.charAt(i);
+            if (c == begin0) {
+                if (stat == 0) {
+                    mark = buf.length();
+                    stat = 1;
+//                    continue;
+                } else {
+                    if (stat == inExpr) {
+                        throw new InvalidException("表达式在索引{}开始，索引{}格式错误", mark, i);
+                    }
+                    mark = -1;
+                    stat = 0;
+                }
+            } else if (c == begin1) {
+                if (stat == 1) {
+                    buf.append(c);
+                    stat = inExpr;
+                    continue;
+                } else {
+                    if (stat == inExpr) {
+                        throw new InvalidException("表达式{}在索引{}开始，索引{}格式错误", pBuf, mark, i);
+                    }
+                    mark = -1;
+                    stat = 0;
+                }
+            } else if (c == end) {
+                if (stat == inExpr) {
+                    buf.setLength(mark);
+                    Object var = Sys.readJsonValue(vars, pBuf.toString(), null, false);
+                    if (var != null) {
+                        buf.append(var);
+                    }
+                    pBuf.setLength(0);
+                    mark = -1;
+                    stat = 0;
+                    continue;
+                } else {
+                    mark = -1;
+                    stat = 0;
+                }
+            }
+            if (stat == inExpr) {
+                pBuf.append(c);
+                continue;
+            }
+            buf.append(c);
+        }
+        return buf.toString();
     }
     //endregion
 
