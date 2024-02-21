@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rx</artifactId>
@@ -12,9 +13,10 @@
         <version>9</version>
     </parent>
     <modules>
-        <module>rxlib</module>
-        <module>agent</module>
         <module>daemon</module>
+        <module>agent</module>
+        <module>rxlib</module>
+        <module>rxlib-x</module>
     </modules>
 
     <name>rx</name>
@@ -54,7 +56,33 @@
         <java.version>1.8</java.version>
         <shallow>true</shallow>
         <gpg.skip>false</gpg.skip>
+
+        <lombok.version>1.18.30</lombok.version>
+        <junit.version>5.9.1</junit.version>
+        <jmh.version>1.36</jmh.version>
     </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-generator-annprocess</artifactId>
+            <version>${jmh.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 
     <build>
         <plugins>

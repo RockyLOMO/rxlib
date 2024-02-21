@@ -1,4 +1,4 @@
-package org.rx.bean;
+package org.rx.test;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;

@@ -1,8 +1,9 @@
-package org.rx.bean;
+package org.rx.test;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.rx.annotation.Metadata;
+import org.rx.bean.NEnum;
 
 @RequiredArgsConstructor
 public enum PersonGender implements NEnum<PersonGender> {
