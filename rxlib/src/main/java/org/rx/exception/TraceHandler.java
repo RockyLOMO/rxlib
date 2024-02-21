@@ -20,6 +20,7 @@ import java.io.Serializable;
 import java.sql.Time;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
@@ -58,6 +59,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         String methodName;
         String parameters;
         String returnValue;
+        Map<String, String> MDC;
         long elapsedMicros;
         int occurCount;
 
@@ -231,7 +233,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 if (queue.size() > conf.getErrorMessageSize()) {
                     queue.poll();
                 }
-                queue.offer(String.format("%s\t%s", DateTime.now().toDateTimeString(), msg));
+                queue.offer(String.format("%s\t%s\nMDC:\t%s", DateTime.now().toDateTimeString(), msg, Sys.getMDCCtxMap()));
                 entity.occurCount++;
                 entity.setAppName(RxConfig.INSTANCE.getId());
                 entity.setThreadName(t.getName());
@@ -308,6 +310,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 } else if (returnValue != null) {
                     entity.setReturnValue(toJsonString(returnValue));
                 }
+                entity.setMDC(Sys.getMDCCtxMap());
                 entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
                 entity.occurCount++;
                 entity.setAppName(RxConfig.INSTANCE.getId());

@@ -14,6 +14,9 @@ import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
+import org.rx.test.GirlBean;
+import org.rx.test.PersonBean;
+import org.rx.test.PersonGender;
 
 import java.io.File;
 import java.io.InputStream;

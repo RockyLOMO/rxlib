@@ -16,6 +16,9 @@ import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.test.GirlBean;
+import org.rx.test.PersonBean;
+import org.rx.test.PersonGender;
 import org.rx.test.UserStruct;
 import org.rx.third.guava.CaseFormat;
 

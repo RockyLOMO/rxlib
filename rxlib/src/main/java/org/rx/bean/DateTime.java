@@ -46,6 +46,14 @@ public final class DateTime extends Date {
         return now().asUniversalTime();
     }
 
+    public static DateTime ofToNull(Date d) {
+        return d != null ? new DateTime(d.getTime()) : null;
+    }
+
+    public static DateTime of(@NonNull Date d) {
+        return new DateTime(d.getTime());
+    }
+
     @ErrorCode(cause = ParseException.class)
     public static DateTime valueOf(@NonNull String dateString) {
         Throwable lastEx = null;
@@ -71,7 +79,7 @@ public final class DateTime extends Date {
     @SneakyThrows
     public static DateTime valueOf(String dateString, String format) {
         //SimpleDateFormat not thread safe
-        return new DateTime(FastDateFormat.getInstance(format).parse(dateString));
+        return DateTime.of(FastDateFormat.getInstance(format).parse(dateString));
     }
 
     private Calendar calendar;

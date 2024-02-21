@@ -144,6 +144,7 @@ public class Files extends FilenameUtils {
     }
 
     //MimeTypeUtils
+    //https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
     public static String getMediaTypeFromName(String fileName) {
         String ext = getExtension(fileName);
         if (Strings.isEmpty(ext)) {

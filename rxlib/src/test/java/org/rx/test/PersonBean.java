@@ -1,10 +1,13 @@
-package org.rx.bean;
+package org.rx.test;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.Metadata;
+import org.rx.bean.DateTime;
+import org.rx.bean.Decimal;
+import org.rx.bean.ULID;
 import org.rx.core.Arrays;
 import org.rx.core.Extends;
 

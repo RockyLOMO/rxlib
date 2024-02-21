@@ -364,15 +364,7 @@ public final class Sys extends SystemUtils {
 
     @SneakyThrows
     public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<String, String> mappedDiagnosticCtx = Collections.emptyMap();
-        MDCAdapter mdc = MDC.getMDCAdapter();
-        if (mdc != null) {
-            LogbackMDCAdapter lb = as(mdc, LogbackMDCAdapter.class);
-            Map<String, String> pm = lb != null ? lb.getPropertyMap() : mdc.getCopyOfContextMap();
-            if (pm != null) {
-                mappedDiagnosticCtx = pm;
-            }
-        }
+        Map<String, String> mappedDiagnosticCtx = getMDCCtxMap();
         boolean doWrite = !mappedDiagnosticCtx.isEmpty();
         if (!doWrite) {
             if (eventArgs.getLogStrategy() == null) {
@@ -421,6 +413,19 @@ public final class Sys extends SystemUtils {
                 log.info(msg.toString());
             }
         }
+    }
+
+    public static Map<String, String> getMDCCtxMap() {
+        MDCAdapter mdc = MDC.getMDCAdapter();
+        if (mdc == null) {
+            return Collections.emptyMap();
+        }
+        LogbackMDCAdapter lb = as(mdc, LogbackMDCAdapter.class);
+        Map<String, String> ctxMap = lb != null ? lb.getPropertyMap() : mdc.getCopyOfContextMap();
+        if (ctxMap == null) {
+            ctxMap = Collections.emptyMap();
+        }
+        return ctxMap;
     }
     //endregion
 
