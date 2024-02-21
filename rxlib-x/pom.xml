@@ -48,8 +48,4 @@
             <version>1.2.21</version>
         </dependency>
     </dependencies>
-
-    <scm>
-        <tag>rxlib-x-3.0.0</tag>
-    </scm>
 </project>
