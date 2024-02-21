@@ -90,7 +90,7 @@ public class Reflects extends ClassUtils {
         registerConvert(Long.class, Date.class, (sv, tt) -> new Date(sv));
         registerConvert(Long.class, DateTime.class, (sv, tt) -> new DateTime(sv));
         registerConvert(Date.class, Long.class, (sv, tt) -> sv.getTime());
-        registerConvert(Date.class, DateTime.class, (sv, tt) -> new DateTime(sv));
+        registerConvert(Date.class, DateTime.class, (sv, tt) -> DateTime.of(sv));
         registerConvert(String.class, BigDecimal.class, (sv, tt) -> new BigDecimal(sv));
         registerConvert(String.class, UUID.class, (sv, tt) -> UUID.fromString(sv));
     }
