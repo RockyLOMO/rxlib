@@ -619,6 +619,9 @@ public class HttpClient {
             reqContent = requestInterceptor.invoke(reqContent);
         }
 
+        //todo get request body
+//        boolean isGet = Strings.equalsIgnoreCase(servletRequest.getMethod(), HttpMethod.GET.name());
+//        ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), isGet ? null : reqContent.toBody()).build()).execute());
         ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), reqContent.toBody()).build()).execute());
         resContent.cachingStream = cachingStream;
         servletResponse.setStatus(resContent.response.code());
