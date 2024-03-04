@@ -7,8 +7,6 @@ import java.util.function.Supplier;
 
 @FunctionalInterface
 public interface Func<T> extends Callable<T>, Supplier<T> {
-    Func EMPTY = () -> null;
-
     T invoke() throws Throwable;
 
     @SneakyThrows

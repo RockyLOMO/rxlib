@@ -13,12 +13,12 @@ import org.rx.io.KeyValueStore;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.Func;
 import org.rx.util.function.PredicateFunc;
 
 import java.net.InetAddress;
 
-import static org.rx.core.Extends.eq;
-import static org.rx.core.Extends.quietly;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 class ComboIPSearcher implements IPSearcher {
@@ -77,7 +77,7 @@ class ComboIPSearcher implements IPSearcher {
         }
         RandomList<BiFunc<String, IPAddress>> fns = resolveHostRemotely ? dApis : apis;
         String finalHost = host;
-        return quietly(() -> fns.next().invoke(finalHost), 3);
+        return retry((Func<IPAddress>) () -> fns.next().invoke(finalHost), 3, quietlyRecover());
     }
 
     //6k/d

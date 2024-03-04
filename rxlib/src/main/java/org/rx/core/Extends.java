@@ -10,6 +10,7 @@ import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 
 import java.io.Serializable;
@@ -49,59 +50,110 @@ public interface Extends extends Serializable {
         }
     }
 
-    static boolean quietly(Action fn) {
-        return quietly(fn, 1, false);
-    }
-
-    static boolean quietly(Action fn, int retryCount) {
-        return quietly(fn, retryCount, false);
-    }
-
-    static boolean quietly(@NonNull Action fn, int retryCount, boolean throwOnLast) {
-        Throwable last = null;
-        for (int i = 0; i < retryCount; i++) {
-            try {
-                fn.invoke();
-                return true;
-            } catch (Throwable e) {
-                TraceHandler.INSTANCE.log("quietly retry={}/{}", i, retryCount, e);
-                last = e;
-            }
-            sleep(0);
-        }
-        if (last != null && throwOnLast) {
-            throw InvalidException.sneaky(last);
+    static boolean quietly(@NonNull Action fn) {
+        try {
+            fn.invoke();
+            return true;
+        } catch (Throwable e) {
+            TraceHandler.INSTANCE.log("quietly {}", fn, e);
         }
         return false;
     }
 
     static <T> T quietly(Func<T> fn) {
-        return quietly(fn, 1, (Func<T>) Func.EMPTY);
+        return quietly(fn, null);
     }
 
-    static <T> T quietly(Func<T> fn, int retryCount) {
-        return quietly(fn, retryCount, null);
-    }
-
-    static <T> T quietly(Func<T> fn, Func<T> defaultValue) {
-        return quietly(fn, 1, defaultValue);
-    }
-
-    static <T> T quietly(@NonNull Func<T> fn, int retryCount, Func<T> defaultValue) {
-        Throwable last = null;
-        for (int i = 0; i < retryCount; i++) {
-            try {
-                return fn.invoke();
-            } catch (Throwable e) {
-                TraceHandler.INSTANCE.log("quietly retry={}/{}", i, retryCount, e);
-                last = e;
-            }
-        }
-        if (last != null && defaultValue == null) {
-            throw InvalidException.sneaky(last);
+    static <T> T quietly(@NonNull Func<T> fn, Func<T> defaultValue) {
+        try {
+            return fn.invoke();
+        } catch (Throwable e) {
+            TraceHandler.INSTANCE.log("quietly {}", fn, e);
         }
         if (defaultValue != null) {
             return defaultValue.get();
+        }
+        return null;
+    }
+
+    static <T> BiFunc<Throwable, T> quietlyRecover() {
+        return e -> {
+            TraceHandler.INSTANCE.log("quietlyRecover", e);
+            return null;
+        };
+    }
+
+    static boolean retry(Action fn, int maxAttempts) {
+        return retry(fn, maxAttempts, 0, 0, 0, null);
+    }
+
+    static boolean retry(Action fn, int maxAttempts, BiFunc<Throwable, Boolean> recover) {
+        return retry(fn, maxAttempts, 0, 0, 0, recover);
+    }
+
+    @SneakyThrows
+    static boolean retry(@NonNull Action fn, int maxAttempts, long backoffDelay, long backoffMaxDelay, double backoffMultipler, BiFunc<Throwable, Boolean> recover) {
+        Throwable last = null;
+        long slept = backoffDelay;
+        boolean exponential = backoffMultipler > 0;
+        boolean exponentialMax = backoffMaxDelay > 0;
+        for (int i = 0; i < maxAttempts; i++) {
+            try {
+                fn.invoke();
+                return true;
+            } catch (Throwable e) {
+                last = e;
+            }
+            if (exponential) {
+                slept *= backoffMultipler;
+            }
+            if (exponentialMax && slept > backoffMaxDelay) {
+                break;
+            }
+            Thread.sleep(slept);
+        }
+        if (last != null) {
+            if (recover == null) {
+                throw last;
+            }
+            return ifNull(recover.invoke(last), false);
+        }
+        return false;
+    }
+
+    static <T> T retry(@NonNull Func<T> fn, int maxAttempts) {
+        return retry(fn, maxAttempts, 0, 0, 0, null);
+    }
+
+    static <T> T retry(@NonNull Func<T> fn, int maxAttempts, BiFunc<Throwable, T> recover) {
+        return retry(fn, maxAttempts, 0, 0, 0, recover);
+    }
+
+    @SneakyThrows
+    static <T> T retry(@NonNull Func<T> fn, int maxAttempts, long backoffDelay, long backoffMaxDelay, double backoffMultipler, BiFunc<Throwable, T> recover) {
+        Throwable last = null;
+        long slept = backoffDelay;
+        boolean exponential = backoffMultipler > 0;
+        boolean exponentialMax = backoffMaxDelay > 0;
+        for (int i = 0; i < maxAttempts; i++) {
+            try {
+                return fn.invoke();
+            } catch (Throwable e) {
+                last = e;
+            }
+            if (exponential) {
+                slept *= backoffMultipler;
+            }
+            if (exponentialMax && slept > backoffMaxDelay) {
+                break;
+            }
+            Thread.sleep(slept);
+        }
+        if (last != null) {
+            if (recover == null) {
+                throw last;
+            }
+            return recover.invoke(last);
         }
         return null;
     }
