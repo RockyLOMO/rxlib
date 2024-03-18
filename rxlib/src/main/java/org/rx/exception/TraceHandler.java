@@ -11,6 +11,7 @@ import org.rx.bean.DateTime;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
+import org.rx.core.StringBuilder;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
 import org.slf4j.helpers.FormattingTuple;
@@ -233,7 +234,13 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 if (queue.size() > conf.getErrorMessageSize()) {
                     queue.poll();
                 }
-                queue.offer(String.format("%s\t%s\nMDC:\t%s", DateTime.now().toDateTimeString(), msg, Sys.getMDCCtxMap()));
+                StringBuilder b = new StringBuilder();
+                b.appendMessageFormat("{}\t{}", DateTime.now().toDateTimeString(), msg);
+                Map<String, String> ctxMap = Sys.getMDCCtxMap();
+                if (!ctxMap.isEmpty()) {
+                    b.appendMessageFormat("\nMDC:\t{}", ctxMap);
+                }
+                queue.offer(b.toString());
                 entity.occurCount++;
                 entity.setAppName(RxConfig.INSTANCE.getId());
                 entity.setThreadName(t.getName());

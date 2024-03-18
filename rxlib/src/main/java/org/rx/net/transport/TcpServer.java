@@ -239,7 +239,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
         StringBuilder buf = new StringBuilder();
         int i = 1;
         for (TcpClient client : Linq.from(clients.values()).orderBy(p -> p.remoteEndpoint)) {
-            buf.append("\t%s", client.getRemoteEndpoint());
+            buf.appendFormat("\t%s", client.getRemoteEndpoint());
             if (i++ % 3 == 0) {
                 buf.appendLine();
             }

@@ -44,7 +44,7 @@ public class EntityQueryLambda<T> implements Extends {
     static final String FUNC_RAND = "RAND()";
 
     static void pkClaus(StringBuilder sql, String pk) {
-        sql.append(WHERE).append(Operator.EQ.format, pk, PARAM_HOLD);
+        sql.append(WHERE).appendFormat(Operator.EQ.format, pk, PARAM_HOLD);
     }
 
     final Class<T> entityType;
@@ -234,7 +234,7 @@ public class EntityQueryLambda<T> implements Extends {
                     } else {
                         valHold = toValueString(condition.right);
                     }
-                    b.append(op.format, colName, valHold);
+                    b.appendFormat(op.format, colName, valHold);
                 }
                 break;
                 case IN:
@@ -250,7 +250,7 @@ public class EntityQueryLambda<T> implements Extends {
                     } else {
                         valHold = Linq.from((Object[]) condition.right).toJoinString(",", EntityQueryLambda::toValueString);
                     }
-                    b.append(op.format, colName, valHold);
+                    b.appendFormat(op.format, colName, valHold);
                 }
                 break;
                 case BETWEEN:
@@ -270,7 +270,7 @@ public class EntityQueryLambda<T> implements Extends {
                         valHold0 = toValueString(p[0]);
                         valHold1 = toValueString(p[1]);
                     }
-                    b.append(op.format, colName, valHold0, valHold1);
+                    b.appendFormat(op.format, colName, valHold0, valHold1);
                 }
                 break;
                 case AND:
@@ -280,7 +280,7 @@ public class EntityQueryLambda<T> implements Extends {
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
-                    b.append(op.format, resolve(l, params, null, orderByRand, autoUnderscoreColumnName, limit, offset), r.toString(params));
+                    b.appendFormat(op.format, resolve(l, params, null, orderByRand, autoUnderscoreColumnName, limit, offset), r.toString(params));
                     break;
             }
         }
@@ -291,7 +291,7 @@ public class EntityQueryLambda<T> implements Extends {
             b.append(ORDER_BY);
             for (Tuple<BiFunc<T, ?>, Order> bi : orders) {
                 String colName = resolveColumnName(bi.left, autoUnderscoreColumnName);
-                b.append("%s %s,", colName, bi.right);
+                b.appendFormat("%s %s,", colName, bi.right);
             }
             b.setLength(b.length() - 1);
         }
@@ -299,7 +299,7 @@ public class EntityQueryLambda<T> implements Extends {
         if (limit != null) {
             b.append(LIMIT);
             if (offset != null) {
-                b.append("%s,", offset);
+                b.appendFormat("%s,", offset);
             }
             b.append(limit);
 //            b.append(LIMIT).append(limit);

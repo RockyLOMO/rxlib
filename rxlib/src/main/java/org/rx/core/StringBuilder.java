@@ -5,8 +5,8 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.util.function.TripleAction;
 
-import java.io.IOException;
 import java.io.Serializable;
+import java.text.MessageFormat;
 
 @Getter
 public final class StringBuilder implements Appendable, CharSequence, Serializable {
@@ -172,10 +172,6 @@ public final class StringBuilder implements Appendable, CharSequence, Serializab
         return this;
     }
 
-    public StringBuilder append(String format, Object... args) {
-        return append(String.format(format, args));
-    }
-
     @Override
     public StringBuilder append(CharSequence csq, int start, int end) {
         buffer.append(csq, start, end);
@@ -222,6 +218,15 @@ public final class StringBuilder implements Appendable, CharSequence, Serializab
         preAppend(obj);
         buffer.append(obj);
         return appendLine();
+    }
+
+    public StringBuilder appendFormat(String format, Object... args) {
+        return append(String.format(format, args));
+    }
+
+    public StringBuilder appendMessageFormat(String format, Object... args) {
+        buffer.append(MessageFormat.format(format, args));
+        return this;
     }
 
     public StringBuilder appendLine(String format, Object... args) {

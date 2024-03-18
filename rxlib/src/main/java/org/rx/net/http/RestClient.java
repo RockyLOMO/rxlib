@@ -81,7 +81,7 @@ public final class RestClient {
                         msg.appendLine("GET:\t%s", reqUrl);
                     }
                     msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
-                    msg.append("Response:\t%s", args.getReturnValue());
+                    msg.appendFormat("Response:\t%s", args.getReturnValue());
                 });
             }
             if (m.getReturnType().equals(Void.class)) {
