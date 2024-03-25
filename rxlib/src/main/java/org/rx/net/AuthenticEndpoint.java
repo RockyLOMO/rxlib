@@ -77,9 +77,9 @@ public class AuthenticEndpoint implements Serializable {
             s.append(username);
         }
         if (!Strings.isEmpty(password)) {
-            s.append(":%s", password);
+            s.appendFormat(":%s", password);
         }
-        s.append("@%s", Sockets.toString(endpoint));
+        s.appendFormat("@%s", Sockets.toString(endpoint));
         if (!MapUtils.isEmpty(parameters)) {
             s.append(HttpClient.buildUrl(null, (Map) parameters));
         }

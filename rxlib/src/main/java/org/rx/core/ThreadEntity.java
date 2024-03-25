@@ -60,7 +60,7 @@ public class ThreadEntity implements Serializable {
         if (inNative) {
             sb.append(" (in native)");
         }
-        sb.append(" BlockedTime=%s WaitedTime=%s UserTime=%s CpuTime=%s",
+        sb.appendFormat(" BlockedTime=%s WaitedTime=%s UserTime=%s CpuTime=%s",
                 Sys.formatNanosElapsed(blockedTime, 2), Sys.formatNanosElapsed(waitedTime, 2),
                 Sys.formatNanosElapsed(userNanos), Sys.formatNanosElapsed(cpuNanos));
         sb.append('\n');

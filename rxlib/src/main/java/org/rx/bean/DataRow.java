@@ -55,16 +55,16 @@ public class DataRow implements Extends {
         return get(table.getColumn(ordinal));
     }
 
-    public void set(int ordinal, Object item) {
-        set(table.getColumn(ordinal), item);
+    public void set(int ordinal, Object cell) {
+        set(table.getColumn(ordinal), cell);
     }
 
     public <T> T get(String columnName) {
         return get(table.getColumn(columnName));
     }
 
-    public void set(String columnName, Object item) {
-        set(table.getColumn(columnName), item);
+    public void set(String columnName, Object cell) {
+        set(table.getColumn(columnName), cell);
     }
 
     public <T> T get(@NonNull DataColumn<T> column) {
@@ -76,16 +76,16 @@ public class DataRow implements Extends {
         return (T) items.get(column.ordinal);
     }
 
-    public <T> void set(@NonNull DataColumn<T> column, T item) {
+    public <T> void set(@NonNull DataColumn<T> column, T cell) {
         require(column, column.getTable() == table);
 
-        if (column.dataType != null && !Reflects.isInstance(item, column.dataType)) {
+        if (column.dataType != null && !Reflects.isInstance(cell, column.dataType)) {
             throw new InvalidException("Item type error");
         }
         if (column.ordinal < items.size()) {
-            items.set(column.ordinal, item);
+            items.set(column.ordinal, cell);
         } else {
-            items.add(column.ordinal, item);
+            items.add(column.ordinal, cell);
         }
     }
 }

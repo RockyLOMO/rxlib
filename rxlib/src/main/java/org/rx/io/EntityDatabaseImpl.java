@@ -256,7 +256,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     continue;
                 }
 
-                cols.append("`%s`=?,", col.getKey());
+                cols.appendFormat("`%s`=?,", col.getKey());
                 params.add(val);
             }
             cols.setLength(cols.length() - 1);
@@ -301,7 +301,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         List<Object> params = new ArrayList<>();
         appendClause(subSql, query, params);
 
-        sql.append(" IN(%s)", subSql);
+        sql.appendFormat(" IN(%s)", subSql);
         String execSql = sql.toString();
 
         long total = 0;
@@ -489,7 +489,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         for (Class<?> entityType : entityTypes) {
             createCols.setLength(0);
             String tableName = tableName(entityType);
-            insert.setLength(0).append("INSERT INTO %s VALUES (", tableName);
+            insert.setLength(0).appendFormat("INSERT INTO %s VALUES (", tableName);
 
             String pkName = null;
             Map<String, Tuple<Field, DbColumn>> columns = new LinkedHashMap<>();
@@ -628,7 +628,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         String tableName = template.getTableName();
         StringBuilder createCols = new StringBuilder();
         StringBuilder insert = new StringBuilder();
-        insert.append("INSERT INTO %s VALUES (", tableName);
+        insert.appendFormat("INSERT INTO %s VALUES (", tableName);
 
         int len = template.getColumns().size();
         List<Class<?>> colTypes = new ArrayList<>(len);

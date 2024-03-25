@@ -217,6 +217,30 @@ public class Strings extends StringUtils {
         return 0;
     }
 
+    public static boolean isStrongPwd(String input) {
+        //^(?=.*\d)(?=.*[a-z])(?=.*[A-Z]).{8,16}
+        //^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])[a-zA-Z0-9~!@#$%^&*]{8,16}$
+        int len = input.length();
+        if (len < 8) {
+            return false;
+        }
+        int strength = 0, f = 1 | 2 | 4;
+        for (int i = 0; i < len; i++) {
+            char c = input.charAt(i);
+            if (Character.isLowerCase(c)) {
+                strength |= 1;
+            } else if (Character.isUpperCase(c)) {
+                strength |= 2;
+            } else if (Character.isDigit(c)) {
+                strength |= 4;
+            }
+            if ((strength & f) == f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static String maskPrivacy(String str) {
         if (isEmpty(str)) {
             return EMPTY;

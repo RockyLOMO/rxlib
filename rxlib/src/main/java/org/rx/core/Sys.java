@@ -13,13 +13,11 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.IterableUtils;
-import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DynamicProxyBean;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.ProceedEventArgs;
-import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -402,7 +400,7 @@ public final class Sys extends SystemUtils {
                     msg.append("MDC:\t");
                     first = false;
                 }
-                msg.append("%s=%s ", entry.getKey(), entry.getValue());
+                msg.appendFormat("%s=%s ", entry.getKey(), entry.getValue());
             }
             if (!first) {
                 msg.appendLine();

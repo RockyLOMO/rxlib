@@ -182,8 +182,8 @@ public class DataTable implements Extends {
         return list;
     }
 
-    public DataRow addRow(Object... items) {
-        DataRow row = newRow(items);
+    public DataRow addRow(Object... cells) {
+        DataRow row = newRow(cells);
         rows.add(row);
         return row;
     }
@@ -201,10 +201,10 @@ public class DataTable implements Extends {
         return row;
     }
 
-    public DataRow newRow(Object... items) {
+    public DataRow newRow(Object... cells) {
         DataRow row = new DataRow(this);
-        if (!Arrays.isEmpty(items)) {
-            row.setArray(items);
+        if (!Arrays.isEmpty(cells)) {
+            row.setArray(cells);
         }
         return row;
     }
@@ -236,7 +236,7 @@ public class DataTable implements Extends {
     }
 
     public <T> DataColumn<T> getColumn(String columnName) {
-        return Linq.from(columns).first(p -> eq(p.columnName, columnName));
+        return Linq.from(columns).first(p -> Strings.hashEquals(p.columnName, columnName));
     }
 
     <T> void setOrdinal(DataColumn<T> column, int ordinal) {
