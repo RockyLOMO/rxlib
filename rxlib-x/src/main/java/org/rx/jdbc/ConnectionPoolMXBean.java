@@ -6,12 +6,6 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 
-/**
- * Created by IntelliJ IDEA.
- *
- * @author wangxiaoming
- * Date: 2019/12/10
- */
 @NoArgsConstructor
 @AllArgsConstructor
 @Data

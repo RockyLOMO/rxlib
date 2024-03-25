@@ -10,12 +10,6 @@ import org.rx.exception.InvalidException;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * Created by IntelliJ IDEA.
- *
- * @author wangxiaoming
- * Date: 2019/9/2
- */
 @Getter
 public enum DriverClassFlag implements NEnum<DriverClassFlag> {
     MySQL(1, "com.mysql.jdbc.Driver", "jdbc:mysql:"),
