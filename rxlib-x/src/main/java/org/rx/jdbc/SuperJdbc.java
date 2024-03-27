@@ -5,11 +5,6 @@ import org.rx.core.Disposable;
 import java.sql.SQLException;
 import java.sql.Wrapper;
 
-/**
- * Created by IntelliJ IDEA.
- * User: wangxiaoming
- * Date: 2019/8/26
- */
 public abstract class SuperJdbc extends Disposable implements Wrapper {
     public static final String CATALOG = "def";
 

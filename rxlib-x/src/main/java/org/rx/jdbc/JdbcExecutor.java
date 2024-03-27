@@ -30,7 +30,8 @@ import static org.rx.core.Sys.*;
 @Slf4j
 public class JdbcExecutor extends Disposable implements EventPublisher<JdbcExecutor>, JdbcExecutable {
     @RequiredArgsConstructor
-    static class DefaultDataSource extends SuperDataSource {
+    public static class DefaultDataSource extends SuperDataSource {
+        @Getter
         final DataSourceConfig config;
 
         @Override
@@ -44,7 +45,7 @@ public class JdbcExecutor extends Disposable implements EventPublisher<JdbcExecu
         }
     }
 
-    static final String SPLIT_SYMBOL = ";";
+    public static final String SPLIT_SYMBOL = ";";
     public static final String STRING_SYMBOL = "`";
 
     public static String buildMysqlConnectionString(String host, int port, String database, long connectTimeout, long readWriteTimeout) {
@@ -115,6 +116,7 @@ public class JdbcExecutor extends Disposable implements EventPublisher<JdbcExecu
     public final Delegate<JdbcExecutor, TimeoutEventArgs> onExecuteTimeout = Delegate.create();
     @Getter
     final DataSourceConfig config;
+    @Getter
     final DataSource dataSource;
     protected boolean closeDataSource;
     @Setter
