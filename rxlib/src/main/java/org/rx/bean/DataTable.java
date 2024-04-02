@@ -15,6 +15,7 @@ import org.h2.value.ValueToObjectConverter;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.third.guava.CaseFormat;
 
 import java.lang.reflect.Type;
 import java.sql.ResultSet;
@@ -167,7 +168,16 @@ public class DataTable implements Extends {
         this.tableName = tableName;
     }
 
-    public <T> List<T> toList(@NonNull Type type) {
+    public <T> List<T> toList(Type type) {
+        return toList(type, false);
+    }
+
+    public <T> List<T> toList(@NonNull Type type, boolean toLowerCamelColumn) {
+        if (toLowerCamelColumn) {
+            for (DataColumn column : columns) {
+                column.setColumnName(CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.LOWER_CAMEL, column.getColumnName()));
+            }
+        }
         List<T> list = new ArrayList<>();
         int colSize = columns.size();
         Iterator<DataRow> rows = getRows();
