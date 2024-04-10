@@ -23,6 +23,7 @@ import org.rx.test.UserStruct;
 import org.rx.third.guava.CaseFormat;
 
 import java.lang.reflect.Method;
+import java.time.Month;
 import java.util.Arrays;
 import java.util.*;
 
@@ -44,7 +45,7 @@ public class TestUtil extends AbstractTester {
         class DateToIntConvert implements BeanMapConverter<Date, Integer> {
             @Override
             public Integer convert(Date sourceValue, Class<Integer> targetType, String propertyName) {
-                return (int) (sourceValue.getTime() - DateTime.MIN.getTime());
+                return (int) (sourceValue.getTime() - DateTime.now().getTime());
             }
         }
 
@@ -89,7 +90,7 @@ public class TestUtil extends AbstractTester {
         f.setIndex(2);
         f.setName(str_name_wyf);
         f.setAge(6);
-        f.setBirth(new DateTime(2020, 2, 20, 0, 0, 0));
+        f.setBirth(new DateTime(2020, Month.FEBRUARY, 20, 0, 0, 0));
         f.setGender(PersonGender.BOY);
         f.setCashCent(200L);
         GirlBean t = new GirlBean();

@@ -9,6 +9,9 @@ import org.rx.exception.ApplicationException;
 
 import java.text.ParseException;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.Month;
+import java.time.temporal.TemporalAdjusters;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
@@ -21,9 +24,9 @@ import static org.rx.core.Extends.values;
  * GMT: UTC +0
  * http://www.mkyong.com/java/how-to-calculate-date-time-difference-in-java/
  */
+@SuppressWarnings("deprecation")
 public final class DateTime extends Date {
     private static final long serialVersionUID = 414744178681347341L;
-    public static final DateTime MIN = new DateTime(2000, 1, 1, 0, 0, 0), MAX = new DateTime(9999, 12, 31, 0, 0, 0);
     public static final String DATE_FORMAT = "yyy-MM-dd";
     public static final String TIME_FORMAT = "HH:mm:ss";
     public static final String DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
@@ -92,57 +95,35 @@ public final class DateTime extends Date {
         return calendar;
     }
 
-    public DateTime getDatePart() {
-        return DateTime.valueOf(toDateString(), DATE_FORMAT);
-    }
-
-    public DateTime setDatePart(String date) {
-        return DateTime.valueOf(toString(date + " HH:mm:ss"), DATE_TIME_FORMAT);
-    }
-
-    public DateTime getTimePart() {
-        return DateTime.valueOf(toTimeString(), TIME_FORMAT);
-    }
-
-    public DateTime setTimePart(String time) {
-        return DateTime.valueOf(toString("yyy-MM-dd " + time), DATE_TIME_FORMAT);
-    }
-
-    public boolean isToday() {
-        return DateTime.now().toString(DATE_FORMAT).equals(toDateString());
-    }
-
-    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getYear() {
         return getCalendar().get(Calendar.YEAR);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getMonth() {
         return getCalendar().get(Calendar.MONTH) + 1;
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
+    public Month getMonthEnum() {
+        return Month.of(getCalendar().get(Calendar.MONTH) + 1);
+    }
+
     @Override
     public int getDay() {
         return getCalendar().get(Calendar.DAY_OF_MONTH);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getHours() {
         return getCalendar().get(Calendar.HOUR_OF_DAY);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getMinutes() {
         return getCalendar().get(Calendar.MINUTE);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public int getSeconds() {
         return getCalendar().get(Calendar.SECOND);
@@ -157,19 +138,35 @@ public final class DateTime extends Date {
     }
 
     public DayOfWeek getDayOfWeek() {
-        return DayOfWeek.of(getCalendar().get(Calendar.DAY_OF_WEEK));
+        switch (getCalendar().get(Calendar.DAY_OF_WEEK)) {
+            case Calendar.MONDAY:
+                return DayOfWeek.MONDAY;
+            case Calendar.TUESDAY:
+                return DayOfWeek.TUESDAY;
+            case Calendar.WEDNESDAY:
+                return DayOfWeek.WEDNESDAY;
+            case Calendar.THURSDAY:
+                return DayOfWeek.THURSDAY;
+            case Calendar.FRIDAY:
+                return DayOfWeek.FRIDAY;
+            case Calendar.SATURDAY:
+                return DayOfWeek.SATURDAY;
+//            case Calendar.SUNDAY:
+            default:
+                return DayOfWeek.SUNDAY;
+        }
     }
 
     public double getTotalDays() {
-        return super.getTime() / (24d * 60 * 60 * 1000);
+        return super.getTime() / (24 * 60 * 60 * 1000d);
     }
 
     public double getTotalHours() {
-        return super.getTime() / (60d * 60 * 1000);
+        return super.getTime() / (60 * 60 * 1000d);
     }
 
     public double getTotalMinutes() {
-        return super.getTime() / (60d * 1000);
+        return super.getTime() / (60 * 1000d);
     }
 
     public double getTotalSeconds() {
@@ -180,15 +177,10 @@ public final class DateTime extends Date {
         return super.getTime();
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
-    public DateTime(int year, int month, int day, int hour, int minute, int second) {
+    public DateTime(int year, Month month, int day, int hour, int minute, int second) {
         Calendar c = getCalendar();
-        c.set(year, month - 1, day, hour, minute, second);
+        c.set(year, month.getValue() - 1, day, hour, minute, second);
         super.setTime(c.getTimeInMillis());
-    }
-
-    public DateTime(@NonNull Date date) {
-        super(date.getTime());
     }
 
     public DateTime(long ticks) {
@@ -201,6 +193,35 @@ public final class DateTime extends Date {
         if (calendar != null) {
             calendar.setTimeInMillis(time);
         }
+    }
+
+    public DateTime getDatePart() {
+        return new DateTime(getYear(), getMonthEnum(), getDay(), 0, 0, 0);
+    }
+
+    public DateTime setDatePart(int year, Month month, int day) {
+        return new DateTime(year, month, day, getHours(), getMinutes(), getSeconds());
+    }
+
+    public DateTime setDatePart(String date) {
+        return DateTime.valueOf(toString(date + " HH:mm:ss"), DATE_TIME_FORMAT);
+    }
+
+    public DateTime getTimePart() {
+        return new DateTime(1970, Month.JANUARY, 1, getHours(), getMinutes(), getSeconds());
+    }
+
+    public DateTime setTimePart(int hour, int minute, int second) {
+        return new DateTime(getYear(), getMonthEnum(), getDay(), hour, minute, second);
+    }
+
+    public DateTime setTimePart(String time) {
+        return DateTime.valueOf(toString("yyy-MM-dd " + time), DATE_TIME_FORMAT);
+    }
+
+    public boolean isToday() {
+        DateTime n = DateTime.now();
+        return n.getYear() == getYear() && n.getMonth() == getMonth() && n.getDay() == getDay();
     }
 
     public DateTime addYears(int value) {
@@ -231,6 +252,18 @@ public final class DateTime extends Date {
         return add(Calendar.MILLISECOND, value);
     }
 
+    public DateTime nextDayOfWeek() {
+//        System.out.println("n:" + LocalDate.parse(toDateString()).with(TemporalAdjusters.next(getDayOfWeek())));
+//        int dayOfWeek = getCalendar().get(Calendar.DAY_OF_WEEK);
+//        return addDays((9 - dayOfWeek) % 7);
+        return addDays(7);
+    }
+
+    public DateTime lastDayOfMonth() {
+//        System.out.println("n:" + LocalDate.parse(toDateString()).with(TemporalAdjusters.lastDayOfMonth()));
+        return set(Calendar.DAY_OF_MONTH, getCalendar().getActualMaximum(Calendar.DAY_OF_MONTH));
+    }
+
     private DateTime add(int field, int value) {
         Calendar c = getCalendar();
         long mark = c.getTimeInMillis();
@@ -244,12 +277,21 @@ public final class DateTime extends Date {
         }
     }
 
-    public DateTime addTicks(long ticks) {
-        return new DateTime(super.getTime() + ticks);
+    private DateTime set(int field, int value) {
+        Calendar c = getCalendar();
+        long mark = c.getTimeInMillis();
+        c.set(field, value);
+        try {
+            DateTime newVal = new DateTime(c.getTimeInMillis());
+            newVal.getCalendar().setTimeZone(getCalendar().getTimeZone());
+            return newVal;
+        } finally {
+            c.setTimeInMillis(mark);
+        }
     }
 
     public DateTime add(@NonNull Date value) {
-        return addTicks(value.getTime());
+        return new DateTime(super.getTime() + value.getTime());
     }
 
     public DateTime subtract(@NonNull Date value) {
