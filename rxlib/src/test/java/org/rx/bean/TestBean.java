@@ -11,6 +11,8 @@ import org.rx.io.Bytes;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
 
+import java.time.DayOfWeek;
+import java.time.Month;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -180,8 +182,8 @@ public class TestBean extends AbstractTester {
     public void dateTime() {
         DateTime now = DateTime.now();
         DateTime utc = DateTime.utcNow();
-        DateTime d = new DateTime(2010, 8, 24, 11, 12, 13);
-        DateTime d3 = new DateTime(2010, 8, 23, 11, 12, 13);
+        DateTime d = new DateTime(2010, Month.AUGUST, 24, 11, 12, 13);
+        DateTime d3 = new DateTime(2010, Month.AUGUST, 23, 11, 12, 13);
 
         assert now.getTime() == utc.getTime();
         assert d.getYear() == 2010;
@@ -197,8 +199,20 @@ public class TestBean extends AbstractTester {
         System.out.println(ts);
         System.out.println(d);
         String sts = String.valueOf(ts);
-        assert d.toString().equals("2010-08-24 11:12:13," + sts.substring(sts.length() - 3) + "+0800");
+        System.out.println(d.toString(DateTime.ISO_DATE_TIME_FORMAT));
+        assert d.toString(DateTime.ISO_DATE_TIME_FORMAT).equals("2010-08-24T11:12:13." + sts.substring(sts.length() - 3) + "+0800");
+        assert d.getTimePart().toDateTimeString().equals("1970-01-01 11:12:13");
         assert d.setTimePart("14:30:01").toDateTimeString().equals("2010-08-24 14:30:01");
+        assert d.setTimePart(14, 30, 1).toDateTimeString().equals("2010-08-24 14:30:01");
+        assert d.getDatePart().toDateTimeString().equals("2010-08-24 00:00:00");
+        assert d.setDatePart("2022-02-02").toDateTimeString().equals("2022-02-02 11:12:13");
+        assert d.setDatePart(2022, Month.FEBRUARY, 2).toDateTimeString().equals("2022-02-02 11:12:13");
+
+        DateTime nd = DateTime.valueOf("2024-04-10 00:20:00");
+        assert nd.getDayOfWeek() == DayOfWeek.WEDNESDAY;
+        log.info("{} nextDayOfWeek {}", nd, nd.nextDayOfWeek());
+        log.info("{} lastDayOfMonth {}", nd, nd.lastDayOfMonth());
+        log.info("{} isToday {}", nd, nd.isToday());
     }
 
     @Test
