@@ -284,7 +284,9 @@ public final class Sys extends SystemUtils {
             } catch (Throwable e) {
                 T value = fallbackTarget.getValue();
                 try {
-                    return p.fastInvoke(value);
+                    Object r = p.fastInvoke(value);
+                    log.warn("fallbackProxy", e);
+                    return r;
                 } catch (Throwable fe) {
                     FallbackException fb = new FallbackException(m, p, target, value, e, fe);
                     if (onError == null) {
