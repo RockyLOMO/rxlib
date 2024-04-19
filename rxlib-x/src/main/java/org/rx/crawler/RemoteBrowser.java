@@ -4,13 +4,13 @@ import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
-import org.rx.spring.MiddlewareConfig;
 import org.rx.core.Linq;
 import org.rx.core.Reflects;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
+import org.rx.spring.MiddlewareConfig;
 import org.rx.spring.SpringContext;
 import org.rx.util.function.*;
 

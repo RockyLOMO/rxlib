@@ -2,8 +2,6 @@ package org.rx.spring;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 @Data
@@ -13,6 +11,7 @@ import org.springframework.stereotype.Component;
 public class MiddlewareConfig {
     private String redisUrl;
     private String storeUrl;
+
     private int limiterPermits = 12;
     private String limiterWhiteList;
 

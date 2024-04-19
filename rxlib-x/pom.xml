@@ -21,6 +21,10 @@
         <HikariCP.version>4.0.3</HikariCP.version>
         <druid.version>1.2.21</druid.version>
         <redisson.version>3.27.2</redisson.version>
+        <guava.version>32.1.1-jre</guava.version>
+
+        <javaxMail.version>1.6.2</javaxMail.version>
+        <poi.version>5.2.2</poi.version>
     </properties>
 
     <dependencies>
@@ -65,10 +69,31 @@
                 </exclusion>
             </exclusions>
         </dependency>
-<!--        <dependency>-->
-<!--            <groupId>com.google.guava</groupId>-->
-<!--            <artifactId>guava</artifactId>-->
-<!--            <version>32.1.1-jre</version>-->
-<!--        </dependency>-->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+        </dependency>
+        <!--        pinyin-->
+        <dependency>
+            <groupId>org.ahocorasick</groupId>
+            <artifactId>ahocorasick</artifactId>
+            <version>0.3.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.sun.mail</groupId>
+            <artifactId>javax.mail</artifactId>
+            <version>${javaxMail.version}</version>
+        </dependency>
     </dependencies>
 </project>

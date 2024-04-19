@@ -1,8 +1,7 @@
 package org.rx.redis;
 
-import lombok.RequiredArgsConstructor;
+import com.google.common.util.concurrent.RateLimiter;
 import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
 import org.rx.core.Cache;
 import org.rx.core.Strings;
 import org.rx.core.Sys;
@@ -22,7 +21,14 @@ public class RedisUtil {
         });
     }
 
-    public static <TK, TV> Cache<TK, TV> wrapCache(String redisUrl) {
-        return Sys.fallbackProxy(Cache.class, new RedisCache<>(redisUrl), new Lazy<>(() -> Cache.getInstance(MemoryCache.class)));
+    public static <TK, TV> Cache<TK, TV> wrapCache(RedisCache<TK, TV> rCache) {
+        return Sys.fallbackProxy(Cache.class, rCache, new Lazy<>(() -> Cache.getInstance(MemoryCache.class)));
+    }
+
+    public static RateLimiterAdapter wrapRateLimiter(RedisRateLimiter rRateLimiter) {
+        return Sys.fallbackProxy(RateLimiterAdapter.class, rRateLimiter, new Lazy<>(() -> {
+            RateLimiter limiter = RateLimiter.create(rRateLimiter.getPermitsPerSecond());
+            return () -> limiter.tryAcquire();
+        }));
     }
 }

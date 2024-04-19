@@ -25,7 +25,8 @@ import java.sql.*;
 import java.util.List;
 
 import static org.rx.core.Extends.*;
-import static org.rx.core.Sys.*;
+import static org.rx.core.Sys.proxy;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class JdbcExecutor extends Disposable implements EventPublisher<JdbcExecutor>, JdbcExecutable {
