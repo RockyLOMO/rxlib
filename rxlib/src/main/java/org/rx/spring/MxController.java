@@ -93,7 +93,7 @@ public class MxController {
                     Object source = null, target;
                     if (!Strings.isBlank(type)) {
                         Class<?> clazz = Class.forName(type);
-                        target = SpringContext.getBean(clazz);
+                        target = SpringContext.getBean(clazz, false);
                         if (target == null) {
                             return null;
                         }
