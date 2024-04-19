@@ -19,10 +19,12 @@ import org.rx.bean.DynamicProxyBean;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
+import org.rx.exception.FallbackException;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
+import org.rx.util.Lazy;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.TripleFunc;
@@ -269,6 +271,29 @@ public final class Sys extends SystemUtils {
             path = new URI(path).getPath();
         }
         return new File(path);
+    }
+
+    public static <T> T fallbackProxy(Class<T> targetType, T target, Lazy<T> fallbackTarget) {
+        return fallbackProxy(targetType, target, fallbackTarget, null);
+    }
+
+    public static <T> T fallbackProxy(@NonNull Class<T> targetType, @NonNull T target, @NonNull Lazy<T> fallbackTarget, BiFunc<FallbackException, Object> onError) {
+        return proxy(targetType, (m, p) -> {
+            try {
+                return p.fastInvoke(target);
+            } catch (Throwable e) {
+                T value = fallbackTarget.getValue();
+                try {
+                    return p.fastInvoke(value);
+                } catch (Throwable fe) {
+                    FallbackException fb = new FallbackException(m, p, target, value, e, fe);
+                    if (onError == null) {
+                        throw fb;
+                    }
+                    return onError.invoke(fb);
+                }
+            }
+        });
     }
 
     public static <T> T targetObject(Object proxyObject) {
