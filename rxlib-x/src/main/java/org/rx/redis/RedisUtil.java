@@ -1,6 +1,7 @@
 package org.rx.redis;
 
 import com.google.common.util.concurrent.RateLimiter;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.rx.core.Cache;
 import org.rx.core.Strings;
@@ -11,10 +12,12 @@ import org.rx.util.Lazy;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+@Slf4j
 public class RedisUtil {
     public static Lock wrapLock(RLock rLock) {
         return Sys.fallbackProxy(Lock.class, rLock, new Lazy<>(ReentrantLock::new), e -> {
             if (Strings.hashEquals(e.getMethod().getName(), "unlock")) {
+                log.debug("fallbackProxy wrapLock", e.getFallbackError());
                 return null;
             }
             throw e;
