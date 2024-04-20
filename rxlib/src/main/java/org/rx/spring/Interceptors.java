@@ -92,7 +92,7 @@ public class Interceptors {
             }
 
             if (Strings.equals(httpEnv.left.getParameter("rmx"), Constants.ENABLE_FLAG)) {
-                MxController controller = SpringContext.getBean(MxController.class);
+                MxController controller = SpringContext.getBean(MxController.class, false);
                 if (controller != null) {
                     return controller.health(httpEnv.left);
                 }

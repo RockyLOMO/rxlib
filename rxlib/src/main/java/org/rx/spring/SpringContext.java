@@ -3,6 +3,7 @@ package org.rx.spring;
 import lombok.Setter;
 import org.rx.core.Linq;
 import org.rx.core.Strings;
+import org.rx.exception.InvalidException;
 import org.rx.util.function.TripleFunc;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -37,8 +38,15 @@ public class SpringContext implements ApplicationContextAware {
     }
 
     public static <T> T getBean(Class<T> clazz) {
+        return getBean(clazz, true);
+    }
+
+    public static <T> T getBean(Class<T> clazz, boolean throwOnEmpty) {
         Map<String, T> beanMaps = getApplicationContext().getBeansOfType(clazz);
-        return !beanMaps.isEmpty() ? beanMaps.values().iterator().next() : null;
+        if (throwOnEmpty && beanMaps.isEmpty()) {
+            throw new InvalidException("Bean {} not registered", clazz);
+        }
+        return beanMaps.values().iterator().next();
     }
 
     public static String[] fromYamlArray(String yamlArray) {

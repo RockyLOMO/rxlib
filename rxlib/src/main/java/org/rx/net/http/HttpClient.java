@@ -9,10 +9,12 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.Cookie;
 import okhttp3.*;
 import okio.BufferedSink;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
+import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
@@ -330,14 +332,17 @@ public class HttpClient {
         return params;
     }
 
-    @SneakyThrows
     public static Map<String, String> decodeHeader(String raw) {
+        return decodeHeader(Arrays.toList(raw.split(Pattern.quote("\n"))));
+    }
+
+    @SneakyThrows
+    public static Map<String, String> decodeHeader(List<String> pairs) {
         Map<String, String> map = new LinkedHashMap<>();
-        if (raw == null) {
+        if (CollectionUtils.isEmpty(pairs)) {
             return map;
         }
 
-        String[] pairs = raw.split(Pattern.quote("\n"));
         for (String pair : pairs) {
             int idx = pair.indexOf(Pattern.quote(":"));
             String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name()) : pair;
