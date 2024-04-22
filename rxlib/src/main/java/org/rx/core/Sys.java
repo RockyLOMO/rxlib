@@ -273,29 +273,39 @@ public final class Sys extends SystemUtils {
         return new File(path);
     }
 
+    public static <T> T fallbackProxy(Class<T> targetType, Lazy<T> target, Lazy<T> fallbackTarget) {
+        return fallbackProxy(targetType, target, fallbackTarget, null);
+    }
+
+    public static <T> T fallbackProxy(@NonNull Class<T> targetType, Lazy<T> target, Lazy<T> fallbackTarget, BiFunc<FallbackException, Object> onError) {
+        return proxy(targetType, (m, p) -> innerFallbackProxy(m, p, target.getValue(), fallbackTarget, onError));
+    }
+
     public static <T> T fallbackProxy(Class<T> targetType, T target, Lazy<T> fallbackTarget) {
         return fallbackProxy(targetType, target, fallbackTarget, null);
     }
 
-    public static <T> T fallbackProxy(@NonNull Class<T> targetType, @NonNull T target, @NonNull Lazy<T> fallbackTarget, BiFunc<FallbackException, Object> onError) {
-        return proxy(targetType, (m, p) -> {
+    public static <T> T fallbackProxy(@NonNull Class<T> targetType, T target, Lazy<T> fallbackTarget, BiFunc<FallbackException, Object> onError) {
+        return proxy(targetType, (m, p) -> innerFallbackProxy(m, p, target, fallbackTarget, onError));
+    }
+
+    static <T> Object innerFallbackProxy(Method m, DynamicProxyBean p, @NonNull T target, @NonNull Lazy<T> fallbackTarget, BiFunc<FallbackException, Object> onError) {
+        try {
+            return p.fastInvoke(target);
+        } catch (Throwable e) {
+            T fallbackTargetValue = fallbackTarget.getValue();
             try {
-                return p.fastInvoke(target);
-            } catch (Throwable e) {
-                T value = fallbackTarget.getValue();
-                try {
-                    Object r = p.fastInvoke(value);
-                    log.warn("fallbackProxy", e);
-                    return r;
-                } catch (Throwable fe) {
-                    FallbackException fb = new FallbackException(m, p, target, value, e, fe);
-                    if (onError == null) {
-                        throw fb;
-                    }
-                    return onError.invoke(fb);
+                Object r = p.fastInvoke(fallbackTargetValue);
+                log.warn("fallbackProxy", e);
+                return r;
+            } catch (Throwable fe) {
+                FallbackException fb = new FallbackException(m, p, target, fallbackTargetValue, e, fe);
+                if (onError == null) {
+                    throw fb;
                 }
+                return onError.apply(fb);
             }
-        });
+        }
     }
 
     public static <T> T targetObject(Object proxyObject) {
