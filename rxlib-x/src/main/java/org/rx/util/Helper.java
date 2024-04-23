@@ -144,14 +144,14 @@ public class Helper {
         return data;
     }
 
-    public static void writeExcel(OutputStream out, boolean is2003File, Map<String, Iterable<Object[]>> data) {
-        writeExcel(out, is2003File, data, null);
+    public static void writeExcel(OutputStream out, boolean is2003File, Iterable<Object[]> sheetRows) {
+        writeExcel(out, is2003File, Collections.singletonMap("sheet1", sheetRows), null);
     }
 
     @SneakyThrows
-    public static void writeExcel(OutputStream out, boolean is2003File, Map<String, Iterable<Object[]>> data, Function<Row, Row> onRow) {
+    public static void writeExcel(OutputStream out, boolean is2003File, Map<String, Iterable<Object[]>> sheets, Function<Row, Row> onRow) {
         try (Workbook workbook = is2003File ? new HSSFWorkbook() : new XSSFWorkbook()) {
-            for (Map.Entry<String, Iterable<Object[]>> entry : data.entrySet()) {
+            for (Map.Entry<String, Iterable<Object[]>> entry : sheets.entrySet()) {
                 Sheet sheet = workbook.getSheet(entry.getKey());
                 if (sheet == null) {
                     sheet = workbook.createSheet(entry.getKey());
