@@ -8,9 +8,12 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.IteratorUtils;
+import org.apache.commons.collections4.ListUtils;
+import org.apache.commons.lang3.ArrayUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
 import org.rx.bean.Decimal;
+import org.rx.bean.Tuple;
 import org.rx.exception.ApplicationException;
 import org.rx.util.function.*;
 
@@ -297,6 +300,19 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     public Linq<T> union(Iterable<T> set) {
         return Linq.from(CollectionUtils.union(this, set));
+    }
+
+    //ListUtils.partition()
+    public Linq<List<T>> partition(int size) {
+        List<List<T>> n = newList();
+        List<T> a = toList();
+        int f = 0, t = 0;
+        while (f < a.size()) {
+            t = Math.min(t + size, a.size());
+            n.add(a.subList(f, t));
+            f = t;
+        }
+        return me(n);
     }
 
     public Linq<T> orderByRand() {
