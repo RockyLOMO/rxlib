@@ -15,6 +15,7 @@ import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.codec.RSAUtil;
 import org.rx.core.cache.DiskCache;
+import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -631,11 +632,19 @@ public class TestCore extends AbstractTester {
     public void cache() {
         System.out.println(cacheKey("prefix", "login", 12345));
 
-//        BiAction<Caffeine<Object, Object>> dump = b -> b.removalListener((k, v, c) -> log.info("onRemoval {} {} {}", k, v, c));
+        Cache<Object, Object> cache = Cache.getInstance(MemoryCache.class);
+        cache.put("abc", 1, CachePolicy.absolute(5));
+        cache.put("bbc", 2, CachePolicy.sliding(2));
+//        cache.put("bbc", 2);
+        AtomicInteger c = new AtomicInteger();
+        Tasks.timer.setTimeout(() -> {
+            log.info("abc: {}, bbc: {}", cache.get("abc"), cache.get("bbc"));
+        }, d -> c.incrementAndGet() > 5 ? 3000 : 1000, null, Constants.TIMER_PERIOD_FLAG);
+
 //        testCache(new MemoryCache<>(dump));
 
-        DiskCache<Tuple<?, ?>, Integer> diskCache = (DiskCache) Cache.getInstance(DiskCache.class);
-        testCache(diskCache);
+//        DiskCache<Tuple<?, ?>, Integer> diskCache = (DiskCache) Cache.getInstance(DiskCache.class);
+//        testCache(diskCache);
 
         System.in.read();
     }

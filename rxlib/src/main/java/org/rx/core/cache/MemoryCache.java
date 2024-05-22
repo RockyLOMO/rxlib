@@ -1,15 +1,17 @@
 package org.rx.core.cache;
 
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.Policy;
-import com.github.benmanes.caffeine.cache.Scheduler;
+import com.github.benmanes.caffeine.cache.*;
 import lombok.SneakyThrows;
+import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.rx.core.*;
+import org.rx.core.Cache;
 import org.rx.util.function.BiAction;
 
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Extends.require;
@@ -34,6 +36,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     }
 
     final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache;
+    final Map<Object, CachePolicy> policyMap = new ConcurrentHashMap<>();
     final Policy.VarExpiration<TK, TV> expireVariably;
 
     public MemoryCache() {
@@ -42,11 +45,15 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
     @SneakyThrows
     public MemoryCache(BiAction<Caffeine<Object, Object>> onBuild) {
-        Caffeine<Object, Object> builder = rootBuilder().expireAfter(new CaffeineExpiry());
+        Caffeine<Object, Object> builder = rootBuilder();
         if (onBuild != null) {
             onBuild.invoke(builder);
         }
-        cache = builder.build();
+        cache = builder.expireAfter(new CaffeineExpiry(policyMap))
+                .removalListener((key, value, cause) -> {
+//                    System.out.println("policyMap remove " + key);
+                    policyMap.remove(key);
+                }).build();
         expireVariably = cache.policy().expireVariably().get();
     }
 
@@ -76,11 +83,10 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public TV put(TK key, TV value, CachePolicy policy) {
-        TV oldValue = cache.asMap().put(key, value);
         if (policy != null) {
-            setExpire(key, TimeUnit.NANOSECONDS.toMillis(CaffeineExpiry.computeNanos(value, -1)));
+            policyMap.put(key, policy);
         }
-        return oldValue;
+        return cache.asMap().put(key, value);
     }
 
     @Override

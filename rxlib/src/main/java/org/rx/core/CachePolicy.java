@@ -6,7 +6,6 @@ import org.rx.bean.DateTime;
 
 import java.io.Serializable;
 
-@AllArgsConstructor
 public class CachePolicy implements Serializable {
     private static final long serialVersionUID = 4378825072232415879L;
 
@@ -28,16 +27,26 @@ public class CachePolicy implements Serializable {
         return new CachePolicy(DateTime.now().addSeconds(expireSeconds).getTime(), expireSeconds * 1000);
     }
 
+    final int slidingSpan;
     @Getter
-    long expiration = Long.MAX_VALUE;
-    int slidingSpan;
+    long expiration;
 
     public boolean isExpired() {
-        return expiration <= System.currentTimeMillis();
+        return expiration < System.currentTimeMillis();
+    }
+
+    public boolean isSliding() {
+        return slidingSpan > 0;
+    }
+
+    public CachePolicy(long expiration, int slidingSpan) {
+        this.expiration = expiration;
+        this.slidingSpan = slidingSpan;
     }
 
     protected CachePolicy(CachePolicy policy) {
         if (policy == null) {
+            this.slidingSpan = 0;
             return;
         }
         this.expiration = policy.expiration;
@@ -45,20 +54,24 @@ public class CachePolicy implements Serializable {
     }
 
     public long ttl() {
-        return ttl(slidingSpan > 0);
+        return ttl(isSliding());
     }
 
     public long ttl(boolean slidingRenew) {
-        long ttl = Math.max(0, expiration - System.currentTimeMillis());
-        if (ttl > 0 && slidingRenew) {
-            Tasks.setTimeout(this::slidingRenew, 100, this, Constants.TIMER_REPLACE_FLAG);
-//            slidingRenew();
+        long curTime = System.currentTimeMillis();
+        long ttl = Math.max(0, expiration - curTime);
+        if (slidingRenew && ttl > 0) {
+            Tasks.setTimeout(() -> {
+//                System.out.println("slidingRenew");
+                expiration = curTime + slidingSpan;
+            }, 100, this, Constants.TIMER_REPLACE_FLAG);
+            return slidingSpan;
         }
         return ttl;
     }
 
     public boolean slidingRenew() {
-        if (slidingSpan <= 0) {
+        if (!isSliding()) {
             return false;
         }
 
