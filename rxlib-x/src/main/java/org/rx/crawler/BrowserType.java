@@ -7,8 +7,10 @@ import lombok.RequiredArgsConstructor;
 @Getter
 public enum BrowserType {
     CHROME("chrome.exe", "chromedriver.exe"),
+    FIRE_FOX("firefox.exe", ""),
+    @Deprecated
     IE("iexplore.exe", "IEDriverServer.exe");
 
-    private final String processName;
-    private final String driverName;
+    final String processName;
+    final String driverName;
 }
