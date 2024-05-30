@@ -27,7 +27,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     }
 
     public DiskCache(int cacheSize) {
-        cache = new MemoryCache<>(b -> b.maximumSize(cacheSize).removalListener(this::onRemoval));
+        cache = new MemoryCache<>(b -> b.maximumSize(cacheSize), this::onRemoval);
         store = (KeyValueStore) KeyValueStore.getInstance(Object.class, DiskCacheItem.class);
     }
 
