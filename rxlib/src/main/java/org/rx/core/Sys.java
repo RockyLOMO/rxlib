@@ -670,6 +670,26 @@ public final class Sys extends SystemUtils {
         return cur;
     }
 
+    static final String TYPED_JSON_KEY = "_rx$type";
+
+    public static <T> T fromTypedJsonObject(@NonNull Map<String, Object> tJson) {
+        String td = (String) tJson.get(TYPED_JSON_KEY);
+        if (td == null) {
+            throw new InvalidException("Invalid json type");
+        }
+        return fromJson(tJson, Reflects.fromTypeDescriptor(td));
+    }
+
+    public static <T> JSONObject toTypedJsonObject(@NonNull T obj) {
+        return toTypedJsonObject(obj, obj.getClass());
+    }
+
+    public static <T> JSONObject toTypedJsonObject(@NonNull T obj, @NonNull Type objType) {
+        JSONObject r = toJsonObject(obj);
+        r.put(TYPED_JSON_KEY, Reflects.getTypeDescriptor(objType));
+        return r;
+    }
+
     //TypeReference
     public static <T> T fromJson(Object src, Type type) {
 //        if (src == null) {
