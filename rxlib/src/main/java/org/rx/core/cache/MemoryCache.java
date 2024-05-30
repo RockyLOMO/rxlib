@@ -21,18 +21,18 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
         IOC.register(MemoryCache.class, new MemoryCache<>());
     }
 
-    public static Caffeine<Object, Object> weightBuilder(Caffeine<Object, Object> b, float memoryPercent, int entryBytes) {
+    public static <TK, TV> Caffeine<TK, TV> weightBuilder(Caffeine<TK, TV> b, float memoryPercent, int entryBytes) {
         require(memoryPercent, 0 < memoryPercent && memoryPercent <= 1);
 
         return weightBuilder(b, (long) (Runtime.getRuntime().maxMemory() * memoryPercent), entryBytes);
     }
 
-    public static Caffeine<Object, Object> weightBuilder(Caffeine<Object, Object> b, long maxBytes, int entryBytes) {
+    public static <TK, TV> Caffeine<TK, TV> weightBuilder(Caffeine<TK, TV> b, long maxBytes, int entryBytes) {
         return b.maximumWeight(maxBytes).weigher((k, v) -> entryBytes);
     }
 
-    static Caffeine<Object, Object> rootBuilder() {
-        return Caffeine.newBuilder().executor(Tasks.executor()).scheduler(Scheduler.forScheduledExecutorService(Tasks.timer()));
+    static <TK, TV> Caffeine<TK, TV> rootBuilder() {
+        return (Caffeine<TK, TV>) Caffeine.newBuilder().executor(Tasks.executor()).scheduler(Scheduler.forScheduledExecutorService(Tasks.timer()));
     }
 
     final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache;
@@ -40,12 +40,12 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     final Policy.VarExpiration<TK, TV> expireVariably;
 
     public MemoryCache() {
-        this(b -> b.maximumSize(RxConfig.INSTANCE.getCache().getMaxItemSize()));
+        this(b -> b.maximumSize(RxConfig.INSTANCE.getCache().getMaxItemSize()), null);
     }
 
     @SneakyThrows
-    public MemoryCache(BiAction<Caffeine<Object, Object>> onBuild) {
-        Caffeine<Object, Object> builder = rootBuilder();
+    public MemoryCache(BiAction<Caffeine<TK, TV>> onBuild, RemovalListener<TK, TV> extraRemovalListener) {
+        Caffeine<TK, TV> builder = rootBuilder();
         if (onBuild != null) {
             onBuild.invoke(builder);
         }
@@ -53,6 +53,9 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
                 .removalListener((key, value, cause) -> {
 //                    System.out.println("policyMap remove " + key);
                     policyMap.remove(key);
+                    if (extraRemovalListener != null) {
+                        extraRemovalListener.onRemoval(key, value, cause);
+                    }
                 }).build();
         expireVariably = cache.policy().expireVariably().get();
     }
