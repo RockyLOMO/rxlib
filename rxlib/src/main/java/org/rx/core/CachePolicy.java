@@ -1,8 +1,8 @@
 package org.rx.core;
 
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.rx.bean.DateTime;
+import org.rx.exception.InvalidException;
 
 import java.io.Serializable;
 
@@ -32,7 +32,9 @@ public class CachePolicy implements Serializable {
     long expiration;
 
     public boolean isExpired() {
-        return expiration < System.currentTimeMillis();
+        return
+//                expiration != Constants.TIMEOUT_INFINITE &&
+                expiration < System.currentTimeMillis();
     }
 
     public boolean isSliding() {
@@ -40,7 +42,9 @@ public class CachePolicy implements Serializable {
     }
 
     public CachePolicy(long expiration, int slidingSpan) {
-        this.expiration = expiration;
+        if ((this.expiration = expiration) < 0) {
+            throw new InvalidException("expiration must ge 0");
+        }
         this.slidingSpan = slidingSpan;
     }
 

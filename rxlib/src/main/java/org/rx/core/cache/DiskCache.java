@@ -21,6 +21,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
     final Cache<TK, DiskCacheItem<TV>> cache;
     final KeyValueStore<TK, DiskCacheItem<TV>> store;
+    int defaultExpireSeconds = 60 * 60 * 24 * 30;
 
     public DiskCache() {
         this(1000);
@@ -98,6 +99,9 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
 
     @Override
     public TV put(TK key, TV value, CachePolicy policy) {
+        if (policy == null) {
+            policy = CachePolicy.absolute(defaultExpireSeconds);
+        }
         DiskCacheItem<TV> old = cache.put(key, new DiskCacheItem<>(value, policy));
         return unwrap(key, old, false);
     }
