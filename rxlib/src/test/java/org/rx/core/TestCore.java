@@ -632,49 +632,41 @@ public class TestCore extends AbstractTester {
     public void cache() {
         System.out.println(cacheKey("prefix", "login", 12345));
 
-        Cache<Object, Object> cache = Cache.getInstance(MemoryCache.class);
-        cache.put("abc", 1, CachePolicy.absolute(5));
-        cache.put("bbc", 2, CachePolicy.sliding(2));
-//        cache.put("bbc", 2);
-        AtomicInteger c = new AtomicInteger();
-        Tasks.timer.setTimeout(() -> {
-            log.info("abc: {}, bbc: {}", cache.get("abc"), cache.get("bbc"));
-        }, d -> c.incrementAndGet() > 5 ? 3000 : 1000, null, Constants.TIMER_PERIOD_FLAG);
+//        Cache<Tuple<Integer, String>, Integer> cache = Cache.getInstance(MemoryCache.class);
+//        testCache(cache);
 
-//        testCache(new MemoryCache<>(dump));
-
-//        DiskCache<Tuple<?, ?>, Integer> diskCache = (DiskCache) Cache.getInstance(DiskCache.class);
-//        testCache(diskCache);
+        DiskCache<Tuple<Integer, String>, Integer> diskCache = (DiskCache) Cache.getInstance(DiskCache.class);
+        testCache(diskCache);
 
         System.in.read();
     }
 
-    private void testCache(Cache<Tuple<?, ?>, Integer> cache) {
+    private void testCache(Cache<Tuple<Integer, String>, Integer> cache) {
         Tuple<Integer, String> key1 = Tuple.of(1, "a");
         Tuple<Integer, String> key2 = Tuple.of(2, "b");
         Tuple<Integer, String> key3 = Tuple.of(3, "c");
 
         for (int i = 0; i < 2; i++) {
-//            cache.put(key1, 100);
-//            assert cache.get(key1).equals(100);
-//            cache.put(key2, 200, CachePolicy.absolute(10));
-//            assert cache.get(key2).equals(200);
-            cache.put(key3, 300, CachePolicy.sliding(5));
+            cache.put(key1, 100);
+            assert cache.get(key1).equals(100);
+            cache.put(key2, 200, CachePolicy.absolute(5));
+            assert cache.get(key2).equals(200);
+            cache.put(key3, 300, CachePolicy.sliding(2));
             assert cache.get(key3).equals(300);
         }
 
-//        assert cache.containsKey(key1);
-//        assert cache.containsKey(key2);
-//        assert cache.containsKey(key3);
-//        assert cache.size() == 3;
-//        Integer val1 = cache.remove(key1);
-//        assert 100 == val1;
-//        assert cache.size() == 2;
+        assert cache.containsKey(key1);
+        assert cache.containsKey(key2);
+        assert cache.containsKey(key3);
+        assert cache.size() == 3;
+        Integer t = cache.remove(key1);
+        assert 100 == t;
+        assert cache.size() == 2;
 
-        Tasks.setTimeout(() -> {
-            assert cache.get(key3).equals(300);
-            log.info("check sliding ok");
-        }, 4000);
+        AtomicInteger c = new AtomicInteger();
+        Tasks.timer.setTimeout(() -> {
+            log.info("key2: {}, key3: {}", cache.get(key2), cache.get(key3));
+        }, d -> c.incrementAndGet() > 5 ? 3000 : 1000, null, Constants.TIMER_PERIOD_FLAG);
     }
 
     //region Linq & NEvent
