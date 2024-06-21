@@ -57,6 +57,7 @@ public final class RxConfig {
         String NET_REACTOR_THREAD_AMOUNT = "app.net.reactorThreadAmount";
         String NET_ENABLE_LOG = "app.net.enableLog";
         String NET_CONNECT_TIMEOUT_MILLIS = "app.net.connectTimeoutMillis";
+        String NET_READ_WRITE_TIMEOUT_MILLIS = "app.net.readWriteTimeoutMillis";
         String NET_POOL_MAX_SIZE = "app.net.poolMaxSize";
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_USER_AGENT = "app.net.userAgent";
@@ -142,6 +143,7 @@ public final class RxConfig {
         int reactorThreadAmount;
         boolean enableLog;
         int connectTimeoutMillis;
+        int readWriteTimeoutMillis;
         int poolMaxSize;
         int poolKeepAliveSeconds;
         String userAgent;
@@ -249,6 +251,7 @@ public final class RxConfig {
         net.reactorThreadAmount = SystemPropertyUtil.getInt(ConfigNames.NET_REACTOR_THREAD_AMOUNT, net.reactorThreadAmount);
         net.enableLog = SystemPropertyUtil.getBoolean(ConfigNames.NET_ENABLE_LOG, net.enableLog);
         net.connectTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_CONNECT_TIMEOUT_MILLIS, net.connectTimeoutMillis);
+        net.readWriteTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_READ_WRITE_TIMEOUT_MILLIS, net.readWriteTimeoutMillis);
         net.poolMaxSize = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_MAX_SIZE, net.poolMaxSize);
         if (net.poolMaxSize <= 0) {
             net.poolMaxSize = Math.max(10, Constants.CPU_THREADS * 2);

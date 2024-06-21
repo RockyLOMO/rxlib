@@ -43,7 +43,7 @@ class ComboIPSearcher implements IPSearcher {
 
     @Override
     public String currentIp() {
-        return Tasks.randomRetry(() -> new HttpClient(TIMEOUT_SECONDS).get("https://api.ipify.org").toString(),
+        return Tasks.randomRetry(() -> new HttpClient().withTimeoutMillis(TIMEOUT_SECONDS).get("https://api.ipify.org").toString(),
                 () -> searchCurrent().getIp());
     }
 
@@ -177,9 +177,7 @@ class ComboIPSearcher implements IPSearcher {
     }
 
     private JSONObject getJson(String url, PredicateFunc<JSONObject> check) {
-        HttpClient client = new HttpClient(TIMEOUT_SECONDS);
-        client.setEnableLog(true);
-        String text = client.get(url).toString();
+        String text = new HttpClient().withFeatures(false, true).withTimeoutMillis(TIMEOUT_SECONDS).get(url).toString();
         if (Strings.isEmpty(text)) {
             throw new InvalidException("Empty response from {}", url);
         }

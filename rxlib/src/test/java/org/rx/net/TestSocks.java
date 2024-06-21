@@ -959,8 +959,7 @@ public class TestSocks extends AbstractTester {
         });
 
         RxConfig.INSTANCE.setLogStrategy(LogStrategy.ALWAYS);
-        HttpClient client = new HttpClient();
-        client.setEnableLog(true);
+        HttpClient client = new HttpClient().withFeatures(false, true);
         assert hbody.equals(client.post(HttpClient.buildUrl("https://127.0.0.1:8081/api", qs), f, fi).toString());
 
         String resJson = client.postJson("https://127.0.0.1:8081/json", j).toString();
