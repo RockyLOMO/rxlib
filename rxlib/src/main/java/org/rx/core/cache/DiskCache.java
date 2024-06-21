@@ -21,7 +21,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
     final Cache<TK, DiskCacheItem<TV>> cache;
     final KeyValueStore<TK, DiskCacheItem<TV>> store;
-    int defaultExpireSeconds = 60 * 60 * 24 * 30;
+    int defaultExpireSeconds = 60 * 60 * 24 * 365;  //1 year
 
     public DiskCache() {
         this(1000);

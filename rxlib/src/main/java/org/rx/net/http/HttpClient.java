@@ -242,7 +242,7 @@ public class HttpClient {
 
     public static final CookieContainer COOKIES = new CookieContainer();
     static final ConnectionPool POOL = new ConnectionPool(RxConfig.INSTANCE.getNet().getPoolMaxSize(), RxConfig.INSTANCE.getNet().getPoolKeepAliveSeconds(), TimeUnit.SECONDS);
-    static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded; charset=utf-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
+    static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded;charset=UTF-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
     static final X509TrustManager TRUST_MANAGER = new X509TrustManager() {
         final X509Certificate[] empty = new X509Certificate[0];
 
@@ -376,15 +376,15 @@ public class HttpClient {
     }
 
     @SneakyThrows
-    static OkHttpClient createClient(long timeoutMillis, boolean enableCookie, Proxy proxy) {
+    static OkHttpClient createClient(long connectTimeoutMillis, long readWriteTimeoutMillis, boolean enableCookie, Proxy proxy) {
         SSLContext sslContext = SSLContext.getInstance("TLS");
         sslContext.init(null, new TrustManager[]{TRUST_MANAGER}, new SecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .sslSocketFactory(sslContext.getSocketFactory(), TRUST_MANAGER).hostnameVerifier((s, sslSession) -> true)
                 .connectionPool(POOL).retryOnConnectionFailure(true) //unexpected end of stream
-                .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
-                .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS).writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+                .connectTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS)
+                .readTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS).writeTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS)
                 .proxy(proxy).proxyAuthenticator(authenticator);
         if (enableCookie) {
             builder.cookieJar(COOKIES);
@@ -393,31 +393,55 @@ public class HttpClient {
     }
     //endregion
 
-    @Setter
-    boolean enableLog = RxConfig.INSTANCE.getNet().isEnableLog();
-    @Setter
-    boolean cachingStream = true;
-    long timeoutMillis;
-    boolean enableCookie;
+    static byte CACHING_STREAM_FLAG = 1, ENABLE_COOKIE_FLAG = 1 << 1, ENABLE_LOG_FLAG = 1 << 2;
+    //1 cachingStream, 2 enableCookie, 4 enableLog
+    byte featureFlags = CACHING_STREAM_FLAG;
+    long connectTimeoutMillis, readWriteTimeoutMillis;
     AuthenticProxy proxy;
     //Not thread safe
     OkHttpClient client;
     HttpHeaders reqHeaders;
     ResponseContent resContent;
 
-    public synchronized void setTimeoutMillis(long timeoutMillis) {
-        this.timeoutMillis = timeoutMillis;
-        client = null;
+    public HttpClient withFeatures(boolean enableCookie, boolean enableLog) {
+        return withFeatures(enableCookie, enableLog);
     }
 
-    public synchronized void setEnableCookie(boolean enableCookie) {
-        this.enableCookie = enableCookie;
+    public synchronized HttpClient withFeatures(boolean enableCookie, boolean enableLog, boolean cachingStream) {
+        if (enableLog) {
+            featureFlags |= ENABLE_LOG_FLAG;
+        } else {
+            featureFlags &= ~ENABLE_LOG_FLAG;
+        }
+        if (enableCookie) {
+            featureFlags |= ENABLE_COOKIE_FLAG;
+        } else {
+            featureFlags &= ~ENABLE_COOKIE_FLAG;
+        }
+        if (cachingStream) {
+            featureFlags |= CACHING_STREAM_FLAG;
+        } else {
+            featureFlags &= ~CACHING_STREAM_FLAG;
+        }
         client = null;
+        return this;
     }
 
-    public synchronized void setProxy(AuthenticProxy proxy) {
+    public HttpClient withTimeoutMillis(long timeoutMillis) {
+        return withTimeoutMillis(timeoutMillis, timeoutMillis);
+    }
+
+    public synchronized HttpClient withTimeoutMillis(long connectTimeoutMillis, long readWriteTimeoutMillis) {
+        this.connectTimeoutMillis = connectTimeoutMillis;
+        this.readWriteTimeoutMillis = readWriteTimeoutMillis;
+        client = null;
+        return this;
+    }
+
+    public synchronized HttpClient withProxy(AuthenticProxy proxy) {
         this.proxy = proxy;
         client = null;
+        return this;
     }
 
     public HttpClient withUserAgent() {
@@ -445,21 +469,14 @@ public class HttpClient {
     }
 
     public HttpClient() {
-        this(RxConfig.INSTANCE.getNet().getConnectTimeoutMillis());
-    }
-
-    public HttpClient(long timeoutMillis) {
-        this(timeoutMillis, false);
-    }
-
-    public HttpClient(long timeoutMillis, boolean enableCookie) {
-        this.timeoutMillis = timeoutMillis;
-        this.enableCookie = enableCookie;
+        RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
+        withFeatures(false, conf.isEnableLog());
+        withTimeoutMillis(conf.getConnectTimeoutMillis(), conf.getReadWriteTimeoutMillis());
     }
 
     OkHttpClient getClient() {
         if (client == null) {
-            client = createClient(timeoutMillis, enableCookie, proxy);
+            client = createClient(connectTimeoutMillis, readWriteTimeoutMillis, (featureFlags & ENABLE_COOKIE_FLAG) == ENABLE_COOKIE_FLAG, proxy);
         }
         return client;
     }
@@ -473,8 +490,10 @@ public class HttpClient {
     }
 
     @SneakyThrows
-    private synchronized ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
-        ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method.toString(), content.toString()}, false);
+    synchronized ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
+        ProceedEventArgs args = new ProceedEventArgs(this.getClass(),
+                new Object[]{method.toString(), content instanceof JsonContent ? ((JsonContent) content).json : content.toString()},
+                false);
         try {
             Request.Builder request = createRequest(url);
             RequestBody requestBody = content.toBody();
@@ -498,14 +517,14 @@ public class HttpClient {
             }
             return resContent = args.proceed(() -> {
                 ResponseContent rc = new ResponseContent(getClient().newCall(request.build()).execute());
-                rc.cachingStream = cachingStream;
+                rc.cachingStream = (featureFlags & CACHING_STREAM_FLAG) == CACHING_STREAM_FLAG;
                 return rc;
             });
         } catch (Throwable e) {
             args.setError(e);
             throw e;
         } finally {
-            if (enableLog) {
+            if ((featureFlags & ENABLE_LOG_FLAG) == ENABLE_LOG_FLAG) {
                 logHttp(args, url);
             }
         }
@@ -628,7 +647,7 @@ public class HttpClient {
 //        boolean isGet = Strings.equalsIgnoreCase(servletRequest.getMethod(), HttpMethod.GET.name());
 //        ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), isGet ? null : reqContent.toBody()).build()).execute());
         ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), reqContent.toBody()).build()).execute());
-        resContent.cachingStream = cachingStream;
+        resContent.cachingStream = (featureFlags & CACHING_STREAM_FLAG) == CACHING_STREAM_FLAG;
         servletResponse.setStatus(resContent.response.code());
         for (Pair<? extends String, ? extends String> header : resContent.responseHeaders()) {
             servletResponse.setHeader(header.getFirst(), header.getSecond());
