@@ -202,7 +202,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (p.startsWith("~/")) {
             p = Sys.USER_HOME + p.substring(1);
         }
-        Files.deleteBefore(Files.getFullPath(p), DateTime.now(timeRollingPattern).addHours(-rollingHours), "*.mv.db");
+        Files.deleteBefore(Files.getFullPath(p), DateTime.valueOf(DateTime.now().toString(timeRollingPattern), timeRollingPattern).addHours(-rollingHours), "*.mv.db");
     }
 
     //region CRUD

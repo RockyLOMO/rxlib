@@ -385,7 +385,7 @@ public class HttpClient {
                 .connectTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS)
                 .readTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS)
                 .writeTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS)
-                .callTimeout(readWriteTimeoutMillis * 2, TimeUnit.MILLISECONDS)
+                .callTimeout(Math.round(readWriteTimeoutMillis * 1.5), TimeUnit.MILLISECONDS)
                 .proxy(proxy).proxyAuthenticator(authenticator);
         if (enableCookie) {
             builder.cookieJar(COOKIES);
