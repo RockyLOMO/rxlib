@@ -36,14 +36,13 @@ public final class DateTime extends Date {
     public static final String[] FORMATS = new String[]{ISO_DATE_TIME_FORMAT, "yyyy-MM-dd HH:mm:ss.SSSZ", "yyyy-MM-dd HH:mm:ss.SSS",
             DATE_TIME_FORMAT, DATE_FORMAT, TIME_FORMAT,
             "yyyyMMddHHmmssSSS"};
-    static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
 
     public static DateTime now() {
         return new DateTime(System.currentTimeMillis(), TimeZone.getDefault());
     }
 
     public static DateTime utcNow() {
-        return new DateTime(System.currentTimeMillis(), UTC_ZONE);
+        return new DateTime(System.currentTimeMillis(), TimeZone.getTimeZone("UTC"));
     }
 
     public static DateTime ofToNull(Date d) {
