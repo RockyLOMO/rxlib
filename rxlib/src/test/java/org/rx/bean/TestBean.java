@@ -15,6 +15,7 @@ import java.time.DayOfWeek;
 import java.time.Month;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.concurrent.CountDownLatch;
 
 import static org.rx.core.Extends.eq;
@@ -182,8 +183,8 @@ public class TestBean extends AbstractTester {
     public void dateTime() {
         DateTime now = DateTime.now();
         DateTime utc = DateTime.utcNow();
-        DateTime d = new DateTime(2010, Month.AUGUST, 24, 11, 12, 13);
-        DateTime d3 = new DateTime(2010, Month.AUGUST, 23, 11, 12, 13);
+        DateTime d = new DateTime(2010, Month.AUGUST, 24, 11, 12, 13, TimeZone.getDefault());
+        DateTime d3 = new DateTime(2010, Month.AUGUST, 23, 11, 12, 13, TimeZone.getDefault());
 
         assert now.getTime() == utc.getTime();
         assert d.getYear() == 2010;
@@ -212,7 +213,7 @@ public class TestBean extends AbstractTester {
         assert nd.getDayOfWeek() == DayOfWeek.WEDNESDAY;
         log.info("{} nextDayOfWeek {}", nd, nd.nextDayOfWeek());
         log.info("{} lastDayOfMonth {}", nd, nd.lastDayOfMonth());
-        log.info("{} isToday {}", nd, nd.isToday());
+//        log.info("{} isToday {}", nd, nd.isToday());
     }
 
     @Test

@@ -32,6 +32,7 @@ import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
@@ -72,7 +73,7 @@ public class TestAgent extends AbstractTester {
     static void ntp() {
         long ts = System.currentTimeMillis();
         System.out.println(ts);
-        System.out.println(new DateTime(ts));
+        System.out.println(new DateTime(ts, TimeZone.getDefault()));
 
         //inject
         NtpClock.transform();
@@ -81,7 +82,7 @@ public class TestAgent extends AbstractTester {
         System.out.println(ts);
         ts = NtpClock.UTC.millis();
         System.out.println(ts);
-        System.out.println(new DateTime(ts));
+        System.out.println(new DateTime(ts, TimeZone.getDefault()));
     }
 
     static void fjp() throws Throwable {
