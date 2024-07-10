@@ -21,7 +21,7 @@ app:
     resizeQuantity: 2
   cache:
     physicalMemoryUsageWarningThreshold: 95
-    mainCache: org.rx.core.cache.MemoryCache
+    mainInstance: org.rx.core.cache.MemoryCache
     slidingSeconds: 60
     maxItemSize: 5000
   disk:
