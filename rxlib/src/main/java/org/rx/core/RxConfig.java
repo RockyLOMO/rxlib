@@ -9,6 +9,7 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Metadata;
 import org.rx.bean.LogStrategy;
+import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 
 import java.util.Collection;
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.newConcurrentList;
 
 @Metadata(topicClass = RxConfig.class)
@@ -187,21 +189,21 @@ public final class RxConfig {
     }
 
     String id;
-    String omega;
     String aesKey;
-    String mxpwd;
-    long mxSamplingPeriod;
     String dateFormat;
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
     final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
+    String omega;
+    String mxpwd;
+    long mxSamplingPeriod;
+    //key1: controller, key2: method, value: url
+    Map<Class<?>, Map<String, String>> mxHttpForwards = new ConcurrentHashMap<>(8);
     TraceConfig trace = new TraceConfig();
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
     DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
-    //key1: controller, key2: method, value: url
-    Map<Class<?>, Map<String, String>> httpForwards = new ConcurrentHashMap<>(8);
 
     public int getIntId() {
         Integer v = Integer.getInteger(id);
@@ -212,7 +214,47 @@ public final class RxConfig {
     }
 
     private RxConfig() {
-//        refreshFromSystemProperty();
+    }
+
+    public void refreshFrom(Map<String, Object> props) {
+        Linq.from(Reflects.getFieldMap(ConfigNames.class).values()).select(p -> p.get(null)).join(props.entrySet(), (p, x) -> eq(p, x.getKey()), (p, x) -> {
+            writeFieldByPath(this, ConfigNames.getWithoutPrefix(x.getKey()), x.getValue());
+            return null;
+        });
+    }
+
+    void writeFieldByPath(Object instance, String fieldPath, Object value) {
+        final String c = ".";
+        int wPathOffset = 0, i;
+        String fieldName;
+        Object cur = instance;
+        while ((i = fieldPath.indexOf(c, wPathOffset)) != -1) {
+            fieldName = fieldPath.substring(wPathOffset, i);
+            try {
+                cur = Reflects.readField(cur, fieldName);
+            } catch (Throwable e) {
+                throw new InvalidException("Read field {} fail", fieldPath.substring(0, wPathOffset), e);
+            }
+            wPathOffset = i + c.length();
+        }
+        if (cur == null) {
+            throw new InvalidException("Read field {} empty", fieldPath.substring(0, wPathOffset));
+        }
+        fieldName = fieldPath.substring(wPathOffset);
+        try {
+            if (Reflects.isTypedJson(value)) {
+                value = Reflects.fromTypedJson(value);
+            }
+//            if (cur instanceof Collection) {
+//                ((Collection<Object>) cur).addAll((Collection<Object>) value);
+//            } else if (cur instanceof Map) {
+//                ((Map<Object, Object>) cur).putAll((Map<Object, Object>) value);
+//            } else {
+            Reflects.writeField(cur, fieldName, value);
+//            }
+        } catch (Throwable e) {
+            throw new InvalidException("Write field {} fail", fieldPath, e);
+        }
     }
 
     @SneakyThrows

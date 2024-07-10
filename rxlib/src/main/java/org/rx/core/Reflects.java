@@ -1,5 +1,7 @@
 package org.rx.core;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -70,6 +72,7 @@ public class Reflects extends ClassUtils {
     public static final Set<Method> OBJECT_METHODS = Collections.unmodifiableSet(new HashSet<>(Arrays.toList(Object.class.getMethods())));
     static final String M_0 = "close", CHANGE_TYPE_METHOD = "valueOf";
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
+    static final String TYPED_JSON_KEY = "$rxType";
     static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PACKAGE | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE;
     //must lazy before thread pool init.
     static final Lazy<Cache<Class<?>, Map<String, Linq<Method>>>> methodCache = new Lazy<>(MemoryCache::new);
@@ -188,11 +191,52 @@ public class Reflects extends ClassUtils {
         return lambda;
     }
 
+    public static boolean isTypedJson(Object value) {
+        if (value instanceof String) {
+            String str = ((String) value).trim();
+            return str.startsWith("{") && str.endsWith("}") && str.contains(TYPED_JSON_KEY);
+        }
+        Map<String, Object> json = as(value, Map.class);
+        if (json != null) {
+            return json.containsKey(TYPED_JSON_KEY);
+        }
+        return false;
+    }
+
+    public static <T> T fromTypedJson(Object value) {
+        Map<String, Object> json = as(value, Map.class);
+        if (json == null) {
+            json = toJsonObject(value);
+        }
+        if (json == null || !json.containsKey(TYPED_JSON_KEY)) {
+            throw new InvalidException("Invalid json");
+        }
+        return fromTypedJson(json);
+    }
+
+    public static <T> T fromTypedJson(@NonNull Map<String, Object> json) {
+        String td = (String) json.get(TYPED_JSON_KEY);
+        if (td == null) {
+            throw new InvalidException("Invalid type descriptor");
+        }
+        return fromJson(json, Reflects.fromTypeDescriptor(td));
+    }
+
+    public static <T> JSONObject toTypedJson(@NonNull T obj) {
+        return toTypedJson(obj, obj.getClass());
+    }
+
+    public static <T> JSONObject toTypedJson(@NonNull T obj, @NonNull Type type) {
+        JSONObject r = toJsonObject(obj);
+        r.put(TYPED_JSON_KEY, Reflects.getTypeDescriptor(type));
+        return r;
+    }
+
     public static String getTypeDescriptor(@NonNull Type type) {
         if (type instanceof Class) {
             return ((Class<?>) type).getName();
         }
-        return toJsonString(type);
+        return JSON.toJSONString(type);
     }
 
     @SneakyThrows

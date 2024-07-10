@@ -97,7 +97,7 @@ public class Interceptors {
                     return controller.health(httpEnv.left);
                 }
             }
-            Map<String, String> fts = RxConfig.INSTANCE.getHttpForwards().get(ms.getDeclaringType());
+            Map<String, String> fts = RxConfig.INSTANCE.getMxHttpForwards().get(ms.getDeclaringType());
             if (fts != null) {
                 String fu = fts.get(ms.getName());
                 if (fu != null) {
