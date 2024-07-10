@@ -8,12 +8,9 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.IteratorUtils;
-import org.apache.commons.collections4.ListUtils;
-import org.apache.commons.lang3.ArrayUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.$;
 import org.rx.bean.Decimal;
-import org.rx.bean.Tuple;
 import org.rx.exception.ApplicationException;
 import org.rx.util.function.*;
 
@@ -245,12 +242,12 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return join(stream().flatMap(p -> newStream(innerSelector.apply(p))).collect(Collectors.toList()), keySelector, resultSelector);
     }
 
-    public <TI, TR> Linq<TR> leftJoin(Iterable<TI> inner, BiPredicate<T, TI> keySelector, TripleFunc<T, TI, TR> resultSelector) {
+    public <TI, TR> Linq<TR> leftJoin(Iterable<TI> right, BiPredicate<T, TI> keySelector, TripleFunc<T, TI, TR> resultSelector) {
         return me(stream().flatMap(p -> {
-            if (!newStream(inner).anyMatch(p2 -> keySelector.test(p, p2))) {
+            if (!newStream(right).anyMatch(p2 -> keySelector.test(p, p2))) {
                 return Stream.of(resultSelector.apply(p, null));
             }
-            return newStream(inner).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3));
+            return newStream(right).filter(p2 -> keySelector.test(p, p2)).map(p3 -> resultSelector.apply(p, p3));
         }));
     }
 
