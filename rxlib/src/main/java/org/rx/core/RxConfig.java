@@ -4,8 +4,10 @@ import com.alibaba.fastjson2.JSONFactory;
 import io.netty.util.internal.SystemPropertyUtil;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.SneakyThrows;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Metadata;
 import org.rx.bean.LogStrategy;
 import org.rx.net.Sockets;
@@ -211,37 +213,6 @@ public final class RxConfig {
     private RxConfig() {
     }
 
-    public void refreshFromSystemProperty() {
-        Map<String, Object> sysProps = new HashMap<>((Map) System.getProperties());
-        reset(net.lanIps, ConfigNames.NET_LAN_IPS);
-        reset(net.ntp.servers, ConfigNames.NTP_SERVERS);
-        reset(net.dns.inlandServers, ConfigNames.DNS_INLAND_SERVERS);
-        reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
-        String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
-        if (v != null) {
-            jsonSkipTypes.clear();
-            //method ref will match multi methods
-            jsonSkipTypes.addAll(Linq.from(Strings.split(v, ",")).select(p -> Class.forName(p)).toSet());
-        }
-
-        sysProps.remove(ConfigNames.NET_LAN_IPS);
-        sysProps.remove(ConfigNames.NTP_SERVERS);
-        sysProps.remove(ConfigNames.DNS_INLAND_SERVERS);
-        sysProps.remove(ConfigNames.DNS_OUTLAND_SERVERS);
-        sysProps.remove(ConfigNames.JSON_SKIP_TYPES);
-
-        refreshFrom(sysProps);
-    }
-
-    void reset(Collection<String> conf, String propName) {
-        String v = SystemPropertyUtil.get(propName);
-        if (v == null) {
-            return;
-        }
-        conf.clear();
-        conf.addAll(Linq.from(Strings.split(v, ",")).toSet());
-    }
-
     public void refreshFrom(Map<String, Object> props) {
         refreshFrom(props, 0);
     }
@@ -252,6 +223,10 @@ public final class RxConfig {
             return null;
         });
 
+        afterSet();
+    }
+
+    void afterSet() {
         threadPool.replicas = Math.max(1, threadPool.replicas);
         if (net.poolMaxSize <= 0) {
             net.poolMaxSize = Math.max(10, Constants.CPU_THREADS * 2);
@@ -259,5 +234,105 @@ public final class RxConfig {
         if (id == null) {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
+    }
+//    public void refreshFromSystemProperty() {
+//        Map<String, Object> sysProps = new HashMap<>((Map) System.getProperties());
+//        reset(net.lanIps, ConfigNames.NET_LAN_IPS);
+//        reset(net.ntp.servers, ConfigNames.NTP_SERVERS);
+//        reset(net.dns.inlandServers, ConfigNames.DNS_INLAND_SERVERS);
+//        reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
+//        String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
+//        if (v != null) {
+//            jsonSkipTypes.clear();
+//            //method ref will match multi methods
+//            jsonSkipTypes.addAll(Linq.from(Strings.split(v, ",")).select(p -> Class.forName(p)).toSet());
+//        }
+//
+//        sysProps.remove(ConfigNames.NET_LAN_IPS);
+//        sysProps.remove(ConfigNames.NTP_SERVERS);
+//        sysProps.remove(ConfigNames.DNS_INLAND_SERVERS);
+//        sysProps.remove(ConfigNames.DNS_OUTLAND_SERVERS);
+//        sysProps.remove(ConfigNames.JSON_SKIP_TYPES);
+//
+//        refreshFrom(sysProps);
+//    }
+
+    @SneakyThrows
+    public void refreshFromSystemProperty() {
+        trace.keepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, trace.keepDays);
+        trace.errorMessageSize = SystemPropertyUtil.getInt(ConfigNames.TRACE_ERROR_MESSAGE_SIZE, trace.errorMessageSize);
+        trace.slowMethodElapsedMicros = SystemPropertyUtil.getLong(ConfigNames.TRACE_SLOW_METHOD_ELAPSED_MICROS, trace.slowMethodElapsedMicros);
+        trace.watchThreadFlags = SystemPropertyUtil.getInt(ConfigNames.TRACE_WATCH_THREAD_FLAGS, trace.watchThreadFlags);
+        trace.samplingCpuPeriod = SystemPropertyUtil.getLong(ConfigNames.TRACE_SAMPLING_CPU_PERIOD, trace.samplingCpuPeriod);
+        threadPool.initSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_INIT_SIZE, threadPool.initSize);
+        threadPool.keepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_KEEP_ALIVE_SECONDS, threadPool.keepAliveSeconds);
+        threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, threadPool.queueCapacity);
+        threadPool.lowCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_LOW_CPU_WATER_MARK, threadPool.lowCpuWaterMark);
+        threadPool.highCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_HIGH_CPU_WATER_MARK, threadPool.highCpuWaterMark);
+        threadPool.replicas = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, threadPool.replicas);
+        threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
+        threadPool.maxTraceDepth = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_TRACE_DEPTH, threadPool.maxTraceDepth);
+        threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, threadPool.cpuLoadWarningThreshold);
+        threadPool.samplingPeriod = SystemPropertyUtil.getLong(ConfigNames.THREAD_POOL_SAMPLING_PERIOD, threadPool.samplingPeriod);
+        threadPool.samplingTimes = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SAMPLING_TIMES, threadPool.samplingTimes);
+        threadPool.minDynamicSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MIN_DYNAMIC_SIZE, threadPool.minDynamicSize);
+        threadPool.maxDynamicSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_DYNAMIC_SIZE, threadPool.maxDynamicSize);
+        threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, threadPool.resizeQuantity);
+
+        cache.physicalMemoryUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.PHYSICAL_MEMORY_USAGE_WARNING, cache.physicalMemoryUsageWarningThreshold);
+        String v = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
+        if (v != null) {
+            cache.mainInstance = (Class<? extends Cache>) ClassUtils.getClass(v, true);
+        }
+        cache.slidingSeconds = SystemPropertyUtil.getInt(ConfigNames.CACHE_SLIDING_SECONDS, cache.slidingSeconds);
+        cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, cache.maxItemSize);
+
+        disk.diskUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.DISK_USAGE_WARNING, disk.diskUsageWarningThreshold);
+        disk.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_ENTITY_DATABASE_ROLL_PERIOD, disk.entityDatabaseRollPeriod);
+
+        net.reactorThreadAmount = SystemPropertyUtil.getInt(ConfigNames.NET_REACTOR_THREAD_AMOUNT, net.reactorThreadAmount);
+        net.enableLog = SystemPropertyUtil.getBoolean(ConfigNames.NET_ENABLE_LOG, net.enableLog);
+        net.connectTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_CONNECT_TIMEOUT_MILLIS, net.connectTimeoutMillis);
+        net.readWriteTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_READ_WRITE_TIMEOUT_MILLIS, net.readWriteTimeoutMillis);
+        net.poolMaxSize = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_MAX_SIZE, net.poolMaxSize);
+        net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, net.poolKeepAliveSeconds);
+        net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, net.userAgent);
+        reset(net.lanIps, ConfigNames.NET_LAN_IPS);
+
+        net.ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, net.ntp.enableFlags);
+        net.ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, net.ntp.syncPeriod);
+        net.ntp.timeoutMillis = SystemPropertyUtil.getLong(ConfigNames.NTP_TIMEOUT_MILLIS, net.ntp.timeoutMillis);
+        reset(net.ntp.servers, ConfigNames.NTP_SERVERS);
+
+        reset(net.dns.inlandServers, ConfigNames.DNS_INLAND_SERVERS);
+        reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
+
+        id = SystemPropertyUtil.get(ConfigNames.APP_ID, id);
+        omega = SystemPropertyUtil.get(ConfigNames.OMEGA, omega);
+        aesKey = SystemPropertyUtil.get(ConfigNames.AES_KEY, aesKey);
+        mxpwd = SystemPropertyUtil.get(ConfigNames.MXPWD, mxpwd);
+        mxSamplingPeriod = SystemPropertyUtil.getLong(ConfigNames.MX_SAMPLING_PERIOD, mxSamplingPeriod);
+        dateFormat = SystemPropertyUtil.get(ConfigNames.DATE_FORMAT, dateFormat);
+        v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
+        if (v != null) {
+            jsonSkipTypes.clear();
+            //method ref will match multi methods
+            jsonSkipTypes.addAll(Linq.from(Strings.split(v, ",")).select(p -> ClassUtils.getClass(p, false)).toSet());
+        }
+        v = SystemPropertyUtil.get(ConfigNames.LOG_STRATEGY);
+        if (v != null) {
+            logStrategy = LogStrategy.valueOf(v);
+        }
+
+        afterSet();
+    }
+
+    void reset(Collection<String> conf, String propName) {
+        String v = SystemPropertyUtil.get(propName);
+        if (v == null) {
+            return;
+        }
+        conf.clear();
+        conf.addAll(Linq.from(Strings.split(v, ",")).toSet());
     }
 }
