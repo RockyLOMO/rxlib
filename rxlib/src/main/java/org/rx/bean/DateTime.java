@@ -190,6 +190,10 @@ public final class DateTime extends Date {
         }
     }
 
+    public DateTime(long ticks) {
+        this(ticks, null);
+    }
+
     public DateTime(long ticks, TimeZone zone) {
         super(ticks);
         if (zone != null) {
@@ -237,11 +241,11 @@ public final class DateTime extends Date {
         return DateTime.valueOf(toString("yyy-MM-dd " + time), DATE_TIME_FORMAT, getTimeZone());
     }
 
-//    public boolean isToday() {
-//        DateTime n = DateTime.now();
-//        n.setTimeZone(getTimeZone());
-//        return n.getYear() == getYear() && n.getMonth() == getMonth() && n.getDay() == getDay();
-//    }
+    public boolean isToday() {
+        DateTime n = DateTime.now();
+        n.setTimeZone(getTimeZone());
+        return n.getYear() == getYear() && n.getMonth() == getMonth() && n.getDay() == getDay();
+    }
 
     public DateTime addYears(int value) {
         return add(Calendar.YEAR, value);
