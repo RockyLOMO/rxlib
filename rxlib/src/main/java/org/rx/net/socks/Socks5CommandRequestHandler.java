@@ -15,7 +15,6 @@ import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.math.BigInteger;
-import java.net.Inet6Address;
 import java.net.InetSocketAddress;
 
 @Slf4j

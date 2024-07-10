@@ -3,12 +3,10 @@ package org.rx.core.cache;
 import com.github.benmanes.caffeine.cache.*;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import org.checkerframework.checker.index.qual.NonNegative;
 import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
-import org.rx.core.*;
 import org.rx.core.Cache;
+import org.rx.core.*;
 import org.rx.util.function.BiAction;
 
 import java.util.Collection;

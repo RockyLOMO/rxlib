@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.values;
 
 public class Strings extends StringUtils {

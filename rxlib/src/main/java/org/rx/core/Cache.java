@@ -3,7 +3,6 @@ package org.rx.core;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.bean.AbstractMap;
-import org.rx.core.cache.DiskCache;
 import org.rx.core.cache.MemoryCache;
 import org.rx.util.function.BiFunc;
 

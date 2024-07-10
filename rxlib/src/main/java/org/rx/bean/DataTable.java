@@ -25,7 +25,8 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.as;
+import static org.rx.core.Extends.tryAs;
 import static org.rx.core.Sys.fromJson;
 
 @Slf4j

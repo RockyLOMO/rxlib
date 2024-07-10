@@ -191,10 +191,69 @@ public class Reflects extends ClassUtils {
         return lambda;
     }
 
+    static final int APPEND_TO_COLLECTION = 1;
+
+    /**
+     * @param instance
+     * @param fieldPath
+     * @param value
+     * @param flags     1 append to Collection
+     */
+    public static void writeFieldByPath(Object instance, String fieldPath, Object value, int flags) {
+        final String c = ".";
+        int wPathOffset = 0, i;
+        String fieldName;
+        Object cur = instance;
+        while ((i = fieldPath.indexOf(c, wPathOffset)) != -1) {
+            fieldName = fieldPath.substring(wPathOffset, i);
+            try {
+                cur = readField(cur, fieldName);
+            } catch (Throwable e) {
+                throw new InvalidException("Read field {} fail", fieldPath.substring(0, wPathOffset), e);
+            }
+            wPathOffset = i + c.length();
+        }
+        if (cur == null) {
+            throw new InvalidException("Read field {} empty", fieldPath.substring(0, wPathOffset));
+        }
+        fieldName = fieldPath.substring(wPathOffset);
+        try {
+            Field field = getFieldMap(cur.getClass()).get(fieldName);
+            if (field == null) {
+                throw new NoSuchFieldException(fieldName);
+            }
+
+            if (isTypedJson(value)) {
+                value = fromTypedJson(value);
+            }
+            if (Collection.class.isAssignableFrom(field.getType())) {
+                Collection<Object> col = (Collection<Object>) field.get(cur);
+                if ((flags & APPEND_TO_COLLECTION) != APPEND_TO_COLLECTION) {
+                    col.clear();
+                }
+                if (value != null) {
+                    col.addAll((Collection<Object>) value);
+                }
+            } else if (Map.class.isAssignableFrom(field.getType())) {
+                Map<Object, Object> col = (Map<Object, Object>) field.get(cur);
+                if ((flags & APPEND_TO_COLLECTION) != APPEND_TO_COLLECTION) {
+                    col.clear();
+                }
+                if (value != null) {
+                    col.putAll((Map<Object, Object>) value);
+                }
+            } else {
+                field.set(cur, changeType(value, field.getType()));
+            }
+        } catch (Throwable e) {
+            throw new InvalidException("Write field {} fail", fieldPath, e);
+        }
+    }
+
     public static boolean isTypedJson(Object value) {
         if (value instanceof String) {
             String str = ((String) value).trim();
-            return str.startsWith("{") && str.endsWith("}") && str.contains(TYPED_JSON_KEY);
+            return str.startsWith("{") && str.endsWith("}") && str.indexOf(TYPED_JSON_KEY, 1) != -1;
         }
         Map<String, Object> json = as(value, Map.class);
         if (json != null) {
@@ -219,7 +278,7 @@ public class Reflects extends ClassUtils {
         if (td == null) {
             throw new InvalidException("Invalid type descriptor");
         }
-        return fromJson(json, Reflects.fromTypeDescriptor(td));
+        return fromJson(json, fromTypeDescriptor(td));
     }
 
     public static <T> JSONObject toTypedJson(@NonNull T obj) {
@@ -228,7 +287,7 @@ public class Reflects extends ClassUtils {
 
     public static <T> JSONObject toTypedJson(@NonNull T obj, @NonNull Type type) {
         JSONObject r = toJsonObject(obj);
-        r.put(TYPED_JSON_KEY, Reflects.getTypeDescriptor(type));
+        r.put(TYPED_JSON_KEY, getTypeDescriptor(type));
         return r;
     }
 
@@ -559,6 +618,7 @@ public class Reflects extends ClassUtils {
                 FieldUtils.removeFinalModifier(field);
             }
 
+//            member.setAccessible(true);
             if (System.getSecurityManager() == null) {
                 member.setAccessible(true); // <~ Dragons
             } else {
@@ -656,6 +716,8 @@ public class Reflects extends ClassUtils {
                     } else {
                         throw new InvalidException("Value should be 0 or 1");
                     }
+                } else if (toType == Class.class && value instanceof String) {
+                    value = loadClass(value.toString(), false);
                 } else {
                     Linq<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
                     if (methods == null || fromType.isEnum()) {

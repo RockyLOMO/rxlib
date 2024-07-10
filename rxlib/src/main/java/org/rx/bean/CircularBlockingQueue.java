@@ -1,7 +1,6 @@
 package org.rx.bean;
 
 import lombok.Getter;
-import lombok.Setter;
 import org.rx.core.*;
 import org.rx.util.function.TripleFunc;
 

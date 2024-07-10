@@ -3,7 +3,6 @@ package org.rx.io;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
-import org.rx.core.Extends;
 
 import java.io.InputStream;
 import java.io.OutputStream;

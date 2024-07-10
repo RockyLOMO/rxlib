@@ -5,7 +5,6 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.Constants;
-import org.rx.core.Extends;
 import org.rx.util.Lazy;
 import org.rx.util.Snowflake;
 import org.rx.util.function.TripleFunc;

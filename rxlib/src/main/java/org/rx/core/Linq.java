@@ -141,7 +141,8 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     private <TR> Stream<TR> newStream(Iterable<TR> iterable) {
-        return StreamSupport.stream(iterable.spliterator(), parallel);
+//        return StreamSupport.stream(iterable.spliterator(), parallel);
+        return StreamSupport.stream(iterable.spliterator(), false);
     }
 
     private <TR> Linq<TR> me(Iterable<TR> set) {

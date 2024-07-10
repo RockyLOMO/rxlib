@@ -10,14 +10,11 @@ import org.rx.exception.ApplicationException;
 
 import java.text.ParseException;
 import java.time.DayOfWeek;
-import java.time.LocalDate;
 import java.time.Month;
-import java.time.temporal.TemporalAdjusters;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
 
-import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.values;
 

@@ -11,7 +11,6 @@ import org.rx.io.Serializer;
 import org.rx.third.open.CrcModel;
 
 import java.io.File;
-import java.io.Serializable;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

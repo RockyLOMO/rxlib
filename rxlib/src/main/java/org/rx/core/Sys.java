@@ -151,7 +151,6 @@ public final class Sys extends SystemUtils {
                 .register(Sys.class)
                 .register(Tasks.class)
                 .register(TraceHandler.INSTANCE);
-        IOC.register(Cache.class, IOC.get(conf.cache.mainCache));
     }
 
     static void checkAdviceShare(boolean isInit) {
