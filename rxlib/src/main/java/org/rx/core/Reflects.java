@@ -717,7 +717,8 @@ public class Reflects extends ClassUtils {
                         throw new InvalidException("Value should be 0 or 1");
                     }
                 } else if (toType == Class.class && value instanceof String) {
-                    value = loadClass(value.toString(), false);
+                    //todo check
+                    value = loadClass(value.toString(), true);
                 } else {
                     Linq<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
                     if (methods == null || fromType.isEnum()) {
