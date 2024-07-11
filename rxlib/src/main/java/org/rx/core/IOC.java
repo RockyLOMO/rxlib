@@ -48,10 +48,12 @@ public final class IOC {
     }
 
     public static <T> void register(@NonNull Class<T> type, @NonNull T bean) {
-//        List<Class<?>> types = ClassUtils.getAllSuperclasses(type); ClassUtils.getAllInterfaces(type);
         List<Class<?>> types = new ArrayList<>();
         types.add(type);
-        types.add(type.getSuperclass());
+        Class<?> superclass = type.getSuperclass();
+        if (superclass != null) {
+            types.add(superclass);
+        }
         for (Class<?> i : type.getInterfaces()) {
             types.add(i);
         }

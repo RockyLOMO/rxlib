@@ -257,6 +257,7 @@ public final class RxConfig {
 //        refreshFrom(sysProps);
 //    }
 
+    //初始化减少依赖其他类
     @SneakyThrows
     public void refreshFromSystemProperty() {
         trace.keepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, trace.keepDays);
