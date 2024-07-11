@@ -1091,9 +1091,9 @@ public class TestCore extends AbstractTester {
 //        conf.enableWatch();
 
         System.out.println(conf.getYaml());
-        Map codeMap = conf.readAs("org.rx.test.CoreTester", Map.class);
+        Map codeMap = conf.readAs("org.rx.core.TestCore", Map.class);
         System.out.println(codeMap);
-        String codeFormat = conf.readAs("org.rx.test.CoreTester.exceptionHandle<IllegalArgumentException>", String.class);
+        String codeFormat = conf.readAs("org.rx.core.TestCore.exceptionHandle<IllegalArgumentException>", String.class);
         System.out.println(codeFormat);
         assert eq(codeFormat, "Test IAException, value={0}");
 
@@ -1107,6 +1107,21 @@ public class TestCore extends AbstractTester {
 //        assert rxConf.getLogTypeWhitelist().size() == 2;
 //        assert rxConf.getJsonSkipTypes().size() == 1;
 
-        sleep(60000);
+        Map<String, Object> props = new HashMap<>();
+        props.put(RxConfig.ConfigNames.OMEGA, "rx");
+        props.put(RxConfig.ConfigNames.NET_USER_AGENT, "rxlib");
+        props.put(RxConfig.ConfigNames.NTP_ENABLE_FLAGS, 1);
+        props.put(RxConfig.ConfigNames.JSON_SKIP_TYPES, Collections.singletonList(TestCore.class));
+        props.put(RxConfig.ConfigNames.CACHE_MAIN_INSTANCE, MemoryCache.class.getName());
+        props.put(RxConfig.ConfigNames.LOG_STRATEGY, LogStrategy.ALWAYS.name());
+        rxConf.refreshFrom(props, 1);
+        assert rxConf.getOmega().equals("rx");
+        assert rxConf.getNet().getUserAgent().equals("rxlib");
+        assert rxConf.getNet().getNtp().getEnableFlags() == 1;
+        assert rxConf.getLogStrategy() == LogStrategy.ALWAYS;
+        System.out.println(rxConf.getJsonSkipTypes());
+        System.out.println(rxConf.getCache().getMainInstance());
+
+        sleep(10000);
     }
 }

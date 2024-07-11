@@ -2,7 +2,6 @@ package org.rx.spring;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.TypeReference;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -90,7 +89,7 @@ public class MxController {
                 case 3:
                     String type = request.getParameter("type");
                     String jsonVal = request.getParameter("jsonVal");
-                    Object source = null, target;
+                    Object target;
                     if (!Strings.isBlank(type)) {
                         Class<?> clazz = Class.forName(type);
                         target = SpringContext.getBean(clazz, false);
@@ -98,21 +97,20 @@ public class MxController {
                             return null;
                         }
                         if (jsonVal != null) {
-                            source = fromJson(jsonVal, clazz);
+                            BeanMapper.DEFAULT.map(fromJson(jsonVal, clazz), target, BeanMapFlag.SKIP_NULL.flags());
                         }
                     } else {
-                        if (jsonVal != null) {
-                            source = fromJson(jsonVal, new TypeReference<RxConfig>() {
-                            }.getType());
-                        }
                         target = RxConfig.INSTANCE;
+                        if (jsonVal != null) {
+                            RxConfig.INSTANCE.refreshFrom(toJsonObject(jsonVal));
+                        }
                     }
-                    return source != null ? BeanMapper.DEFAULT.map(source, target, BeanMapFlag.SKIP_NULL.flags()) : target;
+                    return target;
                 case 4:
                     Class<?> ft = Class.forName(request.getParameter("ft"));
                     String fn = request.getParameter("fn");
                     String fu = request.getParameter("fu");
-                    Map<Class<?>, Map<String, String>> fms = RxConfig.INSTANCE.getHttpForwards();
+                    Map<Class<?>, Map<String, String>> fms = RxConfig.INSTANCE.getMxHttpForwards();
                     if (fu == null) {
                         Map<String, String> fts = fms.get(ft);
                         if (fts != null) {

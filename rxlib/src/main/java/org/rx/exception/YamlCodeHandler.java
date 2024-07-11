@@ -7,9 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
-import org.rx.core.StringBuilder;
 import org.rx.core.cache.MemoryCache;
-import org.slf4j.helpers.MessageFormatter;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AccessibleObject;
@@ -156,7 +154,8 @@ public class YamlCodeHandler {
                 msg = String.format(msg, values);
                 break;
             default:
-                msg = new StringBuilder().appendMessageFormat(msg, values).toString();
+//                msg = new StringBuilder().appendMessageFormat(msg, values).toString();
+                msg = MessageFormat.format(msg, values);
                 break;
         }
         return msg;

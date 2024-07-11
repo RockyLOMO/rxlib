@@ -2,14 +2,10 @@ package org.rx.core;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.apache.commons.lang3.ClassUtils;
 import org.rx.bean.WeakIdentityMap;
 import org.rx.exception.InvalidException;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.WeakHashMap;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
@@ -52,8 +48,15 @@ public final class IOC {
     }
 
     public static <T> void register(@NonNull Class<T> type, @NonNull T bean) {
-        List<Class<?>> types = ClassUtils.getAllSuperclasses(type);
-        types.remove(Object.class);
+        List<Class<?>> types = new ArrayList<>();
+        types.add(type);
+        Class<?> superclass = type.getSuperclass();
+        if (superclass != null) {
+            types.add(superclass);
+        }
+        for (Class<?> i : type.getInterfaces()) {
+            types.add(i);
+        }
         for (Class<?> t : types) {
             container.putIfAbsent(t, bean);
         }

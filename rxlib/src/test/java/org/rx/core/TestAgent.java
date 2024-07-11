@@ -1,43 +1,17 @@
 package org.rx.core;
 
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import net.bytebuddy.ByteBuddy;
-import net.bytebuddy.agent.ByteBuddyAgent;
-import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
-import net.bytebuddy.description.NamedElement;
-import net.bytebuddy.description.type.TypeDefinition;
-import net.bytebuddy.description.type.TypeDescription;
-import net.bytebuddy.dynamic.ClassFileLocator;
-import net.bytebuddy.dynamic.loading.ClassInjector;
-import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
-import net.bytebuddy.dynamic.loading.ClassReloadingStrategy;
-import net.bytebuddy.implementation.MethodDelegation;
-import net.bytebuddy.implementation.bind.annotation.*;
 import net.bytebuddy.implementation.bytecode.assign.Assigner;
-import net.bytebuddy.matcher.ElementMatcher;
-import net.bytebuddy.matcher.ElementMatchers;
-import net.bytebuddy.pool.TypePool;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.bean.DateTime;
 import org.slf4j.MDC;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.lang.instrument.Instrumentation;
-import java.lang.reflect.Method;
 import java.util.Arrays;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.Callable;
+import java.util.TimeZone;
 import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
 import java.util.function.Function;
-import java.util.jar.JarFile;
 
 @Slf4j
 public class TestAgent extends AbstractTester {
@@ -72,7 +46,7 @@ public class TestAgent extends AbstractTester {
     static void ntp() {
         long ts = System.currentTimeMillis();
         System.out.println(ts);
-        System.out.println(new DateTime(ts));
+        System.out.println(new DateTime(ts, TimeZone.getDefault()));
 
         //inject
         NtpClock.transform();
@@ -81,7 +55,7 @@ public class TestAgent extends AbstractTester {
         System.out.println(ts);
         ts = NtpClock.UTC.millis();
         System.out.println(ts);
-        System.out.println(new DateTime(ts));
+        System.out.println(new DateTime(ts, TimeZone.getDefault()));
     }
 
     static void fjp() throws Throwable {

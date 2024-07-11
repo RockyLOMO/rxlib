@@ -5,18 +5,16 @@ import lombok.SneakyThrows;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.RxConfig;
+import org.rx.core.Strings;
 import org.rx.exception.ApplicationException;
 
 import java.text.ParseException;
 import java.time.DayOfWeek;
-import java.time.LocalDate;
 import java.time.Month;
-import java.time.temporal.TemporalAdjusters;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.TimeZone;
 
-import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.values;
 
@@ -35,43 +33,45 @@ public final class DateTime extends Date {
     public static final String[] FORMATS = new String[]{ISO_DATE_TIME_FORMAT, "yyyy-MM-dd HH:mm:ss.SSSZ", "yyyy-MM-dd HH:mm:ss.SSS",
             DATE_TIME_FORMAT, DATE_FORMAT, TIME_FORMAT,
             "yyyyMMddHHmmssSSS"};
-    static final TimeZone UTC_ZONE = TimeZone.getTimeZone("UTC");
 
     public static DateTime now() {
-        return new DateTime(System.currentTimeMillis());
-    }
-
-    public static DateTime now(String format) {
-        return valueOf(now().toString(format), format);
+        return new DateTime(System.currentTimeMillis(), TimeZone.getDefault());
     }
 
     public static DateTime utcNow() {
-        return now().asUniversalTime();
+        return new DateTime(System.currentTimeMillis(), TimeZone.getTimeZone("UTC"));
     }
 
     public static DateTime ofToNull(Date d) {
-        return d != null ? new DateTime(d.getTime()) : null;
+        return d != null ? of(d) : null;
     }
 
     public static DateTime of(@NonNull Date d) {
-        return new DateTime(d.getTime());
+        return d instanceof DateTime ? (DateTime) d : new DateTime(d.getTime(), TimeZone.getDefault());
+    }
+
+    public static DateTime valueOf(@NonNull String dateString) {
+        return valueOf(dateString, (TimeZone) null);
     }
 
     @ErrorCode(cause = ParseException.class)
-    public static DateTime valueOf(@NonNull String dateString) {
+    public static DateTime valueOf(@NonNull String dateString, TimeZone timeZone) {
+        if (Strings.isNumeric(dateString)) {
+            return new DateTime(Long.parseLong(dateString), timeZone);
+        }
         Throwable lastEx = null;
         int offset = dateString.length() >= 23 ? 0 : 3;
         int len = offset + 3, fb = 6;
         for (int i = offset; i < len; i++) {
             try {
-                return valueOf(dateString, FORMATS[i]);
+                return valueOf(dateString, FORMATS[i], timeZone);
             } catch (Throwable ex) {
                 lastEx = ex;
             }
         }
         for (int i = fb; i < FORMATS.length; i++) {
             try {
-                return valueOf(dateString, FORMATS[i]);
+                return valueOf(dateString, FORMATS[i], timeZone);
             } catch (Throwable ex) {
                 lastEx = ex;
             }
@@ -79,10 +79,14 @@ public final class DateTime extends Date {
         throw new ApplicationException(values(String.join(",", FORMATS), dateString), lastEx);
     }
 
-    @SneakyThrows
     public static DateTime valueOf(String dateString, String format) {
+        return valueOf(dateString, format, null);
+    }
+
+    @SneakyThrows
+    public static DateTime valueOf(String dateString, String format, TimeZone timeZone) {
         //SimpleDateFormat not thread safe
-        return DateTime.of(FastDateFormat.getInstance(format).parse(dateString));
+        return DateTime.of(FastDateFormat.getInstance(format, timeZone).parse(dateString));
     }
 
     private Calendar calendar;
@@ -177,14 +181,24 @@ public final class DateTime extends Date {
         return super.getTime();
     }
 
-    public DateTime(int year, Month month, int day, int hour, int minute, int second) {
+    public DateTime(int year, Month month, int day, int hour, int minute, int second, TimeZone zone) {
         Calendar c = getCalendar();
         c.set(year, month.getValue() - 1, day, hour, minute, second);
         super.setTime(c.getTimeInMillis());
+        if (zone != null) {
+            c.setTimeZone(zone);
+        }
     }
 
     public DateTime(long ticks) {
+        this(ticks, null);
+    }
+
+    public DateTime(long ticks, TimeZone zone) {
         super(ticks);
+        if (zone != null) {
+            getCalendar().setTimeZone(zone);
+        }
     }
 
     @Override
@@ -195,32 +209,41 @@ public final class DateTime extends Date {
         }
     }
 
+    public void setTimeZone(TimeZone zone) {
+        getCalendar().setTimeZone(zone);
+    }
+
+    public TimeZone getTimeZone() {
+        return getCalendar().getTimeZone();
+    }
+
     public DateTime getDatePart() {
-        return new DateTime(getYear(), getMonthEnum(), getDay(), 0, 0, 0);
+        return new DateTime(getYear(), getMonthEnum(), getDay(), 0, 0, 0, getTimeZone());
     }
 
     public DateTime setDatePart(int year, Month month, int day) {
-        return new DateTime(year, month, day, getHours(), getMinutes(), getSeconds());
+        return new DateTime(year, month, day, getHours(), getMinutes(), getSeconds(), getTimeZone());
     }
 
     public DateTime setDatePart(String date) {
-        return DateTime.valueOf(toString(date + " HH:mm:ss"), DATE_TIME_FORMAT);
+        return DateTime.valueOf(toString(date + " HH:mm:ss"), DATE_TIME_FORMAT, getTimeZone());
     }
 
     public DateTime getTimePart() {
-        return new DateTime(1970, Month.JANUARY, 1, getHours(), getMinutes(), getSeconds());
+        return new DateTime(1970, Month.JANUARY, 1, getHours(), getMinutes(), getSeconds(), getTimeZone());
     }
 
     public DateTime setTimePart(int hour, int minute, int second) {
-        return new DateTime(getYear(), getMonthEnum(), getDay(), hour, minute, second);
+        return new DateTime(getYear(), getMonthEnum(), getDay(), hour, minute, second, getTimeZone());
     }
 
     public DateTime setTimePart(String time) {
-        return DateTime.valueOf(toString("yyy-MM-dd " + time), DATE_TIME_FORMAT);
+        return DateTime.valueOf(toString("yyy-MM-dd " + time), DATE_TIME_FORMAT, getTimeZone());
     }
 
     public boolean isToday() {
         DateTime n = DateTime.now();
+        n.setTimeZone(getTimeZone());
         return n.getYear() == getYear() && n.getMonth() == getMonth() && n.getDay() == getDay();
     }
 
@@ -269,9 +292,7 @@ public final class DateTime extends Date {
         long mark = c.getTimeInMillis();
         c.set(field, c.get(field) + value);
         try {
-            DateTime newVal = new DateTime(c.getTimeInMillis());
-            newVal.getCalendar().setTimeZone(getCalendar().getTimeZone());
-            return newVal;
+            return new DateTime(c.getTimeInMillis(), getTimeZone());
         } finally {
             c.setTimeInMillis(mark);
         }
@@ -282,30 +303,18 @@ public final class DateTime extends Date {
         long mark = c.getTimeInMillis();
         c.set(field, value);
         try {
-            DateTime newVal = new DateTime(c.getTimeInMillis());
-            newVal.getCalendar().setTimeZone(getCalendar().getTimeZone());
-            return newVal;
+            return new DateTime(c.getTimeInMillis(), getTimeZone());
         } finally {
             c.setTimeInMillis(mark);
         }
     }
 
     public DateTime add(@NonNull Date value) {
-        return new DateTime(super.getTime() + value.getTime());
+        return new DateTime(super.getTime() + value.getTime(), getTimeZone());
     }
 
     public DateTime subtract(@NonNull Date value) {
-        return new DateTime(super.getTime() - value.getTime());
-    }
-
-    public DateTime asLocalTime() {
-        getCalendar().setTimeZone(TimeZone.getDefault());
-        return this;
-    }
-
-    public DateTime asUniversalTime() {
-        getCalendar().setTimeZone(UTC_ZONE);
-        return this;
+        return new DateTime(super.getTime() - value.getTime(), getTimeZone());
     }
 
     public String toDateString() {
@@ -326,6 +335,6 @@ public final class DateTime extends Date {
     }
 
     public String toString(@NonNull String format) {
-        return FastDateFormat.getInstance(format, getCalendar().getTimeZone()).format(this);
+        return FastDateFormat.getInstance(format, getTimeZone()).format(this);
     }
 }

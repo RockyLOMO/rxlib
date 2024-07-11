@@ -13,8 +13,8 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.Tuple;
-import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
@@ -380,8 +380,13 @@ public class HttpClient {
         SSLContext sslContext = SSLContext.getInstance("TLS");
         sslContext.init(null, new TrustManager[]{TRUST_MANAGER}, new SecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
-        OkHttpClient.Builder builder = new OkHttpClient.Builder().sslSocketFactory(sslContext.getSocketFactory(), TRUST_MANAGER).hostnameVerifier((s, sslSession) -> true).connectionPool(POOL).retryOnConnectionFailure(true) //unexpected end of stream
-                .connectTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS).readTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS).writeTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS).proxy(proxy).proxyAuthenticator(authenticator);
+        OkHttpClient.Builder builder = new OkHttpClient.Builder().sslSocketFactory(sslContext.getSocketFactory(), TRUST_MANAGER).hostnameVerifier((s, sslSession) -> true)
+                .connectionPool(POOL).retryOnConnectionFailure(true) //unexpected end of stream
+                .connectTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS)
+                .readTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS)
+                .writeTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS)
+                .callTimeout(Math.round(readWriteTimeoutMillis * 1.5), TimeUnit.MILLISECONDS)
+                .proxy(proxy).proxyAuthenticator(authenticator);
         if (enableCookie) {
             builder.cookieJar(COOKIES);
         }

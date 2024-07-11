@@ -177,7 +177,7 @@ public final class MemoryStream extends IOStream implements Serializable {
 
     @Override
     protected void freeObjects() {
-        if (buffer != null) {
+        if (buffer != null && buffer.refCnt() > 0) {
             buffer.release();
         }
     }

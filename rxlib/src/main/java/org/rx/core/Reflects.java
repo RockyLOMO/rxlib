@@ -1,5 +1,7 @@
 package org.rx.core;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -70,6 +72,7 @@ public class Reflects extends ClassUtils {
     public static final Set<Method> OBJECT_METHODS = Collections.unmodifiableSet(new HashSet<>(Arrays.toList(Object.class.getMethods())));
     static final String M_0 = "close", CHANGE_TYPE_METHOD = "valueOf";
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
+    static final String TYPED_JSON_KEY = "$rxType";
     static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PACKAGE | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE;
     //must lazy before thread pool init.
     static final Lazy<Cache<Class<?>, Map<String, Linq<Method>>>> methodCache = new Lazy<>(MemoryCache::new);
@@ -88,7 +91,7 @@ public class Reflects extends ClassUtils {
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
         registerConvert(Long.class, Date.class, (sv, tt) -> new Date(sv));
-        registerConvert(Long.class, DateTime.class, (sv, tt) -> new DateTime(sv));
+        registerConvert(Long.class, DateTime.class, (sv, tt) -> new DateTime(sv, TimeZone.getDefault()));
         registerConvert(Date.class, Long.class, (sv, tt) -> sv.getTime());
         registerConvert(Date.class, DateTime.class, (sv, tt) -> DateTime.of(sv));
         registerConvert(String.class, BigDecimal.class, (sv, tt) -> new BigDecimal(sv));
@@ -188,11 +191,111 @@ public class Reflects extends ClassUtils {
         return lambda;
     }
 
+    static final int APPEND_TO_COLLECTION = 1;
+
+    /**
+     * @param instance
+     * @param fieldPath
+     * @param value
+     * @param flags     1 append to Collection
+     */
+    public static void writeFieldByPath(Object instance, String fieldPath, Object value, int flags) {
+        final String c = ".";
+        int wPathOffset = 0, i;
+        String fieldName;
+        Object cur = instance;
+        while ((i = fieldPath.indexOf(c, wPathOffset)) != -1) {
+            fieldName = fieldPath.substring(wPathOffset, i);
+            try {
+                cur = readField(cur, fieldName);
+            } catch (Throwable e) {
+                throw new InvalidException("Read field {} fail", fieldPath.substring(0, wPathOffset), e);
+            }
+            wPathOffset = i + c.length();
+        }
+        if (cur == null) {
+            throw new InvalidException("Read field {} empty", fieldPath.substring(0, wPathOffset));
+        }
+        fieldName = fieldPath.substring(wPathOffset);
+        try {
+            Field field = getFieldMap(cur.getClass()).get(fieldName);
+            if (field == null) {
+                throw new NoSuchFieldException(fieldName);
+            }
+
+            if (isTypedJson(value)) {
+                value = fromTypedJson(value);
+            }
+            if (Collection.class.isAssignableFrom(field.getType())) {
+                Collection<Object> col = (Collection<Object>) field.get(cur);
+                if ((flags & APPEND_TO_COLLECTION) != APPEND_TO_COLLECTION) {
+                    col.clear();
+                }
+                if (value != null) {
+                    col.addAll((Collection<Object>) value);
+                }
+            } else if (Map.class.isAssignableFrom(field.getType())) {
+                Map<Object, Object> col = (Map<Object, Object>) field.get(cur);
+                if ((flags & APPEND_TO_COLLECTION) != APPEND_TO_COLLECTION) {
+                    col.clear();
+                }
+                if (value != null) {
+                    col.putAll((Map<Object, Object>) value);
+                }
+            } else {
+                field.set(cur, changeType(value, field.getType()));
+            }
+        } catch (Throwable e) {
+            throw new InvalidException("Write field {} fail", fieldPath, e);
+        }
+    }
+
+    public static boolean isTypedJson(Object value) {
+        if (value instanceof String) {
+            String str = ((String) value).trim();
+            return str.startsWith("{") && str.endsWith("}") && str.indexOf(TYPED_JSON_KEY, 1) != -1;
+        }
+        Map<String, Object> json = as(value, Map.class);
+        if (json != null) {
+            return json.containsKey(TYPED_JSON_KEY);
+        }
+        return false;
+    }
+
+    public static <T> T fromTypedJson(Object value) {
+        Map<String, Object> json = as(value, Map.class);
+        if (json == null) {
+            json = toJsonObject(value);
+        }
+        if (json == null || !json.containsKey(TYPED_JSON_KEY)) {
+            throw new InvalidException("Invalid json");
+        }
+        return fromTypedJson(json);
+    }
+
+    public static <T> T fromTypedJson(@NonNull Map<String, Object> json) {
+        String td = (String) json.get(TYPED_JSON_KEY);
+        if (td == null) {
+            throw new InvalidException("Invalid type descriptor");
+        }
+        return fromJson(json, fromTypeDescriptor(td));
+    }
+
+    public static <T> JSONObject toTypedJson(@NonNull T obj) {
+        return toTypedJson(obj, obj.getClass());
+    }
+
+    public static <T> JSONObject toTypedJson(@NonNull T obj, @NonNull Type type) {
+        JSONObject r = toJsonObject(obj);
+        r.put(TYPED_JSON_KEY, getTypeDescriptor(type));
+        return r;
+    }
+
     public static String getTypeDescriptor(@NonNull Type type) {
         if (type instanceof Class) {
             return ((Class<?>) type).getName();
         }
-        return toJsonString(type);
+        return JSON.toJSONString(type);
     }
 
     @SneakyThrows
@@ -515,6 +618,7 @@ public class Reflects extends ClassUtils {
                 FieldUtils.removeFinalModifier(field);
             }
 
+//            member.setAccessible(true);
             if (System.getSecurityManager() == null) {
                 member.setAccessible(true); // <~ Dragons
             } else {
@@ -612,6 +716,9 @@ public class Reflects extends ClassUtils {
                     } else {
                         throw new InvalidException("Value should be 0 or 1");
                     }
+                } else if (toType == Class.class && value instanceof String) {
+                    //todo check
+                    value = loadClass(value.toString(), true);
                 } else {
                     Linq<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
                     if (methods == null || fromType.isEnum()) {

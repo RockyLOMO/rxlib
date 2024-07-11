@@ -7,16 +7,15 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Metadata;
 import org.rx.bean.LogStrategy;
 import org.rx.net.Sockets;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.newConcurrentList;
 
 @Metadata(topicClass = RxConfig.class)
@@ -123,7 +122,7 @@ public final class RxConfig {
     public static class CacheConfig {
         int physicalMemoryUsageWarningThreshold;
 
-        Class<? extends Cache> mainCache;
+        Class<? extends Cache> mainInstance;
         int slidingSeconds;
         int maxItemSize;
     }
@@ -175,33 +174,33 @@ public final class RxConfig {
 
     static {
         JSONFactory.getDefaultObjectReaderProvider().addAutoTypeAccept("org.springframework");
-        RxConfig temp;
+        RxConfig t;
         try {
-            temp = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);
+            t = YamlConfiguration.RX_CONF.readAs("app", RxConfig.class);
         } catch (Throwable e) {
             log.error("RxMeta init error", e);
-            temp = new RxConfig();
+            t = new RxConfig();
         }
-        temp.refreshFromSystemProperty();
-        INSTANCE = temp;
+        INSTANCE = t;
+        INSTANCE.refreshFromSystemProperty();
     }
 
     String id;
-    String omega;
     String aesKey;
-    String mxpwd;
-    long mxSamplingPeriod;
     String dateFormat;
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
     final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
+    String omega;
+    String mxpwd;
+    long mxSamplingPeriod;
+    //key1: controller, key2: method, value: url
+    Map<Class<?>, Map<String, String>> mxHttpForwards = new ConcurrentHashMap<>(8);
     TraceConfig trace = new TraceConfig();
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
     DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
-    //key1: controller, key2: method, value: url
-    Map<Class<?>, Map<String, String>> httpForwards = new ConcurrentHashMap<>(8);
 
     public int getIntId() {
         Integer v = Integer.getInteger(id);
@@ -212,9 +211,53 @@ public final class RxConfig {
     }
 
     private RxConfig() {
-//        refreshFromSystemProperty();
     }
 
+    public void refreshFrom(Map<String, Object> props) {
+        refreshFrom(props, 0);
+    }
+
+    public void refreshFrom(Map<String, Object> props, int flags) {
+        Linq.from(Reflects.getFieldMap(ConfigNames.class).values()).select(p -> p.get(null)).join(props.entrySet(), (p, x) -> eq(p, x.getKey()), (p, x) -> {
+            Reflects.writeFieldByPath(this, ConfigNames.getWithoutPrefix(x.getKey()), x.getValue(), flags);
+            return null;
+        });
+
+        afterSet();
+    }
+
+    void afterSet() {
+        threadPool.replicas = Math.max(1, threadPool.replicas);
+        if (net.poolMaxSize <= 0) {
+            net.poolMaxSize = Math.max(10, Constants.CPU_THREADS * 2);
+        }
+        if (id == null) {
+            id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
+        }
+    }
+//    public void refreshFromSystemProperty() {
+//        Map<String, Object> sysProps = new HashMap<>((Map) System.getProperties());
+//        reset(net.lanIps, ConfigNames.NET_LAN_IPS);
+//        reset(net.ntp.servers, ConfigNames.NTP_SERVERS);
+//        reset(net.dns.inlandServers, ConfigNames.DNS_INLAND_SERVERS);
+//        reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
+//        String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
+//        if (v != null) {
+//            jsonSkipTypes.clear();
+//            //method ref will match multi methods
+//            jsonSkipTypes.addAll(Linq.from(Strings.split(v, ",")).select(p -> Class.forName(p)).toSet());
+//        }
+//
+//        sysProps.remove(ConfigNames.NET_LAN_IPS);
+//        sysProps.remove(ConfigNames.NTP_SERVERS);
+//        sysProps.remove(ConfigNames.DNS_INLAND_SERVERS);
+//        sysProps.remove(ConfigNames.DNS_OUTLAND_SERVERS);
+//        sysProps.remove(ConfigNames.JSON_SKIP_TYPES);
+//
+//        refreshFrom(sysProps);
+//    }
+
+    //初始化减少依赖其他类
     @SneakyThrows
     public void refreshFromSystemProperty() {
         trace.keepDays = SystemPropertyUtil.getInt(ConfigNames.TRACE_KEEP_DAYS, trace.keepDays);
@@ -227,7 +270,7 @@ public final class RxConfig {
         threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, threadPool.queueCapacity);
         threadPool.lowCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_LOW_CPU_WATER_MARK, threadPool.lowCpuWaterMark);
         threadPool.highCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_HIGH_CPU_WATER_MARK, threadPool.highCpuWaterMark);
-        threadPool.replicas = Math.max(1, SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, threadPool.replicas));
+        threadPool.replicas = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, threadPool.replicas);
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.maxTraceDepth = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_TRACE_DEPTH, threadPool.maxTraceDepth);
         threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, threadPool.cpuLoadWarningThreshold);
@@ -238,9 +281,9 @@ public final class RxConfig {
         threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, threadPool.resizeQuantity);
 
         cache.physicalMemoryUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.PHYSICAL_MEMORY_USAGE_WARNING, cache.physicalMemoryUsageWarningThreshold);
-        String mc = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
-        if (mc != null) {
-            cache.mainCache = (Class<? extends Cache>) Class.forName(mc);
+        String v = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
+        if (v != null) {
+            cache.mainInstance = (Class<? extends Cache>) ClassUtils.getClass(v, true);
         }
         cache.slidingSeconds = SystemPropertyUtil.getInt(ConfigNames.CACHE_SLIDING_SECONDS, cache.slidingSeconds);
         cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, cache.maxItemSize);
@@ -253,9 +296,6 @@ public final class RxConfig {
         net.connectTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_CONNECT_TIMEOUT_MILLIS, net.connectTimeoutMillis);
         net.readWriteTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_READ_WRITE_TIMEOUT_MILLIS, net.readWriteTimeoutMillis);
         net.poolMaxSize = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_MAX_SIZE, net.poolMaxSize);
-        if (net.poolMaxSize <= 0) {
-            net.poolMaxSize = Math.max(10, Constants.CPU_THREADS * 2);
-        }
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, net.poolKeepAliveSeconds);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, net.userAgent);
         reset(net.lanIps, ConfigNames.NET_LAN_IPS);
@@ -269,24 +309,23 @@ public final class RxConfig {
         reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID, id);
-        if (id == null) {
-            id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
-        }
         omega = SystemPropertyUtil.get(ConfigNames.OMEGA, omega);
         aesKey = SystemPropertyUtil.get(ConfigNames.AES_KEY, aesKey);
         mxpwd = SystemPropertyUtil.get(ConfigNames.MXPWD, mxpwd);
         mxSamplingPeriod = SystemPropertyUtil.getLong(ConfigNames.MX_SAMPLING_PERIOD, mxSamplingPeriod);
         dateFormat = SystemPropertyUtil.get(ConfigNames.DATE_FORMAT, dateFormat);
-        String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
+        v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
         if (v != null) {
             jsonSkipTypes.clear();
             //method ref will match multi methods
-            jsonSkipTypes.addAll(Linq.from(Strings.split(v, ",")).select(p -> Class.forName(p)).toSet());
+            jsonSkipTypes.addAll(Linq.from(Strings.split(v, ",")).select(p -> ClassUtils.getClass(p, false)).toSet());
         }
         v = SystemPropertyUtil.get(ConfigNames.LOG_STRATEGY);
         if (v != null) {
             logStrategy = LogStrategy.valueOf(v);
         }
+
+        afterSet();
     }
 
     void reset(Collection<String> conf, String propName) {
