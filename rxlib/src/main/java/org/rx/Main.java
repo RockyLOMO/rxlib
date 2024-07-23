@@ -335,26 +335,26 @@ public final class Main implements SocksSupport {
     final SocksProxyServer proxyServer;
 
     void ddns() {
-        Tasks.schedulePeriod(() -> {
-            if (conf == null) {
-                log.warn("conf is null");
-            }
-
-            InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
-            for (String ddns : conf.ddnsDomains) {
-                List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
-                if (currentIps.contains(wanIp)) {
-                    continue;
-                }
-                int i = ddns.indexOf(".");
-                String domain = ddns.substring(i + 1), name = ddns.substring(0, i);
-                log.info("ddns-{}.{}: {}->{}", name, domain, currentIps, wanIp);
-                AuthenticProxy p = conf.godaddyProxy != null
-                        ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
-                        : null;
-                IPSearcher.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress(), p);
-            }
-        }, conf.ddnsSeconds * 1000L);
+//        Tasks.schedulePeriod(() -> {
+//            if (conf == null) {
+//                log.warn("conf is null");
+//            }
+//
+//            InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
+//            for (String ddns : conf.ddnsDomains) {
+//                List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
+//                if (currentIps.contains(wanIp)) {
+//                    continue;
+//                }
+//                int i = ddns.indexOf(".");
+//                String domain = ddns.substring(i + 1), name = ddns.substring(0, i);
+//                log.info("ddns-{}.{}: {}->{}", name, domain, currentIps, wanIp);
+//                AuthenticProxy p = conf.godaddyProxy != null
+//                        ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
+//                        : null;
+//                IPSearcher.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress(), p);
+//            }
+//        }, conf.ddnsSeconds * 1000L);
     }
 
     @Override
