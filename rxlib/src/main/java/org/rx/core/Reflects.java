@@ -603,6 +603,7 @@ public class Reflects extends ClassUtils {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);
+                FieldUtils.removeFinalModifier(field);
             }
             return Collections.unmodifiableMap(Linq.from(all).toMap(Field::getName, p -> p));
         });
