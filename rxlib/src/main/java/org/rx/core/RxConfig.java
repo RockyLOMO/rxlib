@@ -87,6 +87,8 @@ public final class RxConfig {
     @ToString
     public static class TraceConfig {
         int keepDays;
+        int writeQueueLength;
+        int flushQueuePeriod;
         int errorMessageSize;
         long slowMethodElapsedMicros;
 

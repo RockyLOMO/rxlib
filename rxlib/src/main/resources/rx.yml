@@ -1,6 +1,8 @@
 app:
   trace:
     keepDays: 1
+    writeQueueLength: 100
+    flushQueuePeriod: 1000
     errorMessageSize: 10
     slowMethodElapsedMicros: 50000
     watchThreadFlags: 1

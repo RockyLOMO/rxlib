@@ -73,7 +73,7 @@ public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor>
                     throw pe.getError();
                 }
             } finally {
-                TraceHandler.INSTANCE.saveMethodTrace(pe, signature.getName());
+                TraceHandler.INSTANCE.saveMethodTrace(pe.getDeclaringType(), signature.getName(), pe.getParameters(), pe.getReturnValue(), pe.getError(), pe.getElapsedNanos());
                 onLog(signature, pe, paramSnapshot);
                 raiseEvent(onProceed, pe);
             }
