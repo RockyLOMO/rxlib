@@ -272,7 +272,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
 
     public void saveMethodTrace(Thread t, Class<?> declaringType, String methodName, Object[] parameters,
                                 Object returnValue, Throwable e, long elapsedMicros) {
-        queue.offer(new Object[]{t, declaringType, methodName, parameters, returnValue, e, elapsedMicros});
+        queue.offer(new Object[]{t.getName(), declaringType, methodName, parameters, returnValue, e, elapsedMicros});
     }
 
     void innerSave(String thread, Class<?> declaringType, String methodName, Object[] parameters,
