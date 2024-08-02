@@ -205,7 +205,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                 throw e;
             } finally {
                 Thread t = Thread.currentThread();
-                TraceHandler.INSTANCE.saveMethodTrace(t, fn.getClass(), Reflects.getStackTrace(t), new Object[]{id},
+                TraceHandler.INSTANCE.saveMethodTrace(t, fn.getClass(), Reflects.getStackTrace(t), id == null ? null : new Object[]{id},
                         r, ex, System.nanoTime() - s);
             }
             return r;

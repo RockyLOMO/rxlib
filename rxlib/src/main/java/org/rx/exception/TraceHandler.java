@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
 
 import static org.rx.core.Extends.as;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.RxConfig.ConfigNames.TRACE_KEEP_DAYS;
 import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 import static org.rx.core.Sys.toJsonString;
@@ -195,7 +196,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         int eMsgFlag = stackTrace.indexOf("\n");
         String eMsg = stackTrace.substring(0, eMsgFlag);
         stackTrace = stackTrace.substring(eMsgFlag + 2);
-        msg = eMsg + msg;
+        msg = eMsg + ifNull(msg, "");
 
         long pk = CodecUtil.hash64(stackTrace);
 //        Tasks.nextPool().runSerial(() -> {
