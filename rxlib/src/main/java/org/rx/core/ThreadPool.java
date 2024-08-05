@@ -179,7 +179,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
             if (conf.trace.slowMethodElapsedMicros > 0) {
                 //Reflects.getStackTrace(t)
-                caller = Reflects.getCallerClass();
+                caller = Reflects.CLASS_TRACER.getClassTrace(0);
             } else {
                 caller = null;
             }
@@ -205,7 +205,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     throw e;
                 } finally {
                     Thread t = Thread.currentThread();
-                    TraceHandler.INSTANCE.saveMethodTrace(t, ifNull(caller, ThreadPool.class), fn.getClass().getName(), id == null ? null : new Object[]{id},
+                    TraceHandler.INSTANCE.saveMethodTrace(t, ifNull(caller, ThreadPool.class), fn.getClass().getSimpleName(), id == null ? null : new Object[]{id},
                             r, ex, System.nanoTime() - s);
                 }
                 return r;

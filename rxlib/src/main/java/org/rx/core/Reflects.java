@@ -58,11 +58,21 @@ public class Reflects extends ClassUtils {
         final TripleFunc<TS, Class<TT>, TT> converter;
     }
 
-    static class SecurityManagerEx extends SecurityManager {
+    public interface ClassTracer {
+        Class<?>[] getClassTrace();
+
+        Class<?> getClassTrace(int depth);
+    }
+
+    static class SecurityManagerEx extends SecurityManager implements ClassTracer {
         static final SecurityManagerEx INSTANCE = new SecurityManagerEx();
 
-        Class<?> stackClass(int depth) {
-            return getClassContext()[depth];
+        public Class<?>[] getClassTrace() {
+            return getClassContext();
+        }
+
+        public Class<?> getClassTrace(int depth) {
+            return getClassContext()[1 + depth];
         }
     }
     //endregion
@@ -70,6 +80,7 @@ public class Reflects extends ClassUtils {
     public static final Linq<String> COLLECTION_WRITE_METHOD_NAMES = Linq.from("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
             List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
     public static final Set<Method> OBJECT_METHODS = Collections.unmodifiableSet(new HashSet<>(Arrays.toList(Object.class.getMethods())));
+    public static final ClassTracer CLASS_TRACER = new SecurityManagerEx();
     static final String M_0 = "close", CHANGE_TYPE_METHOD = "valueOf";
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
     static final String TYPED_JSON_KEY = "$rxType";
@@ -123,7 +134,7 @@ public class Reflects extends ClassUtils {
 
     public static Class<?> stackClass(int depth) {
         //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 not exist
-        return SecurityManagerEx.INSTANCE.stackClass(2 + depth);
+        return SecurityManagerEx.INSTANCE.getClassTrace()[2 + depth];
     }
 
     public static InputStream getResource(String namePattern) {

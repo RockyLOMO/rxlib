@@ -999,7 +999,8 @@ public class TestCore extends AbstractTester {
             System.out.println(resource);
             assert resource != null;
         }
-        assert Reflects.stackClass(0) == this.getClass();
+        System.out.println(toJsonString(Reflects.CLASS_TRACER.getClassTrace()));
+        assert Reflects.CLASS_TRACER.getClassTrace(0) == this.getClass();
 //        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
 //            System.out.println(traceElement);
 //        }
