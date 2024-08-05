@@ -167,7 +167,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         final Object id;
         final InternalThreadLocalMap parent;
         final String traceId;
-        final Class<?> caller;
+        final Class<?>[] caller;
 
         private Task(Func<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
@@ -179,7 +179,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
             if (conf.trace.slowMethodElapsedMicros > 0) {
                 //Reflects.getStackTrace(t)
-                caller = Reflects.CLASS_TRACER.getClassTrace(0);
+                caller = Reflects.CLASS_TRACER.getClassTrace();
             } else {
                 caller = null;
             }
@@ -205,7 +205,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     throw e;
                 } finally {
                     Thread t = Thread.currentThread();
-                    TraceHandler.INSTANCE.saveMethodTrace(t, ifNull(caller, ThreadPool.class), fn.getClass().getSimpleName(), id == null ? null : new Object[]{id},
+                    TraceHandler.INSTANCE.saveMethodTrace(t, caller != null ? caller[0] : ThreadPool.class, fn.getClass().getSimpleName() + Linq.from(caller).toJoinString(Constants.STACK_TRACE_FLAG), id == null ? null : new Object[]{id},
                             r, ex, System.nanoTime() - s);
                 }
                 return r;

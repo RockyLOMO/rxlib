@@ -49,6 +49,9 @@ public interface Constants {
     String CACHE_REGION_BEAN_PROPERTIES = "PROP";
     String CACHE_REGION_INTERFACE_METHOD = "IM";
     String CACHE_REGION_SKIP_SERIALIZE = "SS";
+
+    String STACK_TRACE_FLAG = "\nat ";
+
     /**
      * do not edit
      */
