@@ -205,7 +205,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     throw e;
                 } finally {
                     Thread t = Thread.currentThread();
-                    TraceHandler.INSTANCE.saveMethodTrace(t, caller != null ? caller[0] : ThreadPool.class, fn.getClass().getSimpleName() + Linq.from(caller).toJoinString(Constants.STACK_TRACE_FLAG), id == null ? null : new Object[]{id},
+                    TraceHandler.INSTANCE.saveMethodTrace(t, caller != null ? caller[0] : ThreadPool.class, fn.getClass().getSimpleName() + Linq.from(caller).select(Class::getName).toJoinString(Constants.STACK_TRACE_FLAG), id == null ? null : new Object[]{id},
                             r, ex, System.nanoTime() - s);
                 }
                 return r;
