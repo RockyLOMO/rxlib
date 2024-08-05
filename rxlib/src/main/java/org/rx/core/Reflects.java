@@ -111,6 +111,16 @@ public class Reflects extends ClassUtils {
         return Linq.from(new Throwable().getStackTrace()).skip(2).take(takeCount);
     }
 
+    public static Class<?> getCallerClass() {
+        try {
+            Class<?> type = Class.forName("sun.reflect.Reflection");
+            return invokeMethod(type, "getCallerClass");
+        } catch (ClassNotFoundException e) {
+//            throw new RuntimeException(e);
+            return stackClass(0);
+        }
+    }
+
     public static Class<?> stackClass(int depth) {
         //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 not exist
         return SecurityManagerEx.INSTANCE.stackClass(2 + depth);

@@ -26,6 +26,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.require;
 
 @SuppressWarnings(NON_UNCHECKED)
@@ -166,13 +167,21 @@ public class ThreadPool extends ThreadPoolExecutor {
         final Object id;
         final InternalThreadLocalMap parent;
         final String traceId;
+        final Class<?> caller;
 
         private Task(Func<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
                 flags = RunFlag.NONE.flags();
             }
-            if (RxConfig.INSTANCE.threadPool.traceName != null) {
+            RxConfig conf = RxConfig.INSTANCE;
+            if (conf.threadPool.traceName != null) {
                 flags.add(RunFlag.THREAD_TRACE);
+            }
+            if (conf.trace.slowMethodElapsedMicros > 0) {
+                //Reflects.getStackTrace(t)
+                caller = Reflects.getCallerClass();
+            } else {
+                caller = null;
             }
 
             this.fn = fn;
@@ -185,30 +194,29 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public T call() {
-            long eMicrosThreshold = RxConfig.INSTANCE.trace.slowMethodElapsedMicros;
-            if (eMicrosThreshold <= 0) {
+            if (RxConfig.INSTANCE.trace.slowMethodElapsedMicros > 0) {
+                T r = null;
+                Throwable ex = null;
+                long s = System.nanoTime();
                 try {
-                    return fn.invoke();
+                    r = fn.invoke();
                 } catch (Throwable e) {
-                    TraceHandler.INSTANCE.log(toString(), e);
+                    TraceHandler.INSTANCE.log(toString(), ex = e);
                     throw e;
+                } finally {
+                    Thread t = Thread.currentThread();
+                    TraceHandler.INSTANCE.saveMethodTrace(t, ifNull(caller, ThreadPool.class), fn.getClass().getName(), id == null ? null : new Object[]{id},
+                            r, ex, System.nanoTime() - s);
                 }
+                return r;
             }
 
-            T r = null;
-            Throwable ex = null;
-            long s = System.nanoTime();
             try {
-                r = fn.invoke();
+                return fn.invoke();
             } catch (Throwable e) {
-                TraceHandler.INSTANCE.log(toString(), ex = e);
+                TraceHandler.INSTANCE.log(toString(), e);
                 throw e;
-            } finally {
-                Thread t = Thread.currentThread();
-                TraceHandler.INSTANCE.saveMethodTrace(t, fn.getClass(), Reflects.getStackTrace(t), id == null ? null : new Object[]{id},
-                        r, ex, System.nanoTime() - s);
             }
-            return r;
         }
 
         @Override

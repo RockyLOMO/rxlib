@@ -84,6 +84,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         Date modifyTime;
     }
 
+    String FIRST_FLAG = "\nat ";
     public static final TraceHandler INSTANCE = new TraceHandler();
 
     public static Object[] getMessageCandidate(Object... args) {
@@ -193,10 +194,10 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     void innerSave(String thread, String msg, Throwable e) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         String stackTrace = ExceptionUtils.getStackTrace(e);
-        int eMsgFlag = stackTrace.indexOf("\n");
+        int eMsgFlag = stackTrace.indexOf(FIRST_FLAG);
         String eMsg = stackTrace.substring(0, eMsgFlag);
         stackTrace = stackTrace.substring(eMsgFlag + 2);
-        msg = eMsg + ifNull(msg, "");
+        msg = msg == null ? eMsg : String.format("%s\n%s", eMsg, msg);
 
         long pk = CodecUtil.hash64(stackTrace);
 //        Tasks.nextPool().runSerial(() -> {
