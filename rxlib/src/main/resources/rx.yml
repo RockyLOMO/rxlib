@@ -4,7 +4,7 @@ app:
     writeQueueLength: 100
     flushQueuePeriod: 1000
     errorMessageSize: 10
-    slowMethodElapsedMicros: 50000
+    slowMethodElapsedMicros: 1000000
     watchThreadFlags: 1
     samplingCpuPeriod: 30000
   threadPool:
@@ -15,7 +15,7 @@ app:
     highCpuWaterMark: 70
     replicas: 2
     maxTraceDepth: 5
-    slowMethodSamplingPercent: 1
+    slowMethodSamplingPercent: 2
     cpuLoadWarningThreshold: 80
     samplingPeriod: 3000
     samplingTimes: 2

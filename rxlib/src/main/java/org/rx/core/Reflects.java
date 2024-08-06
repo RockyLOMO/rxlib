@@ -208,12 +208,14 @@ public class Reflects extends ClassUtils {
     }
 
     static final int APPEND_TO_COLLECTION = 1;
+    static final int WRITE_QUIETLY = 1 << 1;
 
     /**
      * @param instance
      * @param fieldPath
      * @param value
-     * @param flags     1 append to Collection
+     * @param flags     1       append to Collection
+     *                  1 << 1  write quietly
      */
     public static void writeFieldByPath(Object instance, String fieldPath, Object value, int flags) {
         final String c = ".";
@@ -262,7 +264,10 @@ public class Reflects extends ClassUtils {
                 field.set(cur, changeType(value, field.getType()));
             }
         } catch (Throwable e) {
-            throw new InvalidException("Write field {} fail", fieldPath, e);
+            if ((flags & WRITE_QUIETLY) != WRITE_QUIETLY) {
+                throw new InvalidException("Write field {} fail", fieldPath, e);
+            }
+            log.warn("Write field {} fail", fieldPath, e);
         }
     }
 
