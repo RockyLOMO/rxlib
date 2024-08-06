@@ -144,7 +144,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         static <T> Task<T> adapt(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             Task<T> t = as(fn);
-            return t != null && t.id == id ? t : new Task<>(fn::call, flags, id);
+            return t != null && t.id == id ? t : new Task<>(fn, flags, id);
         }
 
         static <T> Task<T> adapt(Runnable fn) {
@@ -163,14 +163,14 @@ public class ThreadPool extends ThreadPoolExecutor {
             return fn instanceof Task ? (Task<T>) fn : null;
         }
 
-        final Func<T> fn;
+        final Callable<T> fn;
         final FlagsEnum<RunFlag> flags;
         final Object id;
         final InternalThreadLocalMap parent;
         final String traceId;
         final StackTraceElement[] stackTrace;
 
-        private Task(Func<T> fn, FlagsEnum<RunFlag> flags, Object id) {
+        private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
                 flags = RunFlag.NONE.flags();
             }
@@ -178,7 +178,14 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (conf.threadPool.traceName != null) {
                 flags.add(RunFlag.THREAD_TRACE);
             }
-            if (conf.trace.slowMethodElapsedMicros > 0 && ThreadLocalRandom.current().nextInt(0, 100) < conf.threadPool.slowMethodSamplingPercent) {
+            Object ctxST = CTX_STACK_TRACE.getIfExists();
+            if (ctxST != null) {
+                if (ctxST instanceof StackTraceElement[]) {
+                    stackTrace = (StackTraceElement[]) ctxST;
+                } else {
+                    stackTrace = null;
+                }
+            } else if (conf.trace.slowMethodElapsedMicros > 0 && ThreadLocalRandom.current().nextInt(0, 100) < conf.threadPool.slowMethodSamplingPercent) {
                 stackTrace = new Throwable().getStackTrace();
             } else {
                 stackTrace = null;
@@ -199,7 +206,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                 Throwable ex = null;
                 long s = System.nanoTime();
                 try {
-                    r = fn.invoke();
+                    r = fn.call();
                 } catch (Throwable e) {
                     TraceHandler.INSTANCE.log(toString(), ex = e);
                     throw e;
@@ -217,7 +224,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
 
             try {
-                return fn.invoke();
+                return fn.call();
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log(toString(), e);
                 throw e;
@@ -260,8 +267,9 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static final Delegate<EventPublisher.StaticEventPublisher, NEventArgs<String>> onTraceIdChanged = Delegate.create();
     static final ThreadLocal<Queue<String>> CTX_PARENT_TRACE_ID = new InheritableThreadLocal<>();
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
-    static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
-    static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
+    static final FastThreadLocal<Object> CTX_STACK_TRACE = new FastThreadLocal<>();
+    static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
+    private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
@@ -338,9 +346,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         );
     }
 
-    static boolean asyncContinueFlag(boolean def) {
-        Boolean ac = ASYNC_CONTINUE.getIfExists();
-        ASYNC_CONTINUE.remove();
+    static boolean continueFlag(boolean def) {
+        Boolean ac = CONTINUE_FLAG.getIfExists();
+        CONTINUE_FLAG.remove();
         if (ac == null) {
             return def;
         }

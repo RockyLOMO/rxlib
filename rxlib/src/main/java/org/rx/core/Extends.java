@@ -193,7 +193,7 @@ public interface Extends extends Serializable {
                 }
                 TraceHandler.INSTANCE.log("each", e);
             }
-            if (!ThreadPool.asyncContinueFlag(true)) {
+            if (!ThreadPool.continueFlag(true)) {
                 break;
             }
             if (interruptedFlag < 0) {
@@ -212,7 +212,7 @@ public interface Extends extends Serializable {
 
     //CircuitBreakingException
     static void circuitContinue(boolean flag) {
-        ThreadPool.ASYNC_CONTINUE.set(flag);
+        ThreadPool.CONTINUE_FLAG.set(flag);
     }
 
     @SneakyThrows
