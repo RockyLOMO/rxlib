@@ -4,6 +4,7 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.InternalThreadLocalMap;
+import io.netty.util.internal.ThreadLocalRandom;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -167,7 +168,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         final Object id;
         final InternalThreadLocalMap parent;
         final String traceId;
-        final Class<?>[] caller;
+        final StackTraceElement[] stackTrace;
 
         private Task(Func<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
@@ -177,11 +178,10 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (conf.threadPool.traceName != null) {
                 flags.add(RunFlag.THREAD_TRACE);
             }
-            if (conf.trace.slowMethodElapsedMicros > 0) {
-                //Reflects.getStackTrace(t)
-                caller = Reflects.CLASS_TRACER.getClassTrace();
+            if (conf.trace.slowMethodElapsedMicros > 0 && ThreadLocalRandom.current().nextInt(0, 100) < conf.threadPool.slowMethodSamplingPercent) {
+                stackTrace = new Throwable().getStackTrace();
             } else {
-                caller = null;
+                stackTrace = null;
             }
 
             this.fn = fn;
@@ -205,7 +205,12 @@ public class ThreadPool extends ThreadPoolExecutor {
                     throw e;
                 } finally {
                     Thread t = Thread.currentThread();
-                    TraceHandler.INSTANCE.saveMethodTrace(t, caller != null ? caller[0] : ThreadPool.class, fn.getClass().getSimpleName() + Linq.from(caller).select(Class::getName).toJoinString(Constants.STACK_TRACE_FLAG), id == null ? null : new Object[]{id},
+                    TraceHandler.INSTANCE.saveMethodTrace(t,
+                            fn.getClass().getSimpleName(),
+                            stackTrace != null
+                                    ? "[" + Linq.from(stackTrace).select(StackTraceElement::toString).toJoinString(Constants.STACK_TRACE_FLAG) + "]"
+                                    : "Unknown",
+                            id == null ? null : new Object[]{id},
                             r, ex, System.nanoTime() - s);
                 }
                 return r;

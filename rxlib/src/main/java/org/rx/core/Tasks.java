@@ -205,7 +205,7 @@ public final class Tasks {
             return future.get(millis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             //catch +1 ?
-            TraceHandler.INSTANCE.log("awaitNow {} timeout", Reflects.stackClass(2).getName());
+            TraceHandler.INSTANCE.log("awaitNow {} timeout", Reflects.CLASS_TRACER.getClassTrace(2).getName());
         } catch (Exception e) {
             TraceHandler.INSTANCE.log(e);
         }

@@ -15,6 +15,7 @@ app:
     highCpuWaterMark: 70
     replicas: 2
     maxTraceDepth: 5
+    slowMethodSamplingPercent: 1
     cpuLoadWarningThreshold: 80
     samplingPeriod: 3000
     samplingTimes: 2

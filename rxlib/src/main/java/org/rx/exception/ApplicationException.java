@@ -81,7 +81,7 @@ public class ApplicationException extends InvalidException {
         }
         this.codeValues = codeValues;
         if (errorCode instanceof CharSequence) {
-            stacks = Reflects.stackTrace(8);
+            stacks = Linq.from(new Throwable().getStackTrace()).skip(1).take(8);
         } else {
             stacks = null;
         }

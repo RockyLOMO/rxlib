@@ -38,6 +38,7 @@ public final class RxConfig {
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
+        String THREAD_POOL_SLOW_METHOD_SAMPLING_PERCENT = "app.threadPool.slowMethodSamplingPercent";
         String THREAD_POOL_MAX_TRACE_DEPTH = "app.threadPool.maxTraceDepth";
         String THREAD_POOL_SAMPLING_PERIOD = "app.threadPool.samplingPeriod";
         String THREAD_POOL_SAMPLING_TIMES = "app.threadPool.samplingTimes";
@@ -109,6 +110,7 @@ public final class RxConfig {
         int replicas;
         String traceName;
         int maxTraceDepth;
+        int slowMethodSamplingPercent;
 
         int cpuLoadWarningThreshold;
         long samplingPeriod;
@@ -275,6 +277,7 @@ public final class RxConfig {
         threadPool.replicas = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, threadPool.replicas);
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.maxTraceDepth = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_TRACE_DEPTH, threadPool.maxTraceDepth);
+        threadPool.slowMethodSamplingPercent = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SLOW_METHOD_SAMPLING_PERCENT, threadPool.slowMethodSamplingPercent);
         threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, threadPool.cpuLoadWarningThreshold);
         threadPool.samplingPeriod = SystemPropertyUtil.getLong(ConfigNames.THREAD_POOL_SAMPLING_PERIOD, threadPool.samplingPeriod);
         threadPool.samplingTimes = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SAMPLING_TIMES, threadPool.samplingTimes);

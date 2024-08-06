@@ -11,6 +11,7 @@ import org.rx.bean.CircularBlockingQueue;
 import org.rx.bean.DateTime;
 import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
+import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
@@ -20,10 +21,7 @@ import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Serializable;
 import java.sql.Time;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
 
@@ -43,7 +41,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         @DbColumn(primaryKey = true)
         long id;
         ExceptionLevel level;
-        Queue<String> messages;
+        Queue<Map<String, Object>> messages;
         String stackTrace;
         int occurCount;
 
@@ -187,19 +185,21 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveExceptionTrace(Thread t, String msg, Throwable e) {
-        queue.offer(new Object[]{t.getName(), msg, e});
+        queue.offer(new Object[]{t.getName(), DateTime.now(), msg, e});
     }
 
-    void innerSave(String thread, String msg, Throwable e) {
+    void innerSave(String thread, DateTime now, String msg, Throwable e) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         String stackTrace = ExceptionUtils.getStackTrace(e);
+        String eMsg = Strings.EMPTY;
         int eMsgFlag = stackTrace.indexOf(Constants.STACK_TRACE_FLAG);
-        String eMsg = stackTrace.substring(0, eMsgFlag);
-        stackTrace = stackTrace.substring(eMsgFlag + 2);
-        msg = msg == null ? eMsg : String.format("%s\n%s", eMsg, msg);
+        if (eMsgFlag != -1) {
+            eMsgFlag += 2;
+            eMsg = stackTrace.substring(0, eMsgFlag);
+            stackTrace = stackTrace.substring(eMsgFlag);
+        }
 
         long pk = CodecUtil.hash64(stackTrace);
-//        Tasks.nextPool().runSerial(() -> {
         EntityDatabase db = EntityDatabase.DEFAULT;
         db.begin();
         try {
@@ -215,29 +215,26 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                 entity.setMessages(new ConcurrentLinkedQueue<>());
                 entity.setStackTrace(stackTrace);
             }
-            Queue<String> queue = entity.getMessages();
+            Queue<Map<String, Object>> queue = entity.getMessages();
             if (queue.size() > conf.getErrorMessageSize()) {
                 queue.poll();
             }
+            Map<String, Object> call = new HashMap<>(2);
             StringBuilder b = new StringBuilder();
-            b.appendMessageFormat("{}\t{}", DateTime.now().toDateTimeString(), msg);
-            Map<String, String> ctxMap = Sys.getMDCCtxMap();
-            if (!ctxMap.isEmpty()) {
-                b.appendMessageFormat("\nMDC:\t{}", ctxMap);
-            }
-            queue.offer(b.toString());
+            b.appendMessageFormat("{}\t{}{}", now.toDateTimeString(), eMsg, msg);
+            call.put("message", b.toString());
+            call.put("MDC", Sys.getMDCCtxMap());
+            queue.offer(call);
             entity.occurCount++;
             entity.setAppName(RxConfig.INSTANCE.getId());
             entity.setThreadName(thread);
-            entity.setModifyTime(DateTime.now());
+            entity.setModifyTime(now);
             db.save(entity, doInsert);
             db.commit();
         } catch (Throwable ex) {
             log.error("dbTrace", ex);
             db.rollback();
         }
-//            return null;
-//        }, pk);
     }
 
     public List<ExceptionEntity> queryExceptionTraces(Date startTime, Date endTime, ExceptionLevel level, String keyword,
@@ -271,12 +268,12 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         return db.findBy(q);
     }
 
-    public void saveMethodTrace(Thread t, Class<?> declaringType, String methodName, Object[] parameters,
+    public void saveMethodTrace(Thread t, String declaringTypeName, String methodName, Object[] parameters,
                                 Object returnValue, Throwable e, long elapsedMicros) {
-        queue.offer(new Object[]{t.getName(), declaringType, methodName, parameters, returnValue, e, elapsedMicros});
+        queue.offer(new Object[]{t.getName(), DateTime.now(), declaringTypeName, methodName, parameters, returnValue, e, elapsedMicros});
     }
 
-    void innerSave(String thread, Class<?> declaringType, String methodName, Object[] parameters,
+    void innerSave(String thread, DateTime now, String declaringTypeName, String methodName, Object[] parameters,
                    Object returnValue, Throwable error, long elapsedNanos) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         long elapsedMicros;
@@ -284,7 +281,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             return;
         }
 
-        String fullName = String.format("%s.%s(%s)", declaringType.getName(), methodName, parameters == null ? 0 : parameters.length);
+        String fullName = String.format("%s.%s(%s)", declaringTypeName, methodName, parameters == null ? 0 : parameters.length);
         long pk = CodecUtil.hash64(fullName);
 //        Tasks.nextPool().runSerial(() -> {
         EntityDatabase db = EntityDatabase.DEFAULT;
@@ -310,7 +307,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             entity.occurCount++;
             entity.setAppName(RxConfig.INSTANCE.getId());
             entity.setThreadName(thread);
-            entity.setModifyTime(DateTime.now());
+            entity.setModifyTime(now);
             db.save(entity, doInsert);
             db.commit();
         } catch (Throwable e) {

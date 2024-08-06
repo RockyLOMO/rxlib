@@ -517,7 +517,7 @@ public final class Sys extends SystemUtils {
 
     public static String fastCacheKey(String region, Object... args) {
         if (region == null) {
-            region = Reflects.stackClass(1).getSimpleName();
+            region = Reflects.CLASS_TRACER.getClassTrace(1).getSimpleName();
         }
         if (!Arrays.isEmpty(args)) {
             region += java.util.Arrays.hashCode(args);
@@ -527,7 +527,7 @@ public final class Sys extends SystemUtils {
 
     public static String cacheKey(String region, Object... args) {
         if (region == null) {
-            region = Reflects.stackClass(1).getSimpleName();
+            region = Reflects.CLASS_TRACER.getClassTrace(1).getSimpleName();
         }
 
         StringBuilder buf = new StringBuilder();
