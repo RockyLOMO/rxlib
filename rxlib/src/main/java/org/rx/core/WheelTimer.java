@@ -230,6 +230,10 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
 
+    public TimeoutFuture<?> getFutureById(Object taskId) {
+        return holder.get(taskId);
+    }
+
     public TimeoutFuture<?> setTimeout(Action fn, LongUnaryOperator nextDelay) {
         return setTimeout(fn, nextDelay, null, null);
     }

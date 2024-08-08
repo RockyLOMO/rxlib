@@ -4,6 +4,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.NonNull;
 import org.rx.core.Reflects;
+import org.rx.core.StringBuilder;
 import org.rx.core.Strings;
 
 import java.io.Serializable;
@@ -14,9 +15,10 @@ import static org.rx.core.Extends.require;
 @NoArgsConstructor
 public class DataRange<T extends Comparable<T>> implements Serializable {
     private static final long serialVersionUID = 2698228026798507997L;
+    static final String DELIMITER = " - ";
 
     public static <T extends Comparable<T>> DataRange<T> of(String expr, Class<T> type) {
-        String[] vals = Strings.split(expr, "-", 2);
+        String[] vals = Strings.split(expr, DELIMITER, 2);
         return new DataRange<>(Reflects.changeType(vals[0], type), Reflects.changeType(vals[1], type));
     }
 
@@ -32,5 +34,18 @@ public class DataRange<T extends Comparable<T>> implements Serializable {
 
     public boolean has(T data) {
         return start.compareTo(data) <= 0 && end.compareTo(data) > 0;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder buf = new StringBuilder();
+        if (start != null) {
+            buf.append(start.toString());
+        }
+        buf.append(DELIMITER);
+        if (end != null) {
+            buf.append(end.toString());
+        }
+        return buf.toString();
     }
 }

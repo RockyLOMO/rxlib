@@ -11,6 +11,7 @@ import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Metadata;
 import org.rx.bean.LogStrategy;
 import org.rx.net.Sockets;
+import org.springframework.core.env.Environment;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -111,6 +112,7 @@ public final class RxConfig {
         String traceName;
         int maxTraceDepth;
         int slowMethodSamplingPercent;
+        final List<String> slowMethodAutoSampleTime = newConcurrentList(true);
 
         int cpuLoadWarningThreshold;
         long samplingPeriod;
@@ -217,6 +219,14 @@ public final class RxConfig {
     private RxConfig() {
     }
 
+    public void refreshFrom(Environment env, int flags) {
+        Map<String, Object> rsProps = Linq.from(Reflects.getFieldMap(RxConfig.ConfigNames.class).values()).select(p -> {
+            String k = (String) p.get(null);
+            return new AbstractMap.SimpleEntry<>(k, env.getProperty(k));
+        }).where(p -> p.getValue() != null).toMap();
+        refreshFrom(rsProps, flags);
+    }
+
     public void refreshFrom(Map<String, Object> props) {
         refreshFrom(props, 0);
     }
@@ -239,6 +249,7 @@ public final class RxConfig {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
     }
+
 //    public void refreshFromSystemProperty() {
 //        Map<String, Object> sysProps = new HashMap<>((Map) System.getProperties());
 //        reset(net.lanIps, ConfigNames.NET_LAN_IPS);

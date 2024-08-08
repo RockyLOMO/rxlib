@@ -185,10 +185,10 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public void saveExceptionTrace(Thread t, String msg, Throwable e) {
-        queue.offer(new Object[]{t.getName(), DateTime.now(), msg, e});
+        queue.offer(new Object[]{t.getName(), Sys.getMDCCtxMap(), DateTime.now(), msg, e});
     }
 
-    void innerSave(String thread, DateTime now, String msg, Throwable e) {
+    void innerSave(String thread, Map<String, String> mdc, DateTime now, String msg, Throwable e) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         String stackTrace = ExceptionUtils.getStackTrace(e);
         String eMsg = Strings.EMPTY;
@@ -223,7 +223,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             StringBuilder b = new StringBuilder();
             b.appendMessageFormat("{}\t{}{}", now.toDateTimeString(), eMsg, msg);
             call.put("message", b.toString());
-            call.put("MDC", Sys.getMDCCtxMap());
+            call.put("MDC", mdc);
             queue.offer(call);
             entity.occurCount++;
             entity.setAppName(RxConfig.INSTANCE.getId());
@@ -270,10 +270,10 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
 
     public void saveMethodTrace(Thread t, String declaringTypeName, String methodName, Object[] parameters,
                                 Object returnValue, Throwable e, long elapsedMicros) {
-        queue.offer(new Object[]{t.getName(), DateTime.now(), declaringTypeName, methodName, parameters, returnValue, e, elapsedMicros});
+        queue.offer(new Object[]{t.getName(), Sys.getMDCCtxMap(), DateTime.now(), declaringTypeName, methodName, parameters, returnValue, e, elapsedMicros});
     }
 
-    void innerSave(String thread, DateTime now, String declaringTypeName, String methodName, Object[] parameters,
+    void innerSave(String thread, Map<String, String> mdc, DateTime now, String declaringTypeName, String methodName, Object[] parameters,
                    Object returnValue, Throwable error, long elapsedNanos) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         long elapsedMicros;
@@ -302,7 +302,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             } else if (returnValue != null) {
                 entity.setReturnValue(toJsonString(returnValue));
             }
-            entity.setMDC(Sys.getMDCCtxMap());
+            entity.setMDC(mdc);
             entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
             entity.occurCount++;
             entity.setAppName(RxConfig.INSTANCE.getId());
