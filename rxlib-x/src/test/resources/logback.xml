@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="false" debug="false">
+    <property name="log.dir" value="/xiaofan-api/logs"/>
+    <springProperty name="appName" source="spring.application.name"/>
+    <property name="days" value="2"/>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder charset="UTF-8">
+            <pattern>%yellow(%d{HH:mm:ss.SSS}) %highlight(%-5p) %magenta([%t]) %cyan(%c{20}) - %m%n</pattern>
+        </encoder>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+    </appender>
+    <appender name="infoAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${log.dir}/${appName}_info.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>DEBUG</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${log.dir}/${appName}_info.%d{yyyyMMdd}_%i.log</fileNamePattern>
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>500MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+            <maxHistory>${days}</maxHistory>
+        </rollingPolicy>
+        <encoder charset="UTF-8">
+            <pattern>%d{HH:mm:ss.SSS} %-5p [%t] %c{20} %X{rx-traceId} - %m%n</pattern>
+        </encoder>
+    </appender>
+    <logger name="org.rx.repository" level="INFO"/>
+    <logger name="org.rx.net.nameserver" level="DEBUG"/>
+    <logger name="com.xxl.job.core.util.XxlJobRemotingUtil" level="WARN" additivity="false">
+        <appender-ref ref="infoAppender"/>
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+<!--        <appender-ref ref="infoAppender"/>-->
+    </root>
+</configuration>
