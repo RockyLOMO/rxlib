@@ -72,6 +72,7 @@ public final class RxConfig {
 
         String APP_ID = "app.id";
         String MX_SAMPLING_PERIOD = "app.mxSamplingPeriod";
+        String MX_HTTP_FORWARDS = "app.mxHttpForwards";
         String DATE_FORMAT = "app.dateFormat";
         String LOG_STRATEGY = "app.logStrategy";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
@@ -201,7 +202,7 @@ public final class RxConfig {
     String mxpwd;
     long mxSamplingPeriod;
     //key1: controller, key2: method, value: url
-    Map<Class<?>, Map<String, String>> mxHttpForwards = new ConcurrentHashMap<>(8);
+    Map<String, Map<String, String>> mxHttpForwards = new ConcurrentHashMap<>(8);
     TraceConfig trace = new TraceConfig();
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();

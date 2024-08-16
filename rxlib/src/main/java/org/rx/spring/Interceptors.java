@@ -9,12 +9,8 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.annotation.EnableTrace;
-import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.Tuple;
-import org.rx.core.Arrays;
-import org.rx.core.Constants;
-import org.rx.core.RxConfig;
-import org.rx.core.Strings;
+import org.rx.core.*;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
@@ -49,18 +45,22 @@ public class Interceptors {
     public static class ControllerInterceptor extends BaseInterceptor {
         final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
+        public ControllerInterceptor() {
+            logBuilder = new Sys.DefaultCallLogBuilder() {
+                @Override
+                protected Object shortArg(Class<?> declaringType, String methodName, Object arg) {
+                    if (arg instanceof MultipartFile) {
+                        return "[MultipartFile]";
+                    }
+                    return super.shortArg(declaringType, methodName, arg);
+                }
+            };
+        }
+
         @SneakyThrows
         protected Object methodAround(ProceedingJoinPoint joinPoint, Tuple<HttpServletRequest, HttpServletResponse> httpEnv) {
             logCtx("url", httpEnv.left.getRequestURL().toString());
             return super.doAround(joinPoint);
-        }
-
-        @Override
-        protected Object shortArg(Signature signature, Object arg) {
-            if (arg instanceof MultipartFile) {
-                return "[MultipartFile]";
-            }
-            return super.shortArg(signature, arg);
         }
 
         @Override
@@ -97,7 +97,7 @@ public class Interceptors {
                     return controller.health(httpEnv.left);
                 }
             }
-            Map<String, String> fts = RxConfig.INSTANCE.getMxHttpForwards().get(ms.getDeclaringType());
+            Map<String, String> fts = RxConfig.INSTANCE.getMxHttpForwards().get(ms.getDeclaringType().getName());
             if (fts != null) {
                 String fu = fts.get(ms.getName());
                 if (fu != null) {
@@ -170,17 +170,6 @@ public class Interceptors {
                 return Validator.validateMethod(ms.getMethod(), joinPoint.getTarget(), joinPoint.getArgs(), () -> super.doAround(joinPoint));
             }
             return super.doAround(joinPoint);
-        }
-
-        @Override
-        protected void onLog(Signature signature, ProceedEventArgs eventArgs, String paramSnapshot) {
-            Executable r = signature instanceof ConstructorSignature
-                    ? ((ConstructorSignature) signature).getConstructor()
-                    : ((MethodSignature) signature).getMethod();
-            EnableTrace a = r.getAnnotation(EnableTrace.class);
-            if (a == null || a.doLog()) {
-                super.onLog(signature, eventArgs, paramSnapshot);
-            }
         }
 
         protected boolean doValidate(Executable r) {

@@ -68,7 +68,7 @@ app:
     - org.springframework.ui.Model
     - org.springframework.validation.BindingResult
     - org.rx.io.IOStream
-  #  logStrategy:
+  logStrategy: WRITE_ON_ERROR
 
 #ErrorCode
 default: Network error, please retry later.

@@ -9,7 +9,6 @@ import org.rx.annotation.DbColumn;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.CircularBlockingQueue;
 import org.rx.bean.DateTime;
-import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
@@ -26,7 +25,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
 
 import static org.rx.core.Extends.as;
-import static org.rx.core.Extends.ifNull;
 import static org.rx.core.RxConfig.ConfigNames.TRACE_KEEP_DAYS;
 import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 import static org.rx.core.Sys.toJsonString;

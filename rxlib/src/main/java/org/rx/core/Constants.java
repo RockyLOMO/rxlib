@@ -52,6 +52,8 @@ public interface Constants {
 
     String STACK_TRACE_FLAG = "\n\tat ";
 
+    String TYPED_JSON_KEY = "$rxType";
+
     /**
      * do not edit
      */

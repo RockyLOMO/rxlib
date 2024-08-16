@@ -27,7 +27,6 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
-import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.require;
 
 @SuppressWarnings(NON_UNCHECKED)

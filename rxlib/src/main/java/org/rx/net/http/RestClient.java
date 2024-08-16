@@ -1,7 +1,6 @@
 package org.rx.net.http;
 
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.BiFunc;
@@ -50,41 +49,59 @@ public final class RestClient {
             };
 
             String responseText;
-            ProceedEventArgs args = new ProceedEventArgs(contract, new Object[1], m.getReturnType().equals(void.class));
+            Object[] args = new Object[1];
+            boolean isVoid = m.getReturnType().equals(void.class);
             HttpClient client = new HttpClient();
-            try {
-                if (doPost) {
-                    if (parameters.length == 1 && parameters[0].isAnnotationPresent(RequestBody.class)) {
-                        args.getParameters()[0] = p.arguments[0];
-                        responseText = args.proceed(() -> client.postJson(reqUrl, args.getParameters()[0]).toString());
-                    } else {
-                        Map<String, Object> data = getFormData.invoke();
-                        args.getParameters()[0] = data;
-                        responseText = args.proceed(() -> client.post(reqUrl, data).toString());
-                    }
+            ProceedFunc<String> proceed;
+            if (doPost) {
+                if (parameters.length == 1 && parameters[0].isAnnotationPresent(RequestBody.class)) {
+                    args[0] = p.arguments[0];
+                    proceed = new ProceedFunc<String>() {
+                        @Override
+                        public boolean isVoid() {
+                            return isVoid;
+                        }
+
+                        @Override
+                        public String invoke() {
+                            return client.postJson(reqUrl, args[0]).toString();
+                        }
+                    };
                 } else {
                     Map<String, Object> data = getFormData.invoke();
-                    args.getParameters()[0] = data;
-                    responseText = args.proceed(() -> client.get(HttpClient.buildUrl(reqUrl, data)).toString());
+                    args[0] = data;
+                    proceed = new ProceedFunc<String>() {
+                        @Override
+                        public boolean isVoid() {
+                            return isVoid;
+                        }
+
+                        @Override
+                        public String invoke() {
+                            return client.post(reqUrl, data).toString();
+                        }
+                    };
                 }
-                if (checkResponse != null && !checkResponse.invoke(responseText)) {
-                    throw new InvalidException("Response status error");
-                }
-            } catch (Exception e) {
-                args.setError(e);
-                throw e;
-            } finally {
-                Sys.log(args, msg -> {
-                    if (doPost) {
-                        msg.appendLine("POST:\t%s", reqUrl);
-                    } else {
-                        msg.appendLine("GET:\t%s", reqUrl);
+            } else {
+                Map<String, Object> data = getFormData.invoke();
+                args[0] = data;
+                proceed = new ProceedFunc<String>() {
+                    @Override
+                    public boolean isVoid() {
+                        return isVoid;
                     }
-                    msg.appendLine("Request:\t%s", toJsonString(args.getParameters()));
-                    msg.appendFormat("Response:\t%s", args.getReturnValue());
-                });
+
+                    @Override
+                    public String invoke() {
+                        return client.get(HttpClient.buildUrl(reqUrl, data)).toString();
+                    }
+                };
             }
-            if (m.getReturnType().equals(Void.class)) {
+            responseText = Sys.callLog(contract, String.format("%s\t%s", doPost ? "POST" : "GET", reqUrl), args, proceed);
+            if (checkResponse != null && !checkResponse.invoke(responseText)) {
+                throw new InvalidException("Response status error");
+            }
+            if (isVoid) {
                 return null;
             }
             return fromJson(responseText, ifNull(JsonTypeInvoker.JSON_TYPE.get(), m.getReturnType()));

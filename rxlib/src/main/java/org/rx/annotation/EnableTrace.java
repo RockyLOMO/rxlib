@@ -9,6 +9,5 @@ import static java.lang.annotation.ElementType.*;
 @Documented
 @Inherited
 public @interface EnableTrace {
-    boolean doLog() default true;
     boolean doValidate() default false;
 }
