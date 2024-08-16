@@ -6,20 +6,14 @@ import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
 
 import static org.rx.core.Extends.as;
 import static org.rx.core.Sys.*;
 
-public abstract class BaseInterceptor implements EventPublisher<BaseInterceptor> {
+public abstract class BaseInterceptor {
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
     protected CallLogBuilder logBuilder = Sys.DEFAULT_LOG_BUILDER;
-
-    @Override
-    public FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DYNAMIC_ATTACH.flags(EventFlags.QUIETLY);
-    }
 
     protected final void enableTrace(String traceName) {
         if (traceName == null) {

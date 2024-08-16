@@ -220,7 +220,7 @@ public final class RxConfig {
     private RxConfig() {
     }
 
-    public void refreshFrom(Environment env, int flags) {
+    public void refreshFrom(Environment env, byte flags) {
         Map<String, Object> rsProps = Linq.from(Reflects.getFieldMap(RxConfig.ConfigNames.class).values()).select(p -> {
             String k = (String) p.get(null);
             return new AbstractMap.SimpleEntry<>(k, env.getProperty(k));
@@ -229,10 +229,10 @@ public final class RxConfig {
     }
 
     public void refreshFrom(Map<String, Object> props) {
-        refreshFrom(props, 0);
+        refreshFrom(props, (byte) 0);
     }
 
-    public void refreshFrom(Map<String, Object> props, int flags) {
+    public void refreshFrom(Map<String, Object> props, byte flags) {
         Linq.from(Reflects.getFieldMap(ConfigNames.class).values()).select(p -> p.get(null)).join(props.entrySet(), (p, x) -> eq(p, x.getKey()), (p, x) -> {
             Reflects.writeFieldByPath(this, ConfigNames.getWithoutPrefix(x.getKey()), x.getValue(), flags);
             return null;

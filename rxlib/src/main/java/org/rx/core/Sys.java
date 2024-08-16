@@ -6,10 +6,7 @@ import com.alibaba.fastjson2.filter.ValueFilter;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.Timeout;
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.IterableUtils;
@@ -27,6 +24,7 @@ import org.rx.net.Sockets;
 import org.rx.util.Lazy;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.Func;
 import org.rx.util.function.TripleFunc;
 import org.slf4j.MDC;
 import org.slf4j.spi.MDCAdapter;
@@ -445,6 +443,160 @@ public final class Sys extends SystemUtils {
                 TraceHandler.INSTANCE.log(msg.toString(), eventArgs.getError());
             } else {
                 log.info(msg.toString());
+            }
+        }
+    }
+
+    public interface ProceedFunc<T> extends Func<T> {
+        default boolean isVoid() {
+            return false;
+        }
+    }
+
+    public interface CallLogBuilder {
+        String buildParamSnapshot(Class<?> declaringType, String methodName, Object[] parameters);
+
+        String buildLog(Class<?> declaringType, String methodName, Object[] parameters, String paramSnapshot, Object returnValue, Throwable error, long elapsedNanos);
+    }
+
+    public static class DefaultCallLogBuilder implements CallLogBuilder {
+        public static final byte HTTP_KEYWORD_FLAG = 1, LOG_MDC_FLAG = 1 << 1;
+        @Getter
+        @Setter
+        byte flags;
+
+        public DefaultCallLogBuilder() {
+            this((byte) 0);
+        }
+
+        public DefaultCallLogBuilder(byte flags) {
+            this.flags = flags;
+        }
+
+        @Override
+        public String buildParamSnapshot(Class<?> declaringType, String methodName, Object[] args) {
+            if (Arrays.isEmpty(args)) {
+                return "{}";
+            }
+            List<Object> list = Linq.from(args).select(p -> shortArg(declaringType, methodName, p)).toList();
+            return toJsonString(list.size() == 1 ? list.get(0) : list);
+        }
+
+        protected Object shortArg(Class<?> declaringType, String methodName, Object arg) {
+            if (arg instanceof byte[]) {
+                byte[] b = (byte[]) arg;
+                if (b.length > MAX_FIELD_SIZE) {
+                    return "[BigBytes]";
+                }
+            }
+            if (arg instanceof String) {
+                String s = (String) arg;
+                if (s.length() > MAX_FIELD_SIZE) {
+                    return "[BigString]";
+                }
+            }
+            return arg;
+        }
+
+        @Override
+        public String buildLog(Class<?> declaringType, String methodName, Object[] parameters, String paramSnapshot, Object returnValue, Throwable error, long elapsedNanos) {
+            StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
+            if ((flags & HTTP_KEYWORD_FLAG) == HTTP_KEYWORD_FLAG) {
+                msg.appendLine("Call:\t%s", methodName)
+                        .appendLine("Request:\t%s", paramSnapshot)
+                        .appendLine("Response:\t%s\tElapsed=%s", toJsonString(shortArg(declaringType, methodName, returnValue)), formatNanosElapsed(elapsedNanos));
+            } else {
+                msg.appendLine("Call:\t%s", methodName)
+                        .appendLine("Parameters:\t%s", paramSnapshot)
+                        .appendLine("ReturnValue:\t%s\tElapsed=%s", toJsonString(shortArg(declaringType, methodName, returnValue)), formatNanosElapsed(elapsedNanos));
+            }
+            if (error != null) {
+                msg.appendLine("Error:\t%s", error.getMessage());
+            }
+
+            if ((flags & LOG_MDC_FLAG) == LOG_MDC_FLAG) {
+                Map<String, String> mappedDiagnosticCtx = getMDCCtxMap();
+                boolean first = true;
+                for (Map.Entry<String, String> entry : mappedDiagnosticCtx.entrySet()) {
+                    if (first) {
+                        msg.append("MDC:\t");
+                        first = false;
+                    }
+                    msg.appendFormat("%s=%s ", entry.getKey(), entry.getValue());
+                }
+                if (!first) {
+                    msg.appendLine();
+                }
+            }
+            return msg.toString();
+        }
+    }
+
+    static final int MAX_FIELD_SIZE = 1024 * 4;
+    public static final CallLogBuilder DEFAULT_LOG_BUILDER = new DefaultCallLogBuilder();
+    public static final CallLogBuilder HTTP_LOG_BUILDER = new DefaultCallLogBuilder(DefaultCallLogBuilder.HTTP_KEYWORD_FLAG);
+
+    public static <T> T callLog(Class<?> declaringType, String methodName, Object[] parameters, ProceedFunc<T> proceed) {
+        return callLog(declaringType, methodName, parameters, proceed, DEFAULT_LOG_BUILDER, null);
+    }
+
+    @SneakyThrows
+    public static <T> T callLog(@NonNull Class<?> declaringType, @NonNull String methodName, Object[] parameters, @NonNull ProceedFunc<T> proceed, @NonNull CallLogBuilder builder, LogStrategy strategy) {
+        Object returnValue = null;
+        Throwable error = null;
+        String paramSnapshot = builder.buildParamSnapshot(declaringType, methodName, parameters);
+
+        long start = System.nanoTime();
+        try {
+            T retVal = proceed.invoke();
+            returnValue = retVal;
+            return retVal;
+        } catch (Throwable e) {
+            throw error = e;
+        } finally {
+            long elapsedNanos = System.nanoTime() - start;
+            try {
+                TraceHandler.INSTANCE.saveMethodTrace(Thread.currentThread(), declaringType.getName(), methodName, parameters, returnValue, error, elapsedNanos);
+
+                RxConfig conf = RxConfig.INSTANCE;
+                if (strategy == null) {
+                    strategy = conf.logStrategy;
+                }
+                if (strategy == null) {
+                    strategy = error != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL;
+                }
+
+                boolean doWrite;
+                switch (strategy) {
+                    case WRITE_ON_NULL:
+                        doWrite = error != null
+                                || (!proceed.isVoid() && returnValue == null)
+                                || (!Arrays.isEmpty(parameters) && Arrays.contains(parameters, null));
+                        break;
+                    case WRITE_ON_ERROR:
+                        doWrite = error != null;
+                        break;
+                    case ALWAYS:
+                        doWrite = true;
+                        break;
+                    default:
+                        doWrite = false;
+                        break;
+                }
+                if (doWrite && !CollectionUtils.isEmpty(conf.logTypeWhitelist)) {
+                    doWrite = Linq.from(conf.logTypeWhitelist).any(p -> declaringType.getName().startsWith(p));
+                }
+                if (doWrite) {
+                    String msg = builder.buildLog(declaringType, methodName, parameters, paramSnapshot, returnValue, error, elapsedNanos);
+                    if (error != null) {
+                        TraceHandler.INSTANCE.log(msg, error);
+                    } else {
+                        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(declaringType);
+                        log.info(msg);
+                    }
+                }
+            } catch (Throwable e) {
+                log.warn("callLog", e);
             }
         }
     }

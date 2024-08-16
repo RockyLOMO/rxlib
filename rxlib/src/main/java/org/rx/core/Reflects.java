@@ -206,8 +206,8 @@ public class Reflects extends ClassUtils {
         return lambda;
     }
 
-    static final int APPEND_TO_COLLECTION = 1;
-    static final int WRITE_QUIETLY = 1 << 1;
+    static final byte APPEND_TO_COLLECTION = 1;
+    static final byte WRITE_QUIETLY = 1 << 1;
 
     /**
      * @param instance
@@ -216,7 +216,7 @@ public class Reflects extends ClassUtils {
      * @param flags     1       append to Collection
      *                  1 << 1  write quietly
      */
-    public static void writeFieldByPath(Object instance, String fieldPath, Object value, int flags) {
+    public static void writeFieldByPath(Object instance, String fieldPath, Object value, byte flags) {
         final String c = ".";
         int wPathOffset = 0, i;
         String fieldName;

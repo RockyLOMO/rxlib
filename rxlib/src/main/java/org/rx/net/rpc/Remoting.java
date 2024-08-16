@@ -409,33 +409,24 @@ public final class Remoting {
                 }
 
                 MethodMessage pack = (MethodMessage) e.getValue();
-                ProceedEventArgs args = new ProceedEventArgs(contractInstance.getClass(), pack.parameters, false);
                 try {
-                    pack.returnValue = RemotingContext.invoke(() -> args.proceed(() -> {
-                        String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
-                        if (tn != null) {
-                            ThreadPool.startTrace(pack.traceId, true);
-                        }
-                        try {
-                            return Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters);
-                        } finally {
-                            ThreadPool.endTrace();
-                        }
-                    }), s, e.getClient());
+                    pack.returnValue = Sys.callLog(contractInstance.getClass(),
+                            String.format("Server %s.%s [%s]-> %s", contractInstance.getClass().getSimpleName(), pack.methodName,
+                                    s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteEndpoint())),
+                            pack.parameters, () -> RemotingContext.invoke(() -> {
+                                String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
+                                if (tn != null) {
+                                    ThreadPool.startTrace(pack.traceId, true);
+                                }
+                                try {
+                                    return Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters);
+                                } finally {
+                                    ThreadPool.endTrace();
+                                }
+                            }, s, e.getClient()));
                 } catch (Throwable ex) {
                     Throwable cause = ifNull(ex.getCause(), ex);
-                    args.setError(ex);
                     pack.errorMessage = String.format("%s %s", cause.getClass().getSimpleName(), cause.getMessage());
-                } finally {
-                    log(args, msg -> {
-                        msg.appendLine("Server invoke %s.%s [%s]-> %s", contractInstance.getClass().getSimpleName(), pack.methodName,
-                                s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteEndpoint()));
-                        msg.appendLine("Request:\t%s", toJsonString(args.getParameters()))
-                                .appendLine("Response:\t%s", toJsonString(args.getReturnValue()));
-                        if (args.getError() != null) {
-                            msg.appendLine("Error:\t%s", pack.errorMessage);
-                        }
-                    });
                 }
                 Arrays.fill(pack.parameters, null);
                 e.getClient().send(pack);
