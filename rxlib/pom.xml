@@ -31,7 +31,7 @@
         <jsch.version>0.1.55</jsch.version>
 
         <spring.boot.version>2.5.15</spring.boot.version>
-        <spring.version>5.3.33</spring.version>
+        <spring.version>5.3.27</spring.version>
         <aspectj.version>1.9.7</aspectj.version>
     </properties>
 
@@ -57,7 +57,7 @@
         </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
-            <artifactId>spring-web</artifactId>
+            <artifactId>spring-webmvc</artifactId>
             <version>${spring.version}</version>
         </dependency>
         <dependency>

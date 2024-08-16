@@ -2,11 +2,11 @@ package org.rx.spring;
 
 import io.netty.util.concurrent.FastThreadLocal;
 import org.apache.commons.lang3.BooleanUtils;
-import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.core.*;
+import org.rx.core.Reflects;
+import org.rx.core.Sys;
 
 import static org.rx.core.Extends.as;
 import static org.rx.core.Sys.*;
@@ -15,28 +15,11 @@ public abstract class BaseInterceptor {
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
     protected CallLogBuilder logBuilder = Sys.DEFAULT_LOG_BUILDER;
 
-    protected final void enableTrace(String traceName) {
-        if (traceName == null) {
-            traceName = Constants.DEFAULT_TRACE_NAME;
-        }
-        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
-        conf.setTraceName(traceName);
-        ThreadPool.onTraceIdChanged.first((s, e) -> logCtx(conf.getTraceName(), e.getValue()));
-    }
-
-    protected String startTrace(JoinPoint joinPoint, String parentTraceId) {
-        return ThreadPool.startTrace(parentTraceId);
-    }
-
     public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
         if (BooleanUtils.isTrue(idempotent.get())) {
             return joinPoint.proceed();
         }
         idempotent.set(Boolean.TRUE);
-        String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
-        if (tn != null) {
-            logCtxIfAbsent(tn, startTrace(joinPoint, null));
-        }
         try {
             Signature signature = joinPoint.getSignature();
             MethodSignature methodSignature = as(signature, MethodSignature.class);
@@ -53,7 +36,6 @@ public abstract class BaseInterceptor {
                 }
             }, logBuilder, null);
         } finally {
-            ThreadPool.endTrace();
             clearLogCtx();
             idempotent.remove();
         }

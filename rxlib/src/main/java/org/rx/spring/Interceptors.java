@@ -1,14 +1,13 @@
 package org.rx.spring;
 
 import lombok.SneakyThrows;
-import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.annotation.EnableTrace;
+import org.rx.annotation.EnableLog;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
@@ -61,22 +60,6 @@ public class Interceptors {
         protected Object methodAround(ProceedingJoinPoint joinPoint, Tuple<HttpServletRequest, HttpServletResponse> httpEnv) {
             logCtx("url", httpEnv.left.getRequestURL().toString());
             return super.doAround(joinPoint);
-        }
-
-        @Override
-        protected String startTrace(JoinPoint joinPoint, String parentTraceId) {
-            Tuple<HttpServletRequest, HttpServletResponse> httpEnv = httpEnv();
-            if (httpEnv == null) {
-                return super.startTrace(joinPoint, parentTraceId);
-            }
-
-            String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
-            if (parentTraceId == null) {
-                parentTraceId = httpEnv.left.getHeader(tn);
-            }
-            String tid = super.startTrace(joinPoint, parentTraceId);
-            httpEnv.right.setHeader(tn, tid);
-            return tid;
         }
 
         @Override
@@ -149,12 +132,8 @@ public class Interceptors {
 
     @Aspect
     @Component
-    public static class TraceInterceptor extends BaseInterceptor {
-        public void setTraceName(String traceName) {
-            super.enableTrace(traceName);
-        }
-
-        @Around("@annotation(org.rx.annotation.EnableTrace) || @within(org.rx.annotation.EnableTrace)")
+    public static class LogInterceptor extends BaseInterceptor {
+        @Around("@annotation(org.rx.annotation.EnableLog) || @within(org.rx.annotation.EnableLog)")
         public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
             Signature signature = joinPoint.getSignature();
             if (signature instanceof ConstructorSignature) {
@@ -173,9 +152,9 @@ public class Interceptors {
         }
 
         protected boolean doValidate(Executable r) {
-            EnableTrace a = r.getAnnotation(EnableTrace.class);
+            EnableLog a = r.getAnnotation(EnableLog.class);
             if (a == null) {
-                a = r.getDeclaringClass().getAnnotation(EnableTrace.class);
+                a = r.getDeclaringClass().getAnnotation(EnableLog.class);
             }
             return a != null && a.doValidate();
         }
