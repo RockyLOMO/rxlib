@@ -14,7 +14,6 @@ import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DynamicProxyBean;
 import org.rx.bean.LogStrategy;
-import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.FallbackException;
 import org.rx.exception.InvalidException;
@@ -380,73 +379,6 @@ public final class Sys extends SystemUtils {
         mdc.clear();
     }
 
-    public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
-        RxConfig conf = RxConfig.INSTANCE;
-        eventArgs.setLogStrategy(conf.logStrategy);
-        eventArgs.setLogTypeWhitelist(conf.logTypeWhitelist);
-        log(eventArgs, msg -> {
-            msg.appendLine("Url:\t%s", url)
-                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
-                    .appendLine("Response:\t%s\tElapsed=%s", toJsonString(eventArgs.getReturnValue()), formatNanosElapsed(eventArgs.getElapsedNanos()));
-            if (eventArgs.getError() != null) {
-                msg.appendLine("Error:\t%s", eventArgs.getError());
-            }
-        });
-    }
-
-    @SneakyThrows
-    public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<String, String> mappedDiagnosticCtx = getMDCCtxMap();
-        boolean doWrite = !mappedDiagnosticCtx.isEmpty();
-        if (!doWrite) {
-            if (eventArgs.getLogStrategy() == null) {
-                eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
-            }
-            switch (eventArgs.getLogStrategy()) {
-                case WRITE_ON_NULL:
-                    doWrite = eventArgs.getError() != null
-                            || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
-                            || (!Arrays.isEmpty(eventArgs.getParameters()) && Arrays.contains(eventArgs.getParameters(), null));
-                    break;
-                case WRITE_ON_ERROR:
-                    if (eventArgs.getError() != null) {
-                        doWrite = true;
-                    }
-                    break;
-                case ALWAYS:
-                    doWrite = true;
-                    break;
-            }
-        }
-        if (doWrite) {
-            Set<String> whitelist = eventArgs.getLogTypeWhitelist();
-            if (!CollectionUtils.isEmpty(whitelist)) {
-                doWrite = Linq.from(whitelist).any(p -> eventArgs.getDeclaringType().getName().startsWith(p));
-            }
-        }
-        if (doWrite) {
-            org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
-            StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
-            formatMessage.invoke(msg);
-            boolean first = true;
-            for (Map.Entry<String, String> entry : mappedDiagnosticCtx.entrySet()) {
-                if (first) {
-                    msg.append("MDC:\t");
-                    first = false;
-                }
-                msg.appendFormat("%s=%s ", entry.getKey(), entry.getValue());
-            }
-            if (!first) {
-                msg.appendLine();
-            }
-            if (eventArgs.getError() != null) {
-                TraceHandler.INSTANCE.log(msg.toString(), eventArgs.getError());
-            } else {
-                log.info(msg.toString());
-            }
-        }
-    }
-
     public interface ProceedFunc<T> extends Func<T> {
         default boolean isVoid() {
             return false;
@@ -479,7 +411,7 @@ public final class Sys extends SystemUtils {
                 return "{}";
             }
             List<Object> list = Linq.from(args).select(p -> shortArg(declaringType, methodName, p)).toList();
-            return toJsonString(list.size() == 1 ? list.get(0) : list);
+            return toString(list.size() == 1 ? list.get(0) : list);
         }
 
         protected Object shortArg(Class<?> declaringType, String methodName, Object arg) {
@@ -498,17 +430,24 @@ public final class Sys extends SystemUtils {
             return arg;
         }
 
+        protected String toString(Object arg) {
+            if (arg == null) {
+                return "null";
+            }
+            return toJsonString(arg);
+        }
+
         @Override
         public String buildLog(Class<?> declaringType, String methodName, Object[] parameters, String paramSnapshot, Object returnValue, Throwable error, long elapsedNanos) {
             StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
             if ((flags & HTTP_KEYWORD_FLAG) == HTTP_KEYWORD_FLAG) {
                 msg.appendLine("Call:\t%s", methodName)
                         .appendLine("Request:\t%s", paramSnapshot)
-                        .appendLine("Response:\t%s\tElapsed=%s", toJsonString(shortArg(declaringType, methodName, returnValue)), formatNanosElapsed(elapsedNanos));
+                        .appendLine("Response:\t%s\tElapsed=%s", toString(shortArg(declaringType, methodName, returnValue)), formatNanosElapsed(elapsedNanos));
             } else {
                 msg.appendLine("Call:\t%s", methodName)
                         .appendLine("Parameters:\t%s", paramSnapshot)
-                        .appendLine("ReturnValue:\t%s\tElapsed=%s", toJsonString(shortArg(declaringType, methodName, returnValue)), formatNanosElapsed(elapsedNanos));
+                        .appendLine("ReturnValue:\t%s\tElapsed=%s", toString(shortArg(declaringType, methodName, returnValue)), formatNanosElapsed(elapsedNanos));
             }
             if (error != null) {
                 msg.appendLine("Error:\t%s", error.getMessage());

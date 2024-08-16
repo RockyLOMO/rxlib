@@ -10,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.bean.DynamicProxyBean;
-import org.rx.bean.ProceedEventArgs;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
@@ -33,10 +32,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Extends.*;
-import static org.rx.core.Sys.*;
+import static org.rx.core.Sys.proxy;
+import static org.rx.core.Sys.toJsonString;
 
 //snappy + protobuf
 @Slf4j
@@ -184,27 +185,36 @@ public final class Remoting {
                 }
             }
             StatefulTcpClient client = sync.v;
-            Map<Integer, ClientBean> waitBeans = null;
+            AtomicReference<Map<Integer, ClientBean>> waitBeans = new AtomicReference<>();
 
             MethodMessage methodMessage = as(pack, MethodMessage.class);
-            ProceedEventArgs eventArgs = methodMessage != null ? new ProceedEventArgs(contract, methodMessage.parameters, false) : null;
+            boolean isMethodCall = methodMessage != null;
             try {
-                client.send(pack);
-                if (eventArgs != null) {
-                    waitBeans = getClientBeans(client);
-                    waitBeans.put(clientBean.pack.id, clientBean);
-                    if (!clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis())) {
-                        if (!client.isConnected()) {
-                            throw new ClientDisconnectedException(client);
-                        }
-                        if (clientBean.pack.returnValue == null) {
-                            throw new TimeoutException(String.format("The method %s read timeout", clientBean.pack.methodName));
-                        }
-                    }
-                    clientBean.syncRoot.reset();
-                }
-                if (clientBean.pack.errorMessage != null) {
-                    throw new RemotingException(clientBean.pack.errorMessage);
+                if (isMethodCall) {
+                    Sys.callLog(contract,
+                            String.format("Client %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
+                                    Sockets.toString(client.getLocalEndpoint()),
+                                    Sockets.toString(client.getConfig().getServerEndpoint())), methodMessage.parameters, () -> {
+                                client.send(methodMessage);
+                                Map<Integer, ClientBean> wb = getClientBeans(client);
+                                waitBeans.set(wb);
+                                wb.put(clientBean.pack.id, clientBean);
+                                if (!clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis())) {
+                                    if (!client.isConnected()) {
+                                        throw new ClientDisconnectedException(client);
+                                    }
+                                    if (clientBean.pack.returnValue == null) {
+                                        throw new TimeoutException(String.format("The method %s read timeout", clientBean.pack.methodName));
+                                    }
+                                }
+                                clientBean.syncRoot.reset();
+                                if (clientBean.pack.errorMessage != null) {
+                                    throw new RemotingException(clientBean.pack.errorMessage);
+                                }
+                                return clientBean.pack.returnValue;
+                            });
+                } else {
+                    client.send(pack);
                 }
             } catch (ClientDisconnectedException e) {
                 if (!client.getConfig().isEnableReconnect()) {
@@ -213,39 +223,24 @@ public final class Remoting {
                     throw e;
                 }
 
-                if (eventArgs == null) {
+                if (isMethodCall) {
+                    Map<Integer, ClientBean> wb = getClientBeans(client);
+                    waitBeans.set(wb);
+                    wb.put(clientBean.pack.id, clientBean);
+                    if (!clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis())) {
+                        if (clientBean.pack.returnValue == null) {
+                            throw e;
+                        }
+                    }
+                    clientBean.syncRoot.reset();
+                } else {
                     throw e;
                 }
-                waitBeans = getClientBeans(client);
-                waitBeans.put(clientBean.pack.id, clientBean);
-                if (!clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis())) {
-                    if (clientBean.pack.returnValue == null) {
-                        eventArgs.setError(e);
-                        throw e;
-                    }
-                }
-                clientBean.syncRoot.reset();
-            } catch (Throwable e) {
-                if (eventArgs != null) {
-                    eventArgs.setError(e);
-                }
-                throw e;
             } finally {
-                if (eventArgs != null) {
-                    log(eventArgs, msg -> {
-                        msg.appendLine("Client invoke %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
-                                Sockets.toString(client.getLocalEndpoint()),
-                                Sockets.toString(client.getConfig().getServerEndpoint()));
-                        msg.appendLine("Request:\t%s", toJsonString(methodMessage.parameters))
-                                .appendLine("Response:\t%s", clientBean.pack == null ? "NULL" : toJsonString(clientBean.pack.returnValue));
-                        if (eventArgs.getError() != null) {
-                            msg.appendLine("Error:\t%s", eventArgs.getError().getMessage());
-                        }
-                    });
-                }
-                if (waitBeans != null) {
-                    waitBeans.remove(clientBean.pack.id);
-                    if (waitBeans.isEmpty()) {
+                Map<Integer, ClientBean> wb = waitBeans.get();
+                if (wb != null) {
+                    wb.remove(clientBean.pack.id);
+                    if (wb.isEmpty()) {
                         synchronized (sync) {
                             sync.v = pool.returnClient(client);
                         }
@@ -411,7 +406,7 @@ public final class Remoting {
                 MethodMessage pack = (MethodMessage) e.getValue();
                 try {
                     pack.returnValue = Sys.callLog(contractInstance.getClass(),
-                            String.format("Server %s.%s [%s]-> %s", contractInstance.getClass().getSimpleName(), pack.methodName,
+                            String.format("Server %s.%s [%s -> %s]", contractInstance.getClass().getSimpleName(), pack.methodName,
                                     s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteEndpoint())),
                             pack.parameters, () -> RemotingContext.invoke(() -> {
                                 String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();

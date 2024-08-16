@@ -97,7 +97,7 @@ public final class RestClient {
                     }
                 };
             }
-            responseText = Sys.callLog(contract, String.format("%s\t%s", doPost ? "POST" : "GET", reqUrl), args, proceed, Sys.HTTP_LOG_BUILDER, null);
+            responseText = Sys.callLog(contract, String.format("%s %s", doPost ? "POST" : "GET", reqUrl), args, proceed, Sys.HTTP_LOG_BUILDER, null);
             if (checkResponse != null && !checkResponse.invoke(responseText)) {
                 throw new InvalidException("Response status error");
             }
