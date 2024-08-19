@@ -19,6 +19,7 @@ import java.util.Queue;
 import java.util.concurrent.*;
 
 import static org.rx.core.Extends.circuitContinue;
+import static org.rx.core.RxConfig.ConfigNames.THREAD_POOL_REPLICAS;
 
 //Java 11 ForkJoinPool.commonPool() has class loading issue
 @Slf4j
@@ -31,7 +32,9 @@ public final class Tasks {
     static int poolCount;
 
     static {
-        onChanged(null);
+        ObjectChangeTracker.DEFAULT.register(Tasks.class);
+        onChanged(new ObjectChangedEvent(RxConfig.INSTANCE, Collections.emptyMap()));
+
         executor = new AbstractExecutorService() {
             @Getter
             boolean shutdown;
@@ -109,7 +112,7 @@ public final class Tasks {
             return;
         }
 
-        log.info("RxMeta {} changed {} -> {}", RxConfig.ConfigNames.THREAD_POOL_REPLICAS, poolCount, newCount);
+        log.info("RxMeta {} changed {} -> {}", THREAD_POOL_REPLICAS, poolCount, newCount);
         for (int i = 0; i < newCount; i++) {
             nodes.add(0, new ThreadPool(String.format("N%s", i)));
         }

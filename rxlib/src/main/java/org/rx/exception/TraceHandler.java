@@ -26,7 +26,6 @@ import java.util.concurrent.ScheduledFuture;
 
 import static org.rx.core.Extends.as;
 import static org.rx.core.RxConfig.ConfigNames.TRACE_KEEP_DAYS;
-import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
@@ -100,37 +99,34 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     ScheduledFuture<?> future;
 
     private TraceHandler() {
+        RxConfig conf = RxConfig.INSTANCE;
         try {
-            Thread.setDefaultUncaughtExceptionHandler(this);
             EntityDatabase db = EntityDatabase.DEFAULT;
             db.createMapping(ExceptionEntity.class, MethodEntity.class, MetricsEntity.class, ThreadEntity.class);
-
             queue.onConsume.combine((s, e) -> {
-                RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
-                if (conf.getKeepDays() <= 0) {
+                RxConfig.TraceConfig c = RxConfig.INSTANCE.getTrace();
+                if (c.getKeepDays() <= 0) {
                     return;
                 }
 
                 Reflects.invokeMethod(this, "innerSave", e.getValue());
             });
-            queue.setConsumePeriod(RxConfig.INSTANCE.getTrace().getFlushQueuePeriod());
+            queue.setConsumePeriod(conf.getTrace().getFlushQueuePeriod());
         } catch (Throwable e) {
-            log.error("RxMeta init error", e);
+            log.error("RxMeta init db error", e);
         }
+        ObjectChangeTracker.DEFAULT.register(this);
+        onChanged(new ObjectChangedEvent(conf, Collections.emptyMap()));
+        Thread.setDefaultUncaughtExceptionHandler(this);
     }
 
     @Subscribe(topicClass = RxConfig.class)
-    void onChanged(ObjectChangedEvent event) {
+    synchronized void onChanged(ObjectChangedEvent event) {
         RxConfig.TraceConfig trace = RxConfig.INSTANCE.getTrace();
         queue.setCapacity(trace.getWriteQueueLength());
 
-        ObjectChangeTracker.ChangedValue changedValue = event.getChangedMap().get(getWithoutPrefix(TRACE_KEEP_DAYS));
-        if (changedValue == null) {
-            return;
-        }
-
-        int keepDays = changedValue.newValue();
-        log.info("RxMeta {} changed {}", TRACE_KEEP_DAYS, changedValue);
+        int keepDays = trace.getKeepDays();
+        log.info("RxMeta {} changed {}", TRACE_KEEP_DAYS, keepDays);
         if (keepDays > 0) {
             if (future == null) {
                 future = Tasks.scheduleDaily(() -> {

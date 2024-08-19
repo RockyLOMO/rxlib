@@ -11,7 +11,6 @@ import org.rx.annotation.EnableLog;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
-import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
 import org.rx.util.Servlets;
 import org.rx.util.Validator;
@@ -109,9 +108,6 @@ public class Interceptors {
         @ResponseStatus(HttpStatus.OK)
         @ResponseBody
         public Object onException(Throwable e, HttpServletRequest request) {
-            if (!Boolean.TRUE.equals(request.getAttribute("_skipGlobalLog"))) {
-                TraceHandler.INSTANCE.log(request.getRequestURL().toString(), e);
-            }
             String msg = null;
             if (e instanceof MethodArgumentNotValidException) {
                 FieldError fieldError = ((MethodArgumentNotValidException) e).getBindingResult().getFieldError();

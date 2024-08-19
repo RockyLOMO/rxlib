@@ -144,10 +144,32 @@ public final class Sys extends SystemUtils {
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(false), JSON.toJSONString(conf));
 
-        ObjectChangeTracker.DEFAULT.watch(conf, true)
-                .register(Sys.class)
-                .register(Tasks.class)
-                .register(TraceHandler.INSTANCE);
+//        ObjectChangeTracker.DEFAULT.watch(conf, true)
+//                .register(Sys.class)
+//                .register(Tasks.class)
+//                .register(TraceHandler.INSTANCE);
+        ObjectChangeTracker.DEFAULT.watch(conf).register(Sys.class);
+        onChanged(new ObjectChangedEvent(conf, Collections.emptyMap()));
+    }
+
+    @Subscribe(topicClass = RxConfig.class)
+    static void onChanged(ObjectChangedEvent event) {
+        Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
+//        log.info("RxMeta Sys changed {}", changedMap);
+        Integer enableFlags = event.readValue(getWithoutPrefix(NTP_ENABLE_FLAGS));
+        if (enableFlags == null) {
+            return;
+        }
+        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, enableFlags);
+        if ((enableFlags & 1) == 1) {
+            NtpClock.scheduleTask();
+        }
+        if ((enableFlags & 2) == 2) {
+            Tasks.setTimeout(() -> {
+                log.info("TimeAdvice inject..");
+                NtpClock.transform();
+            }, 60000);
+        }
     }
 
     static void checkAdviceShare(boolean isInit) {
@@ -193,26 +215,6 @@ public final class Sys extends SystemUtils {
         v = share[ADVICE_SHARE_TIME_INDEX];
         long[] time;
         return !(v instanceof long[]) || (time = (long[]) v).length != 2 ? null : time;
-    }
-
-    @Subscribe(topicClass = RxConfig.class)
-    static void onChanged(ObjectChangedEvent event) {
-        Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
-//        log.info("RxMeta Sys changed {}", changedMap);
-        Integer enableFlags = event.readValue(getWithoutPrefix(NTP_ENABLE_FLAGS));
-        if (enableFlags == null) {
-            return;
-        }
-        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, enableFlags);
-        if ((enableFlags & 1) == 1) {
-            NtpClock.scheduleTask();
-        }
-        if ((enableFlags & 2) == 2) {
-            Tasks.setTimeout(() -> {
-                log.info("TimeAdvice inject..");
-                NtpClock.transform();
-            }, 60000);
-        }
     }
 
     //region basic
@@ -526,12 +528,18 @@ public final class Sys extends SystemUtils {
                     doWrite = Linq.from(conf.logTypeWhitelist).any(p -> declaringType.getName().startsWith(p));
                 }
                 if (doWrite) {
-                    String msg = builder.buildLog(declaringType, methodName, parameters, paramSnapshot, returnValue, error, elapsedNanos);
-                    if (error != null) {
-                        TraceHandler.INSTANCE.log(msg, error);
-                    } else {
-                        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(declaringType);
-                        log.info(msg);
+                    try {
+                        String msg = builder.buildLog(declaringType, methodName, parameters, paramSnapshot, returnValue, error, elapsedNanos);
+                        if (msg != null) {
+                            if (error != null) {
+                                TraceHandler.INSTANCE.log(msg, error);
+                            } else {
+                                org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(declaringType);
+                                log.info(msg);
+                            }
+                        }
+                    } catch (Throwable e) {
+                        log.warn("buildLog", e);
                     }
                 }
             } catch (Throwable e) {
