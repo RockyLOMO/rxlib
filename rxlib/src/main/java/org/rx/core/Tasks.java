@@ -32,8 +32,7 @@ public final class Tasks {
     static int poolCount;
 
     static {
-        ObjectChangeTracker.DEFAULT.register(Tasks.class);
-        onChanged(new ObjectChangedEvent(RxConfig.INSTANCE, Collections.emptyMap()));
+        createPool(new ObjectChangedEvent(RxConfig.INSTANCE, Collections.emptyMap()));
 
         executor = new AbstractExecutorService() {
             @Getter
@@ -103,10 +102,12 @@ public final class Tasks {
                 log.warn("setAsyncPool {}", e, ie);
             }
         }
+
+        timer.setTimeout(() -> ObjectChangeTracker.DEFAULT.register(Tasks.class), 30000);
     }
 
     @Subscribe(topicClass = RxConfig.class)
-    static synchronized void onChanged(ObjectChangedEvent event) {
+    static synchronized void createPool(ObjectChangedEvent event) {
         int newCount = RxConfig.INSTANCE.threadPool.replicas;
         if (newCount == poolCount) {
             return;
