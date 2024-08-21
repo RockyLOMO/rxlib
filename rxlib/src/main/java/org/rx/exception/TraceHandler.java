@@ -7,9 +7,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.Subscribe;
+import org.rx.bean.CircularBlockingQueue;
 import org.rx.bean.DateTime;
-import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
+import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
@@ -19,16 +20,12 @@ import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Serializable;
 import java.sql.Time;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledFuture;
 
 import static org.rx.core.Extends.as;
 import static org.rx.core.RxConfig.ConfigNames.TRACE_KEEP_DAYS;
-import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
@@ -41,7 +38,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         @DbColumn(primaryKey = true)
         long id;
         ExceptionLevel level;
-        Queue<String> messages;
+        Queue<Map<String, Object>> messages;
         String stackTrace;
         int occurCount;
 
@@ -98,27 +95,38 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         return args;
     }
 
+    final CircularBlockingQueue<Object[]> queue = new CircularBlockingQueue<>(RxConfig.INSTANCE.getTrace().getWriteQueueLength());
     ScheduledFuture<?> future;
 
     private TraceHandler() {
+        RxConfig conf = RxConfig.INSTANCE;
         try {
-            Thread.setDefaultUncaughtExceptionHandler(this);
             EntityDatabase db = EntityDatabase.DEFAULT;
             db.createMapping(ExceptionEntity.class, MethodEntity.class, MetricsEntity.class, ThreadEntity.class);
+            queue.onConsume.combine((s, e) -> {
+                RxConfig.TraceConfig c = RxConfig.INSTANCE.getTrace();
+                if (c.getKeepDays() <= 0) {
+                    return;
+                }
+
+                Reflects.invokeMethod(this, "innerSave", e.getValue());
+            });
+            queue.setConsumePeriod(conf.getTrace().getFlushQueuePeriod());
         } catch (Throwable e) {
-            log.error("RxMeta init error", e);
+            log.error("RxMeta init db error", e);
         }
+        ObjectChangeTracker.DEFAULT.register(this);
+        onChanged(new ObjectChangedEvent(conf, Collections.emptyMap()));
+        Thread.setDefaultUncaughtExceptionHandler(this);
     }
 
     @Subscribe(topicClass = RxConfig.class)
-    void onChanged(ObjectChangedEvent event) {
-        ObjectChangeTracker.ChangedValue changedValue = event.getChangedMap().get(getWithoutPrefix(TRACE_KEEP_DAYS));
-        if (changedValue == null) {
-            return;
-        }
+    synchronized void onChanged(ObjectChangedEvent event) {
+        RxConfig.TraceConfig trace = RxConfig.INSTANCE.getTrace();
+        queue.setCapacity(trace.getWriteQueueLength());
 
-        int keepDays = changedValue.newValue();
-        log.info("RxMeta {} changed {}", TRACE_KEEP_DAYS, changedValue);
+        int keepDays = trace.getKeepDays();
+        log.info("RxMeta {} changed {}", TRACE_KEEP_DAYS, keepDays);
         if (keepDays > 0) {
             if (future == null) {
                 future = Tasks.scheduleDaily(() -> {
@@ -170,6 +178,161 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
     }
 
+    public void saveExceptionTrace(Thread t, String msg, Throwable e) {
+        queue.offer(new Object[]{t.getName(), Sys.getMDCCtxMap(), DateTime.now(), msg, e});
+    }
+
+    void innerSave(String thread, Map<String, String> mdc, DateTime now, String msg, Throwable e) {
+        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
+        String stackTrace = ExceptionUtils.getStackTrace(e);
+        String eMsg = Strings.EMPTY;
+        int eMsgFlag = stackTrace.indexOf(Constants.STACK_TRACE_FLAG);
+        if (eMsgFlag != -1) {
+            eMsgFlag += 2;
+            eMsg = stackTrace.substring(0, eMsgFlag);
+            stackTrace = stackTrace.substring(eMsgFlag);
+        }
+
+        long pk = CodecUtil.hash64(stackTrace);
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        db.begin();
+        try {
+            ExceptionEntity entity = db.findById(ExceptionEntity.class, pk);
+            boolean doInsert = entity == null;
+            if (doInsert) {
+                entity = new ExceptionEntity();
+                entity.setId(pk);
+                InvalidException invalidException = as(e, InvalidException.class);
+                ExceptionLevel level = invalidException != null && invalidException.getLevel() != null ? invalidException.getLevel()
+                        : ExceptionLevel.SYSTEM;
+                entity.setLevel(level);
+                entity.setMessages(new ConcurrentLinkedQueue<>());
+                entity.setStackTrace(stackTrace);
+            }
+            Queue<Map<String, Object>> queue = entity.getMessages();
+            if (queue.size() > conf.getErrorMessageSize()) {
+                queue.poll();
+            }
+            Map<String, Object> call = new HashMap<>(2);
+            StringBuilder b = new StringBuilder();
+            b.appendMessageFormat("{}\t{}{}", now.toDateTimeString(), eMsg, msg);
+            call.put("message", b.toString());
+            call.put("MDC", mdc);
+            queue.offer(call);
+            entity.occurCount++;
+            entity.setAppName(RxConfig.INSTANCE.getId());
+            entity.setThreadName(thread);
+            entity.setModifyTime(now);
+            db.save(entity, doInsert);
+            db.commit();
+        } catch (Throwable ex) {
+            log.error("dbTrace", ex);
+            db.rollback();
+        }
+    }
+
+    public List<ExceptionEntity> queryExceptionTraces(Date startTime, Date endTime, ExceptionLevel level, String keyword,
+                                                      Boolean newest, Integer limit) {
+        if (newest == null) {
+            newest = Boolean.FALSE;
+        }
+        if (limit == null) {
+            limit = 20;
+        }
+
+        EntityQueryLambda<ExceptionEntity> q = new EntityQueryLambda<>(ExceptionEntity.class).limit(limit);
+        if (startTime != null) {
+            q.ge(ExceptionEntity::getModifyTime, startTime);
+        }
+        if (endTime != null) {
+            q.lt(ExceptionEntity::getModifyTime, endTime);
+        }
+        if (level != null) {
+            q.eq(ExceptionEntity::getLevel, level);
+        }
+        if (!Strings.isBlank(keyword)) {
+            q.like(ExceptionEntity::getStackTrace, "%" + keyword.trim() + "%");
+        }
+        if (newest) {
+            q.orderByDescending(ExceptionEntity::getModifyTime);
+        } else {
+            q.orderByDescending(ExceptionEntity::getOccurCount);
+        }
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        return db.findBy(q);
+    }
+
+    public void saveMethodTrace(Thread t, String declaringTypeName, String methodName, Object[] parameters,
+                                Object returnValue, Throwable e, long elapsedMicros) {
+        queue.offer(new Object[]{t.getName(), Sys.getMDCCtxMap(), DateTime.now(), declaringTypeName, methodName, parameters, returnValue, e, elapsedMicros});
+    }
+
+    void innerSave(String thread, Map<String, String> mdc, DateTime now, String declaringTypeName, String methodName, Object[] parameters,
+                   Object returnValue, Throwable error, long elapsedNanos) {
+        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
+        long elapsedMicros;
+        if ((elapsedMicros = elapsedNanos / 1000L) < conf.getSlowMethodElapsedMicros()) {
+            return;
+        }
+
+        String fullName = String.format("%s.%s(%s)", declaringTypeName, methodName, parameters == null ? 0 : parameters.length);
+        long pk = CodecUtil.hash64(fullName);
+//        Tasks.nextPool().runSerial(() -> {
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        db.begin();
+        try {
+            MethodEntity entity = db.findById(MethodEntity.class, pk);
+            boolean doInsert = entity == null;
+            if (doInsert) {
+                entity = new MethodEntity();
+                entity.setId(pk);
+                entity.setMethodName(fullName);
+            }
+            if (parameters != null) {
+                entity.setParameters(toJsonString(parameters));
+            }
+            if (error != null) {
+                entity.setReturnValue(ExceptionUtils.getStackTrace(error));
+            } else if (returnValue != null) {
+                entity.setReturnValue(toJsonString(returnValue));
+            }
+            entity.setMDC(mdc);
+            entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
+            entity.occurCount++;
+            entity.setAppName(RxConfig.INSTANCE.getId());
+            entity.setThreadName(thread);
+            entity.setModifyTime(now);
+            db.save(entity, doInsert);
+            db.commit();
+        } catch (Throwable e) {
+            log.error("dbTrace", e);
+            db.rollback();
+        }
+//            return null;
+//        }, pk);
+    }
+
+    public List<MethodEntity> queryMethodTraces(String methodNamePrefix, Boolean methodOccurMost, Integer limit) {
+        if (methodOccurMost == null) {
+            methodOccurMost = Boolean.FALSE;
+        }
+        if (limit == null) {
+            limit = 20;
+        }
+
+        EntityQueryLambda<MethodEntity> q = new EntityQueryLambda<>(MethodEntity.class).limit(limit);
+        if (methodNamePrefix != null) {
+            q.like(MethodEntity::getMethodName, String.format("%s%%", methodNamePrefix));
+        }
+        if (methodOccurMost) {
+            q.orderByDescending(MethodEntity::getOccurCount);
+        } else {
+            q.orderByDescending(MethodEntity::getElapsedMicros);
+        }
+        EntityDatabase db = EntityDatabase.DEFAULT;
+        return db.findBy(q);
+    }
+
     public void saveThreadTrace(Linq<ThreadEntity> snapshot) {
         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
         if (conf.getKeepDays() <= 0) {
@@ -204,154 +367,6 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
         EntityDatabase db = EntityDatabase.DEFAULT;
         return Linq.from(db.findBy(q));
-    }
-
-    public void saveExceptionTrace(Thread t, String msg, Throwable e) {
-        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
-        if (conf.getKeepDays() <= 0) {
-            return;
-        }
-
-        String stackTrace = ExceptionUtils.getStackTrace(e);
-        long pk = CodecUtil.hash64(stackTrace);
-        Tasks.nextPool().runSerial(() -> {
-            EntityDatabase db = EntityDatabase.DEFAULT;
-            db.begin();
-            try {
-                ExceptionEntity entity = db.findById(ExceptionEntity.class, pk);
-                boolean doInsert = entity == null;
-                if (doInsert) {
-                    entity = new ExceptionEntity();
-                    entity.setId(pk);
-                    InvalidException invalidException = as(e, InvalidException.class);
-                    ExceptionLevel level = invalidException != null && invalidException.getLevel() != null ? invalidException.getLevel()
-                            : ExceptionLevel.SYSTEM;
-                    entity.setLevel(level);
-                    entity.setMessages(new ConcurrentLinkedQueue<>());
-                    entity.setStackTrace(stackTrace);
-                }
-                Queue<String> queue = entity.getMessages();
-                if (queue.size() > conf.getErrorMessageSize()) {
-                    queue.poll();
-                }
-                StringBuilder b = new StringBuilder();
-                b.appendMessageFormat("{}\t{}", DateTime.now().toDateTimeString(), msg);
-                Map<String, String> ctxMap = Sys.getMDCCtxMap();
-                if (!ctxMap.isEmpty()) {
-                    b.appendMessageFormat("\nMDC:\t{}", ctxMap);
-                }
-                queue.offer(b.toString());
-                entity.occurCount++;
-                entity.setAppName(RxConfig.INSTANCE.getId());
-                entity.setThreadName(t.getName());
-                entity.setModifyTime(DateTime.now());
-                db.save(entity, doInsert);
-                db.commit();
-            } catch (Throwable ex) {
-                log.error("dbTrace", ex);
-                db.rollback();
-            }
-            return null;
-        }, pk);
-    }
-
-    public List<ExceptionEntity> queryExceptionTraces(Date startTime, Date endTime, ExceptionLevel level, String keyword,
-                                                      Boolean newest, Integer limit) {
-        if (newest == null) {
-            newest = Boolean.FALSE;
-        }
-        if (limit == null) {
-            limit = 20;
-        }
-
-        EntityQueryLambda<ExceptionEntity> q = new EntityQueryLambda<>(ExceptionEntity.class).limit(limit);
-        if (startTime != null) {
-            q.ge(ExceptionEntity::getModifyTime, startTime);
-        }
-        if (endTime != null) {
-            q.lt(ExceptionEntity::getModifyTime, endTime);
-        }
-        if (level != null) {
-            q.eq(ExceptionEntity::getLevel, level);
-        }
-        if (!Strings.isBlank(keyword)) {
-            q.like(ExceptionEntity::getStackTrace, "%" + keyword.trim() + "%");
-        }
-        if (newest) {
-            q.orderByDescending(ExceptionEntity::getModifyTime);
-        } else {
-            q.orderByDescending(ExceptionEntity::getOccurCount);
-        }
-        EntityDatabase db = EntityDatabase.DEFAULT;
-        return db.findBy(q);
-    }
-
-    public void saveMethodTrace(ProceedEventArgs pe, String methodName) {
-        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
-        long elapsedMicros;
-        if (conf.getKeepDays() <= 0 || (elapsedMicros = pe.getElapsedNanos() / 1000L) < conf.getSlowMethodElapsedMicros()) {
-            return;
-        }
-
-        Object[] parameters = pe.getParameters();
-        Throwable error = pe.getError();
-        Object returnValue = pe.getReturnValue();
-        String fullName = String.format("%s.%s(%s)", pe.getDeclaringType().getName(), methodName, parameters == null ? 0 : parameters.length);
-        long pk = CodecUtil.hash64(fullName);
-        Tasks.nextPool().runSerial(() -> {
-            EntityDatabase db = EntityDatabase.DEFAULT;
-            db.begin();
-            try {
-                MethodEntity entity = db.findById(MethodEntity.class, pk);
-                boolean doInsert = entity == null;
-                if (doInsert) {
-                    entity = new MethodEntity();
-                    entity.setId(pk);
-                    entity.setMethodName(fullName);
-                }
-                if (parameters != null) {
-                    entity.setParameters(toJsonString(parameters));
-                }
-                if (error != null) {
-                    entity.setReturnValue(ExceptionUtils.getStackTrace(error));
-                } else if (returnValue != null) {
-                    entity.setReturnValue(toJsonString(returnValue));
-                }
-                entity.setMDC(Sys.getMDCCtxMap());
-                entity.elapsedMicros = Math.max(entity.elapsedMicros, elapsedMicros);
-                entity.occurCount++;
-                entity.setAppName(RxConfig.INSTANCE.getId());
-                entity.setThreadName(Thread.currentThread().getName());
-                entity.setModifyTime(DateTime.now());
-                db.save(entity, doInsert);
-                db.commit();
-            } catch (Throwable e) {
-                log.error("dbTrace", e);
-                db.rollback();
-            }
-            return null;
-        }, pk);
-    }
-
-    public List<MethodEntity> queryMethodTraces(String methodNamePrefix, Boolean methodOccurMost, Integer limit) {
-        if (methodOccurMost == null) {
-            methodOccurMost = Boolean.FALSE;
-        }
-        if (limit == null) {
-            limit = 20;
-        }
-
-        EntityQueryLambda<MethodEntity> q = new EntityQueryLambda<>(MethodEntity.class).limit(limit);
-        if (methodNamePrefix != null) {
-            q.like(MethodEntity::getMethodName, String.format("%s%%", methodNamePrefix));
-        }
-        if (methodOccurMost) {
-            q.orderByDescending(MethodEntity::getOccurCount);
-        } else {
-            q.orderByDescending(MethodEntity::getElapsedMicros);
-        }
-        EntityDatabase db = EntityDatabase.DEFAULT;
-        return db.findBy(q);
     }
 
     public void saveMetric(String name, String message) {

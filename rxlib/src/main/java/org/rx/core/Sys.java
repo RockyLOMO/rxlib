@@ -6,10 +6,7 @@ import com.alibaba.fastjson2.filter.ValueFilter;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.Timeout;
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.IterableUtils;
@@ -17,7 +14,6 @@ import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DynamicProxyBean;
 import org.rx.bean.LogStrategy;
-import org.rx.bean.ProceedEventArgs;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.FallbackException;
 import org.rx.exception.InvalidException;
@@ -27,6 +23,7 @@ import org.rx.net.Sockets;
 import org.rx.util.Lazy;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.Func;
 import org.rx.util.function.TripleFunc;
 import org.slf4j.MDC;
 import org.slf4j.spi.MDCAdapter;
@@ -147,10 +144,32 @@ public final class Sys extends SystemUtils {
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(false), JSON.toJSONString(conf));
 
-        ObjectChangeTracker.DEFAULT.watch(conf, true)
-                .register(Sys.class)
-                .register(Tasks.class)
-                .register(TraceHandler.INSTANCE);
+//        ObjectChangeTracker.DEFAULT.watch(conf, true)
+//                .register(Sys.class)
+//                .register(Tasks.class)
+//                .register(TraceHandler.INSTANCE);
+        ObjectChangeTracker.DEFAULT.watch(conf).register(Sys.class);
+        onChanged(new ObjectChangedEvent(conf, Collections.emptyMap()));
+    }
+
+    @Subscribe(topicClass = RxConfig.class)
+    static void onChanged(ObjectChangedEvent event) {
+        Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
+//        log.info("RxMeta Sys changed {}", changedMap);
+        Integer enableFlags = event.readValue(getWithoutPrefix(NTP_ENABLE_FLAGS));
+        if (enableFlags == null) {
+            return;
+        }
+        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, enableFlags);
+        if ((enableFlags & 1) == 1) {
+            NtpClock.scheduleTask();
+        }
+        if ((enableFlags & 2) == 2) {
+            Tasks.setTimeout(() -> {
+                log.info("TimeAdvice inject..");
+                NtpClock.transform();
+            }, 60000);
+        }
     }
 
     static void checkAdviceShare(boolean isInit) {
@@ -196,26 +215,6 @@ public final class Sys extends SystemUtils {
         v = share[ADVICE_SHARE_TIME_INDEX];
         long[] time;
         return !(v instanceof long[]) || (time = (long[]) v).length != 2 ? null : time;
-    }
-
-    @Subscribe(topicClass = RxConfig.class)
-    static void onChanged(ObjectChangedEvent event) {
-        Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
-//        log.info("RxMeta Sys changed {}", changedMap);
-        Integer enableFlags = event.readValue(getWithoutPrefix(NTP_ENABLE_FLAGS));
-        if (enableFlags == null) {
-            return;
-        }
-        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, enableFlags);
-        if ((enableFlags & 1) == 1) {
-            NtpClock.scheduleTask();
-        }
-        if ((enableFlags & 2) == 2) {
-            Tasks.setTimeout(() -> {
-                log.info("TimeAdvice inject..");
-                NtpClock.transform();
-            }, 60000);
-        }
     }
 
     //region basic
@@ -382,69 +381,169 @@ public final class Sys extends SystemUtils {
         mdc.clear();
     }
 
-    public static void logHttp(@NonNull ProceedEventArgs eventArgs, String url) {
-        RxConfig conf = RxConfig.INSTANCE;
-        eventArgs.setLogStrategy(conf.logStrategy);
-        eventArgs.setLogTypeWhitelist(conf.logTypeWhitelist);
-        log(eventArgs, msg -> {
-            msg.appendLine("Url:\t%s", url)
-                    .appendLine("Request:\t%s", toJsonString(eventArgs.getParameters()))
-                    .appendLine("Response:\t%s\tElapsed=%s", toJsonString(eventArgs.getReturnValue()), formatNanosElapsed(eventArgs.getElapsedNanos()));
-            if (eventArgs.getError() != null) {
-                msg.appendLine("Error:\t%s", eventArgs.getError());
+    public interface ProceedFunc<T> extends Func<T> {
+        default boolean isVoid() {
+            return false;
+        }
+    }
+
+    public interface CallLogBuilder {
+        String buildParamSnapshot(Class<?> declaringType, String methodName, Object[] parameters);
+
+        String buildLog(Class<?> declaringType, String methodName, Object[] parameters, String paramSnapshot, Object returnValue, Throwable error, long elapsedNanos);
+    }
+
+    public static class DefaultCallLogBuilder implements CallLogBuilder {
+        public static final byte HTTP_KEYWORD_FLAG = 1, LOG_MDC_FLAG = 1 << 1;
+        @Getter
+        @Setter
+        byte flags;
+
+        public DefaultCallLogBuilder() {
+            this((byte) 0);
+        }
+
+        public DefaultCallLogBuilder(byte flags) {
+            this.flags = flags;
+        }
+
+        @Override
+        public String buildParamSnapshot(Class<?> declaringType, String methodName, Object[] args) {
+            if (Arrays.isEmpty(args)) {
+                return "{}";
             }
-        });
+            List<Object> list = Linq.from(args).select(p -> shortArg(declaringType, methodName, p)).toList();
+            return toString(list.size() == 1 ? list.get(0) : list);
+        }
+
+        protected Object shortArg(Class<?> declaringType, String methodName, Object arg) {
+            if (arg instanceof byte[]) {
+                byte[] b = (byte[]) arg;
+                if (b.length > MAX_FIELD_SIZE) {
+                    return "[BigBytes]";
+                }
+            }
+            if (arg instanceof String) {
+                String s = (String) arg;
+                if (s.length() > MAX_FIELD_SIZE) {
+                    return "[BigString]";
+                }
+            }
+            return arg;
+        }
+
+        protected String toString(Object arg) {
+            if (arg == null) {
+                return "null";
+            }
+            return toJsonString(arg);
+        }
+
+        @Override
+        public String buildLog(Class<?> declaringType, String methodName, Object[] parameters, String paramSnapshot, Object returnValue, Throwable error, long elapsedNanos) {
+            StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
+            if ((flags & HTTP_KEYWORD_FLAG) == HTTP_KEYWORD_FLAG) {
+                msg.appendLine("Call:\t%s", methodName)
+                        .appendLine("Request:\t%s", paramSnapshot)
+                        .appendLine("Response:\t%s\tElapsed=%s", toString(shortArg(declaringType, methodName, returnValue)), formatNanosElapsed(elapsedNanos));
+            } else {
+                msg.appendLine("Call:\t%s", methodName)
+                        .appendLine("Parameters:\t%s", paramSnapshot)
+                        .appendLine("ReturnValue:\t%s\tElapsed=%s", toString(shortArg(declaringType, methodName, returnValue)), formatNanosElapsed(elapsedNanos));
+            }
+            if (error != null) {
+                msg.appendLine("Error:\t%s", error.getMessage());
+            }
+
+            if ((flags & LOG_MDC_FLAG) == LOG_MDC_FLAG) {
+                Map<String, String> mappedDiagnosticCtx = getMDCCtxMap();
+                boolean first = true;
+                for (Map.Entry<String, String> entry : mappedDiagnosticCtx.entrySet()) {
+                    if (first) {
+                        msg.append("MDC:\t");
+                        first = false;
+                    }
+                    msg.appendFormat("%s=%s ", entry.getKey(), entry.getValue());
+                }
+                if (!first) {
+                    msg.appendLine();
+                }
+            }
+            return msg.toString();
+        }
+    }
+
+    static final int MAX_FIELD_SIZE = 1024 * 4;
+    public static final CallLogBuilder DEFAULT_LOG_BUILDER = new DefaultCallLogBuilder();
+    public static final CallLogBuilder HTTP_LOG_BUILDER = new DefaultCallLogBuilder(DefaultCallLogBuilder.HTTP_KEYWORD_FLAG);
+
+    public static <T> T callLog(Class<?> declaringType, String methodName, Object[] parameters, ProceedFunc<T> proceed) {
+        return callLog(declaringType, methodName, parameters, proceed, DEFAULT_LOG_BUILDER, null);
     }
 
     @SneakyThrows
-    public static void log(@NonNull ProceedEventArgs eventArgs, @NonNull BiAction<StringBuilder> formatMessage) {
-        Map<String, String> mappedDiagnosticCtx = getMDCCtxMap();
-        boolean doWrite = !mappedDiagnosticCtx.isEmpty();
-        if (!doWrite) {
-            if (eventArgs.getLogStrategy() == null) {
-                eventArgs.setLogStrategy(eventArgs.getError() != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL);
-            }
-            switch (eventArgs.getLogStrategy()) {
-                case WRITE_ON_NULL:
-                    doWrite = eventArgs.getError() != null
-                            || (!eventArgs.isVoid() && eventArgs.getReturnValue() == null)
-                            || (!Arrays.isEmpty(eventArgs.getParameters()) && Arrays.contains(eventArgs.getParameters(), null));
-                    break;
-                case WRITE_ON_ERROR:
-                    if (eventArgs.getError() != null) {
-                        doWrite = true;
-                    }
-                    break;
-                case ALWAYS:
-                    doWrite = true;
-                    break;
-            }
-        }
-        if (doWrite) {
-            Set<String> whitelist = eventArgs.getLogTypeWhitelist();
-            if (!CollectionUtils.isEmpty(whitelist)) {
-                doWrite = Linq.from(whitelist).any(p -> eventArgs.getDeclaringType().getName().startsWith(p));
-            }
-        }
-        if (doWrite) {
-            org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(eventArgs.getDeclaringType());
-            StringBuilder msg = new StringBuilder(Constants.HEAP_BUF_SIZE);
-            formatMessage.invoke(msg);
-            boolean first = true;
-            for (Map.Entry<String, String> entry : mappedDiagnosticCtx.entrySet()) {
-                if (first) {
-                    msg.append("MDC:\t");
-                    first = false;
+    public static <T> T callLog(@NonNull Class<?> declaringType, @NonNull String methodName, Object[] parameters, @NonNull ProceedFunc<T> proceed, @NonNull CallLogBuilder builder, LogStrategy strategy) {
+        Object returnValue = null;
+        Throwable error = null;
+        String paramSnapshot = builder.buildParamSnapshot(declaringType, methodName, parameters);
+
+        long start = System.nanoTime();
+        try {
+            T retVal = proceed.invoke();
+            returnValue = retVal;
+            return retVal;
+        } catch (Throwable e) {
+            throw error = e;
+        } finally {
+            long elapsedNanos = System.nanoTime() - start;
+            try {
+                TraceHandler.INSTANCE.saveMethodTrace(Thread.currentThread(), declaringType.getName(), methodName, parameters, returnValue, error, elapsedNanos);
+
+                RxConfig conf = RxConfig.INSTANCE;
+                if (strategy == null) {
+                    strategy = conf.logStrategy;
                 }
-                msg.appendFormat("%s=%s ", entry.getKey(), entry.getValue());
-            }
-            if (!first) {
-                msg.appendLine();
-            }
-            if (eventArgs.getError() != null) {
-                TraceHandler.INSTANCE.log(msg.toString(), eventArgs.getError());
-            } else {
-                log.info(msg.toString());
+                if (strategy == null) {
+                    strategy = error != null ? LogStrategy.WRITE_ON_ERROR : LogStrategy.WRITE_ON_NULL;
+                }
+
+                boolean doWrite;
+                switch (strategy) {
+                    case WRITE_ON_NULL:
+                        doWrite = error != null
+                                || (!proceed.isVoid() && returnValue == null)
+                                || (!Arrays.isEmpty(parameters) && Arrays.contains(parameters, null));
+                        break;
+                    case WRITE_ON_ERROR:
+                        doWrite = error != null;
+                        break;
+                    case ALWAYS:
+                        doWrite = true;
+                        break;
+                    default:
+                        doWrite = false;
+                        break;
+                }
+                if (doWrite && !CollectionUtils.isEmpty(conf.logTypeWhitelist)) {
+                    doWrite = Linq.from(conf.logTypeWhitelist).any(p -> declaringType.getName().startsWith(p));
+                }
+                if (doWrite) {
+                    try {
+                        String msg = builder.buildLog(declaringType, methodName, parameters, paramSnapshot, returnValue, error, elapsedNanos);
+                        if (msg != null) {
+                            if (error != null) {
+                                TraceHandler.INSTANCE.log(msg, error);
+                            } else {
+                                org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(declaringType);
+                                log.info(msg);
+                            }
+                        }
+                    } catch (Throwable e) {
+                        log.warn("buildLog", e);
+                    }
+                }
+            } catch (Throwable e) {
+                log.warn("callLog", e);
             }
         }
     }
@@ -517,7 +616,7 @@ public final class Sys extends SystemUtils {
 
     public static String fastCacheKey(String region, Object... args) {
         if (region == null) {
-            region = Reflects.stackClass(1).getSimpleName();
+            region = Reflects.CLASS_TRACER.getClassTrace(1).getSimpleName();
         }
         if (!Arrays.isEmpty(args)) {
             region += java.util.Arrays.hashCode(args);
@@ -527,7 +626,7 @@ public final class Sys extends SystemUtils {
 
     public static String cacheKey(String region, Object... args) {
         if (region == null) {
-            region = Reflects.stackClass(1).getSimpleName();
+            region = Reflects.CLASS_TRACER.getClassTrace(1).getSimpleName();
         }
 
         StringBuilder buf = new StringBuilder();

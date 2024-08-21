@@ -1,22 +1,16 @@
 package org.rx.spring;
 
 import lombok.SneakyThrows;
-import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.ConstructorSignature;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.rx.annotation.EnableTrace;
-import org.rx.bean.ProceedEventArgs;
+import org.rx.annotation.EnableLog;
 import org.rx.bean.Tuple;
-import org.rx.core.Arrays;
-import org.rx.core.Constants;
-import org.rx.core.RxConfig;
-import org.rx.core.Strings;
+import org.rx.core.*;
 import org.rx.exception.ApplicationException;
-import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
 import org.rx.util.Servlets;
 import org.rx.util.Validator;
@@ -49,34 +43,22 @@ public class Interceptors {
     public static class ControllerInterceptor extends BaseInterceptor {
         final List<String> skipMethods = new CopyOnWriteArrayList<>(Arrays.toList("setServletRequest", "setServletResponse", "isSignIn"));
 
+        public ControllerInterceptor() {
+            logBuilder = new Sys.DefaultCallLogBuilder() {
+                @Override
+                protected Object shortArg(Class<?> declaringType, String methodName, Object arg) {
+                    if (arg instanceof MultipartFile) {
+                        return "[MultipartFile]";
+                    }
+                    return super.shortArg(declaringType, methodName, arg);
+                }
+            };
+        }
+
         @SneakyThrows
         protected Object methodAround(ProceedingJoinPoint joinPoint, Tuple<HttpServletRequest, HttpServletResponse> httpEnv) {
             logCtx("url", httpEnv.left.getRequestURL().toString());
             return super.doAround(joinPoint);
-        }
-
-        @Override
-        protected Object shortArg(Signature signature, Object arg) {
-            if (arg instanceof MultipartFile) {
-                return "[MultipartFile]";
-            }
-            return super.shortArg(signature, arg);
-        }
-
-        @Override
-        protected String startTrace(JoinPoint joinPoint, String parentTraceId) {
-            Tuple<HttpServletRequest, HttpServletResponse> httpEnv = httpEnv();
-            if (httpEnv == null) {
-                return super.startTrace(joinPoint, parentTraceId);
-            }
-
-            String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
-            if (parentTraceId == null) {
-                parentTraceId = httpEnv.left.getHeader(tn);
-            }
-            String tid = super.startTrace(joinPoint, parentTraceId);
-            httpEnv.right.setHeader(tn, tid);
-            return tid;
         }
 
         @Override
@@ -97,7 +79,7 @@ public class Interceptors {
                     return controller.health(httpEnv.left);
                 }
             }
-            Map<String, String> fts = RxConfig.INSTANCE.getMxHttpForwards().get(ms.getDeclaringType());
+            Map<String, String> fts = RxConfig.INSTANCE.getMxHttpForwards().get(ms.getDeclaringType().getName());
             if (fts != null) {
                 String fu = fts.get(ms.getName());
                 if (fu != null) {
@@ -126,9 +108,6 @@ public class Interceptors {
         @ResponseStatus(HttpStatus.OK)
         @ResponseBody
         public Object onException(Throwable e, HttpServletRequest request) {
-            if (!Boolean.TRUE.equals(request.getAttribute("_skipGlobalLog"))) {
-                TraceHandler.INSTANCE.log(request.getRequestURL().toString(), e);
-            }
             String msg = null;
             if (e instanceof MethodArgumentNotValidException) {
                 FieldError fieldError = ((MethodArgumentNotValidException) e).getBindingResult().getFieldError();
@@ -149,12 +128,8 @@ public class Interceptors {
 
     @Aspect
     @Component
-    public static class TraceInterceptor extends BaseInterceptor {
-        public void setTraceName(String traceName) {
-            super.enableTrace(traceName);
-        }
-
-        @Around("@annotation(org.rx.annotation.EnableTrace) || @within(org.rx.annotation.EnableTrace)")
+    public static class LogInterceptor extends BaseInterceptor {
+        @Around("@annotation(org.rx.annotation.EnableLog) || @within(org.rx.annotation.EnableLog)")
         public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
             Signature signature = joinPoint.getSignature();
             if (signature instanceof ConstructorSignature) {
@@ -172,21 +147,10 @@ public class Interceptors {
             return super.doAround(joinPoint);
         }
 
-        @Override
-        protected void onLog(Signature signature, ProceedEventArgs eventArgs, String paramSnapshot) {
-            Executable r = signature instanceof ConstructorSignature
-                    ? ((ConstructorSignature) signature).getConstructor()
-                    : ((MethodSignature) signature).getMethod();
-            EnableTrace a = r.getAnnotation(EnableTrace.class);
-            if (a == null || a.doLog()) {
-                super.onLog(signature, eventArgs, paramSnapshot);
-            }
-        }
-
         protected boolean doValidate(Executable r) {
-            EnableTrace a = r.getAnnotation(EnableTrace.class);
+            EnableLog a = r.getAnnotation(EnableLog.class);
             if (a == null) {
-                a = r.getDeclaringClass().getAnnotation(EnableTrace.class);
+                a = r.getDeclaringClass().getAnnotation(EnableLog.class);
             }
             return a != null && a.doValidate();
         }

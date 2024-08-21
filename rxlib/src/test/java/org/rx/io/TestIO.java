@@ -750,4 +750,37 @@ public class TestIO extends AbstractTester {
             System.out.println(p);
         }
     }
+
+    @Test
+    public void bitwiseStoring() {
+        int a = Integer.MAX_VALUE, b = 200;
+        int c = -50, d = Integer.MIN_VALUE;
+
+        long n = Bytes.wrap(a, b);
+        int[] unwrap = Bytes.unwrap(n);
+        assert unwrap[0] == a && unwrap[1] == b;
+
+        n = Bytes.wrap(c, d);
+        unwrap = Bytes.unwrap(n);
+        assert unwrap[0] == c && unwrap[1] == d;
+
+
+        short w = 1, x = 50;
+        short y = -50, z = Short.MIN_VALUE;
+
+        int sn = Bytes.wrap(w, x);
+        System.out.println("n3-b:" + sn);
+        short[] sunwrap = Bytes.unwrap(sn);
+        System.out.println("n3-a:" + toJsonString(sunwrap));
+        assert sunwrap[0] == w && sunwrap[1] == x;
+
+        sn = Bytes.wrap(y, z);
+        System.out.println("n4:" + sn);
+        sunwrap = Bytes.unwrap(sn);
+        assert sunwrap[0] == y && sunwrap[1] == z;
+
+        int[] ax = {0};
+        ax[0]++;
+        System.out.println(ax[0]);
+    }
 }

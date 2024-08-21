@@ -999,7 +999,8 @@ public class TestCore extends AbstractTester {
             System.out.println(resource);
             assert resource != null;
         }
-        assert Reflects.stackClass(0) == this.getClass();
+        System.out.println(toJsonString(Reflects.CLASS_TRACER.getClassTrace()));
+        assert Reflects.CLASS_TRACER.getClassTrace(0) == this.getClass();
 //        for (StackTraceElement traceElement : Reflects.stackTrace(8)) {
 //            System.out.println(traceElement);
 //        }
@@ -1114,7 +1115,7 @@ public class TestCore extends AbstractTester {
         props.put(RxConfig.ConfigNames.JSON_SKIP_TYPES, Collections.singletonList(TestCore.class));
         props.put(RxConfig.ConfigNames.CACHE_MAIN_INSTANCE, MemoryCache.class.getName());
         props.put(RxConfig.ConfigNames.LOG_STRATEGY, LogStrategy.ALWAYS.name());
-        rxConf.refreshFrom(props, 1);
+        rxConf.refreshFrom(props, (byte) 1);
         assert rxConf.getOmega().equals("rx");
         assert rxConf.getNet().getUserAgent().equals("rxlib");
         assert rxConf.getNet().getNtp().getEnableFlags() == 1;

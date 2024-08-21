@@ -4,6 +4,7 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.InternalThreadLocalMap;
+import io.netty.util.internal.ThreadLocalRandom;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -136,35 +137,54 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     static class Task<T> implements Runnable, Callable<T>, Supplier<T> {
-        static <T> Task<T> adapt(Callable<T> fn) {
+        //减少stackTrace
+//        static <T> Task<T> adapt(Callable<T> fn) {
+//            return adapt(fn, null, null);
+//        }
+
+        static <T> Task<T> adapt(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             Task<T> t = as(fn);
-            return t != null ? t : new Task<>(fn::call, null, null);
+            return t != null && t.id == id ? t : new Task<>(fn, flags, id);
         }
 
-        static <T> Task<T> adapt(Runnable fn) {
+        static <T> Task<T> adapt(Runnable fn, FlagsEnum<RunFlag> flags, Object id) {
             Task<T> t = as(fn);
-            return t != null ? t : new Task<>(() -> {
+            return t != null && t.id == id ? t : new Task<>(() -> {
                 fn.run();
                 return null;
-            }, null, null);
+            }, flags, id);
         }
 
         static <T> Task<T> as(Object fn) {
             return fn instanceof Task ? (Task<T>) fn : null;
         }
 
-        final Func<T> fn;
+        final Callable<T> fn;
         final FlagsEnum<RunFlag> flags;
         final Object id;
         final InternalThreadLocalMap parent;
         final String traceId;
+        final StackTraceElement[] stackTrace;
 
-        Task(Func<T> fn, FlagsEnum<RunFlag> flags, Object id) {
+        private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
                 flags = RunFlag.NONE.flags();
             }
-            if (RxConfig.INSTANCE.threadPool.traceName != null) {
+            RxConfig conf = RxConfig.INSTANCE;
+            if (conf.threadPool.traceName != null) {
                 flags.add(RunFlag.THREAD_TRACE);
+            }
+            Object ctxST = CTX_STACK_TRACE.getIfExists();
+            if (ctxST != null) {
+                if (ctxST instanceof StackTraceElement[]) {
+                    stackTrace = (StackTraceElement[]) ctxST;
+                } else {
+                    stackTrace = null;
+                }
+            } else if (conf.trace.slowMethodElapsedMicros > 0 && ThreadLocalRandom.current().nextInt(0, 100) < conf.threadPool.slowMethodSamplingPercent) {
+                stackTrace = new Throwable().getStackTrace();
+            } else {
+                stackTrace = null;
             }
 
             this.fn = fn;
@@ -177,8 +197,30 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public T call() {
+            if (RxConfig.INSTANCE.trace.slowMethodElapsedMicros > 0) {
+                T r = null;
+                Throwable ex = null;
+                long s = System.nanoTime();
+                try {
+                    r = fn.call();
+                } catch (Throwable e) {
+                    TraceHandler.INSTANCE.log(toString(), ex = e);
+                    throw e;
+                } finally {
+                    Thread t = Thread.currentThread();
+                    TraceHandler.INSTANCE.saveMethodTrace(t,
+                            fn.getClass().getSimpleName(),
+                            stackTrace != null
+                                    ? "[" + Linq.from(stackTrace).select(StackTraceElement::toString).toJoinString(Constants.STACK_TRACE_FLAG) + "]"
+                                    : "Unknown",
+                            id == null ? null : new Object[]{id},
+                            r, ex, System.nanoTime() - s);
+                }
+                return r;
+            }
+
             try {
-                return fn.invoke();
+                return fn.call();
             } catch (Throwable e) {
                 TraceHandler.INSTANCE.log(toString(), e);
                 throw e;
@@ -221,8 +263,9 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static final Delegate<EventPublisher.StaticEventPublisher, NEventArgs<String>> onTraceIdChanged = Delegate.create();
     static final ThreadLocal<Queue<String>> CTX_PARENT_TRACE_ID = new InheritableThreadLocal<>();
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
-    static final FastThreadLocal<Boolean> ASYNC_CONTINUE = new FastThreadLocal<>();
-    static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
+    static final FastThreadLocal<Object> CTX_STACK_TRACE = new FastThreadLocal<>();
+    static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
+    private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
             RxConfig.INSTANCE.threadPool.highCpuWaterMark);
@@ -299,9 +342,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         );
     }
 
-    static boolean asyncContinueFlag(boolean def) {
-        Boolean ac = ASYNC_CONTINUE.getIfExists();
-        ASYNC_CONTINUE.remove();
+    static boolean continueFlag(boolean def) {
+        Boolean ac = CONTINUE_FLAG.getIfExists();
+        CONTINUE_FLAG.remove();
         if (ac == null) {
             return def;
         }
@@ -386,7 +429,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     //region v1
     @Override
     public void execute(Runnable command) {
-        super.execute(Task.adapt(command));
+        super.execute(Task.adapt(command, null, null));
     }
 
     @Override
@@ -412,32 +455,32 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @Override
     protected final <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
-        return new FutureTaskAdapter<>(Task.adapt(runnable), value);
+        return new FutureTaskAdapter<>(Task.adapt(runnable, null, null), value);
     }
 
     @Override
     protected final <T> RunnableFuture<T> newTaskFor(Callable<T> callable) {
-        return new FutureTaskAdapter<>(Task.adapt(callable));
+        return new FutureTaskAdapter<>(Task.adapt(callable, null, null));
     }
 
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> tasks) throws InterruptedException, ExecutionException {
-        return super.invokeAny(Linq.from(tasks).select(p -> Task.adapt(p)).toList());
+        return super.invokeAny(Linq.from(tasks).select(p -> Task.adapt(p, null, null)).toList());
     }
 
     @Override
     public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-        return super.invokeAny(Linq.from(tasks).select(p -> Task.adapt(p)).toList(), timeout, unit);
+        return super.invokeAny(Linq.from(tasks).select(p -> Task.adapt(p, null, null)).toList(), timeout, unit);
     }
 
     @Override
     public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks) throws InterruptedException {
-        return super.invokeAll(Linq.from(tasks).select(p -> Task.adapt(p)).toList());
+        return super.invokeAll(Linq.from(tasks).select(p -> Task.adapt(p, null, null)).toList());
     }
 
     @Override
     public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException {
-        return super.invokeAll(Linq.from(tasks).select(p -> Task.adapt(p)).toList(), timeout, unit);
+        return super.invokeAll(Linq.from(tasks).select(p -> Task.adapt(p, null, null)).toList(), timeout, unit);
     }
 
     public Future<Void> run(Action task) {
@@ -445,7 +488,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public Future<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return submit((Callable<Void>) new Task<Void>(task.toFunc(), flags, taskId));
+        return submit((Callable<Void>) Task.<Void>adapt(task, flags, taskId));
     }
 
     public <T> Future<T> run(Func<T> task) {
@@ -453,18 +496,18 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public <T> Future<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return submit((Callable<T>) new Task<>(task, flags, taskId));
+        return submit((Callable<T>) Task.adapt(task, flags, taskId));
     }
 
     @SneakyThrows
     public <T> T runAny(Iterable<Func<T>> tasks, long timeoutMillis) {
-        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) new Task<>(p, null, null)).toList();
+        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) Task.adapt(p, null, null)).toList();
         return timeoutMillis > 0 ? super.invokeAny(callables, timeoutMillis, TimeUnit.MILLISECONDS) : super.invokeAny(callables);
     }
 
     @SneakyThrows
     public <T> List<Future<T>> runAll(Iterable<Func<T>> tasks, long timeoutMillis) {
-        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) new Task<>(p, null, null)).toList();
+        List<Callable<T>> callables = Linq.from(tasks).select(p -> (Callable<T>) Task.adapt(p, null, null)).toList();
         return timeoutMillis > 0 ? super.invokeAll(callables, timeoutMillis, TimeUnit.MILLISECONDS) : super.invokeAll(callables);
     }
 
@@ -479,7 +522,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public CompletableFuture<Void> runAsync(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        Task<Void> t = new Task<>(task.toFunc(), flags, taskId);
+        Task<Void> t = Task.adapt(task, flags, taskId);
         return CompletableFuture.runAsync(t, asyncExecutor);
     }
 
@@ -488,7 +531,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public <T> CompletableFuture<T> runAsync(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        Task<T> t = new Task<>(task, flags, taskId);
+        Task<T> t = Task.adapt(task, flags, taskId);
         return CompletableFuture.supplyAsync(t, asyncExecutor);
     }
 
@@ -510,7 +553,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     <T> CompletableFuture<T> runSerialAsync(@NonNull Func<T> task, @NonNull Object taskId, FlagsEnum<RunFlag> flags, boolean reuse) {
         Function<Object, CompletableFuture<T>> mfn = k -> {
-            Task<T> t = new Task<>(task, flags, taskId);
+            Task<T> t = Task.adapt(task, flags, taskId);
             return CompletableFuture.supplyAsync(t, asyncExecutor).whenCompleteAsync((r, e) -> taskSerialMap.remove(taskId));
         };
         CompletableFuture<T> v, newValue = null;
@@ -536,7 +579,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public <T> MultiTaskFuture<T, T> runAnyAsync(Iterable<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
-            Task<T> t = new Task<>(task, null, null);
+            Task<T> t = Task.adapt(task, null, null);
             return CompletableFuture.supplyAsync(t, asyncExecutor);
         }).toArray();
         return new MultiTaskFuture<>((CompletableFuture<T>) CompletableFuture.anyOf(futures), futures);
@@ -544,7 +587,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public <T> MultiTaskFuture<Void, T> runAllAsync(Iterable<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
-            Task<T> t = new Task<>(task, null, null);
+            Task<T> t = Task.adapt(task, null, null);
             //allOf().join() will hang
 //            return wrap(CompletableFuture.supplyAsync(t, this), t.traceId);
             return CompletableFuture.supplyAsync(t, asyncExecutor);

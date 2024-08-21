@@ -12,6 +12,7 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 
+//ServletComponentScan
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @WebFilter(urlPatterns = "/*")
@@ -21,7 +22,7 @@ public class MxWebFilter implements Filter {
         if (Strings.startsWithIgnoreCase(servletRequest.getContentType(), HttpHeaderValues.APPLICATION_JSON)
                 && !(servletRequest instanceof ContentCachingRequestWrapper)) {
             servletRequest = new ContentCachingRequestWrapper((HttpServletRequest) servletRequest);
-            log.info("MxWebFilter exchange ContentCachingRequest");
+//            log.info("MxWebFilter exchange ContentCachingRequest");
         }
         filterChain.doFilter(servletRequest, servletResponse);
     }

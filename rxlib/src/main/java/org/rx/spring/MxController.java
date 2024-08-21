@@ -33,7 +33,6 @@ import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.ifNull;
@@ -106,20 +105,6 @@ public class MxController {
                         }
                     }
                     return target;
-                case 4:
-                    Class<?> ft = Class.forName(request.getParameter("ft"));
-                    String fn = request.getParameter("fn");
-                    String fu = request.getParameter("fu");
-                    Map<Class<?>, Map<String, String>> fms = RxConfig.INSTANCE.getMxHttpForwards();
-                    if (fu == null) {
-                        Map<String, String> fts = fms.get(ft);
-                        if (fts != null) {
-                            fts.remove(fn);
-                        }
-                    } else {
-                        fms.computeIfAbsent(ft, k -> new ConcurrentHashMap<>(8)).put(fn, fu);
-                    }
-                    return fms;
                 case 5:
                     return Linq.from(InetAddress.getAllByName(request.getParameter("host"))).select(p -> p.getHostAddress()).toArray();
                 case 6:

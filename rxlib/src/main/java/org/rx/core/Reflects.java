@@ -58,11 +58,21 @@ public class Reflects extends ClassUtils {
         final TripleFunc<TS, Class<TT>, TT> converter;
     }
 
-    static class SecurityManagerEx extends SecurityManager {
+    public interface ClassTracer {
+        Class<?>[] getClassTrace();
+
+        Class<?> getClassTrace(int depth);
+    }
+
+    static class SecurityManagerEx extends SecurityManager implements ClassTracer {
         static final SecurityManagerEx INSTANCE = new SecurityManagerEx();
 
-        Class<?> stackClass(int depth) {
-            return getClassContext()[depth];
+        public Class<?>[] getClassTrace() {
+            return getClassContext();
+        }
+
+        public Class<?> getClassTrace(int depth) {
+            return getClassContext()[1 + depth];
         }
     }
     //endregion
@@ -70,9 +80,9 @@ public class Reflects extends ClassUtils {
     public static final Linq<String> COLLECTION_WRITE_METHOD_NAMES = Linq.from("add", "remove", "addAll", "removeAll", "removeIf", "retainAll", "clear"),
             List_WRITE_METHOD_NAMES = COLLECTION_WRITE_METHOD_NAMES.union(Arrays.toList("replaceAll", "set"));
     public static final Set<Method> OBJECT_METHODS = Collections.unmodifiableSet(new HashSet<>(Arrays.toList(Object.class.getMethods())));
+    public static final ClassTracer CLASS_TRACER = new SecurityManagerEx();
     static final String M_0 = "close", CHANGE_TYPE_METHOD = "valueOf";
     static final String GET_PROPERTY = "get", GET_BOOL_PROPERTY = "is", SET_PROPERTY = "set";
-    static final String TYPED_JSON_KEY = "$rxType";
     static final int LOOKUP_FLAGS = MethodHandles.Lookup.PUBLIC | MethodHandles.Lookup.PACKAGE | MethodHandles.Lookup.PROTECTED | MethodHandles.Lookup.PRIVATE;
     //must lazy before thread pool init.
     static final Lazy<Cache<Class<?>, Map<String, Linq<Method>>>> methodCache = new Lazy<>(MemoryCache::new);
@@ -99,21 +109,26 @@ public class Reflects extends ClassUtils {
     }
 
     //region class
+//    public static Class<?> getCallerClass() {
+//        try {
+//            Class<?> type = Class.forName("sun.reflect.Reflection");
+//            return invokeMethod(type, "getCallerClass");
+//        } catch (ClassNotFoundException e) {
+//            return CLASS_TRACER.getClassTrace(0);
+//        }
+//    }
+
+//    public static StackTraceElement[] getCallerStack() {
+//        //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 not exist
+//        return new Throwable().getStackTrace();
+//    }
+
     public static String getStackTrace(Thread t) {
         StringBuilder buf = new StringBuilder();
         for (StackTraceElement traceElement : t.getStackTrace()) {
             buf.append("\tat ").appendLine(traceElement);
         }
         return buf.toString();
-    }
-
-    public static Linq<StackTraceElement> stackTrace(int takeCount) {
-        return Linq.from(new Throwable().getStackTrace()).skip(2).take(takeCount);
-    }
-
-    public static Class<?> stackClass(int depth) {
-        //Throwable.class.getDeclaredMethod("getStackTraceElement", int.class) & Reflection.getCallerClass(2 + depth) java 11 not exist
-        return SecurityManagerEx.INSTANCE.stackClass(2 + depth);
     }
 
     public static InputStream getResource(String namePattern) {
@@ -191,15 +206,17 @@ public class Reflects extends ClassUtils {
         return lambda;
     }
 
-    static final int APPEND_TO_COLLECTION = 1;
+    static final byte APPEND_TO_COLLECTION = 1;
+    static final byte WRITE_QUIETLY = 1 << 1;
 
     /**
      * @param instance
      * @param fieldPath
      * @param value
-     * @param flags     1 append to Collection
+     * @param flags     1       append to Collection
+     *                  1 << 1  write quietly
      */
-    public static void writeFieldByPath(Object instance, String fieldPath, Object value, int flags) {
+    public static void writeFieldByPath(Object instance, String fieldPath, Object value, byte flags) {
         final String c = ".";
         int wPathOffset = 0, i;
         String fieldName;
@@ -246,18 +263,21 @@ public class Reflects extends ClassUtils {
                 field.set(cur, changeType(value, field.getType()));
             }
         } catch (Throwable e) {
-            throw new InvalidException("Write field {} fail", fieldPath, e);
+            if ((flags & WRITE_QUIETLY) != WRITE_QUIETLY) {
+                throw new InvalidException("Write field {} fail", fieldPath, e);
+            }
+            log.warn("Write field {} fail", fieldPath, e);
         }
     }
 
     public static boolean isTypedJson(Object value) {
         if (value instanceof String) {
             String str = ((String) value).trim();
-            return str.startsWith("{") && str.endsWith("}") && str.indexOf(TYPED_JSON_KEY, 1) != -1;
+            return str.startsWith("{") && str.endsWith("}") && str.indexOf(Constants.TYPED_JSON_KEY, 1) != -1;
         }
         Map<String, Object> json = as(value, Map.class);
         if (json != null) {
-            return json.containsKey(TYPED_JSON_KEY);
+            return json.containsKey(Constants.TYPED_JSON_KEY);
         }
         return false;
     }
@@ -267,14 +287,14 @@ public class Reflects extends ClassUtils {
         if (json == null) {
             json = toJsonObject(value);
         }
-        if (json == null || !json.containsKey(TYPED_JSON_KEY)) {
+        if (json == null || !json.containsKey(Constants.TYPED_JSON_KEY)) {
             throw new InvalidException("Invalid json");
         }
         return fromTypedJson(json);
     }
 
     public static <T> T fromTypedJson(@NonNull Map<String, Object> json) {
-        String td = (String) json.get(TYPED_JSON_KEY);
+        String td = (String) json.get(Constants.TYPED_JSON_KEY);
         if (td == null) {
             throw new InvalidException("Invalid type descriptor");
         }
@@ -287,7 +307,7 @@ public class Reflects extends ClassUtils {
 
     public static <T> JSONObject toTypedJson(@NonNull T obj, @NonNull Type type) {
         JSONObject r = toJsonObject(obj);
-        r.put(TYPED_JSON_KEY, getTypeDescriptor(type));
+        r.put(Constants.TYPED_JSON_KEY, getTypeDescriptor(type));
         return r;
     }
 
@@ -603,6 +623,7 @@ public class Reflects extends ClassUtils {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);
+                FieldUtils.removeFinalModifier(field);
             }
             return Collections.unmodifiableMap(Linq.from(all).toMap(Field::getName, p -> p));
         });

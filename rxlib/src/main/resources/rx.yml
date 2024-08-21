@@ -1,8 +1,10 @@
 app:
   trace:
     keepDays: 1
+    writeQueueLength: 100
+    flushQueuePeriod: 1000
     errorMessageSize: 10
-    slowMethodElapsedMicros: 50000
+    slowMethodElapsedMicros: 1000000
     watchThreadFlags: 1
     samplingCpuPeriod: 30000
   threadPool:
@@ -13,6 +15,7 @@ app:
     highCpuWaterMark: 70
     replicas: 2
     maxTraceDepth: 5
+    slowMethodSamplingPercent: 2
     cpuLoadWarningThreshold: 80
     samplingPeriod: 3000
     samplingTimes: 2
@@ -65,7 +68,7 @@ app:
     - org.springframework.ui.Model
     - org.springframework.validation.BindingResult
     - org.rx.io.IOStream
-  #  logStrategy:
+  logStrategy: WRITE_ON_ERROR
 
 #ErrorCode
 default: Network error, please retry later.

@@ -4,6 +4,7 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.Timer;
 import io.netty.util.TimerTask;
+import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
@@ -45,19 +46,25 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         final Object id;
         final LongUnaryOperator nextDelayFn;
         final String traceId;
+        final StackTraceElement[] stackTrace;
         long delay;
         long expiredTime;
         volatile Timeout timeout;
         volatile Future<T> future;
         long p0, p1;
-        int p2;
 
         Task(Func<T> fn, FlagsEnum<TimeoutFlag> flags, Object id, LongUnaryOperator nextDelayFn) {
             if (flags == null) {
                 flags = TimeoutFlag.NONE.flags();
             }
-            if (RxConfig.INSTANCE.threadPool.traceName != null) {
+            RxConfig conf = RxConfig.INSTANCE;
+            if (conf.threadPool.traceName != null) {
                 flags.add(TimeoutFlag.THREAD_TRACE);
+            }
+            if (conf.trace.slowMethodElapsedMicros > 0 && ThreadLocalRandom.current().nextInt(0, 100) < conf.threadPool.slowMethodSamplingPercent) {
+                stackTrace = new Throwable().getStackTrace();
+            } else {
+                stackTrace = null;
             }
 
             this.fn = fn;
@@ -74,13 +81,14 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             if (traceFlag) {
                 ThreadPool.startTrace(traceId);
             }
+            ThreadPool.CTX_STACK_TRACE.set(stackTrace != null ? stackTrace : Boolean.TRUE);
             try {
                 future = executor.submit(() -> {
                     boolean doContinue = flags.has(TimeoutFlag.PERIOD);
                     try {
                         return fn.get();
                     } finally {
-                        if (ThreadPool.asyncContinueFlag(doContinue)) {
+                        if (ThreadPool.continueFlag(doContinue)) {
                             newTimeout(this, delay, timeout.timer());
                         } else if (id != null) {
                             holder.remove(id);
@@ -88,6 +96,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                     }
                 });
             } finally {
+                ThreadPool.CTX_STACK_TRACE.remove();
                 if (traceFlag) {
                     ThreadPool.endTrace();
                 }
@@ -98,7 +107,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @Override
         public String toString() {
             String hc = id != null ? id.toString() : Integer.toHexString(hashCode());
-            return String.format("WheelTask-%s[%s]", hc, flags.getValue());
+            return String.format("TimeTask-%s[%s]", hc, flags.getValue());
         }
 
         @Override
@@ -220,6 +229,10 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     final ExecutorService executor;
     final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
+
+    public TimeoutFuture<?> getFutureById(Object taskId) {
+        return holder.get(taskId);
+    }
 
     public TimeoutFuture<?> setTimeout(Action fn, LongUnaryOperator nextDelay) {
         return setTimeout(fn, nextDelay, null, null);

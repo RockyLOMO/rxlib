@@ -18,6 +18,15 @@ public class CircularBlockingQueue<T> extends LinkedBlockingQueue<T> implements 
     @Getter
     long consumePeriod;
 
+    public void setCapacity(int capacity) {
+        if (capacity <= 0) throw new IllegalArgumentException();
+        Reflects.writeField(this, "capacity", capacity);
+    }
+
+    public int getCapacity() {
+        return Reflects.readField(this, "capacity");
+    }
+
     public synchronized void setConsumePeriod(long consumePeriod) {
         if ((this.consumePeriod = consumePeriod) > 0) {
             if (consumeTimer != null) {
@@ -61,6 +70,7 @@ public class CircularBlockingQueue<T> extends LinkedBlockingQueue<T> implements 
         this.onFull = onFull;
     }
 
+    //Full会抛异常
 //        @Override
 //        public boolean add(T t) {
 //            return offer(t);

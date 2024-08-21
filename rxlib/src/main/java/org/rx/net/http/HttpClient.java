@@ -11,7 +11,6 @@ import okhttp3.*;
 import okio.BufferedSink;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
-import org.rx.bean.ProceedEventArgs;
 import org.rx.bean.Tuple;
 import org.rx.core.Arrays;
 import org.rx.core.*;
@@ -44,7 +43,6 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-import static org.rx.core.Sys.logHttp;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
@@ -492,41 +490,38 @@ public class HttpClient {
 
     @SneakyThrows
     synchronized ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
-        ProceedEventArgs args = new ProceedEventArgs(this.getClass(), new Object[]{method.toString(), content instanceof JsonContent ? ((JsonContent) content).json : content.toString()}, false);
-        try {
-            Request.Builder request = createRequest(url);
-            RequestBody requestBody = content.toBody();
-            if (HttpMethod.GET.equals(method)) {
-                request.get();
-            } else if (HttpMethod.POST.equals(method)) {
-                request.post(requestBody);
-            } else if (HttpMethod.HEAD.equals(method)) {
-                request.head();
-            } else if (HttpMethod.PUT.equals(method)) {
-                request.put(requestBody);
-            } else if (HttpMethod.PATCH.equals(method)) {
-                request.patch(requestBody);
-            } else if (HttpMethod.DELETE.equals(method)) {
-                request.delete(requestBody);
-            } else {
-                throw new UnsupportedOperationException();
-            }
-            if (resContent != null) {
-                resContent.response.close();
-            }
-            return resContent = args.proceed(() -> {
+        Request.Builder request = createRequest(url);
+        RequestBody requestBody = content.toBody();
+        if (HttpMethod.GET.equals(method)) {
+            request.get();
+        } else if (HttpMethod.POST.equals(method)) {
+            request.post(requestBody);
+        } else if (HttpMethod.HEAD.equals(method)) {
+            request.head();
+        } else if (HttpMethod.PUT.equals(method)) {
+            request.put(requestBody);
+        } else if (HttpMethod.PATCH.equals(method)) {
+            request.patch(requestBody);
+        } else if (HttpMethod.DELETE.equals(method)) {
+            request.delete(requestBody);
+        } else {
+            throw new UnsupportedOperationException();
+        }
+        if (resContent != null) {
+            resContent.response.close();
+        }
+        if ((featureFlags & ENABLE_LOG_FLAG) == ENABLE_LOG_FLAG) {
+            resContent = Sys.callLog(this.getClass(), String.format("%s %s", method, url), new Object[]{content instanceof JsonContent ? ((JsonContent) content).json : content.toString()}, () -> {
                 ResponseContent rc = new ResponseContent(getClient().newCall(request.build()).execute());
                 rc.cachingStream = (featureFlags & CACHING_STREAM_FLAG) == CACHING_STREAM_FLAG;
                 return rc;
-            });
-        } catch (Throwable e) {
-            args.setError(e);
-            throw e;
-        } finally {
-            if ((featureFlags & ENABLE_LOG_FLAG) == ENABLE_LOG_FLAG) {
-                logHttp(args, url);
-            }
+            }, Sys.HTTP_LOG_BUILDER, null);
+        } else {
+            ResponseContent rc = new ResponseContent(getClient().newCall(request.build()).execute());
+            rc.cachingStream = (featureFlags & CACHING_STREAM_FLAG) == CACHING_STREAM_FLAG;
+            resContent = rc;
         }
+        return resContent;
     }
 
     public ResponseContent head(@NonNull String url) {

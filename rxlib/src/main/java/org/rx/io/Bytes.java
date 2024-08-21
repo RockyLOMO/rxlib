@@ -64,12 +64,20 @@ public class Bytes {
         return buf;
     }
 
-    public static long wrap(int a, int b) {
-        return (((long) a) << 32) | (b & 0xffffffffL);
+    public static long wrap(int high, int low) {
+        return (((long) high) << 32) | (low & 0xffffffffL);
     }
 
-    public static int[] unwrap(long l) {
-        return new int[]{(int) (l >> 32), (int) l};
+    public static int[] unwrap(long n) {
+        return new int[]{(int) (n >> 32), (int) n};
+    }
+
+    public static int wrap(short high, short low) {
+        return (high << 16) | (low & 0xffff);
+    }
+
+    public static short[] unwrap(int n) {
+        return new short[]{(short) (n >> 16), (short) n};
     }
 
     public static int findText(ByteBuf byteBuf, String str) {

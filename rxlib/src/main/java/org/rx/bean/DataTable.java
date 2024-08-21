@@ -29,6 +29,7 @@ import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.tryAs;
 import static org.rx.core.Sys.fromJson;
 
+//SimpleResultSet
 @Slf4j
 @SuppressWarnings(Constants.NON_RAW_TYPES)
 @NoArgsConstructor

@@ -11,6 +11,7 @@ import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Metadata;
 import org.rx.bean.LogStrategy;
 import org.rx.net.Sockets;
+import org.springframework.core.env.Environment;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,6 +39,7 @@ public final class RxConfig {
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
+        String THREAD_POOL_SLOW_METHOD_SAMPLING_PERCENT = "app.threadPool.slowMethodSamplingPercent";
         String THREAD_POOL_MAX_TRACE_DEPTH = "app.threadPool.maxTraceDepth";
         String THREAD_POOL_SAMPLING_PERIOD = "app.threadPool.samplingPeriod";
         String THREAD_POOL_SAMPLING_TIMES = "app.threadPool.samplingTimes";
@@ -70,6 +72,7 @@ public final class RxConfig {
 
         String APP_ID = "app.id";
         String MX_SAMPLING_PERIOD = "app.mxSamplingPeriod";
+        String MX_HTTP_FORWARDS = "app.mxHttpForwards";
         String DATE_FORMAT = "app.dateFormat";
         String LOG_STRATEGY = "app.logStrategy";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
@@ -87,6 +90,8 @@ public final class RxConfig {
     @ToString
     public static class TraceConfig {
         int keepDays;
+        int writeQueueLength;
+        int flushQueuePeriod;
         int errorMessageSize;
         long slowMethodElapsedMicros;
 
@@ -107,6 +112,8 @@ public final class RxConfig {
         int replicas;
         String traceName;
         int maxTraceDepth;
+        int slowMethodSamplingPercent;
+        final List<String> slowMethodAutoSampleTime = newConcurrentList(true);
 
         int cpuLoadWarningThreshold;
         long samplingPeriod;
@@ -195,7 +202,7 @@ public final class RxConfig {
     String mxpwd;
     long mxSamplingPeriod;
     //key1: controller, key2: method, value: url
-    Map<Class<?>, Map<String, String>> mxHttpForwards = new ConcurrentHashMap<>(8);
+    Map<String, Map<String, String>> mxHttpForwards = new ConcurrentHashMap<>(8);
     TraceConfig trace = new TraceConfig();
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
@@ -213,11 +220,19 @@ public final class RxConfig {
     private RxConfig() {
     }
 
-    public void refreshFrom(Map<String, Object> props) {
-        refreshFrom(props, 0);
+    public void refreshFrom(Environment env, byte flags) {
+        Map<String, Object> rsProps = Linq.from(Reflects.getFieldMap(RxConfig.ConfigNames.class).values()).select(p -> {
+            String k = (String) p.get(null);
+            return new AbstractMap.SimpleEntry<>(k, env.getProperty(k));
+        }).where(p -> p.getValue() != null).toMap();
+        refreshFrom(rsProps, flags);
     }
 
-    public void refreshFrom(Map<String, Object> props, int flags) {
+    public void refreshFrom(Map<String, Object> props) {
+        refreshFrom(props, (byte) 0);
+    }
+
+    public void refreshFrom(Map<String, Object> props, byte flags) {
         Linq.from(Reflects.getFieldMap(ConfigNames.class).values()).select(p -> p.get(null)).join(props.entrySet(), (p, x) -> eq(p, x.getKey()), (p, x) -> {
             Reflects.writeFieldByPath(this, ConfigNames.getWithoutPrefix(x.getKey()), x.getValue(), flags);
             return null;
@@ -235,6 +250,7 @@ public final class RxConfig {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
     }
+
 //    public void refreshFromSystemProperty() {
 //        Map<String, Object> sysProps = new HashMap<>((Map) System.getProperties());
 //        reset(net.lanIps, ConfigNames.NET_LAN_IPS);
@@ -273,6 +289,7 @@ public final class RxConfig {
         threadPool.replicas = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, threadPool.replicas);
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.maxTraceDepth = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_TRACE_DEPTH, threadPool.maxTraceDepth);
+        threadPool.slowMethodSamplingPercent = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SLOW_METHOD_SAMPLING_PERCENT, threadPool.slowMethodSamplingPercent);
         threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, threadPool.cpuLoadWarningThreshold);
         threadPool.samplingPeriod = SystemPropertyUtil.getLong(ConfigNames.THREAD_POOL_SAMPLING_PERIOD, threadPool.samplingPeriod);
         threadPool.samplingTimes = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SAMPLING_TIMES, threadPool.samplingTimes);

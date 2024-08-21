@@ -8,7 +8,6 @@ import static java.lang.annotation.ElementType.*;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 @Inherited
-public @interface EnableTrace {
-    boolean doLog() default true;
+public @interface EnableLog {
     boolean doValidate() default false;
 }
