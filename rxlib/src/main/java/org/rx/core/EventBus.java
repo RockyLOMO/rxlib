@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ClassUtils;
@@ -8,6 +9,7 @@ import org.rx.annotation.Subscribe;
 import org.rx.bean.Tuple;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
+import org.rx.util.function.BiAction;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
@@ -16,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 @Slf4j
-public class EventBus implements EventPublisher<EventBus> {
+public class EventBus {
     public static final EventBus DEFAULT = new EventBus();
     static final int TOPIC_MAP_INITIAL_CAPACITY = 4;
 
@@ -33,9 +35,17 @@ public class EventBus implements EventPublisher<EventBus> {
         return topic;
     }
 
-    public final Delegate<EventBus, NEventArgs<?>> onDeadEvent = Delegate.create();
+    @Getter
+    volatile BiAction<Object> onDeadEvent = e -> log.info("The event {} had no subscribers", e);
     //eventType -> topic -> eventMethodsInListener
     final Map<Class<?>, Map<Serializable, Set<Tuple<Object, Method>>>> subscribers = new ConcurrentHashMap<>();
+
+    public void setOnDeadEvent(BiAction<Object> onDeadEvent) {
+        if (onDeadEvent == null) {
+            onDeadEvent = e -> log.info("The event {} had no subscribers", e);
+        }
+        this.onDeadEvent = onDeadEvent;
+    }
 
     public <T> void register(@NonNull T subscriber) {
         for (Map.Entry<Class<?>, Set<Tuple<Object, Method>>> entry : findAllSubscribers(subscriber).entrySet()) {
@@ -111,7 +121,7 @@ public class EventBus implements EventPublisher<EventBus> {
         Set<Tuple<Object, Method>> eventSubscribers = topic == null ? q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).values()).selectMany(p -> p).toSet() : q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).getOrDefault(topic, Collections.emptySet())).toSet();
         if (eventSubscribers.isEmpty()) {
             TraceHandler.INSTANCE.saveMetric(Constants.MetricName.DEAD_EVENT.name(), String.format("The event %s[%s] had no subscribers", event, topic));
-            raiseEvent(onDeadEvent, new NEventArgs<>(event));
+            onDeadEvent.accept(event);
             return;
         }
 

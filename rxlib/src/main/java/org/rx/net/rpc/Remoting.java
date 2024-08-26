@@ -331,7 +331,7 @@ public final class Remoting {
                             EventPublisher<?> eventTarget = (EventPublisher<?>) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
                                 synchronized (eventBean) {
-                                    ServerBean.EventContext eCtx = new ServerBean.EventContext(args);
+                                    ServerBean.EventContext eCtx = new ServerBean.EventContext((EventArgs) args);
                                     if (config.getEventComputeVersion() == RpcServerConfig.EVENT_DISABLE_COMPUTE) {
                                         eCtx.computingClient = null;
                                     } else {
@@ -352,7 +352,7 @@ public final class Remoting {
                                             eCtx.computingClient = computingClient;
                                             EventMessage pack = new EventMessage(p.eventName, EventFlag.COMPUTE_ARGS);
                                             pack.computeId = Snowflake.DEFAULT.nextId();
-                                            pack.eventArgs = args;
+                                            pack.eventArgs = (EventArgs) args;
                                             eventBean.contextMap.put(pack.computeId, eCtx);
                                             try {
                                                 computingClient.send(pack);

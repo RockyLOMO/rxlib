@@ -2,17 +2,14 @@ package org.rx.bean;
 
 import lombok.Getter;
 import org.rx.core.*;
-import org.rx.util.function.TripleFunc;
 
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static org.rx.core.Extends.ifNull;
-
 public class CircularBlockingQueue<T> extends LinkedBlockingQueue<T> implements EventPublisher<CircularBlockingQueue<T>> {
     private static final long serialVersionUID = 4685018531330571106L;
-    public final Delegate<CircularBlockingQueue<T>, NEventArgs<T>> onConsume = Delegate.create();
-    public TripleFunc<CircularBlockingQueue<T>, T, Boolean> onFull;
+    public final Delegate<CircularBlockingQueue<T>, T> onConsume = Delegate.create();
+    public final Delegate<CircularBlockingQueue<T>, NEventArgs<T>> onFull = Delegate.create();
     final ReentrantLock pLock = Reflects.readField(this, "putLock");
     TimeoutFuture<?> consumeTimer;
     @Getter
@@ -34,10 +31,8 @@ public class CircularBlockingQueue<T> extends LinkedBlockingQueue<T> implements 
             }
             consumeTimer = Tasks.timer().setTimeout(() -> {
                 T t;
-                NEventArgs<T> e = new NEventArgs<>();
                 while ((t = poll()) != null) {
-                    e.setValue(t);
-                    raiseEvent(onConsume, e);
+                    raiseEvent(onConsume, t);
                 }
             }, d -> consumePeriod, null, Constants.TIMER_PERIOD_FLAG);
         } else {
@@ -48,26 +43,20 @@ public class CircularBlockingQueue<T> extends LinkedBlockingQueue<T> implements 
     }
 
     public CircularBlockingQueue(int capacity) {
-        this(capacity, null);
-        onFull = (q, t) -> {
+        super(capacity);
+        onFull.combine((q, t) -> {
             pLock.lock();
             try {
                 boolean ok;
                 do {
                     q.poll();
-                    ok = q.innerOffer(t);
+                    ok = q.innerOffer(t.getValue());
                 }
                 while (!ok);
-                return true;
             } finally {
                 pLock.unlock();
             }
-        };
-    }
-
-    public CircularBlockingQueue(int capacity, TripleFunc<CircularBlockingQueue<T>, T, Boolean> onFull) {
-        super(capacity);
-        this.onFull = onFull;
+        });
     }
 
     //Full会抛异常
@@ -80,7 +69,9 @@ public class CircularBlockingQueue<T> extends LinkedBlockingQueue<T> implements 
     public boolean offer(T t) {
         boolean r = super.offer(t);
         if (!r && onFull != null) {
-            return ifNull(onFull.apply(this, t), false);
+            NEventArgs<T> e = new NEventArgs<>(t);
+            raiseEvent(onFull, e);
+            return !e.isCancel();
         }
         return r;
     }

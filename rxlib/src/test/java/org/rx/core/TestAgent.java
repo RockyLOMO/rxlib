@@ -59,7 +59,7 @@ public class TestAgent extends AbstractTester {
     }
 
     static void fjp() throws Throwable {
-        ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e.getValue()));
+        ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e));
 
         ForkJoinPoolWrapper.transform();
         ForkJoinPool pool = ForkJoinPool.commonPool();

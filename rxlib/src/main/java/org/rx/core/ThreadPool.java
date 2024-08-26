@@ -260,7 +260,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     //region static members
     public static volatile Func<String> traceIdGenerator;
-    public static final Delegate<EventPublisher.StaticEventPublisher, NEventArgs<String>> onTraceIdChanged = Delegate.create();
+    public static final Delegate<EventPublisher.StaticEventPublisher, String> onTraceIdChanged = Delegate.create();
     static final ThreadLocal<Queue<String>> CTX_PARENT_TRACE_ID = new InheritableThreadLocal<>();
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
     static final FastThreadLocal<Object> CTX_STACK_TRACE = new FastThreadLocal<>();
@@ -280,8 +280,20 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static String startTrace(String traceId, boolean requiresNew) {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
-            tid = traceId != null ? traceId :
-                    traceIdGenerator != null ? traceIdGenerator.invoke() : ULID.randomULID().toBase64String();
+            if (traceId != null) {
+                tid = traceId;
+            } else {
+                if (traceIdGenerator != null) {
+                    try {
+                        tid = traceIdGenerator.invoke();
+                    } catch (Throwable e) {
+                        TraceHandler.INSTANCE.log(e);
+                    }
+                }
+                if (tid == null) {
+                    tid = ULID.randomULID().toBase64String();
+                }
+            }
             CTX_TRACE_ID.set(tid);
         } else if (traceId != null && !traceId.equals(tid)) {
             if (!requiresNew) {
@@ -301,7 +313,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
         }
 //        log.info("trace start {}", tid);
-        onTraceIdChanged.invoke(EventPublisher.STATIC_EVENT_INSTANCE, new NEventArgs<>(tid));
+        onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, tid);
         return tid;
     }
 
@@ -323,7 +335,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             parentTid = null;
             CTX_TRACE_ID.remove();
         }
-        onTraceIdChanged.invoke(EventPublisher.STATIC_EVENT_INSTANCE, new NEventArgs<>(parentTid));
+        onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, parentTid);
     }
 
     public static <T> T completionReturnedValue() {

@@ -26,9 +26,15 @@ public interface EventPublisher<TSender extends EventPublisher<TSender>> extends
     }
 
     StaticEventPublisher STATIC_EVENT_INSTANCE = new StaticEventPublisher();
+    StaticEventPublisher STATIC_QUIETLY_EVENT_INSTANCE = new StaticEventPublisher() {
+        @Override
+        public FlagsEnum<EventFlags> eventFlags() {
+            return Constants.EVENT_ALL_FLAG;
+        }
+    };
 
     default FlagsEnum<EventFlags> eventFlags() {
-        return EventFlags.DYNAMIC_ATTACH.flags();
+        return Constants.EVENT_DYNAMIC_FLAG;
     }
 
     @NonNull
@@ -36,48 +42,48 @@ public interface EventPublisher<TSender extends EventPublisher<TSender>> extends
         return Tasks.nextPool();
     }
 
-    default <TArgs extends EventArgs> void attachEvent(String eventName, TripleAction<TSender, TArgs> event) {
-        attachEvent(eventName, event, true);
+    default <TEvent> void attachEvent(String eventName, TripleAction<TSender, TEvent> eventDelegate) {
+        attachEvent(eventName, eventDelegate, true);
     }
 
-    default <TArgs extends EventArgs> void attachEvent(@NonNull String eventName, TripleAction<TSender, TArgs> event, boolean combine) {
-        Delegate<TSender, TArgs> d = Delegate.wrap(this, eventName);
+    default <TEvent> void attachEvent(@NonNull String eventName, TripleAction<TSender, TEvent> eventDelegate, boolean combine) {
+        Delegate<TSender, TEvent> d = Delegate.wrap(this, eventName);
         if (combine) {
-            d.combine(event);
+            d.combine(eventDelegate);
             return;
         }
-        d.replace(event);
+        d.replace(eventDelegate);
     }
 
-    default <TArgs extends EventArgs> void detachEvent(@NonNull String eventName, TripleAction<TSender, TArgs> event) {
-        Delegate<TSender, TArgs> d = Delegate.wrap(this, eventName);
-        d.remove(event);
+    default <TEvent> void detachEvent(@NonNull String eventName, TripleAction<TSender, TEvent> eventDelegate) {
+        Delegate<TSender, TEvent> d = Delegate.wrap(this, eventName);
+        d.remove(eventDelegate);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
-    default <TArgs extends EventArgs> void raiseEvent(@NonNull String eventName, TArgs args) {
-        Delegate<TSender, TArgs> d = Delegate.wrap(this, eventName);
-        d.invoke((TSender) this, args);
+    default <TEvent> void raiseEvent(@NonNull String eventName, TEvent event) {
+        Delegate<TSender, TEvent> d = Delegate.wrap(this, eventName);
+        d.invoke((TSender) this, event);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
-    default <TArgs extends EventArgs> void raiseEvent(Delegate<TSender, TArgs> event, @NonNull TArgs args) {
-        if (event.isEmpty()) {
+    default <TEvent> void raiseEvent(Delegate<TSender, TEvent> eventDelegate, @NonNull TEvent event) {
+        if (eventDelegate.isEmpty()) {
             return;
         }
-        event.invoke((TSender) this, args);
+        eventDelegate.invoke((TSender) this, event);
     }
 
-    default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(String eventName, TArgs args) {
-        return asyncScheduler().runAsync(() -> raiseEvent(eventName, args));
+    default <TEvent> CompletableFuture<Void> raiseEventAsync(String eventName, TEvent event) {
+        return asyncScheduler().runAsync(() -> raiseEvent(eventName, event));
     }
 
-    default <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(Delegate<TSender, TArgs> event, TArgs args) {
-        if (event.isEmpty()) {
+    default <TEvent> CompletableFuture<Void> raiseEventAsync(Delegate<TSender, TEvent> eventDelegate, TEvent event) {
+        if (eventDelegate.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
-        return asyncScheduler().runAsync(() -> raiseEvent(event, args));
+        return asyncScheduler().runAsync(() -> raiseEvent(eventDelegate, event));
     }
 }

@@ -193,7 +193,7 @@ public class TestCore extends AbstractTester {
         //线程trace，支持异步trace包括Executor(ThreadPool), ScheduledExecutorService(WheelTimer), CompletableFuture.xxAsync(), parallelStream()系列方法。
         RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
         ThreadPool.traceIdGenerator = () -> UUID.randomUUID().toString().replace("-", "");
-        ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e.getValue()));
+        ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e));
         ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
 
         //当线程池无空闲线程时，任务放置队列后，当队列任务执行时会带上正确的traceId
@@ -343,7 +343,7 @@ public class TestCore extends AbstractTester {
     @Test
     public void serialAsync() {
         RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
-        ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e.getValue()));
+        ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e));
         ThreadPool.startTrace(null);
 
         ThreadPool pool = Tasks.nextPool();
@@ -561,8 +561,8 @@ public class TestCore extends AbstractTester {
     public void eventBus() {
         AtomicInteger deadEventCounter = new AtomicInteger();
         EventBus bus = EventBus.DEFAULT;
-        bus.onDeadEvent.combine((s, e) -> {
-            log.error("DeadEvent {}", e.getValue());
+        bus.setOnDeadEvent(e -> {
+            log.error("DeadEvent {}", e);
             deadEventCounter.incrementAndGet();
         });
 

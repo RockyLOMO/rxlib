@@ -60,4 +60,7 @@ public interface Constants {
     FlagsEnum<TimeoutFlag> TIMER_PERIOD_FLAG = TimeoutFlag.PERIOD.flags();
     FlagsEnum<TimeoutFlag> TIMER_SINGLE_FLAG = TimeoutFlag.SINGLE.flags();
     FlagsEnum<TimeoutFlag> TIMER_REPLACE_FLAG = TimeoutFlag.REPLACE.flags();
+
+    FlagsEnum<EventPublisher.EventFlags> EVENT_DYNAMIC_FLAG = EventPublisher.EventFlags.DYNAMIC_ATTACH.flags();
+    FlagsEnum<EventPublisher.EventFlags> EVENT_ALL_FLAG = EventPublisher.EventFlags.DYNAMIC_ATTACH.flags(EventPublisher.EventFlags.QUIETLY);
 }
