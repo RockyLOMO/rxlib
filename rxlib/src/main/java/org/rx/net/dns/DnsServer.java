@@ -56,8 +56,7 @@ public class DnsServer extends Disposable {
 
         DiskCache<Object, Object> cache = (DiskCache<Object, Object>) Cache.getInstance(DiskCache.class);
         if (ENABLE_AUTO_RENEW) {
-            cache.onExpired.combine((s, e) -> {
-                Map.Entry<Object, Object> entry = e.getValue();
+            cache.onExpired.combine((s, entry) -> {
                 String key;
                 if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
                     entry.setValue(null);
