@@ -18,7 +18,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
         IOC.register(DiskCache.class, new DiskCache<>());
     }
 
-    public final Delegate<DiskCache<TK, TV>, NEventArgs<Map.Entry<TK, TV>>> onExpired = Delegate.create();
+    public final Delegate<DiskCache<TK, TV>, Map.Entry<TK, TV>> onExpired = Delegate.create();
     final Cache<TK, DiskCacheItem<TV>> cache;
     final KeyValueStore<TK, DiskCacheItem<TV>> store;
     int defaultExpireSeconds = 60 * 60 * 24 * 365;  //1 year
@@ -41,7 +41,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
             return;
         }
         if (item.isExpired()) {
-            raiseEvent(onExpired, new NEventArgs<>(new AbstractMap.SimpleEntry<>(key, item.value)));
+            raiseEvent(onExpired, new AbstractMap.SimpleEntry<>(key, item.value));
             return;
         }
         if (!(key instanceof Serializable && item.value instanceof Serializable)) {
@@ -87,9 +87,9 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
             if (onExpired == null) {
                 return null;
             }
-            NEventArgs<Map.Entry<TK, TV>> args = new NEventArgs<>(new AbstractMap.SimpleEntry<>(key, item.value));
+            Map.Entry<TK, TV> args = new AbstractMap.SimpleEntry<>(key, item.value);
             raiseEvent(onExpired, args);
-            return args.getValue().getValue();
+            return args.getValue();
         }
         if (doRenew && item.slidingRenew()) {
             cache.put(key, item);
