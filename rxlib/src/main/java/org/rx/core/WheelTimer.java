@@ -227,7 +227,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     static final long TICK_DURATION = 100;
     static final Map<Object, TimeoutFuture> holder = new ConcurrentHashMap<>();
     final ExecutorService executor;
-    final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"), TICK_DURATION, TimeUnit.MILLISECONDS);
+    final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER", Thread.NORM_PRIORITY), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
 
     public TimeoutFuture<?> getFutureById(Object taskId) {

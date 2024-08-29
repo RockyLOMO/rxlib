@@ -209,7 +209,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                 } finally {
                     Thread t = Thread.currentThread();
                     TraceHandler.INSTANCE.saveMethodTrace(t,
-                            fn.getClass().getSimpleName(),
+                            this.getClass().getSimpleName(),//fn.getClass().getSimpleName(),
                             stackTrace != null
                                     ? "[" + Linq.from(stackTrace).select(StackTraceElement::toString).toJoinString(Constants.STACK_TRACE_FLAG) + "]"
                                     : "Unknown",
@@ -267,8 +267,19 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
     private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
-    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
-            RxConfig.INSTANCE.threadPool.highCpuWaterMark);
+    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark() {
+        private static final long serialVersionUID = 4308886582647381475L;
+
+        @Override
+        public int getLow() {
+            return RxConfig.INSTANCE.threadPool.lowCpuWaterMark;
+        }
+
+        @Override
+        public int getHigh() {
+            return RxConfig.INSTANCE.threadPool.highCpuWaterMark;
+        }
+    };
     static final Map<Object, RefCounter<ReentrantLock>> taskLockMap = new ConcurrentHashMap<>(8);
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
 
@@ -348,10 +359,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         return (int) Math.max(Constants.CPU_THREADS, Math.floor(Constants.CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
     }
 
-    static ThreadFactory newThreadFactory(String name) {
-        return new DefaultThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true
-//                , Thread.NORM_PRIORITY + 1
-        );
+    static ThreadFactory newThreadFactory(String name, int priority) {
+        return new DefaultThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true, priority);
     }
 
     static boolean continueFlag(boolean def) {
@@ -398,7 +407,7 @@ public class ThreadPool extends ThreadPoolExecutor {
      */
     public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
         super(checkSize(initSize), Integer.MAX_VALUE,
-                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
+                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName, Thread.NORM_PRIORITY), (r, executor) -> {
                     if (executor.isShutdown()) {
                         log.warn("ThreadPool {} is shutdown", poolName);
                         return;
