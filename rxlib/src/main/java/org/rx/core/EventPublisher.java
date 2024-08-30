@@ -25,7 +25,7 @@ public interface EventPublisher<TSender extends EventPublisher<TSender>> extends
         final int value;
     }
 
-    StaticEventPublisher STATIC_EVENT_INSTANCE = new StaticEventPublisher();
+//    StaticEventPublisher STATIC_EVENT_INSTANCE = new StaticEventPublisher();
     StaticEventPublisher STATIC_QUIETLY_EVENT_INSTANCE = new StaticEventPublisher() {
         @Override
         public FlagsEnum<EventFlags> eventFlags() {
