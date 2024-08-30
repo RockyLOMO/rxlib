@@ -392,11 +392,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public ThreadPool(String poolName) {
         //computeThreads(1, 2, 1)
-        this(RxConfig.INSTANCE.threadPool.initSize, RxConfig.INSTANCE.threadPool.queueCapacity, poolName);
-    }
-
-    public ThreadPool(int initSize, int queueCapacity, String poolName) {
-        this(initSize, queueCapacity, DEFAULT_CPU_WATER_MARK, poolName);
+        this(RxConfig.INSTANCE.threadPool.initSize, RxConfig.INSTANCE.threadPool.queueCapacity, null, poolName);
     }
 
     /**
@@ -418,7 +414,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         ((ThreadQueue) super.getQueue()).pool = this;
         this.poolName = poolName;
 
-        setDynamicSize(cpuWaterMark);
+        dynamicSizeByCpuLoad(cpuWaterMark);
     }
 
     private static int checkSize(int size) {
@@ -436,12 +432,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         return capacity;
     }
 
-    public void setDynamicSize(IntWaterMark cpuWaterMark) {
-        if (cpuWaterMark.getLow() < 0) {
-            cpuWaterMark.setLow(0);
-        }
-        if (cpuWaterMark.getHigh() > 100) {
-            cpuWaterMark.setHigh(100);
+    public void dynamicSizeByCpuLoad(IntWaterMark cpuWaterMark) {
+        if (cpuWaterMark == null) {
+            cpuWaterMark = DEFAULT_CPU_WATER_MARK;
         }
         CpuWatchman.INSTANCE.register(this, cpuWaterMark);
     }

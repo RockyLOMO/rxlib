@@ -13,6 +13,7 @@ app:
     queueCapacity: 0
     lowCpuWaterMark: 40
     highCpuWaterMark: 70
+    watchSystemCpu: false
     replicas: 2
     maxTraceDepth: 5
     slowMethodSamplingPercent: 2

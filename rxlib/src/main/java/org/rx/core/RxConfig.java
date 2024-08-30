@@ -37,6 +37,7 @@ public final class RxConfig {
         String THREAD_POOL_QUEUE_CAPACITY = "app.threadPool.queueCapacity";
         String THREAD_POOL_LOW_CPU_WATER_MARK = "app.threadPool.lowCpuWaterMark";
         String THREAD_POOL_HIGH_CPU_WATER_MARK = "app.threadPool.highCpuWaterMark";
+        String THREAD_POOL_WATCH_SYSTEM_CPU = "app.threadPool.watchSystemCpu";
         String THREAD_POOL_REPLICAS = "app.threadPool.replicas";
         String THREAD_POOL_TRACE_NAME = "app.threadPool.traceName";
         String THREAD_POOL_SLOW_METHOD_SAMPLING_PERCENT = "app.threadPool.slowMethodSamplingPercent";
@@ -109,6 +110,7 @@ public final class RxConfig {
         int queueCapacity;
         int lowCpuWaterMark;
         int highCpuWaterMark;
+        boolean watchSystemCpu;
         int replicas;
         String traceName;
         int maxTraceDepth;
@@ -286,6 +288,7 @@ public final class RxConfig {
         threadPool.queueCapacity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_QUEUE_CAPACITY, threadPool.queueCapacity);
         threadPool.lowCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_LOW_CPU_WATER_MARK, threadPool.lowCpuWaterMark);
         threadPool.highCpuWaterMark = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_HIGH_CPU_WATER_MARK, threadPool.highCpuWaterMark);
+        threadPool.watchSystemCpu = SystemPropertyUtil.getBoolean(ConfigNames.THREAD_POOL_WATCH_SYSTEM_CPU, threadPool.watchSystemCpu);
         threadPool.replicas = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, threadPool.replicas);
         threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
         threadPool.maxTraceDepth = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_TRACE_DEPTH, threadPool.maxTraceDepth);

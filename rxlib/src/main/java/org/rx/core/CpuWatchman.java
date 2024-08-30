@@ -6,6 +6,7 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.*;
@@ -157,7 +158,7 @@ public class CpuWatchman implements TimerTask {
         return poolSize;
     }
 
-    final Map<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> holder = new WeakIdentityMap<>(8);
+    final Map<ThreadPoolExecutor, Tuple<IntWaterMark, int[]>> holder = new WeakIdentityMap<>(8);
 
     private CpuWatchman() {
         timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
@@ -165,9 +166,10 @@ public class CpuWatchman implements TimerTask {
 
     @Override
     public void run(Timeout timeout) throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
         try {
-            Decimal cpuLoad = Decimal.valueOf(osMx.getSystemCpuLoad() * 100);
-            for (Map.Entry<ThreadPoolExecutor, BiTuple<IntWaterMark, Integer, Integer>> entry : holder.entrySet()) {
+            Decimal cpuLoad = Decimal.valueOf(conf.watchSystemCpu ? osMx.getSystemCpuLoad() : osMx.getProcessCpuLoad() * 100);
+            for (Map.Entry<ThreadPoolExecutor, Tuple<IntWaterMark, int[]>> entry : holder.entrySet()) {
                 ThreadPoolExecutor pool = entry.getKey();
                 if (pool instanceof ScheduledExecutorService) {
                     scheduledThread(cpuLoad, pool, entry.getValue());
@@ -176,14 +178,15 @@ public class CpuWatchman implements TimerTask {
                 thread(cpuLoad, pool, entry.getValue());
             }
         } finally {
-            timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);
+            timer.newTimeout(this, conf.samplingPeriod, TimeUnit.MILLISECONDS);
         }
     }
 
-    private void thread(Decimal cpuLoad, ThreadPoolExecutor pool, BiTuple<IntWaterMark, Integer, Integer> tuple) {
+    private void thread(Decimal cpuLoad, ThreadPoolExecutor pool, Tuple<IntWaterMark, int[]> tuple) {
         IntWaterMark waterMark = tuple.left;
-        int decrementCounter = tuple.middle;
-        int incrementCounter = tuple.right;
+        int[] counter = tuple.right;
+        int decrementCounter = counter[0];
+        int incrementCounter = counter[1];
 
         String prefix = pool.toString();
         if (log.isDebugEnabled()) {
@@ -214,14 +217,15 @@ public class CpuWatchman implements TimerTask {
             incrementCounter = 0;
         }
 
-        tuple.middle = decrementCounter;
-        tuple.right = incrementCounter;
+        counter[0] = decrementCounter;
+        counter[1] = incrementCounter;
     }
 
-    private void scheduledThread(Decimal cpuLoad, ThreadPoolExecutor pool, BiTuple<IntWaterMark, Integer, Integer> tuple) {
+    private void scheduledThread(Decimal cpuLoad, ThreadPoolExecutor pool, Tuple<IntWaterMark, int[]> tuple) {
         IntWaterMark waterMark = tuple.left;
-        int decrementCounter = tuple.middle;
-        int incrementCounter = tuple.right;
+        int[] counter = tuple.right;
+        int decrementCounter = counter[0];
+        int incrementCounter = counter[1];
 
         String prefix = pool.toString();
         int active = pool.getActiveCount();
@@ -252,15 +256,21 @@ public class CpuWatchman implements TimerTask {
             incrementCounter = 0;
         }
 
-        tuple.middle = decrementCounter;
-        tuple.right = incrementCounter;
+        counter[0] = decrementCounter;
+        counter[1] = incrementCounter;
     }
 
-    public void register(ThreadPoolExecutor pool, IntWaterMark cpuWaterMark) {
-        if (cpuWaterMark == null) {
-            return;
+    public void register(@NonNull ThreadPoolExecutor pool, @NonNull IntWaterMark waterMark) {
+        if (waterMark.getLow() < 0) {
+            waterMark.setLow(0);
         }
+        if (waterMark.getHigh() > 100) {
+            waterMark.setHigh(100);
+        }
+        holder.put(pool, Tuple.of(waterMark, new int[2]));
+    }
 
-        holder.put(pool, BiTuple.of(cpuWaterMark, 0, 0));
+    public void unregister(@NonNull ThreadPoolExecutor pool) {
+        holder.remove(pool);
     }
 }
