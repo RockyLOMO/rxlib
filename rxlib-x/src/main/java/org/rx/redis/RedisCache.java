@@ -78,7 +78,11 @@ public class RedisCache<TK, TV> implements Cache<TK, TV> {
     }
 
     public RedisCache(String redisUrl) {
-        client = create(redisUrl);
+        this(create(redisUrl));
+    }
+
+    public RedisCache(@NonNull RedissonClient redissonClient) {
+        client = redissonClient;
     }
 
     @Override

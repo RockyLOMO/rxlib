@@ -111,11 +111,11 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         log.info("Load H2 driver {}.{}", driver.getMajorVersion(), driver.getMinorVersion());
     }
 
-    static String columnName(Field field, DbColumn dbColumn, boolean autoUnderscoreColumnName) {
+    static String columnName(Field field, DbColumn dbColumn, BiFunc<String, String> columnMapping) {
         if (dbColumn != null && !dbColumn.name().isEmpty()) {
             return dbColumn.name();
         }
-        return autoUnderscoreColumnName ? CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, field.getName())
+        return columnMapping != null ? columnMapping.apply(field.getName())
                 : field.getName();
     }
 
@@ -126,7 +126,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     final int maxConnections;
     final Set<Class<?>> mappedEntityTypes = ConcurrentHashMap.newKeySet();
     @Setter
-    boolean autoUnderscoreColumnName;
+    BiFunc<String, String> columnMapping = EntityQueryLambda.TO_UNDERSCORE_COLUMN_MAPPING;
+    @Setter
+    BiFunc<Class<?>, String> tableMapping = EntityQueryLambda.TO_UNDERSCORE_TABLE_MAPPING;
     @Setter
     boolean autoRollbackOnError;
     @Setter
@@ -326,7 +328,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             query.limit = null;
         }
         SqlMeta meta = getMeta(query.entityType);
-        query.setAutoUnderscoreColumnName(autoUnderscoreColumnName);
+        query.setColumnMapping(columnMapping);
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         replaceSelectColumns(sql, "COUNT(*)");
@@ -358,7 +360,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             query.offset = null;
         }
         SqlMeta meta = getMeta(query.entityType);
-        query.setAutoUnderscoreColumnName(autoUnderscoreColumnName);
+        query.setColumnMapping(columnMapping);
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         replaceSelectColumns(sql, "1");
@@ -411,7 +413,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     @Override
     public <T> List<T> findBy(EntityQueryLambda<T> query) {
         SqlMeta meta = getMeta(query.entityType);
-        query.setAutoUnderscoreColumnName(autoUnderscoreColumnName);
+        query.setColumnMapping(columnMapping);
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         List<Object> params = new ArrayList<>();
@@ -449,7 +451,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         Field field = Reflects.getFieldMap(entityType).get(fieldName);
         DbColumn dbColumn = field.getAnnotation(DbColumn.class);
         String tableName = tableName(entityType);
-        String colName = columnName(field, dbColumn, autoUnderscoreColumnName);
+        String colName = columnName(field, dbColumn, columnMapping);
         String sql = String.format("DROP INDEX %s ON %s;", indexName(tableName, colName), tableName);
         executeUpdate(sql);
     }
@@ -458,7 +460,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         Field field = Reflects.getFieldMap(entityType).get(fieldName);
         DbColumn dbColumn = field.getAnnotation(DbColumn.class);
         String tableName = tableName(entityType);
-        String colName = columnName(field, dbColumn, autoUnderscoreColumnName);
+        String colName = columnName(field, dbColumn, columnMapping);
         String index = dbColumn != null && (dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_ASC
                 || dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_DESC) ? "UNIQUE " : Strings.EMPTY;
         String desc = dbColumn != null && (dbColumn.index() == DbColumn.IndexKind.INDEX_DESC
@@ -498,7 +500,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     continue;
                 }
                 DbColumn dbColumn = field.getAnnotation(DbColumn.class);
-                String colName = columnName(field, dbColumn, autoUnderscoreColumnName);
+                String colName = columnName(field, dbColumn, columnMapping);
                 Tuple<Field, DbColumn> tuple = Tuple.of(field, dbColumn);
                 columns.put(colName, tuple);
 
@@ -570,7 +572,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (n != null) {
             return n;
         }
-        return autoUnderscoreColumnName ? CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, entityType.getSimpleName())
+        return tableMapping != null ? tableMapping.apply(entityType)
                 : entityType.getSimpleName();
     }
 

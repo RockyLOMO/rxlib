@@ -267,19 +267,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
     private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
-    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark() {
-        private static final long serialVersionUID = 4308886582647381475L;
-
-        @Override
-        public int getLow() {
-            return RxConfig.INSTANCE.threadPool.lowCpuWaterMark;
-        }
-
-        @Override
-        public int getHigh() {
-            return RxConfig.INSTANCE.threadPool.highCpuWaterMark;
-        }
-    };
     static final Map<Object, RefCounter<ReentrantLock>> taskLockMap = new ConcurrentHashMap<>(8);
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
 
@@ -434,7 +421,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public void dynamicSizeByCpuLoad(IntWaterMark cpuWaterMark) {
         if (cpuWaterMark == null) {
-            cpuWaterMark = DEFAULT_CPU_WATER_MARK;
+            cpuWaterMark = RxConfig.INSTANCE.threadPool.cpuWaterMark;
         }
         CpuWatchman.INSTANCE.register(this, cpuWaterMark);
     }

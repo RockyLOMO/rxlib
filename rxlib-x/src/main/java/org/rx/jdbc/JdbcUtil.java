@@ -8,13 +8,14 @@ import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.pool.ProxyConnection;
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.rx.bean.DateTime;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.exception.InvalidException;
+import org.rx.io.EntityQueryLambda;
 import org.rx.third.guava.CaseFormat;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.TripleFunc;
 
 import javax.sql.DataSource;
 import java.io.InputStream;
@@ -28,6 +29,8 @@ import java.util.*;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Sys.fromJson;
 import static org.rx.core.Sys.toJsonObject;
+import static org.rx.io.EntityQueryLambda.TO_UNDERSCORE_COLUMN_MAPPING;
+import static org.rx.io.EntityQueryLambda.TO_UNDERSCORE_TABLE_MAPPING;
 
 public class JdbcUtil {
     static final String HINT_PREFIX = "/*", HINT_SUFFIX = "*/";
@@ -202,13 +205,10 @@ public class JdbcUtil {
         }
     }
 
-    ////    static byte PREFER_COLUMN_NAME = 1;
-//// boolean preferColumnName, boolean toLowerCamelColumn
-    static final BiFunc<String, String> LOWER_CAMEL_COLUMN_MAPPING = p -> CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.LOWER_CAMEL, p);
-    static final Object DBNull = new Object();
+    public static final BiFunc<String, String> TO_CAMEL_COLUMN_MAPPING = p -> CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.LOWER_CAMEL, p);
 
     public static <T> List<T> readAs(ResultSet resultSet, Type type) {
-        return readAs(resultSet, type, LOWER_CAMEL_COLUMN_MAPPING, null);
+        return readAs(resultSet, type, TO_CAMEL_COLUMN_MAPPING, null);
     }
 
     @SneakyThrows
@@ -243,75 +243,86 @@ public class JdbcUtil {
         return list;
     }
 
-    public static <T> int buildInsertSql(String tableName, @NonNull T po, BiFunc<String, String> columnMapping) {
-        JSONObject row = toJsonObject(po);
-        if (row.isEmpty()) {
-            throw new InvalidException("Type {} hasn't any getters", po.getClass());
-        }
-
-        List<String> columns = new ArrayList<>(row.size()),values = new ArrayList<>(row.size());
-        for (String k : new HashSet<>(row.keySet())) {
-            String nk = columnMapping.apply(k);
-            if (nk == null) {
-                row.remove(k);
-                continue;
-            }
-            if (nk.equals(k)) {
-                continue;
-            }
-            row.put(nk, row.remove(k));
-        }
-
-
-        for (String col : row.keySet()) {
-            columns
-        }
-
-        StringBuilder buf = new StringBuilder(128)
-                .appendMessageFormat(Constants.SQL_INSERT, tableName,String.join(",",row.keySet()),Linq.from());
-        boolean first = true;
-        for (Map.Entry<String, Object> entry : row.entrySet()) {
-            if (first) {
-                first = false;
-            } else {
-                buf.append(',');
-            }
-            Object val = entry.getValue();
-            buf.appendMessageFormat(" `{}`={}", entry.getKey(), DBNull == val ? "NULL" : val.toString());
-        }
-        return 1;
+    public static <T> String buildInsertSql(T po) {
+        return buildInsertSql(po, TO_UNDERSCORE_TABLE_MAPPING, TO_UNDERSCORE_COLUMN_MAPPING, null);
     }
 
-    public static <T> int buildInsertSql(String tableName, @NonNull T po, BiFunc<String, String> columnMapping) {
+    public static <T> String buildInsertSql(@NonNull T po, BiFunc<Class<?>, String> tableMapping, BiFunc<String, String> columnMapping, TripleFunc<String, Object, Object> valueMapping) {
         JSONObject row = toJsonObject(po);
         if (row.isEmpty()) {
             throw new InvalidException("Type {} hasn't any getters", po.getClass());
         }
 
-        for (String k : new HashSet<>(row.keySet())) {
-            String nk = columnMapping.apply(k);
-            if (nk == null) {
-                row.remove(k);
-                continue;
+        List<String> columns = new ArrayList<>(row.size()), values = new ArrayList<>(row.size());
+        if (columnMapping != null) {
+            for (String k : row.keySet()) {
+                String nk = columnMapping.apply(k);
+                if (nk == null) {
+                    continue;
+                }
+                columns.add("`" + nk + "`");
+                Object val = row.get(k);
+                if (valueMapping != null) {
+                    val = valueMapping.apply(nk, val);
+                }
+                values.add(EntityQueryLambda.toValueString(val));
             }
-            if (nk.equals(k)) {
-                continue;
+        } else {
+            for (String k : row.keySet()) {
+                columns.add("`" + k + "`");
+                Object val = row.get(k);
+                if (valueMapping != null) {
+                    val = valueMapping.apply(k, val);
+                }
+                values.add(EntityQueryLambda.toValueString(val));
             }
-            row.put(nk, row.remove(k));
         }
 
-        StringBuilder buf = new StringBuilder(32)
-                .appendMessageFormat("UPDATE {} SET", tableName);
-        boolean first = true;
-        for (Map.Entry<String, Object> entry : row.entrySet()) {
-            if (first) {
-                first = false;
-            } else {
-                buf.append(',');
-            }
-            Object val = entry.getValue();
-            buf.appendMessageFormat(" `{}`={}", entry.getKey(), DBNull == val ? "NULL" : val.toString());
+        Class<?> poType = po.getClass();
+        return new StringBuilder(128)
+                .appendMessageFormat(Constants.SQL_INSERT,
+                        tableMapping != null ? tableMapping.apply(poType) : poType.getSimpleName(),
+                        String.join(",", columns), String.join(",", values)).toString();
+    }
+
+    public static <T> String buildUpdateSql(T po, EntityQueryLambda<T> query) {
+        return buildUpdateSql(po, query, TO_UNDERSCORE_TABLE_MAPPING, TO_UNDERSCORE_COLUMN_MAPPING, null);
+    }
+
+    public static <T> String buildUpdateSql(@NonNull T po, @NonNull EntityQueryLambda<T> query, BiFunc<Class<?>, String> tableMapping, BiFunc<String, String> columnMapping, TripleFunc<String, Object, Object> valueMapping) {
+        JSONObject row = toJsonObject(po);
+        if (row.isEmpty()) {
+            throw new InvalidException("Type {} hasn't any getters", po.getClass());
         }
-        return 1;
+        query.setColumnMapping(columnMapping);
+
+        List<String> colVals = new ArrayList<>(row.size());
+        if (columnMapping != null) {
+            for (String k : row.keySet()) {
+                String nk = columnMapping.apply(k);
+                if (nk == null) {
+                    continue;
+                }
+                Object val = row.get(k);
+                if (valueMapping != null) {
+                    val = valueMapping.apply(nk, val);
+                }
+                colVals.add("`" + nk + "`=" + EntityQueryLambda.toValueString(val));
+            }
+        } else {
+            for (String k : row.keySet()) {
+                Object val = row.get(k);
+                if (valueMapping != null) {
+                    val = valueMapping.apply(k, val);
+                }
+                colVals.add("`" + k + "`=" + EntityQueryLambda.toValueString(val));
+            }
+        }
+
+        Class<?> poType = po.getClass();
+        return new StringBuilder(128)
+                .appendMessageFormat(Constants.SQL_UPDATE, tableMapping != null ? tableMapping.apply(poType) : poType.getSimpleName(),
+                        String.join(",", colVals))
+                .append(query).toString();
     }
 }

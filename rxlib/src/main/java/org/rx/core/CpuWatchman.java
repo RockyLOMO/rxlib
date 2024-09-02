@@ -10,6 +10,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.*;
+import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.BeanMapper;
 import org.rx.util.Snowflake;
@@ -267,6 +268,10 @@ public class CpuWatchman implements TimerTask {
         if (waterMark.getHigh() > 100) {
             waterMark.setHigh(100);
         }
+        if (waterMark.getLow() > waterMark.getHigh()) {
+            throw new InvalidException("waterMark low > high");
+        }
+
         holder.put(pool, Tuple.of(waterMark, new int[2]));
     }
 

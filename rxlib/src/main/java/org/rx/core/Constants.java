@@ -57,6 +57,11 @@ public interface Constants {
     /**
      * do not edit
      */
+//    String SQL_INSERT = "INSERT INTO ${table} (${columns}) VALUES (${values})";
+//    String SQL_UPDATE = "UPDATE ${table} SET ${columnValues} WHERE ";
+    String SQL_INSERT = "INSERT INTO {} ({}) VALUES ({})";
+    String SQL_UPDATE = "UPDATE {} SET {} WHERE ";
+
     FlagsEnum<TimeoutFlag> TIMER_PERIOD_FLAG = TimeoutFlag.PERIOD.flags();
     FlagsEnum<TimeoutFlag> TIMER_SINGLE_FLAG = TimeoutFlag.SINGLE.flags();
     FlagsEnum<TimeoutFlag> TIMER_REPLACE_FLAG = TimeoutFlag.REPLACE.flags();
