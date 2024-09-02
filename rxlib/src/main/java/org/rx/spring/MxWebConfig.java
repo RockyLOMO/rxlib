@@ -16,6 +16,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import static org.rx.core.Sys.logCtx;
 
+//WebMvcConfigurationSupport
 @RequiredArgsConstructor
 @Configuration
 public class MxWebConfig implements WebMvcConfigurer {
@@ -47,7 +48,7 @@ public class MxWebConfig implements WebMvcConfigurer {
         }
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
         conf.setTraceName(traceName);
-        ThreadPool.onTraceIdChanged.first((s, e) -> logCtx(conf.getTraceName(), e.getValue()));
+        ThreadPool.onTraceIdChanged.first((s, e) -> logCtx(conf.getTraceName(), e));
     }
 
     final WebTracer tracer;

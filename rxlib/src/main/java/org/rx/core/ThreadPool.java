@@ -209,7 +209,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                 } finally {
                     Thread t = Thread.currentThread();
                     TraceHandler.INSTANCE.saveMethodTrace(t,
-                            fn.getClass().getSimpleName(),
+                            this.getClass().getSimpleName(),//fn.getClass().getSimpleName(),
                             stackTrace != null
                                     ? "[" + Linq.from(stackTrace).select(StackTraceElement::toString).toJoinString(Constants.STACK_TRACE_FLAG) + "]"
                                     : "Unknown",
@@ -260,15 +260,13 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     //region static members
     public static volatile Func<String> traceIdGenerator;
-    public static final Delegate<EventPublisher.StaticEventPublisher, NEventArgs<String>> onTraceIdChanged = Delegate.create();
+    public static final Delegate<EventPublisher.StaticEventPublisher, String> onTraceIdChanged = Delegate.create();
     static final ThreadLocal<Queue<String>> CTX_PARENT_TRACE_ID = new InheritableThreadLocal<>();
     static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
     static final FastThreadLocal<Object> CTX_STACK_TRACE = new FastThreadLocal<>();
     static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
     private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
-    static final IntWaterMark DEFAULT_CPU_WATER_MARK = new IntWaterMark(RxConfig.INSTANCE.threadPool.lowCpuWaterMark,
-            RxConfig.INSTANCE.threadPool.highCpuWaterMark);
     static final Map<Object, RefCounter<ReentrantLock>> taskLockMap = new ConcurrentHashMap<>(8);
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
 
@@ -280,8 +278,20 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static String startTrace(String traceId, boolean requiresNew) {
         String tid = CTX_TRACE_ID.get();
         if (tid == null) {
-            tid = traceId != null ? traceId :
-                    traceIdGenerator != null ? traceIdGenerator.invoke() : ULID.randomULID().toBase64String();
+            if (traceId != null) {
+                tid = traceId;
+            } else {
+                if (traceIdGenerator != null) {
+                    try {
+                        tid = traceIdGenerator.invoke();
+                    } catch (Throwable e) {
+                        TraceHandler.INSTANCE.log(e);
+                    }
+                }
+                if (tid == null) {
+                    tid = ULID.randomULID().toBase64String();
+                }
+            }
             CTX_TRACE_ID.set(tid);
         } else if (traceId != null && !traceId.equals(tid)) {
             if (!requiresNew) {
@@ -301,7 +311,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
         }
 //        log.info("trace start {}", tid);
-        onTraceIdChanged.invoke(EventPublisher.STATIC_EVENT_INSTANCE, new NEventArgs<>(tid));
+        onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, tid);
         return tid;
     }
 
@@ -323,7 +333,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             parentTid = null;
             CTX_TRACE_ID.remove();
         }
-        onTraceIdChanged.invoke(EventPublisher.STATIC_EVENT_INSTANCE, new NEventArgs<>(parentTid));
+        onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, parentTid);
     }
 
     public static <T> T completionReturnedValue() {
@@ -336,10 +346,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         return (int) Math.max(Constants.CPU_THREADS, Math.floor(Constants.CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
     }
 
-    static ThreadFactory newThreadFactory(String name) {
-        return new DefaultThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true
-//                , Thread.NORM_PRIORITY + 1
-        );
+    static ThreadFactory newThreadFactory(String name, int priority) {
+        return new DefaultThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true, priority);
     }
 
     static boolean continueFlag(boolean def) {
@@ -371,11 +379,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public ThreadPool(String poolName) {
         //computeThreads(1, 2, 1)
-        this(RxConfig.INSTANCE.threadPool.initSize, RxConfig.INSTANCE.threadPool.queueCapacity, poolName);
-    }
-
-    public ThreadPool(int initSize, int queueCapacity, String poolName) {
-        this(initSize, queueCapacity, DEFAULT_CPU_WATER_MARK, poolName);
+        this(RxConfig.INSTANCE.threadPool.initSize, RxConfig.INSTANCE.threadPool.queueCapacity, null, poolName);
     }
 
     /**
@@ -386,7 +390,7 @@ public class ThreadPool extends ThreadPoolExecutor {
      */
     public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
         super(checkSize(initSize), Integer.MAX_VALUE,
-                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName), (r, executor) -> {
+                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName, Thread.NORM_PRIORITY), (r, executor) -> {
                     if (executor.isShutdown()) {
                         log.warn("ThreadPool {} is shutdown", poolName);
                         return;
@@ -397,7 +401,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         ((ThreadQueue) super.getQueue()).pool = this;
         this.poolName = poolName;
 
-        setDynamicSize(cpuWaterMark);
+        dynamicSizeByCpuLoad(cpuWaterMark);
     }
 
     private static int checkSize(int size) {
@@ -415,12 +419,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         return capacity;
     }
 
-    public void setDynamicSize(IntWaterMark cpuWaterMark) {
-        if (cpuWaterMark.getLow() < 0) {
-            cpuWaterMark.setLow(0);
-        }
-        if (cpuWaterMark.getHigh() > 100) {
-            cpuWaterMark.setHigh(100);
+    public void dynamicSizeByCpuLoad(IntWaterMark cpuWaterMark) {
+        if (cpuWaterMark == null) {
+            cpuWaterMark = RxConfig.INSTANCE.threadPool.cpuWaterMark;
         }
         CpuWatchman.INSTANCE.register(this, cpuWaterMark);
     }

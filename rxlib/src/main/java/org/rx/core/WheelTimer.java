@@ -58,9 +58,6 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 flags = TimeoutFlag.NONE.flags();
             }
             RxConfig conf = RxConfig.INSTANCE;
-            if (conf.threadPool.traceName != null) {
-                flags.add(TimeoutFlag.THREAD_TRACE);
-            }
             if (conf.trace.slowMethodElapsedMicros > 0 && ThreadLocalRandom.current().nextInt(0, 100) < conf.threadPool.slowMethodSamplingPercent) {
                 stackTrace = new Throwable().getStackTrace();
             } else {
@@ -77,10 +74,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @SneakyThrows
         @Override
         public synchronized void run(Timeout timeout) throws Exception {
-            boolean traceFlag = flags.has(TimeoutFlag.THREAD_TRACE);
-            if (traceFlag) {
-                ThreadPool.startTrace(traceId);
-            }
+            ThreadPool.startTrace(traceId);
             ThreadPool.CTX_STACK_TRACE.set(stackTrace != null ? stackTrace : Boolean.TRUE);
             try {
                 future = executor.submit(() -> {
@@ -97,9 +91,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 });
             } finally {
                 ThreadPool.CTX_STACK_TRACE.remove();
-                if (traceFlag) {
-                    ThreadPool.endTrace();
-                }
+                ThreadPool.endTrace();
             }
             notifyAll();
         }
@@ -227,7 +219,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     static final long TICK_DURATION = 100;
     static final Map<Object, TimeoutFuture> holder = new ConcurrentHashMap<>();
     final ExecutorService executor;
-    final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER"), TICK_DURATION, TimeUnit.MILLISECONDS);
+    final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER", Thread.NORM_PRIORITY), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
 
     public TimeoutFuture<?> getFutureById(Object taskId) {

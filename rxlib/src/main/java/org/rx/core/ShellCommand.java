@@ -71,13 +71,6 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
         }
     }
 
-    @RequiredArgsConstructor
-    @Getter
-    public static class ExitedEventArgs extends EventArgs {
-        private static final long serialVersionUID = 6563058539741657972L;
-        final int exitValue;
-    }
-
     public static final TripleAction<ShellCommand, PrintOutEventArgs> CONSOLE_OUT_HANDLER = (s, e) -> System.out.print(e.toString());
     static final String LINUX_BASH = "bash -c ", WIN_CMD = "cmd /c ";
     static final List<ShellCommand> KILL_LIST = newConcurrentList(true);
@@ -184,7 +177,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
     }
 
     public final Delegate<ShellCommand, PrintOutEventArgs> onPrintOut = Delegate.create();
-    public final Delegate<ShellCommand, ExitedEventArgs> onExited = Delegate.create();
+    public final Delegate<ShellCommand, Integer> onExited = Delegate.create();
 
     final long daemonPeriod;
     @Getter
@@ -279,7 +272,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
                 synchronized (this) {
                     int exitValue = tmp.exitValue();
                     log.debug("exit={} {}", exitValue, shell);
-                    raiseEvent(onExited, new ExitedEventArgs(exitValue));
+                    raiseEvent(onExited, exitValue);
                 }
             }
         });
@@ -328,7 +321,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
         log.debug("kill {}", shell);
         process.destroyForcibly();
         daemonFuture.cancel(true);
-        raiseEvent(onExited, new ExitedEventArgs(process.exitValue()));
+        raiseEvent(onExited, process.exitValue());
     }
 
     public synchronized void restart() {

@@ -51,7 +51,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             }
             if (tryAs(pack, PingPacket.class, p -> {
                 log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), NtpClock.UTC.millis() - p.getTimestamp());
-                raiseEventAsync(onPong, new NEventArgs<>(p));
+                raiseEventAsync(onPong, p);
             })) {
                 return;
             }
@@ -110,7 +110,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             onReconnected = Delegate.create();
     public final Delegate<TcpClient, NEventArgs<Serializable>> onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<TcpClient, NEventArgs<PingPacket>> onPong = Delegate.create();
+    public final Delegate<TcpClient, PingPacket> onPong = Delegate.create();
     public final Delegate<TcpClient, NEventArgs<Throwable>> onError = Delegate.create();
     @Getter
     final TcpClientConfig config;

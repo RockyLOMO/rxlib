@@ -11,15 +11,17 @@ app:
     initSize: 0
     keepAliveSeconds: 600
     queueCapacity: 0
-    lowCpuWaterMark: 40
-    highCpuWaterMark: 70
+    cpuWaterMark:
+      low: 40
+      high: 70
+    watchSystemCpu: false
     replicas: 2
     maxTraceDepth: 5
     slowMethodSamplingPercent: 2
     cpuLoadWarningThreshold: 80
     samplingPeriod: 3000
     samplingTimes: 2
-    minDynamicSize: 2
+    minDynamicSize: 1
     maxDynamicSize: 1000
     resizeQuantity: 2
   cache:

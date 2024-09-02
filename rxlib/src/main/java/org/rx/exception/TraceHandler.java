@@ -109,7 +109,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                     return;
                 }
 
-                Reflects.invokeMethod(this, "innerSave", e.getValue());
+                Reflects.invokeMethod(this, "innerSave", e);
             });
             queue.setConsumePeriod(conf.getTrace().getFlushQueuePeriod());
         } catch (Throwable e) {

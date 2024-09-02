@@ -12,6 +12,7 @@ import org.h2.jdbc.JdbcConnection;
 import org.h2.jdbc.JdbcResultSet;
 import org.h2.result.LocalResult;
 import org.h2.value.ValueToObjectConverter;
+import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -20,10 +21,7 @@ import org.rx.third.guava.CaseFormat;
 import java.lang.reflect.Type;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.tryAs;
@@ -183,13 +181,14 @@ public class DataTable implements Extends {
         List<T> list = new ArrayList<>();
         int colSize = columns.size();
         Iterator<DataRow> rows = getRows();
+        Map<String, Object> row = new HashMap<>(colSize);
         while (rows.hasNext()) {
+            row.clear();
             List<Object> cells = rows.next().items;
-            JSONObject j = new JSONObject(colSize);
             for (int i = 0; i < colSize; i++) {
-                j.put(columns.get(i).columnName, cells.get(i));
+                row.put(columns.get(i).columnName, cells.get(i));
             }
-            list.add(fromJson(j, type));
+            list.add(fromJson(row, type));
         }
         return list;
     }

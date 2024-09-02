@@ -1,27 +1,36 @@
 package org.rx.jdbc;
 
 import com.alibaba.druid.pool.DruidDataSource;
+import com.alibaba.fastjson2.JSONObject;
 import com.mysql.jdbc.MySQLConnection;
 import com.mysql.jdbc.StringUtils;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.pool.ProxyConnection;
+import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.rx.core.Linq;
-import org.rx.core.Reflects;
+import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
+import org.rx.io.EntityQueryLambda;
+import org.rx.third.guava.CaseFormat;
+import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
+import org.rx.util.function.TripleFunc;
 
 import javax.sql.DataSource;
 import java.io.InputStream;
 import java.io.Reader;
 import java.lang.reflect.Field;
+import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.sql.*;
-import java.util.Collections;
-import java.util.Map;
+import java.util.*;
 
 import static org.rx.core.Extends.as;
+import static org.rx.core.Sys.fromJson;
+import static org.rx.core.Sys.toJsonObject;
+import static org.rx.io.EntityQueryLambda.TO_UNDERSCORE_COLUMN_MAPPING;
+import static org.rx.io.EntityQueryLambda.TO_UNDERSCORE_TABLE_MAPPING;
 
 public class JdbcUtil {
     static final String HINT_PREFIX = "/*", HINT_SUFFIX = "*/";
@@ -194,5 +203,126 @@ public class JdbcUtil {
                 System.out.println();
             }
         }
+    }
+
+    public static final BiFunc<String, String> TO_CAMEL_COLUMN_MAPPING = p -> CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.LOWER_CAMEL, p);
+
+    public static <T> List<T> readAs(ResultSet resultSet, Type type) {
+        return readAs(resultSet, type, TO_CAMEL_COLUMN_MAPPING, null);
+    }
+
+    @SneakyThrows
+    public static <T> List<T> readAs(@NonNull ResultSet resultSet, @NonNull Type type, BiFunc<String, String> columnMapping, BiAction<Map<String, Object>> rowMapping) {
+        List<T> list = new ArrayList<>();
+        try (ResultSet rs = resultSet) {
+            ResultSetMetaData metaData = rs.getMetaData();
+            int colSize = metaData.getColumnCount();
+            List<String> columns = new ArrayList<>(colSize);
+            if (columnMapping != null) {
+                for (int i = 1; i <= colSize; i++) {
+                    columns.add(columnMapping.invoke(metaData.getColumnLabel(i)));
+                }
+            } else {
+                for (int i = 1; i <= colSize; i++) {
+                    columns.add(metaData.getColumnLabel(i));
+                }
+            }
+
+            JSONObject row = new JSONObject(colSize);
+            while (rs.next()) {
+                row.clear();
+                for (int i = 0; i < colSize; ) {
+                    row.put(columns.get(i), rs.getObject(++i));
+                }
+                if (rowMapping != null) {
+                    rowMapping.invoke(row);
+                }
+                list.add(fromJson(row, type));
+            }
+        }
+        return list;
+    }
+
+    public static <T> String buildInsertSql(T po) {
+        return buildInsertSql(po, TO_UNDERSCORE_TABLE_MAPPING, TO_UNDERSCORE_COLUMN_MAPPING, null);
+    }
+
+    public static <T> String buildInsertSql(@NonNull T po, BiFunc<Class<?>, String> tableMapping, BiFunc<String, String> columnMapping, TripleFunc<String, Object, Object> valueMapping) {
+        JSONObject row = toJsonObject(po);
+        if (row.isEmpty()) {
+            throw new InvalidException("Type {} hasn't any getters", po.getClass());
+        }
+
+        List<String> columns = new ArrayList<>(row.size()), values = new ArrayList<>(row.size());
+        if (columnMapping != null) {
+            for (String k : row.keySet()) {
+                String nk = columnMapping.apply(k);
+                if (nk == null) {
+                    continue;
+                }
+                columns.add("`" + nk + "`");
+                Object val = row.get(k);
+                if (valueMapping != null) {
+                    val = valueMapping.apply(nk, val);
+                }
+                values.add(EntityQueryLambda.toValueString(val));
+            }
+        } else {
+            for (String k : row.keySet()) {
+                columns.add("`" + k + "`");
+                Object val = row.get(k);
+                if (valueMapping != null) {
+                    val = valueMapping.apply(k, val);
+                }
+                values.add(EntityQueryLambda.toValueString(val));
+            }
+        }
+
+        Class<?> poType = po.getClass();
+        return new StringBuilder(128)
+                .appendMessageFormat(Constants.SQL_INSERT,
+                        tableMapping != null ? tableMapping.apply(poType) : poType.getSimpleName(),
+                        String.join(",", columns), String.join(",", values)).toString();
+    }
+
+    public static <T> String buildUpdateSql(T po, EntityQueryLambda<T> query) {
+        return buildUpdateSql(po, query, TO_UNDERSCORE_TABLE_MAPPING, TO_UNDERSCORE_COLUMN_MAPPING, null);
+    }
+
+    public static <T> String buildUpdateSql(@NonNull T po, @NonNull EntityQueryLambda<T> query, BiFunc<Class<?>, String> tableMapping, BiFunc<String, String> columnMapping, TripleFunc<String, Object, Object> valueMapping) {
+        JSONObject row = toJsonObject(po);
+        if (row.isEmpty()) {
+            throw new InvalidException("Type {} hasn't any getters", po.getClass());
+        }
+        query.setColumnMapping(columnMapping);
+
+        List<String> colVals = new ArrayList<>(row.size());
+        if (columnMapping != null) {
+            for (String k : row.keySet()) {
+                String nk = columnMapping.apply(k);
+                if (nk == null) {
+                    continue;
+                }
+                Object val = row.get(k);
+                if (valueMapping != null) {
+                    val = valueMapping.apply(nk, val);
+                }
+                colVals.add("`" + nk + "`=" + EntityQueryLambda.toValueString(val));
+            }
+        } else {
+            for (String k : row.keySet()) {
+                Object val = row.get(k);
+                if (valueMapping != null) {
+                    val = valueMapping.apply(k, val);
+                }
+                colVals.add("`" + k + "`=" + EntityQueryLambda.toValueString(val));
+            }
+        }
+
+        Class<?> poType = po.getClass();
+        return new StringBuilder(128)
+                .appendMessageFormat(Constants.SQL_UPDATE, tableMapping != null ? tableMapping.apply(poType) : poType.getSimpleName(),
+                        String.join(",", colVals))
+                .append(query).toString();
     }
 }

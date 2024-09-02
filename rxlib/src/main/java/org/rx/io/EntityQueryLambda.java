@@ -48,12 +48,12 @@ public class EntityQueryLambda<T> implements Extends {
     }
 
     final Class<T> entityType;
-    @Setter
-    boolean autoUnderscoreColumnName;
     final ArrayList<BiTuple<Serializable, Operator, ?>> conditions = new ArrayList<>();
     final List<Tuple<BiFunc<T, ?>, Order>> orders = new ArrayList<>();
     boolean orderByRand;
     Integer limit, offset;
+    @Setter
+    BiFunc<String, String> columnMapping;
 
     public EntityQueryLambda<T> limit(int limit) {
         this.limit = limit;
@@ -171,7 +171,7 @@ public class EntityQueryLambda<T> implements Extends {
     }
 
     public String toString(List<Object> params) {
-        return resolve(conditions, params, orders, orderByRand, autoUnderscoreColumnName, limit, offset);
+        return resolve(conditions, params, orders, orderByRand, limit, offset, columnMapping);
     }
 
     static <T> List<T> sharding(List<T> result, EntityQueryLambda<T> lambda) {
@@ -208,8 +208,8 @@ public class EntityQueryLambda<T> implements Extends {
     }
 
     static <T> String resolve(ArrayList<BiTuple<Serializable, Operator, ?>> conditions, List<Object> params,
-                              List<Tuple<BiFunc<T, ?>, Order>> orders, boolean orderByRand, boolean autoUnderscoreColumnName,
-                              Integer limit, Integer offset) {
+                              List<Tuple<BiFunc<T, ?>, Order>> orders, boolean orderByRand, Integer limit, Integer offset,
+                              BiFunc<String, String> columnMapping) {
         StringBuilder b = new StringBuilder(128);
         boolean isParam = params != null;
         for (BiTuple<Serializable, Operator, ?> condition : conditions) {
@@ -223,7 +223,7 @@ public class EntityQueryLambda<T> implements Extends {
                 case LE:
                 case LIKE:
                 case NOT_LIKE: {
-                    String colName = resolveColumnName(condition.left, autoUnderscoreColumnName);
+                    String colName = resolveColumnName(condition.left, columnMapping);
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
@@ -239,7 +239,7 @@ public class EntityQueryLambda<T> implements Extends {
                 break;
                 case IN:
                 case NOT_IN: {
-                    String colName = resolveColumnName(condition.left, autoUnderscoreColumnName);
+                    String colName = resolveColumnName(condition.left, columnMapping);
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
@@ -255,7 +255,7 @@ public class EntityQueryLambda<T> implements Extends {
                 break;
                 case BETWEEN:
                 case NOT_BETWEEN: {
-                    String colName = resolveColumnName(condition.left, autoUnderscoreColumnName);
+                    String colName = resolveColumnName(condition.left, columnMapping);
                     Object[] p = (Object[]) condition.right;
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
@@ -280,7 +280,7 @@ public class EntityQueryLambda<T> implements Extends {
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
-                    b.appendFormat(op.format, resolve(l, params, null, orderByRand, autoUnderscoreColumnName, limit, offset), r.toString(params));
+                    b.appendFormat(op.format, resolve(l, params, null, orderByRand, limit, offset, columnMapping), r.toString(params));
                     break;
             }
         }
@@ -290,7 +290,7 @@ public class EntityQueryLambda<T> implements Extends {
         } else if (!CollectionUtils.isEmpty(orders)) {
             b.append(ORDER_BY);
             for (Tuple<BiFunc<T, ?>, Order> bi : orders) {
-                String colName = resolveColumnName(bi.left, autoUnderscoreColumnName);
+                String colName = resolveColumnName(bi.left, columnMapping);
                 b.appendFormat("%s %s,", colName, bi.right);
             }
             b.setLength(b.length() - 1);
@@ -310,13 +310,17 @@ public class EntityQueryLambda<T> implements Extends {
         return b.toString();
     }
 
-    static <T> String resolveColumnName(Object fn, boolean autoUnderscoreColumnName) {
+    static <T> String resolveColumnName(Object fn, BiFunc<String, String> columnMapping) {
         String propName = Reflects.resolveProperty((BiFunc<T, ?>) fn);
-        return autoUnderscoreColumnName ? CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, propName)
-                : propName;
+        return columnMapping != null ? columnMapping.apply(propName) : propName;
+//        return autoUnderscoreColumnName ? CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, propName)
+//                : propName;
     }
 
-    static String toValueString(Object val) {
+    public static final BiFunc<String, String> TO_UNDERSCORE_COLUMN_MAPPING = p -> CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, p);
+    public static final BiFunc<Class<?>, String> TO_UNDERSCORE_TABLE_MAPPING = p -> CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, p.getSimpleName());
+
+    public static String toValueString(Object val) {
         if (val == null) {
             return DB_NULL;
         }

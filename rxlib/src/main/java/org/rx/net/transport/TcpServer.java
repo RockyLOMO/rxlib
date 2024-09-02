@@ -192,7 +192,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     }
 
     @Override
-    public <TArgs extends EventArgs> CompletableFuture<Void> raiseEventAsync(Delegate<TcpServer, TArgs> event, TArgs args) {
+    public <TArgs> CompletableFuture<Void> raiseEventAsync(Delegate<TcpServer, TArgs> event, TArgs args) {
         ThreadPool scheduler = asyncScheduler();
         return scheduler.runAsync(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY.flags());
     }
