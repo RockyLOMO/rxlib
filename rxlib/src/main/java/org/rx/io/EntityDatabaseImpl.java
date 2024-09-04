@@ -294,6 +294,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
         query.limit(1000);
         SqlMeta meta = getMeta(query.entityType);
+        query.setColumnMapping(columnMapping);
 
         StringBuilder sql = new StringBuilder(meta.deleteSql);
         sql.setLength(sql.length() - 2);
@@ -568,10 +569,10 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     @Override
     public String tableName(Class<?> entityType) {
-        String n = Extends.metadata(entityType);
-        if (n != null) {
-            return n;
-        }
+//        String n = Extends.metadata(entityType);
+//        if (n != null) {
+//            return n;
+//        }
         return tableMapping != null ? tableMapping.apply(entityType)
                 : entityType.getSimpleName();
     }

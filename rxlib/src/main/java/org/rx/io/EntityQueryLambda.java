@@ -3,6 +3,7 @@ package org.rx.io;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.apache.commons.collections4.CollectionUtils;
+import org.rx.annotation.Metadata;
 import org.rx.bean.BiTuple;
 import org.rx.bean.Tuple;
 import org.rx.core.Extends;
@@ -277,6 +278,7 @@ public class EntityQueryLambda<T> implements Extends {
                 case OR:
                     ArrayList<BiTuple<Serializable, Operator, ?>> l = (ArrayList<BiTuple<Serializable, Operator, ?>>) condition.left;
                     EntityQueryLambda<T> r = (EntityQueryLambda<T>) condition.right;
+                    r.setColumnMapping(columnMapping);
                     if (!b.isEmpty()) {
                         b.append(OP_AND);
                     }
@@ -318,7 +320,13 @@ public class EntityQueryLambda<T> implements Extends {
     }
 
     public static final BiFunc<String, String> TO_UNDERSCORE_COLUMN_MAPPING = p -> CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, p);
-    public static final BiFunc<Class<?>, String> TO_UNDERSCORE_TABLE_MAPPING = p -> CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, p.getSimpleName());
+    public static final BiFunc<Class<?>, String> TO_UNDERSCORE_TABLE_MAPPING = t -> {
+        Metadata md = t.getAnnotation(Metadata.class);
+        if (md != null) {
+            return md.value();
+        }
+        return CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, t.getSimpleName());
+    };
 
     public static String toValueString(Object val) {
         if (val == null) {
