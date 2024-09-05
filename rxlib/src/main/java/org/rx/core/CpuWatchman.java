@@ -232,9 +232,11 @@ public class CpuWatchman implements TimerTask {
         int active = pool.getActiveCount();
         int size = pool.getCorePoolSize();
         float idle = (float) active / size * 100;
-        log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% idle={} de/incrementCounter={}/{}", prefix,
-                pool.getCorePoolSize(), pool.getQueue().size(),
-                cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
+        if (log.isDebugEnabled()) {
+            log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% idle={} de/incrementCounter={}/{}", prefix,
+                    pool.getCorePoolSize(), pool.getQueue().size(),
+                    cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
+        }
 
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
         if (size > conf.minDynamicSize && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
