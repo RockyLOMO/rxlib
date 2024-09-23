@@ -191,15 +191,15 @@ public class CpuWatchman implements TimerTask {
 
         String prefix = pool.toString();
         if (log.isDebugEnabled()) {
-            log.debug("{} PoolSize={}+[{}] Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
-                    pool.getPoolSize(), pool.getQueue().size(),
+            log.debug("{} PoolSize={}/{}+[{}] Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
+                    pool.getPoolSize(), pool.getCorePoolSize(), pool.getQueue().size(),
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
         }
 
         if (cpuLoad.gt(waterMark.getHigh())) {
             if (++decrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
-                log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% decrement to {}", prefix,
-                        pool.getPoolSize(), pool.getQueue().size(),
+                log.info("{} PoolSize={}/{}+[{}] Threshold={}[{}-{}]% decrement to {}", prefix,
+                        pool.getPoolSize(), pool.getCorePoolSize(), pool.getQueue().size(),
                         cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrSize(pool));
                 decrementCounter = 0;
             }
@@ -209,8 +209,8 @@ public class CpuWatchman implements TimerTask {
 
         if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
             if (++incrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
-                log.info("{} PoolSize={}+[{}] Threshold={}[{}-{}]% increment to {}", prefix,
-                        pool.getPoolSize(), pool.getQueue().size(),
+                log.info("{} PoolSize={}/{}+[{}] Threshold={}[{}-{}]% increment to {}", prefix,
+                        pool.getPoolSize(), pool.getCorePoolSize(), pool.getQueue().size(),
                         cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
                 incrementCounter = 0;
             }

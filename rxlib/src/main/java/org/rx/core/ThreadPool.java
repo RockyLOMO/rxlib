@@ -397,8 +397,9 @@ public class ThreadPool extends ThreadPoolExecutor {
      * @param queueCapacity LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
     public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(checkSize(initSize), Integer.MAX_VALUE,
-                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName, Thread.NORM_PRIORITY), (r, executor) -> {
+        super(checkSize(initSize), RxConfig.INSTANCE.threadPool.maxDynamicSize,
+                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS,
+                new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName, Thread.NORM_PRIORITY), (r, executor) -> {
                     if (executor.isShutdown()) {
                         log.warn("ThreadPool {} is shutdown", poolName);
                         return;

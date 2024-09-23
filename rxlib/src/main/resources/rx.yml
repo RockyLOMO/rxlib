@@ -9,7 +9,7 @@ app:
     samplingCpuPeriod: 30000
   threadPool:
     initSize: 0
-    keepAliveSeconds: 600
+    keepAliveSeconds: 300
     queueCapacity: 0
     cpuWaterMark:
       low: 40
