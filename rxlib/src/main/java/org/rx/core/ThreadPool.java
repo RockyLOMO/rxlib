@@ -74,7 +74,9 @@ public class ThreadPool extends ThreadPoolExecutor {
                         wait(500);
                     }
                 }
-                log.debug("Wait poll ok");
+                if (log.isDebugEnabled()) {
+                    log.debug("Wait poll ok");
+                }
             }
             counter.incrementAndGet();
             Task<?> task = pool.setTask(r);
@@ -97,7 +99,9 @@ public class ThreadPool extends ThreadPoolExecutor {
                 throw e;
             } finally {
                 if (ok) {
-                    log.debug("Notify poll");
+                    if (log.isDebugEnabled()) {
+                        log.debug("Notify poll");
+                    }
                     doNotify();
                 }
             }
@@ -108,7 +112,9 @@ public class ThreadPool extends ThreadPoolExecutor {
             try {
                 return super.take();
             } finally {
-                log.debug("Notify take");
+                if (log.isDebugEnabled()) {
+                    log.debug("Notify take");
+                }
                 doNotify();
             }
         }
@@ -117,7 +123,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         public boolean remove(Object o) {
             boolean ok = super.remove(o);
             if (ok) {
-                log.debug("Notify remove");
+                if (log.isDebugEnabled()) {
+                    log.debug("Notify remove");
+                }
                 doNotify();
             }
             return ok;
@@ -389,8 +397,9 @@ public class ThreadPool extends ThreadPoolExecutor {
      * @param queueCapacity LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
     public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(checkSize(initSize), Integer.MAX_VALUE,
-                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS, new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName, Thread.NORM_PRIORITY), (r, executor) -> {
+        super(checkSize(initSize), RxConfig.INSTANCE.threadPool.maxDynamicSize,
+                RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS,
+                new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName, Thread.NORM_PRIORITY), (r, executor) -> {
                     if (executor.isShutdown()) {
                         log.warn("ThreadPool {} is shutdown", poolName);
                         return;
@@ -612,12 +621,16 @@ public class ThreadPool extends ThreadPoolExecutor {
                 throw new InterruptedException(String.format("SingleScope %s locked by other thread", task.id));
             }
             ctx.incrementRefCnt();
-            log.debug("CTX tryLock {} -> {}", task.id, flags.name());
+            if (log.isDebugEnabled()) {
+                log.debug("CTX tryLock {} -> {}", task.id, flags.name());
+            }
         } else if (flags.has(RunFlag.SYNCHRONIZED)) {
             RefCounter<ReentrantLock> ctx = getContextForLock(task.id);
             ctx.incrementRefCnt();
             ctx.ref.lock();
-            log.debug("CTX lock {} -> {}", task.id, flags.name());
+            if (log.isDebugEnabled()) {
+                log.debug("CTX lock {} -> {}", task.id, flags.name());
+            }
         }
         if (flags.has(RunFlag.PRIORITY) && !getQueue().isEmpty()) {
             CpuWatchman.incrSize(this);
@@ -668,7 +681,9 @@ public class ThreadPool extends ThreadPoolExecutor {
                     taskLockMap.remove(id);
                     doRemove = true;
                 }
-                log.debug("CTX unlock{} {} -> {}", doRemove ? " & clear" : "", id, task.flags.name());
+                if (log.isDebugEnabled()) {
+                    log.debug("CTX unlock{} {} -> {}", doRemove ? " & clear" : "", id, task.flags.name());
+                }
                 ctx.ref.unlock();
             }
         }

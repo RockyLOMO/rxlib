@@ -1,5 +1,6 @@
 package org.rx.io;
 
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.apache.commons.collections4.CollectionUtils;
@@ -48,6 +49,7 @@ public class EntityQueryLambda<T> implements Extends {
         sql.append(WHERE).appendFormat(Operator.EQ.format, pk, PARAM_HOLD);
     }
 
+    @Getter
     final Class<T> entityType;
     final ArrayList<BiTuple<Serializable, Operator, ?>> conditions = new ArrayList<>();
     final List<Tuple<BiFunc<T, ?>, Order>> orders = new ArrayList<>();

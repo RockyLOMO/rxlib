@@ -11,12 +11,15 @@ import org.rx.annotation.EnableLog;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
+import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
 import org.rx.util.Servlets;
 import org.rx.util.Validator;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.stereotype.Component;
+import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -27,10 +30,13 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.validation.ConstraintViolation;
+import javax.validation.ConstraintViolationException;
 import java.lang.reflect.Executable;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 
 import static org.rx.core.Extends.as;
 import static org.rx.core.Sys.logCtx;
@@ -107,13 +113,23 @@ public class Interceptors {
         @ExceptionHandler({Throwable.class})
         @ResponseStatus(HttpStatus.OK)
         @ResponseBody
-        public Object onException(Throwable e, HttpServletRequest request) {
+        public Object onException(Throwable e) {
             String msg = null;
-            if (e instanceof MethodArgumentNotValidException) {
+            if (e instanceof ConstraintViolationException) {
+                ConstraintViolationException error = (ConstraintViolationException) e;
+                msg = error.getConstraintViolations().stream().map(ConstraintViolation::getMessage).collect(Collectors.joining());
+            } else if (e instanceof MethodArgumentNotValidException) {
                 FieldError fieldError = ((MethodArgumentNotValidException) e).getBindingResult().getFieldError();
                 if (fieldError != null) {
                     msg = String.format("Field '%s' %s", fieldError.getField(), fieldError.getDefaultMessage());
                 }
+            } else if (e instanceof BindException) {
+                FieldError fieldError = ((BindException) e).getFieldError();
+                if (fieldError != null) {
+                    msg = String.format("Field '%s' %s", fieldError.getField(), fieldError.getDefaultMessage());
+                }
+            } else if (e instanceof HttpMessageNotReadableException) {
+                msg = "Request body not readable";
             }
             if (msg == null) {
                 msg = ApplicationException.getMessage(e);
@@ -122,6 +138,7 @@ public class Interceptors {
             if (SpringContext.controllerExceptionHandler != null) {
                 return SpringContext.controllerExceptionHandler.apply(e, msg);
             }
+            TraceHandler.INSTANCE.log(e);
             return new ResponseEntity<>(msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
