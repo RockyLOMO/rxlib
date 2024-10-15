@@ -98,14 +98,15 @@ public class Reflects extends ClassUtils {
             throw InvalidException.sneaky(e);
         }
 
+        registerConvert(String.class, BigDecimal.class, (sv, tt) -> new BigDecimal(sv));
+        registerConvert(String.class, UUID.class, (sv, tt) -> UUID.fromString(sv));
+        registerConvert(String.class, Date.class, (sv, tt) -> DateTime.valueOf(sv));
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
-        registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
         registerConvert(Long.class, Date.class, (sv, tt) -> new Date(sv));
         registerConvert(Long.class, DateTime.class, (sv, tt) -> new DateTime(sv, TimeZone.getDefault()));
         registerConvert(Date.class, Long.class, (sv, tt) -> sv.getTime());
         registerConvert(Date.class, DateTime.class, (sv, tt) -> DateTime.of(sv));
-        registerConvert(String.class, BigDecimal.class, (sv, tt) -> new BigDecimal(sv));
-        registerConvert(String.class, UUID.class, (sv, tt) -> UUID.fromString(sv));
+        registerConvert(NEnum.class, Integer.class, (sv, tt) -> sv.getValue());
     }
 
     //region class

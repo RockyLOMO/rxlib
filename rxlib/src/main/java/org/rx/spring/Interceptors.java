@@ -11,6 +11,7 @@ import org.rx.annotation.EnableLog;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
+import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
 import org.rx.util.Servlets;
 import org.rx.util.Validator;
@@ -137,6 +138,7 @@ public class Interceptors {
             if (SpringContext.controllerExceptionHandler != null) {
                 return SpringContext.controllerExceptionHandler.apply(e, msg);
             }
+            TraceHandler.INSTANCE.log(e);
             return new ResponseEntity<>(msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
