@@ -374,7 +374,7 @@ public class Strings extends StringUtils {
         /**
          * 验证手机号码
          */
-        String Mobile = "^0{0,1}1[3|5|7|8]\\d{9}$";
+        String Mobile = "^0{0,1}1[3|4|5|6|7|8|9]\\d{9}$";
         /**
          * 验证电话号码
          */
