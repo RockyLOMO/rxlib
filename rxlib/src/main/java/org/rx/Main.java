@@ -76,6 +76,7 @@ public final class Main implements SocksSupport {
         public int steeringTTL;
         public List<String> gfwList;
         public List<String> directList;
+        public boolean autoGfw;
         public int waitIpInfoMillis = 1000;
         public int ddnsSeconds;
         public List<String> ddnsDomains;
@@ -283,9 +284,11 @@ public final class Main implements SocksSupport {
                     gfw = true;
                 } else if (Sockets.isBypass(conf.directList, host)) {
                     gfw = false;
-                } else {
+                } else if (conf.autoGfw) {
                     IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(host, true), conf.waitIpInfoMillis);
                     gfw = ipAddress == null || !ipAddress.isChina();
+                } else {
+                    gfw = true;
                 }
                 if (!gfw) {
                     e.setUpstream(new Upstream(e.getFirstDestination()));
