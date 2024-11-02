@@ -19,7 +19,6 @@ import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
-import org.rx.third.guava.CaseFormat;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -47,7 +46,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         final Map.Entry<String, Tuple<Field, DbColumn>> primaryKey;
         @Getter
         final Map<String, Tuple<Field, DbColumn>> columns;
-        final Map<String, Tuple<String, Tuple<Field, DbColumn>>> upperColumns = new HashMap<>();
+        final Map<String, Tuple<String, Tuple<Field, DbColumn>>> jdbcColumns = new HashMap<>();
         final Linq<Map.Entry<String, Tuple<Field, DbColumn>>> insertView;
         final Linq<Map.Entry<String, Tuple<Field, DbColumn>>> secondaryView;
         final String insertSql;
@@ -60,7 +59,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             this.primaryKey = new AbstractMap.SimpleEntry<>(primaryKey, columns.get(primaryKey));
             this.columns = columns;
             for (Map.Entry<String, Tuple<Field, DbColumn>> entry : columns.entrySet()) {
-                upperColumns.put(entry.getKey().toUpperCase(), Tuple.of(entry.getKey(), entry.getValue()));
+                jdbcColumns.put(entry.getKey().toUpperCase(), Tuple.of(entry.getKey(), entry.getValue()));
             }
             insertView = Linq.from(columns.entrySet()).where(p -> p.getValue().right == null || !p.getValue().right.autoIncrement());
             secondaryView = Linq.from(columns.entrySet()).where(p -> !eq(p.getKey(), getPrimaryKey().getKey()));
@@ -69,6 +68,19 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             this.updateSql = updateSql;
             this.deleteSql = deleteSql;
             this.selectSql = selectSql;
+        }
+
+        public Tuple<String, Tuple<Field, DbColumn>> getJdbcColumn(String col) {
+            Tuple<String, Tuple<Field, DbColumn>> bi = jdbcColumns.get(col);
+            if (bi == null) {
+                for (Map.Entry<String, Tuple<String, Tuple<Field, DbColumn>>> entry : jdbcColumns.entrySet()) {
+                    if (entry.getKey().replace("_", "").equals(col)) {
+                        jdbcColumns.put(col, bi = entry.getValue());
+                        break;
+                    }
+                }
+            }
+            return bi;
         }
     }
 
@@ -733,7 +745,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 SqlMeta meta = getMeta(entityType);
                 for (int i = 0; i < dt.getColumns().size(); i++) {
                     DataColumn<?> column = dt.getColumn(i);
-                    Tuple<String, Tuple<Field, DbColumn>> bi = meta.upperColumns.get(column.getColumnName());
+                    Tuple<String, Tuple<Field, DbColumn>> bi = meta.getJdbcColumn(column.getColumnName());
                     if (bi == null) {
                         continue;
                     }
@@ -789,9 +801,11 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     T t = entityType.newInstance();
                     for (int i = 1; i <= metaData.getColumnCount(); i++) {
                         //metaData.getColumnName is capitalized
-                        Tuple<Field, DbColumn> bi = meta.upperColumns.get(metaData.getColumnName(i)).right;
-                        if (bi == null) {
-                            throw new InvalidException("Mapping {} not found", metaData.getColumnName(i));
+                        String jdbcCol = metaData.getColumnName(i);
+                        Tuple<String, Tuple<Field, DbColumn>> pbi = meta.getJdbcColumn(jdbcCol);
+                        Tuple<Field, DbColumn> bi;
+                        if (pbi == null || (bi = pbi.right) == null) {
+                            throw new InvalidException("Mapping {} not found", jdbcCol);
                         }
                         Class<?> type = bi.left.getType();
                         bi.left.set(t, convertCell(type, rs.getObject(i)));

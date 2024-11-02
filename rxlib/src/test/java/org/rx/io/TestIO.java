@@ -12,6 +12,7 @@ import org.rx.AbstractTester;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.*;
 import org.rx.core.*;
+import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.GirlBean;
@@ -181,7 +182,7 @@ public class TestIO extends AbstractTester {
         System.out.println(db.executeQuery("select * from `person` limit 2", PersonBean.class));
         System.out.println(db.count(queryLambda));
         List<PersonBean> list = db.findBy(queryLambda);
-        assert list.isEmpty();
+        assert !list.isEmpty();
         ULID pk = entity.getId();
         assert db.existsById(PersonBean.class, pk);
         PersonBean byId = db.findById(PersonBean.class, pk);
@@ -197,6 +198,12 @@ public class TestIO extends AbstractTester {
         System.out.println(q.toString(params));
         System.out.println(toJsonString(params));
         System.out.println(q.orderByRand());
+
+
+        List<Object> paramsX = new ArrayList<>();
+        String sql = new EntityQueryLambda<>(TraceHandler.ExceptionEntity.class)
+                .lt(TraceHandler.ExceptionEntity::getModifyTime, DateTime.now()).toString(paramsX);
+        System.out.println(sql + "(" + paramsX + ")");
     }
     //endregion
 
