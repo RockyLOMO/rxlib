@@ -1,8 +1,14 @@
 package org.rx.util;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import org.rx.annotation.ValidRegex;
+import org.rx.core.Arrays;
 import org.rx.core.Linq;
+import org.rx.core.Reflects;
 import org.rx.util.function.Func;
+import sun.reflect.generics.reflectiveObjects.ParameterizedTypeImpl;
+import sun.reflect.generics.reflectiveObjects.TypeVariableImpl;
 
 import javax.validation.ConstraintValidator;
 import javax.validation.ConstraintValidatorContext;
@@ -10,11 +16,14 @@ import javax.validation.ConstraintViolation;
 import javax.validation.Validation;
 import javax.validation.executable.ExecutableValidator;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Type;
 import java.util.Collections;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
 
 /**
@@ -134,4 +143,74 @@ public class Validator {
             doThrow(violation);
         }
     }
+
+//    void append(JSONObject j, Type type, Type[] typeArguments) {
+//        ParameterizedTypeImpl pt = as(type, ParameterizedTypeImpl.class);
+//        if (pt != null) {
+//            Type[] ats = ifNull(typeArguments, pt.getActualTypeArguments());
+//            int atsOffset = 0;
+//            for (Field field : Reflects.getFieldMap(pt.getRawType()).values()) {
+//                if (field.getName().equals("serialVersionUID")) {
+//                    continue;
+//                }
+//                ParameterizedTypeImpl gpt = as(field.getGenericType(), ParameterizedTypeImpl.class);
+//                if (gpt != null) {
+//                    JSONObject n = new JSONObject();
+//                    if (Iterable.class.isAssignableFrom(gpt.getRawType())) {
+//                        JSONArray arr = new JSONArray();
+//                        arr.add(n);
+//                        j.put(field.getName(), arr);
+//                    } else {
+//                        j.put(field.getName(), n);
+//                    }
+//
+//                    Type[] atas = gpt.getActualTypeArguments();
+//                    if (atas[0] instanceof TypeVariableImpl) {
+//                        append(n, ats[atsOffset], Arrays.subarray(atas, atsOffset, atsOffset += atas.length));
+//                    } else {
+//                        append(n, ats[atsOffset++], null);
+//                    }
+//                    continue;
+//                }
+//
+//                j.put(field.getName(), getDesc(field));
+//            }
+//            return;
+//        }
+//
+//        Class<?> clz = (Class<?>) type;
+//        Type[] ats = typeArguments;
+//        int atsOffset = 0;
+//        for (Field field : Reflects.getFieldMap(clz).values()) {
+//            if (field.getName().equals("serialVersionUID")) {
+//                continue;
+//            }
+//            ParameterizedTypeImpl gpt = as(field.getGenericType(), ParameterizedTypeImpl.class);
+//            if (gpt != null) {
+//                JSONObject n = new JSONObject();
+//                if (Iterable.class.isAssignableFrom(gpt.getRawType())) {
+//                    JSONArray arr = new JSONArray();
+//                    arr.add(n);
+//                    j.put(field.getName(), arr);
+//                } else {
+//                    j.put(field.getName(), n);
+//                }
+//
+//                Type[] atas = gpt.getActualTypeArguments();
+//                if (atas[0] instanceof TypeVariableImpl && ats != null) {
+//                    append(n, ats[atsOffset], Arrays.subarray(atas, atsOffset, atsOffset += atas.length));
+//                } else {
+//                    append(n, atas[0], null);
+//                }
+//                continue;
+//            }
+//
+//            j.put(field.getName(), getDesc(field));
+//        }
+//    }
+//
+//    String getDesc(Field field) {
+//        ApiModelProperty attr = field.getAnnotation(ApiModelProperty.class);
+//        return field.getType().getSimpleName() + (attr == null ? "" : " " + attr.value());
+//    }
 }
