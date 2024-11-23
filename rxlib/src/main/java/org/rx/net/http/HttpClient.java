@@ -638,9 +638,9 @@ public class HttpClient {
         }
 
         //todo get request body
-//        boolean isGet = Strings.equalsIgnoreCase(servletRequest.getMethod(), HttpMethod.GET.name());
-//        ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), isGet ? null : reqContent.toBody()).build()).execute());
-        ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), reqContent.toBody()).build()).execute());
+        boolean isGet = Strings.equalsIgnoreCase(servletRequest.getMethod(), HttpMethod.GET.name());
+        ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), isGet ? null : reqContent.toBody()).build()).execute());
+//        ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), reqContent.toBody()).build()).execute());
         resContent.cachingStream = (featureFlags & CACHING_STREAM_FLAG) == CACHING_STREAM_FLAG;
         servletResponse.setStatus(resContent.response.code());
         for (Pair<? extends String, ? extends String> header : resContent.responseHeaders()) {
