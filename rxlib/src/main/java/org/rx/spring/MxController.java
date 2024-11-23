@@ -141,7 +141,10 @@ public class MxController {
     }
 
     @RequestMapping("health/p")
-    public void healthP(HttpServletRequest request, HttpServletResponse response) {
+    public Object healthP(HttpServletRequest request, HttpServletResponse response) {
+        if ("1".equals(request.getParameter("mock"))) {
+            return 1;
+        }
         String fu = request.getParameter("fu");
         Integer tm = Reflects.convertQuietly(request.getParameter("tm"), Integer.class);
         HttpClient client = new HttpClient();
@@ -149,6 +152,7 @@ public class MxController {
             client.withTimeoutMillis(tm);
         }
         client.forward(request, response, fu);
+        return null;
     }
 
 //    @SneakyThrows
@@ -206,9 +210,7 @@ public class MxController {
         return result;
     }
 
-    Map<String, Object> queryTraces(Date startTime, Date endTime, String level, String keyword, Boolean newest,
-                                    Boolean methodOccurMost, String methodNamePrefix, String metricsName,
-                                    Integer take) {
+    Map<String, Object> queryTraces(Date startTime, Date endTime, String level, String keyword, Boolean newest, Boolean methodOccurMost, String methodNamePrefix, String metricsName, Integer take) {
         Map<String, Object> result = new LinkedHashMap<>(3);
         ExceptionLevel el = null;
         if (!Strings.isBlank(level)) {
@@ -281,9 +283,7 @@ public class MxController {
 
         j.put("rxConfig", RxConfig.INSTANCE);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames())).select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.putAll(queryTraces(null, null, null, null, null,
-                null, null, null,
-                take));
+        j.putAll(queryTraces(null, null, null, null, null, null, null, null, take));
         return j;
     }
 
