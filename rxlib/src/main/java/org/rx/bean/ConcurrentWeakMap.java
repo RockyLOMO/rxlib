@@ -19,11 +19,11 @@ public class ConcurrentWeakMap<K, V> implements AbstractMap<K, V> {
     final boolean identityReference;
     transient MapView.EntrySetView<Reference<K>, K, V> entrySet;
 
-    public ConcurrentWeakMap() {
-        this(16, false);
+    public ConcurrentWeakMap(boolean identityReference) {
+        this(identityReference, 16);
     }
 
-    public ConcurrentWeakMap(int initialCapacity, boolean identityReference) {
+    public ConcurrentWeakMap(boolean identityReference, int initialCapacity) {
         map = new ConcurrentHashMap<>(initialCapacity);
         this.identityReference = identityReference;
     }

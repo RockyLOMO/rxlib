@@ -173,7 +173,7 @@ public class ObjectChangeTracker {
     //endregion
 
     public static final ObjectChangeTracker DEFAULT = new ObjectChangeTracker();
-    final Map<Object, Map<String, Object>> sources = new ConcurrentWeakMap<>();
+    final Map<Object, Map<String, Object>> sources = new ConcurrentWeakMap<>(true);
     final EventBus bus = EventBus.DEFAULT;
 
     public ObjectChangeTracker() {

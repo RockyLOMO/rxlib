@@ -9,10 +9,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.DateTime;
-import org.rx.bean.Decimal;
-import org.rx.bean.IntWaterMark;
-import org.rx.bean.Tuple;
+import org.rx.bean.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.BeanMapper;
@@ -162,7 +159,7 @@ public class CpuWatchman implements TimerTask {
         return poolSize;
     }
 
-    final Map<ThreadPoolExecutor, Tuple<IntWaterMark, int[]>> holder = new WeakIdentityMap<>(8);
+    final Map<ThreadPoolExecutor, Tuple<IntWaterMark, int[]>> holder = new ConcurrentWeakMap<>(true, 8);
 
     private CpuWatchman() {
         timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);

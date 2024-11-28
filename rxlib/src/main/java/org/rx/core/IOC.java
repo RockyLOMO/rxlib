@@ -6,7 +6,6 @@ import org.apache.commons.collections4.map.AbstractReferenceMap;
 import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.apache.commons.collections4.map.ReferenceMap;
 import org.rx.bean.ConcurrentWeakMap;
-import org.rx.bean.WeakIdentityMap;
 import org.rx.exception.InvalidException;
 
 import java.util.*;
@@ -17,7 +16,8 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 @SuppressWarnings(NON_UNCHECKED)
 public final class IOC {
     static final Map<Class<?>, Object> container = new ConcurrentHashMap<>(8);
-    static final Map WEAK_KEY_MAP = Collections.synchronizedMap(new WeakHashMap<>());
+    //    static final Map WEAK_KEY_MAP = Collections.synchronizedMap(new WeakHashMap<>());
+    static final Map WEAK_KEY_MAP = new ConcurrentWeakMap<>(false);
     static Map weakValMap, wKeyIdentityMap, wValIdentityMap;
 
     public static <T> boolean isInit(Class<T> type) {
@@ -94,7 +94,7 @@ public final class IOC {
             return wValIdentityMap;
         }
         if (wKeyIdentityMap == null) {
-            wKeyIdentityMap = new ConcurrentWeakMap<>();
+            wKeyIdentityMap = new ConcurrentWeakMap<>(true);
         }
         return wKeyIdentityMap;
     }
