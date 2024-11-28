@@ -416,7 +416,7 @@ public class TestUtil extends AbstractTester {
 
     @Test
     public void third() {
-        Map<Object, Integer> identityMap = new WeakIdentityMap<>();
+        Map<Object, Integer> identityMap = new ConcurrentWeakMap<>(true);
         UserStruct k = new UserStruct();
         identityMap.put(k, 1);
         k.age = 2;

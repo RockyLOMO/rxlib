@@ -134,4 +134,74 @@ public class Validator {
             doThrow(violation);
         }
     }
+
+//    void append(JSONObject j, Type type, Type[] typeArguments) {
+//        ParameterizedTypeImpl pt = as(type, ParameterizedTypeImpl.class);
+//        if (pt != null) {
+//            Type[] ats = ifNull(typeArguments, pt.getActualTypeArguments());
+//            int atsOffset = 0;
+//            for (Field field : Reflects.getFieldMap(pt.getRawType()).values()) {
+//                if (field.getName().equals("serialVersionUID")) {
+//                    continue;
+//                }
+//                ParameterizedTypeImpl gpt = as(field.getGenericType(), ParameterizedTypeImpl.class);
+//                if (gpt != null) {
+//                    JSONObject n = new JSONObject();
+//                    if (Iterable.class.isAssignableFrom(gpt.getRawType())) {
+//                        JSONArray arr = new JSONArray();
+//                        arr.add(n);
+//                        j.put(field.getName(), arr);
+//                    } else {
+//                        j.put(field.getName(), n);
+//                    }
+//
+//                    Type[] atas = gpt.getActualTypeArguments();
+//                    if (atas[0] instanceof TypeVariableImpl) {
+//                        append(n, ats[atsOffset], Arrays.subarray(atas, atsOffset, atsOffset += atas.length));
+//                    } else {
+//                        append(n, ats[atsOffset++], null);
+//                    }
+//                    continue;
+//                }
+//
+//                j.put(field.getName(), getDesc(field));
+//            }
+//            return;
+//        }
+//
+//        Class<?> clz = (Class<?>) type;
+//        Type[] ats = typeArguments;
+//        int atsOffset = 0;
+//        for (Field field : Reflects.getFieldMap(clz).values()) {
+//            if (field.getName().equals("serialVersionUID")) {
+//                continue;
+//            }
+//            ParameterizedTypeImpl gpt = as(field.getGenericType(), ParameterizedTypeImpl.class);
+//            if (gpt != null) {
+//                JSONObject n = new JSONObject();
+//                if (Iterable.class.isAssignableFrom(gpt.getRawType())) {
+//                    JSONArray arr = new JSONArray();
+//                    arr.add(n);
+//                    j.put(field.getName(), arr);
+//                } else {
+//                    j.put(field.getName(), n);
+//                }
+//
+//                Type[] atas = gpt.getActualTypeArguments();
+//                if (atas[0] instanceof TypeVariableImpl && ats != null) {
+//                    append(n, ats[atsOffset], Arrays.subarray(atas, atsOffset, atsOffset += atas.length));
+//                } else {
+//                    append(n, atas[0], null);
+//                }
+//                continue;
+//            }
+//
+//            j.put(field.getName(), getDesc(field));
+//        }
+//    }
+//
+//    String getDesc(Field field) {
+//        ApiModelProperty attr = field.getAnnotation(ApiModelProperty.class);
+//        return field.getType().getSimpleName() + (attr == null ? "" : " " + attr.value());
+//    }
 }

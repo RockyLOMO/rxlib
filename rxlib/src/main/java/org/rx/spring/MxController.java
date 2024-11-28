@@ -15,6 +15,7 @@ import org.rx.io.Bytes;
 import org.rx.io.IOStream;
 import org.rx.net.NetEventWait;
 import org.rx.net.Sockets;
+import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.annotation.PostConstruct;
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
@@ -138,15 +140,23 @@ public class MxController {
         }
     }
 
-    //    @PostMapping("directOffer")
-//    public void directOffer(String appName, String socksId, String endpoint, MultipartFile binary) {
-//        SendPack pack = new SendPack(appName, socksId, Sockets.parseEndpoint(endpoint));
-//        pack.setBinary(binary);
-//        server.frontendOffer(pack);
-//    }
-//
+    @RequestMapping("health/p")
+    public Object healthP(HttpServletRequest request, HttpServletResponse response) {
+        if ("1".equals(request.getParameter("mock"))) {
+            return 1;
+        }
+        String fu = request.getParameter("fu");
+        Integer tm = Reflects.convertQuietly(request.getParameter("tm"), Integer.class);
+        HttpClient client = new HttpClient();
+        if (tm != null) {
+            client.withTimeoutMillis(tm);
+        }
+        client.forward(request, response, fu);
+        return null;
+    }
+
 //    @SneakyThrows
-//    @PostMapping("directPoll")
+//    @PostMapping("directPoll/Offer")
 //    public void directPoll(String appName, String socksId, String endpoint, HttpServletResponse response) {
 //        ReceivePack pack = server.frontendPoll(new SendPack(appName, socksId, Sockets.parseEndpoint(endpoint)));
 //        ServletOutputStream out = response.getOutputStream();
@@ -200,9 +210,7 @@ public class MxController {
         return result;
     }
 
-    Map<String, Object> queryTraces(Date startTime, Date endTime, String level, String keyword, Boolean newest,
-                                    Boolean methodOccurMost, String methodNamePrefix, String metricsName,
-                                    Integer take) {
+    Map<String, Object> queryTraces(Date startTime, Date endTime, String level, String keyword, Boolean newest, Boolean methodOccurMost, String methodNamePrefix, String metricsName, Integer take) {
         Map<String, Object> result = new LinkedHashMap<>(3);
         ExceptionLevel el = null;
         if (!Strings.isBlank(level)) {
@@ -275,9 +283,7 @@ public class MxController {
 
         j.put("rxConfig", RxConfig.INSTANCE);
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames())).select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.putAll(queryTraces(null, null, null, null, null,
-                null, null, null,
-                take));
+        j.putAll(queryTraces(null, null, null, null, null, null, null, null, take));
         return j;
     }
 

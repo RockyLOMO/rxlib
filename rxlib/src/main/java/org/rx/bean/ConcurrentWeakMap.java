@@ -1,5 +1,7 @@
 package org.rx.bean;
 
+import lombok.NonNull;
+
 import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
@@ -9,18 +11,25 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
-//ReferenceIdentityMap
-public class WeakIdentityMap<K, V> implements AbstractMap<K, V> {
-    final Map<WeakReference<K>, V> map;
+//不要放值类型
+//ReferenceMap, ReferenceIdentityMap
+public class ConcurrentWeakMap<K, V> implements AbstractMap<K, V> {
     final ReferenceQueue<K> refQueue = new ReferenceQueue<>();
-    transient MapView.EntrySetView<WeakReference<K>, K, V> entrySet;
+    final Map<Reference<K>, V> map;
+    final boolean identityReference;
+    transient MapView.EntrySetView<Reference<K>, K, V> entrySet;
 
-    public WeakIdentityMap() {
-        this(16);
+    public ConcurrentWeakMap(boolean identityReference) {
+        this(identityReference, 16);
     }
 
-    public WeakIdentityMap(int initialCapacity) {
+    public ConcurrentWeakMap(boolean identityReference, int initialCapacity) {
         map = new ConcurrentHashMap<>(initialCapacity);
+        this.identityReference = identityReference;
+    }
+
+    Reference<K> toKeyReference(K key) {
+        return identityReference ? new IdentityWeakReference<>(key, refQueue) : new WeakReference<>(key, refQueue);
     }
 
     @Override
@@ -30,43 +39,35 @@ public class WeakIdentityMap<K, V> implements AbstractMap<K, V> {
     }
 
     @Override
-    public V get(Object key) {
+    public V get(@NonNull Object key) {
         expunge();
-        Objects.requireNonNull(key, "key");
-        WeakReference<K> keyref = new IdentityWeakReference<>((K) key);
-        return map.get(keyref);
+        return map.get(toKeyReference((K) key));
     }
 
     @Override
-    public V put(K key, V value) {
+    public V put(@NonNull K key, V value) {
         expunge();
-        Objects.requireNonNull(key, "key");
-        WeakReference<K> keyref = new IdentityWeakReference<>(key, refQueue);
-        return map.put(keyref, value);
+        return map.put(toKeyReference(key), value);
     }
 
     @Override
-    public V remove(Object key) {
+    public V remove(@NonNull Object key) {
         expunge();
-        Objects.requireNonNull(key, "key");
-        WeakReference<K> keyref = new IdentityWeakReference<>((K) key);
-        return map.remove(keyref);
+        return map.remove(toKeyReference((K) key));
     }
 
     @Override
     public Set<Entry<K, V>> entrySet() {
         expunge();
-        MapView.EntrySetView<WeakReference<K>, K, V> es;
+        MapView.EntrySetView<Reference<K>, K, V> es;
         return (es = entrySet) != null ? es : (entrySet = new MapView.EntrySetView<>(map, Reference::get));
     }
 
     @Override
-    public V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
+    public V computeIfAbsent(@NonNull K key, Function<? super K, ? extends V> mappingFunction) {
         expunge();
-        Objects.requireNonNull(key, "key");
         Objects.requireNonNull(mappingFunction, "mappingFunction");
-        WeakReference<K> keyref = new IdentityWeakReference<>(key, refQueue);
-        return map.computeIfAbsent(keyref, p -> mappingFunction.apply(key));
+        return map.computeIfAbsent(toKeyReference(key), p -> mappingFunction.apply(key));
     }
 
 //    public Stream<K> keysForValue(V value) {
@@ -115,11 +116,10 @@ public class WeakIdentityMap<K, V> implements AbstractMap<K, V> {
             if (this == o) {
                 return true;
             }
-            if (!(o instanceof WeakIdentityMap.IdentityWeakReference<?>)) {
+            if (!(o instanceof IdentityWeakReference)) {
                 return false;
             }
-            Object got = get();
-            return got != null && got == ((IdentityWeakReference<?>) o).get();
+            return get() == ((IdentityWeakReference<?>) o).get();
         }
 
         @Override

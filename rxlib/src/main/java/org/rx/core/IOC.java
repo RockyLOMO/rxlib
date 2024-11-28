@@ -2,7 +2,10 @@ package org.rx.core;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.rx.bean.WeakIdentityMap;
+import org.apache.commons.collections4.map.AbstractReferenceMap;
+import org.apache.commons.collections4.map.ReferenceIdentityMap;
+import org.apache.commons.collections4.map.ReferenceMap;
+import org.rx.bean.ConcurrentWeakMap;
 import org.rx.exception.InvalidException;
 
 import java.util.*;
@@ -13,9 +16,9 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 @SuppressWarnings(NON_UNCHECKED)
 public final class IOC {
     static final Map<Class<?>, Object> container = new ConcurrentHashMap<>(8);
-    static final Map WEAK_MAP = Collections.synchronizedMap(new WeakHashMap<>());
-    //不要放值类型
-    static final Map WEAK_IDENTITY_MAP = new WeakIdentityMap<>();
+    //    static final Map WEAK_KEY_MAP = Collections.synchronizedMap(new WeakHashMap<>());
+    static final Map WEAK_KEY_MAP = new ConcurrentWeakMap<>(false);
+    static Map weakValMap, wKeyIdentityMap, wValIdentityMap;
 
     public static <T> boolean isInit(Class<T> type) {
         return container.containsKey(type);
@@ -67,11 +70,32 @@ public final class IOC {
         container.remove(type);
     }
 
-    public static <K, V> Map<K, V> weakMap(boolean identity) {
-        return identity ? WEAK_IDENTITY_MAP : WEAK_MAP;
+    public static <K, V> Map<K, V> weakMap(boolean weakValue) {
+        if (!weakValue) {
+            return WEAK_KEY_MAP;
+        }
+        synchronized (WEAK_KEY_MAP) {
+            if (weakValMap == null) {
+                weakValMap = Collections.synchronizedMap(new ReferenceMap<>(AbstractReferenceMap.ReferenceStrength.HARD, AbstractReferenceMap.ReferenceStrength.WEAK));
+            }
+            return weakValMap;
+        }
     }
 
-    static <K, V> Map<K, V> weakMap(Object ref, boolean identity) {
-        return (Map<K, V>) (identity ? WEAK_IDENTITY_MAP : WEAK_MAP).computeIfAbsent(ref, k -> new ConcurrentHashMap<>(4));
+    static <K, V> Map<K, V> weakMap(Object ref, boolean weakValue) {
+        return (Map<K, V>) weakMap(weakValue).computeIfAbsent(ref, k -> new ConcurrentHashMap<>(4));
+    }
+
+    public synchronized static <K, V> Map<K, V> weakIdentityMap(boolean weakValue) {
+        if (weakValue) {
+            if (wValIdentityMap == null) {
+                wValIdentityMap = Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.HARD, AbstractReferenceMap.ReferenceStrength.WEAK));
+            }
+            return wValIdentityMap;
+        }
+        if (wKeyIdentityMap == null) {
+            wKeyIdentityMap = new ConcurrentWeakMap<>(true);
+        }
+        return wKeyIdentityMap;
     }
 }

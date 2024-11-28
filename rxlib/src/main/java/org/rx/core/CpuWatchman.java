@@ -159,7 +159,7 @@ public class CpuWatchman implements TimerTask {
         return poolSize;
     }
 
-    final Map<ThreadPoolExecutor, Tuple<IntWaterMark, int[]>> holder = new WeakIdentityMap<>(8);
+    final Map<ThreadPoolExecutor, Tuple<IntWaterMark, int[]>> holder = new ConcurrentWeakMap<>(true, 8);
 
     private CpuWatchman() {
         timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);

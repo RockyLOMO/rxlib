@@ -23,10 +23,10 @@ public class Tuple<T1, T2> implements Serializable {
         return new Tuple<>(t1, t2);
     }
 
+    public static <T1, T2> Map.Entry<T1, T2> toMapEntry(T1 t1, T2 t2) {
+        return new AbstractMap.SimpleImmutableEntry<>(t1, t2);
+    }
+
     public T1 left;
     public T2 right;
-
-    public Map.Entry<T1, T2> toMapEntry() {
-        return new AbstractMap.SimpleImmutableEntry<>(left, right);
-    }
 }
