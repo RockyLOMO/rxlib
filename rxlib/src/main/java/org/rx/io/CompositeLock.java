@@ -32,7 +32,7 @@ public final class CompositeLock {
 
     private final FileStream owner;
     private final FlagsEnum<Flags> flags;
-    //    private final ConcurrentHashMap<FileStream.Block, RefCounter<ReadWriteLock>> rwLocks = new ConcurrentHashMap<>();
+    //同一时间有锁就行
     final Map<FileStream.Block, ReadWriteLock> rwLocks = Collections.synchronizedMap(new WeakHashMap<>());
 
     @SneakyThrows
