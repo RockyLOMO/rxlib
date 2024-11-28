@@ -14,10 +14,7 @@ import org.rx.AbstractTester;
 import org.rx.annotation.Mapping;
 import org.rx.annotation.Metadata;
 import org.rx.annotation.Subscribe;
-import org.rx.bean.BiTuple;
-import org.rx.bean.DateTime;
-import org.rx.bean.FlagsEnum;
-import org.rx.bean.ULID;
+import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.test.GirlBean;
@@ -419,7 +416,7 @@ public class TestUtil extends AbstractTester {
 
     @Test
     public void third() {
-        Map<Object, Integer> identityMap = new WeakIdentityMap<>();
+        Map<Object, Integer> identityMap = new ConcurrentWeakMap<>(true);
         UserStruct k = new UserStruct();
         identityMap.put(k, 1);
         k.age = 2;
