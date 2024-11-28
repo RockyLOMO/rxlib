@@ -45,7 +45,7 @@ public class BeanRegister {
             }
 
             String rk = "RateLimiter:" + clientIp;
-            RateLimiterAdapter adapter = IOC.<String, RateLimiterAdapter>weakMap(false)
+            RateLimiterAdapter adapter = IOC.<String, RateLimiterAdapter>weakMap(true)
                     .computeIfAbsent(rk, k -> RedisUtil.wrapRateLimiter(new RedisRateLimiter(rCache, k, conf.getLimiterPermits())));
             return adapter.tryAcquire();
         };

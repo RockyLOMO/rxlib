@@ -3,7 +3,7 @@ package org.rx.core;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Metadata;
-import org.rx.bean.WeakIdentityMap;
+import org.rx.bean.ConcurrentWeakMap;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.springframework.cglib.proxy.Enhancer;
@@ -173,7 +173,7 @@ public class ObjectChangeTracker {
     //endregion
 
     public static final ObjectChangeTracker DEFAULT = new ObjectChangeTracker();
-    final Map<Object, Map<String, Object>> sources = new WeakIdentityMap<>();
+    final Map<Object, Map<String, Object>> sources = new ConcurrentWeakMap<>();
     final EventBus bus = EventBus.DEFAULT;
 
     public ObjectChangeTracker() {
