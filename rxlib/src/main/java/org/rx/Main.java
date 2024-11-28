@@ -363,8 +363,13 @@ public final class Main implements SocksSupport {
 
     static void serverInit() {
         httpServer = new HttpServer(8082, true).requestMapping("/hf", (request, response) -> {
-            String url = request.getQueryString().getFirst("forwardUrl");
-            response.jsonBody(new HttpClient().get(url).toJson());
+            String url = request.getQueryString().getFirst("fu");
+            Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
+            HttpClient client = new HttpClient();
+            if (tm != null) {
+                client.withTimeoutMillis(tm);
+            }
+            response.jsonBody(client.get(url).toJson());
         });
     }
 
