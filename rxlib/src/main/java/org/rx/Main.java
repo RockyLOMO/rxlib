@@ -12,6 +12,7 @@ import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.http.*;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
@@ -31,6 +32,7 @@ import org.rx.util.function.TripleAction;
 import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -88,8 +90,8 @@ public final class Main implements SocksSupport {
         public String udp2rawEndpoint;
     }
 
-    static RSSConf conf;
     static boolean udp2raw = false;
+    static RSSConf conf;
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
@@ -302,10 +304,35 @@ public final class Main implements SocksSupport {
             });
         }
 
-        app.ddns();
+        clientInit();
         log.info("Server started..");
         app.await();
     }
+
+    static void clientInit() {
+        Tasks.schedulePeriod(() -> {
+            if (conf == null) {
+                log.warn("conf is null");
+            }
+
+            InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
+            for (String ddns : conf.ddnsDomains) {
+                List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
+                if (currentIps.contains(wanIp)) {
+                    continue;
+                }
+                int i = ddns.indexOf(".");
+                String domain = ddns.substring(i + 1), name = ddns.substring(0, i);
+                log.info("ddns-{}.{}: {}->{}", name, domain, currentIps, wanIp);
+                AuthenticProxy p = conf.godaddyProxy != null
+                        ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
+                        : null;
+                IPSearcher.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress(), p);
+            }
+        }, conf.ddnsSeconds * 1000L);
+    }
+
+    static HttpServer httpServer;
 
     static void launchServer(Map<String, String> options, Integer port, Integer connectTimeout) {
         AuthenticEndpoint shadowUser = Reflects.convertQuietly(options.get("shadowUser"), AuthenticEndpoint.class);
@@ -330,33 +357,18 @@ public final class Main implements SocksSupport {
         rpcConf.getTcpConfig().setTransportFlags(TransportFlags.FRONTEND_AES_COMBO.flags());
         Main app = new Main(backSvr);
         Remoting.register(app, rpcConf);
+        serverInit();
         app.await();
     }
 
-    final SocksProxyServer proxyServer;
-
-    void ddns() {
-//        Tasks.schedulePeriod(() -> {
-//            if (conf == null) {
-//                log.warn("conf is null");
-//            }
-//
-//            InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
-//            for (String ddns : conf.ddnsDomains) {
-//                List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
-//                if (currentIps.contains(wanIp)) {
-//                    continue;
-//                }
-//                int i = ddns.indexOf(".");
-//                String domain = ddns.substring(i + 1), name = ddns.substring(0, i);
-//                log.info("ddns-{}.{}: {}->{}", name, domain, currentIps, wanIp);
-//                AuthenticProxy p = conf.godaddyProxy != null
-//                        ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
-//                        : null;
-//                IPSearcher.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress(), p);
-//            }
-//        }, conf.ddnsSeconds * 1000L);
+    static void serverInit() {
+        httpServer = new HttpServer(8082, true).requestMapping("/hf", (request, response) -> {
+            String url = request.getQueryString().getFirst("forwardUrl");
+            response.jsonBody(new HttpClient().get(url).toJson());
+        });
     }
+
+    final SocksProxyServer proxyServer;
 
     @Override
     public void fakeEndpoint(BigInteger hash, String endpoint) {
