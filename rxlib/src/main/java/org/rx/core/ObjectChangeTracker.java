@@ -2,8 +2,9 @@ package org.rx.core;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.map.AbstractReferenceMap;
+import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.rx.annotation.Metadata;
-import org.rx.bean.ConcurrentWeakMap;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.springframework.cglib.proxy.Enhancer;
@@ -173,7 +174,7 @@ public class ObjectChangeTracker {
     //endregion
 
     public static final ObjectChangeTracker DEFAULT = new ObjectChangeTracker();
-    final Map<Object, Map<String, Object>> sources = new ConcurrentWeakMap<>(true);
+    final Map<Object, Map<String, Object>> sources = Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.WEAK, AbstractReferenceMap.ReferenceStrength.HARD));
     final EventBus bus = EventBus.DEFAULT;
 
     public ObjectChangeTracker() {

@@ -8,6 +8,8 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.HttpUrl;
+import org.apache.commons.collections4.map.AbstractReferenceMap;
+import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
@@ -416,7 +418,7 @@ public class TestUtil extends AbstractTester {
 
     @Test
     public void third() {
-        Map<Object, Integer> identityMap = new ConcurrentWeakMap<>(true);
+        Map<Object, Integer> identityMap = Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.WEAK, AbstractReferenceMap.ReferenceStrength.HARD));
         UserStruct k = new UserStruct();
         identityMap.put(k, 1);
         k.age = 2;

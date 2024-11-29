@@ -9,6 +9,8 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.map.AbstractReferenceMap;
+import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.rx.bean.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -16,6 +18,7 @@ import org.rx.util.BeanMapper;
 import org.rx.util.Snowflake;
 
 import java.lang.management.ManagementFactory;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Map;
 import java.util.Objects;
@@ -159,7 +162,7 @@ public class CpuWatchman implements TimerTask {
         return poolSize;
     }
 
-    final Map<ThreadPoolExecutor, Tuple<IntWaterMark, int[]>> holder = new ConcurrentWeakMap<>(true, 8);
+    final Map<ThreadPoolExecutor, Tuple<IntWaterMark, int[]>> holder = Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.WEAK, AbstractReferenceMap.ReferenceStrength.HARD, 8, 0.75F));
 
     private CpuWatchman() {
         timer.newTimeout(this, RxConfig.INSTANCE.threadPool.samplingPeriod, TimeUnit.MILLISECONDS);

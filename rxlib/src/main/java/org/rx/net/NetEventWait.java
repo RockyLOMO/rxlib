@@ -9,7 +9,8 @@ import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.rx.bean.ConcurrentWeakMap;
+import org.apache.commons.collections4.map.AbstractReferenceMap;
+import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
@@ -88,7 +89,7 @@ public final class NetEventWait extends Disposable implements WaitHandle {
         this.multicastEndpoint = multicastEndpoint;
         idString = group + "@" + Integer.toHexString(hashCode());
         channel = channels.computeIfAbsent(multicastEndpoint, k -> (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, true, c -> {
-                    c.attr(REF).set(Collections.newSetFromMap(new ConcurrentWeakMap<>(true)));
+                    c.attr(REF).set(Collections.newSetFromMap(Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.WEAK, AbstractReferenceMap.ReferenceStrength.HARD))));
                     c.pipeline().addLast(Handler.DEFAULT);
                 })
                 .bind(multicastEndpoint.getPort()).addListener((ChannelFutureListener) f -> {

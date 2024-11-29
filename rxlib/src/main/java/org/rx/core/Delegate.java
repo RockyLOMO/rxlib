@@ -41,7 +41,7 @@ public class Delegate<TSender extends EventPublisher<TSender>, TEvent> implement
             if (!target.eventFlags().has(EventPublisher.EventFlags.DYNAMIC_ATTACH)) {
                 throw new InvalidException("Event {} not defined", fnName);
             }
-            d = IOC.<String, Delegate<TSender, TEvent>>weakMap(target, false).computeIfAbsent(fnName, k -> new Delegate<>());
+            d = IOC.<String, Delegate<TSender, TEvent>>weakMap(target).computeIfAbsent(fnName, k -> new Delegate<>());
         }
         return d;
     }
