@@ -45,7 +45,15 @@ import static org.rx.core.Tasks.awaitQuietly;
 @Slf4j
 @RequiredArgsConstructor
 public final class Main implements SocksSupport {
+    @SneakyThrows
     public static void main(String[] args) {
+//        serverInit();
+//
+//        String hfSvr = "https://f-li.cn:8082/hf";
+//        String fu = "https://api.web.ecapi.cn/platform/dmOrder?page=1&pageSize=100&time_from=2024-11-20%2019%3A36%3A48&time_to=2024-11-23%2019%3A36%3A48&apkey=33b26a2d-9111-40ec-eff0-d1f7316cb689";
+//        System.out.println(new HttpClient().get(HttpClient.buildUrl(hfSvr, Collections.singletonMap("fu", fu))).toString());
+//        System.in.read();
+
         Map<String, String> options = Sys.mainOptions(args);
         Integer port = Reflects.convertQuietly(options.get("port"), Integer.class);
         if (port == null) {
@@ -363,7 +371,7 @@ public final class Main implements SocksSupport {
 
     static void serverInit() {
         httpServer = new HttpServer(8082, true).requestMapping("/hf", (request, response) -> {
-            String url = request.getQueryString().getFirst("forwardUrl");
+            String url = request.getQueryString().getFirst("fu");
             response.jsonBody(new HttpClient().get(url).toJson());
         });
     }

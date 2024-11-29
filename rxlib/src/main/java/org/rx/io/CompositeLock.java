@@ -2,6 +2,8 @@ package org.rx.io;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.map.AbstractReferenceMap;
+import org.apache.commons.collections4.map.ReferenceMap;
 import org.rx.bean.FlagsEnum;
 import org.rx.bean.NEnum;
 import org.rx.util.function.Action;
@@ -32,8 +34,7 @@ public final class CompositeLock {
 
     private final FileStream owner;
     private final FlagsEnum<Flags> flags;
-    //同一时间有锁就行
-    final Map<FileStream.Block, ReadWriteLock> rwLocks = Collections.synchronizedMap(new WeakHashMap<>());
+    final Map<FileStream.Block, ReadWriteLock> rwLocks = Collections.synchronizedMap(new ReferenceMap<>(AbstractReferenceMap.ReferenceStrength.HARD, AbstractReferenceMap.ReferenceStrength.WEAK));
 
     @SneakyThrows
     private <T> T lock(FileStream.Block block, boolean shared, @NonNull Func<T> fn) {
