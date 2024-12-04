@@ -9,6 +9,7 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 import org.rx.util.function.PredicateFunc;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -51,7 +52,8 @@ public class ObjectPool<T> extends Disposable {
     final PredicateFunc<T> validateHandler;
     final BiAction<T> passivateHandler;
     final ConcurrentLinkedDeque<IdentityWrapper<T>> stack = new ConcurrentLinkedDeque<>();
-    final Map<IdentityWrapper<T>, ObjectConf> conf = new ConcurrentHashMap<>();
+    final ConcurrentHashMap<IdentityWrapper<T>, ObjectConf> conf = new ConcurrentHashMap<>();
+    //    final HashMap<IdentityWrapper<T>, ObjectConf> conf = new HashMap<>();
     final AtomicInteger size = new AtomicInteger();
     @Getter
     final int minSize;
@@ -152,14 +154,16 @@ public class ObjectPool<T> extends Disposable {
         }
 
         IdentityWrapper<T> wrapper = new IdentityWrapper<>(createHandler.get());
-        if (!stack.offer(wrapper)) {
-            log.error("ObjPool create object fail: Offer stack fail");
-            return null;
-        }
-        ObjectConf c = new ObjectConf();
-        c.setBorrowed(true);
-        if (conf.putIfAbsent(wrapper, c) != null) {
-            throw new InvalidException("create object fail, object '{}' has already in this pool", wrapper);
+        synchronized (conf) {
+            if (!stack.offer(wrapper)) {
+                log.error("ObjPool create object fail: Offer stack fail");
+                return null;
+            }
+            ObjectConf c = new ObjectConf();
+            c.setBorrowed(true);
+            if (conf.putIfAbsent(wrapper, c) != null) {
+                throw new InvalidException("create object fail, object '{}' has already in this pool", wrapper);
+            }
         }
         size.incrementAndGet();
 
@@ -173,14 +177,16 @@ public class ObjectPool<T> extends Disposable {
     boolean doRetire(IdentityWrapper<T> wrapper, int action) {
         boolean ok;
 
-        ok = stack.remove(wrapper);
+        synchronized (conf) {
+            ok = stack.remove(wrapper);
 //        if (ok) {
-        ObjectConf c = conf.remove(wrapper);
-        if (c != null) {
-            size.decrementAndGet();
+            ObjectConf c = conf.remove(wrapper);
+            if (c != null) {
+                size.decrementAndGet();
 
-            if (!c.isBorrowed()) {
-                tryClose(wrapper);
+                if (!c.isBorrowed()) {
+                    tryClose(wrapper);
+                }
             }
         }
 //        }
@@ -191,9 +197,11 @@ public class ObjectPool<T> extends Disposable {
     IdentityWrapper<T> doPoll() {
         IdentityWrapper<T> wrapper;
         ObjectConf c;
-        while ((wrapper = stack.poll()) != null && (c = conf.get(wrapper)) != null && !c.isBorrowed()) {
-            c.setBorrowed(true);
-            return wrapper;
+        synchronized (conf) {
+            while ((wrapper = stack.poll()) != null && (c = conf.get(wrapper)) != null && !c.isBorrowed()) {
+                c.setBorrowed(true);
+                return wrapper;
+            }
         }
         return null;
     }
@@ -220,19 +228,21 @@ public class ObjectPool<T> extends Disposable {
             return;
         }
 
-        ObjectConf c = conf.get(wrapper);
-        if (c == null) {
-            throw new InvalidException("Object '{}' not belong to this pool", wrapper);
-        }
-        if (!c.isBorrowed()) {
-            throw new InvalidException("Object '{}' has already in this pool", wrapper);
-        }
-        c.setBorrowed(false);
-        if (
+        synchronized (conf) {
+            ObjectConf c = conf.get(wrapper);
+            if (c == null) {
+                throw new InvalidException("Object '{}' not belong to this pool", wrapper);
+            }
+            if (!c.isBorrowed()) {
+                throw new InvalidException("Object '{}' has already in this pool", wrapper);
+            }
+            c.setBorrowed(false);
+            if (
 //                size() > maxSize ||  //Not required
-                !stack.offer(wrapper)) {
-            doRetire(wrapper, 2);
-            return;
+                    !stack.offer(wrapper)) {
+                doRetire(wrapper, 2);
+                return;
+            }
         }
 
         if (passivateHandler != null) {

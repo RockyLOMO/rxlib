@@ -57,7 +57,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             }
 
             channel.writeAndFlush(pack);
-            log.debug("serverWrite {} {}", channel.remoteAddress(), pack.getClass());
+            log.debug("serverWrite {} {}", channel.remoteAddress(), pack);
         }
 
         @Override
@@ -93,7 +93,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel channel = ctx.channel();
-            log.debug("serverRead {} {}", channel.remoteAddress(), msg.getClass());
+            log.debug("serverRead {} {}", channel.remoteAddress(), msg);
 
             Serializable pack;
             if ((pack = as(msg, Serializable.class)) == null) {
