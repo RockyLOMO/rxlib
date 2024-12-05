@@ -52,8 +52,8 @@ public class ObjectPool<T> extends Disposable {
     final PredicateFunc<T> validateHandler;
     final BiAction<T> passivateHandler;
     final ConcurrentLinkedDeque<IdentityWrapper<T>> stack = new ConcurrentLinkedDeque<>();
-    final ConcurrentHashMap<IdentityWrapper<T>, ObjectConf> conf = new ConcurrentHashMap<>();
-    //    final HashMap<IdentityWrapper<T>, ObjectConf> conf = new HashMap<>();
+    //    final ConcurrentHashMap<IdentityWrapper<T>, ObjectConf> conf = new ConcurrentHashMap<>();
+    final HashMap<IdentityWrapper<T>, ObjectConf> conf = new HashMap<>();
     final AtomicInteger size = new AtomicInteger();
     @Getter
     final int minSize;
