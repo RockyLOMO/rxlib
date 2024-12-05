@@ -346,8 +346,10 @@ public class HttpClient {
             if (idx == -1) {
                 continue;
             }
-            String key = URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name());
-            String value = pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name()).trim() : Strings.EMPTY;
+//            String key = URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name());
+//            String value = pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name()).trim() : Strings.EMPTY;
+            String key = pair.substring(0, idx);
+            String value = pair.length() > idx + 1 ? pair.substring(idx + 1).trim() : Strings.EMPTY;
             map.put(key, value);
         }
         return map;
