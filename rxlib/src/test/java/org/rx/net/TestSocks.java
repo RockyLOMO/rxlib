@@ -1,6 +1,8 @@
 package org.rx.net;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandler;
@@ -51,6 +53,7 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
+import org.rx.net.socks.Authenticator;
 import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -69,10 +72,7 @@ import org.rx.util.function.TripleAction;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
-import java.net.Inet4Address;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.text.NumberFormat;
@@ -977,9 +977,28 @@ public class TestSocks extends AbstractTester {
 
     @Test
     public void httpClient() {
+        String headerString = "Host: api.m.jd.com\n" +
+                "Connection: keep-alive\n" +
+                "accept: application/json, text/plain, */*\n" +
+                "x-rp-client: h5_1.0.0\n" +
+                "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.117 Safari/537.36\n" +
+                "x-referer-page: https://union.jd.com/proManager/index\n" +
+                "Sec-Fetch-Site: same-site\n" +
+                "Sec-Fetch-Mode: cors\n" +
+                "Referer: https://union.jd.com/proManager/index\n" +
+                "Accept-Encoding: gzip, deflate, br\n" +
+                "Accept-Language: zh-CN,zh;q=0.9\n" +
+                "Cookie: 3AB9D23F7A4B3C9B=ARGJW6C3BFDRDMLE2IVRJCQQ4NC65HDMB36IGPXUW7JJIMZ6MAYRK76GNV7RW6G2OXJJWE65MKVKERXQVNCPGEDE7E; shshshfpa=32cf9547-71b5-cb5d-1141-a6948a84ee1f-1711338862; shshshfpx=32cf9547-71b5-cb5d-1141-a6948a84ee1f-1711338862; pinId=aNUo6h3G0C3g20hktm5QsLV9-x-f3wj7; ceshi3.com=000; TrackID=1uEPlyXHGsCrw3e9T2CiwnS_Kg44jPCmW7M7JaJxheSPPiTdzr5ptE8cLdtgE3HjE16KVVNse8ZjaSYN1UaPDQTjYF7rSIE8suOSlO7WUY2c; thor=4E59707BBCC79D185665341B50BCF449ACFFCCD324A6233513038620008A4578A9B63966C063E636DD2B552DFA68D20B99AEE8AFAC979EED6D58FA8598B4AB9745C6DC0883922D019E86083B802AE95C42B2B3DF5A215C1B21708FB4A03DB22929C898E4CA1D6D9CECF6C5FEE278AB84C715963A11341C8F0013E50C0146B77986CEC20075563108A2B3A25C3E8C1B99AACC6E9A1AABB2D0604BC6D5298C5231; light_key=AASBKE7rOxgWQziEhC_QY6yaBurdXBQX7T4ZdhepQVZ01DnEa3XFaBp1llHlhQpl7X0dAnxZ; pin=jd_7251433dc47cc; unick=%E4%B9%90%E4%B9%8B%E5%A6%88%E5%92%AA24; __jdu=1718436564176204601267; __jdc=209449046; mba_muid=1718436564176204601267; __jd_ref_cls=MLoginRegister_SMSVerificationAppear; __jdv=209449046|direct|-|none|-|1732589133783; __jda=209449046.1718436564176204601267.1718436564.1732773234.1732846225.15; flash=3_aR-kwuagL7sh-LyDB0lZDT0uTa3Zw6B0RjNlMTQpp3jDKGhHYkYld59RiG3pP6y4jQzxtmjjjxQTENVpDWIivxf7cDKw-OGS4SkIoXRc_yiPTQ1Rs5dD8tXVC27d2h-g9T2wf8gjVoXBw_St29oxkaZhmyQhjEGgtL3Im2Zr8F5MKn8P8tet1e**; 3AB9D23F7A4B3CSS=jdd03ARGJW6C3BFDRDMLE2IVRJCQQ4NC65HDMB36IGPXUW7JJIMZ6MAYRK76GNV7RW6G2OXJJWE65MKVKERXQVNCPGEDE7EAAAAMTSWNDEMYAAAAACXBSN7WNY3LOIAX; _gia_d=1; shshshfpb=BApXS23qTlvZAOTtXg_Il6aOIz-MxQl_FBlNyj01X9xJ1MszOHYC2; __jdb=209449046.8298.1718436564176204601267|15.1732846225\n" +
+                "\n\n\n";
+        Map<String, String> headers = HttpClient.decodeHeader(Arrays.toList(Strings.split(headerString, "\n")));
+        headers.remove("Host");
+        System.out.println(JSON.toJSONString(headers, JSONWriter.Feature.PrettyFormat));
+
         HttpClient c = new HttpClient();
-        c.requestHeaders().add("Connection", "close");
-        System.out.println(c.get("").toString());
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            c.requestHeaders().set(entry.getKey(), entry.getValue());
+        }
+        System.out.println(c.get("http://cn.bing.com").toString());
     }
 
     @Test
