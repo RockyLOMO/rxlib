@@ -5,6 +5,8 @@ import io.netty.buffer.ByteBuf;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.map.AbstractReferenceMap;
+import org.apache.commons.collections4.map.ReferenceMap;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.junit.jupiter.api.Test;
@@ -34,6 +36,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
@@ -460,6 +464,33 @@ public class TestIO extends AbstractTester {
             assert fk != null && fk.logPosition == rk;
         }, 100);
         log.info("{}", indexer);
+    }
+
+    final Map<FileStream.Block, ReadWriteLock> rwLocks = Collections.synchronizedMap(new ReferenceMap<>(AbstractReferenceMap.ReferenceStrength.HARD, AbstractReferenceMap.ReferenceStrength.WEAK));
+
+    @Test
+    public void overlapsLock() {
+        ReentrantReadWriteLock r = new ReentrantReadWriteLock();
+        rwLocks.put(new FileStream.Block(4, 2), r);
+        assert overlaps(0, 4) == null;
+        assert overlaps(6, 10) == null;
+        assert overlaps(3, 1) == null;
+        assert overlaps(3, 2) == r;
+        assert overlaps(3, 4) == r;
+        assert overlaps(5, 1) == r;
+        assert overlaps(5, 3) == r;
+    }
+
+    private ReadWriteLock overlaps(long position, long size) {
+        for (Map.Entry<FileStream.Block, ReadWriteLock> entry : rwLocks.entrySet()) {
+            FileStream.Block block = entry.getKey();
+            if (position + size <= block.position)
+                continue;               // That is below this
+            if (block.position + block.size <= position)
+                continue;               // This is below that
+            return entry.getValue();
+        }
+        return null;
     }
     //endregion
 
