@@ -370,6 +370,7 @@ public final class Sockets {
         });
     }
 
+    //ctx.channel()会为null
     public static void closeOnFlushed(Channel channel) {
         if (channel == null || !channel.isActive()) {
             return;

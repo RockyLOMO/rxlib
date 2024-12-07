@@ -32,8 +32,8 @@ public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         Channel inbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(inbound);
-        Sockets.closeOnFlushed(sc.outbound);
         super.channelInactive(ctx);
+        Sockets.closeOnFlushed(sc.outbound);
     }
 
     @Override
