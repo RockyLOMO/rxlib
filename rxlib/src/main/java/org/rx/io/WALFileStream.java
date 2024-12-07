@@ -14,7 +14,6 @@ import org.rx.util.function.BiFunc;
 import java.io.*;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.LinkedTransferQueue;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.core.Extends.require;
 
@@ -45,63 +44,21 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         throw new UnsupportedEncodingException();
     }
 
-    static class MetaHeader implements Serializable {
+    private static class MetaHeader implements Serializable {
         private static final long serialVersionUID = 3894764623767567837L;
 
         private void writeObject(ObjectOutputStream out) throws IOException {
             out.writeLong(logPos);
-            out.writeInt(size.get());
+            out.writeLong(size);
         }
 
         private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
             logPos = in.readLong();
-            size = new AtomicInteger();
-            size.set(in.readInt());
+            size = in.readLong();
         }
 
-        private transient WALFileStream owner;
-        private volatile long logPos = HEADER_SIZE;
-        private AtomicInteger size = new AtomicInteger();
-        Object extra;
-
-        public long getLogPosition() {
-            return logPos;
-        }
-
-        public void setLogPosition(long logPosition) {
-            require(logPosition, logPosition >= HEADER_SIZE);
-
-            logPos = logPosition;
-            writeBack();
-        }
-
-        public int getSize() {
-            return size.get();
-        }
-
-        public void setSize(int size) {
-            this.size.set(size);
-            writeBack();
-        }
-
-        public int incrementSize() {
-            int s = size.incrementAndGet();
-            writeBack();
-            return s;
-        }
-
-        public int decrementSize() {
-            int s = size.decrementAndGet();
-            writeBack();
-            return s;
-        }
-
-        private void writeBack() {
-            if (owner == null) {
-                return;
-            }
-            owner.saveMeta();
-        }
+        long logPos = HEADER_SIZE;
+        long size;
     }
 
     static final float GROW_FACTOR = 0.75f;
@@ -198,17 +155,35 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
 
     @Override
     public long getPosition() {
-        return lock.readInvoke(meta::getLogPosition);
+        return lock.readInvoke(() -> meta.logPos);
     }
 
     @Override
     public void setPosition(long position) {
-        lock.writeInvoke(() -> meta.setLogPosition(position));
+        require(position, position >= HEADER_SIZE);
+
+        lock.writeInvoke(() -> {
+            meta.logPos = position;
+            saveMeta();
+        }, 0, HEADER_SIZE);
     }
 
     @Override
     public long getLength() {
         return lock.readInvoke(file::getLength);
+    }
+
+    Object extra;
+
+    public long getSize() {
+        return lock.readInvoke(() -> meta.size);
+    }
+
+    public void setSize(long size) {
+        lock.writeInvoke(() -> {
+            meta.size = size;
+            saveMeta();
+        }, 0, HEADER_SIZE);
     }
 
     public WALFileStream(File file, long growSize, int readerCount, @NonNull Serializer serializer) {
@@ -223,7 +198,6 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         }
 
         meta = loadMeta();
-        meta.owner = this;
     }
 
     @Override
@@ -234,14 +208,13 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
 
     public void clear() {
         lock.writeInvoke(() -> {
-            meta.setLogPosition(HEADER_SIZE);
-            meta.setSize(0);
+            meta.size = 0;
+            setPosition(HEADER_SIZE);
         });
     }
 
-    public void saveMeta() {
-        checkNotClosed();
-
+    void saveMeta() {
+//        checkNotClosed();
         lock.writeInvoke(() -> {
             writer.setPosition(0);
             serializer.serialize(meta, writer);
@@ -302,7 +275,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         return lock.writeInvoke(() -> {
             long length = file.getLength();
             if (length < growSize
-                    || (meta != null && meta.getLogPosition() / (float) length > GROW_FACTOR)) {
+            if (length < growSize || (meta != null && meta.logPos / (float) length > GROW_FACTOR)) {
                 long resize = length + growSize;
                 log.info("growSize {} {}->{}", getName(), length, resize);
                 _setLength(resize);
@@ -374,9 +347,9 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     }
 
     private void ensureWrite(BiAction<IOStream> action) {
-        long logPosition = meta.getLogPosition();
+        long logPosition = meta.logPos;
         lock.writeInvoke(() -> {
-            if (logPosition != meta.getLogPosition()) {
+            if (logPosition != meta.logPos) {
                 throw new InvalidException("Concurrent error");
 //                log.warn("Fallback lock");
 //                lock.writeInvoke(() -> innerWrite(meta.getLogPosition(), action));
@@ -393,7 +366,8 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         writer.setPosition(logPosition);
         action.accept(writer);
         _flush();
-        meta.setLogPosition(writer.getPosition());
+
+        setPosition(writer.getPosition());
     }
 
     private void _flush() {

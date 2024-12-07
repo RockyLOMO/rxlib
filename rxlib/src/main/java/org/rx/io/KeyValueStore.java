@@ -79,7 +79,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     @RequiredArgsConstructor
     class IteratorContext {
         final Entry<TK, TV>[] buf;
-        long logPos = wal.meta.getLogPosition();
+        long logPos = wal.getPosition();
         int writePos;
         int readPos;
         int remaining;
@@ -130,7 +130,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
         indexer = new ExternalSortingIndexer<>(new File(String.format("%s/%s", config.getDirectoryPath(), idxName)), config.getIndexBufferSize(), config.getIndexReaderCount());
 
         wal.lock.writeInvoke(() -> {
-            long pos = wal.meta.getLogPosition();
+            long pos = wal.getPosition();
             Entry<TK, TV> val;
             $<Long> endPos = $();
             while ((val = unsafeRead(pos, null, endPos)) != null) {
@@ -146,18 +146,18 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                 }
 
                 key.logPosition = pos;
-                wal.meta.setLogPosition(endPos.v);
+                wal.setPosition(endPos.v);
                 indexer.save(key);
 
                 if (incr) {
-                    wal.meta.incrementSize();
+                    wal.setSize(wal.getSize() + 1);
                 }
                 log.debug("recover {}", key);
                 pos = endPos.v;
             }
         });
-        if (wal.meta.extra == null) {
-            wal.meta.extra = new AtomicInteger();
+        if (wal.extra == null) {
+            wal.extra = new AtomicInteger();
         }
 
         if (config.getApiPort() > 0) {
@@ -186,13 +186,13 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                 incr = true;
             }
 
-            long pos = wal.meta.getLogPosition();
+            long pos = wal.getPosition();
             if (key.logPosition >= WALFileStream.HEADER_SIZE) {
                 KeyIndexer.KeyEntity<TK> finalKey = key;
 //                wal.lock.writeInvoke(() -> {
-                wal.meta.setLogPosition(finalKey.logPosition);
+                wal.setPosition(finalKey.logPosition);
                 wal.write(TOMB_MARK);
-                wal.meta.setLogPosition(pos);
+                wal.setPosition(pos);
                 log.debug("fastPut mark TOMB {} <- {}", finalKey.logPosition, pos);
 //                }, key.logPosition, 1);
             }
@@ -200,13 +200,13 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             key.logPosition = pos;
             wal.write(0);
             serializer.serialize(val, wal);
-            int size = (int) (wal.meta.getLogPosition() - key.logPosition);
+            int size = (int) (wal.getPosition() - key.logPosition);
             wal.writeInt(size);
 //            log.debug("fastPut {} {}", key, val);
 
             indexer.save(key);
             if (incr) {
-                wal.meta.incrementSize();
+                wal.setSize(wal.getSize() + 1);
             }
         }, WALFileStream.HEADER_SIZE);
     }
@@ -220,15 +220,15 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                 return;
             }
 
-            long pos = wal.meta.getLogPosition();
-            wal.meta.setLogPosition(key.logPosition);
+            long pos = wal.getPosition();
+            wal.setPosition(key.logPosition);
             wal.write(TOMB_MARK);
-            wal.meta.setLogPosition(pos);
+            wal.setPosition(pos);
             log.debug("fastRemove {}", key);
 
             key.logPosition = TOMB_MARK;
             indexer.save(key);
-            wal.meta.decrementSize();
+            wal.setSize(wal.getSize() - 1);
         }, WALFileStream.HEADER_SIZE);
     }
 
@@ -257,7 +257,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             val = serializer.deserialize(wal, true);
 
             if (k != null && !k.equals(val.key)) {
-                AtomicInteger counter = (AtomicInteger) wal.meta.extra;
+                AtomicInteger counter = (AtomicInteger) wal.extra;
                 int total = counter == null ? -1 : counter.incrementAndGet();
                 log.warn("LogPosError hash collision {} total={}", k, total);
                 Files.writeLines("./hc_err.log", Linq.from(String.format("%s %s hc=%s total=%s", DateTime.now(), logName
@@ -436,7 +436,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     //region map
     @Override
     public int size() {
-        return wal.meta.getSize();
+        return (int) wal.getSize();
     }
 
     @Override
