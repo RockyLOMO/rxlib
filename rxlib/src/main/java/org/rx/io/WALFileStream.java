@@ -274,7 +274,6 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     private boolean ensureGrow() {
         return lock.writeInvoke(() -> {
             long length = file.getLength();
-            if (length < growSize
             if (length < growSize || (meta != null && meta.logPos / (float) length > GROW_FACTOR)) {
                 long resize = length + growSize;
                 log.info("growSize {} {}->{}", getName(), length, resize);
