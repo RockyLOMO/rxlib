@@ -38,8 +38,8 @@ public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         SocksContext sc = SocksContext.ctx(ctx.channel());
-        Sockets.closeOnFlushed(sc.inbound);
         super.channelInactive(ctx);
+        Sockets.closeOnFlushed(sc.inbound);
     }
 
     @Override
