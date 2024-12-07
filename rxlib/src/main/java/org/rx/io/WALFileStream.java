@@ -72,7 +72,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     private CompositeMmap writer;
     private final LinkedTransferQueue<IOStream> readers = new LinkedTransferQueue<>();
     private final Serializer serializer;
-    final MetaHeader meta;
+    private final MetaHeader meta;
     @Setter
     long flushDelayMillis = 1000;
     private transient InputStream _reader;
@@ -172,8 +172,6 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     public long getLength() {
         return lock.readInvoke(file::getLength);
     }
-
-    Object extra;
 
     public long getSize() {
         return lock.readInvoke(() -> meta.size);

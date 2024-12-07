@@ -12,6 +12,7 @@ import org.rx.codec.CodecUtil;
 import org.rx.core.Disposable;
 import org.rx.core.Linq;
 import org.rx.core.Reflects;
+import org.rx.core.StringBuilder;
 import org.rx.core.Strings;
 import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
@@ -156,9 +157,6 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                 pos = endPos.v;
             }
         });
-        if (wal.extra == null) {
-            wal.extra = new AtomicInteger();
-        }
 
         if (config.getApiPort() > 0) {
             startApiServer(config.getApiPort());
@@ -257,11 +255,11 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
             val = serializer.deserialize(wal, true);
 
             if (k != null && !k.equals(val.key)) {
-                AtomicInteger counter = (AtomicInteger) wal.extra;
-                int total = counter == null ? -1 : counter.incrementAndGet();
-                log.warn("LogPosError hash collision {} total={}", k, total);
-                Files.writeLines("./hc_err.log", Linq.from(String.format("%s %s hc=%s total=%s", DateTime.now(), logName
-                        , k, total)), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                String msg = new StringBuilder()
+                        .appendMessageFormat("{} {} KeyValueStore hash collision {}",
+                                DateTime.now().toDateTimeString(), logName, k).toString();
+                Files.writeLines("./rx_err.log", Linq.from(msg),
+                        StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 return null;
             }
             return val;
