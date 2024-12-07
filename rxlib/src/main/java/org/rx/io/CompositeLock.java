@@ -34,26 +34,29 @@ public final class CompositeLock {
 
     private final FileStream owner;
     private final FlagsEnum<Flags> flags;
-    final Map<FileStream.Block, ReadWriteLock> rwLocks = Collections.synchronizedMap(new ReferenceMap<>(AbstractReferenceMap.ReferenceStrength.HARD, AbstractReferenceMap.ReferenceStrength.WEAK));
+    final Map<FileStream.Block, ReadWriteLock> rwLocks = new ReferenceMap<>(AbstractReferenceMap.ReferenceStrength.HARD, AbstractReferenceMap.ReferenceStrength.WEAK);
 
     @SneakyThrows
     private <T> T lock(FileStream.Block block, boolean shared, @NonNull Func<T> fn) {
         Lock lock = null;
-        if (flags.has(Flags.READ_WRITE_LOCK)) {
-            ReadWriteLock rwLock = rwLocks.computeIfAbsent(block, k -> {
-                ReadWriteLock t = overlaps(k.position, k.size);
-                if (t == null) {
-                    t = new ReentrantReadWriteLock();
-                }
-                return t;
-            });
-//            log.info("Lock {} - {}", rwLock, block);
-            lock = shared ? rwLock.readLock() : rwLock.writeLock();
-            lock.lock();
-        }
-
         FileLock fLock = null;
         try {
+            if (flags.has(Flags.READ_WRITE_LOCK)) {
+                ReadWriteLock rwLock;
+                synchronized (rwLocks) {
+                    rwLock = rwLocks.computeIfAbsent(block, k -> {
+                        ReadWriteLock t = overlaps(k.position, k.size);
+                        if (t == null) {
+                            t = new ReentrantReadWriteLock();
+                        }
+                        return t;
+                    });
+                }
+//            log.info("Lock {} - {}", rwLock, block);
+                lock = shared ? rwLock.readLock() : rwLock.writeLock();
+                lock.lock();
+            }
+
             if (flags.has(Flags.FILE_LOCK)) {
                 fLock = owner.getRandomAccessFile().getChannel().lock(block.position, block.size, shared);
             }
