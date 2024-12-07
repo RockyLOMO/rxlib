@@ -191,14 +191,6 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         readerPosition.set(position);
     }
 
-//    public long getWriterPosition() {
-//        return meta.getLogPosition();
-//    }
-//
-//    public void setWriterPosition(long position) {
-//        meta.setLogPosition(position);
-//    }
-
     @Override
     public boolean canSeek() {
         return true;
@@ -206,12 +198,12 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
 
     @Override
     public long getPosition() {
-        return meta.getLogPosition();
+        return lock.readInvoke(meta::getLogPosition);
     }
 
     @Override
     public void setPosition(long position) {
-        meta.setLogPosition(position);
+        lock.writeInvoke(() -> meta.setLogPosition(position));
     }
 
     @Override
@@ -386,15 +378,22 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         lock.writeInvoke(() -> {
             if (logPosition != meta.getLogPosition()) {
                 throw new InvalidException("Concurrent error");
+//                log.warn("Fallback lock");
+//                lock.writeInvoke(() -> innerWrite(meta.getLogPosition(), action));
+//                return;
             }
 
-            ensureGrow();
-
-            writer.setPosition(logPosition);
-            action.invoke(writer);
-            _flush();
-            meta.setLogPosition(writer.getPosition());
+            innerWrite(logPosition, action);
         }, logPosition);
+    }
+
+    void innerWrite(long logPosition, BiAction<IOStream> action) {
+        ensureGrow();
+
+        writer.setPosition(logPosition);
+        action.accept(writer);
+        _flush();
+        meta.setLogPosition(writer.getPosition());
     }
 
     private void _flush() {
