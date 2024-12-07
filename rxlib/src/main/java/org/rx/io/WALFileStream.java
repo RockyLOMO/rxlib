@@ -346,17 +346,17 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     }
 
     private void ensureWrite(BiAction<IOStream> action) {
-        long logPosition = meta.logPos;
+        long logPos = meta.logPos;
         lock.writeInvoke(() -> {
-            if (logPosition != meta.logPos) {
-                throw new InvalidException("Concurrent error");
-//                log.warn("Fallback lock");
-//                lock.writeInvoke(() -> innerWrite(meta.getLogPosition(), action));
-//                return;
+            if (logPos != meta.logPos) {
+//                throw new InvalidException("Concurrent error");
+                log.warn("Fallback to global lock <- pos:{}", logPos);
+                lock.writeInvoke(() -> innerWrite(meta.logPos, action));
+                return;
             }
 
-            innerWrite(logPosition, action);
-        }, logPosition);
+            innerWrite(logPos, action);
+        }, logPos);
     }
 
     void innerWrite(long logPosition, BiAction<IOStream> action) {
