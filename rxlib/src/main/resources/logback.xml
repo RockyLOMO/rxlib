@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="false" debug="false">
-    <!--    <springProperty scope="context" name="appName" source="spring.application.name" default="RxSocks"/>-->
     <property name="logLevel" value="INFO"/>
     <property name="logPath" value="./logs"/>
     <property name="appName" value="RxSocks"/>
@@ -30,9 +29,26 @@
             <pattern>%d{HH:mm:ss.SSS} %-5p [%t] %c{20} - %m%n</pattern>
         </encoder>
     </appender>
+    <appender name="errorAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${logPath}/${appName}_error.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${logPath}/${appName}_error.%d{yyyyMMdd}_%i.log</fileNamePattern>
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>500MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+            <maxHistory>${days}</maxHistory>
+        </rollingPolicy>
+        <encoder charset="UTF-8">
+            <pattern>%d{HH:mm:ss.SSS} %-5p [%t] %c{20} - %m%n</pattern>
+        </encoder>
+    </appender>
 
     <root level="${logLevel}">
 <!--        <appender-ref ref="STDOUT"/>-->
         <appender-ref ref="infoAppender"/>
+        <appender-ref ref="errorAppender"/>
     </root>
 </configuration>
