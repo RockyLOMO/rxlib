@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -17,12 +18,17 @@ public class ProxyChannelIdleHandler extends IdleStateHandler {
     @SneakyThrows
     @Override
     protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
-        log.info("{} {} idle: {}", Sockets.protocolName(ctx.channel()), ctx.channel(), evt.state());
-        SocksContext sc = SocksContext.ctx(ctx.channel());
+        Channel channel = ctx.channel();
+        if (channel == null) {
+            return;
+        }
+
+        log.info("{} {} idle: {}", Sockets.protocolName(channel), channel, evt.state());
+        SocksContext sc = SocksContext.ctx(channel);
         if (sc.onClose != null) {
             sc.onClose.invoke();
         }
         super.channelIdle(ctx, evt);
-        Sockets.closeOnFlushed(ctx.channel());
+        Sockets.closeOnFlushed(channel);
     }
 }
