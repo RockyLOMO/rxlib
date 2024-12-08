@@ -70,7 +70,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             info.totalReadBytes.addAndGet(writeBytes);
             info.totalWriteBytes.addAndGet(readBytes);
         }
-        tryAs(authenticator, DbAuthenticator.class, p -> p.save(user));
+//        tryAs(authenticator, DbAuthenticator.class, p -> p.save(user));
 
         InetSocketAddress remoteAddress = (InetSocketAddress) ctx.channel().remoteAddress();
         log.info("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",
