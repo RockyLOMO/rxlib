@@ -523,7 +523,7 @@ public class TestSocks extends AbstractTester {
         SocksUser usr = new SocksUser("rocky");
         usr.setPassword(defPwd);
         usr.setMaxIpCount(-1);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf, Authenticator.dbAuth(Collections.singletonList(usr), null));
+        SocksProxyServer backSvr = new SocksProxyServer(backConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
         rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
