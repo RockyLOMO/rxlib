@@ -7,6 +7,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.proxy.ProxyConnectException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.rx.core.Strings;
 import org.rx.net.Sockets;
 
 @Slf4j
@@ -46,11 +47,11 @@ public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         Channel outbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(outbound);
-//        if (cause instanceof ProxyConnectException) {
-//            log.warn("RELAY {}[{}] => {} thrown\n{}", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause.getMessage());
-//        } else {
+        if (cause instanceof ProxyConnectException && Strings.lastIndexOf(cause.getMessage(), "timeout") != -1) {
+            log.warn("RELAY {}[{}] => {} thrown\n{}", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause.getMessage());
+        } else {
             log.warn("RELAY {}[{}] => {} thrown", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause);
-//        }
+        }
         Sockets.closeOnFlushed(outbound);
     }
 }
