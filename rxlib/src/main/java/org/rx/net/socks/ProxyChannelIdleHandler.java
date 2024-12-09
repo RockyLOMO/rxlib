@@ -19,13 +19,9 @@ public class ProxyChannelIdleHandler extends IdleStateHandler {
     @Override
     protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
         Channel channel = ctx.channel();
-        if (channel == null) {
-            return;
-        }
-
         log.info("{} {} idle: {}", Sockets.protocolName(channel), channel, evt.state());
-        SocksContext sc = SocksContext.ctx(channel);
-        if (sc.onClose != null) {
+        SocksContext sc = SocksContext.ctx(channel, false);
+        if (sc != null && sc.onClose != null) {
             sc.onClose.invoke();
         }
         super.channelIdle(ctx, evt);

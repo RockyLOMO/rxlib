@@ -33,7 +33,7 @@ import static org.rx.core.Extends.require;
 public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
     static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
-    static final AttributeKey<SocksContext> CTX = AttributeKey.valueOf("PROXY_CTX");
+    private static final AttributeKey<SocksContext> CTX = AttributeKey.valueOf("PROXY_CTX");
     //ss
     static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
 
@@ -56,7 +56,11 @@ public final class SocksContext extends EventArgs {
     }
 
     public static SocksContext ctx(Channel channel) {
-        return require(channel.attr(CTX).get());
+        return ctx(channel, true);
+    }
+
+    public static SocksContext ctx(Channel channel, boolean throwOnEmpty) {
+        return throwOnEmpty ? require(channel.attr(CTX).get()) : channel.attr(CTX).get();
     }
 
     //region common
