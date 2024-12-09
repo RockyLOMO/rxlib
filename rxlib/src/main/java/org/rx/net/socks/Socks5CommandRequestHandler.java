@@ -90,7 +90,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 }
-                TraceHandler.INSTANCE.log("socks5[{}] connect {}[{}] fail", server.getConfig().getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause());
+                if (f.cause() instanceof io.netty.channel.ConnectTimeoutException) {
+                    log.warn("socks5[{}] connect {}[{}] fail\n{}", server.getConfig().getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause().getMessage());
+                } else {
+                    log.error("socks5[{}] connect {}[{}] fail", server.getConfig().getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause());
+                }
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
