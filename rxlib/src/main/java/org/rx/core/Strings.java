@@ -483,6 +483,10 @@ public class Strings extends StringUtils {
          * 大小写+数字
          */
         String PWD_STRENGTH = "^(?=.*\\d)(?=.*[a-z])(?=.*[A-Z]).{8,40}$";
+
+        String CN_NAME = "^[\\u4e00-\\u9fa5]{1,2}[\\u4e00-\\u9fa5·]{1,15}[\\u4e00-\\u9fa5]{1,2}$";
+
+        String EN_NAME = "^[A-Za-z.'’-]{1,20}\\s[A-Za-z.'’-]{1,20}$";
     }
     //endregion
 
