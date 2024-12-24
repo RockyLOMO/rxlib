@@ -1,5 +1,6 @@
 package org.rx.jdbc;
 
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.annotation.DbColumn;
@@ -25,6 +26,7 @@ import static org.rx.core.Sys.fastCacheKey;
 
 @RequiredArgsConstructor
 public class SimpleORM {
+    @Getter
     final JdbcExecutor executor;
 
     static final BiFunc<Class<?>, String> TO_UNDERSCORE_TABLE_MAPPING = t -> {

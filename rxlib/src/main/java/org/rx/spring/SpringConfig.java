@@ -2,17 +2,23 @@ package org.rx.spring;
 
 import org.rx.bean.Decimal;
 import org.rx.core.Reflects;
+import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Component;
 
 import javax.validation.Validation;
 import javax.validation.Validator;
 import java.io.File;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 
 @Configuration
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
@@ -29,10 +35,37 @@ public class SpringConfig
 //        return (e, m, a) -> TraceHandler.INSTANCE.log(e);
 //    }
 
-//    @Bean("defaultExecutorService")
-//    public ExecutorService executorService() {
-//        return Tasks.executor();
-//    }
+    @Primary
+    @Bean
+    public AsyncTaskExecutor asyncTaskExecutorEx() {
+        return new AsyncTaskExecutor() {
+            @Override
+            public void execute(Runnable task, long startTimeout) {
+                Tasks.executor().execute(task);
+            }
+
+            @Override
+            public Future<?> submit(Runnable task) {
+                return Tasks.executor().submit(task);
+            }
+
+            @Override
+            public <T> Future<T> submit(Callable<T> task) {
+                return Tasks.executor().submit(task);
+            }
+
+            @Override
+            public void execute(Runnable task) {
+                Tasks.executor().execute(task);
+            }
+        };
+    }
+
+    @Primary
+    @Bean
+    public ExecutorService executorServiceEx() {
+        return Tasks.executor();
+    }
 
     @Bean
     public Validator validator() {

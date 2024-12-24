@@ -75,7 +75,7 @@ public final class Tasks {
             }
 
             @Override
-            public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+            public boolean awaitTermination(long timeout, TimeUnit unit) {
                 return shutdown;
             }
         };
