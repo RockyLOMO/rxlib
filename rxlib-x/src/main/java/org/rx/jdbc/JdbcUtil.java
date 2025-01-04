@@ -205,16 +205,6 @@ public class JdbcUtil {
         }
     }
 
-    @SneakyThrows
-    public static <T> T executeScalar(ResultSet resultSet) {
-        try (ResultSet rs = resultSet) {
-            if (rs.next()) {
-                return (T) rs.getObject(1);
-            }
-            return null;
-        }
-    }
-
     public static final BiFunc<String, String> TO_CAMEL_COLUMN_MAPPING = p -> CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.LOWER_CAMEL, p);
 
     public static <T> List<T> readAs(ResultSet resultSet, Type type) {

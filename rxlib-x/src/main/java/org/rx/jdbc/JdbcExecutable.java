@@ -12,6 +12,10 @@ public interface JdbcExecutable {
 
     ResultSet executeQuery(String sql, Object[] params, long executeTimeoutMillis);
 
+    <T> T executeScalar(String sql, Object[] params);
+
+    <T> T executeScalar(String sql, Object[] params, long executeTimeoutMillis);
+
     <T> T executeQuery(String sql, Object[] params, BiFunc<ResultSet, T> func);
 
     <T> T executeQuery(String sql, Object[] params, BiFunc<ResultSet, T> func, long executeTimeoutMillis);
@@ -31,6 +35,10 @@ public interface JdbcExecutable {
     ResultSet executeQuery(String sql);
 
     ResultSet executeQuery(String sql, long executeTimeoutMillis);
+
+    <T> T executeScalar(String sql);
+
+    <T> T executeScalar(String sql, long executeTimeoutMillis);
 
     <T> T executeQuery(String sql, BiFunc<ResultSet, T> func);
 

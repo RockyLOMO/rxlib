@@ -48,15 +48,6 @@ public class MxController {
     @SneakyThrows
     @RequestMapping("health")
     public Object health(HttpServletRequest request) {
-        final String rt = "1";
-        String multicast = request.getParameter("multicast");
-        if (multicast != null) {
-            String group = request.getParameter("group");
-            Integer mcId = Reflects.changeType(request.getParameter("mcId"), Integer.class);
-            NetEventWait.multicastLocal(Sockets.parseEndpoint(multicast), group, ifNull(mcId, 0));
-            return rt;
-        }
-
         final HttpHeaders headers = new HttpHeaders();
 //        headers.setContentType(MediaType.valueOf("text/plain;charset=UTF-8"));
         headers.setContentType(MediaType.TEXT_PLAIN);
@@ -74,7 +65,18 @@ public class MxController {
             TraceHandler.INSTANCE.log("rx replay {}", buf);
             return new ResponseEntity<>(buf, headers, HttpStatus.OK);
         }
+
+        final String rt = "1";
+        ThreadPool.startTrace(null);
         try {
+            String multicast = request.getParameter("multicast");
+            if (multicast != null) {
+                String group = request.getParameter("group");
+                Integer mcId = Reflects.changeType(request.getParameter("mcId"), Integer.class);
+                NetEventWait.multicastLocal(Sockets.parseEndpoint(multicast), group, ifNull(mcId, 0));
+                return rt;
+            }
+
             switch (Integer.parseInt(x)) {
                 case 1:
                     Sys.diagnosticMx.setVMOption(request.getParameter("k"), request.getParameter("v"));
@@ -137,6 +139,8 @@ public class MxController {
             return svrState(request);
         } catch (Throwable e) {
             return new ResponseEntity<>(String.format("%s\n%s", e, ExceptionUtils.getStackTrace(e)), headers, HttpStatus.OK);
+        } finally {
+            ThreadPool.endTrace();
         }
     }
 

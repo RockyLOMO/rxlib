@@ -343,6 +343,22 @@ public class JdbcExecutor extends Disposable implements EventPublisher<JdbcExecu
     }
 
     @Override
+    public <T> T executeScalar(String sql, Object[] params) {
+        return executeScalar(sql, params, executeTimeoutMillis);
+    }
+
+    @SneakyThrows
+    @Override
+    public <T> T executeScalar(String sql, Object[] params, long executeTimeoutMillis) {
+        try (ResultSet rs = executeQuery(sql, params, executeTimeoutMillis)) {
+            if (rs.next()) {
+                return (T) rs.getObject(1);
+            }
+            return null;
+        }
+    }
+
+    @Override
     public <T> T executeQuery(String sql, Object[] params, BiFunc<ResultSet, T> func) {
         return executeQuery(sql, params, func, executeTimeoutMillis);
     }
@@ -497,6 +513,22 @@ public class JdbcExecutor extends Disposable implements EventPublisher<JdbcExecu
             if (f != null) {
                 f.cancel();
             }
+        }
+    }
+
+    @Override
+    public <T> T executeScalar(String sql) {
+        return executeScalar(sql, executeTimeoutMillis);
+    }
+
+    @SneakyThrows
+    @Override
+    public <T> T executeScalar(String sql, long executeTimeoutMillis) {
+        try (ResultSet rs = executeQuery(sql, executeTimeoutMillis)) {
+            if (rs.next()) {
+                return (T) rs.getObject(1);
+            }
+            return null;
         }
     }
 

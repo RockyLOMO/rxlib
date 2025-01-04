@@ -813,4 +813,17 @@ public class Reflects extends ClassUtils {
 //                || type == UUID.class;
     }
     //endregion
+
+    @SneakyThrows
+    public static void trimToNull(Object dto) {
+        if (dto == null) {
+            return;
+        }
+        for (Field field : Linq.from(getFieldMap(dto.getClass()).values()).where(p -> p.getType() == String.class)) {
+            String v = (String) field.get(dto);
+            if (Strings.isEmpty(v)) {
+                field.set(dto, null);
+            }
+        }
+    }
 }

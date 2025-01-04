@@ -7,6 +7,7 @@ import io.netty.util.TimerTask;
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.*;
 import org.rx.bean.$;
+import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
@@ -218,6 +219,14 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     static final long TICK_DURATION = 100;
     static final Map<Object, TimeoutFuture> holder = new ConcurrentHashMap<>();
+
+    public static LongUnaryOperator dailyOperator(@NonNull Func<String> timeFn) {
+        return d -> {
+            long delay = DateTime.now().setTimePart(timeFn.get()).getTime() - System.currentTimeMillis();
+            return delay > 0 ? delay : Constants.ONE_DAY_TOTAL_SECONDS * 1000 + delay;
+        };
+    }
+
     final ExecutorService executor;
     final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER", Thread.NORM_PRIORITY), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
