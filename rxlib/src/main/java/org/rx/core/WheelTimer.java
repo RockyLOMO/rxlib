@@ -69,7 +69,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             this.flags = flags;
             this.id = id;
             this.nextDelayFn = nextDelayFn;
-            traceId = ThreadPool.CTX_TRACE_ID.get();
+            traceId = ThreadPool.traceId();
         }
 
         @SneakyThrows

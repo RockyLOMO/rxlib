@@ -92,7 +92,7 @@ public class ForkJoinPoolWrapper {
     };
 
     static Runnable wrap(Runnable task) {
-        String traceId = ThreadPool.CTX_TRACE_ID.get();
+        String traceId = ThreadPool.traceId();
 //        log.info("wrap Runnable {}", traceId);
         return () -> {
             ThreadPool.startTrace(traceId);
@@ -105,7 +105,7 @@ public class ForkJoinPoolWrapper {
     }
 
     static <T> Callable<T> wrap(Callable<T> task) {
-        String traceId = ThreadPool.CTX_TRACE_ID.get();
+        String traceId = ThreadPool.traceId();
 //        log.info("wrap Callable {}", traceId);
         return () -> {
             ThreadPool.startTrace(traceId);
@@ -118,7 +118,7 @@ public class ForkJoinPoolWrapper {
     }
 
     static <T> ForkJoinTask<T> wrap(ForkJoinTask<T> task) {
-        String traceId = ThreadPool.CTX_TRACE_ID.get();
+        String traceId = ThreadPool.traceId();
 //        log.info("wrap ForkJoinTask {}", traceId);
         return ForkJoinTask.adapt(() -> {
             ThreadPool.startTrace(traceId);

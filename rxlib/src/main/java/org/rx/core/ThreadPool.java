@@ -10,16 +10,16 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.FlagsEnum;
-import org.rx.bean.IntWaterMark;
-import org.rx.bean.RefCounter;
-import org.rx.bean.ULID;
+import org.rx.bean.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
@@ -199,7 +199,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             this.flags = flags;
             this.id = id;
             parent = flags.has(RunFlag.INHERIT_FAST_THREAD_LOCALS) ? InternalThreadLocalMap.getIfSet() : null;
-            traceId = CTX_TRACE_ID.get();
+            traceId = traceId();
         }
 
         @SneakyThrows
@@ -269,8 +269,25 @@ public class ThreadPool extends ThreadPoolExecutor {
     //region static members
     public static volatile Func<String> traceIdGenerator;
     public static final Delegate<EventPublisher.StaticEventPublisher, String> onTraceIdChanged = Delegate.create();
-    static final ThreadLocal<Queue<String>> CTX_PARENT_TRACE_ID = new InheritableThreadLocal<>();
-    static final ThreadLocal<String> CTX_TRACE_ID = new InheritableThreadLocal<>();
+    static final ThreadLocal<LinkedList<Object>> CTX_TRACE_ID = new InheritableThreadLocal<LinkedList<Object>>() {
+        @Override
+        protected LinkedList<Object> initialValue() {
+            return new LinkedList<>();
+        }
+
+        @Override
+        protected LinkedList<Object> childValue(LinkedList<Object> parentValue) {
+            //Thread.currentThread()是parent线程
+            LinkedList<Object> c = new LinkedList<>();
+            Object peek = parentValue.peek();
+            if (peek != null) {
+                String tid = peek instanceof Tuple ? ((Tuple<String, Integer>) peek).left : (String) peek;
+//                log.debug("inherit {}", tid);
+                c.add(Tuple.of(tid, 0));
+            }
+            return c;
+        }
+    };
     static final FastThreadLocal<Object> CTX_STACK_TRACE = new FastThreadLocal<>();
     static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
     private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
@@ -284,7 +301,12 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     @SneakyThrows
     public static String startTrace(String traceId, boolean requiresNew) {
-        String tid = CTX_TRACE_ID.get();
+        LinkedList<Object> queue = CTX_TRACE_ID.get();
+
+        Object peek = queue.peek();
+        Tuple<String, Integer> nestTid = null;
+        String tid = peek instanceof Tuple ? (nestTid = (Tuple<String, Integer>) peek).left : (String) peek;
+        byte f = 0;
         if (tid == null) {
             if (traceId != null) {
                 tid = traceId;
@@ -300,48 +322,87 @@ public class ThreadPool extends ThreadPoolExecutor {
                     tid = ULID.randomULID().toBase64String();
                 }
             }
-            CTX_TRACE_ID.set(tid);
-        } else if (traceId != null && !traceId.equals(tid)) {
-            if (!requiresNew) {
-                log.warn("The traceId already mapped to {} and can not set to {}", tid, traceId);
+            queue.addFirst(tid);
+            f = 1;
+        } else {
+            if (traceId != null && !traceId.equals(tid)) {
+                if (!requiresNew) {
+                    log.warn("RTrace - The traceId already mapped to {} and can not set to {}", peek, traceId);
+                } else {
+                    log.info("RTrace - Trace requires new to {} with parent {}", traceId, peek);
+                    if (queue.size() > RxConfig.INSTANCE.threadPool.maxTraceDepth) {
+                        log.warn("RTrace - Discard traceId {}", traceId);
+                    } else {
+                        queue.addFirst(tid = traceId);
+                    }
+                    f = 3;
+                }
             } else {
-                LinkedList<String> queue = (LinkedList<String>) CTX_PARENT_TRACE_ID.get();
-                if (queue == null) {
-                    CTX_PARENT_TRACE_ID.set(queue = new LinkedList<>());
-                }
                 if (queue.size() > RxConfig.INSTANCE.threadPool.maxTraceDepth) {
+                    log.warn("RTrace - Discard traceId {}", peek);
+                } else {
                     queue.poll();
+                    if (nestTid == null) {
+                        nestTid = Tuple.of(tid, 1);
+                    }
+                    nestTid.right++;
+                    queue.addFirst(nestTid);
                 }
-                queue.addFirst(tid);
-                CTX_TRACE_ID.set(traceId);
-                log.info("trace requires new to {} with parent {}", traceId, tid);
-                tid = traceId;
+                f = 2;
             }
         }
-//        log.info("trace start {}", tid);
+
         onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, tid);
+        if (log.isDebugEnabled()) {
+            switch (f) {
+                case 1:
+                    log.debug("RTrace - start new {}", queue);
+                    break;
+                case 2:
+                    log.debug("RTrace - start nest {}", queue);
+                    break;
+                case 3:
+                    log.debug("RTrace - start requires new {}", queue);
+                    break;
+            }
+        }
         return tid;
     }
 
     public static String traceId() {
-        return CTX_TRACE_ID.get();
+        Object peek = CTX_TRACE_ID.get().peek();
+        return peek instanceof Tuple ? ((Tuple<String, Integer>) peek).left : (String) peek;
     }
 
     @SneakyThrows
     public static void endTrace() {
-//        log.info("trace end");
-        Queue<String> queue = CTX_PARENT_TRACE_ID.get();
-        String parentTid;
-        if (queue != null && (parentTid = queue.poll()) != null) {
-            CTX_TRACE_ID.set(parentTid);
-            if (queue.isEmpty()) {
-                CTX_PARENT_TRACE_ID.remove();
-            }
-        } else {
-            parentTid = null;
-            CTX_TRACE_ID.remove();
+        LinkedList<Object> queue = CTX_TRACE_ID.get();
+        if (queue.isEmpty()) {
+            log.warn("RTrace - not started");
+            return;
         }
-        onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, parentTid);
+
+        boolean next = false;
+        Object peek = queue.peek();
+        Tuple<String, Integer> nestTid = null;
+        String tid = peek instanceof Tuple ? (nestTid = (Tuple<String, Integer>) peek).left : (String) peek;
+        if (nestTid == null || --nestTid.right <= 0) {
+            queue.poll();
+            next = true;
+        }
+        log.debug("RTrace - end {} -> {}", queue, peek);
+
+        while (next) {
+            peek = queue.peek();
+            nestTid = null;
+            tid = peek instanceof Tuple ? (nestTid = (Tuple<String, Integer>) peek).left : (String) peek;
+            if (nestTid != null && nestTid.right == 0) {
+                queue.poll();
+            } else {
+                next = false;
+            }
+        }
+        onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, tid);
     }
 
     public static <T> T completionReturnedValue() {
