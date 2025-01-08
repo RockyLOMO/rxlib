@@ -39,7 +39,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Extends.*;
@@ -197,41 +196,43 @@ public class TestCore extends AbstractTester {
         ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
 
         //当线程池无空闲线程时，任务放置队列后，当队列任务执行时会带上正确的traceId
-//        ThreadPool.startTrace(null);
-//        for (int i = 0; i < 2; i++) {
-//            int finalI = i;
-//            pool.run(() -> {
-//                log.info("TRACE DELAY-1 {}", finalI);
-//                pool.run(() -> {
-//                    log.info("TRACE DELAY-1_1 {}", finalI);
-//                    sleep(oneSecond);
-//                });
-//                sleep(oneSecond);
-//            });
-//            log.info("TRACE DELAY MAIN {}", finalI);
-//            pool.run(() -> {
-//                log.info("TRACE DELAY-2 {}", finalI);
-//                sleep(oneSecond);
-//            });
-//        }
-//        ThreadPool.endTrace();
-//        sleep(8000);
-//
-//        //WheelTimer(ScheduledExecutorService) 异步trace
-//        WheelTimer timer = Tasks.timer();
-//        ThreadPool.startTrace(null);
-//        for (int i = 0; i < 2; i++) {
-//            int finalI = i;
-//            timer.setTimeout(() -> {
-//                log.info("TRACE TIMER {}", finalI);
-//                sleep(oneSecond);
-//            }, oneSecond);
-//            log.info("TRACE TIMER MAIN {}", finalI);
-//        }
-//        ThreadPool.endTrace();
-//        sleep(4000);
+        ThreadPool.startTrace(null);
+        for (int i = 0; i < 2; i++) {
+            int finalI = i;
+            pool.run(() -> {
+                log.info("TRACE DELAY-1 {}", finalI);
+                pool.run(() -> {
+                    log.info("TRACE DELAY-1_1 {}", finalI);
+                    sleep(oneSecond);
+                });
+                sleep(oneSecond);
+            });
+            log.info("TRACE DELAY MAIN {}", finalI);
+            pool.run(() -> {
+                log.info("TRACE DELAY-2 {}", finalI);
+                sleep(oneSecond);
+            });
+        }
+        ThreadPool.endTrace();
+        sleep(5000);
+        System.out.println("---next---");
 
-        //CompletableFuture.xxAsync异步方法正确获取trace
+        //WheelTimer(ScheduledExecutorService) 异步trace
+        WheelTimer timer = Tasks.timer();
+        ThreadPool.startTrace(null);
+        for (int i = 0; i < 2; i++) {
+            int finalI = i;
+            timer.setTimeout(() -> {
+                log.info("TRACE TIMER {}", finalI);
+                sleep(oneSecond);
+            }, oneSecond);
+            log.info("TRACE TIMER MAIN {}", finalI);
+        }
+        ThreadPool.endTrace();
+        sleep(5000);
+        System.out.println("---next---");
+//
+//        //CompletableFuture.xxAsync异步方法正确获取trace
 //        ThreadPool.startTrace(null);
 //        for (int i = 0; i < 2; i++) {
 //            int finalI = i;
@@ -269,30 +270,31 @@ public class TestCore extends AbstractTester {
 //        log.info("TRACE ALL_OF end");
 //        ThreadPool.endTrace();
 //        sleep(5000);
-
-        //parallelStream
-        ThreadPool.startTrace(null);
-        Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9).parallelStream().map(p -> {
-            //todo
-            Arrays.toList("a", "b", "c").parallelStream().map(x -> {
-                log.info("parallelStream {} -> {}", p, x);
-                return x.toString();
-            }).collect(Collectors.toList());
-            log.info("parallelStream {}", p);
-            return p.toString();
-        }).collect(Collectors.toList());
-        ThreadPool.endTrace();
-
-        //timer
-        ThreadPool.startTrace(null);
-        Tasks.timer().setTimeout(() -> {
-            log.info("TIMER 1");
-            pool.run(() -> {
-                log.info("TIMER 2");
-            });
-        }, d -> d > 5000 ? -1 : Math.max(d * 2, 1000), null, TimeoutFlag.PERIOD.flags());
-        ThreadPool.endTrace();
-        sleep(8000);
+//        System.out.println("---next---");
+//
+//        //parallelStream
+//        ThreadPool.startTrace(null);
+//        Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9).parallelStream().map(p -> {
+//            //todo
+//            Arrays.toList("a", "b", "c").parallelStream().map(x -> {
+//                log.info("parallelStream {} -> {}", p, x);
+//                return x.toString();
+//            }).collect(Collectors.toList());
+//            log.info("parallelStream {}", p);
+//            return p.toString();
+//        }).collect(Collectors.toList());
+//        ThreadPool.endTrace();
+//
+//        //timer
+//        ThreadPool.startTrace(null);
+//        Tasks.timer().setTimeout(() -> {
+//            log.info("TIMER 1");
+//            pool.run(() -> {
+//                log.info("TIMER 2");
+//            });
+//        }, d -> d > 5000 ? -1 : Math.max(d * 2, 1000), null, TimeoutFlag.PERIOD.flags());
+//        ThreadPool.endTrace();
+//        sleep(8000);
 //
 //        //netty FastThreadLocal 支持继承
 //        FastThreadLocal<Integer> ftl = new FastThreadLocal<>();
