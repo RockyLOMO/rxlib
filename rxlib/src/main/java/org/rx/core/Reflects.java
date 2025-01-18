@@ -126,8 +126,9 @@ public class Reflects extends ClassUtils {
 
     public static String getStackTrace(Thread t) {
         StringBuilder buf = new StringBuilder();
-        for (StackTraceElement traceElement : t.getStackTrace()) {
-            buf.append("\tat ").appendLine(traceElement);
+        StackTraceElement[] stackTrace = t.getStackTrace();
+        for (int i = 1; i < stackTrace.length; i++) {
+            buf.append("\tat ").appendLine(stackTrace[i]);
         }
         return buf.toString();
     }
@@ -294,10 +295,15 @@ public class Reflects extends ClassUtils {
         return fromTypedJson(json);
     }
 
+    @SneakyThrows
     public static <T> T fromTypedJson(@NonNull Map<String, Object> json) {
         String td = (String) json.get(Constants.TYPED_JSON_KEY);
         if (td == null) {
-            throw new InvalidException("Invalid type descriptor");
+            String baseValue = (String) json.get("baseValue");
+            if (baseValue == null) {
+                throw new InvalidException("Invalid type descriptor");
+            }
+            return (T) JSON.parseObject(baseValue, Class.forName(json.get("baseType").toString()));
         }
         return fromJson(json, fromTypeDescriptor(td));
     }
@@ -307,9 +313,19 @@ public class Reflects extends ClassUtils {
     }
 
     public static <T> JSONObject toTypedJson(@NonNull T obj, @NonNull Type type) {
-        JSONObject r = toJsonObject(obj);
-        r.put(Constants.TYPED_JSON_KEY, getTypeDescriptor(type));
-        return r;
+        try {
+            JSONObject r = toJsonObject(obj);
+            r.put(Constants.TYPED_JSON_KEY, getTypeDescriptor(type));
+            return r;
+        } catch (Exception e) {
+            if (Strings.startsWith(e.getMessage(), "Invalid json")) {
+                JSONObject r = new JSONObject(1);
+                r.put("baseValue", JSON.toJSONString(obj));
+                r.put("baseType", obj.getClass().getName());
+                return r;
+            }
+            throw e;
+        }
     }
 
     public static String getTypeDescriptor(@NonNull Type type) {

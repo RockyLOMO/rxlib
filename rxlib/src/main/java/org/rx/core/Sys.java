@@ -782,9 +782,9 @@ public final class Sys extends SystemUtils {
     }
 
     public static JSONObject toJsonObject(Object src) {
-        if (src instanceof JSONObject) {
-            return (JSONObject) src;
-        }
+//        if (src instanceof JSONObject) {
+//            return (JSONObject) src;
+//        }
         if (src instanceof Map) {
             return new JSONObject((Map<String, Object>) src);
         }
