@@ -183,8 +183,8 @@ public class MxController {
         JSONObject params = getParams(request);
         Class<?> kls = Class.forName(params.getString("bean"));
         Object bean = SpringContext.getBean(kls);
-        Method method = Reflects.getMethodMap(kls).get(params.getString("method")).first();
         List<Object> args = params.getJSONArray("args");
+        Method method = Reflects.getMethodMap(kls).get(params.getString("method")).where(p -> p.getParameterCount() == args.size()).first();
         Class<?>[] parameterTypes = method.getParameterTypes();
         Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> {
             Object o = args.get(i);
