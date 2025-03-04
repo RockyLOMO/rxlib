@@ -199,7 +199,6 @@ public final class Main implements SocksSupport {
             AuthenticEndpoint udp2rawSvrEp = AuthenticEndpoint.valueOf(conf.udp2rawEndpoint);
             frontConf.getUdp2rawServers().add(udp2rawSvrEp.getEndpoint());
         }
-        //Authenticator.dbAuth(shadowUsers.select(p -> p.right).toList(), port + 1)
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf, new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList()));
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
