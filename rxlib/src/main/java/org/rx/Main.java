@@ -30,6 +30,8 @@ import org.rx.net.support.*;
 import org.rx.net.transport.TcpClientConfig;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.Action;
+import org.rx.util.function.BiFunc;
+import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 
 import java.math.BigInteger;
@@ -226,9 +228,13 @@ public final class Main implements SocksSupport {
                 e.setHandled(true);
             }
         };
+        BiFunc<SocksContext, Func<UpstreamSupport>> routerFn = e -> {
+            InetAddress srcHost = e.getSource().getAddress();
+//            String destHost = e.getFirstDestination().getHost();
+            return () -> shadowServers.next(srcHost, conf.steeringTTL, true);
+        };
         frontSvr.onRoute.replace(firstRoute, (s, e) -> {
-            InetAddress steeringBy = e.getSource().getAddress();
-            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, () -> shadowServers.next(steeringBy, conf.steeringTTL, true)));
+            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, routerFn.apply(e)));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
@@ -258,8 +264,7 @@ public final class Main implements SocksSupport {
 //              }
 //              return;
 //          }
-            InetAddress steeringBy = e.getSource().getAddress();
-            e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, () -> shadowServers.next(steeringBy, conf.steeringTTL, true)));
+            e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, routerFn.apply(e)));
         });
         frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
         Main app = new Main(frontSvr);
