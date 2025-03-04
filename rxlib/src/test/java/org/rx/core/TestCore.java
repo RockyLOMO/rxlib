@@ -2,6 +2,7 @@ package org.rx.core;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.TypeReference;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Extends.*;
@@ -231,114 +233,150 @@ public class TestCore extends AbstractTester {
         ThreadPool.endTrace();
         sleep(5000);
         System.out.println("---next---");
-//
-//        //CompletableFuture.xxAsync异步方法正确获取trace
-//        ThreadPool.startTrace(null);
-//        for (int i = 0; i < 2; i++) {
-//            int finalI = i;
-//            CompletableFuture<Void> cf1 = pool.runAsync(() -> {
-//                log.info("TRACE ASYNC-1 {}", finalI);
-//                pool.runAsync(() -> {
-//                    log.info("TRACE ASYNC-1_1 {}", finalI);
-//                    sleep(oneSecond);
-//                }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
-//                sleep(oneSecond);
-//            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
-//            log.info("TRACE ASYNC MAIN {}", finalI);
-//            CompletableFuture<Void> cf2 = pool.runAsync(() -> {
-//                log.info("TRACE ASYNC-2 {}", finalI);
-//                sleep(oneSecond);
-//            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
-//        }
-//        ThreadPool.endTrace();
-//
-//        ThreadPool.startTrace(null);
-//        log.info("TRACE ALL_OF start");
-//        CompletableFuture.allOf(pool.runAsync(() -> {
-//            log.info("TRACE ALL_OF ASYNC-1");
-//            pool.runAsync(() -> {
-//                log.info("TRACE ALL_OF ASYNC-1_1");
-//                sleep(oneSecond);
-//            }).whenCompleteAsync((r, e) -> log.info("TRACE ALL_OF ASYNC-1_1 uni {}", r));
-//            sleep(oneSecond);
-//        }).whenCompleteAsync((r, e) -> log.info("TRACE ALL_OF ASYNC-1 uni {}", r)), pool.runAsync(() -> {
-//            log.info("TRACE ALL_OF ASYNC-2");
-//            sleep(oneSecond);
-//        }).whenCompleteAsync((r, e) -> log.info("TRACE ALL_OF ASYNC-2 uni {}", r))).whenCompleteAsync((r, e) -> {
-//            log.info("TRACE ALL-OF {}", r);
-//        }).get(10, TimeUnit.SECONDS);
-//        log.info("TRACE ALL_OF end");
-//        ThreadPool.endTrace();
-//        sleep(5000);
-//        System.out.println("---next---");
-//
-//        //parallelStream
-//        ThreadPool.startTrace(null);
-//        Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9).parallelStream().map(p -> {
-//            //todo
-//            Arrays.toList("a", "b", "c").parallelStream().map(x -> {
-//                log.info("parallelStream {} -> {}", p, x);
-//                return x.toString();
-//            }).collect(Collectors.toList());
-//            log.info("parallelStream {}", p);
-//            return p.toString();
-//        }).collect(Collectors.toList());
-//        ThreadPool.endTrace();
-//
-//        //timer
-//        ThreadPool.startTrace(null);
-//        Tasks.timer().setTimeout(() -> {
-//            log.info("TIMER 1");
-//            pool.run(() -> {
-//                log.info("TIMER 2");
-//            });
-//        }, d -> d > 5000 ? -1 : Math.max(d * 2, 1000), null, TimeoutFlag.PERIOD.flags());
-//        ThreadPool.endTrace();
-//        sleep(8000);
-//
-//        //netty FastThreadLocal 支持继承
-//        FastThreadLocal<Integer> ftl = new FastThreadLocal<>();
-//        ftl.set(64);
-//        pool.run(() -> {
-//            assert ftl.get() == 64;
-//            log.info("Inherit ok 1");
-//        }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
-//
-//        pool.runAsync(() -> {
-//            assert ftl.get() == 64;
-//            log.info("Inherit ok 2");
-//        }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
-//        sleep(2000);
-//
-//        log.info("--ExecutorService--");
-//        ThreadPool.startTrace(null);
-////        ExecutorService es = pool;
-////        es.submit(() -> {
-////            log.info("submit..");
-////            return 1024;
-////        });
-////        es.execute(() -> {
-////            log.info("exec..");
-////        });
-////        sleep(1000);
-//
-//        log.info("test scope1 start");
-//        ThreadPool.startTrace("newScope1", true);
-//        log.info("test scope2 start");
-//
-//        ThreadPool.startTrace("newScope2", true);
-//        log.info("test scope3");
-//        ThreadPool.endTrace();
-//
-//        log.info("test scope2 end");
-//        ThreadPool.endTrace();
-//
-//        log.info("test scope1 end");
-//        ThreadPool.endTrace();
-//        log.info("--done--");
 
-//        log.info("--TestService--");
-//        ThreadPool.startTrace(null);
+        //CompletableFuture.xxAsync异步方法正确获取trace
+        ThreadPool.startTrace(null);
+        for (int i = 0; i < 2; i++) {
+            int finalI = i;
+            CompletableFuture<Void> cf1 = pool.runAsync(() -> {
+                log.info("TRACE ASYNC-1 {}", finalI);
+                pool.runAsync(() -> {
+                    log.info("TRACE ASYNC-1_1 {}", finalI);
+                    sleep(oneSecond);
+                }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
+                sleep(oneSecond);
+            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
+            log.info("TRACE ASYNC MAIN {}", finalI);
+            CompletableFuture<Void> cf2 = pool.runAsync(() -> {
+                log.info("TRACE ASYNC-2 {}", finalI);
+                sleep(oneSecond);
+            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
+        }
+        ThreadPool.endTrace();
+        sleep(5000);
+        System.out.println("---next---");
+
+        ThreadPool.startTrace(null);
+        log.info("TRACE ALL_OF start");
+        CompletableFuture.allOf(pool.runAsync(() -> {
+            log.info("TRACE ALL_OF ASYNC-1");
+            pool.runAsync(() -> {
+                log.info("TRACE ALL_OF ASYNC-1_1");
+                sleep(oneSecond);
+            }).whenCompleteAsync((r, e) -> log.info("TRACE ALL_OF ASYNC-1_1 uni {}", r));
+            sleep(oneSecond);
+        }).whenCompleteAsync((r, e) -> log.info("TRACE ALL_OF ASYNC-1 uni {}", r)), pool.runAsync(() -> {
+            log.info("TRACE ALL_OF ASYNC-2");
+            sleep(oneSecond);
+        }).whenCompleteAsync((r, e) -> log.info("TRACE ALL_OF ASYNC-2 uni {}", r))).whenCompleteAsync((r, e) -> {
+            log.info("TRACE ALL-OF {}", r);
+        }).get(10, TimeUnit.SECONDS);
+        log.info("TRACE ALL_OF end");
+        ThreadPool.endTrace();
+        sleep(5000);
+        System.out.println("---next---");
+
+        //parallelStream
+        ThreadPool.startTrace(null);
+        Arrays.toList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9).parallelStream().map(p -> {
+            //todo
+            Arrays.toList("a", "b", "c").parallelStream().map(x -> {
+                log.info("parallelStream {} -> {}", p, x);
+                return x.toString();
+            }).collect(Collectors.toList());
+            log.info("parallelStream {}", p);
+            return p.toString();
+        }).collect(Collectors.toList());
+        ThreadPool.endTrace();
+        sleep(5000);
+        System.out.println("---next---");
+
+        //timer
+        ThreadPool.startTrace(null);
+        Tasks.timer().setTimeout(() -> {
+            log.info("TIMER 1");
+            pool.run(() -> {
+                log.info("TIMER 2");
+            });
+        }, d -> d > 5000 ? -1 : Math.max(d * 2, 1000), null, TimeoutFlag.PERIOD.flags());
+        ThreadPool.endTrace();
+        sleep(8000);
+        System.out.println("---next---");
+
+        //netty FastThreadLocal 支持继承
+        FastThreadLocal<Integer> ftl = new FastThreadLocal<>();
+        ftl.set(64);
+        pool.run(() -> {
+            assert ftl.get() == 64;
+            log.info("Inherit ok 1");
+        }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
+
+        pool.runAsync(() -> {
+            assert ftl.get() == 64;
+            log.info("Inherit ok 2");
+        }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
+        sleep(2000);
+        System.out.println("---next---");
+
+        //ExecutorService
+        ThreadPool.startTrace(null);
+        log.info("root scope begin");
+        ExecutorService es = pool;
+        es.submit(() -> {
+            log.info("submit..");
+            return 1024;
+        });
+        es.execute(() -> {
+            log.info("exec..");
+        });
+        sleep(1000);
+
+        //nest trace
+        log.info("nest scope1 prepare");
+        ThreadPool.startTrace("newScope1", true);
+        log.info("nest scope1 begin");
+
+        log.info("nest scope2 prepare");
+        ThreadPool.startTrace("newScope2", true);
+        log.info("nest scope2 begin");
+
+        es.execute(() -> {
+            log.info("nest sub begin");
+            for (int i = 0; i < 5; i++) {
+                ThreadPool.startTrace(null);
+                log.info("nest sub {}", i);
+                ThreadPool.endTrace();
+            }
+            log.info("nest sub end");
+        });
+
+        log.info("nest scope2 end");
+        ThreadPool.endTrace();
+        log.info("nest scope2 post");
+
+        log.info("nest scope1 end");
+        ThreadPool.endTrace();
+        log.info("nest scope1 post");
+
+        log.info("root scope end");
+        ThreadPool.endTrace();
+        log.info("--done--");
+
+        for (int i = 0; i < 3; i++) {
+            int finalI = i;
+            es.execute(() -> {
+                log.info("nest sub{} begin", finalI);
+                for (int j = 0; j < 5; j++) {
+                    ThreadPool.startTrace(null);
+                    log.info("nest sub{} {}", finalI, j);
+                    sleep(200);
+                    ThreadPool.endTrace();
+                }
+                log.info("nest sub{} end", finalI);
+            });
+        }
+        sleep(5000);
+        System.out.println("---done---");
     }
 
     @SneakyThrows
