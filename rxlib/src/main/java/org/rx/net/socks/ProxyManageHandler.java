@@ -15,8 +15,6 @@ import org.rx.net.support.SocksSupport;
 
 import java.net.InetSocketAddress;
 
-import static org.rx.core.Extends.tryAs;
-
 @Slf4j
 public class ProxyManageHandler extends ChannelTrafficShapingHandler {
     public static ProxyManageHandler get(ChannelHandlerContext ctx) {
@@ -36,7 +34,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
 
     public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
         this.user = user;
-        InetSocketAddress realEp = (InetSocketAddress) SocksSupport.ENDPOINT_TRACER.head(ctx.channel());
+        InetSocketAddress realEp = SocksSupport.ENDPOINT_TRACER.head(ctx.channel());
         info = user.getLoginIps().computeIfAbsent(realEp.getAddress(), SocksUser.LoginInfo::new);
         if (user.getMaxIpCount() != -1 && user.getLoginIps().size() > user.getMaxIpCount()) {
             log.error("SocksUser {} maxIpCount={}\nconnectedIps={} incomingIp={}", user.getUsername(), user.getMaxIpCount(), user.getLoginIps().keySet(), realEp);

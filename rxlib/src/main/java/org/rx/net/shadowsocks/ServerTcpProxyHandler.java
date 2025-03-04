@@ -52,9 +52,8 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
             }
             log.debug("connect to backend {}[{}]", finalDestinationEp, realEp);
             Channel outbound = f.channel();
-            outbound.pipeline().addLast(BackendRelayHandler.DEFAULT);
-
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
+            outbound.pipeline().addLast(BackendRelayHandler.DEFAULT);
         });
 
         ctx.fireChannelRead(msg).pipeline().remove(this);
