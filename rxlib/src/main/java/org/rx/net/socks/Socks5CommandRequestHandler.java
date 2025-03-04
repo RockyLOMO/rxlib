@@ -6,7 +6,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
-import org.rx.exception.TraceHandler;
 import org.rx.net.AESCodec;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
@@ -99,6 +98,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
             Channel outbound = f.channel();
+            SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
             StringBuilder aesMsg = new StringBuilder();
             Socks5ProxyHandler proxyHandler;
             SocksConfig config = server.getConfig();

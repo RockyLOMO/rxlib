@@ -9,33 +9,31 @@ import org.rx.net.Sockets;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
-import static org.rx.core.Sys.fastCacheKey;
-
 @Slf4j
 public final class EndpointTracer {
-    static final InetSocketAddress unknownAddr = Sockets.newAnyEndpoint(0);
-    final Cache<String, SocketAddress> index = Cache.getInstance(MemoryCache.class);
+    static final InetSocketAddress unknownEp = Sockets.newAnyEndpoint(0);
+    final Cache<InetSocketAddress, InetSocketAddress> index = Cache.getInstance(MemoryCache.class);
 
-    String key(SocketAddress sa) {
-        return fastCacheKey("EpTrace", sa);
+    InetSocketAddress key(SocketAddress sa) {
+        return ((InetSocketAddress) sa);
     }
 
     public void link(Channel inbound, Channel outbound) {
-        SocketAddress addr = index.get(key(outbound.localAddress()), k -> inbound.remoteAddress());
-//        log.info("EpTracer link {} <- {} {}", data.head, inbound, outbound);
+        InetSocketAddress source = index.get(key(inbound.remoteAddress()), k -> (InetSocketAddress) inbound.remoteAddress());
+        index.put(key(outbound.localAddress()), source);
+        log.info("EpTracer link {} <- ({} -> {})", Sockets.toString(source), inbound, outbound);
     }
 
-    public SocketAddress head(Channel channel) {
-        //inbound channel
-        SocketAddress addr = index.get(key(channel.remoteAddress()));
-        if (addr == null) {
-            //outbound channel
-            addr = index.get(key(channel.localAddress()));
+    public InetSocketAddress head(Channel inbound) {
+        return head((InetSocketAddress) inbound.remoteAddress());
+    }
+
+    public InetSocketAddress head(InetSocketAddress remoteAddr) {
+        InetSocketAddress source = index.get(key(remoteAddr));
+        if (source == null || Sockets.isPrivateIp(source.getAddress())) {
+            source = unknownEp;
         }
-        if (addr == null) {
-            addr = unknownAddr;
-        }
-//        log.info("EpTracer head {} <- {}", head, channel);
-        return addr;
+        log.info("EpTracer head {} <- ({})", Sockets.toString(source), remoteAddr);
+        return source;
     }
 }

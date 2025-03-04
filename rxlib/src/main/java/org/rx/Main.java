@@ -2,6 +2,7 @@ package org.rx;
 
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.$;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.*;
@@ -12,7 +13,9 @@ import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.http.*;
+import org.rx.net.http.AuthenticProxy;
+import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
@@ -27,6 +30,8 @@ import org.rx.net.support.*;
 import org.rx.net.transport.TcpClientConfig;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.Action;
+import org.rx.util.function.BiFunc;
+import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 
 import java.math.BigInteger;
@@ -38,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import static org.rx.bean.$.$;
 import static org.rx.core.Extends.*;
 import static org.rx.core.Sys.toJsonString;
 import static org.rx.core.Tasks.awaitQuietly;
@@ -110,6 +116,7 @@ public final class Main implements SocksSupport {
         }
 
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
+        $<UpstreamSupport> defSS = $();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
         SocksConfig frontConf = new SocksConfig(port);
         YamlConfiguration watcher = new YamlConfiguration("conf.yml").enableWatch();
@@ -129,17 +136,18 @@ public final class Main implements SocksSupport {
             }
             shadowServers.clear();
             dnsInterceptors.clear();
+            int defW = 0;
             for (AuthenticEndpoint shadowServer : svrs) {
                 RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1),
                         conf.rpcMinSize, conf.rpcMaxSize);
                 TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
                 tcpConfig.setTransportFlags(TransportFlags.BACKEND_AES_COMBO.flags());
-                String weight = shadowServer.getParameters().get("w");
-                if (Strings.isEmpty(weight)) {
+                int weight = Reflects.convertQuietly(shadowServer.getParameters().get("w"), int.class, 0);
+                if (weight <= 0) {
                     continue;
                 }
                 SocksSupport facade = Remoting.createFacade(SocksSupport.class, rpcConf);
-                shadowServers.add(new UpstreamSupport(shadowServer, new SocksSupport() {
+                UpstreamSupport upstream = new UpstreamSupport(shadowServer, new SocksSupport() {
                     @Override
                     public void fakeEndpoint(BigInteger hash, String realEndpoint) {
                         facade.fakeEndpoint(hash, realEndpoint);
@@ -157,7 +165,12 @@ public final class Main implements SocksSupport {
                     public void addWhiteList(InetAddress endpoint) {
                         facade.addWhiteList(endpoint);
                     }
-                }), Integer.parseInt(weight));
+                });
+                shadowServers.add(upstream, weight);
+                if (defW < weight) {
+                    defSS.v = upstream;
+                    defW = weight;
+                }
             }
             dnsInterceptors.addAll(Linq.from(shadowServers).<DnsServer.ResolveInterceptor>select(UpstreamSupport::getSupport).toList());
             log.info("reload svrs {}", toJsonString(svrs));
@@ -215,8 +228,13 @@ public final class Main implements SocksSupport {
                 e.setHandled(true);
             }
         };
+        BiFunc<SocksContext, Func<UpstreamSupport>> routerFn = e -> {
+            InetAddress srcHost = e.getSource().getAddress();
+//            String destHost = e.getFirstDestination().getHost();
+            return () -> shadowServers.next(srcHost, conf.steeringTTL, true);
+        };
         frontSvr.onRoute.replace(firstRoute, (s, e) -> {
-            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, () -> shadowServers.next(e.getSource(), conf.steeringTTL, true)));
+            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, routerFn.apply(e)));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
@@ -246,7 +264,7 @@ public final class Main implements SocksSupport {
 //              }
 //              return;
 //          }
-            e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, () -> shadowServers.next(e.getSource(), conf.steeringTTL, true)));
+            e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, routerFn.apply(e)));
         });
         frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
         Main app = new Main(frontSvr);

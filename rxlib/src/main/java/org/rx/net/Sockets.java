@@ -466,6 +466,32 @@ public final class Sockets {
         return isBypass(RxConfig.INSTANCE.getNet().getLanIps(), hostAddress);
     }
 
+    /**
+     * 10.0.0.0/8
+     * 172.16.0.0/12
+     * 192.168.0.0/16
+     *
+     * @param ip
+     * @return
+     */
+    public static boolean isPrivateIp(InetAddress ip) {
+        byte[] ipBytes = ip.getAddress();
+        // 将字节数组转换为无符号整数，用于比较
+        int first = ipBytes[0] & 0xFF;  // 第一段
+        int second = ipBytes[1] & 0xFF; // 第二段
+
+        // 检查是否在 10.0.0.0 - 10.255.255.255 范围内
+        if (first == 10) {
+            return true;
+        }
+        // 检查是否在 172.16.0.0 - 172.31.255.255 范围内
+        if (first == 172 && second >= 16 && second <= 31) {
+            return true;
+        }
+        // 检查是否在 192.168.0.0 - 192.168.255.255 范围内
+        return first == 192 && second == 168;
+    }
+
     public static boolean isValidIp(String ip) {
         return NetUtil.isValidIpV4Address(ip) || NetUtil.isValidIpV6Address(ip);
     }
