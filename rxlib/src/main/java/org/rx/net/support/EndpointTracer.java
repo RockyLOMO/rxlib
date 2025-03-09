@@ -21,7 +21,7 @@ public final class EndpointTracer {
     public void link(Channel inbound, Channel outbound) {
         InetSocketAddress source = index.get(key(inbound.remoteAddress()), k -> (InetSocketAddress) inbound.remoteAddress());
         index.put(key(outbound.localAddress()), source);
-        log.info("EpTracer link {} <- ({} -> {})", Sockets.toString(source), inbound, outbound);
+//        log.info("EpTracer link {} <- ({} -> {})", Sockets.toString(source), inbound, outbound);
     }
 
     public InetSocketAddress head(Channel inbound) {
@@ -30,7 +30,9 @@ public final class EndpointTracer {
 
     public InetSocketAddress head(InetSocketAddress remoteAddr) {
         InetSocketAddress source = index.get(key(remoteAddr));
-        if (source == null || Sockets.isPrivateIp(source.getAddress())) {
+        if (source == null
+//                || Sockets.isPrivateIp(source.getAddress())
+        ) {
             source = unknownEp;
         }
         log.info("EpTracer head {} <- ({})", Sockets.toString(source), remoteAddr);
