@@ -141,6 +141,10 @@ public class Helper {
                     cells.add(value);
                 }
                 List<Object> newCells = fn.apply(rowIdx, cells);
+                if (newCells == null) {
+                    sheet.removeRow(row);
+                    continue;
+                }
 
                 int lastCellNum = firstCellNum + newCells.size();
                 for (int i = firstCellNum; i < lastCellNum; i++) {
