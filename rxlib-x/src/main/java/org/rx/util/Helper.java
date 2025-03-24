@@ -7,8 +7,11 @@ import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.rx.core.Numbers;
+import org.rx.exception.InvalidException;
 import org.rx.spring.MiddlewareConfig;
 import org.rx.spring.SpringContext;
+import org.rx.util.function.QuadraFunc;
+import org.rx.util.function.TripleFunc;
 
 import javax.mail.*;
 import javax.mail.internet.InternetAddress;
@@ -58,6 +61,110 @@ public class Helper {
             Transport.send(msg);
         } catch (Exception e) {
             log.warn("sendEmail {}", e.getMessage());
+        }
+    }
+
+    public static void replaceExcel(InputStream in, OutputStream out, String sheetName, TripleFunc<Integer, List<Object>, List<Object>> fn, boolean is2003File) {
+        replaceExcel(in, out, sheetName, fn, is2003File, false);
+    }
+
+    @SneakyThrows
+    public static void replaceExcel(@NonNull InputStream in, @NonNull OutputStream out, @NonNull String sheetName,
+                                    TripleFunc<Integer, List<Object>, List<Object>> fn, boolean is2003File, boolean skipColumn) {
+        FormulaEvaluator evaluator = null;
+        try (Workbook workbook = is2003File ? new HSSFWorkbook(in) : new XSSFWorkbook(in)) {
+            Sheet sheet = workbook.getSheet(sheetName);
+            if (sheet == null) {
+                throw new InvalidException("Sheet {} not found", sheetName);
+            }
+
+            List<Object> cells = new ArrayList<>();
+            int firstRowNum = sheet.getFirstRowNum();
+            for (int rowIdx = skipColumn ? firstRowNum + 1 : firstRowNum; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
+                Row row = sheet.getRow(rowIdx);
+                if (row == null) {
+                    throw new InvalidException("Sheet row {} not found", rowIdx);
+//                    fn.accept(rowIndex, rowIndex, Collections.emptyList());
+//                    continue;
+                }
+
+                cells.clear();
+                short firstCellNum = row.getFirstCellNum();
+                for (int i = firstCellNum; i < row.getLastCellNum(); i++) {
+//                    if (i < firstCellNum) {
+//                        cells.add(null);
+//                        continue;
+//                    }
+                    Cell cell = row.getCell(i);
+                    if (cell == null) {
+                        throw new InvalidException("Sheet row {} cell {} not found", rowIdx, i);
+//                        cells.add(null);
+//                        continue;
+                    }
+
+                    CellType cellType = cell.getCellType();
+                    if (cellType == CellType.FORMULA) {
+                        if (evaluator == null) {
+                            evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+                        }
+                        cellType = evaluator.evaluateFormulaCell(cell);
+                    }
+                    Object value;
+//                        System.out.println(i + ":" + cellType);
+                    switch (cellType) {
+                        case NUMERIC:
+                            if (!eq(cell.getCellStyle().getDataFormatString(), "General")) {
+                                value = cell.getDateCellValue();
+                            } else {
+                                double n = cell.getNumericCellValue();
+                                boolean b = Numbers.hasPrecision(n);
+                                if (b) {
+                                    value = (int) n;
+                                } else {
+                                    value = n;
+                                }
+                                //will auto wrap to double
+//                                    value = b ? (int) n : n;
+                            }
+                            break;
+                        case BOOLEAN:
+                            value = cell.getBooleanCellValue();
+                            break;
+                        default:
+//                                value = cell.getStringCellValue();
+                            if (cell.getCellType() == CellType.ERROR) {
+                                cell.setCellType(CellType.STRING);
+                            }
+                            value = cell.toString();
+                            break;
+                    }
+                    cells.add(value);
+                }
+                List<Object> newCells = fn.apply(rowIdx, cells);
+                if (newCells == null) {
+                    sheet.removeRow(row);
+                    continue;
+                }
+
+                int lastCellNum = firstCellNum + newCells.size();
+                for (int i = firstCellNum; i < lastCellNum; i++) {
+                    Cell cell = row.getCell(i);
+                    if (cell == null) {
+                        cell = row.createCell(i);
+                    }
+                    Object newValue = newCells.get(i - firstRowNum);
+                    String value;
+                    if (newValue instanceof Date) {
+                        value = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(newValue);
+                    } else if (newValue == null) {
+                        value = null;
+                    } else {
+                        value = String.valueOf(newValue);
+                    }
+                    cell.setCellValue(value);
+                }
+            }
+            workbook.write(out);
         }
     }
 
