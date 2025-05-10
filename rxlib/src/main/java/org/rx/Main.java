@@ -176,7 +176,7 @@ public final class Main implements SocksSupport {
             log.info("reload svrs {}", toJsonString(svrs));
 
             if (conf.bypassHosts != null) {
-                frontConf.getBypassList().addAll(conf.bypassHosts);
+                frontConf.getBypassHosts().addAll(conf.bypassHosts);
             }
         });
         watcher.raiseChange();
@@ -223,7 +223,7 @@ public final class Main implements SocksSupport {
                 return;
             }
             //bypass
-            if (Sockets.isBypass(frontConf.getBypassList(), dstEp.getHost())) {
+            if (Sockets.isBypass(frontConf.getBypassHosts(), dstEp.getHost())) {
                 e.setUpstream(new Upstream(dstEp));
                 e.setHandled(true);
             }
@@ -297,7 +297,7 @@ public final class Main implements SocksSupport {
                     return;
                 }
                 //bypass
-                if (Sockets.isBypass(ssConfig.getBypassList(), dstEp.getHost())) {
+                if (Sockets.isBypass(ssConfig.getBypassHosts(), dstEp.getHost())) {
 //                    log.info("ss bypass: {}", dstEp);
                     e.setUpstream(new Upstream(dstEp));
                     e.setHandled(true);

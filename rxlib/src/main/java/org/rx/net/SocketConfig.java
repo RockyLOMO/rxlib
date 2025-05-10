@@ -26,7 +26,7 @@ public class SocketConfig implements Extends {
     private FlagsEnum<TransportFlags> transportFlags = TransportFlags.NONE.flags();
     private byte[] aesKey;
     @Getter(lazy = true)
-    private final Set<String> bypassList = bypassList();
+    private final Set<String> bypassHosts = bypassHosts();
 
     public byte[] getAesKey() {
         if (aesKey == null) {
@@ -35,7 +35,7 @@ public class SocketConfig implements Extends {
         return aesKey;
     }
 
-    private Set<String> bypassList() {
-        return new CopyOnWriteArraySet<>(RxConfig.INSTANCE.getNet().getLanIps());
+    private Set<String> bypassHosts() {
+        return new CopyOnWriteArraySet<>(RxConfig.INSTANCE.getNet().getBypassHosts());
     }
 }

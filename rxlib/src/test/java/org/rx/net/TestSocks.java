@@ -53,7 +53,6 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.Authenticator;
 import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -548,7 +547,7 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             //bypass
-            if (Sockets.isBypass(frontConf.getBypassList(), dstEp.getHost())) {
+            if (Sockets.isBypass(frontConf.getBypassHosts(), dstEp.getHost())) {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
@@ -621,7 +620,7 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             //bypass
-            if (Sockets.isBypass(frontConf.getBypassList(), dstEp.getHost())) {
+            if (Sockets.isBypass(frontConf.getBypassHosts(), dstEp.getHost())) {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
@@ -874,7 +873,7 @@ public class TestSocks extends AbstractTester {
 
     @Test
     public void ipUtil() {
-        String expr = RxConfig.INSTANCE.getNet().getLanIps().get(3);
+        String expr = RxConfig.INSTANCE.getNet().getBypassHosts().get(3);
         assert Pattern.matches(expr, "192.168.31.7");
 
         String h = "google.com";
@@ -900,11 +899,11 @@ public class TestSocks extends AbstractTester {
 //        fn.invoke("x.f-li.cn");
 
         SocketConfig conf = new SocketConfig();
-        assert Sockets.isBypass(conf.getBypassList(), "127.0.0.1");
-        assert Sockets.isBypass(conf.getBypassList(), "192.168.31.1");
-        assert !Sockets.isBypass(conf.getBypassList(), "192.169.31.1");
-        assert Sockets.isBypass(conf.getBypassList(), "localhost");
-        assert !Sockets.isBypass(conf.getBypassList(), "google.cn");
+        assert Sockets.isBypass(conf.getBypassHosts(), "127.0.0.1");
+        assert Sockets.isBypass(conf.getBypassHosts(), "192.168.31.1");
+        assert !Sockets.isBypass(conf.getBypassHosts(), "192.169.31.1");
+        assert Sockets.isBypass(conf.getBypassHosts(), "localhost");
+        assert !Sockets.isBypass(conf.getBypassHosts(), "google.cn");
         assert !Sockets.isBypass(Arrays.toList("*google.com"), "google.cn");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");

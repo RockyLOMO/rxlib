@@ -457,15 +457,6 @@ public final class Sockets {
         return false;
     }
 
-    @SneakyThrows
-    public static boolean isLanIp(InetAddress ip) {
-        String hostAddress = ip.getHostAddress();
-        if (Strings.hashEquals(getLoopbackHostAddress(), hostAddress)) {
-            return true;
-        }
-        return isBypass(RxConfig.INSTANCE.getNet().getLanIps(), hostAddress);
-    }
-
     /**
      * 10.0.0.0/8
      * 172.16.0.0/12
