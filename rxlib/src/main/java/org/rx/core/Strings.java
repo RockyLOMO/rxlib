@@ -7,6 +7,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 
+import java.awt.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -359,6 +360,15 @@ public class Strings extends StringUtils {
             }
         }
         return text;
+    }
+
+    public static String toDecodeString(Font font) {
+        String name = font.getName().replace(" ", "-");
+        String style = font.isBold() && font.isItalic() ? "BOLDITALIC" :
+                font.isBold() ? "BOLD" :
+                        font.isItalic() ? "ITALIC" : "PLAIN";
+        int size = font.getSize();
+        return style.equals("PLAIN") ? name + "-" + size : name + "-" + style + "-" + size;
     }
 
     //region Regular

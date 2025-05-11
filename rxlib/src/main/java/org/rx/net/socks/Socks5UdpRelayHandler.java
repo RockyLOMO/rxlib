@@ -12,6 +12,7 @@ import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 @Slf4j
@@ -67,7 +68,9 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         Channel inbound = ctx.channel();
         SocksProxyServer server = SocksContext.server(inbound);
         final InetSocketAddress srcEp = in.sender();
-        if (!Sockets.isLanIp(srcEp.getAddress()) && !server.config.getWhiteList().contains(srcEp.getAddress())) {
+        InetAddress saddr = srcEp.getAddress();
+        if (!saddr.isLoopbackAddress() && !Sockets.isPrivateIp(saddr)
+                && !server.config.getWhiteList().contains(saddr)) {
             log.warn("security error, package from {}", srcEp);
             return;
         }

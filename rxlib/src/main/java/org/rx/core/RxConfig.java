@@ -64,7 +64,7 @@ public final class RxConfig {
         String NET_POOL_MAX_SIZE = "app.net.poolMaxSize";
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_USER_AGENT = "app.net.userAgent";
-        String NET_LAN_IPS = "app.net.lanIps";
+        String NET_BYPASS_HOSTS = "app.net.bypassHosts";
         String NTP_ENABLE_FLAGS = "app.net.ntp.enableFlags";
         String NTP_SYNC_PERIOD = "app.net.ntp.syncPeriod";
         String NTP_TIMEOUT_MILLIS = "app.net.ntp.timeoutMillis";
@@ -155,7 +155,7 @@ public final class RxConfig {
         int poolMaxSize;
         int poolKeepAliveSeconds;
         String userAgent;
-        final List<String> lanIps = newConcurrentList(true);
+        final List<String> bypassHosts = newConcurrentList(true);
         NtpConfig ntp = new NtpConfig();
         DnsConfig dns = new DnsConfig();
     }
@@ -318,7 +318,7 @@ public final class RxConfig {
         net.poolMaxSize = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_MAX_SIZE, net.poolMaxSize);
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, net.poolKeepAliveSeconds);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, net.userAgent);
-        reset(net.lanIps, ConfigNames.NET_LAN_IPS);
+        reset(net.bypassHosts, ConfigNames.NET_BYPASS_HOSTS);
 
         net.ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, net.ntp.enableFlags);
         net.ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, net.ntp.syncPeriod);
