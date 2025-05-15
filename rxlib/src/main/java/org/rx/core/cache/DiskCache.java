@@ -1,14 +1,15 @@
 package org.rx.core.cache;
 
-import com.github.benmanes.caffeine.cache.RemovalCause;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.rx.codec.CodecUtil;
 import org.rx.core.*;
-import org.rx.io.KeyValueStore;
+import org.rx.io.EntityDatabase;
+import org.rx.io.EntityQueryLambda;
 
-import java.io.Serializable;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
 
@@ -19,123 +20,93 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     }
 
     public final Delegate<DiskCache<TK, TV>, Map.Entry<TK, TV>> onExpired = Delegate.create();
-    final Cache<TK, DiskCacheItem<TV>> cache;
-    final KeyValueStore<TK, DiskCacheItem<TV>> store;
+    final EntityDatabase db = EntityDatabase.DEFAULT;
+    @Setter
     int defaultExpireSeconds = 60 * 60 * 24 * 365;  //1 year
+    @Setter
+    int maxEntrySetSize = 1000;
 
     public DiskCache() {
-        this(1000);
-    }
-
-    public DiskCache(int cacheSize) {
-        cache = new MemoryCache<>(b -> b.maximumSize(cacheSize), this::onRemoval);
-        store = (KeyValueStore) KeyValueStore.getInstance(Object.class, DiskCacheItem.class);
-    }
-
-    void onRemoval(@Nullable TK key, DiskCacheItem<TV> item, @NonNull RemovalCause removalCause) {
-        if (item == null) {
-            return;
-        }
-        log.info("onRemoval {}[{}] -> {}", key, item.getExpiration(), removalCause);
-        if (item.value == null || removalCause == RemovalCause.REPLACED || removalCause == RemovalCause.EXPLICIT) {
-            return;
-        }
-        if (item.isExpired()) {
-            raiseEvent(onExpired, new AbstractMap.SimpleEntry<>(key, item.value));
-            return;
-        }
-        if (!(key instanceof Serializable && item.value instanceof Serializable)) {
-            return;
-        }
-        store.fastPut(key, item);
-        log.info("onRemoval copy to store {} -> {}ms", key, item.getExpiration() - System.currentTimeMillis());
+        db.createMapping(H2CacheItem.class);
     }
 
     @Override
     public int size() {
-        return cache.size() + store.size();
+        return (int) db.count(new EntityQueryLambda<>(H2CacheItem.class));
     }
 
     @Override
     public boolean containsKey(Object key) {
-        return get(key) != null;
+        return db.exists(new EntityQueryLambda<>(H2CacheItem.class)
+                .eq(H2CacheItem::getId, CodecUtil.hash64(key)));
     }
 
     @Override
     public boolean containsValue(Object value) {
-        return cache.containsValue(value) || store.containsValue(value);
+        return db.exists(new EntityQueryLambda<>(H2CacheItem.class)
+                .eq(H2CacheItem::getValIdx, CodecUtil.hash64(value)));
     }
 
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV get(Object key) {
-        boolean doRenew = false;
-        DiskCacheItem<TV> item = cache.get(key);
-        if (item == null) {
-            item = store.get(key);
-            doRenew = true;
-        }
-        return unwrap((TK) key, item, doRenew);
-    }
-
-    private TV unwrap(TK key, DiskCacheItem<TV> item, boolean doRenew) {
+        H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
         if (item == null) {
             return null;
         }
         if (item.isExpired()) {
-            remove(key);
+            db.deleteById(H2CacheItem.class, item.id);
             if (onExpired == null) {
                 return null;
             }
-            Map.Entry<TK, TV> args = new AbstractMap.SimpleEntry<>(key, item.value);
-            raiseEvent(onExpired, args);
-            return args.getValue();
+            raiseEvent(onExpired, item);
+            return item.getValue();
         }
-        if (doRenew && item.slidingRenew()) {
-            cache.put(key, item);
+        if (item.slidingRenew()) {
+            db.save(item);
         }
-        return item.value;
+        return item.getValue();
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV put(TK key, TV value, CachePolicy policy) {
         if (policy == null) {
             policy = CachePolicy.absolute(defaultExpireSeconds);
         }
-        DiskCacheItem<TV> old = cache.put(key, new DiskCacheItem<>(value, policy));
-        return unwrap(key, old, false);
+        TV oldValue;
+        H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
+        if (item == null) {
+            oldValue = null;
+            item = new H2CacheItem<>(key, value, policy);
+        } else {
+            oldValue = item.getValue();
+            item.setValue(value);
+        }
+        db.save(item);
+        return oldValue;
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV remove(Object key) {
-        DiskCacheItem<TV> remove = cache.remove(key);
-        if (remove == null) {
-            remove = store.remove(key);
+        H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
+        if (item == null) {
+            return null;
         }
-        return remove == null ? null : remove.value;
+        db.deleteById(H2CacheItem.class, item.id);
+        return item.getValue();
     }
 
     @Override
     public void clear() {
-        cache.clear();
-        store.clear();
+        db.dropMapping(H2CacheItem.class);
     }
 
-    @Override
-    public Set<TK> keySet() {
-        return cache.keySet();
-    }
-
-    @Override
-    public Collection<TV> values() {
-        return Linq.from(keySet()).select(k -> get(k)).where(Objects::nonNull).toList();
-    }
-
+    @SuppressWarnings(NON_UNCHECKED)
     @Override
     public Set<Map.Entry<TK, TV>> entrySet() {
-        return Linq.from(keySet()).select(k -> {
-            TV v = get(k);
-            return v == null ? null : (Map.Entry<TK, TV>) new AbstractMap.SimpleEntry<>(k, v);
-        }).where(Objects::nonNull).toSet();
+        List<H2CacheItem> by = db.findBy(new EntityQueryLambda<>(H2CacheItem.class).limit(maxEntrySetSize));
+        return Linq.from(by).<Map.Entry<TK, TV>>cast().toSet();
     }
 }
