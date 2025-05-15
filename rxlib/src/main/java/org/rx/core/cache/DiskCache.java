@@ -15,10 +15,10 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
 public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCache<TK, TV>> {
-    public static final DiskCache<?, ?> DEFAULT = new DiskCache<>();
+    public static final DiskCache<?, ?> DEFAULT;
 
     static {
-        IOC.register(DiskCache.class, DEFAULT);
+        IOC.register(DiskCache.class, DEFAULT = new DiskCache<>());
     }
 
     public final Delegate<DiskCache<TK, TV>, Map.Entry<TK, TV>> onExpired = Delegate.create();
