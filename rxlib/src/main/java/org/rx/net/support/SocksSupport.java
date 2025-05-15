@@ -21,7 +21,7 @@ public interface SocksSupport extends AutoCloseable, DnsServer.ResolveIntercepto
     EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
     static Cache<BigInteger, UnresolvedEndpoint> fakeDict() {
-        return Cache.getInstance(DiskCache.class);
+        return (Cache<BigInteger, UnresolvedEndpoint>) DiskCache.DEFAULT;
     }
 
     void fakeEndpoint(BigInteger hash, String realEndpoint);

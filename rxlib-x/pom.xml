@@ -19,7 +19,7 @@
         <mysql.version>5.1.49</mysql.version>
         <HikariCP.version>4.0.3</HikariCP.version>
         <druid.version>1.2.21</druid.version>
-        <redisson.version>3.38.1</redisson.version>
+        <redisson.version>3.40.2</redisson.version>
         <guava.version>32.1.1-jre</guava.version>
 
         <javaxMail.version>1.6.2</javaxMail.version>
