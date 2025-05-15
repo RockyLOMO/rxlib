@@ -23,7 +23,7 @@
         <byte-buddy.version>1.15.7</byte-buddy.version>
         <zip4j.version>2.11.3</zip4j.version>
         <h2.version>2.2.224</h2.version>
-        <netty.version>4.1.114.Final</netty.version>
+        <netty.version>4.1.115.Final</netty.version>
         <!--1.78.1有问题-->
         <bcprov.version>1.79</bcprov.version>
         <okhttp.version>4.12.0</okhttp.version>
