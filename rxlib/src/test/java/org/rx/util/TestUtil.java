@@ -36,6 +36,16 @@ import static org.rx.core.Sys.*;
 
 @Slf4j
 public class TestUtil extends AbstractTester {
+    @Test
+    public void gym() {
+        double kg = 85;
+        double[] p = {0.5d, 0.7d, 0.9d};
+        for (double v : p) {
+            Decimal percent = Decimal.valueOf(v);
+            log.info("热身组 {} {}kg", percent.toPercentString(), Decimal.valueOf(kg).multiply(percent).toString());
+        }
+    }
+
     //region BeanMapper
     //因为有default method，暂不支持abstract class
     interface PersonMapper {

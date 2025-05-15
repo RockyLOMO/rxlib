@@ -97,6 +97,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     static final String $TABLE = "$TABLE", $CREATE_COLUMNS = "$CREATE_COLUMNS", $PK = "$PK",
             $UPDATE_COLUMNS = "$UPDATE_COLUMNS";
     static final Map<Class<?>, H2Type> H2_TYPES = new ConcurrentHashMap<>();
+    static final Serializer SERIALIZER = Serializer.DEFAULT;
     static final Map<Class<?>, SqlMeta> SQL_META = new ConcurrentHashMap<>();
     static final FastThreadLocal<Connection> TX_CONN = new FastThreadLocal<>();
 
@@ -129,6 +130,74 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
         return columnMapping != null ? columnMapping.apply(field.getName())
                 : field.getName();
+    }
+
+    static String toH2Type(Class<?> fieldType) {
+        String h2Type;
+        if (Reflects.isAssignable(fieldType, NEnum.class, false)) {
+            h2Type = H2Type.INTEGER.getName();
+        } else if (Reflects.isAssignable(fieldType, Decimal.class, false) || fieldType == BigDecimal.class) {
+//            h2Type = H2Type.NUMERIC.getName();
+            h2Type = "NUMERIC(56, 6)";
+        } else if (fieldType.isArray()) {
+//            if (fieldType.getComponentType() == Object.class) {
+            h2Type = H2Type.BLOB.getName();
+//            } else {
+//                h2Type = H2Type.JAVA_OBJECT.getName();
+//            }
+        } else {
+            h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType), H2Type.JAVA_OBJECT).getName();
+        }
+        return h2Type;
+    }
+
+    @SneakyThrows
+    static void fillParams(PreparedStatement stmt, List<Object> params) {
+        for (int i = 0; i < params.size(); ) {
+            Object val = params.get(i++);
+            if (val != null) {
+                if (val instanceof NEnum) {
+                    stmt.setInt(i, ((NEnum<?>) val).getValue());
+                    continue;
+                }
+                if (val.getClass().isArray()) {
+                    try (IOStream stream = SERIALIZER.serialize(val)) {
+                        stmt.setBinaryStream(i, stream.getReader());
+                    }
+                    continue;
+                }
+                if (val instanceof Decimal) {
+                    stmt.setBigDecimal(i, ((Decimal) val).getValue());
+                    continue;
+                }
+            }
+            stmt.setObject(i, val);
+        }
+    }
+
+    @SneakyThrows
+    static Object convertCell(Class<?> type, Object cell) {
+        if (cell == null) {
+            return Reflects.defaultValue(type);
+        }
+        if (type.isArray()) {
+//            if (type.getComponentType() == Object.class) {
+//                Object[] arr;
+//                Blob blob = (Blob) cell;
+//                if (blob.length() == 0) {
+//                    arr = Arrays.EMPTY_OBJECT_ARRAY;
+//                } else {
+//                    arr = SERIALIZER.deserialize(IOStream.wrap(null, blob.getBinaryStream()));
+//                }
+//                return arr;
+//            }
+            Blob blob = (Blob) cell;
+            if (blob.length() == 0) {
+                return null;
+            }
+            return SERIALIZER.deserialize(IOStream.wrap(null, blob.getBinaryStream()));
+        }
+        return Reflects.changeType(cell, type);
     }
 
     final String filePath;
@@ -712,26 +781,6 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
     }
 
-    static String toH2Type(Class<?> fieldType) {
-        String h2Type;
-        if (Reflects.isAssignable(fieldType, NEnum.class, false)) {
-            h2Type = H2Type.INTEGER.getName();
-        } else if (Reflects.isAssignable(fieldType, Decimal.class, false) || fieldType == BigDecimal.class) {
-//            h2Type = H2Type.NUMERIC.getName();
-            h2Type = "NUMERIC(56, 6)";
-        } else if (fieldType.isArray()) {
-            if (fieldType.getComponentType() == Object.class) {
-                h2Type = H2Type.BLOB.getName();
-            } else {
-//                h2Type = H2Type.array(H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType.getComponentType()), H2Type.JAVA_OBJECT)).getName();
-                h2Type = H2Type.JAVA_OBJECT.getName();
-            }
-        } else {
-            h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType), H2Type.JAVA_OBJECT).getName();
-        }
-        return h2Type;
-    }
-
     //region jdbc
     public DataTable executeQuery(String sql) {
         return executeQuery(sql, null);
@@ -815,46 +864,6 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
         }, sql, params);
         return r;
-    }
-
-    @SneakyThrows
-    static Object convertCell(Class<?> type, Object cell) {
-        if (cell == null) {
-            return Reflects.defaultValue(type);
-        }
-        if (type.isArray() && type.getComponentType() == Object.class) {
-            Object[] arr;
-            Blob blob = (Blob) cell;
-            if (blob.length() == 0) {
-                arr = Arrays.EMPTY_OBJECT_ARRAY;
-            } else {
-                arr = Serializer.DEFAULT.deserialize(IOStream.wrap(null, blob.getBinaryStream()));
-            }
-            return arr;
-        }
-        return Reflects.changeType(cell, type);
-    }
-
-    @SneakyThrows
-    static void fillParams(PreparedStatement stmt, List<Object> params) {
-        for (int i = 0; i < params.size(); ) {
-            Object val = params.get(i++);
-            if (val instanceof NEnum) {
-                stmt.setInt(i, ((NEnum<?>) val).getValue());
-                continue;
-            }
-            if (val instanceof Object[]) {
-                try (IOStream stream = Serializer.DEFAULT.serialize(val)) {
-                    stmt.setBinaryStream(i, stream.getReader());
-                }
-                continue;
-            }
-            if (val instanceof Decimal) {
-                stmt.setBigDecimal(i, ((Decimal) val).getValue());
-                continue;
-            }
-            stmt.setObject(i, val);
-        }
     }
     //endregion
 
