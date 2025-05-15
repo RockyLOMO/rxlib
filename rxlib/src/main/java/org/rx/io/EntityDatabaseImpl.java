@@ -36,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
@@ -222,7 +223,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             String filePath = getFilePath();
             curFilePath = filePath;
             //http://www.h2database.com/html/commands.html#set_cache_size
-            String h2Settings = RxConfig.INSTANCE.getDisk().getH2Settings();
+            String h2Settings = ifNull(RxConfig.INSTANCE.getDisk().getH2Settings(), "");
             log.info("h2Settings: {}", h2Settings);
             connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;", filePath) + h2Settings, null, null);
             connPool.setMaxConnections(maxConnections);
