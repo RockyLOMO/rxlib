@@ -10,8 +10,6 @@ import org.rx.util.function.Func;
 import org.rx.util.function.PredicateFunc;
 
 import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;

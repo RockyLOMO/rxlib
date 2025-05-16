@@ -29,6 +29,7 @@ public class CachePolicy implements Serializable {
 
     final int slidingSpan;
     @Getter
+//    @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
     long expiration;
 
     public boolean isExpired() {

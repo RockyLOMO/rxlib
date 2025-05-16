@@ -14,7 +14,6 @@ import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.*;
-import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -376,6 +375,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (query.conditions.isEmpty()) {
             throw new InvalidException("Forbid: empty condition");
         }
+        int max = query.limit == null ? -1 : query.limit;
+
         query.limit(1000);
         SqlMeta meta = getMeta(query.entityType);
         query.setColumnMapping(columnMapping);
@@ -395,6 +396,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         int rf;
         while ((rf = executeUpdate(execSql, params)) > 0) {
             total += rf;
+            if (max != -1 && total >= max) {
+                break;
+            }
         }
         return total;
     }
