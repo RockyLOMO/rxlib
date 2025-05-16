@@ -4,10 +4,10 @@ import org.rx.net.http.AuthenticProxy;
 import org.rx.net.http.HttpClient;
 
 public interface IPSearcher {
-    IPSearcher DEFAULT = new ComboIPSearcher();
+    IPSearcher DEFAULT = new GeoLite2();
 
     static String godaddyDns(String ssoKey, String domain, String name) {
-        return godaddyDns(ssoKey, domain, name, DEFAULT.currentIp(), null);
+        return godaddyDns(ssoKey, domain, name, DEFAULT.getPublicIp(), null);
     }
 
     static String godaddyDns(String ssoKey, String domain, String name, String ip, AuthenticProxy proxy) {
@@ -22,13 +22,11 @@ public interface IPSearcher {
                 "]", ip)).toString();
     }
 
-    String currentIp();
+    String getPublicIp();
 
-    IPAddress searchCurrent();
-
-    default IPAddress search(String host) {
-        return search(host, false);
+    default IPAddress resolvePublicIp() {
+        return resolve(getPublicIp());
     }
 
-    IPAddress search(String host, boolean resolveHostRemotely);
+    IPAddress resolve(String host);
 }

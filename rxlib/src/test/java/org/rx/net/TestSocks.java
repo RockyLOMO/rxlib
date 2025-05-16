@@ -56,10 +56,7 @@ import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.IPSearcher;
-import org.rx.net.support.SocksSupport;
-import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.net.support.UpstreamSupport;
+import org.rx.net.support.*;
 import org.rx.net.transport.SftpClient;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
@@ -740,7 +737,7 @@ public class TestSocks extends AbstractTester {
         }, 6000);
 
         DnsClient inlandClient = DnsClient.inlandClient();
-        InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
+        InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.getPublicIp());
         List<InetAddress> currentIps = inlandClient.resolveAll(host_devops);
         System.out.println("ddns: " + wanIp + " = " + currentIps);
         //注入InetAddress.getAllByName()变更要查询的dnsServer的地址，支持非53端口
@@ -879,9 +876,24 @@ public class TestSocks extends AbstractTester {
         String expr = RxConfig.INSTANCE.getNet().getBypassHosts().get(3);
         assert Pattern.matches(expr, "192.168.31.7");
 
-        String h = "google.com";
-        System.out.println(IPSearcher.DEFAULT.search(h));
-        System.out.println(IPSearcher.DEFAULT.search(h, true));
+        SocketConfig conf = new SocketConfig();
+        assert Sockets.isBypass(conf.getBypassHosts(), "127.0.0.1");
+        assert Sockets.isBypass(conf.getBypassHosts(), "192.168.31.1");
+        assert !Sockets.isBypass(conf.getBypassHosts(), "192.169.31.1");
+        assert Sockets.isBypass(conf.getBypassHosts(), "localhost");
+        assert !Sockets.isBypass(conf.getBypassHosts(), "google.cn");
+        assert !Sockets.isBypass(Arrays.toList("*google.com"), "google.cn");
+        assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
+        assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
+
+        System.out.println(IPSearcher.DEFAULT.resolve("8.8.8.8"));
+        System.out.println(IPSearcher.DEFAULT.resolve("61.169.146.210"));
+        System.out.println(IPSearcher.DEFAULT.resolve("192.168.31.2"));
+        System.out.println(IPSearcher.DEFAULT.getPublicIp());
+
+//        String h = "google.com";
+//        System.out.println(IPSearcher.DEFAULT.search(h));
+//        System.out.println(IPSearcher.DEFAULT.search(h, true));
 //        List<BiFunc<String, IPAddress>> apis = Reflects.readField(IPSearcher.DEFAULT, "apis");
 //        BiAction<String> fn = p -> {
 //            IPAddress last = null;
@@ -900,16 +912,6 @@ public class TestSocks extends AbstractTester {
 //        };
 //        fn.invoke(Sockets.loopbackAddress().getHostAddress());
 //        fn.invoke("x.f-li.cn");
-
-        SocketConfig conf = new SocketConfig();
-        assert Sockets.isBypass(conf.getBypassHosts(), "127.0.0.1");
-        assert Sockets.isBypass(conf.getBypassHosts(), "192.168.31.1");
-        assert !Sockets.isBypass(conf.getBypassHosts(), "192.169.31.1");
-        assert Sockets.isBypass(conf.getBypassHosts(), "localhost");
-        assert !Sockets.isBypass(conf.getBypassHosts(), "google.cn");
-        assert !Sockets.isBypass(Arrays.toList("*google.com"), "google.cn");
-        assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
-        assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
     }
 
     @SneakyThrows

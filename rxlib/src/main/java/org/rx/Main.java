@@ -270,7 +270,7 @@ public final class Main implements SocksSupport {
         Main app = new Main(frontSvr);
 
         Action fn = () -> {
-            InetAddress addr = InetAddress.getByName(IPSearcher.DEFAULT.searchCurrent().getIp());
+            InetAddress addr = InetAddress.getByName(IPSearcher.DEFAULT.resolvePublicIp().getIp());
             eachQuietly(shadowServers, p -> p.getSupport().addWhiteList(addr));
         };
         fn.invoke();
@@ -313,7 +313,7 @@ public final class Main implements SocksSupport {
                 } else if (Sockets.isBypass(conf.directList, host)) {
                     gfw = false;
                 } else if (conf.autoGfw) {
-                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.search(host, true), conf.waitIpInfoMillis);
+                    IPAddress ipAddress = awaitQuietly(() -> IPSearcher.DEFAULT.resolve(host), conf.waitIpInfoMillis);
                     gfw = ipAddress == null || !ipAddress.isChina();
                 } else {
                     gfw = true;
@@ -341,7 +341,7 @@ public final class Main implements SocksSupport {
                 log.warn("conf is null");
             }
 
-            InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.currentIp());
+            InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.getPublicIp());
             for (String ddns : conf.ddnsDomains) {
                 List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
                 if (currentIps.contains(wanIp)) {
@@ -388,15 +388,22 @@ public final class Main implements SocksSupport {
     }
 
     static void serverInit() {
-        httpServer = new HttpServer(8082, true).requestMapping("/hf", (request, response) -> {
-            String url = request.getQueryString().getFirst("fu");
-            Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
-            HttpClient client = new HttpClient();
-            if (tm != null) {
-                client.withTimeoutMillis(tm);
-            }
-            response.jsonBody(client.get(url).toJson());
-        });
+        httpServer = new HttpServer(8082, true)
+                .requestMapping("/hf", (request, response) -> {
+                    String url = request.getQueryString().getFirst("fu");
+                    Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
+                    HttpClient client = new HttpClient();
+                    if (tm != null) {
+                        client.withTimeoutMillis(tm);
+                    }
+                    response.jsonBody(client.get(url).toJson());
+                })
+                .requestMapping("/getPublicIp", (request, response) -> {
+                    response.jsonBody(Sockets.toString(request.getRemoteEndpoint()));
+                })
+                .requestMapping("/geo", (request, response) -> {
+                    response.jsonBody(IPSearcher.DEFAULT.resolve(request.getQueryString().getFirst("host")));
+                });
     }
 
     final SocksProxyServer proxyServer;
