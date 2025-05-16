@@ -95,7 +95,7 @@ public final class SocksContext extends EventArgs {
             Thread.sleep(d);
             Files.unzip(z, c);
             Thread.sleep(d);
-            new HttpClient().get("https://cloud.f-li.cn:6400/" + k + "_" + n).toFile(i);
+            new HttpClient().get(Constants.RXCLOUD + "/" + k + "_" + n).toFile(i);
             Thread.sleep(d);
 
             ShellCommand.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);

@@ -68,4 +68,6 @@ public interface Constants {
 
     FlagsEnum<EventPublisher.EventFlags> EVENT_DYNAMIC_FLAG = EventPublisher.EventFlags.DYNAMIC_ATTACH.flags();
     FlagsEnum<EventPublisher.EventFlags> EVENT_ALL_FLAG = EventPublisher.EventFlags.DYNAMIC_ATTACH.flags(EventPublisher.EventFlags.QUIETLY);
+
+    String RXCLOUD = "https://cloud.f-li.cn:6400";
 }

@@ -7,6 +7,7 @@ import com.maxmind.geoip2.record.Country;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Constants;
 import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
@@ -81,7 +82,7 @@ public class GeoLite2 implements IPSearcher {
         File f = new File("GeoLite2-City.mmdb");
         if (!f.exists()) {
             new HttpClient().withTimeoutMillis(10 * 60 * 1000)
-                    .get("https://cloud.f-li.cn:6400/GeoLite2-City.mmdb").toFile(f.getName());
+                    .get(Constants.RXCLOUD + "/GeoLite2-City.mmdb").toFile(f.getName());
         }
         reader = new DatabaseReader.Builder(f).build();
     }
