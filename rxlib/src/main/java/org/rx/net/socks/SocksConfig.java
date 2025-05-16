@@ -4,19 +4,13 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
-import org.rx.core.Cache;
-import org.rx.core.CachePolicy;
-import org.rx.core.cache.DiskCache;
 import org.rx.net.SocketConfig;
-import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
-import static org.rx.core.Sys.cacheKey;
 
 @RequiredArgsConstructor
 @Getter

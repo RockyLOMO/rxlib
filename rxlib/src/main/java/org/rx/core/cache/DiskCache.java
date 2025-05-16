@@ -1,5 +1,6 @@
 package org.rx.core.cache;
 
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.codec.CodecUtil;
@@ -22,14 +23,32 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     }
 
     public final Delegate<DiskCache<TK, TV>, Map.Entry<TK, TV>> onExpired = Delegate.create();
-    final EntityDatabase db = EntityDatabase.DEFAULT;
+    final EntityDatabase db;
     @Setter
     int defaultExpireSeconds = 60 * 60 * 24 * 365;  //1 year
     @Setter
     int maxEntrySetSize = 1000;
+    @Setter
+    long expungePeriod = 1000 * 60;
 
     public DiskCache() {
+        this(EntityDatabase.DEFAULT);
+    }
+
+    public DiskCache(@NonNull EntityDatabase db) {
         db.createMapping(H2CacheItem.class);
+        this.db = db;
+        Tasks.schedulePeriod(this::expungeStale, expungePeriod);
+    }
+
+    void expungeStale() {
+        List<H2CacheItem> stales = db.findBy(new EntityQueryLambda<>(H2CacheItem.class)
+                .le(H2CacheItem::getExpiration, System.currentTimeMillis())
+                .limit(100));
+        for (H2CacheItem stale : stales) {
+            db.deleteById(H2CacheItem.class, stale.id);
+            raiseEvent(onExpired, stale);
+        }
     }
 
     @Override
@@ -58,9 +77,6 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
         }
         if (item.isExpired()) {
             db.deleteById(H2CacheItem.class, item.id);
-            if (onExpired == null) {
-                return null;
-            }
             raiseEvent(onExpired, item);
             return item.getValue();
         }
