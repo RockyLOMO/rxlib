@@ -57,7 +57,7 @@ public class SocksUser implements Serializable {
 
         public LoginInfo(InetAddress ip) {
             this.ip = ip;
-            Tasks.run(() -> ipInfo = IPSearcher.DEFAULT.search(ip.getHostAddress()));
+            ipInfo = IPSearcher.DEFAULT.resolve(ip.getHostAddress());
         }
     }
 

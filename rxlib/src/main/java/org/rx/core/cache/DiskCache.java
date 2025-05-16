@@ -27,7 +27,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     @Setter
     int defaultExpireSeconds = 60 * 60 * 24 * 365;  //1 year
     @Setter
-    int maxEntrySetSize = 1000;
+    int querySize = 1000;
     @Setter
     long expungePeriod = 1000 * 60;
 
@@ -44,7 +44,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     void expungeStale() {
         List<H2CacheItem> stales = db.findBy(new EntityQueryLambda<>(H2CacheItem.class)
                 .le(H2CacheItem::getExpiration, System.currentTimeMillis())
-                .limit(100));
+                .limit(querySize));
         for (H2CacheItem stale : stales) {
             db.deleteById(H2CacheItem.class, stale.id);
             raiseEvent(onExpired, stale);
@@ -121,10 +121,15 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
         db.dropMapping(H2CacheItem.class);
     }
 
-    @SuppressWarnings(NON_UNCHECKED)
+
     @Override
     public Set<Map.Entry<TK, TV>> entrySet() {
-        List<H2CacheItem> by = db.findBy(new EntityQueryLambda<>(H2CacheItem.class).limit(maxEntrySetSize));
+        return entrySet(0, querySize);
+    }
+
+    public Set<Map.Entry<TK, TV>> entrySet(int offset, int size) {
+        List<H2CacheItem> by = db.findBy(new EntityQueryLambda<>(H2CacheItem.class)
+                .limit(offset, size));
         return Linq.from(by).<Map.Entry<TK, TV>>cast().toSet();
     }
 }
