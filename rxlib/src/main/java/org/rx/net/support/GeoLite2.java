@@ -23,12 +23,12 @@ import java.util.Collections;
 public class GeoLite2 implements IPSearcher {
     DatabaseReader reader;
     @Setter
-    String resolveServer;
+    String resolveServer = "https://f-li.cn:8082";
 
     @Override
     public String getPublicIp() {
         String[] services = resolveServer != null
-                ? new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org", resolveServer + "/getPublicIp"}
+                ? new String[]{resolveServer + "/getPublicIp", "https://checkip.amazonaws.com", "https://api.seeip.org"}
                 : new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
         HttpClient client = new HttpClient();
         for (String service : services) {
