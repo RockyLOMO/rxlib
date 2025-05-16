@@ -23,9 +23,18 @@ public class GeoLite2 implements IPSearcher {
     @Setter
     String resolveServer;
 
+    public GeoLite2() {
+        this("GeoLite2-City.mmdb");
+    }
+
     @SneakyThrows
-    public GeoLite2(String filePath) {
-        reader = new DatabaseReader.Builder(new File(filePath)).build();
+    public GeoLite2(String p) {
+//        String p = "GeoLite2-City.mmdb";
+        File f = new File(p);
+//        try (FileStream fs = new FileStream(f)) {
+//            fs.write(Reflects.getResource(p));
+//        }
+        reader = new DatabaseReader.Builder(f).build();
     }
 
     @Override

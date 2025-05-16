@@ -4,7 +4,7 @@ import org.rx.net.http.AuthenticProxy;
 import org.rx.net.http.HttpClient;
 
 public interface IPSearcher {
-    IPSearcher DEFAULT = new GeoLite2("GeoLite2-City.mmdb");
+    IPSearcher DEFAULT = new GeoLite2();
 
     static String godaddyDns(String ssoKey, String domain, String name) {
         return godaddyDns(ssoKey, domain, name, DEFAULT.getPublicIp(), null);
