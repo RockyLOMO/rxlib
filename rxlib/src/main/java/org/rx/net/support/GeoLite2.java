@@ -12,6 +12,7 @@ import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.http.HttpClient;
+import org.rx.util.Lazy;
 
 import java.io.File;
 import java.net.InetAddress;
@@ -19,22 +20,19 @@ import java.util.Collections;
 
 @Slf4j
 public class GeoLite2 implements IPSearcher {
-    final DatabaseReader reader;
+    final Lazy<DatabaseReader> reader;
     @Setter
     String resolveServer;
 
     public GeoLite2() {
-        this("GeoLite2-City.mmdb");
-    }
-
-    @SneakyThrows
-    public GeoLite2(String p) {
-//        String p = "GeoLite2-City.mmdb";
-        File f = new File(p);
-//        try (FileStream fs = new FileStream(f)) {
-//            fs.write(Reflects.getResource(p));
-//        }
-        reader = new DatabaseReader.Builder(f).build();
+        reader = new Lazy<>(() -> {
+            File f = new File("GeoLite2-City.mmdb");
+            if (!f.exists()) {
+                new HttpClient().withTimeoutMillis(10 * 60 * 1000)
+                        .get("https://cloud.f-li.cn:6400/GeoLite2-City.mmdb").toFile(f.getName());
+            }
+            return new DatabaseReader.Builder(f).build();
+        });
     }
 
     @Override
@@ -79,7 +77,7 @@ public class GeoLite2 implements IPSearcher {
             return new IPAddress(ip.getHostAddress(), "Private", null, null);
         }
 
-        CityResponse result = reader.city(ip);
+        CityResponse result = reader.getValue().city(ip);
         Country country = result.getCountry();
         City city = result.getCity();
         return new IPAddress(ip.getHostAddress(), country.getName(), country.getIsoCode(), city.getName());
