@@ -63,7 +63,8 @@ public class GeoLite2 implements IPSearcher {
 
     @SneakyThrows
     IPAddress search(InetAddress ip) {
-        if (Sockets.isPrivateIp(ip)) {
+        if (ip.isLoopbackAddress() || ip.isAnyLocalAddress()
+                || Sockets.isPrivateIp(ip)) {
             return new IPAddress(ip.getHostAddress(), "Private", null, null);
         }
         if (reader == null) {
