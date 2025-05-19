@@ -34,6 +34,8 @@ public interface EntityDatabase extends AutoCloseable {
 
     void compact();
 
+    <T> void truncateMapping(Class<T> entityType);
+
     <T> void dropMapping(Class<T> entityType);
 
     void createMapping(Class<?>... entityTypes);

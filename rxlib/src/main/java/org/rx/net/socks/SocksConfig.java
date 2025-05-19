@@ -4,13 +4,13 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import org.rx.core.cache.DiskCache;
 import org.rx.net.SocketConfig;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @RequiredArgsConstructor
 @Getter
@@ -31,10 +31,6 @@ public class SocksConfig extends SocketConfig {
     private final Set<InetAddress> whiteList = whiteList();
 
     private Set<InetAddress> whiteList() {
-//        Cache<Integer, Set<InetAddress>> cache = Cache.getInstance(DiskCache.class);
-//        return cache.get(cacheKey("whiteList",this.hashCode()),k->ConcurrentHashMap.newKeySet(1), CachePolicy.)
-        Set<InetAddress> list = ConcurrentHashMap.newKeySet(1);
-//        list.add(Sockets.getLoopbackAddress());
-        return list;
+        return DiskCache.DEFAULT.asSet();
     }
 }

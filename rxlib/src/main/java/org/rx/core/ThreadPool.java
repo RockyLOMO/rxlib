@@ -378,7 +378,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static void endTrace() {
         LinkedList<Object> queue = CTX_TRACE_ID.get();
         if (queue.isEmpty()) {
-            log.warn("RTrace - not started");
+            log.debug("RTrace - not started");
             return;
         }
 

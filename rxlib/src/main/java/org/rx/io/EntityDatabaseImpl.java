@@ -564,6 +564,15 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     @Override
+    public <T> void truncateMapping(Class<T> entityType) {
+        SqlMeta meta = getMeta(entityType);
+
+        StringBuilder sql = new StringBuilder(meta.selectSql);
+        sql.replace(0, 13, "TRUNCATE TABLE");
+        executeUpdate(sql.toString());
+    }
+
+    @Override
     public <T> void dropMapping(Class<T> entityType) {
         SqlMeta meta = getMeta(entityType);
 

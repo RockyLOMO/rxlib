@@ -9,7 +9,6 @@ import org.rx.io.Serializer;
 
 import java.util.Map;
 
-@ToString
 public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
     private static final long serialVersionUID = -7742074465897857966L;
     @Getter
@@ -72,5 +71,13 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
         super(policy);
         setKey(key);
         setValue(value);
+    }
+
+    @Override
+    public String toString() {
+        return "H2CacheItem{" +
+                "key=" + getKey() +
+                ", value=" + getValue() +
+                '}';
     }
 }
