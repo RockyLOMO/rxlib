@@ -1,6 +1,7 @@
 package org.rx.core.cache;
 
 import lombok.Getter;
+import lombok.Setter;
 import lombok.ToString;
 import org.rx.annotation.DbColumn;
 import org.rx.codec.CodecUtil;
@@ -17,7 +18,11 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
     @Getter
     @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
     long valIdx;
-//    @Getter
+    @Getter
+    @Setter
+    String region;
+
+    //    @Getter
 //    K key;
 //    V val;
 //
@@ -37,7 +42,6 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
 //        valIdx = CodecUtil.hash64(val);
 //        return oldValue;
 //    }
-
     private byte[] key;
     private byte[] val;
 
@@ -78,6 +82,7 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
         return "H2CacheItem{" +
                 "key=" + getKey() +
                 ", value=" + getValue() +
+                ", region=" + getRegion() +
                 '}';
     }
 }

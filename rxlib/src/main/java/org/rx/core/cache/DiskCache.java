@@ -1,5 +1,6 @@
 package org.rx.core.cache;
 
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -18,18 +19,20 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
 public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCache<TK, TV>> {
-    public class EntrySetView extends AbstractSet<Entry<TK, TV>> {
+    class EntrySetView extends AbstractSet<Entry<TK, TV>> {
         @Override
         public Iterator<Map.Entry<TK, TV>> iterator() {
-            return iterator(0, Integer.MAX_VALUE);
-        }
+            Object[] iteCtx = ITERATOR_CTX.get();
+            boolean noCtx = iteCtx == null;
+            int offset = noCtx ? 0 : (int) iteCtx[0];
+            int size = noCtx ? Integer.MAX_VALUE : (int) iteCtx[1];
+            Class<?> keyType = noCtx ? null : (Class<?>) iteCtx[2];
 
-        public Iterator<Map.Entry<TK, TV>> iterator(int offset, int size) {
             //1 = readPos, 2 = remaining
             final int[] wrap = {offset, 0, size};
             $<List<H2CacheItem>> buf = $();
             int readSize = Math.min(prefetchCount, wrap[2]);
-            buf.v = db.findBy(new EntityQueryLambda<>(H2CacheItem.class)
+            buf.v = db.findBy(newQuery(keyType)
                     .limit(wrap[0], readSize));
             if (buf.v.isEmpty()) {
                 return IteratorUtils.emptyIterator();
@@ -47,7 +50,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
                     while (true) {
                         if (++wrap[1] == buf.v.size()) {
                             int nextSize = Math.min(prefetchCount, wrap[2]);
-                            buf.v = db.findBy(new EntityQueryLambda<>(H2CacheItem.class)
+                            buf.v = db.findBy(newQuery(keyType)
                                     .limit(wrap[0], nextSize));
                             if (buf.v.isEmpty()) {
                                 return null;
@@ -64,6 +67,14 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
                     DiskCache.this.remove(current.getKey());
                 }
             };
+        }
+
+        EntityQueryLambda<H2CacheItem> newQuery(Class<?> keyType) {
+            EntityQueryLambda<H2CacheItem> q = new EntityQueryLambda<>(H2CacheItem.class);
+            if (keyType != null) {
+                q.eq(H2CacheItem::getRegion, keyType.getSimpleName());
+            }
+            return q;
         }
 
         @Override
@@ -88,9 +99,18 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     }
 
     public static final DiskCache<?, ?> DEFAULT;
+    static final FastThreadLocal<Object[]> ITERATOR_CTX = new FastThreadLocal<>();
 
     static {
         IOC.register(DiskCache.class, DEFAULT = new DiskCache<>());
+    }
+
+    public static void iteratorContext() {
+        iteratorContext(0, Integer.MAX_VALUE, null);
+    }
+
+    public static void iteratorContext(int offset, int size, Class<?> keyType) {
+        ITERATOR_CTX.set(new Object[]{offset, size, keyType});
     }
 
     public final Delegate<DiskCache<TK, TV>, Map.Entry<TK, TV>> onExpired = Delegate.create();
@@ -169,6 +189,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
         if (item == null) {
             oldValue = null;
             item = new H2CacheItem<>(key, value, policy);
+            item.setRegion(key.getClass().getSimpleName());
         } else {
             oldValue = item.getValue();
             item.setValue(value);
@@ -194,7 +215,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     }
 
     @Override
-    public EntrySetView entrySet() {
+    public Set<Entry<TK, TV>> entrySet() {
         if (setView == null) {
             setView = new EntrySetView();
         }
