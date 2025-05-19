@@ -23,9 +23,9 @@
         <byte-buddy.version>1.15.7</byte-buddy.version>
         <zip4j.version>2.11.3</zip4j.version>
         <h2.version>2.2.224</h2.version>
-        <netty.version>4.1.115.Final</netty.version>
+        <netty.version>4.2.1.Final</netty.version>
         <!--1.78.1有问题-->
-        <bcprov.version>1.79</bcprov.version>
+        <bcprov.version>1.78</bcprov.version>
         <okhttp.version>4.12.0</okhttp.version>
         <sshd.version>2.13.2</sshd.version>
         <jsch.version>0.1.55</jsch.version>
