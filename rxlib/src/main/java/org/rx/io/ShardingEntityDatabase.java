@@ -221,6 +221,11 @@ public class ShardingEntityDatabase implements EntityDatabase {
     }
 
     @Override
+    public <T> void truncateMapping(Class<T> entityType) {
+        invokeAll(p -> p.truncateMapping(entityType));
+    }
+
+    @Override
     public <T> void dropMapping(Class<T> entityType) {
         invokeAll(p -> p.dropMapping(entityType));
     }

@@ -3,8 +3,12 @@ package org.rx.core;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.bean.AbstractMap;
+import org.rx.bean.SetFromMap;
 import org.rx.core.cache.MemoryCache;
 import org.rx.util.function.BiFunc;
+
+import java.util.Map;
+import java.util.Set;
 
 import static org.rx.core.Constants.NON_RAW_TYPES;
 
@@ -57,4 +61,8 @@ public interface Cache<TK, TV> extends AbstractMap<TK, TV> {
     }
 
     TV put(TK key, TV value, CachePolicy policy);
+
+    default <TK> Set<TK> asSet() {
+        return new SetFromMap<>((Map<TK, Boolean>) this);
+    }
 }

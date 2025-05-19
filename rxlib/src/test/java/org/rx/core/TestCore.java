@@ -16,6 +16,7 @@ import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.codec.RSAUtil;
 import org.rx.core.cache.DiskCache;
+import org.rx.core.cache.H2CacheItem;
 import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
@@ -675,9 +676,25 @@ public class TestCore extends AbstractTester {
 //        Cache<Tuple<Integer, String>, Integer> cache = Cache.getInstance(MemoryCache.class);
 //        testCache(cache);
 
-        DiskCache<Tuple<Integer, String>, Integer> diskCache = (DiskCache) Cache.getInstance(DiskCache.class);
-        testCache(diskCache);
+        DiskCache<Tuple<Integer, String>, Integer> dCache = (DiskCache) Cache.getInstance(DiskCache.class);
+        dCache.clear();
+//        testCache(dCache);
 
+        DiskCache<Long, String> xCache = (DiskCache<Long, String>) DiskCache.DEFAULT;
+        xCache.setPrefetchCount(4);
+        for (long i = 0; i < 20; i++) {
+            assert xCache.put(i, i + 100 + "x") == null;
+        }
+        Set<Object> xSet = xCache.asSet();
+        for (int i = 1000; i < 1010; i++) {
+            assert xSet.add(i);
+        }
+        List<H2CacheItem> dbResult = EntityDatabase.DEFAULT.findBy(new EntityQueryLambda<>(H2CacheItem.class));
+        int i = 0;
+        for (Map.Entry<Long, String> entry : xCache.entrySet()) {
+            System.out.println("entry:" + entry + " = dbResult:" + dbResult.get(i));
+            i++;
+        }
         System.in.read();
     }
 
