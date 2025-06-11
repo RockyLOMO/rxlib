@@ -33,6 +33,7 @@ import java.util.Date;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.ifNull;
@@ -99,7 +100,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     static final Map<Class<?>, H2Type> H2_TYPES = new ConcurrentHashMap<>();
     static final Serializer SERIALIZER = Serializer.DEFAULT;
     static final Map<Class<?>, SqlMeta> SQL_META = new ConcurrentHashMap<>();
-    static final FastThreadLocal<Connection> TX_CONN = new FastThreadLocal<>();
+    //    static final AtomicInteger TX_ID = new AtomicInteger();
+    static final FastThreadLocal<Connection> TL_CONN = new FastThreadLocal<>();
+    static final FastThreadLocal<Integer> TL_TX = new FastThreadLocal<>();
 
     static {
         H2_TYPES.put(String.class, H2Type.VARCHAR);
@@ -886,7 +889,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     //region trans
     @Override
     public boolean isInTransaction() {
-        return TX_CONN.isSet();
+        return TL_TX.isSet();
     }
 
     @Override
@@ -897,10 +900,18 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     @Override
     @SneakyThrows
     public void begin(int transactionIsolation) {
-        Connection conn = TX_CONN.getIfExists();
+        Connection conn = TL_CONN.getIfExists();
         if (conn == null) {
-            TX_CONN.set(conn = getConnectionPool().getConnection());
+            TL_CONN.set(conn = getConnectionPool().getConnection());
         }
+        Integer txDepth = TL_TX.getIfExists();
+        if (txDepth == null) {
+            txDepth = 1;
+        } else {
+            txDepth++;
+        }
+        TL_TX.set(txDepth);
+
         if (transactionIsolation != Connection.TRANSACTION_NONE) {
             conn.setTransactionIsolation(transactionIsolation);
         }
@@ -910,54 +921,93 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     @Override
     @SneakyThrows
     public void commit() {
-        Connection conn = TX_CONN.getIfExists();
+        Connection conn = TL_CONN.getIfExists();
         if (conn == null) {
+            throw new InvalidException("No connection");
+        }
+        Integer txDepth = TL_TX.getIfExists();
+        if (txDepth == null) {
             throw new InvalidException("Not in transaction");
         }
-        TX_CONN.remove();
+
         conn.commit();
+        if (--txDepth >= 1) {
+            TL_TX.set(txDepth);
+            return;
+        }
+        //txDepth = 0
+        TL_TX.remove();
         conn.close();
+        TL_CONN.remove();
     }
 
     @Override
     @SneakyThrows
     public void rollback() {
-        Connection conn = TX_CONN.getIfExists();
+        Connection conn = TL_CONN.getIfExists();
         if (conn == null) {
-//            throw new InvalidException("Not in transaction");
-            log.warn("Not in transaction");
+            throw new InvalidException("No connection");
+        }
+        Integer txDepth = TL_TX.getIfExists();
+        if (txDepth == null) {
+            throw new InvalidException("Not in transaction");
+//            log.warn("Not in transaction");
+//            return;
+        }
+
+        conn.rollback();
+        if (--txDepth >= 1) {
+            TL_TX.set(txDepth);
             return;
         }
-        TX_CONN.remove();
-        conn.rollback();
+        //txDepth = 0
+        TL_TX.remove();
         conn.close();
+        TL_CONN.remove();
     }
 
     @SneakyThrows
     private void invoke(BiAction<Connection> fn, String sql, List<Object> params) {
-        Connection conn = TX_CONN.getIfExists();
-        boolean isInTx = conn != null;
-        if (!isInTx) {
-            conn = getConnectionPool().getConnection();
-        }
+        Connection conn = preInvoke(sql, params);
         long startTime = System.nanoTime();
         try {
             fn.invoke(conn);
         } catch (Throwable e) {
-            if (isInTx && autoRollbackOnError) {
+            if (isInTransaction() && autoRollbackOnError) {
                 rollback();
             }
             throw e;
         } finally {
-            postInvoke(sql, params, conn, isInTx, startTime);
+            postInvoke(sql, params, conn, startTime);
         }
     }
 
-    private void postInvoke(String sql, List<Object> params, Connection conn, boolean isInTx, long startTime) throws SQLException {
-        long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
-        if (!isInTx) {
-            conn.close();
+    @SneakyThrows
+    private <T> T invoke(BiFunc<Connection, T> fn, String sql, List<Object> params) {
+        Connection conn = preInvoke(sql, params);
+        long startTime = System.nanoTime();
+        try {
+            return fn.invoke(conn);
+        } catch (Throwable e) {
+            if (isInTransaction() && autoRollbackOnError) {
+                rollback();
+            }
+            throw e;
+        } finally {
+            postInvoke(sql, params, conn, startTime);
         }
+    }
+
+    private Connection preInvoke(String sql, List<Object> params) throws SQLException {
+        Connection conn = TL_CONN.getIfExists();
+        if (conn == null) {
+            TL_CONN.set(conn = getConnectionPool().getConnection());
+        }
+        return conn;
+    }
+
+    private void postInvoke(String sql, List<Object> params, Connection conn, long startTime) throws SQLException {
+        long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
         if (elapsed > slowSqlElapsed) {
             log.warn("slowSql: {} -> {}ms", sql, elapsed);
         } else {
@@ -965,25 +1015,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 log.debug("executeQuery {}\n{}", sql, toJsonString(params));
             }
         }
-    }
-
-    @SneakyThrows
-    private <T> T invoke(BiFunc<Connection, T> fn, String sql, List<Object> params) {
-        Connection conn = TX_CONN.getIfExists();
-        boolean isInTx = conn != null;
-        if (!isInTx) {
-            conn = getConnectionPool().getConnection();
-        }
-        long startTime = System.nanoTime();
-        try {
-            return fn.invoke(conn);
-        } catch (Throwable e) {
-            if (isInTx && autoRollbackOnError) {
-                rollback();
-            }
-            throw e;
-        } finally {
-            postInvoke(sql, params, conn, isInTx, startTime);
+        if (!isInTransaction()) {
+            conn.close();
+            TL_CONN.remove();
         }
     }
     //endregion
