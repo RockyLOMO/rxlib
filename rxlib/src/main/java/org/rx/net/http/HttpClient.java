@@ -241,7 +241,7 @@ public class HttpClient {
     public static final CookieContainer COOKIES = new CookieContainer();
     static final ConnectionPool POOL = new ConnectionPool(RxConfig.INSTANCE.getNet().getPoolMaxSize(), RxConfig.INSTANCE.getNet().getPoolKeepAliveSeconds(), TimeUnit.SECONDS);
     static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded;charset=UTF-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
-    static final X509TrustManager TRUST_MANAGER = new X509TrustManager() {
+    static final X509TrustManager[] TRUST_ALL_CERTS = new X509TrustManager[]{new X509TrustManager() {
         final X509Certificate[] empty = new X509Certificate[0];
 
         @Override
@@ -256,7 +256,7 @@ public class HttpClient {
         public X509Certificate[] getAcceptedIssuers() {
             return empty;
         }
-    };
+    }};
 
     //region StaticMembers
     public static String encodeCookie(List<Cookie> cookies) {
@@ -381,9 +381,10 @@ public class HttpClient {
     @SneakyThrows
     static OkHttpClient createClient(long connectTimeoutMillis, long readWriteTimeoutMillis, boolean enableCookie, Proxy proxy) {
         SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(null, new TrustManager[]{TRUST_MANAGER}, new SecureRandom());
+        sslContext.init(null, TRUST_ALL_CERTS, new SecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
-        OkHttpClient.Builder builder = new OkHttpClient.Builder().sslSocketFactory(sslContext.getSocketFactory(), TRUST_MANAGER).hostnameVerifier((s, sslSession) -> true)
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+                .sslSocketFactory(sslContext.getSocketFactory(), TRUST_ALL_CERTS[0]).hostnameVerifier((hostname, session) -> true)
                 .connectionPool(POOL).retryOnConnectionFailure(true) //unexpected end of stream
                 .connectTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS)
                 .readTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS)
