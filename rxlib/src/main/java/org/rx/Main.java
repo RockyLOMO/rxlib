@@ -399,7 +399,7 @@ public final class Main implements SocksSupport {
                     response.jsonBody(client.get(url).toJson());
                 })
                 .requestMapping("/getPublicIp", (request, response) -> {
-                    response.jsonBody(Sockets.toString(request.getRemoteEndpoint()));
+                    response.jsonBody(request.getRemoteEndpoint().getHostString());
                 })
                 .requestMapping("/geo", (request, response) -> {
                     response.jsonBody(IPSearcher.DEFAULT.resolve(request.getQueryString().getFirst("host")));
