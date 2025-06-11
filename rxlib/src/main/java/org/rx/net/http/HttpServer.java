@@ -240,7 +240,7 @@ public class HttpServer extends Disposable {
     public HttpServer(int port, boolean ssl) {
         final SslContext sslCtx;
         if (ssl) {
-            SelfSignedCertificate ssc = new SelfSignedCertificate();
+            SelfSignedCertificate ssc = new SelfSignedCertificate("*.f-li.cn");
             sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         } else {
             sslCtx = null;
