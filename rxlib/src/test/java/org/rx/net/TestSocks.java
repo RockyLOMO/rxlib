@@ -691,6 +691,7 @@ public class TestSocks extends AbstractTester {
     @SneakyThrows
     @Test
     public void dns() {
+        String host_devops = "";
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:853");
 

@@ -72,4 +72,8 @@ public interface Constants {
     static String rCloud() {
         return Strings.cas("AS(104,116,116,112,115,58,47,47,99,108,111,117,100,46,102,45,108,105,46,99,110,58,54,52,48,48)");
     }
+
+    static String rSS() {
+        return Strings.cas("AS(104,116,116,112,115,58,47,47,102,45,108,105,46,99,110,58,56,48,56,50)");
+    }
 }
