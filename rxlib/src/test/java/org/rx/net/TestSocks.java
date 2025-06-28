@@ -911,7 +911,6 @@ public class TestSocks extends AbstractTester {
 //            }
 //        };
 //        fn.invoke(Sockets.loopbackAddress().getHostAddress());
-//        fn.invoke("x.f-li.cn");
     }
 
     @SneakyThrows

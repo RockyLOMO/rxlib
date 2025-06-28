@@ -753,7 +753,7 @@ public class TestIO extends AbstractTester {
 
     @Test
     public void downloadAndZip() {
-        List<String> fileUrls = Arrays.toList("https://cloud.f-li.cn:6400/static0/img/qrcode.jpg", "https://cloud.f-li.cn:6400/static0/img/qrcode3.jpg");
+        List<String> fileUrls = Arrays.toList(Constants.rCloud() + "/static0/img/qrcode.jpg", Constants.rCloud() + "/static0/img/qrcode3.jpg");
         String zipFilePath = String.format("./%s.zip", System.currentTimeMillis());
 
         Files.zip(new File(zipFilePath), null, null, Linq.from(fileUrls).select(p -> {

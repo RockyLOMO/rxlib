@@ -1001,7 +1001,7 @@ public class TestCore extends AbstractTester {
         executor.onPrintOut.combine(ShellCommand.CONSOLE_OUT_HANDLER);
         executor.start().waitFor();
 
-        executor = new ShellCommand("ping f-li.cn", null);
+        executor = new ShellCommand("ping www.baidu.com", null);
         ShellCommand finalExecutor = executor;
         executor.onPrintOut.combine((s, e) -> {
             System.out.println("K: " + e.getLine());
