@@ -70,8 +70,7 @@ public class AbstractTester {
         }
     }
 
-    public final String host_devops = "devops.f-li.cn";
-    public final String host_cloud = "cloud.f-li.cn";
+    public final String host_cloud = "x.cn";
     public final InetSocketAddress endpoint_3307 = Sockets.parseEndpoint("127.0.0.1:3307");
     public final InetSocketAddress endpoint_3308 = Sockets.parseEndpoint("127.0.0.1:3308");
     public final long oneSecond = 1000;
