@@ -197,7 +197,6 @@ public final class RxConfig {
     }
 
     String id;
-    String cloud;
     String aesKey;
     String dateFormat;
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
