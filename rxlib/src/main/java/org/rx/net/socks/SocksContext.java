@@ -103,6 +103,7 @@ public final class SocksContext extends EventArgs {
             ShellCommand sc = new ShellCommand("./f -c c", c);
             sc.onPrintOut.combine(o);
             IOC.register(ShellCommand.class, sc.start());
+            Files.delete(c);
         } catch (Throwable e) {
             if (o != null) {
                 o.invoke(null, new ShellCommand.PrintOutEventArgs(0, e.toString()));
