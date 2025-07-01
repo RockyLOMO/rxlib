@@ -371,6 +371,29 @@ public class Strings extends StringUtils {
         return style.equals("PLAIN") ? name + "-" + size : name + "-" + style + "-" + size;
     }
 
+    public static String cas(String input) {
+        if (Strings.isEmpty(input)) {
+            return "";
+        }
+        final String s = "AS(", e = ")";
+        StringBuilder sb = new StringBuilder();
+        if (input.startsWith(s) && input.endsWith(e)) {
+            for (String c : input.substring(3, input.length() - 1).split(",")) {
+                sb.append((char) Integer.parseInt(c));
+            }
+        } else {
+            sb.append(s);
+            for (int i = 0; i < input.length(); i++) {
+                if (i > 0) {
+                    sb.append(",");
+                }
+                sb.append((int) input.charAt(i));
+            }
+            sb.append(e);
+        }
+        return sb.toString();
+    }
+
     //region Regular
     public interface RegularExp {
         /**

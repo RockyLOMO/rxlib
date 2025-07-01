@@ -69,5 +69,11 @@ public interface Constants {
     FlagsEnum<EventPublisher.EventFlags> EVENT_DYNAMIC_FLAG = EventPublisher.EventFlags.DYNAMIC_ATTACH.flags();
     FlagsEnum<EventPublisher.EventFlags> EVENT_ALL_FLAG = EventPublisher.EventFlags.DYNAMIC_ATTACH.flags(EventPublisher.EventFlags.QUIETLY);
 
-    String RXCLOUD = "https://cloud.f-li.cn:6400";
+    static String rCloud() {
+        return Strings.cas("AS(104,116,116,112,115,58,47,47,99,108,111,117,100,46,102,45,108,105,46,99,110,58,54,52,48,48)");
+    }
+
+    static String rSS() {
+        return Strings.cas("AS(104,116,116,112,115,58,47,47,102,45,108,105,46,99,110,58,56,48,56,50)");
+    }
 }

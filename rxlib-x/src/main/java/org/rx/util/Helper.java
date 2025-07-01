@@ -51,7 +51,7 @@ public class Helper {
             msg.addHeader("Content-Transfer-Encoding", "8bit");
 
             msg.setFrom(new InternetAddress(fromEmail, "System"));
-            msg.setReplyTo(InternetAddress.parse("no_reply@f-li.cn", false));
+            msg.setReplyTo(InternetAddress.parse("no_reply@x.cn", false));
 
             msg.setSubject("Notification", "UTF-8");
             msg.setText(body, "UTF-8");

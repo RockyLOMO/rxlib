@@ -442,10 +442,5 @@ public class TestUtil extends AbstractTester {
 
         assert "ROW_ID".equals(CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, "rowId"));
         assert "ROW_ID".equals(CaseFormat.UPPER_CAMEL.to(CaseFormat.UPPER_UNDERSCORE, "RowId"));
-
-        String s = "http://x.f-li.cn/asd";
-        System.out.println(HttpUrl.get(s).host());
-        System.out.println(HttpUrl.get(s).topPrivateDomain());
-        System.out.println(URI.create(s).getHost());
     }
 }

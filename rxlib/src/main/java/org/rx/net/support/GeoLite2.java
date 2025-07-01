@@ -23,7 +23,7 @@ import java.util.Collections;
 public class GeoLite2 implements IPSearcher {
     DatabaseReader reader;
     @Setter
-    String resolveServer = "https://f-li.cn:8082";
+    String resolveServer = Constants.rSS();
 
     @Override
     public String getPublicIp() {
@@ -83,7 +83,7 @@ public class GeoLite2 implements IPSearcher {
         File f = new File("GeoLite2-City.mmdb");
         if (!f.exists()) {
             new HttpClient().withTimeoutMillis(10 * 60 * 1000)
-                    .get(Constants.RXCLOUD + "/GeoLite2-City.mmdb").toFile(f.getName());
+                    .get(Constants.rCloud() + "/GeoLite2-City.mmdb").toFile(f.getName());
         }
         reader = new DatabaseReader.Builder(f).build();
     }

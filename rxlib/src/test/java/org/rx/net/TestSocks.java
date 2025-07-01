@@ -691,6 +691,7 @@ public class TestSocks extends AbstractTester {
     @SneakyThrows
     @Test
     public void dns() {
+        String host_devops = "";
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:853");
 
@@ -911,7 +912,6 @@ public class TestSocks extends AbstractTester {
 //            }
 //        };
 //        fn.invoke(Sockets.loopbackAddress().getHostAddress());
-//        fn.invoke("x.f-li.cn");
     }
 
     @SneakyThrows
@@ -1008,7 +1008,7 @@ public class TestSocks extends AbstractTester {
 
     @Test
     public void restfulRpc() {
-        String url = "http://f-li.cn/blog/1.html?userId=rx&type=1&userId=ft";
+        String url = "http://x.cn/blog/1.html?userId=rx&type=1&userId=ft";
         Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
         assert map.get("userId").equals("ft");
         assert map.get("type").equals("1");
@@ -1084,17 +1084,17 @@ public class TestSocks extends AbstractTester {
     @Test
     public void netUtil() {
         //authenticEndpoint
-        String aep = "yf:123456@f-li.cn:1080?w=9";
+        String aep = "yf:123456@x.cn:1080?w=9";
         AuthenticEndpoint endpoint = AuthenticEndpoint.valueOf(aep);
-        assert Sockets.toString(endpoint.getEndpoint()).equals("f-li.cn:1080");
+        assert Sockets.toString(endpoint.getEndpoint()).equals("x.cn:1080");
         assert endpoint.getUsername().equals("yf");
         assert endpoint.getPassword().equals("123456");
         assert endpoint.toString().equals(aep);
         assert endpoint.getParameters().get("w").equals("9");
 
-        aep = "yf:123456@f-li.cn:1080";
+        aep = "yf:123456@x:1080";
         endpoint = AuthenticEndpoint.valueOf(aep);
-        assert Sockets.toString(endpoint.getEndpoint()).equals("f-li.cn:1080");
+        assert Sockets.toString(endpoint.getEndpoint()).equals("x.cn:1080");
         assert endpoint.getUsername().equals("yf");
         assert endpoint.getPassword().equals("123456");
         assert endpoint.toString().equals(aep);

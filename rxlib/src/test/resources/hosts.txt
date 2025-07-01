@@ -1,10 +1,1 @@
-192.168.31.7	db.f-li.cn
-192.168.31.7	cloud.f-li.cn
-192.168.31.7	devops.f-li.cn
-192.168.31.7	jks.f-li.cn
-192.168.31.7	prometheus.f-li.cn
-192.168.31.7	skywalking.f-li.cn
-192.168.31.7	elasticsearch.f-li.cn
-192.168.137.8	bot.f-li.cn
-192.168.137.16	crawler.f-li.cn
-192.168.137.4	k8s.f-li.cn
+192.168.31.7	x.cn
