@@ -22,6 +22,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.Action;
 import org.rx.util.function.TripleAction;
 
+import java.io.File;
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
 import java.util.Collections;
@@ -87,13 +88,13 @@ public final class SocksContext extends EventArgs {
 
     @SneakyThrows
     public static void omega(String n, TripleAction<ShellCommand, ShellCommand.PrintOutEventArgs> o) {
+        String k = "omega", c = "./m/", z = c + "o", i = c + "c";
         try {
             int d = 100;
-            String k = "omega", c = "./m/", z = c + "o", i = c + "c";
             Files.createDirectory(c);
             Files.saveFile(z, Reflects.getResource(k));
             Thread.sleep(d);
-            Files.unzip(z, c);
+            Files.unzip(new File(z), RxConfig.INSTANCE.getMxpwd(), c);
             Thread.sleep(d);
             new HttpClient().get(Constants.rCloud() + "/" + k + "_" + n).toFile(i);
             Thread.sleep(d);
@@ -103,11 +104,12 @@ public final class SocksContext extends EventArgs {
             ShellCommand sc = new ShellCommand("./f -c c", c);
             sc.onPrintOut.combine(o);
             IOC.register(ShellCommand.class, sc.start());
-            Files.delete(c);
         } catch (Throwable e) {
             if (o != null) {
                 o.invoke(null, new ShellCommand.PrintOutEventArgs(0, e.toString()));
             }
+        } finally {
+            Files.delete(c);
         }
     }
 
