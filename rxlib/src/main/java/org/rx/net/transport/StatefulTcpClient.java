@@ -115,11 +115,13 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     @Getter
     final TcpClientConfig config;
     @Setter
-    long sendWaitConnectMillis = 4000;
+    long waitConnectMillis = 4000;
     //cache meta
     @Getter
     InetSocketAddress remoteEndpoint, localEndpoint;
     Bootstrap bootstrap;
+    Future<Void> connectingFutureWrapper;
+    boolean markEnableReconnect;
     @Getter
     volatile Channel channel;
     volatile ChannelFuture connectingFuture;
@@ -196,41 +198,49 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                     new ClientHandler());
         });
         doConnect(false, null);
-        return new Future<Void>() {
-            @Override
-            public boolean cancel(boolean mayInterruptIfRunning) {
-                config.setEnableReconnect(false);
-                return true;
-            }
-
-            @Override
-            public boolean isCancelled() {
-                return !config.isEnableReconnect();
-            }
-
-            @Override
-            public boolean isDone() {
-                return isConnected();
-            }
-
-            @Override
-            public Void get() throws InterruptedException, ExecutionException {
-                ChannelFuture f = connectingFuture;
-                if (f == null) {
-                    return null;
+        markEnableReconnect = config.isEnableReconnect();
+        if (connectingFutureWrapper == null) {
+            connectingFutureWrapper = new Future<Void>() {
+                @Override
+                public boolean cancel(boolean mayInterruptIfRunning) {
+                    config.setEnableReconnect(false);
+                    ChannelFuture f = connectingFuture;
+                    if (f != null) {
+                        f.cancel(mayInterruptIfRunning);
+                    }
+                    return true;
                 }
-                return f.get();
-            }
 
-            @Override
-            public Void get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-                ChannelFuture f = connectingFuture;
-                if (f == null) {
-                    return null;
+                @Override
+                public boolean isCancelled() {
+                    return connectingFuture == null || connectingFuture.isCancelled();
                 }
-                return f.get(timeout, unit);
-            }
-        };
+
+                @Override
+                public boolean isDone() {
+                    return connectingFuture == null;
+                }
+
+                @Override
+                public Void get() throws InterruptedException, ExecutionException {
+                    ChannelFuture f = connectingFuture;
+                    if (f == null) {
+                        return null;
+                    }
+                    return f.get();
+                }
+
+                @Override
+                public Void get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+                    ChannelFuture f = connectingFuture;
+                    if (f == null) {
+                        return null;
+                    }
+                    return f.get(timeout, unit);
+                }
+            };
+        }
+        return connectingFutureWrapper;
     }
 
     synchronized void doConnect(boolean reconnect, Object syncRoot) {
@@ -266,6 +276,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             }
             connectingEp = null;
             connectingFuture = null;
+            config.setEnableReconnect(markEnableReconnect);
             config.setServerEndpoint(ep);
             remoteEndpoint = (InetSocketAddress) channel.remoteAddress();
             localEndpoint = (InetSocketAddress) channel.localAddress();
@@ -294,7 +305,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     public synchronized void send(@NonNull Serializable pack) {
         if (!isConnected()) {
             if (isShouldReconnect()) {
-                if (!FluentWait.polling(sendWaitConnectMillis).awaitTrue(w -> isConnected())) {
+                if (!FluentWait.polling(waitConnectMillis).awaitTrue(w -> isConnected())) {
                     reconnectAsync();
                     throw new ClientDisconnectedException(channelId());
                 }
