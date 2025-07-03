@@ -32,5 +32,7 @@ public class RrpConfig extends SocketConfig {
 
     //client
     String serverEndpoint;
+    boolean enableReconnect = true;
+    long waitConnectMillis = 4000;
     List<Proxy> proxies;
 }

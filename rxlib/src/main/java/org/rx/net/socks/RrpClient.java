@@ -4,8 +4,12 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.*;
+import org.rx.core.Constants;
+import org.rx.core.Disposable;
+import org.rx.core.FluentWait;
+import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.transport.ClientDisconnectedException;
 
@@ -16,29 +20,62 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Extends.circuitContinue;
-import static org.rx.core.Extends.ifNull;
 
 @Slf4j
 public class RrpClient extends Disposable {
-    static class Handler extends ChannelInboundHandlerAdapter {
+    class ClientHandler extends ChannelInboundHandlerAdapter {
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+//            Channel channel = ctx.channel();
+//            log.debug("clientRead {} {}", channel.remoteAddress(), msg.getClass());
+//            Serializable pack;
+//            if ((pack = as(msg, Serializable.class)) == null) {
+//                log.warn("clientRead discard {} {}", channel.remoteAddress(), msg.getClass());
+//                return;
+//            }
+//            if (tryAs(pack, ErrorPacket.class, p -> exceptionCaught(ctx, new InvalidException("Server error: {}", p.getErrorMessage())))) {
+//                return;
+//            }
+//            if (tryAs(pack, PingPacket.class, p -> {
+//                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), NtpClock.UTC.millis() - p.getTimestamp());
+//                raiseEventAsync(onPong, p);
+//            })) {
+//                return;
+//            }
+        }
 
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) {
+            Channel channel = ctx.channel();
+            log.info("clientInactive {}", channel.remoteAddress());
+
+            reconnectAsync();
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            Channel channel = ctx.channel();
+            TraceHandler.INSTANCE.log("clientCaught {}", channel.remoteAddress(), cause);
+
+            close();
+        }
     }
 
     final RrpConfig config;
-    long waitConnectMillis = 4000;
-    boolean enableReconnect = true;
     Bootstrap bootstrap;
-    Future<Void> connectingFutureWrapper;
     boolean markEnableReconnect;
+    Future<Void> connectingFutureWrapper;
+    String channelId;
     volatile Channel channel;
     volatile ChannelFuture connectingFuture;
 
     public boolean isConnected() {
-        return channel != null && channel.isActive();
+        Channel c = channel;
+        return c != null && c.isActive();
     }
 
-    protected boolean isShouldReconnect() {
-        return enableReconnect && !isConnected();
+    protected synchronized boolean isShouldReconnect() {
+        return config.isEnableReconnect() && !isConnected();
     }
 
     public RrpClient(@NonNull RrpConfig config) {
@@ -47,7 +84,7 @@ public class RrpClient extends Disposable {
 
     @Override
     protected void freeObjects() throws Throwable {
-        enableReconnect = false;
+        config.setEnableReconnect(false);
         Sockets.closeOnFlushed(channel);
     }
 
@@ -56,14 +93,16 @@ public class RrpClient extends Disposable {
             throw new InvalidException("Client has connected");
         }
 
-        bootstrap = Sockets.bootstrap(config, channel -> channel.pipeline().addLast(new Handler()));
+        bootstrap = Sockets.bootstrap(config, channel -> channel.pipeline().addLast(new ClientHandler()));
         doConnect(false);
-        markEnableReconnect = enableReconnect;
+        markEnableReconnect = config.isEnableReconnect();
         if (connectingFutureWrapper == null) {
             connectingFutureWrapper = new Future<Void>() {
                 @Override
                 public boolean cancel(boolean mayInterruptIfRunning) {
-                    enableReconnect = false;
+                    synchronized (RrpClient.this) {
+                        config.setEnableReconnect(false);
+                    }
                     ChannelFuture f = connectingFuture;
                     if (f != null) {
                         f.cancel(mayInterruptIfRunning);
@@ -73,7 +112,8 @@ public class RrpClient extends Disposable {
 
                 @Override
                 public boolean isCancelled() {
-                    return connectingFuture == null || connectingFuture.isCancelled();
+                    ChannelFuture f = connectingFuture;
+                    return f == null || f.isCancelled();
                 }
 
                 @Override
@@ -104,15 +144,17 @@ public class RrpClient extends Disposable {
     }
 
     synchronized void doConnect(boolean reconnect) {
-        if (reconnect) {
-            if (!isShouldReconnect()) {
-                return;
-            }
+        if (isConnected()) {
+            return;
+        }
+        if (reconnect && !isShouldReconnect()) {
+            return;
         }
 
         InetSocketAddress ep = Sockets.parseEndpoint(config.getServerEndpoint());
         connectingFuture = bootstrap.connect(ep).addListeners(Sockets.logConnect(ep), (ChannelFutureListener) f -> {
             channel = f.channel();
+            channelId = channel.id().asShortText();
             if (!f.isSuccess()) {
                 if (isShouldReconnect()) {
                     Tasks.timer().setTimeout(() -> {
@@ -129,6 +171,9 @@ public class RrpClient extends Disposable {
                 return;
             }
             connectingFuture = null;
+            synchronized (this) {
+                config.setEnableReconnect(markEnableReconnect);
+            }
             if (reconnect) {
                 log.info("reconnect {} ok", ep);
             }
@@ -139,20 +184,16 @@ public class RrpClient extends Disposable {
         Tasks.setTimeout(() -> doConnect(true), 1000, bootstrap, Constants.TIMER_REPLACE_FLAG);
     }
 
-    ChannelId channelId() {
-        return channel != null ? channel.id() : null;
-    }
-
     public synchronized void send(@NonNull Object msg) {
         if (!isConnected()) {
             if (isShouldReconnect()) {
-                if (!FluentWait.polling(waitConnectMillis).awaitTrue(w -> isConnected())) {
+                if (!FluentWait.polling(config.getWaitConnectMillis()).awaitTrue(w -> isConnected())) {
                     reconnectAsync();
-                    throw new ClientDisconnectedException(channelId());
+                    throw new ClientDisconnectedException(channelId);
                 }
             }
             if (!isConnected()) {
-                throw new ClientDisconnectedException(channelId());
+                throw new ClientDisconnectedException(channelId);
             }
         }
 
