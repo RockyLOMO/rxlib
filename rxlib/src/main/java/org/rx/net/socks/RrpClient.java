@@ -21,6 +21,7 @@ import java.util.concurrent.*;
 
 import static org.rx.core.Extends.circuitContinue;
 import static org.rx.core.Extends.tryClose;
+import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class RrpClient extends Disposable {
@@ -28,6 +29,7 @@ public class RrpClient extends Disposable {
         final RrpConfig.Proxy p;
         final Channel serverChannel;
         final Map<String, Channel> localChannels = new ConcurrentHashMap<>();
+        InetSocketAddress localEndpoint;
         SocksProxyServer localSS;
 
         @Override
@@ -42,7 +44,11 @@ public class RrpClient extends Disposable {
         public RpClientProxy(RrpConfig.Proxy p, Channel serverChannel) {
             this.p = p;
             this.serverChannel = serverChannel;
-            localSS = new SocksProxyServer(new SocksConfig(p.getRemotePort()));
+            localSS = new SocksProxyServer(new SocksConfig(0), null, ch -> {
+                int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();
+                log.info("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
+                localEndpoint = Sockets.newLoopbackEndpoint(bindPort);
+            });
         }
     }
 
@@ -57,17 +63,15 @@ public class RrpClient extends Disposable {
             Channel serverChannel = proxyCtx.serverChannel;
             //step5
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
-            try {
-                buf.writeByte(RrpConfig.ACTION_FORWARD);
-                buf.writeInt(proxyCtx.p.remotePort);
-                byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
-                buf.writeInt(bytes.length);
-                buf.writeBytes(bytes);
-                serverChannel.write(buf);
-            } finally {
-                buf.release();
-            }
+            buf.writeByte(RrpConfig.ACTION_FORWARD);
+            buf.writeInt(proxyCtx.p.remotePort);
+            byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
+            buf.writeInt(bytes.length);
+            buf.writeBytes(bytes);
+            serverChannel.write(buf);
+
             serverChannel.writeAndFlush(msg);
+            log.info("RrpClient step5 {}({}) {} -> serverChannel", proxyCtx.serverChannel, channelId, localChannel);
         }
 
         @Override
@@ -93,18 +97,20 @@ public class RrpClient extends Disposable {
 
             //step1
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
-            try {
-                buf.writeByte(RrpConfig.ACTION_REGISTER);
-                byte[] tokenData = config.getToken().getBytes(StandardCharsets.US_ASCII);
+            buf.writeByte(RrpConfig.ACTION_REGISTER);
+            String token = config.getToken();
+            if (token == null) {
+                buf.writeInt(0);
+            } else {
+                byte[] tokenData = token.getBytes(StandardCharsets.US_ASCII);
                 buf.writeInt(tokenData.length);
                 buf.writeBytes(tokenData);
-                byte[] bytes = Serializer.DEFAULT.serializeToBytes(config.getProxies());
-                buf.writeInt(bytes.length);
-                buf.writeBytes(bytes);
-                serverChannel.writeAndFlush(buf);
-            } finally {
-                buf.release();
             }
+            byte[] bytes = Serializer.DEFAULT.serializeToBytes(config.getProxies());
+            buf.writeInt(bytes.length);
+            buf.writeBytes(bytes);
+            serverChannel.writeAndFlush(buf);
+            log.info("RrpClient step1 {} -> {}", toJsonString(config.getProxies()), serverChannel);
         }
 
         @Override
@@ -114,6 +120,7 @@ public class RrpClient extends Disposable {
             //step4
             byte action = buf.readByte();
             if (action != RrpConfig.ACTION_FORWARD) {
+                log.warn("Invalid action {}", action);
                 serverChannel.close();
                 return;
             }
@@ -121,6 +128,16 @@ public class RrpClient extends Disposable {
             int remotePort = buf.readInt();
             int idLen = buf.readInt();
             String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
+            ByteBuf slice = buf.slice();
+            byte[] data1 = new byte[buf.readableBytes()];
+            buf.readBytes(data1);
+            byte[] data2 = new byte[slice.readableBytes()];
+            slice.readBytes(data2);
+            for (int i = 0; i < data1.length; i++) {
+                assert data1[i] == data2[i];
+            }
+            slice.readerIndex(0);
+
 //            Map<String, Channel> localClients = proxyMap.get(remotePort).localClients;
 //            Channel local;
 //            synchronized (localClients) {
@@ -140,8 +157,10 @@ public class RrpClient extends Disposable {
 //            }
             RpClientProxy proxyCtx = proxyMap.get(remotePort);
             Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> Sockets.bootstrap(config, ch -> ch.pipeline()
-                    .addLast(new SocksClientHandler(proxyCtx, channelId))).connect(Sockets.newLoopbackEndpoint(proxyCtx.p.remotePort)).syncUninterruptibly().channel());
-            localChannel.writeAndFlush(buf);
+                            .addLast(new SocksClientHandler(proxyCtx, channelId)))
+                    .connect(proxyCtx.localEndpoint).syncUninterruptibly().channel());
+            localChannel.writeAndFlush(slice);
+            log.info("RrpClient step4 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
         }
 
         @Override
@@ -162,7 +181,6 @@ public class RrpClient extends Disposable {
     final RrpConfig config;
     final Map<Integer, RpClientProxy> proxyMap = new ConcurrentHashMap<>();
     Bootstrap bootstrap;
-    boolean markEnableReconnect;
     Future<Void> connectingFutureWrapper;
     volatile Channel channel;
     volatile ChannelFuture connectingFuture;
@@ -193,7 +211,6 @@ public class RrpClient extends Disposable {
 
         bootstrap = Sockets.bootstrap(config, channel -> channel.pipeline().addLast(new ClientHandler()));
         doConnect(false);
-        markEnableReconnect = config.isEnableReconnect();
         if (connectingFutureWrapper == null) {
             connectingFutureWrapper = new Future<Void>() {
                 @Override
@@ -268,9 +285,6 @@ public class RrpClient extends Disposable {
                 return;
             }
             connectingFuture = null;
-            synchronized (this) {
-                config.setEnableReconnect(markEnableReconnect);
-            }
             if (reconnect) {
                 log.info("{} reconnect {} ok", this, ep);
             }

@@ -665,6 +665,27 @@ public class TestSocks extends AbstractTester {
 //    }
     //endregion
 
+    //region rrp
+    @SneakyThrows
+    @Test
+    public void rrp() {
+        RrpConfig c = new RrpConfig();
+        c.setBindPort(9000);
+        RrpServer server = new RrpServer(c);
+
+        c.setServerEndpoint("127.0.0.1:9000");
+        RrpConfig.Proxy p = new RrpConfig.Proxy();
+        p.setName("ss");
+        p.setType(1);
+        p.setRemotePort(9001);
+        c.setProxies(Collections.singletonList(p));
+        RrpClient client = new RrpClient(c);
+        client.connectAsync();
+
+        System.in.read();
+    }
+    //endregion
+
     @SneakyThrows
     @Test
     public void ssh() {

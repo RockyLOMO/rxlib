@@ -79,17 +79,16 @@ public class RrpServer extends Disposable {
             Channel outbound = rpClient.clientChannel;
             //step3
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
-            try {
-                buf.writeByte(RrpConfig.ACTION_FORWARD);
-                buf.writeInt(remotePort);
-                byte[] bytes = inbound.id().asShortText().getBytes(StandardCharsets.US_ASCII);
-                buf.writeInt(bytes.length);
-                buf.writeBytes(bytes);
-                outbound.write(buf);
-            } finally {
-                buf.release();
-            }
+            buf.writeByte(RrpConfig.ACTION_FORWARD);
+            buf.writeInt(remotePort);
+            String channelId = inbound.id().asShortText();
+            byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
+            buf.writeInt(bytes.length);
+            buf.writeBytes(bytes);
+            outbound.write(buf);
+
             outbound.writeAndFlush(msg);
+            log.info("RrpServer step3 {}({}) -> clientChannel", rpClient.clientChannel, channelId);
         }
 
         @Override
@@ -125,7 +124,7 @@ public class RrpServer extends Disposable {
             if (action == RrpConfig.ACTION_REGISTER) {
                 //step2
                 int tokenLen = buf.readInt();
-                String token = buf.readCharSequence(tokenLen, StandardCharsets.US_ASCII).toString();
+                String token = tokenLen > 0 ? buf.readCharSequence(tokenLen, StandardCharsets.US_ASCII).toString() : null;
                 if (!eq(token, server.config.getToken())) {
                     log.warn("Invalid token {}", token);
                     clientChannel.close();
@@ -140,8 +139,10 @@ public class RrpServer extends Disposable {
                 //step6
                 int remotePort = buf.readInt();
                 int idLen = buf.readInt();
-                String idStr = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
-                server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(idStr).writeAndFlush(buf);
+                String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
+                Channel remoteChannel = server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(channelId);
+                remoteChannel.writeAndFlush(buf.slice());
+                log.info("RrpServer step6 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
             }
         }
 
@@ -184,13 +185,17 @@ public class RrpServer extends Disposable {
 
         for (RrpConfig.Proxy rp : pList) {
             String name = rp.getName();
+            if (name == null) {
+                log.warn("RrpServer Proxy empty name");
+                continue;
+            }
             if (Linq.from(clients.values()).selectMany(p -> p.proxyMap.values()).any(p -> eq(p.p.getName(), name))) {
-                log.warn("Proxy name {} exist", name);
+                log.warn("RrpServer Proxy name {} exist", name);
                 continue;
             }
             int remotePort = rp.getRemotePort();
             if (Linq.from(clients.values()).selectMany(p -> p.proxyMap.values()).any(p -> p.p.getRemotePort() == remotePort)) {
-                log.warn("Proxy remotePort {} exist", remotePort);
+                log.warn("RrpServer Proxy remotePort {} exist", remotePort);
                 continue;
             }
 
@@ -198,6 +203,7 @@ public class RrpServer extends Disposable {
                     .addLast(new RemoteServerHandler(rpClient, remotePort)));
             rpClient.proxyMap.put(remotePort, new RpClientProxy(rp, remoteBootstrap,
                     remoteBootstrap.bind(remotePort).addListener(Sockets.logBind(remotePort)).channel()));
+            log.info("RrpServer step2 {} remote Tcp bind R{}", clientChannel, remotePort);
         }
     }
 }

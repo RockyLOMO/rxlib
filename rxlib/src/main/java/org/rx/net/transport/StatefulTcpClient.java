@@ -102,7 +102,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             if (args.isCancel()) {
                 return;
             }
-            owner.close();
+            Sockets.closeOnFlushed(channel);
         }
     }
 
@@ -121,7 +121,6 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     @Getter
     InetSocketAddress remoteEndpoint, localEndpoint;
     Bootstrap bootstrap;
-    boolean markEnableReconnect;
     Future<Void> connectingFutureWrapper;
     @Getter
     volatile Channel channel;
@@ -200,14 +199,13 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                     new ClientHandler(this));
         });
         doConnect(false, null);
-        markEnableReconnect = config.isEnableReconnect();
         if (connectingFutureWrapper == null) {
             connectingFutureWrapper = new Future<Void>() {
                 @Override
                 public boolean cancel(boolean mayInterruptIfRunning) {
-                    synchronized (StatefulTcpClient.this) {
-                        config.setEnableReconnect(false);
-                    }
+//                    synchronized (StatefulTcpClient.this) {
+//                    config.setEnableReconnect(false);
+//                    }
                     ChannelFuture f = connectingFuture;
                     if (f != null) {
                         f.cancel(mayInterruptIfRunning);
@@ -281,9 +279,6 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             }
             connectingEp = null;
             connectingFuture = null;
-            synchronized (this) {
-                config.setEnableReconnect(markEnableReconnect);
-            }
             config.setServerEndpoint(ep);
             remoteEndpoint = (InetSocketAddress) channel.remoteAddress();
             localEndpoint = (InetSocketAddress) channel.localAddress();
