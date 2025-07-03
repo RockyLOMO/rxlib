@@ -30,11 +30,16 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     @Getter
     final SocksConfig config;
     final ServerBootstrap bootstrap;
+    final Channel tcpChannel;
     final Channel udpChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     @Setter
     private PredicateFunc<UnresolvedEndpoint> aesRouter;
+
+    public boolean isBind() {
+        return tcpChannel.isActive();
+    }
 
     public boolean isAuthEnabled() {
         return authenticator != null;
@@ -67,7 +72,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
         });
-        bootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort()));
+        tcpChannel = bootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort())).channel();
 
         //udp server
         int udpPort = config.getListenPort();
@@ -85,6 +90,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @Override
     protected void freeObjects() {
+        Sockets.closeOnFlushed(tcpChannel);
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();
     }

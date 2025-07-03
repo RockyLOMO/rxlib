@@ -32,7 +32,9 @@ import static org.rx.core.Extends.*;
 @Slf4j
 @RequiredArgsConstructor
 public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
-    class ClientImpl extends ChannelInboundHandlerAdapter implements TcpClient {
+    @RequiredArgsConstructor
+    static class ClientImpl extends ChannelInboundHandlerAdapter implements TcpClient {
+        final TcpServer owner;
         final Delegate<TcpClient, NEventArgs<Serializable>> onReceive = Delegate.create();
         @Getter
         Channel channel;
@@ -47,10 +49,10 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
         @Override
         public void send(Serializable pack) {
-            checkNotClosed();
+            owner.checkNotClosed();
 
             TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, pack);
-            TcpServer.this.raiseEvent(onSend, args);
+            owner.raiseEvent(owner.onSend, args);
             if (args.isCancel() || !isConnected()) {
                 log.warn("Send cancelled or client {} disconnected", remoteEndpoint);
                 return;
@@ -75,6 +77,8 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 //            super.channelActive(ctx);
             channel = ctx.channel();
             log.debug("serverActive {}", channel.remoteAddress());
+            TcpServerConfig config = owner.config;
+            Map<InetSocketAddress, ClientImpl> clients = owner.clients;
             if (clients.size() > config.getCapacity()) {
                 log.warn("Force close client, Not enough capacity {}/{}.", clients.size(), config.getCapacity());
                 Sockets.closeOnFlushed(channel);
@@ -83,7 +87,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
             clients.put(remoteEndpoint = (InetSocketAddress) channel.remoteAddress(), this);
             TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, null);
-            TcpServer.this.raiseEvent(onConnected, args);
+            owner.raiseEvent(owner.onConnected, args);
             if (args.isCancel()) {
                 log.warn("Force close client");
                 Sockets.closeOnFlushed(channel);
@@ -103,7 +107,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             }
             if (tryAs(pack, PingPacket.class, p -> {
                 ctx.writeAndFlush(p);
-                TcpServer.this.raiseEventAsync(onPing, new TcpServerEventArgs<>(this, p));
+                owner.raiseEventAsync(owner.onPing, new TcpServerEventArgs<>(this, p));
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
             })) {
                 return;
@@ -111,14 +115,14 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
             TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, pack);
             raiseEvent(onReceive, args);
-            TcpServer.this.raiseEventAsync(TcpServer.this.onReceive, args);
+            owner.raiseEventAsync(owner.onReceive, args);
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("serverInactive {}", ctx.channel().remoteAddress());
-            clients.remove(getRemoteEndpoint());
-            TcpServer.this.raiseEventAsync(onDisconnected, new TcpServerEventArgs<>(this, null));
+            owner.clients.remove(getRemoteEndpoint());
+            owner.raiseEventAsync(owner.onDisconnected, new TcpServerEventArgs<>(this, null));
         }
 
         @Override
@@ -141,7 +145,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             }
 
             TcpServerEventArgs<Throwable> args = new TcpServerEventArgs<>(this, cause);
-            quietly(() -> TcpServer.this.raiseEvent(onError, args));
+            quietly(() -> owner.raiseEvent(owner.onError, args));
             if (args.isCancel()) {
                 return;
             }
@@ -150,7 +154,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
         @Override
         public void connect(InetSocketAddress remoteEp) {
-            checkNotClosed();
+            owner.checkNotClosed();
             if (isConnected()) {
                 return;
             }
@@ -159,7 +163,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
         @Override
         public Future<Void> connectAsync(InetSocketAddress remoteEp) {
-            checkNotClosed();
+            owner.checkNotClosed();
             if (isConnected()) {
                 return CompletableFuture.completedFuture(null);
             }
@@ -180,7 +184,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     final TcpServerConfig config;
     final Map<InetSocketAddress, ClientImpl> clients = new ConcurrentHashMap<>();
     ServerBootstrap bootstrap;
-    volatile Channel serverChannel;
+    Channel serverChannel;
 
     @Override
     public @NonNull ThreadPool asyncScheduler() {
@@ -203,9 +207,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
     @Override
     protected void freeObjects() {
-        if (isStarted()) {
-            Sockets.closeOnFlushed(serverChannel);
-        }
+        Sockets.closeOnFlushed(serverChannel);
         Sockets.closeBootstrap(bootstrap);
         raiseEvent(onClosed, EventArgs.EMPTY);
     }
@@ -225,14 +227,9 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             Sockets.addFrontendHandler(channel, config);
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
-                    new ClientImpl());
+                    new ClientImpl(this));
         }).option(ChannelOption.SO_REUSEADDR, true);
-        bootstrap.bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                return;
-            }
-            serverChannel = f.channel();
-        });
+        serverChannel = bootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort())).channel();
     }
 
     public String dumpClients() {

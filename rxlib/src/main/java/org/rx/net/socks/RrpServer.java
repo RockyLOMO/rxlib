@@ -34,6 +34,14 @@ public class RrpServer extends Disposable {
     static class RpClient {
         final Channel clientChannel;
         final Map<Integer, ProxyCtx> proxyMap = new ConcurrentHashMap<>();
+
+        public ProxyCtx getProxyCtx(int remotePort) {
+            ProxyCtx ctx = proxyMap.get(remotePort);
+            if (ctx == null) {
+                throw new InvalidException("ProxyCtx {} not exist", remotePort);
+            }
+            return ctx;
+        }
     }
 
     @RequiredArgsConstructor
@@ -44,7 +52,7 @@ public class RrpServer extends Disposable {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel inbound = ctx.channel();
-            rpClient.proxyMap.get(remotePort).remoteClients.put(inbound.id().asShortText(), inbound);
+            rpClient.getProxyCtx(remotePort).remoteClients.put(inbound.id().asShortText(), inbound);
         }
 
         @Override
@@ -68,7 +76,7 @@ public class RrpServer extends Disposable {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             Channel inbound = ctx.channel();
-            rpClient.proxyMap.get(remotePort).remoteClients.remove(inbound.id().asShortText());
+            rpClient.getProxyCtx(remotePort).remoteClients.remove(inbound.id().asShortText());
         }
 
         @Override
@@ -105,7 +113,7 @@ public class RrpServer extends Disposable {
                 int remotePort = buf.readInt();
                 int idLen = buf.readInt();
                 String idStr = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
-                server.clients.get(clientChannel).proxyMap.get(remotePort).remoteClients.get(idStr).writeAndFlush(buf);
+                server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(idStr).writeAndFlush(buf);
             }
         }
 
@@ -117,29 +125,21 @@ public class RrpServer extends Disposable {
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            Channel inbound = ctx.channel();
-            log.warn("RELAY {} => ALL thrown", inbound.remoteAddress(), cause);
-            Sockets.closeOnFlushed(inbound);
+            Channel clientChannel = ctx.channel();
+            log.warn("RELAY {} => ALL thrown", clientChannel.remoteAddress(), cause);
+            Sockets.closeOnFlushed(clientChannel);
         }
     }
 
     final RrpConfig config;
     final ServerBootstrap bootstrap;
     final Map<Channel, RpClient> clients = new ConcurrentHashMap<>();
-    volatile Channel serverChannel;
+    Channel serverChannel;
 
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
-        bootstrap = Sockets.serverBootstrap(channel -> {
-            ChannelPipeline pipeline = channel.pipeline();
-            pipeline.addLast(new ServerHandler(this));
-        });
-        bootstrap.bind(config.getBindPort()).addListeners(Sockets.logBind(config.getBindPort()), (ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                return;
-            }
-            serverChannel = f.channel();
-        });
+        bootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new ServerHandler(this)));
+        serverChannel = bootstrap.bind(config.getBindPort()).addListener(Sockets.logBind(config.getBindPort())).channel();
     }
 
     @Override
@@ -169,17 +169,17 @@ public class RrpServer extends Disposable {
                 throw new InvalidException("Invalid token {}", token);
             }
             if (Linq.from(clients.values()).selectMany(p -> p.proxyMap.values()).any(p -> eq(p.p.getName(), name))) {
-                throw new InvalidException("Proxy {} exist", name);
+//                throw new InvalidException("Proxy {} exist", name);
+                log.warn("Proxy {} exist", name);
+                continue;
             }
             rp.setName(name);
 
             int remotePort = rp.getRemotePort();
-            ServerBootstrap remoteBootstrap = Sockets.serverBootstrap(channel -> {
-                ChannelPipeline pipeline = channel.pipeline();
-                pipeline.addLast(new RemoteServerHandler(rpClient, remotePort));
-            });
+            ServerBootstrap remoteBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline()
+                    .addLast(new RemoteServerHandler(rpClient, remotePort)));
             remoteBootstrap.bind(remotePort).addListener(Sockets.logBind(remotePort));
-            rpClient.proxyMap.put(rp.getRemotePort(), new ProxyCtx(rp, remoteBootstrap));
+            rpClient.proxyMap.put(remotePort, new ProxyCtx(rp, remoteBootstrap));
         }
     }
 }

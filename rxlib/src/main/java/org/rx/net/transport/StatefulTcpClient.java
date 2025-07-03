@@ -7,13 +7,12 @@ import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.Setter;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
-import org.rx.net.socks.RrpClient;
 import org.rx.net.transport.protocol.ErrorPacket;
 import org.rx.net.transport.protocol.PingPacket;
 import org.slf4j.helpers.MessageFormatter;
@@ -29,13 +28,16 @@ import static org.rx.core.Extends.*;
 
 @Slf4j
 public class StatefulTcpClient extends Disposable implements TcpClient {
-    class ClientHandler extends ChannelInboundHandlerAdapter {
+    @RequiredArgsConstructor
+    static class ClientHandler extends ChannelInboundHandlerAdapter {
+        final StatefulTcpClient owner;
+
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel channel = ctx.channel();
             log.debug("clientActive {}", channel.remoteAddress());
 
-            raiseEventAsync(onConnected, EventArgs.EMPTY);
+            owner.raiseEventAsync(owner.onConnected, EventArgs.EMPTY);
         }
 
         @Override
@@ -52,12 +54,12 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             }
             if (tryAs(pack, PingPacket.class, p -> {
                 log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), NtpClock.UTC.millis() - p.getTimestamp());
-                raiseEventAsync(onPong, p);
+                owner.raiseEventAsync(owner.onPong, p);
             })) {
                 return;
             }
 
-            raiseEventAsync(onReceive, new NEventArgs<>(pack));
+            owner.raiseEventAsync(owner.onReceive, new NEventArgs<>(pack));
         }
 
         @Override
@@ -65,8 +67,8 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             Channel channel = ctx.channel();
             log.info("clientInactive {}", channel.remoteAddress());
 
-            raiseEvent(onDisconnected, EventArgs.EMPTY);
-            reconnectAsync();
+            owner.raiseEvent(owner.onDisconnected, EventArgs.EMPTY);
+            owner.reconnectAsync();
         }
 
         @Override
@@ -96,11 +98,11 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             }
 
             NEventArgs<Throwable> args = new NEventArgs<>(cause);
-            quietly(() -> raiseEvent(onError, args));
+            quietly(() -> owner.raiseEvent(owner.onError, args));
             if (args.isCancel()) {
                 return;
             }
-            close();
+            owner.close();
         }
     }
 
@@ -121,7 +123,6 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     Bootstrap bootstrap;
     boolean markEnableReconnect;
     Future<Void> connectingFutureWrapper;
-    String channelId;
     @Getter
     volatile Channel channel;
     volatile ChannelFuture connectingFuture;
@@ -159,7 +160,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     @Override
     public synchronized void connect(@NonNull InetSocketAddress remoteEp) throws TimeoutException {
         if (isConnected()) {
-            throw new InvalidException("Client has connected");
+            throw new InvalidException("{} has connected", this);
         }
 
         config.setServerEndpoint(remoteEp);
@@ -168,7 +169,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
-                    new ClientHandler());
+                    new ClientHandler(this));
         });
         final Object syncRoot = config;
         doConnect(false, syncRoot);
@@ -180,14 +181,14 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             }
         }
         if (!isConnected()) {
-            throw new TimeoutException(MessageFormatter.format("Client connect {} timeout", config.getServerEndpoint()).getMessage());
+            throw new TimeoutException(MessageFormatter.format("{} connect {} timeout", this, config.getServerEndpoint()).getMessage());
         }
     }
 
     @Override
     public synchronized Future<Void> connectAsync(@NonNull InetSocketAddress remoteEp) {
         if (isConnected()) {
-            throw new InvalidException("Client has connected");
+            throw new InvalidException("{} has connected", this);
         }
 
         config.setServerEndpoint(remoteEp);
@@ -196,7 +197,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
-                    new ClientHandler());
+                    new ClientHandler(this));
         });
         doConnect(false, null);
         markEnableReconnect = config.isEnableReconnect();
@@ -263,7 +264,6 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
 
         connectingFuture = bootstrap.connect(ep).addListeners(Sockets.logConnect(config.getServerEndpoint()), (ChannelFutureListener) f -> {
             channel = f.channel();
-            channelId = channel.id().asShortText();
             if (!f.isSuccess()) {
                 if (isShouldReconnect()) {
                     Tasks.timer().setTimeout(() -> {
@@ -275,7 +275,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                         return delay;
                     }, this, Constants.TIMER_SINGLE_FLAG);
                 } else {
-                    log.warn("{} {} fail", reconnect ? "reconnect" : "connect", ep);
+                    log.warn("{} {} {} fail", this, reconnect ? "reconnect" : "connect", ep);
                 }
                 return;
             }
@@ -294,7 +294,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
                 }
             }
             if (reconnect) {
-                log.info("reconnect {} ok", ep);
+                log.info("{} reconnect {} ok", this, ep);
                 raiseEvent(onReconnected, new NEventArgs<>(ep));
             }
         });
@@ -310,11 +310,11 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             if (isShouldReconnect()) {
                 if (!FluentWait.polling(config.getWaitConnectMillis()).awaitTrue(w -> isConnected())) {
                     reconnectAsync();
-                    throw new ClientDisconnectedException(channelId);
+                    throw new ClientDisconnectedException(this);
                 }
             }
             if (!isConnected()) {
-                throw new ClientDisconnectedException(channelId);
+                throw new ClientDisconnectedException(this);
             }
         }
 
