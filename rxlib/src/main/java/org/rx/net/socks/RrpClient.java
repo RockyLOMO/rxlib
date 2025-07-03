@@ -1,71 +1,169 @@
 package org.rx.net.socks;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.*;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
 import org.rx.core.Disposable;
-import org.rx.core.FluentWait;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
+import org.rx.io.Serializer;
 import org.rx.net.Sockets;
-import org.rx.net.transport.ClientDisconnectedException;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.*;
 
 import static org.rx.core.Extends.circuitContinue;
+import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class RrpClient extends Disposable {
-    class ClientHandler extends ChannelInboundHandlerAdapter {
+    static class RpClientProxy extends Disposable {
+        final RrpConfig.Proxy p;
+        final Channel serverChannel;
+        final Map<String, Channel> localChannels = new ConcurrentHashMap<>();
+        SocksProxyServer localSS;
+
+        @Override
+        protected void freeObjects() throws Throwable {
+            for (Channel v : localChannels.values()) {
+                Sockets.closeOnFlushed(v);
+            }
+            tryClose(localSS);
+            Sockets.closeOnFlushed(serverChannel);
+        }
+
+        public RpClientProxy(RrpConfig.Proxy p, Channel serverChannel) {
+            this.p = p;
+            this.serverChannel = serverChannel;
+            localSS = new SocksProxyServer(new SocksConfig(p.getRemotePort()));
+        }
+    }
+
+    @RequiredArgsConstructor
+    static class SocksClientHandler extends ChannelInboundHandlerAdapter {
+        final RpClientProxy proxyCtx;
+        final String channelId;
+
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
-//            Channel channel = ctx.channel();
-//            log.debug("clientRead {} {}", channel.remoteAddress(), msg.getClass());
-//            Serializable pack;
-//            if ((pack = as(msg, Serializable.class)) == null) {
-//                log.warn("clientRead discard {} {}", channel.remoteAddress(), msg.getClass());
-//                return;
+            Channel localChannel = ctx.channel();
+            Channel serverChannel = proxyCtx.serverChannel;
+            //step5
+            ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
+            try {
+                buf.writeByte(RrpConfig.ACTION_FORWARD);
+                buf.writeInt(proxyCtx.p.remotePort);
+                byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
+                buf.writeInt(bytes.length);
+                buf.writeBytes(bytes);
+                serverChannel.write(buf);
+            } finally {
+                buf.release();
+            }
+            serverChannel.writeAndFlush(msg);
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+            tryClose(proxyCtx.localChannels.remove(channelId));
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+            Channel localChannel = ctx.channel();
+            Channel serverChannel = proxyCtx.serverChannel;
+            log.warn("RELAY {} => {}[{}] thrown", localChannel.remoteAddress(), serverChannel.localAddress(), serverChannel.remoteAddress(), cause);
+        }
+    }
+
+    class ClientHandler extends ChannelInboundHandlerAdapter {
+        @Override
+        public void channelActive(ChannelHandlerContext ctx) {
+            Channel serverChannel = ctx.channel();
+            for (RrpConfig.Proxy p : config.getProxies()) {
+                proxyMap.computeIfAbsent(p.getRemotePort(), k -> new RpClientProxy(p, serverChannel));
+            }
+
+            //step1
+            ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
+            try {
+                buf.writeByte(RrpConfig.ACTION_REGISTER);
+                byte[] tokenData = config.getToken().getBytes(StandardCharsets.US_ASCII);
+                buf.writeInt(tokenData.length);
+                buf.writeBytes(tokenData);
+                byte[] bytes = Serializer.DEFAULT.serializeToBytes(config.getProxies());
+                buf.writeInt(bytes.length);
+                buf.writeBytes(bytes);
+                serverChannel.writeAndFlush(buf);
+            } finally {
+                buf.release();
+            }
+        }
+
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            Channel serverChannel = ctx.channel();
+            ByteBuf buf = (ByteBuf) msg;
+            //step4
+            byte action = buf.readByte();
+            if (action != RrpConfig.ACTION_FORWARD) {
+                serverChannel.close();
+                return;
+            }
+
+            int remotePort = buf.readInt();
+            int idLen = buf.readInt();
+            String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
+//            Map<String, Channel> localClients = proxyMap.get(remotePort).localClients;
+//            Channel local;
+//            synchronized (localClients) {
+//                local = localClients.get(idStr);
+//                if (local == null) {
+//                    ByteBuf finalBuf = Unpooled.copiedBuffer(buf);
+//                    localClients.put(idStr, local = Sockets.bootstrap(config, ch -> ch.pipeline()
+//                            .addLast(new SocksClientHandler())).connect(Sockets.newLoopbackEndpoint(1)).addListener((ChannelFutureListener) f -> {
+//                        if (!f.isSuccess()) {
+//                            return;
+//                        }
+//
+//                        f.channel().writeAndFlush(finalBuf);
+//                    }).channel());
+//                    return;
+//                }
 //            }
-//            if (tryAs(pack, ErrorPacket.class, p -> exceptionCaught(ctx, new InvalidException("Server error: {}", p.getErrorMessage())))) {
-//                return;
-//            }
-//            if (tryAs(pack, PingPacket.class, p -> {
-//                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), NtpClock.UTC.millis() - p.getTimestamp());
-//                raiseEventAsync(onPong, p);
-//            })) {
-//                return;
-//            }
+            RpClientProxy proxyCtx = proxyMap.get(remotePort);
+            Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> Sockets.bootstrap(config, ch -> ch.pipeline()
+                    .addLast(new SocksClientHandler(proxyCtx, channelId))).connect(Sockets.newLoopbackEndpoint(proxyCtx.p.remotePort)).syncUninterruptibly().channel());
+            localChannel.writeAndFlush(buf);
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
-            Channel channel = ctx.channel();
-            log.info("clientInactive {}", channel.remoteAddress());
+            Channel serverChannel = ctx.channel();
+            log.info("clientInactive {}", serverChannel.remoteAddress());
 
             reconnectAsync();
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            Channel channel = ctx.channel();
-            TraceHandler.INSTANCE.log("clientCaught {}", channel.remoteAddress(), cause);
-
-            close();
+            Channel serverChannel = ctx.channel();
+            log.warn("RELAY {} => ALL thrown", serverChannel.remoteAddress(), cause);
         }
     }
 
     final RrpConfig config;
+    final Map<Integer, RpClientProxy> proxyMap = new ConcurrentHashMap<>();
     Bootstrap bootstrap;
     boolean markEnableReconnect;
     Future<Void> connectingFutureWrapper;
-    String channelId;
     volatile Channel channel;
     volatile ChannelFuture connectingFuture;
 
@@ -90,7 +188,7 @@ public class RrpClient extends Disposable {
 
     public synchronized Future<Void> connectAsync() {
         if (isConnected()) {
-            throw new InvalidException("Client has connected");
+            throw new InvalidException("{} has connected", this);
         }
 
         bootstrap = Sockets.bootstrap(config, channel -> channel.pipeline().addLast(new ClientHandler()));
@@ -154,7 +252,6 @@ public class RrpClient extends Disposable {
         InetSocketAddress ep = Sockets.parseEndpoint(config.getServerEndpoint());
         connectingFuture = bootstrap.connect(ep).addListeners(Sockets.logConnect(ep), (ChannelFutureListener) f -> {
             channel = f.channel();
-            channelId = channel.id().asShortText();
             if (!f.isSuccess()) {
                 if (isShouldReconnect()) {
                     Tasks.timer().setTimeout(() -> {
@@ -166,7 +263,7 @@ public class RrpClient extends Disposable {
                         return delay;
                     }, this, Constants.TIMER_SINGLE_FLAG);
                 } else {
-                    log.warn("{} {} fail", reconnect ? "reconnect" : "connect", ep);
+                    log.warn("{} {} {} fail", this, reconnect ? "reconnect" : "connect", ep);
                 }
                 return;
             }
@@ -175,7 +272,7 @@ public class RrpClient extends Disposable {
                 config.setEnableReconnect(markEnableReconnect);
             }
             if (reconnect) {
-                log.info("reconnect {} ok", ep);
+                log.info("{} reconnect {} ok", this, ep);
             }
         });
     }
@@ -184,19 +281,19 @@ public class RrpClient extends Disposable {
         Tasks.setTimeout(() -> doConnect(true), 1000, bootstrap, Constants.TIMER_REPLACE_FLAG);
     }
 
-    public synchronized void send(@NonNull Object msg) {
-        if (!isConnected()) {
-            if (isShouldReconnect()) {
-                if (!FluentWait.polling(config.getWaitConnectMillis()).awaitTrue(w -> isConnected())) {
-                    reconnectAsync();
-                    throw new ClientDisconnectedException(channelId);
-                }
-            }
-            if (!isConnected()) {
-                throw new ClientDisconnectedException(channelId);
-            }
-        }
-
-        channel.writeAndFlush(msg);
-    }
+//    public synchronized void send(@NonNull Object msg) {
+//        if (!isConnected()) {
+//            if (isShouldReconnect()) {
+//                if (!FluentWait.polling(config.getWaitConnectMillis()).awaitTrue(w -> isConnected())) {
+//                    reconnectAsync();
+//                    throw new ClientDisconnectedException(this);
+//                }
+//            }
+//            if (!isConnected()) {
+//                throw new ClientDisconnectedException(this);
+//            }
+//        }
+//
+//        channel.writeAndFlush(msg);
+//    }
 }
