@@ -3,7 +3,9 @@ package org.rx.net.socks;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -68,9 +70,9 @@ public class RrpClient extends Disposable {
             byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
-            serverChannel.write(buf);
+//            serverChannel.write(buf);
 
-            serverChannel.writeAndFlush(msg);
+            serverChannel.writeAndFlush(Unpooled.wrappedBuffer(buf, (ByteBuf) msg));
             log.info("RrpClient step5 {}({}) {} -> serverChannel", proxyCtx.serverChannel, channelId, localChannel);
         }
 
@@ -128,16 +130,6 @@ public class RrpClient extends Disposable {
             int remotePort = buf.readInt();
             int idLen = buf.readInt();
             String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
-            ByteBuf slice = buf.slice();
-            byte[] data1 = new byte[buf.readableBytes()];
-            buf.readBytes(data1);
-            byte[] data2 = new byte[slice.readableBytes()];
-            slice.readBytes(data2);
-            for (int i = 0; i < data1.length; i++) {
-                assert data1[i] == data2[i];
-            }
-            slice.readerIndex(0);
-
 //            Map<String, Channel> localClients = proxyMap.get(remotePort).localClients;
 //            Channel local;
 //            synchronized (localClients) {
@@ -159,7 +151,7 @@ public class RrpClient extends Disposable {
             Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> Sockets.bootstrap(config, ch -> ch.pipeline()
                             .addLast(new SocksClientHandler(proxyCtx, channelId)))
                     .connect(proxyCtx.localEndpoint).syncUninterruptibly().channel());
-            localChannel.writeAndFlush(slice);
+            localChannel.writeAndFlush(buf);
             log.info("RrpClient step4 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
         }
 
@@ -209,7 +201,10 @@ public class RrpClient extends Disposable {
             throw new InvalidException("{} has connected", this);
         }
 
-        bootstrap = Sockets.bootstrap(config, channel -> channel.pipeline().addLast(new ClientHandler()));
+        bootstrap = Sockets.bootstrap(config, channel -> channel.pipeline()
+                .addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4))
+                .addLast(Sockets.INT_LENGTH_PREPENDER)
+                .addLast(new ClientHandler()));
         doConnect(false);
         if (connectingFutureWrapper == null) {
             connectingFutureWrapper = new Future<Void>() {

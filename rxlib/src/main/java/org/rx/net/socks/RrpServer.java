@@ -3,12 +3,15 @@ package org.rx.net.socks;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Constants;
 import org.rx.core.Disposable;
 import org.rx.core.Linq;
 import org.rx.exception.InvalidException;
@@ -85,9 +88,9 @@ public class RrpServer extends Disposable {
             byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
-            outbound.write(buf);
+//            outbound.write(buf);
 
-            outbound.writeAndFlush(msg);
+            outbound.writeAndFlush(Unpooled.wrappedBuffer(buf, (ByteBuf) msg));
             log.info("RrpServer step3 {}({}) -> clientChannel", rpClient.clientChannel, channelId);
         }
 
@@ -141,7 +144,7 @@ public class RrpServer extends Disposable {
                 int idLen = buf.readInt();
                 String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
                 Channel remoteChannel = server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(channelId);
-                remoteChannel.writeAndFlush(buf.slice());
+                remoteChannel.writeAndFlush(buf);
                 log.info("RrpServer step6 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
             }
         }
@@ -167,7 +170,10 @@ public class RrpServer extends Disposable {
 
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
-        bootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new ServerHandler(this)));
+        bootstrap = Sockets.serverBootstrap(channel -> channel.pipeline()
+                .addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4))
+                .addLast(Sockets.INT_LENGTH_PREPENDER)
+                .addLast(new ServerHandler(this)));
         serverChannel = bootstrap.bind(config.getBindPort()).addListener(Sockets.logBind(config.getBindPort())).channel();
     }
 
@@ -177,7 +183,7 @@ public class RrpServer extends Disposable {
         Sockets.closeBootstrap(bootstrap);
     }
 
-    public void register(@NonNull Channel clientChannel, @NonNull List<RrpConfig.Proxy> pList) {
+    void register(@NonNull Channel clientChannel, @NonNull List<RrpConfig.Proxy> pList) {
         RpClient rpClient = clients.get(clientChannel);
         if (rpClient == null) {
             throw new InvalidException("Client {} not fund", clientChannel.id());
@@ -203,7 +209,7 @@ public class RrpServer extends Disposable {
                     .addLast(new RemoteServerHandler(rpClient, remotePort)));
             rpClient.proxyMap.put(remotePort, new RpClientProxy(rp, remoteBootstrap,
                     remoteBootstrap.bind(remotePort).addListener(Sockets.logBind(remotePort)).channel()));
-            log.info("RrpServer step2 {} remote Tcp bind R{}", clientChannel, remotePort);
+            log.info("RrpServer step2 {} remote Tcp bind {}", clientChannel, remotePort);
         }
     }
 }
