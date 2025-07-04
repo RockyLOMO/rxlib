@@ -11,6 +11,7 @@ import org.rx.core.Constants;
 
 import java.util.List;
 
+@Deprecated
 @RequiredArgsConstructor
 public class AESCodec extends MessageToMessageCodec<ByteBuf, ByteBuf> {
     final byte[] key;
@@ -18,7 +19,7 @@ public class AESCodec extends MessageToMessageCodec<ByteBuf, ByteBuf> {
     public ChannelHandler[] channelHandlers() {
         return new ChannelHandler[]{
                 new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4),
-                Sockets.INT_LENGTH_PREPENDER, this
+                Sockets.INT_LENGTH_FIELD_ENCODER, this
         };
     }
 

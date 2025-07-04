@@ -261,6 +261,8 @@ public final class Sockets {
             return;
         }
 
+        //入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
+        //出站事件（如数据写入、连接关闭等）由 ChannelOutboundHandler 处理，传播方向是从 pipeline 的 tail 到 head。
         ChannelPipeline pipeline = channel.pipeline();
         if (flags.has(TransportFlags.FRONTEND_SSL)) {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
@@ -268,31 +270,34 @@ public final class Sockets {
             pipeline.addLast(sslCtx.newHandler(channel.alloc()));
         }
 
-//        boolean hasZipR = flags.has(TransportFlags.CLIENT_COMPRESS_READ),
-//                hasZipW = flags.has(TransportFlags.CLIENT_COMPRESS_WRITE),
-//                hasAesR = flags.has(TransportFlags.CLIENT_AES_READ),
-//                hasAesW = flags.has(TransportFlags.CLIENT_AES_WRITE);
-//        if (hasZipR || hasAesR) {
-//            pipeline.addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4));
-//        }
-//        if (hasZipW || hasAesW) {
-//            pipeline.addLast(Sockets.INT_LENGTH_PREPENDER);
-//        }
-
-        if (flags.has(TransportFlags.SERVER_AES_BOTH)) {
-            if (config.getAesKey() == null) {
-                throw new InvalidException("AES key is empty");
-            }
-            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
-        }
-
-        //ZIP支持长度
+        //支持LengthField?
         if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
             pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
         }
         if (flags.has(TransportFlags.SERVER_COMPRESS_WRITE)) {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
         }
+
+        boolean hasAesR = flags.has(TransportFlags.SERVER_AES_READ),
+                hasAesW = flags.has(TransportFlags.SERVER_AES_WRITE);
+        if (hasAesR || hasAesW) {
+            if (config.getAesKey() == null) {
+                throw new InvalidException("AES key is empty");
+            }
+            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
+        }
+        if (hasAesR) {
+            pipeline.addLast(new AESDecoder().channelHandlers());
+        }
+        if (hasAesW) {
+            pipeline.addLast(AESEncoder.DEFAULT.channelHandlers());
+        }
+//        if (flags.has(TransportFlags.SERVER_AES_BOTH)) {
+//            if (config.getAesKey() == null) {
+//                throw new InvalidException("AES key is empty");
+//            }
+//            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
+//        }
         log.debug("server pipeline: {}", channel.pipeline());
     }
 
@@ -309,129 +314,35 @@ public final class Sockets {
             pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
         }
 
-//        boolean hasZipR = flags.has(TransportFlags.CLIENT_COMPRESS_READ),
-//                hasZipW = flags.has(TransportFlags.CLIENT_COMPRESS_WRITE),
-//                hasAesR = flags.has(TransportFlags.CLIENT_AES_READ),
-//                hasAesW = flags.has(TransportFlags.CLIENT_AES_WRITE);
-//        if (hasZipR || hasAesR) {
-//            pipeline.addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4));
-//        }
-//        if (hasZipW || hasAesW) {
-//            pipeline.addLast(Sockets.INT_LENGTH_PREPENDER);
-//        }
-
-        if (flags.has(TransportFlags.CLIENT_AES_BOTH)) {
-            if (config.getAesKey() == null) {
-                throw new InvalidException("AES key is empty");
-            }
-            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
-        }
-
         if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
             pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
         }
         if (flags.has(TransportFlags.CLIENT_COMPRESS_WRITE)) {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
         }
+
+        boolean hasAesR = flags.has(TransportFlags.CLIENT_AES_READ),
+                hasAesW = flags.has(TransportFlags.CLIENT_AES_WRITE);
+        if (hasAesR || hasAesW) {
+            if (config.getAesKey() == null) {
+                throw new InvalidException("AES key is empty");
+            }
+            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
+        }
+        if (hasAesR) {
+            pipeline.addLast(new AESDecoder().channelHandlers());
+        }
+        if (hasAesW) {
+            pipeline.addLast(AESEncoder.DEFAULT.channelHandlers());
+        }
+//        if (flags.has(TransportFlags.CLIENT_AES_BOTH)) {
+//            if (config.getAesKey() == null) {
+//                throw new InvalidException("AES key is empty");
+//            }
+//            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
+//        }
         log.debug("client pipeline: {}", channel.pipeline());
     }
-
-//    @SneakyThrows
-//    public static void addServerHandler(Channel channel, SocketConfig config) {
-//        FlagsEnum<TransportFlags> flags = config.getTransportFlags();
-//        if (flags == null) {
-//            return;
-//        }
-//
-//        ChannelPipeline pipeline = channel.pipeline();
-//        if (flags.has(TransportFlags.FRONTEND_SSL)) {
-//            SelfSignedCertificate ssc = new SelfSignedCertificate();
-//            SslContext sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
-//            pipeline.addLast(sslCtx.newHandler(channel.alloc()));
-//        }
-//
-//        boolean hasAesR = flags.has(TransportFlags.CLIENT_AES_READ),
-//                hasZipR = flags.has(TransportFlags.CLIENT_COMPRESS_READ);
-//        boolean hasAesW = flags.has(TransportFlags.CLIENT_AES_WRITE),
-//                hasZipW = flags.has(TransportFlags.CLIENT_COMPRESS_WRITE);
-//        if(hasAesR || hasAesW){
-//            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
-//        }
-//
-////        if (hasAesR || hasZipR) {
-////            pipeline.addFirst(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4));
-////        }
-////        if (hasAesR) {
-////            pipeline.addLast(new AESDecoder());
-////        }
-//        if (hasZipR) {
-//            pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-//        }
-//
-//        if (hasZipW) {
-//            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-//        }
-////        if (hasAesW) {
-////            pipeline.addLast(AESEncoder.DEFAULT);
-////        }
-////        if (hasZipW || hasAesW) {
-////            pipeline.addLast(LengthFieldPrepender.class.getSimpleName(), Sockets.INT_LENGTH_PREPENDER);
-////        }
-//
-//        if (hasAesR || hasAesW) {
-//            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
-//        }
-//    }
-//
-//    @SneakyThrows
-//    public static void addClientHandler(Channel channel, SocketConfig config, InetSocketAddress remoteEndpoint) {
-//        FlagsEnum<TransportFlags> flags = config.getTransportFlags();
-//        if (flags == null) {
-//            return;
-//        }
-//
-//        ChannelPipeline pipeline = channel.pipeline();
-//        if (flags.has(TransportFlags.BACKEND_SSL)) {
-//            SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-//            pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
-//        }
-//
-//        boolean hasAesR = flags.has(TransportFlags.CLIENT_AES_READ),
-//                hasZipR = flags.has(TransportFlags.CLIENT_COMPRESS_READ);
-//        boolean hasAesW = flags.has(TransportFlags.CLIENT_AES_WRITE),
-//                hasZipW = flags.has(TransportFlags.CLIENT_COMPRESS_WRITE);
-//        if(hasAesR || hasAesW){
-//            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
-//        }
-//
-////        if (hasAesR
-//////                || hasZipR
-////        ) {
-////            pipeline.addFirst(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4));
-////        }
-////        if (hasAesR) {
-////            pipeline.addLast(new AESDecoder());
-////        }
-//        if (hasZipR) {
-//            pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-//        }
-//
-//        if (hasZipW) {
-//            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-//        }
-////        if (hasAesW) {
-////            pipeline.addLast(AESEncoder.DEFAULT);
-////        }
-////        if (
-//////                hasZipW ||
-////                        hasAesW) {
-////            pipeline.addLast(LengthFieldPrepender.class.getSimpleName(), Sockets.INT_LENGTH_PREPENDER);
-////        }
-//
-//        if (hasAesR || hasAesW) {
-//            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
-//        }
-//    }
     //endregion
 
     public static Bootstrap udpBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {

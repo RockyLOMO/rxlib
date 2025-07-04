@@ -100,6 +100,7 @@ public class AESUtil {
         int outputSize = cipher.getOutputSize(in.remaining());
         ByteBuffer out = ByteBuffer.allocateDirect(outputSize);
         cipher.doFinal(in, out);
+        buf.skipBytes(buf.readableBytes());
         return Unpooled.wrappedBuffer((ByteBuffer) out.flip());
     }
 

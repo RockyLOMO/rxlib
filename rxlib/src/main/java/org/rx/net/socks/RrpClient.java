@@ -5,7 +5,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,8 +47,8 @@ public class RrpClient extends Disposable {
             this.p = p;
             this.serverChannel = serverChannel;
             SocksConfig conf = new SocksConfig(0);
-            conf.setTransportFlags(TransportFlags.SERVER_COMPRESS_READ.flags());
-//            conf.setTransportFlags(TransportFlags.SERVER_AES_READ.flags());
+//            conf.setTransportFlags(TransportFlags.SERVER_COMPRESS_READ.flags());
+            conf.setTransportFlags(TransportFlags.SERVER_AES_READ.flags());
             localSS = new SocksProxyServer(conf, null, ch -> {
                 int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();
                 log.debug("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
@@ -137,8 +136,8 @@ public class RrpClient extends Disposable {
             RpClientProxy proxyCtx = proxyMap.get(remotePort);
             Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
                 RrpConfig conf = Sys.deepClone(config);
-                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
-//                conf.setTransportFlags(TransportFlags.CLIENT_AES_WRITE.flags());
+//                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
+                conf.setTransportFlags(TransportFlags.CLIENT_AES_WRITE.flags());
                 ChannelFuture connF = Sockets.bootstrap(conf, ch -> {
                     Sockets.addClientHandler(ch, conf, proxyCtx.localEndpoint);
                     ch.pipeline().addLast(new SocksClientHandler(proxyCtx, channelId));
