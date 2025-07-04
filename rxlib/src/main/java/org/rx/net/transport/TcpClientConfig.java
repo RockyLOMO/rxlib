@@ -23,5 +23,6 @@ public class TcpClientConfig extends SocketConfig {
     @NotNull
     private volatile InetSocketAddress serverEndpoint;
     private volatile boolean enableReconnect;
+    private long waitConnectMillis = 4000;
     private int heartbeatTimeout = 60;
 }

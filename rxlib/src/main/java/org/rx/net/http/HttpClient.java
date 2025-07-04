@@ -21,7 +21,6 @@ import org.rx.io.IOStream;
 import org.rx.util.function.BiFunc;
 
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import javax.servlet.ServletInputStream;
 import javax.servlet.ServletOutputStream;

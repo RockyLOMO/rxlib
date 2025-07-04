@@ -200,7 +200,7 @@ public final class Main implements SocksSupport {
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
-        frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        frontConf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
         frontConf.setMemoryMode(MemoryMode.MEDIUM);
         frontConf.setConnectTimeoutMillis(connectTimeout);
         frontConf.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
@@ -371,7 +371,7 @@ public final class Main implements SocksSupport {
         ssUser.setMaxIpCount(-1);
 
         SocksConfig backConf = new SocksConfig(port);
-        backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        backConf.setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
         backConf.setMemoryMode(MemoryMode.MEDIUM);
         backConf.setConnectTimeoutMillis(connectTimeout);
         backConf.setEnableUdp2raw(udp2raw);

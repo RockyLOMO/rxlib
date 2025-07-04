@@ -36,8 +36,7 @@ import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-import static org.rx.core.Extends.eq;
-import static org.rx.core.Extends.ifNull;
+import static org.rx.core.Extends.*;
 import static org.rx.core.Sys.fromJson;
 import static org.rx.core.Sys.toJsonObject;
 
@@ -182,7 +181,7 @@ public class MxController {
     Object invoke(HttpServletRequest request) {
         JSONObject params = getParams(request);
         Class<?> kls = Class.forName(params.getString("bean"));
-        Object bean = SpringContext.getBean(kls);
+        Object bean = quietly(() -> SpringContext.getBean(kls), () -> kls);
         List<Object> args = params.getJSONArray("args");
         Method method = Reflects.getMethodMap(kls).get(params.getString("method")).where(p -> p.getParameterCount() == args.size()).first();
         Class<?>[] parameterTypes = method.getParameterTypes();

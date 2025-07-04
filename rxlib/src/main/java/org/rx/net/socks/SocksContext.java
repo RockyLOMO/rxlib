@@ -33,10 +33,26 @@ import static org.rx.core.Extends.require;
 @RequiredArgsConstructor
 public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
-    static final AttributeKey<SocksProxyServer> SERVER = AttributeKey.valueOf("SERVER");
-    private static final AttributeKey<SocksContext> CTX = AttributeKey.valueOf("PROXY_CTX");
+    static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
+    private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sProxyCtx");
     //ss
-    static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
+    static final AttributeKey<ShadowsocksServer> SS_SVR = AttributeKey.valueOf("ssSvr");
+
+    public static <T> T getParentAttr(Channel chnl, AttributeKey<T> key) {
+        T v = chnl.parent().attr(key).get();
+        if (v == null) {
+            throw new InvalidException("Parent attr {} not exist", key);
+        }
+        return v;
+    }
+
+    public static <T> T getAttr(Channel chnl, AttributeKey<T> key) {
+        T v = chnl.attr(key).get();
+        if (v == null) {
+            throw new InvalidException("Attr {} not exist", key);
+        }
+        return v;
+    }
 
     /**
      * call this method before bind & connect
@@ -52,8 +68,8 @@ public final class SocksContext extends EventArgs {
         }
         sc.inbound = inbound;
         sc.outbound = outbound;
-        inbound.attr(CTX).set(sc);
-        outbound.attr(CTX).set(sc);
+        inbound.attr(SOCKS_CTX).set(sc);
+        outbound.attr(SOCKS_CTX).set(sc);
     }
 
     public static SocksContext ctx(Channel channel) {
@@ -61,21 +77,11 @@ public final class SocksContext extends EventArgs {
     }
 
     public static SocksContext ctx(Channel channel, boolean throwOnEmpty) {
-        return throwOnEmpty ? require(channel.attr(CTX).get()) : channel.attr(CTX).get();
+        return throwOnEmpty ? require(channel.attr(SOCKS_CTX).get()) : channel.attr(SOCKS_CTX).get();
     }
-
-    //region common
-    public static SocksProxyServer server(Channel channel) {
-        return require(channel.attr(SERVER).get());
-    }
-
-    public static void server(Channel channel, SocksProxyServer server) {
-        channel.attr(SERVER).set(server);
-    }
-    //endregion
 
     public static ShadowsocksServer ssServer(Channel channel, boolean throwOnEmpty) {
-        ShadowsocksServer shadowsocksServer = channel.attr(SS_SERVER).get();
+        ShadowsocksServer shadowsocksServer = channel.attr(SS_SVR).get();
         if (throwOnEmpty && shadowsocksServer == null) {
             throw new InvalidException("Set ssServer first");
         }
@@ -83,7 +89,7 @@ public final class SocksContext extends EventArgs {
     }
 
     public static void ssServer(Channel channel, ShadowsocksServer server) {
-        channel.attr(SS_SERVER).set(server);
+        channel.attr(SS_SVR).set(server);
     }
 
     @SneakyThrows

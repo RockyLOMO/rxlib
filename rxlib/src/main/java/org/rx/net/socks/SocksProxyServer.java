@@ -2,6 +2,7 @@ package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
@@ -16,6 +17,7 @@ import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.util.function.BiAction;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
@@ -30,25 +32,38 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     @Getter
     final SocksConfig config;
     final ServerBootstrap bootstrap;
+    final Channel tcpChannel;
     final Channel udpChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     @Setter
     private PredicateFunc<UnresolvedEndpoint> aesRouter;
 
+//    public boolean isBind() {
+//        return tcpChannel.isActive();
+//    }
+//
+//    public Integer getBindPort() {
+//        InetSocketAddress ep = (InetSocketAddress) tcpChannel.localAddress();
+//        return ep != null ? ep.getPort() : null;
+//    }
+
     public boolean isAuthEnabled() {
         return authenticator != null;
     }
 
     public SocksProxyServer(SocksConfig config) {
-        this(config, null);
+        this(config, null, null);
     }
 
     public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator) {
+        this(config, authenticator, null);
+    }
+
+    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiAction<Channel> onBind) {
         this.config = config;
         this.authenticator = authenticator;
         bootstrap = Sockets.serverBootstrap(config, channel -> {
-            SocksContext.server(channel, SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
             if (isAuthEnabled()) {
                 //Traffic statistics
@@ -56,7 +71,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }
             pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
 //            SocksPortUnificationServerHandler
-            Sockets.addFrontendHandler(channel, config);
+            Sockets.addServerHandler(channel, config);
             pipeline.addLast(Socks5ServerEncoder.DEFAULT)
                     .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
                     .addLast(Socks5InitialRequestHandler.class.getSimpleName(), Socks5InitialRequestHandler.DEFAULT);
@@ -67,24 +82,28 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
         });
-        bootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort()));
+        tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
+            if (f.isSuccess() && onBind != null) {
+                onBind.accept(f.channel());
+            }
+        }).channel();
 
         //udp server
         int udpPort = config.getListenPort();
         udpChannel = Sockets.udpBootstrap(Sockets.ReactorNames.SS, MemoryMode.HIGH, channel -> {
-            SocksContext.server(channel, SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
             if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
             } else {
-                Sockets.addFrontendHandler(channel, config);
+                Sockets.addServerHandler(channel, config);
                 pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
             }
-        }).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
+        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
     }
 
     @Override
     protected void freeObjects() {
+        Sockets.closeOnFlushed(tcpChannel);
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();
     }

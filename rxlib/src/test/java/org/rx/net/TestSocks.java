@@ -56,7 +56,10 @@ import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Socks5Upstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.*;
+import org.rx.net.support.IPSearcher;
+import org.rx.net.support.SocksSupport;
+import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.SftpClient;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
@@ -525,13 +528,13 @@ public class TestSocks extends AbstractTester {
         SocksProxyServer backSvr = new SocksProxyServer(backConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
         Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
         shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
@@ -585,24 +588,24 @@ public class TestSocks extends AbstractTester {
         //backend
         InetSocketAddress backSrvEp = Sockets.newLoopbackEndpoint(2080);
         SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
-        backConf.setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        backConf.setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
         backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null);
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.FRONTEND_COMPRESS.flags());
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
         Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
         shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);
-        frontConf.setTransportFlags(TransportFlags.BACKEND_COMPRESS.flags());
+        frontConf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         frontConf.setEnableUdp2raw(udp2raw);
         if (!udp2rawDirect) {
@@ -663,6 +666,27 @@ public class TestSocks extends AbstractTester {
 //
 //        System.in.read();
 //    }
+    //endregion
+
+    //region rrp
+    @SneakyThrows
+    @Test
+    public void rrp() {
+        RrpConfig c = new RrpConfig();
+        c.setBindPort(9000);
+        RrpServer server = new RrpServer(c);
+
+        c.setServerEndpoint("127.0.0.1:9000");
+        RrpConfig.Proxy p = new RrpConfig.Proxy();
+        p.setName("ss");
+//        p.setType(1);
+        p.setRemotePort(2090);
+        c.setProxies(Collections.singletonList(p));
+        RrpClient client = new RrpClient(c);
+        client.connectAsync();
+
+        System.in.read();
+    }
     //endregion
 
     @SneakyThrows
