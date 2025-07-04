@@ -1,5 +1,6 @@
 package org.rx.net;
 
+import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -15,6 +16,8 @@ import java.util.concurrent.CopyOnWriteArraySet;
 @Setter
 @ToString
 public class SocketConfig implements Extends {
+    public static AttributeKey<byte[]> ATTR_AES_KEY = AttributeKey.valueOf("aesKey");
+
     private static final long serialVersionUID = 5312790348211652335L;
     public static final int DELAY_TIMEOUT_MILLIS = 30000;
 
