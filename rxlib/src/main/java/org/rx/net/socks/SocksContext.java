@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import io.netty.channel.Channel;
+import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +38,22 @@ public final class SocksContext extends EventArgs {
     private static final AttributeKey<SocksContext> CTX = AttributeKey.valueOf("PROXY_CTX");
     //ss
     static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
+
+    public static <T> T getParentAttr(Channel chnl, AttributeKey<T> key) {
+        T v = chnl.parent().attr(key).get();
+        if (v == null) {
+            throw new InvalidException("Parent attr {} not exist", key);
+        }
+        return v;
+    }
+
+    public static <T> T getAttr(Channel chnl, AttributeKey<T> key) {
+        T v = chnl.attr(key).get();
+        if (v == null) {
+            throw new InvalidException("Attr {} not exist", key);
+        }
+        return v;
+    }
 
     /**
      * call this method before bind & connect

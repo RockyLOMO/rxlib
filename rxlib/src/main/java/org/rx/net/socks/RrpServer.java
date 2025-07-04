@@ -5,9 +5,11 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,8 +35,8 @@ public class RrpServer extends Disposable {
     static class RpClientProxy extends Disposable {
         final RrpConfig.Proxy p;
         final ServerBootstrap remoteServer;
-        final Channel remoteServerChannel;
         final Map<String, Channel> remoteClients = new ConcurrentHashMap<>();
+        Channel remoteServerChannel;
 
         @Override
         protected void freeObjects() throws Throwable {
@@ -53,6 +55,7 @@ public class RrpServer extends Disposable {
             for (RpClientProxy v : proxyMap.values()) {
                 v.close();
             }
+            proxyMap.clear();
             Sockets.closeOnFlushed(clientChannel);
         }
 
@@ -65,30 +68,31 @@ public class RrpServer extends Disposable {
         }
     }
 
-    @RequiredArgsConstructor
+    @ChannelHandler.Sharable
     static class RemoteServerHandler extends ChannelInboundHandlerAdapter {
-        final RpClient rpClient;
-        final int remotePort;
+        static final RemoteServerHandler DEFAULT = new RemoteServerHandler();
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel inbound = ctx.channel();
-            rpClient.getProxyCtx(remotePort).remoteClients.put(inbound.id().asShortText(), inbound);
+            RpClientProxy rpClientProxy = SocksContext.getParentAttr(inbound, ATTR_CLI_PROXY);
+            rpClientProxy.remoteClients.put(inbound.id().asShortText(), inbound);
         }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel inbound = ctx.channel();
+            RpClient rpClient = SocksContext.getParentAttr(inbound, ATTR_CLI);
+            RpClientProxy rpClientProxy = SocksContext.getParentAttr(inbound, ATTR_CLI_PROXY);
             Channel outbound = rpClient.clientChannel;
             //step3
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
             buf.writeByte(RrpConfig.ACTION_FORWARD);
-            buf.writeInt(remotePort);
+            buf.writeInt(rpClientProxy.p.remotePort);
             String channelId = inbound.id().asShortText();
             byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
-//            outbound.write(buf);
 
             outbound.writeAndFlush(Unpooled.wrappedBuffer(buf, (ByteBuf) msg));
             log.info("RrpServer step3 {}({}) -> clientChannel", rpClient.clientChannel, channelId);
@@ -97,31 +101,35 @@ public class RrpServer extends Disposable {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             Channel inbound = ctx.channel();
-            rpClient.getProxyCtx(remotePort).remoteClients.remove(inbound.id().asShortText());
+            RpClientProxy rpClientProxy = SocksContext.getParentAttr(inbound, ATTR_CLI_PROXY);
+            rpClientProxy.remoteClients.remove(inbound.id().asShortText());
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel inbound = ctx.channel();
+            RpClient rpClient = SocksContext.getParentAttr(inbound, ATTR_CLI);
             Channel outbound = rpClient.clientChannel;
             log.warn("RELAY {} => {}[{}] thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
             Sockets.closeOnFlushed(inbound);
         }
     }
 
-    @RequiredArgsConstructor
+    @ChannelHandler.Sharable
     static class ServerHandler extends ChannelInboundHandlerAdapter {
-        final RrpServer server;
+        static final ServerHandler DEFAULT = new ServerHandler();
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel clientChannel = ctx.channel();
+            RrpServer server = SocksContext.getParentAttr(clientChannel, ATTR_SVR);
             server.clients.put(clientChannel, new RpClient(clientChannel));
         }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel clientChannel = ctx.channel();
+            RrpServer server = SocksContext.getParentAttr(clientChannel, ATTR_SVR);
             ByteBuf buf = (ByteBuf) msg;
             byte action = buf.readByte();
             if (action == RrpConfig.ACTION_REGISTER) {
@@ -152,17 +160,22 @@ public class RrpServer extends Disposable {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             Channel clientChannel = ctx.channel();
+            RrpServer server = SocksContext.getParentAttr(clientChannel, ATTR_SVR);
             tryClose(server.clients.remove(clientChannel));
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel clientChannel = ctx.channel();
+            RrpServer server = SocksContext.getParentAttr(clientChannel, ATTR_SVR);
             log.warn("RELAY {} => ALL thrown", clientChannel.remoteAddress(), cause);
             tryClose(server.clients.remove(clientChannel));
         }
     }
 
+    static final AttributeKey<RrpServer> ATTR_SVR = AttributeKey.valueOf("rSvr");
+    static final AttributeKey<RpClient> ATTR_CLI = AttributeKey.valueOf("rCli");
+    static final AttributeKey<RpClientProxy> ATTR_CLI_PROXY = AttributeKey.valueOf("rCliProxy");
     final RrpConfig config;
     final ServerBootstrap bootstrap;
     final Map<Channel, RpClient> clients = new ConcurrentHashMap<>();
@@ -171,9 +184,10 @@ public class RrpServer extends Disposable {
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
         bootstrap = Sockets.serverBootstrap(channel -> channel.pipeline()
-                .addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4))
-                .addLast(Sockets.INT_LENGTH_PREPENDER)
-                .addLast(new ServerHandler(this)));
+                        .addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4))
+                        .addLast(Sockets.INT_LENGTH_PREPENDER)
+                        .addLast(ServerHandler.DEFAULT))
+                .attr(ATTR_SVR, this);
         serverChannel = bootstrap.bind(config.getBindPort()).addListener(Sockets.logBind(config.getBindPort())).channel();
     }
 
@@ -206,9 +220,12 @@ public class RrpServer extends Disposable {
             }
 
             ServerBootstrap remoteBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline()
-                    .addLast(new RemoteServerHandler(rpClient, remotePort)));
-            rpClient.proxyMap.put(remotePort, new RpClientProxy(rp, remoteBootstrap,
-                    remoteBootstrap.bind(remotePort).addListener(Sockets.logBind(remotePort)).channel()));
+                    .addLast(RemoteServerHandler.DEFAULT));
+            RpClientProxy rpClientProxy = new RpClientProxy(rp, remoteBootstrap);
+            rpClientProxy.remoteServerChannel = remoteBootstrap
+                    .attr(ATTR_CLI, rpClient)
+                    .attr(ATTR_CLI_PROXY, rpClientProxy).bind(remotePort).addListener(Sockets.logBind(remotePort)).channel();
+            rpClient.proxyMap.put(remotePort, rpClientProxy);
             log.info("RrpServer step2 {} remote Tcp bind {}", clientChannel, remotePort);
         }
     }
