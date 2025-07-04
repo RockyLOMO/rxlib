@@ -18,6 +18,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.codec.compression.ZlibCodecFactory;
 import io.netty.handler.codec.compression.ZlibWrapper;
@@ -268,11 +269,20 @@ public final class Sockets {
             }
             pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
         }
+        boolean lenRead = false, lenWrite = false;
         if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
             pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            lenRead = true;
         }
         if (flags.has(TransportFlags.SERVER_COMPRESS_WRITE)) {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+            lenWrite = true;
+        }
+        if (lenRead) {
+            pipeline.addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4));
+        }
+        if (lenWrite) {
+            pipeline.addLast(Sockets.INT_LENGTH_PREPENDER);
         }
     }
 
@@ -294,12 +304,20 @@ public final class Sockets {
             }
             pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
         }
+        boolean lenRead = false, lenWrite = false;
         if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
             pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            lenRead = true;
         }
         if (flags.has(TransportFlags.CLIENT_COMPRESS_WRITE)) {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-            System.out.println("11111111111111111111111");
+            lenWrite = true;
+        }
+        if (lenRead) {
+            pipeline.addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4));
+        }
+        if (lenWrite) {
+            pipeline.addLast(Sockets.INT_LENGTH_PREPENDER);
         }
     }
     //endregion
