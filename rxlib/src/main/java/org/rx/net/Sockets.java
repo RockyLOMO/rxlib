@@ -67,12 +67,16 @@ public final class Sockets {
 
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
-    public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
+    public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
     static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
+
+    public static LengthFieldBasedFrameDecoder intLengthFieldDecoder() {
+        return new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4);
+    }
 
     //region netty
     public static void injectNameService(List<InetSocketAddress> nameServerList) {
@@ -282,6 +286,7 @@ public final class Sockets {
             pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
         }
 
+        //ZIP支持长度
         if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
             pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
         }

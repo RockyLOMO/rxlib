@@ -49,6 +49,7 @@ public class RrpClient extends Disposable {
             this.serverChannel = serverChannel;
             SocksConfig conf = new SocksConfig(0);
             conf.setTransportFlags(TransportFlags.SERVER_COMPRESS_READ.flags());
+//            conf.setTransportFlags(TransportFlags.SERVER_AES_READ.flags());
             localSS = new SocksProxyServer(conf, null, ch -> {
                 int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();
                 log.debug("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
@@ -137,11 +138,10 @@ public class RrpClient extends Disposable {
             Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
                 RrpConfig conf = Sys.deepClone(config);
                 conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
+//                conf.setTransportFlags(TransportFlags.CLIENT_AES_WRITE.flags());
                 ChannelFuture connF = Sockets.bootstrap(conf, ch -> {
                     Sockets.addClientHandler(ch, conf, proxyCtx.localEndpoint);
-                    ch.pipeline()
-//                            .addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))
-                            .addLast(new SocksClientHandler(proxyCtx, channelId));
+                    ch.pipeline().addLast(new SocksClientHandler(proxyCtx, channelId));
                 }).connect(proxyCtx.localEndpoint);
                 Channel ch = connF.channel();
                 ch.attr(ATTR_CONN_FUTURE).set(connF);
@@ -214,8 +214,8 @@ public class RrpClient extends Disposable {
         }
 
         bootstrap = Sockets.bootstrap(config, channel -> channel.pipeline()
-                .addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4))
-                .addLast(Sockets.INT_LENGTH_PREPENDER)
+                .addLast(Sockets.intLengthFieldDecoder())
+                .addLast(Sockets.INT_LENGTH_FIELD_ENCODER)
                 .addLast(new ClientHandler()));
         doConnect(false);
         if (connectingFutureWrapper == null) {
