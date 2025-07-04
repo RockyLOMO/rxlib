@@ -24,6 +24,7 @@ import java.util.concurrent.*;
 import static org.rx.core.Extends.circuitContinue;
 import static org.rx.core.Extends.tryClose;
 import static org.rx.core.Sys.toJsonString;
+import static org.rx.net.socks.RrpConfig.ATTR_CONN_FUTURE;
 
 @Slf4j
 public class RrpClient extends Disposable {
@@ -48,7 +49,7 @@ public class RrpClient extends Disposable {
             this.serverChannel = serverChannel;
             localSS = new SocksProxyServer(new SocksConfig(0), null, ch -> {
                 int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();
-                log.info("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
+                log.debug("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
                 localEndpoint = Sockets.newLoopbackEndpoint(bindPort);
             });
         }
@@ -73,7 +74,7 @@ public class RrpClient extends Disposable {
 //            serverChannel.write(buf);
 
             serverChannel.writeAndFlush(Unpooled.wrappedBuffer(buf, (ByteBuf) msg));
-            log.info("RrpClient step5 {}({}) {} -> serverChannel", proxyCtx.serverChannel, channelId, localChannel);
+            log.debug("RrpClient step5 {}({}) {} -> serverChannel", proxyCtx.serverChannel, channelId, localChannel);
         }
 
         @Override
@@ -112,7 +113,7 @@ public class RrpClient extends Disposable {
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
             serverChannel.writeAndFlush(buf);
-            log.info("RrpClient step1 {} -> {}", toJsonString(config.getProxies()), serverChannel);
+            log.debug("RrpClient step1 {} -> {}", toJsonString(config.getProxies()), serverChannel);
         }
 
         @Override
@@ -130,35 +131,39 @@ public class RrpClient extends Disposable {
             int remotePort = buf.readInt();
             int idLen = buf.readInt();
             String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
-//            Map<String, Channel> localClients = proxyMap.get(remotePort).localClients;
-//            Channel local;
-//            synchronized (localClients) {
-//                local = localClients.get(idStr);
-//                if (local == null) {
-//                    ByteBuf finalBuf = Unpooled.copiedBuffer(buf);
-//                    localClients.put(idStr, local = Sockets.bootstrap(config, ch -> ch.pipeline()
-//                            .addLast(new SocksClientHandler())).connect(Sockets.newLoopbackEndpoint(1)).addListener((ChannelFutureListener) f -> {
-//                        if (!f.isSuccess()) {
-//                            return;
-//                        }
-//
-//                        f.channel().writeAndFlush(finalBuf);
-//                    }).channel());
-//                    return;
-//                }
-//            }
             RpClientProxy proxyCtx = proxyMap.get(remotePort);
-            Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> Sockets.bootstrap(config, ch -> ch.pipeline()
-                            .addLast(new SocksClientHandler(proxyCtx, channelId)))
-                    .connect(proxyCtx.localEndpoint).syncUninterruptibly().channel());
-            localChannel.writeAndFlush(buf);
-            log.info("RrpClient step4 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
+            Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
+                ChannelFuture connF = Sockets.bootstrap(config, ch -> ch.pipeline()
+                                .addLast(new SocksClientHandler(proxyCtx, channelId)))
+                        .connect(proxyCtx.localEndpoint);
+                Channel ch = connF.channel();
+                ch.attr(ATTR_CONN_FUTURE).set(connF);
+                connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CONN_FUTURE).set(null));
+                return ch;
+            });
+            ChannelFuture connF = localChannel.attr(ATTR_CONN_FUTURE).get();
+            if (connF == null) {
+                localChannel.writeAndFlush(buf);
+            } else {
+//                ByteBuf finalBuf = Unpooled.copiedBuffer(buf);
+                connF.addListener((ChannelFutureListener) f -> {
+                    if (f.isSuccess()) {
+                        f.channel().writeAndFlush(buf);
+                    }
+                });
+            }
+
+//            Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> Sockets.bootstrap(config, ch -> ch.pipeline()
+//                            .addLast(new SocksClientHandler(proxyCtx, channelId)))
+//                    .connect(proxyCtx.localEndpoint).syncUninterruptibly().channel());
+//            localChannel.writeAndFlush(buf);
+            log.debug("RrpClient step4 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             Channel serverChannel = ctx.channel();
-            log.info("clientInactive {}", serverChannel.remoteAddress());
+            log.debug("clientInactive {}", serverChannel.remoteAddress());
 
             reconnectAsync();
         }
@@ -271,17 +276,17 @@ public class RrpClient extends Disposable {
                         circuitContinue(isShouldReconnect());
                     }, d -> {
                         long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
-                        log.warn("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);
+                        log.debug("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);
                         return delay;
                     }, this, Constants.TIMER_SINGLE_FLAG);
                 } else {
-                    log.warn("{} {} {} fail", this, reconnect ? "reconnect" : "connect", ep);
+                    log.debug("{} {} {} fail", this, reconnect ? "reconnect" : "connect", ep);
                 }
                 return;
             }
             connectingFuture = null;
             if (reconnect) {
-                log.info("{} reconnect {} ok", this, ep);
+                log.debug("{} reconnect {} ok", this, ep);
             }
         });
     }

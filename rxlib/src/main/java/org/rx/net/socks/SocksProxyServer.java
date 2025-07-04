@@ -17,12 +17,9 @@ import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
-
-import java.net.InetSocketAddress;
 
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));

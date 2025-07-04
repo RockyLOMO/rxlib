@@ -9,7 +9,6 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.tryClose;
+import static org.rx.net.socks.RrpConfig.*;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -95,7 +95,7 @@ public class RrpServer extends Disposable {
             buf.writeBytes(bytes);
 
             outbound.writeAndFlush(Unpooled.wrappedBuffer(buf, (ByteBuf) msg));
-            log.info("RrpServer step3 {}({}) -> clientChannel", rpClient.clientChannel, channelId);
+            log.debug("RrpServer step3 {}({}) -> clientChannel", rpClient.clientChannel, channelId);
         }
 
         @Override
@@ -153,7 +153,7 @@ public class RrpServer extends Disposable {
                 String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
                 Channel remoteChannel = server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(channelId);
                 remoteChannel.writeAndFlush(buf);
-                log.info("RrpServer step6 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
+                log.debug("RrpServer step6 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
             }
         }
 
@@ -173,9 +173,6 @@ public class RrpServer extends Disposable {
         }
     }
 
-    static final AttributeKey<RrpServer> ATTR_SVR = AttributeKey.valueOf("rSvr");
-    static final AttributeKey<RpClient> ATTR_CLI = AttributeKey.valueOf("rCli");
-    static final AttributeKey<RpClientProxy> ATTR_CLI_PROXY = AttributeKey.valueOf("rCliProxy");
     final RrpConfig config;
     final ServerBootstrap bootstrap;
     final Map<Channel, RpClient> clients = new ConcurrentHashMap<>();
@@ -226,7 +223,7 @@ public class RrpServer extends Disposable {
                     .attr(ATTR_CLI, rpClient)
                     .attr(ATTR_CLI_PROXY, rpClientProxy).bind(remotePort).addListener(Sockets.logBind(remotePort)).channel();
             rpClient.proxyMap.put(remotePort, rpClientProxy);
-            log.info("RrpServer step2 {} remote Tcp bind {}", clientChannel, remotePort);
+            log.debug("RrpServer step2 {} remote Tcp bind {}", clientChannel, remotePort);
         }
     }
 }
