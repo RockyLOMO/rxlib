@@ -165,7 +165,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         config.setServerEndpoint(remoteEp);
         bootstrap = Sockets.bootstrap(Sockets.ReactorNames.RPC, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
-            Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
+            Sockets.addClientHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler(this));
@@ -193,7 +193,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
         config.setServerEndpoint(remoteEp);
         bootstrap = Sockets.bootstrap(Sockets.ReactorNames.RPC, config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
-            Sockets.addBackendHandler(channel, config, config.getServerEndpoint());
+            Sockets.addClientHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler(this));

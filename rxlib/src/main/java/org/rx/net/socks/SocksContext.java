@@ -36,7 +36,7 @@ public final class SocksContext extends EventArgs {
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sProxyCtx");
     //ss
-    static final AttributeKey<ShadowsocksServer> SS_SERVER = AttributeKey.valueOf("SS_SERVER");
+    static final AttributeKey<ShadowsocksServer> SS_SVR = AttributeKey.valueOf("ssSvr");
 
     public static <T> T getParentAttr(Channel chnl, AttributeKey<T> key) {
         T v = chnl.parent().attr(key).get();
@@ -81,7 +81,7 @@ public final class SocksContext extends EventArgs {
     }
 
     public static ShadowsocksServer ssServer(Channel channel, boolean throwOnEmpty) {
-        ShadowsocksServer shadowsocksServer = channel.attr(SS_SERVER).get();
+        ShadowsocksServer shadowsocksServer = channel.attr(SS_SVR).get();
         if (throwOnEmpty && shadowsocksServer == null) {
             throw new InvalidException("Set ssServer first");
         }
@@ -89,7 +89,7 @@ public final class SocksContext extends EventArgs {
     }
 
     public static void ssServer(Channel channel, ShadowsocksServer server) {
-        channel.attr(SS_SERVER).set(server);
+        channel.attr(SS_SVR).set(server);
     }
 
     @SneakyThrows

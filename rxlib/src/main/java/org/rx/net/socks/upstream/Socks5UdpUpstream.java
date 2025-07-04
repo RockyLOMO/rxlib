@@ -30,6 +30,6 @@ public class Socks5UdpUpstream extends Upstream {
         }
 
         AuthenticEndpoint svrEp = socksServer = next.getEndpoint();
-        Sockets.addBackendHandler(channel, config, svrEp.getEndpoint());
+        Sockets.addClientHandler(channel, config, svrEp.getEndpoint());
     }
 }

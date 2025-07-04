@@ -71,7 +71,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }
             pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
 //            SocksPortUnificationServerHandler
-            Sockets.addFrontendHandler(channel, config);
+            Sockets.addServerHandler(channel, config);
             pipeline.addLast(Socks5ServerEncoder.DEFAULT)
                     .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
                     .addLast(Socks5InitialRequestHandler.class.getSimpleName(), Socks5InitialRequestHandler.DEFAULT);
@@ -95,7 +95,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
             } else {
-                Sockets.addFrontendHandler(channel, config);
+                Sockets.addServerHandler(channel, config);
                 pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
             }
         }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();

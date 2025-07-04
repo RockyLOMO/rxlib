@@ -250,7 +250,7 @@ public final class Sockets {
     }
 
     @SneakyThrows
-    public static void addFrontendHandler(Channel channel, SocketConfig config) {
+    public static void addServerHandler(Channel channel, SocketConfig config) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
             return;
@@ -268,14 +268,16 @@ public final class Sockets {
             }
             pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
         }
-        if (flags.has(TransportFlags.FRONTEND_COMPRESS)) {
-            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))
-                    .addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+        if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
+            pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+        }
+        if (flags.has(TransportFlags.SERVER_COMPRESS_WRITE)) {
+            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
         }
     }
 
     @SneakyThrows
-    public static void addBackendHandler(Channel channel, SocketConfig config, InetSocketAddress remoteEndpoint) {
+    public static void addClientHandler(Channel channel, SocketConfig config, InetSocketAddress remoteEndpoint) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
             return;
@@ -292,9 +294,12 @@ public final class Sockets {
             }
             pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
         }
-        if (flags.has(TransportFlags.BACKEND_COMPRESS)) {
-            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))
-                    .addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+        if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
+            pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+        }
+        if (flags.has(TransportFlags.CLIENT_COMPRESS_WRITE)) {
+            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+            System.out.println("11111111111111111111111");
         }
     }
     //endregion

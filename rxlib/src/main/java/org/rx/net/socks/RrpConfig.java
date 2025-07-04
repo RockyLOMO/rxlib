@@ -27,9 +27,10 @@ public class RrpConfig extends SocketConfig {
     public static class Proxy implements Serializable {
         private static final long serialVersionUID = 6037910788987887824L;
         String name;
-        // 1 = socks5
-        int type;
         int remotePort;
+//        String localEndpoint;
+//        // 1 = socks5
+//        int type;
     }
 
     String token;

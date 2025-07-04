@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
 import org.rx.core.Disposable;
+import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.io.Serializer;
@@ -37,17 +38,17 @@ public class RrpClient extends Disposable {
 
         @Override
         protected void freeObjects() throws Throwable {
-            for (Channel v : localChannels.values()) {
-                Sockets.closeOnFlushed(v);
-            }
-            tryClose(localSS);
             Sockets.closeOnFlushed(serverChannel);
+            localChannels.clear();
+            tryClose(localSS);
         }
 
         public RpClientProxy(RrpConfig.Proxy p, Channel serverChannel) {
             this.p = p;
             this.serverChannel = serverChannel;
-            localSS = new SocksProxyServer(new SocksConfig(0), null, ch -> {
+            SocksConfig conf = new SocksConfig(0);
+//            conf.setTransportFlags(TransportFlags.SERVER_COMPRESS_READ.flags());
+            localSS = new SocksProxyServer(conf, null, ch -> {
                 int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();
                 log.debug("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
                 localEndpoint = Sockets.newLoopbackEndpoint(bindPort);
@@ -133,9 +134,15 @@ public class RrpClient extends Disposable {
             String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
             RpClientProxy proxyCtx = proxyMap.get(remotePort);
             Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
-                ChannelFuture connF = Sockets.bootstrap(config, ch -> ch.pipeline()
-                                .addLast(new SocksClientHandler(proxyCtx, channelId)))
-                        .connect(proxyCtx.localEndpoint);
+                RrpConfig conf = Sys.deepClone(config);
+//                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
+                ChannelFuture connF = Sockets.bootstrap(conf, ch -> {
+//                    Sockets.addClientHandler(ch, conf, proxyCtx.localEndpoint);
+//                    ch.pipeline().addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+                    ch.pipeline()
+//                            .addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP))
+                            .addLast(new SocksClientHandler(proxyCtx, channelId));
+                }).connect(proxyCtx.localEndpoint);
                 Channel ch = connF.channel();
                 ch.attr(ATTR_CONN_FUTURE).set(connF);
                 connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CONN_FUTURE).set(null));

@@ -42,6 +42,7 @@ public class RrpServer extends Disposable {
         protected void freeObjects() throws Throwable {
             Sockets.closeOnFlushed(remoteServerChannel);
             Sockets.closeBootstrap(remoteServer);
+            remoteClients.clear();
         }
     }
 
@@ -52,11 +53,11 @@ public class RrpServer extends Disposable {
 
         @Override
         protected void freeObjects() throws Throwable {
+            Sockets.closeOnFlushed(clientChannel);
             for (RpClientProxy v : proxyMap.values()) {
                 v.close();
             }
             proxyMap.clear();
-            Sockets.closeOnFlushed(clientChannel);
         }
 
         public RpClientProxy getProxyCtx(int remotePort) {

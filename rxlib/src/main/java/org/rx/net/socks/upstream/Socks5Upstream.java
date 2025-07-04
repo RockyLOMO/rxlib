@@ -41,7 +41,7 @@ public class Socks5Upstream extends Upstream {
         AuthenticEndpoint svrEp = next.getEndpoint();
         SocksSupport support = next.getSupport();
 
-        Sockets.addBackendHandler(channel, config, svrEp.getEndpoint());
+        Sockets.addClientHandler(channel, config, svrEp.getEndpoint());
 
         if (support != null
                 && (SocksSupport.FAKE_IPS.contains(destination.getHost()) || SocksSupport.FAKE_PORTS.contains(destination.getPort())
