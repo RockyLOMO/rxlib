@@ -43,7 +43,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             return;
         }
 
-        SocksProxyServer server = SocksContext.server(inbound.channel());
+        SocksProxyServer server = SocksContext.getParentAttr(inbound.channel(), SocksContext.SOCKS_SVR);
         final InetSocketAddress srcEp0 = in.sender();
 
         List<InetSocketAddress> udp2rawServers = server.config.getUdp2rawServers();
@@ -108,8 +108,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
             return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
-                SocksContext.server(ob, server);
-                upstream.initChannel(ob);
+                        upstream.initChannel(ob);
 
 //                ob.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getUdpTimeoutSeconds()) {
 //                    @Override
@@ -130,7 +129,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
 ////                        log.info("UDP2RAW SERVER {}[{}] => {}[{}]", out.sender(), dstEp, srcEp0, srcEp);
 //                    }
 //                });
-            }).bind(0).addListener(Sockets.logBind(0))
+                    }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0))
 //                    .addListener(UdpManager.FLUSH_PENDING_QUEUE)
                     .channel()
 //                    .syncUninterruptibly().channel(), srcEp.socketAddress(), dstEp, upstream, false)

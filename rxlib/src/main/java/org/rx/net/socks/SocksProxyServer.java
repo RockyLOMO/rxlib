@@ -67,7 +67,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         this.config = config;
         this.authenticator = authenticator;
         bootstrap = Sockets.serverBootstrap(config, channel -> {
-            SocksContext.server(channel, SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
             if (isAuthEnabled()) {
                 //Traffic statistics
@@ -86,7 +85,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
         });
-        tcpChannel = bootstrap.bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
+        tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
             if (f.isSuccess() && onBind != null) {
                 onBind.accept(f.channel());
             }
@@ -95,7 +94,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         //udp server
         int udpPort = config.getListenPort();
         udpChannel = Sockets.udpBootstrap(Sockets.ReactorNames.SS, MemoryMode.HIGH, channel -> {
-            SocksContext.server(channel, SocksProxyServer.this);
             ChannelPipeline pipeline = channel.pipeline();
             if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
@@ -103,7 +101,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 Sockets.addFrontendHandler(channel, config);
                 pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
             }
-        }).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
+        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
     }
 
     @Override

@@ -27,7 +27,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         ChannelPipeline pipeline = inbound.pipeline();
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
-        SocksProxyServer server = SocksContext.server(inbound.channel());
+        SocksProxyServer server = SocksContext.getParentAttr(inbound.channel(), SocksContext.SOCKS_SVR);
 //        log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
@@ -71,15 +71,14 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e) {
-        SocksProxyServer server = SocksContext.server(inbound);
+        SocksProxyServer server = SocksContext.getParentAttr(inbound, SocksContext.SOCKS_SVR);
 
         Sockets.bootstrap(inbound.eventLoop(), server.getConfig(), outbound -> {
             e.getUpstream().initChannel(outbound);
 
-            SocksContext.server(outbound, server);
             SocksContext.mark(inbound, outbound, e, true);
             inbound.pipeline().addLast(FrontendRelayHandler.DEFAULT);
-        }).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
+        }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
@@ -133,7 +132,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
 
-            SocksProxyServer server = SocksContext.server(inbound);
+            SocksProxyServer server = SocksContext.getParentAttr(inbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.getConfig();
             if (server.aesRouter(e.firstDestination) && config.getTransportFlags().has(TransportFlags.FRONTEND_COMPRESS)) {
                 ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();

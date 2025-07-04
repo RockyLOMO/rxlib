@@ -30,7 +30,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             InetSocketAddress srcEp = sc.source;
             UnresolvedEndpoint dstEp = sc.firstDestination;
             ByteBuf outBuf = out.content();
-            SocksProxyServer server = SocksContext.server(outbound);
+            SocksProxyServer server = SocksContext.getParentAttr(outbound, SocksContext.SOCKS_SVR);
             if (sc.upstream.getSocksServer() == null) {
 //                log.debug("socks5[{}] UDP IN {}", server.config.getListenPort(), Bytes.hexDump(outBuf.retain()));
                 outBuf = UdpManager.socks5Encode(outBuf, dstEp);
@@ -66,7 +66,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         }
 
         Channel inbound = ctx.channel();
-        SocksProxyServer server = SocksContext.server(inbound);
+        SocksProxyServer server = SocksContext.getParentAttr(inbound, SocksContext.SOCKS_SVR);
         final InetSocketAddress srcEp = in.sender();
         InetAddress saddr = srcEp.getAddress();
         if (!saddr.isLoopbackAddress() && !Sockets.isPrivateIp(saddr)
@@ -82,14 +82,13 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             Upstream upstream = e.getUpstream();
 
             return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
-                SocksContext.server(ob, server);
                 SocksContext.mark(inbound, ob, e, false);
                 e.onClose = () -> UdpManager.closeChannel(srcEp);
 
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
-            }).bind(0).addListener(Sockets.logBind(0)).syncUninterruptibly().channel();
+            }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0)).syncUninterruptibly().channel();
         });
 
         SocksContext sc = SocksContext.ctx(outbound);
