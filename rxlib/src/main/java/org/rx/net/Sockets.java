@@ -298,7 +298,7 @@ public final class Sockets {
 //            }
 //            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
 //        }
-        log.debug("server pipeline: {}", channel.pipeline());
+//        log.debug("server pipeline: {}", channel.pipeline());
     }
 
     @SneakyThrows
@@ -341,7 +341,7 @@ public final class Sockets {
 //            }
 //            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
 //        }
-        log.debug("client pipeline: {}", channel.pipeline());
+//        log.debug("client pipeline: {}", channel.pipeline());
     }
     //endregion
 
