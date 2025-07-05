@@ -8,6 +8,7 @@ import io.netty.channel.*;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.Tuple;
 import org.rx.core.Constants;
 import org.rx.core.Disposable;
 import org.rx.core.Sys;
@@ -25,7 +26,8 @@ import java.util.concurrent.*;
 import static org.rx.core.Extends.circuitContinue;
 import static org.rx.core.Extends.tryClose;
 import static org.rx.core.Sys.toJsonString;
-import static org.rx.net.socks.RrpConfig.ATTR_CONN_FUTURE;
+import static org.rx.net.socks.RrpConfig.ATTR_CLI_CONN;
+import static org.rx.net.socks.RrpConfig.ATTR_CLI_PROXY;
 
 @Slf4j
 public class RrpClient extends Disposable {
@@ -48,7 +50,8 @@ public class RrpClient extends Disposable {
             this.serverChannel = serverChannel;
             SocksConfig conf = new SocksConfig(0);
 //            conf.setTransportFlags(TransportFlags.SERVER_COMPRESS_READ.flags());
-            conf.setTransportFlags(TransportFlags.SERVER_AES_READ.flags());
+//            conf.setTransportFlags(TransportFlags.SERVER_AES_READ.flags());
+            conf.setTransportFlags(TransportFlags.SERVER_AES_BOTH.flags());
             localSS = new SocksProxyServer(conf, null, ch -> {
                 int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();
                 log.debug("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
@@ -57,14 +60,16 @@ public class RrpClient extends Disposable {
         }
     }
 
-    @RequiredArgsConstructor
+    @ChannelHandler.Sharable
     static class SocksClientHandler extends ChannelInboundHandlerAdapter {
-        final RpClientProxy proxyCtx;
-        final String channelId;
+        static final SocksClientHandler DEFAULT = new SocksClientHandler();
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel localChannel = ctx.channel();
+            Tuple<RpClientProxy, String> attr = SocksContext.getAttr(localChannel, ATTR_CLI_PROXY);
+            RpClientProxy proxyCtx = attr.left;
+            String channelId = attr.right;
             Channel serverChannel = proxyCtx.serverChannel;
             //step5
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
@@ -81,12 +86,19 @@ public class RrpClient extends Disposable {
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+            Channel localChannel = ctx.channel();
+            Tuple<RpClientProxy, String> attr = SocksContext.getAttr(localChannel, ATTR_CLI_PROXY);
+            RpClientProxy proxyCtx = attr.left;
+            String channelId = attr.right;
             tryClose(proxyCtx.localChannels.remove(channelId));
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             Channel localChannel = ctx.channel();
+            Tuple<RpClientProxy, String> attr = SocksContext.getAttr(localChannel, ATTR_CLI_PROXY);
+            RpClientProxy proxyCtx = attr.left;
+//            String channelId = attr.right;
             Channel serverChannel = proxyCtx.serverChannel;
             log.warn("RELAY {} => {}[{}] thrown", localChannel.remoteAddress(), serverChannel.localAddress(), serverChannel.remoteAddress(), cause);
         }
@@ -137,17 +149,18 @@ public class RrpClient extends Disposable {
             Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
                 RrpConfig conf = Sys.deepClone(config);
 //                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
-                conf.setTransportFlags(TransportFlags.CLIENT_AES_WRITE.flags());
+//                conf.setTransportFlags(TransportFlags.CLIENT_AES_WRITE.flags());
+                conf.setTransportFlags(TransportFlags.CLIENT_AES_BOTH.flags());
                 ChannelFuture connF = Sockets.bootstrap(conf, ch -> {
                     Sockets.addClientHandler(ch, conf, proxyCtx.localEndpoint);
-                    ch.pipeline().addLast(new SocksClientHandler(proxyCtx, channelId));
-                }).connect(proxyCtx.localEndpoint);
+                    ch.pipeline().addLast(SocksClientHandler.DEFAULT);
+                }).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
                 Channel ch = connF.channel();
-                ch.attr(ATTR_CONN_FUTURE).set(connF);
-                connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CONN_FUTURE).set(null));
+                ch.attr(ATTR_CLI_CONN).set(connF);
+                connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CLI_CONN).set(null));
                 return ch;
             });
-            ChannelFuture connF = localChannel.attr(ATTR_CONN_FUTURE).get();
+            ChannelFuture connF = localChannel.attr(ATTR_CLI_CONN).get();
             if (connF == null) {
                 localChannel.writeAndFlush(buf);
             } else {
