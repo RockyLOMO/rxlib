@@ -74,15 +74,15 @@ public class RrpServer extends Disposable {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel inbound = ctx.channel();
-            RpClientProxy rpClientProxy = SocksContext.getParentAttr(inbound, ATTR_CLI_PROXY);
+            RpClientProxy rpClientProxy = SocksContext.getAttr(inbound, ATTR_CLI_PROXY);
             rpClientProxy.remoteClients.put(inbound.id().asShortText(), inbound);
         }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel inbound = ctx.channel();
-            RpClient rpClient = SocksContext.getParentAttr(inbound, ATTR_CLI);
-            RpClientProxy rpClientProxy = SocksContext.getParentAttr(inbound, ATTR_CLI_PROXY);
+            RpClient rpClient = SocksContext.getAttr(inbound, ATTR_CLI);
+            RpClientProxy rpClientProxy = SocksContext.getAttr(inbound, ATTR_CLI_PROXY);
             Channel outbound = rpClient.clientChannel;
             //step3
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
@@ -100,14 +100,14 @@ public class RrpServer extends Disposable {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             Channel inbound = ctx.channel();
-            RpClientProxy rpClientProxy = SocksContext.getParentAttr(inbound, ATTR_CLI_PROXY);
+            RpClientProxy rpClientProxy = SocksContext.getAttr(inbound, ATTR_CLI_PROXY);
             rpClientProxy.remoteClients.remove(inbound.id().asShortText());
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel inbound = ctx.channel();
-            RpClient rpClient = SocksContext.getParentAttr(inbound, ATTR_CLI);
+            RpClient rpClient = SocksContext.getAttr(inbound, ATTR_CLI);
             Channel outbound = rpClient.clientChannel;
             log.warn("RELAY {} => {}[{}] thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
             Sockets.closeOnFlushed(inbound);
@@ -121,14 +121,14 @@ public class RrpServer extends Disposable {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel clientChannel = ctx.channel();
-            RrpServer server = SocksContext.getParentAttr(clientChannel, ATTR_SVR);
+            RrpServer server = SocksContext.getAttr(clientChannel, ATTR_SVR);
             server.clients.put(clientChannel, new RpClient(clientChannel));
         }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel clientChannel = ctx.channel();
-            RrpServer server = SocksContext.getParentAttr(clientChannel, ATTR_SVR);
+            RrpServer server = SocksContext.getAttr(clientChannel, ATTR_SVR);
             ByteBuf buf = (ByteBuf) msg;
             byte action = buf.readByte();
             if (action == RrpConfig.ACTION_REGISTER) {
@@ -159,14 +159,14 @@ public class RrpServer extends Disposable {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             Channel clientChannel = ctx.channel();
-            RrpServer server = SocksContext.getParentAttr(clientChannel, ATTR_SVR);
+            RrpServer server = SocksContext.getAttr(clientChannel, ATTR_SVR);
             tryClose(server.clients.remove(clientChannel));
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel clientChannel = ctx.channel();
-            RrpServer server = SocksContext.getParentAttr(clientChannel, ATTR_SVR);
+            RrpServer server = SocksContext.getAttr(clientChannel, ATTR_SVR);
             log.warn("RELAY {} => ALL thrown", clientChannel.remoteAddress(), cause);
             tryClose(server.clients.remove(clientChannel));
         }

@@ -27,7 +27,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         ChannelPipeline pipeline = inbound.pipeline();
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
-        SocksProxyServer server = SocksContext.getParentAttr(inbound.channel(), SocksContext.SOCKS_SVR);
+        SocksProxyServer server = SocksContext.getAttr(inbound.channel(), SocksContext.SOCKS_SVR);
 //        log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
@@ -71,7 +71,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e) {
-        SocksProxyServer server = SocksContext.getParentAttr(inbound, SocksContext.SOCKS_SVR);
+        SocksProxyServer server = SocksContext.getAttr(inbound, SocksContext.SOCKS_SVR);
 
         Sockets.bootstrap(inbound.eventLoop(), server.getConfig(), outbound -> {
             e.getUpstream().initChannel(outbound);
@@ -132,7 +132,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
 
-            SocksProxyServer server = SocksContext.getParentAttr(inbound, SocksContext.SOCKS_SVR);
+            SocksProxyServer server = SocksContext.getAttr(inbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.getConfig();
             if (server.aesRouter(e.firstDestination) && config.getTransportFlags().has(TransportFlags.SERVER_COMPRESS_BOTH)) {
                 ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();

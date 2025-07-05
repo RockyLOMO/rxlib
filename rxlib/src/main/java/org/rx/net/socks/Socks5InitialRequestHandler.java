@@ -28,7 +28,7 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
         pipeline.remove(this);
 //        log.debug("socks5[{}] init connect: {}", server.getConfig().getListenPort(), msg);
 
-        SocksProxyServer server = SocksContext.getParentAttr(ctx.channel(), SocksContext.SOCKS_SVR);
+        SocksProxyServer server = SocksContext.getAttr(ctx.channel(), SocksContext.SOCKS_SVR);
         Set<InetAddress> whiteList = server.getConfig().getWhiteList();
         InetSocketAddress remoteEp = (InetSocketAddress) ctx.channel().remoteAddress();
         InetAddress raddr = remoteEp.getAddress();
