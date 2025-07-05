@@ -8,11 +8,9 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Constants;
 import org.rx.core.Disposable;
 import org.rx.core.Linq;
 import org.rx.exception.InvalidException;
@@ -182,8 +180,8 @@ public class RrpServer extends Disposable {
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
         bootstrap = Sockets.serverBootstrap(channel -> channel.pipeline()
-                        .addLast(new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4))
-                        .addLast(Sockets.INT_LENGTH_PREPENDER)
+                        .addLast(Sockets.intLengthFieldDecoder())
+                        .addLast(Sockets.INT_LENGTH_FIELD_ENCODER)
                         .addLast(ServerHandler.DEFAULT))
                 .attr(ATTR_SVR, this);
         serverChannel = bootstrap.bind(config.getBindPort()).addListener(Sockets.logBind(config.getBindPort())).channel();

@@ -18,6 +18,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.codec.compression.ZlibCodecFactory;
 import io.netty.handler.codec.compression.ZlibWrapper;
@@ -66,12 +67,16 @@ public final class Sockets {
 
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
-    public static final LengthFieldPrepender INT_LENGTH_PREPENDER = new LengthFieldPrepender(4);
+    public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
     static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
+
+    public static LengthFieldBasedFrameDecoder intLengthFieldDecoder() {
+        return new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4);
+    }
 
     //region netty
     public static void injectNameService(List<InetSocketAddress> nameServerList) {
@@ -256,24 +261,44 @@ public final class Sockets {
             return;
         }
 
+        //入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
+        //出站事件（如数据写入、连接关闭等）由 ChannelOutboundHandler 处理，传播方向是从 pipeline 的 tail 到 head。
         ChannelPipeline pipeline = channel.pipeline();
         if (flags.has(TransportFlags.FRONTEND_SSL)) {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
             SslContext sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
             pipeline.addLast(sslCtx.newHandler(channel.alloc()));
         }
-        if (flags.has(TransportFlags.FRONTEND_AES)) {
-            if (config.getAesKey() == null) {
-                throw new InvalidException("AES key is empty");
-            }
-            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
-        }
+
+        //支持LengthField?
         if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
             pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
         }
         if (flags.has(TransportFlags.SERVER_COMPRESS_WRITE)) {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
         }
+
+        boolean hasAesR = flags.has(TransportFlags.SERVER_AES_READ),
+                hasAesW = flags.has(TransportFlags.SERVER_AES_WRITE);
+        if (hasAesR || hasAesW) {
+            if (config.getAesKey() == null) {
+                throw new InvalidException("AES key is empty");
+            }
+            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
+        }
+        if (hasAesR) {
+            pipeline.addLast(new AESDecoder().channelHandlers());
+        }
+        if (hasAesW) {
+            pipeline.addLast(AESEncoder.DEFAULT.channelHandlers());
+        }
+//        if (flags.has(TransportFlags.SERVER_AES_BOTH)) {
+//            if (config.getAesKey() == null) {
+//                throw new InvalidException("AES key is empty");
+//            }
+//            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
+//        }
+//        log.debug("server pipeline: {}", channel.pipeline());
     }
 
     @SneakyThrows
@@ -288,19 +313,35 @@ public final class Sockets {
             SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
         }
-        if (flags.has(TransportFlags.BACKEND_AES)) {
-            if (config.getAesKey() == null) {
-                throw new InvalidException("AES key is empty");
-            }
-            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
-        }
+
         if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
             pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
         }
         if (flags.has(TransportFlags.CLIENT_COMPRESS_WRITE)) {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
-            System.out.println("11111111111111111111111");
         }
+
+        boolean hasAesR = flags.has(TransportFlags.CLIENT_AES_READ),
+                hasAesW = flags.has(TransportFlags.CLIENT_AES_WRITE);
+        if (hasAesR || hasAesW) {
+            if (config.getAesKey() == null) {
+                throw new InvalidException("AES key is empty");
+            }
+            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
+        }
+        if (hasAesR) {
+            pipeline.addLast(new AESDecoder().channelHandlers());
+        }
+        if (hasAesW) {
+            pipeline.addLast(AESEncoder.DEFAULT.channelHandlers());
+        }
+//        if (flags.has(TransportFlags.CLIENT_AES_BOTH)) {
+//            if (config.getAesKey() == null) {
+//                throw new InvalidException("AES key is empty");
+//            }
+//            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
+//        }
+//        log.debug("client pipeline: {}", channel.pipeline());
     }
     //endregion
 
