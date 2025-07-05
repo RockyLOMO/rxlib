@@ -30,7 +30,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             InetSocketAddress srcEp = sc.source;
             UnresolvedEndpoint dstEp = sc.firstDestination;
             ByteBuf outBuf = out.content();
-            SocksProxyServer server = SocksContext.getParentAttr(outbound, SocksContext.SOCKS_SVR);
+            SocksProxyServer server = SocksContext.getAttr(outbound, SocksContext.SOCKS_SVR);
             if (sc.upstream.getSocksServer() == null) {
 //                log.debug("socks5[{}] UDP IN {}", server.config.getListenPort(), Bytes.hexDump(outBuf.retain()));
                 outBuf = UdpManager.socks5Encode(outBuf, dstEp);
@@ -66,7 +66,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         }
 
         Channel inbound = ctx.channel();
-        SocksProxyServer server = SocksContext.getParentAttr(inbound, SocksContext.SOCKS_SVR);
+        SocksProxyServer server = SocksContext.getAttr(inbound, SocksContext.SOCKS_SVR);
         final InetSocketAddress srcEp = in.sender();
         InetAddress saddr = srcEp.getAddress();
         if (!saddr.isLoopbackAddress() && !Sockets.isPrivateIp(saddr)
