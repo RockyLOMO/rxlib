@@ -16,6 +16,7 @@ import org.rx.core.Linq;
 import org.rx.exception.InvalidException;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
+import org.rx.net.TransportFlags;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -179,9 +180,10 @@ public class RrpServer extends Disposable {
 
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
-        bootstrap = Sockets.serverBootstrap(channel -> channel.pipeline()
-                        .addLast(Sockets.intLengthFieldDecoder())
-                        .addLast(Sockets.INT_LENGTH_FIELD_ENCODER)
+//        config.setTransportFlags(TransportFlags.SERVER_AES_BOTH.flags());
+        config.setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
+        bootstrap = Sockets.serverBootstrap(channel -> Sockets.addServerHandler(channel, config).pipeline()
+//                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
                         .addLast(ServerHandler.DEFAULT))
                 .attr(ATTR_SVR, this);
         serverChannel = bootstrap.bind(config.getBindPort()).addListener(Sockets.logBind(config.getBindPort())).channel();

@@ -49,7 +49,6 @@ public class RrpClient extends Disposable {
             this.serverChannel = serverChannel;
             SocksConfig conf = new SocksConfig(0);
 //            conf.setTransportFlags(TransportFlags.SERVER_COMPRESS_READ.flags());
-//            conf.setTransportFlags(TransportFlags.SERVER_AES_READ.flags());
             conf.setTransportFlags(TransportFlags.SERVER_AES_BOTH.flags());
             localSS = new SocksProxyServer(conf, (u, w) -> {
                 if (!eq(p.getAuth(), u + ":" + w)) {
@@ -156,12 +155,9 @@ public class RrpClient extends Disposable {
             Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
                 RrpConfig conf = Sys.deepClone(config);
 //                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
-//                conf.setTransportFlags(TransportFlags.CLIENT_AES_WRITE.flags());
                 conf.setTransportFlags(TransportFlags.CLIENT_AES_BOTH.flags());
-                ChannelFuture connF = Sockets.bootstrap(conf, ch -> {
-                    Sockets.addClientHandler(ch, conf, proxyCtx.localEndpoint);
-                    ch.pipeline().addLast(SocksClientHandler.DEFAULT);
-                }).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
+                ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf, proxyCtx.localEndpoint).pipeline()
+                        .addLast(SocksClientHandler.DEFAULT)).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
                 Channel ch = connF.channel();
                 ch.attr(ATTR_CLI_CONN).set(connF);
                 connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CLI_CONN).set(null));
@@ -232,10 +228,12 @@ public class RrpClient extends Disposable {
             throw new InvalidException("{} has connected", this);
         }
 
-        bootstrap = Sockets.bootstrap(config, channel -> channel.pipeline()
-                .addLast(Sockets.intLengthFieldDecoder())
-                .addLast(Sockets.INT_LENGTH_FIELD_ENCODER)
-                .addLast(new ClientHandler()));
+//        config.setTransportFlags(TransportFlags.CLIENT_AES_BOTH.flags());
+        config.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
+        bootstrap = Sockets.bootstrap(config, channel ->
+                Sockets.addClientHandler(channel, config, Sockets.parseEndpoint(config.getServerEndpoint())).pipeline()
+//                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
+                        .addLast(new ClientHandler()));
         doConnect(false);
         if (connectingFutureWrapper == null) {
             connectingFutureWrapper = new Future<Void>() {

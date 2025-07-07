@@ -255,10 +255,10 @@ public final class Sockets {
     }
 
     @SneakyThrows
-    public static void addServerHandler(Channel channel, SocketConfig config) {
+    public static Channel addServerHandler(Channel channel, SocketConfig config) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
-            return;
+            return channel;
         }
 
         //入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
@@ -299,13 +299,14 @@ public final class Sockets {
 //            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
 //        }
 //        log.debug("server pipeline: {}", channel.pipeline());
+        return channel;
     }
 
     @SneakyThrows
-    public static void addClientHandler(Channel channel, SocketConfig config, InetSocketAddress remoteEndpoint) {
+    public static Channel addClientHandler(Channel channel, SocketConfig config, InetSocketAddress remoteEndpoint) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
-            return;
+            return channel;
         }
 
         ChannelPipeline pipeline = channel.pipeline();
@@ -342,6 +343,7 @@ public final class Sockets {
 //            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
 //        }
 //        log.debug("client pipeline: {}", channel.pipeline());
+        return channel;
     }
     //endregion
 
