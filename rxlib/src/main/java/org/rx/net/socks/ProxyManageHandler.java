@@ -21,15 +21,13 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         return (ProxyManageHandler) ctx.pipeline().get(ProxyManageHandler.class.getSimpleName());
     }
 
-    private final Authenticator authenticator;
     @Getter
     private SocksUser user = SocksUser.ANONYMOUS;
     private SocksUser.LoginInfo info;
     private long activeTime;
 
-    public ProxyManageHandler(Authenticator authenticator, long checkInterval) {
+    public ProxyManageHandler(long checkInterval) {
         super(checkInterval);
-        this.authenticator = authenticator;
     }
 
     public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
@@ -68,7 +66,6 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             info.totalReadBytes.addAndGet(writeBytes);
             info.totalWriteBytes.addAndGet(readBytes);
         }
-//        tryAs(authenticator, DbAuthenticator.class, p -> p.save(user));
 
         InetSocketAddress remoteAddress = (InetSocketAddress) ctx.channel().remoteAddress();
         log.info("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",

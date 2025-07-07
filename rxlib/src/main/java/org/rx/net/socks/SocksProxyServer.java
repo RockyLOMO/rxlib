@@ -67,7 +67,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             ChannelPipeline pipeline = channel.pipeline();
             if (isAuthEnabled()) {
                 //Traffic statistics
-                pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(authenticator, config.getTrafficShapingInterval()));
+                pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(config.getTrafficShapingInterval()));
             }
             pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
 //            SocksPortUnificationServerHandler

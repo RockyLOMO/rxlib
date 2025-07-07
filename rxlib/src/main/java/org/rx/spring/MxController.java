@@ -307,7 +307,7 @@ public class MxController {
         Tasks.setTimeout(() -> {
             String omega = event.<RxConfig>source().getOmega();
             if (omega != null) {
-                SocksContext.omega(omega, null);
+                SocksContext.omega(omega);
             }
         }, 60 * 1000);
     }

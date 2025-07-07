@@ -673,14 +673,16 @@ public class TestSocks extends AbstractTester {
     @Test
     public void rrp() {
         RrpConfig c = new RrpConfig();
+        c.setToken("youfanX");
         c.setBindPort(9000);
         RrpServer server = new RrpServer(c);
 
-        c.setServerEndpoint("127.0.0.1:9000");
+        c.setServerEndpoint("cloud.f-li.cn:4001");
         RrpConfig.Proxy p = new RrpConfig.Proxy();
         p.setName("ss");
 //        p.setType(1);
-        p.setRemotePort(2090);
+        p.setRemotePort(6013);
+        p.setAuth("lezhi:lezhi2020");
         c.setProxies(Collections.singletonList(p));
         RrpClient client = new RrpClient(c);
         client.connectAsync();

@@ -33,6 +33,7 @@ public class RrpConfig extends SocketConfig {
 //        String localEndpoint;
 //        // 1 = forward 2 = socks5
 //        int type;
+        String auth;
     }
 
     String token;
