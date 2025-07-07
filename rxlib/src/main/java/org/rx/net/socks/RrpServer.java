@@ -180,8 +180,8 @@ public class RrpServer extends Disposable {
 
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
-//        config.setTransportFlags(TransportFlags.SERVER_AES_BOTH.flags());
-        config.setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
+        config.setTransportFlags(TransportFlags.SERVER_AES_BOTH.flags());
+//        config.setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
         bootstrap = Sockets.serverBootstrap(channel -> Sockets.addServerHandler(channel, config).pipeline()
 //                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
                         .addLast(ServerHandler.DEFAULT))

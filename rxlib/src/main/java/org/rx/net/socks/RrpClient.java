@@ -228,8 +228,8 @@ public class RrpClient extends Disposable {
             throw new InvalidException("{} has connected", this);
         }
 
-//        config.setTransportFlags(TransportFlags.CLIENT_AES_BOTH.flags());
-        config.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
+        config.setTransportFlags(TransportFlags.CLIENT_AES_BOTH.flags());
+//        config.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
         bootstrap = Sockets.bootstrap(config, channel ->
                 Sockets.addClientHandler(channel, config, Sockets.parseEndpoint(config.getServerEndpoint())).pipeline()
 //                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
