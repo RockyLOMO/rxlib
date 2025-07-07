@@ -50,13 +50,15 @@ public class RrpClient extends Disposable {
             SocksConfig conf = new SocksConfig(0);
 //            conf.setTransportFlags(TransportFlags.SERVER_COMPRESS_READ.flags());
 //            conf.setTransportFlags(TransportFlags.SERVER_AES_READ.flags());
-//            conf.setTransportFlags(TransportFlags.SERVER_AES_BOTH.flags());
+            conf.setTransportFlags(TransportFlags.SERVER_AES_BOTH.flags());
             localSS = new SocksProxyServer(conf, (u, w) -> {
                 if (!eq(p.getAuth(), u + ":" + w)) {
                     log.debug("RrpClient check {}!={}:{}", p.getAuth(), u, w);
                     return null;
                 }
-                return new SocksUser(u);
+                SocksUser usr = new SocksUser(u);
+                usr.setMaxIpCount(-1);
+                return usr;
             }, ch -> {
                 int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();
                 log.debug("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
@@ -155,7 +157,7 @@ public class RrpClient extends Disposable {
                 RrpConfig conf = Sys.deepClone(config);
 //                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
 //                conf.setTransportFlags(TransportFlags.CLIENT_AES_WRITE.flags());
-//                conf.setTransportFlags(TransportFlags.CLIENT_AES_BOTH.flags());
+                conf.setTransportFlags(TransportFlags.CLIENT_AES_BOTH.flags());
                 ChannelFuture connF = Sockets.bootstrap(conf, ch -> {
                     Sockets.addClientHandler(ch, conf, proxyCtx.localEndpoint);
                     ch.pipeline().addLast(SocksClientHandler.DEFAULT);

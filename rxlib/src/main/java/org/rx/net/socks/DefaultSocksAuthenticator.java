@@ -40,24 +40,24 @@ public class DefaultSocksAuthenticator implements Authenticator {
         return user;
     }
 
-    public void save(@NonNull SocksUser user) {
-        store.put(user.getUsername(), user);
-    }
+//    public void save(@NonNull SocksUser user) {
+//        store.put(user.getUsername(), user);
+//    }
 
     public void resetIp() {
         for (SocksUser user : store.values()) {
-            boolean changed = false;
+//            boolean changed = false;
             Map<InetAddress, SocksUser.LoginInfo> loginIps = user.getLoginIps();
             for (Map.Entry<InetAddress, SocksUser.LoginInfo> lEntry : loginIps.entrySet()) {
                 DateTime latestTime = lEntry.getValue().latestTime;
                 if (latestTime != null && latestTime.before(DateTime.now().addDays(-2))) {
                     loginIps.remove(lEntry.getKey());
-                    changed = true;
+//                    changed = true;
                 }
             }
-            if (changed) {
-                save(user);
-            }
+//            if (changed) {
+//                save(user);
+//            }
         }
     }
 
