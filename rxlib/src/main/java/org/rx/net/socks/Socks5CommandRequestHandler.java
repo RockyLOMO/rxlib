@@ -104,7 +104,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             if (server.aesRouter(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
                     if (config.getTransportFlags().has(TransportFlags.CLIENT_COMPRESS_BOTH)) {
-                        ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();
+                        ChannelHandler[] handlers = new AESCodec("123".getBytes()).channelHandlers();
                         for (int i = handlers.length - 1; i > -1; i--) {
                             ChannelHandler handler = handlers[i];
                             outbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
@@ -135,7 +135,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             SocksProxyServer server = SocksContext.getAttr(inbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.getConfig();
             if (server.aesRouter(e.firstDestination) && config.getTransportFlags().has(TransportFlags.SERVER_COMPRESS_BOTH)) {
-                ChannelHandler[] handlers = new AESCodec(config.getAesKey()).channelHandlers();
+                ChannelHandler[] handlers = new AESCodec("123".getBytes()).channelHandlers();
                 for (int i = handlers.length - 1; i > -1; i--) {
                     ChannelHandler handler = handlers[i];
                     inbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);

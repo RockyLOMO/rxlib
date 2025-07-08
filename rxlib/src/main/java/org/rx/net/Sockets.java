@@ -36,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
@@ -281,16 +282,16 @@ public final class Sockets {
         boolean hasAesR = flags.has(TransportFlags.SERVER_AES_READ),
                 hasAesW = flags.has(TransportFlags.SERVER_AES_WRITE);
         if (hasAesR || hasAesW) {
-            if (config.getAesKey() == null) {
-                throw new InvalidException("AES key is empty");
+            if (config.getCipherKey() == null) {
+                throw new InvalidException("Cipher key is empty");
             }
-            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
+            channel.attr(SocketConfig.ATTR_CIPHER_KEY).set(Tuple.of(config.getCipher(), config.getCipherKey()));
         }
         if (hasAesR) {
-            pipeline.addLast(new AESDecoder().channelHandlers());
+            pipeline.addLast(new CipherDecoder().channelHandlers());
         }
         if (hasAesW) {
-            pipeline.addLast(AESEncoder.DEFAULT.channelHandlers());
+            pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
         }
 //        if (flags.has(TransportFlags.SERVER_AES_BOTH)) {
 //            if (config.getAesKey() == null) {
@@ -325,16 +326,16 @@ public final class Sockets {
         boolean hasAesR = flags.has(TransportFlags.CLIENT_AES_READ),
                 hasAesW = flags.has(TransportFlags.CLIENT_AES_WRITE);
         if (hasAesR || hasAesW) {
-            if (config.getAesKey() == null) {
-                throw new InvalidException("AES key is empty");
+            if (config.getCipherKey() == null) {
+                throw new InvalidException("Cipher key is empty");
             }
-            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
+            channel.attr(SocketConfig.ATTR_CIPHER_KEY).set(Tuple.of(config.getCipher(), config.getCipherKey()));
         }
         if (hasAesR) {
-            pipeline.addLast(new AESDecoder().channelHandlers());
+            pipeline.addLast(new CipherDecoder().channelHandlers());
         }
         if (hasAesW) {
-            pipeline.addLast(AESEncoder.DEFAULT.channelHandlers());
+            pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
         }
 //        if (flags.has(TransportFlags.CLIENT_AES_BOTH)) {
 //            if (config.getAesKey() == null) {

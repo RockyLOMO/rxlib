@@ -28,6 +28,16 @@ public class XChaCha20Poly1305Util {
         byte[] ciphertext = new byte[plaintext.length];
         cipher.processBytes(plaintext, 0, plaintext.length, ciphertext, 0);
 
+        byte[] tag = doMac(parametersWithIV, ciphertext);
+
+        byte[] output = new byte[NONCE_LEN + ciphertext.length + TAG_LEN];
+        System.arraycopy(nonce, 0, output, 0, NONCE_LEN);
+        System.arraycopy(ciphertext, 0, output, NONCE_LEN, ciphertext.length);
+        System.arraycopy(tag, 0, output, NONCE_LEN + ciphertext.length, TAG_LEN);
+        return output;
+    }
+
+    private static byte[] doMac(ParametersWithIV parametersWithIV, byte[] ciphertext) {
         XChaCha20Engine macCipher = new XChaCha20Engine();
         macCipher.init(true, parametersWithIV);
         byte[] polyKey = new byte[32];
@@ -38,12 +48,7 @@ public class XChaCha20Poly1305Util {
         mac.update(ciphertext, 0, ciphertext.length);
         byte[] tag = new byte[TAG_LEN];
         mac.doFinal(tag, 0);
-
-        byte[] output = new byte[NONCE_LEN + ciphertext.length + TAG_LEN];
-        System.arraycopy(nonce, 0, output, 0, NONCE_LEN);
-        System.arraycopy(ciphertext, 0, output, NONCE_LEN, ciphertext.length);
-        System.arraycopy(tag, 0, output, NONCE_LEN + ciphertext.length, TAG_LEN);
-        return output;
+        return tag;
     }
 
     public static byte[] decrypt(byte[] key, byte[] input) {
@@ -59,16 +64,7 @@ public class XChaCha20Poly1305Util {
         byte[] tag = Arrays.copyOfRange(input, input.length - TAG_LEN, input.length);
         ParametersWithIV parametersWithIV = new ParametersWithIV(new KeyParameter(key), nonce);
 
-        XChaCha20Engine macCipher = new XChaCha20Engine();
-        macCipher.init(true, parametersWithIV);
-        byte[] polyKey = new byte[32];
-        macCipher.processBytes(new byte[32], 0, 32, polyKey, 0);
-
-        Poly1305 mac = new Poly1305();
-        mac.init(new KeyParameter(polyKey));
-        mac.update(ciphertext, 0, ciphertext.length);
-        byte[] computedTag = new byte[TAG_LEN];
-        mac.doFinal(computedTag, 0);
+        byte[] computedTag = doMac(parametersWithIV, ciphertext);
         if (!Arrays.equals(tag, computedTag)) {
             throw new SecurityException("Tag mismatch");
         }
@@ -89,7 +85,7 @@ public class XChaCha20Poly1305Util {
     public static void main(String[] args) throws Exception {
         // Generate a key
         byte[] key = generateKey();
-        System.out.println();
+        System.out.println("Key: " + CodecUtil.convertToBase64(key));
 
         // Encrypt
         String plaintext = "Hello, this is a test message for XChaCha20-Poly1305!";
