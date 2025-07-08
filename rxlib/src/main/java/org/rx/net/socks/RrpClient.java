@@ -6,7 +6,6 @@ import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.Tuple;
 import org.rx.core.Constants;
@@ -49,7 +48,7 @@ public class RrpClient extends Disposable {
             this.serverChannel = serverChannel;
             SocksConfig conf = new SocksConfig(0);
 //            conf.setTransportFlags(TransportFlags.SERVER_COMPRESS_READ.flags());
-            conf.setTransportFlags(TransportFlags.SERVER_AES_BOTH.flags());
+            conf.setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags());
             localSS = new SocksProxyServer(conf, (u, w) -> {
                 if (!eq(p.getAuth(), u + ":" + w)) {
                     log.debug("RrpClient check {}!={}:{}", p.getAuth(), u, w);
@@ -155,7 +154,7 @@ public class RrpClient extends Disposable {
             Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
                 RrpConfig conf = Sys.deepClone(config);
 //                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
-                conf.setTransportFlags(TransportFlags.CLIENT_AES_BOTH.flags());
+                conf.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags());
                 ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf, proxyCtx.localEndpoint).pipeline()
                         .addLast(SocksClientHandler.DEFAULT)).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
                 Channel ch = connF.channel();
@@ -228,7 +227,7 @@ public class RrpClient extends Disposable {
             throw new InvalidException("{} has connected", this);
         }
 
-        config.setTransportFlags(TransportFlags.CLIENT_AES_BOTH.flags());
+        config.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags());
 //        config.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
         bootstrap = Sockets.bootstrap(config, channel ->
                 Sockets.addClientHandler(channel, config, Sockets.parseEndpoint(config.getServerEndpoint())).pipeline()

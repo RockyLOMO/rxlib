@@ -4,11 +4,10 @@ import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.Tuple;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
-import org.rx.net.AESCodec;
-import org.rx.net.Sockets;
-import org.rx.net.TransportFlags;
+import org.rx.net.*;
 import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -99,23 +98,29 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             Channel outbound = f.channel();
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
             StringBuilder aesMsg = new StringBuilder();
-            Socks5ProxyHandler proxyHandler;
-            SocksConfig config = server.getConfig();
-            if (server.aesRouter(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
-                proxyHandler.setHandshakeCallback(() -> {
-                    if (config.getTransportFlags().has(TransportFlags.CLIENT_COMPRESS_BOTH)) {
-                        ChannelHandler[] handlers = new AESCodec("123".getBytes()).channelHandlers();
-                        for (int i = handlers.length - 1; i > -1; i--) {
-                            ChannelHandler handler = handlers[i];
-                            outbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
-                        }
-//                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
-                        aesMsg.append("[BACKEND_AES]");
-                    }
-                    relay(inbound, outbound, dstAddrType, e, aesMsg);
-                });
-                return;
-            }
+//            Socks5ProxyHandler proxyHandler;
+//            SocksConfig config = server.getConfig();
+//            if (server.aesRouter(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
+//                proxyHandler.setHandshakeCallback(() -> {
+//                    if (config.getTransportFlags().has(TransportFlags.CLIENT_COMPRESS_BOTH)) {
+//                        outbound.attr(SocketConfig.ATTR_CIPHER_KEY).set(Tuple.of(config.getCipher(), config.getCipherKey()));
+//                        ChannelHandler[] handlers = new CipherDecoder().channelHandlers();
+//                        for (int i = handlers.length - 1; i > -1; i--) {
+//                            ChannelHandler handler = handlers[i];
+//                            outbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+//                        }
+//                        handlers = CipherEncoder.DEFAULT.channelHandlers();
+//                        for (int i = handlers.length - 1; i > -1; i--) {
+//                            ChannelHandler handler = handlers[i];
+//                            outbound.pipeline().addAfter(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
+//                        }
+////                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
+//                        aesMsg.append("[BACKEND_AES]");
+//                    }
+//                    relay(inbound, outbound, dstAddrType, e, aesMsg);
+//                });
+//                return;
+//            }
 
             relay(inbound, outbound, dstAddrType, e, aesMsg);
         });
@@ -134,15 +139,21 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             SocksProxyServer server = SocksContext.getAttr(inbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.getConfig();
-            if (server.aesRouter(e.firstDestination) && config.getTransportFlags().has(TransportFlags.SERVER_COMPRESS_BOTH)) {
-                ChannelHandler[] handlers = new AESCodec("123".getBytes()).channelHandlers();
-                for (int i = handlers.length - 1; i > -1; i--) {
-                    ChannelHandler handler = handlers[i];
-                    inbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
-                }
-//                extMsg.append("[FRONTEND_AES] %s", Strings.join(inbound.channel().pipeline().names()));
-                extMsg.append("[FRONTEND_AES]");
-            }
+//            if (server.aesRouter(e.firstDestination) && config.getTransportFlags().has(TransportFlags.SERVER_COMPRESS_BOTH)) {
+//                outbound.attr(SocketConfig.ATTR_CIPHER_KEY).set(Tuple.of(config.getCipher(), config.getCipherKey()));
+//                ChannelHandler[] handlers = new CipherDecoder().channelHandlers();
+//                for (int i = handlers.length - 1; i > -1; i--) {
+//                    ChannelHandler handler = handlers[i];
+//                    outbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+//                }
+//                handlers = CipherEncoder.DEFAULT.channelHandlers();
+//                for (int i = handlers.length - 1; i > -1; i--) {
+//                    ChannelHandler handler = handlers[i];
+//                    outbound.pipeline().addAfter(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
+//                }
+////                extMsg.append("[FRONTEND_AES] %s", Strings.join(inbound.channel().pipeline().names()));
+//                extMsg.append("[FRONTEND_AES]");
+//            }
             log.info("socks5[{}] {} => {} connected, dstEp={}[{}] {}", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination, extMsg.toString());
         });
     }
