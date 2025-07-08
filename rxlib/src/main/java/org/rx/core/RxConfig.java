@@ -66,6 +66,7 @@ public final class RxConfig {
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_USER_AGENT = "app.net.userAgent";
         String NET_BYPASS_HOSTS = "app.net.bypassHosts";
+        String NET_CIPHERS_KEY = "app.net.ciphers";
         String NTP_ENABLE_FLAGS = "app.net.ntp.enableFlags";
         String NTP_SYNC_PERIOD = "app.net.ntp.syncPeriod";
         String NTP_TIMEOUT_MILLIS = "app.net.ntp.timeoutMillis";
@@ -79,7 +80,6 @@ public final class RxConfig {
         String DATE_FORMAT = "app.dateFormat";
         String LOG_STRATEGY = "app.logStrategy";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
-        String AES_KEY = "app.aesKey";
         String OMEGA = "app.omega";
         String MXPWD = "app.mxpwd";
 
@@ -158,8 +158,7 @@ public final class RxConfig {
         int poolKeepAliveSeconds;
         String userAgent;
         final List<String> bypassHosts = newConcurrentList(true);
-        short cipher;
-        final Map<Short, String> cipherKeys = new ConcurrentHashMap<>();
+        final List<String> ciphers = newConcurrentList(true);
         NtpConfig ntp = new NtpConfig();
         DnsConfig dns = new DnsConfig();
     }
@@ -199,7 +198,6 @@ public final class RxConfig {
     }
 
     String id;
-    String aesKey;
     String dateFormat;
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
@@ -324,6 +322,7 @@ public final class RxConfig {
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, net.poolKeepAliveSeconds);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, net.userAgent);
         reset(net.bypassHosts, ConfigNames.NET_BYPASS_HOSTS);
+        reset(net.ciphers, ConfigNames.NET_CIPHERS_KEY);
 
         net.ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, net.ntp.enableFlags);
         net.ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, net.ntp.syncPeriod);
@@ -335,7 +334,6 @@ public final class RxConfig {
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID, id);
         omega = SystemPropertyUtil.get(ConfigNames.OMEGA, omega);
-        aesKey = SystemPropertyUtil.get(ConfigNames.AES_KEY, aesKey);
         mxpwd = SystemPropertyUtil.get(ConfigNames.MXPWD, mxpwd);
         mxSamplingPeriod = SystemPropertyUtil.getLong(ConfigNames.MX_SAMPLING_PERIOD, mxSamplingPeriod);
         dateFormat = SystemPropertyUtil.get(ConfigNames.DATE_FORMAT, dateFormat);

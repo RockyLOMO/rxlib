@@ -46,10 +46,9 @@ app:
       - "[::1]"
       - localhost
       - 192.168.*
-    cipher: 2
-    cipherKeys:
-      1: ℞FREEDOM
-      2: juTKxjSE+VQHBvVH8OO23gh1uQY7GQCq1XU7bGSijfA=
+    ciphers:
+      - 1,℞FREEDOM
+      - 2,juTKxjSE+VQHBvVH8OO23gh1uQY7GQCq1XU7bGSijfA=
     ntp:
       enableFlags: 0
       syncPeriod: 128000
