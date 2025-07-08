@@ -158,6 +158,8 @@ public final class RxConfig {
         int poolKeepAliveSeconds;
         String userAgent;
         final List<String> bypassHosts = newConcurrentList(true);
+        short cipher;
+        final Map<Short, String> cipherKeys = new ConcurrentHashMap<>();
         NtpConfig ntp = new NtpConfig();
         DnsConfig dns = new DnsConfig();
     }

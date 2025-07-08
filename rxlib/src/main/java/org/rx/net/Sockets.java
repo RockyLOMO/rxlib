@@ -36,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
@@ -255,10 +256,10 @@ public final class Sockets {
     }
 
     @SneakyThrows
-    public static void addServerHandler(Channel channel, SocketConfig config) {
+    public static Channel addServerHandler(Channel channel, SocketConfig config) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
-            return;
+            return channel;
         }
 
         //入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
@@ -270,6 +271,7 @@ public final class Sockets {
             pipeline.addLast(sslCtx.newHandler(channel.alloc()));
         }
 
+        //先压缩再加密
         //支持LengthField?
         if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
             pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
@@ -278,34 +280,29 @@ public final class Sockets {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
         }
 
-        boolean hasAesR = flags.has(TransportFlags.SERVER_AES_READ),
-                hasAesW = flags.has(TransportFlags.SERVER_AES_WRITE);
-        if (hasAesR || hasAesW) {
-            if (config.getAesKey() == null) {
-                throw new InvalidException("AES key is empty");
+        boolean hasCipherR = flags.has(TransportFlags.SERVER_CIPHER_READ),
+                hasCipherW = flags.has(TransportFlags.SERVER_CIPHER_WRITE);
+        if (hasCipherR || hasCipherW) {
+            if (config.getCipherKey() == null) {
+                throw new InvalidException("Cipher key is empty");
             }
-            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
+            channel.attr(SocketConfig.ATTR_CIPHER_KEY).set(Tuple.of(config.getCipher(), config.getCipherKey()));
         }
-        if (hasAesR) {
-            pipeline.addLast(new AESDecoder().channelHandlers());
+        if (hasCipherR) {
+            pipeline.addLast(new CipherDecoder().channelHandlers());
         }
-        if (hasAesW) {
-            pipeline.addLast(AESEncoder.DEFAULT.channelHandlers());
+        if (hasCipherW) {
+            pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
         }
-//        if (flags.has(TransportFlags.SERVER_AES_BOTH)) {
-//            if (config.getAesKey() == null) {
-//                throw new InvalidException("AES key is empty");
-//            }
-//            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
-//        }
-//        log.debug("server pipeline: {}", channel.pipeline());
+        //        log.debug("server pipeline: {}", channel.pipeline());
+        return channel;
     }
 
     @SneakyThrows
-    public static void addClientHandler(Channel channel, SocketConfig config, InetSocketAddress remoteEndpoint) {
+    public static Channel addClientHandler(Channel channel, SocketConfig config, InetSocketAddress remoteEndpoint) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
-            return;
+            return channel;
         }
 
         ChannelPipeline pipeline = channel.pipeline();
@@ -321,27 +318,21 @@ public final class Sockets {
             pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
         }
 
-        boolean hasAesR = flags.has(TransportFlags.CLIENT_AES_READ),
-                hasAesW = flags.has(TransportFlags.CLIENT_AES_WRITE);
-        if (hasAesR || hasAesW) {
-            if (config.getAesKey() == null) {
-                throw new InvalidException("AES key is empty");
+        boolean hasCipherR = flags.has(TransportFlags.CLIENT_CIPHER_READ),
+                hasCipherW = flags.has(TransportFlags.CLIENT_CIPHER_WRITE);
+        if (hasCipherR || hasCipherW) {
+            if (config.getCipherKey() == null) {
+                throw new InvalidException("Cipher key is empty");
             }
-            channel.attr(SocketConfig.ATTR_AES_KEY).set(config.getAesKey());
+            channel.attr(SocketConfig.ATTR_CIPHER_KEY).set(Tuple.of(config.getCipher(), config.getCipherKey()));
         }
-        if (hasAesR) {
-            pipeline.addLast(new AESDecoder().channelHandlers());
+        if (hasCipherR) {
+            pipeline.addLast(new CipherDecoder().channelHandlers());
         }
-        if (hasAesW) {
-            pipeline.addLast(AESEncoder.DEFAULT.channelHandlers());
+        if (hasCipherW) {
+            pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
         }
-//        if (flags.has(TransportFlags.CLIENT_AES_BOTH)) {
-//            if (config.getAesKey() == null) {
-//                throw new InvalidException("AES key is empty");
-//            }
-//            pipeline.addLast(new AESCodec(config.getAesKey()).channelHandlers());
-//        }
-//        log.debug("client pipeline: {}", channel.pipeline());
+        return channel;
     }
     //endregion
 

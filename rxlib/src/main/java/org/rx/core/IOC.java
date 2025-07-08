@@ -11,6 +11,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
+import static org.rx.core.Extends.tryClose;
 
 @SuppressWarnings(NON_UNCHECKED)
 public final class IOC {
@@ -66,7 +67,7 @@ public final class IOC {
     }
 
     public static <T> void unregister(Class<T> type) {
-        container.remove(type);
+        tryClose(container.remove(type));
     }
 
     public static <K, V> Map<K, V> weakKeyMap() {

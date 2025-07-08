@@ -508,6 +508,8 @@ public class TestSocks extends AbstractTester {
 
     //region ss
     int connectTimeoutMillis = 30000;
+    String socks5Usr = "rocky";
+    String socks5Pwd = "123456";
 
     @SneakyThrows
     @Test
@@ -519,11 +521,10 @@ public class TestSocks extends AbstractTester {
 
         //backend
         InetSocketAddress backSrvEp = Sockets.newLoopbackEndpoint(2080);
-        String defPwd = "123456";
         SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
-        SocksUser usr = new SocksUser("rocky");
-        usr.setPassword(defPwd);
+        SocksUser usr = new SocksUser(socks5Usr);
+        usr.setPassword(socks5Pwd);
         usr.setMaxIpCount(-1);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
 
@@ -539,7 +540,7 @@ public class TestSocks extends AbstractTester {
 
         AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
         ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(2090),
-                CipherKind.AES_128_GCM.getCipherName(), defPwd);
+                CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<ShadowsocksServer, SocksContext> firstRoute = (s, e) -> {
@@ -673,14 +674,18 @@ public class TestSocks extends AbstractTester {
     @Test
     public void rrp() {
         RrpConfig c = new RrpConfig();
+//        c.getTransportFlags().add(TransportFlags.SERVER_AES_BOTH, TransportFlags.CLIENT_AES_BOTH);
+        c.setToken("youfanX");
         c.setBindPort(9000);
         RrpServer server = new RrpServer(c);
 
-        c.setServerEndpoint("127.0.0.1:9000");
+        c.setServerEndpoint("cloud.f-li.cn:4001");
+//        c.setServerEndpoint("127.0.0.1:9000");
         RrpConfig.Proxy p = new RrpConfig.Proxy();
         p.setName("ss");
 //        p.setType(1);
-        p.setRemotePort(2090);
+        p.setRemotePort(6013);
+        p.setAuth("lezhi:lezhi2020");
         c.setProxies(Collections.singletonList(p));
         RrpClient client = new RrpClient(c);
         client.connectAsync();

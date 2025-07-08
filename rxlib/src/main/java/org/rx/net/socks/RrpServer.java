@@ -16,6 +16,7 @@ import org.rx.core.Linq;
 import org.rx.exception.InvalidException;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
+import org.rx.net.TransportFlags;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -74,15 +75,15 @@ public class RrpServer extends Disposable {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel inbound = ctx.channel();
-            RpClientProxy rpClientProxy = SocksContext.getAttr(inbound, ATTR_CLI_PROXY);
+            RpClientProxy rpClientProxy = SocksContext.getAttr(inbound, ATTR_SVR_PROXY);
             rpClientProxy.remoteClients.put(inbound.id().asShortText(), inbound);
         }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel inbound = ctx.channel();
-            RpClient rpClient = SocksContext.getAttr(inbound, ATTR_CLI);
-            RpClientProxy rpClientProxy = SocksContext.getAttr(inbound, ATTR_CLI_PROXY);
+            RpClient rpClient = SocksContext.getAttr(inbound, ATTR_SVR_CLI);
+            RpClientProxy rpClientProxy = SocksContext.getAttr(inbound, ATTR_SVR_PROXY);
             Channel outbound = rpClient.clientChannel;
             //step3
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
@@ -100,14 +101,14 @@ public class RrpServer extends Disposable {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             Channel inbound = ctx.channel();
-            RpClientProxy rpClientProxy = SocksContext.getAttr(inbound, ATTR_CLI_PROXY);
+            RpClientProxy rpClientProxy = SocksContext.getAttr(inbound, ATTR_SVR_PROXY);
             rpClientProxy.remoteClients.remove(inbound.id().asShortText());
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel inbound = ctx.channel();
-            RpClient rpClient = SocksContext.getAttr(inbound, ATTR_CLI);
+            RpClient rpClient = SocksContext.getAttr(inbound, ATTR_SVR_CLI);
             Channel outbound = rpClient.clientChannel;
             log.warn("RELAY {} => {}[{}] thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
             Sockets.closeOnFlushed(inbound);
@@ -179,9 +180,10 @@ public class RrpServer extends Disposable {
 
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
-        bootstrap = Sockets.serverBootstrap(channel -> channel.pipeline()
-                        .addLast(Sockets.intLengthFieldDecoder())
-                        .addLast(Sockets.INT_LENGTH_FIELD_ENCODER)
+        config.setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags());
+//        config.setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
+        bootstrap = Sockets.serverBootstrap(channel -> Sockets.addServerHandler(channel, config).pipeline()
+//                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
                         .addLast(ServerHandler.DEFAULT))
                 .attr(ATTR_SVR, this);
         serverChannel = bootstrap.bind(config.getBindPort()).addListener(Sockets.logBind(config.getBindPort())).channel();
@@ -219,8 +221,8 @@ public class RrpServer extends Disposable {
                     .addLast(RemoteServerHandler.DEFAULT));
             RpClientProxy rpClientProxy = new RpClientProxy(rp, remoteBootstrap);
             rpClientProxy.remoteServerChannel = remoteBootstrap
-                    .attr(ATTR_CLI, rpClient)
-                    .attr(ATTR_CLI_PROXY, rpClientProxy).bind(remotePort).addListener(Sockets.logBind(remotePort)).channel();
+                    .attr(ATTR_SVR_CLI, rpClient)
+                    .attr(ATTR_SVR_PROXY, rpClientProxy).bind(remotePort).addListener(Sockets.logBind(remotePort)).channel();
             rpClient.proxyMap.put(remotePort, rpClientProxy);
             log.debug("RrpServer step2 {} remote Tcp bind {}", clientChannel, remotePort);
         }

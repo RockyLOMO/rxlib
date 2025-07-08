@@ -23,9 +23,9 @@ import org.rx.util.function.TripleAction;
 
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
-    public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
-//            || dstEp.getPort() == 80
-            ;
+//    public static final PredicateFunc<UnresolvedEndpoint> DNS_AES_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
+////            || dstEp.getPort() == 80
+//            ;
     public final Delegate<SocksProxyServer, SocksContext> onRoute = Delegate.create(DIRECT_ROUTER),
             onUdpRoute = Delegate.create(DIRECT_ROUTER);
     public final Delegate<SocksProxyServer, SocksContext> onReconnecting = Delegate.create();
@@ -36,13 +36,13 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final Channel udpChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
-    @Setter
-    private PredicateFunc<UnresolvedEndpoint> aesRouter;
+//    @Setter
+//    private PredicateFunc<UnresolvedEndpoint> aesRouter;
 
-//    public boolean isBind() {
-//        return tcpChannel.isActive();
-//    }
-//
+    public boolean isBind() {
+        return tcpChannel.isActive();
+    }
+
 //    public Integer getBindPort() {
 //        InetSocketAddress ep = (InetSocketAddress) tcpChannel.localAddress();
 //        return ep != null ? ep.getPort() : null;
@@ -67,7 +67,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             ChannelPipeline pipeline = channel.pipeline();
             if (isAuthEnabled()) {
                 //Traffic statistics
-                pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(authenticator, config.getTrafficShapingInterval()));
+                pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(config.getTrafficShapingInterval()));
             }
             pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
 //            SocksPortUnificationServerHandler
@@ -108,11 +108,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         udpChannel.close();
     }
 
-    @SneakyThrows
-    boolean aesRouter(UnresolvedEndpoint dstEp) {
-        if (aesRouter == null) {
-            return false;
-        }
-        return aesRouter.invoke(dstEp);
-    }
+//    @SneakyThrows
+//    boolean aesRouter(UnresolvedEndpoint dstEp) {
+//        if (aesRouter == null) {
+//            return false;
+//        }
+//        return aesRouter.invoke(dstEp);
+//    }
 }

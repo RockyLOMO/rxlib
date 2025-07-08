@@ -31,7 +31,7 @@ app:
     maxItemSize: 5000
   disk:
     diskUsageWarningThreshold: 90
-#    h2Settings: CACHE_SIZE=8192;COMPRESS=false;ASYNC=true;PAGE_SIZE=2048;MAX_COMPACT_TIME=100;THREAD_POOL_SIZE=2;MVCC=false;WRITE_BUFFER_SIZE=2048;
+    #    h2Settings: CACHE_SIZE=8192;COMPRESS=false;ASYNC=true;PAGE_SIZE=2048;MAX_COMPACT_TIME=100;THREAD_POOL_SIZE=2;MVCC=false;WRITE_BUFFER_SIZE=2048;
     entityDatabaseRollPeriod: 10000
   net:
     reactorThreadAmount: 0
@@ -46,6 +46,10 @@ app:
       - "[::1]"
       - localhost
       - 192.168.*
+    cipher: 2
+    cipherKeys:
+      1: ℞FREEDOM
+      2: juTKxjSE+VQHBvVH8OO23gh1uQY7GQCq1XU7bGSijfA=
     ntp:
       enableFlags: 0
       syncPeriod: 128000
@@ -60,7 +64,6 @@ app:
       outlandServers:
         - "8.8.8.8:53"
         - "1.1.1.1:53"
-  aesKey: ℞FREEDOM
   mxpwd: rxlib
   mxSamplingPeriod: 60000
   dateFormat: yyyy-MM-dd HH:mm:ss

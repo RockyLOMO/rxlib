@@ -66,6 +66,9 @@ public class SocksUser implements Serializable {
     final String username;
     final Map<InetAddress, LoginInfo> loginIps = new ConcurrentHashMap<>(8);
     String password;
+    /**
+     * 默认0 = 不启用账号
+     */
     int maxIpCount;
     DateTime lastResetTime;
 
