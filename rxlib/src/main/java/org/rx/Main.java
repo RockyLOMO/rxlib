@@ -266,7 +266,7 @@ public final class Main implements SocksSupport {
 //          }
             e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, routerFn.apply(e)));
         });
-//        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
+        frontSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         Main app = new Main(frontSvr);
 
         Action fn = () -> {
@@ -376,7 +376,7 @@ public final class Main implements SocksSupport {
         backConf.setConnectTimeoutMillis(connectTimeout);
         backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS);
-//        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
+        backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
         //server port + 1 = rpc
         RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(port + 1));

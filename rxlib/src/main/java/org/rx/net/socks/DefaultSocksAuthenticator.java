@@ -1,6 +1,5 @@
 package org.rx.net.socks;
 
-import lombok.NonNull;
 import org.rx.bean.DateTime;
 import org.rx.core.Tasks;
 
