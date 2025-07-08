@@ -43,7 +43,7 @@ public class SocketConfig implements Extends {
         if (cipherKey == null) {
             RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
             cipherKey = Linq.from(conf.getCiphers()).where(p -> p.startsWith(cipher + ","))
-                    .<byte[]>select(p -> CodecUtil.deserializeFromBase64(p.substring(2))).first();
+                    .select(p -> CodecUtil.convertFromBase64(p.substring(2))).first();
         }
         return cipherKey;
     }
