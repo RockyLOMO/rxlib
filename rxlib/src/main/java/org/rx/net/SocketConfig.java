@@ -8,6 +8,7 @@ import org.rx.bean.FlagsEnum;
 import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Extends;
+import org.rx.core.Linq;
 import org.rx.core.RxConfig;
 
 import java.util.Set;
@@ -29,7 +30,7 @@ public class SocketConfig implements Extends {
     private int connectTimeoutMillis;
     private FlagsEnum<TransportFlags> transportFlags = TransportFlags.NONE.flags();
     // 1 = AES, 2 = XChaCha20Poly1305
-    private short cipher;
+    private short cipher = 2;
     private byte[] cipherKey;
     @Getter(lazy = true)
     private final Set<String> bypassHosts = bypassHosts();
@@ -41,7 +42,8 @@ public class SocketConfig implements Extends {
     public byte[] getCipherKey() {
         if (cipherKey == null) {
             RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
-            cipherKey = CodecUtil.deserializeFromBase64(conf.getCipherKeys().get(cipher));
+            cipherKey = Linq.from(conf.getCiphers()).where(p -> p.startsWith(cipher + ","))
+                    .<byte[]>select(p -> CodecUtil.deserializeFromBase64(p.substring(2))).first();
         }
         return cipherKey;
     }
@@ -50,6 +52,5 @@ public class SocketConfig implements Extends {
         RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
         enableLog = conf.isEnableLog();
         connectTimeoutMillis = conf.getConnectTimeoutMillis();
-        cipher = conf.getCipher();
     }
 }
