@@ -1,11 +1,9 @@
 package org.rx.net;
 
-import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.bean.FlagsEnum;
-import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Extends;
 import org.rx.core.Linq;
@@ -18,8 +16,6 @@ import java.util.concurrent.CopyOnWriteArraySet;
 @Setter
 @ToString
 public class SocketConfig implements Extends {
-    public static AttributeKey<Tuple<Short, byte[]>> ATTR_CIPHER_KEY = AttributeKey.valueOf("cipherKey");
-
     private static final long serialVersionUID = 5312790348211652335L;
     public static final int DELAY_TIMEOUT_MILLIS = 30000;
 

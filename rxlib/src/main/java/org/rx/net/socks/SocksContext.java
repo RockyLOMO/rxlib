@@ -13,17 +13,16 @@ import org.apache.sshd.server.auth.pubkey.AcceptAllPublickeyAuthenticator;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
 import org.apache.sshd.server.shell.InteractiveProcessShellFactory;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
-import org.rx.core.*;
+import org.rx.core.EventArgs;
+import org.rx.core.IOC;
+import org.rx.core.RxConfig;
 import org.rx.exception.InvalidException;
-import org.rx.io.Files;
-import org.rx.net.http.HttpClient;
+import org.rx.net.SocketConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.Action;
-import org.rx.util.function.TripleAction;
 
-import java.io.File;
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
 import java.util.Collections;
@@ -36,6 +35,7 @@ import static org.rx.core.Sys.fromJson;
 public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
+   public static final AttributeKey<SocketConfig> SOCKS_CONF = AttributeKey.valueOf("sConf");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sProxyCtx");
     //ss
     static final AttributeKey<ShadowsocksServer> SS_SVR = AttributeKey.valueOf("ssSvr");

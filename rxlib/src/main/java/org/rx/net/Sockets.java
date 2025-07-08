@@ -36,12 +36,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
-import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.socks.SocksContext;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -286,7 +286,7 @@ public final class Sockets {
             if (config.getCipherKey() == null) {
                 throw new InvalidException("Cipher key is empty");
             }
-            channel.attr(SocketConfig.ATTR_CIPHER_KEY).set(Tuple.of(config.getCipher(), config.getCipherKey()));
+            channel.attr(SocksContext.SOCKS_CONF).set(config);
         }
         if (hasCipherR) {
             pipeline.addLast(new CipherDecoder().channelHandlers());
@@ -324,7 +324,7 @@ public final class Sockets {
             if (config.getCipherKey() == null) {
                 throw new InvalidException("Cipher key is empty");
             }
-            channel.attr(SocketConfig.ATTR_CIPHER_KEY).set(Tuple.of(config.getCipher(), config.getCipherKey()));
+            channel.attr(SocksContext.SOCKS_CONF).set(config);
         }
         if (hasCipherR) {
             pipeline.addLast(new CipherDecoder().channelHandlers());
