@@ -30,6 +30,8 @@ import org.rx.bean.MultiValueMap;
 import org.rx.bean.RandomList;
 import org.rx.bean.ULID;
 import org.rx.codec.AESUtil;
+import org.rx.codec.CodecUtil;
+import org.rx.codec.XChaCha20Poly1305Util;
 import org.rx.core.Arrays;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -654,6 +656,22 @@ public class TestSocks extends AbstractTester {
         System.in.read();
     }
 
+    @Test
+    public void testXChaCha() {
+        // Generate a key
+        byte[] key = XChaCha20Poly1305Util.generateKey();
+        System.out.println("Key: " + CodecUtil.convertToBase64(key));
+
+        // Encrypt
+        String plaintext = "Hello, this is a test message for XChaCha20-Poly1305!";
+        byte[] encrypted = XChaCha20Poly1305Util.encrypt(key, plaintext.getBytes(StandardCharsets.UTF_8));
+        System.out.println("Encrypted: " + encrypted);
+
+        // Decrypt
+        byte[] decrypted = XChaCha20Poly1305Util.decrypt(key, encrypted);
+        System.out.println("Decrypted: " + new String(decrypted));
+    }
+
 //    @SneakyThrows
 //    @Test
 //    public void directProxy() {
@@ -678,15 +696,17 @@ public class TestSocks extends AbstractTester {
         c.setToken("youfanX");
         c.setBindPort(9000);
         RrpServer server = new RrpServer(c);
+//        c.setServerEndpoint("127.0.0.1:9000");
 
         c.setServerEndpoint("cloud.f-li.cn:4001");
-//        c.setServerEndpoint("127.0.0.1:9000");
         RrpConfig.Proxy p = new RrpConfig.Proxy();
         p.setName("ss");
 //        p.setType(1);
         p.setRemotePort(6013);
         p.setAuth("lezhi:lezhi2020");
         c.setProxies(Collections.singletonList(p));
+        log.info("client conf {}", toJsonString(Collections.singletonMap("k", toJsonString(c))));
+
         RrpClient client = new RrpClient(c);
         client.connectAsync();
 

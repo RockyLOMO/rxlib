@@ -4,7 +4,6 @@ import org.bouncycastle.crypto.macs.Poly1305;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.params.ParametersWithIV;
 
-import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
 
@@ -80,20 +79,5 @@ public class XChaCha20Poly1305Util {
         byte[] key = new byte[KEY_LEN];
         secureRandom.nextBytes(key);
         return key;
-    }
-
-    public static void main(String[] args) throws Exception {
-        // Generate a key
-        byte[] key = generateKey();
-        System.out.println("Key: " + CodecUtil.convertToBase64(key));
-
-        // Encrypt
-        String plaintext = "Hello, this is a test message for XChaCha20-Poly1305!";
-        byte[] encrypted = XChaCha20Poly1305Util.encrypt(key, plaintext.getBytes(StandardCharsets.UTF_8));
-        System.out.println("Encrypted: " + encrypted);
-
-        // Decrypt
-        byte[] decrypted = XChaCha20Poly1305Util.decrypt(key, encrypted);
-        System.out.println("Decrypted: " + new String(decrypted));
     }
 }
