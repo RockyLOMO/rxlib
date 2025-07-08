@@ -598,13 +598,13 @@ public class TestSocks extends AbstractTester {
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags());
         Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags());
         shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);

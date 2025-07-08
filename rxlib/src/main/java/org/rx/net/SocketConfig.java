@@ -41,7 +41,7 @@ public class SocketConfig implements Extends {
     public byte[] getCipherKey() {
         if (cipherKey == null) {
             RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
-            cipherKey = CodecUtil.deserializeFromBase64(conf.getCipherKeys().get(cipher));
+            cipherKey = CodecUtil.convertFromBase64(conf.getCipherKeys().get(cipher));
         }
         return cipherKey;
     }
