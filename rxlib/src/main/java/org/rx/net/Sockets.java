@@ -271,6 +271,13 @@ public final class Sockets {
             pipeline.addLast(sslCtx.newHandler(channel.alloc()));
         }
 
+        if (flags.has(TransportFlags.SERVER_HTTP_PSEUDO_READ)) {
+            pipeline.addLast(new HttpPseudoHeaderDecoder());
+        }
+        if (flags.has(TransportFlags.SERVER_HTTP_PSEUDO_WRITE)) {
+            pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
+        }
+
         //先压缩再加密
         //支持LengthField?
         if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
@@ -309,6 +316,13 @@ public final class Sockets {
         if (flags.has(TransportFlags.BACKEND_SSL)) {
             SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
+        }
+
+        if (flags.has(TransportFlags.CLIENT_HTTP_PSEUDO_READ)) {
+            pipeline.addLast(new HttpPseudoHeaderDecoder());
+        }
+        if (flags.has(TransportFlags.CLIENT_HTTP_PSEUDO_WRITE)) {
+            pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
         }
 
         if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
