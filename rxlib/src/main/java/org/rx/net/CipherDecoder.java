@@ -19,7 +19,7 @@ public class CipherDecoder extends ByteToMessageDecoder {
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
-        SocketConfig conf = SocksContext.getAttr(ctx.channel(), SocksContext.SOCKS_CONF);
+        SocketConfig conf = SocksContext.getAttr(ctx.channel(), SocketConfig.ATTR_CONF);
         byte[] k;
         if ((k = conf.getCipherKey()) == null) {
             throw new InvalidException("Cipher key is empty");

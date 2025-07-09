@@ -14,6 +14,8 @@ import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.io.Serializer;
+import org.rx.net.HttpPseudoHeaderDecoder;
+import org.rx.net.HttpPseudoHeaderEncoder;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 
@@ -227,11 +229,12 @@ public class RrpClient extends Disposable {
             throw new InvalidException("{} has connected", this);
         }
 
-        config.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH));
-//        config.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
+//        config.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH));
+//        config.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags());
         bootstrap = Sockets.bootstrap(config, channel ->
                 Sockets.addClientHandler(channel, config, Sockets.parseEndpoint(config.getServerEndpoint())).pipeline()
-//                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
+                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
+                        .addLast(new HttpPseudoHeaderDecoder(), HttpPseudoHeaderEncoder.DEFAULT)
                         .addLast(new ClientHandler()));
         doConnect(false);
         if (connectingFutureWrapper == null) {

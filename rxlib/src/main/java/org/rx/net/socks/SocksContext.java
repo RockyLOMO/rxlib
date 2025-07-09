@@ -17,7 +17,6 @@ import org.rx.core.EventArgs;
 import org.rx.core.IOC;
 import org.rx.core.RxConfig;
 import org.rx.exception.InvalidException;
-import org.rx.net.SocketConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -35,16 +34,20 @@ import static org.rx.core.Sys.fromJson;
 public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
-   public static final AttributeKey<SocketConfig> SOCKS_CONF = AttributeKey.valueOf("sConf");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sProxyCtx");
     //ss
     static final AttributeKey<ShadowsocksServer> SS_SVR = AttributeKey.valueOf("ssSvr");
 
     public static <T> T getAttr(Channel chnl, AttributeKey<T> key) {
+        return getAttr(chnl, key, true);
+    }
+
+    public static <T> T getAttr(Channel chnl, AttributeKey<T> key, boolean throwOnEmpty) {
         T v = chnl.attr(key).get();
-        if (v == null) {
-            v = chnl.parent().attr(key).get();
-            if (v == null) {
+        Channel parent;
+        if (v == null && (parent = chnl.parent()) != null) {
+            v = parent.attr(key).get();
+            if (v == null && throwOnEmpty) {
                 throw new InvalidException("Attr {} not exist", key);
             }
         }

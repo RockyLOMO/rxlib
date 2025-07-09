@@ -15,8 +15,10 @@ import org.rx.core.Disposable;
 import org.rx.core.Linq;
 import org.rx.exception.InvalidException;
 import org.rx.io.Serializer;
+import org.rx.net.HttpPseudoHeaderDecoder;
+import org.rx.net.HttpPseudoHeaderEncoder;
+import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
-import org.rx.net.TransportFlags;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -180,12 +182,14 @@ public class RrpServer extends Disposable {
 
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
-        config.setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH));
-//        config.setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
+//        config.setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH));
+//        config.setTransportFlags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH.flags());
         bootstrap = Sockets.serverBootstrap(channel -> Sockets.addServerHandler(channel, config).pipeline()
-//                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
+                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
+                        .addLast(new HttpPseudoHeaderDecoder(), HttpPseudoHeaderEncoder.DEFAULT)
                         .addLast(ServerHandler.DEFAULT))
-                .attr(ATTR_SVR, this);
+                .attr(ATTR_SVR, this)
+                .attr(SocketConfig.ATTR_PSEUDO_SVR, true);
         serverChannel = bootstrap.bind(config.getBindPort()).addListener(Sockets.logBind(config.getBindPort())).channel();
     }
 

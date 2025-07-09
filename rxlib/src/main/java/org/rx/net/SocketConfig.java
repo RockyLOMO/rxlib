@@ -1,5 +1,6 @@
 package org.rx.net;
 
+import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -17,6 +18,9 @@ import java.util.concurrent.CopyOnWriteArraySet;
 @ToString
 public class SocketConfig implements Extends {
     private static final long serialVersionUID = 5312790348211652335L;
+
+    public static final AttributeKey<SocketConfig> ATTR_CONF = AttributeKey.valueOf("conf");
+    public static final AttributeKey<Boolean> ATTR_PSEUDO_SVR = AttributeKey.valueOf("pseudoSvr");
     public static final int DELAY_TIMEOUT_MILLIS = 30000;
 
     //Set true if live with current process.

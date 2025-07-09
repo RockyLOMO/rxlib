@@ -1,13 +1,12 @@
 package org.rx.net;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
-import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.FastDateFormat;
+import org.rx.net.socks.SocksContext;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
@@ -19,7 +18,6 @@ import java.util.concurrent.ThreadLocalRandom;
 @ChannelHandler.Sharable
 public class HttpPseudoHeaderEncoder extends MessageToByteEncoder<ByteBuf> {
     public static final HttpPseudoHeaderEncoder DEFAULT = new HttpPseudoHeaderEncoder();
-    public static final AttributeKey<Boolean> ATTR_IS_SVR = AttributeKey.valueOf("pseudoSvr");
 
     //region HttpPathGenerator
     // 常见 API 前缀
@@ -179,7 +177,7 @@ public class HttpPseudoHeaderEncoder extends MessageToByteEncoder<ByteBuf> {
     @Override
     protected void encode(ChannelHandlerContext ctx, ByteBuf msg, ByteBuf out) throws Exception {
         String headers;
-        if (Boolean.TRUE.equals(ctx.channel().attr(ATTR_IS_SVR).get())) {
+        if (Boolean.TRUE.equals(SocksContext.getAttr(ctx.channel(), SocketConfig.ATTR_PSEUDO_SVR, false))) {
             headers = String.format(RESPONSE_PSEUDO_HEADER, msg.readableBytes(), generateDateHeader());
         } else {
             if (ThreadLocalRandom.current().nextInt(0, 100) >= 20) {
@@ -188,7 +186,7 @@ public class HttpPseudoHeaderEncoder extends MessageToByteEncoder<ByteBuf> {
                 headers = String.format(POST_REQUEST_PSEUDO_HEADER, generateRandomPath(), msg.readableBytes(), generateRandomHost());
             }
         }
-        log.debug("pseudo {}", headers);
+        log.debug("pseudo encode {}", headers);
 
         out.writeCharSequence(headers, StandardCharsets.US_ASCII);
         out.writeBytes(msg);
