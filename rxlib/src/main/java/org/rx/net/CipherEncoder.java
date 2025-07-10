@@ -8,7 +8,6 @@ import io.netty.handler.codec.MessageToByteEncoder;
 import org.rx.codec.AESUtil;
 import org.rx.codec.XChaCha20Poly1305Util;
 import org.rx.exception.InvalidException;
-import org.rx.net.socks.SocksContext;
 
 @ChannelHandler.Sharable
 public class CipherEncoder extends MessageToByteEncoder<ByteBuf> {

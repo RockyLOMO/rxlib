@@ -6,7 +6,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.time.FastDateFormat;
-import org.rx.net.socks.SocksContext;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
@@ -174,10 +173,18 @@ public class HttpPseudoHeaderEncoder extends MessageToByteEncoder<ByteBuf> {
         return FastDateFormat.getInstance("EEE, dd MMM yyyy HH:mm:ss 'GMT'", TimeZone.getTimeZone("GMT"), Locale.US).format(new Date());
     }
 
+//    short i = 0;
+
     @Override
     protected void encode(ChannelHandlerContext ctx, ByteBuf msg, ByteBuf out) throws Exception {
+//        if (i > 1) {
+//            throw new InvalidException("encode ex");
+//        } else {
+//            i++;
+//        }
+
         String headers;
-        if (Boolean.TRUE.equals(SocksContext.getAttr(ctx.channel(), SocketConfig.ATTR_PSEUDO_SVR, false))) {
+        if (Boolean.TRUE.equals(Sockets.getAttr(ctx.channel(), SocketConfig.ATTR_PSEUDO_SVR, false))) {
             headers = String.format(RESPONSE_PSEUDO_HEADER, msg.readableBytes(), generateDateHeader());
         } else {
             if (ThreadLocalRandom.current().nextInt(0, 100) >= 20) {

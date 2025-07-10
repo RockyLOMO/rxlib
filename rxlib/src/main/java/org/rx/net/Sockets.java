@@ -28,6 +28,7 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.util.AttributeKey;
 import io.netty.util.NetUtil;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -41,7 +42,6 @@ import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.socks.SocksContext;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -179,7 +179,7 @@ public final class Sockets {
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
                 .childHandler(WaterMarkHandler.DEFAULT);
-        if (config.isEnableLog()) {
+        if (config.isDebug()) {
             //netty log
             b.handler(DEFAULT_LOG);
         }
@@ -188,7 +188,9 @@ public final class Sockets {
                 @SneakyThrows
                 @Override
                 protected void initChannel(SocketChannel socketChannel) {
+                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
                     initChannel.invoke(socketChannel);
+//                    socketChannel.pipeline().addLast(ChannelExceptionHandler.DEFAULT);
                 }
             });
         }
@@ -240,7 +242,7 @@ public final class Sockets {
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
                 .handler(WaterMarkHandler.DEFAULT);
-        if (config.isEnableLog()) {
+        if (config.isDebug()) {
             b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
@@ -248,7 +250,9 @@ public final class Sockets {
                 @SneakyThrows
                 @Override
                 protected void initChannel(SocketChannel socketChannel) {
+                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
                     initChannel.invoke(socketChannel);
+//                    socketChannel.pipeline().addLast(ChannelExceptionHandler.DEFAULT);
                 }
             });
         }

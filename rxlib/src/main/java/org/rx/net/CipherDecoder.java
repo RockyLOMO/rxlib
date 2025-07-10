@@ -8,7 +8,6 @@ import io.netty.handler.codec.ByteToMessageDecoder;
 import org.rx.codec.AESUtil;
 import org.rx.codec.XChaCha20Poly1305Util;
 import org.rx.exception.InvalidException;
-import org.rx.net.socks.SocksContext;
 
 import java.util.List;
 
