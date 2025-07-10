@@ -36,6 +36,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final Channel udpChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
+    //只有压缩时一定要用
     @Setter
     private PredicateFunc<UnresolvedEndpoint> cipherRouter;
 
