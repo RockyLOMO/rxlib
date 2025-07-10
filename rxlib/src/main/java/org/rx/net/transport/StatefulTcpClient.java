@@ -260,7 +260,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             ep = config.getServerEndpoint();
         }
 
-        connectingFuture = bootstrap.connect(ep).addListeners(Sockets.logConnect(config.getServerEndpoint()), (ChannelFutureListener) f -> {
+        connectingFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
             channel = f.channel();
             if (!f.isSuccess()) {
                 if (isShouldReconnect()) {

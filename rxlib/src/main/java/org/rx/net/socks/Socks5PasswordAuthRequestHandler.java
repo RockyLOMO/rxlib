@@ -6,6 +6,7 @@ import io.netty.handler.codec.socksx.v5.DefaultSocks5PasswordAuthResponse;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthStatus;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.net.Sockets;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -19,7 +20,7 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
         pipeline.remove(this);
 //        log.debug("socks5 auth {}:{}", msg.username(), msg.password());
 
-        SocksProxyServer server = SocksContext.getAttr(ctx.channel(), SocksContext.SOCKS_SVR);
+        SocksProxyServer server = Sockets.getAttr(ctx.channel(), SocksContext.SOCKS_SVR);
         SocksUser user;
         if (server.getAuthenticator() == null || (user = server.getAuthenticator().login(msg.username(), msg.password())) == null) {
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);

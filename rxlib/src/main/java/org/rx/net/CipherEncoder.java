@@ -8,7 +8,6 @@ import io.netty.handler.codec.MessageToByteEncoder;
 import org.rx.codec.AESUtil;
 import org.rx.codec.XChaCha20Poly1305Util;
 import org.rx.exception.InvalidException;
-import org.rx.net.socks.SocksContext;
 
 @ChannelHandler.Sharable
 public class CipherEncoder extends MessageToByteEncoder<ByteBuf> {
@@ -20,7 +19,7 @@ public class CipherEncoder extends MessageToByteEncoder<ByteBuf> {
 
     @Override
     protected void encode(ChannelHandlerContext ctx, ByteBuf msg, ByteBuf out) throws Exception {
-        SocketConfig conf = SocksContext.getAttr(ctx.channel(), SocksContext.SOCKS_CONF);
+        SocketConfig conf = Sockets.getAttr(ctx.channel(), SocketConfig.ATTR_CONF);
         byte[] k;
         if ((k = conf.getCipherKey()) == null) {
             throw new InvalidException("Cipher key is empty");

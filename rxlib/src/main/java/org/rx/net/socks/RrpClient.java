@@ -14,6 +14,8 @@ import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.io.Serializer;
+import org.rx.net.HttpPseudoHeaderDecoder;
+import org.rx.net.HttpPseudoHeaderEncoder;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 
@@ -72,7 +74,7 @@ public class RrpClient extends Disposable {
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel localChannel = ctx.channel();
-            Tuple<RpClientProxy, String> attr = SocksContext.getAttr(localChannel, ATTR_CLI_PROXY);
+            Tuple<RpClientProxy, String> attr = Sockets.getAttr(localChannel, ATTR_CLI_PROXY);
             RpClientProxy proxyCtx = attr.left;
             String channelId = attr.right;
             Channel serverChannel = proxyCtx.serverChannel;
@@ -92,7 +94,7 @@ public class RrpClient extends Disposable {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             Channel localChannel = ctx.channel();
-            Tuple<RpClientProxy, String> attr = SocksContext.getAttr(localChannel, ATTR_CLI_PROXY);
+            Tuple<RpClientProxy, String> attr = Sockets.getAttr(localChannel, ATTR_CLI_PROXY);
             RpClientProxy proxyCtx = attr.left;
             String channelId = attr.right;
             tryClose(proxyCtx.localChannels.remove(channelId));
@@ -101,7 +103,7 @@ public class RrpClient extends Disposable {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             Channel localChannel = ctx.channel();
-            Tuple<RpClientProxy, String> attr = SocksContext.getAttr(localChannel, ATTR_CLI_PROXY);
+            Tuple<RpClientProxy, String> attr = Sockets.getAttr(localChannel, ATTR_CLI_PROXY);
             RpClientProxy proxyCtx = attr.left;
 //            String channelId = attr.right;
             Channel serverChannel = proxyCtx.serverChannel;
@@ -227,12 +229,15 @@ public class RrpClient extends Disposable {
             throw new InvalidException("{} has connected", this);
         }
 
-        config.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags());
-//        config.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
-        bootstrap = Sockets.bootstrap(config, channel ->
-                Sockets.addClientHandler(channel, config, Sockets.parseEndpoint(config.getServerEndpoint())).pipeline()
+        config.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH));
+//        config.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags());
+        bootstrap = Sockets.bootstrap(config, channel -> {
+            Sockets.addClientHandler(channel, config, Sockets.parseEndpoint(config.getServerEndpoint())).pipeline()
 //                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
-                        .addLast(new ClientHandler()));
+//                    .addLast(new HttpPseudoHeaderDecoder(), HttpPseudoHeaderEncoder.DEFAULT)
+                    .addLast(new ClientHandler());
+            Sockets.dumpPipeline("RrpCli", channel);
+        });
         doConnect(false);
         if (connectingFutureWrapper == null) {
             connectingFutureWrapper = new Future<Void>() {
@@ -290,7 +295,7 @@ public class RrpClient extends Disposable {
         }
 
         InetSocketAddress ep = Sockets.parseEndpoint(config.getServerEndpoint());
-        connectingFuture = bootstrap.connect(ep).addListeners(Sockets.logConnect(ep), (ChannelFutureListener) f -> {
+        connectingFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
             channel = f.channel();
             if (!f.isSuccess()) {
                 if (isShouldReconnect()) {

@@ -598,13 +598,13 @@ public class TestSocks extends AbstractTester {
 //        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags());
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH));
         Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags());
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH));
         shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);
@@ -691,23 +691,26 @@ public class TestSocks extends AbstractTester {
     @SneakyThrows
     @Test
     public void rrp() {
-        RrpConfig c = new RrpConfig();
-//        c.getTransportFlags().add(TransportFlags.SERVER_AES_BOTH, TransportFlags.CLIENT_AES_BOTH);
-        c.setToken("youfanX");
-        c.setBindPort(9000);
-        RrpServer server = new RrpServer(c);
-//        c.setServerEndpoint("127.0.0.1:9000");
+        System.setProperty("io.netty.leakDetectionLevel", "ADVANCED");
+        //客户端服务端配置需要分开
+        RrpConfig sConf = new RrpConfig();
+        sConf.setToken("youfanX");
+        sConf.setBindPort(9000);
+        RrpServer server = new RrpServer(sConf);
 
-        c.setServerEndpoint("cloud.f-li.cn:4001");
+        RrpConfig cConf = new RrpConfig();
+        cConf.setToken("youfanX");
+        cConf.setServerEndpoint("127.0.0.1:9000");
+//        c.setServerEndpoint("cloud.f-li.cn:4001");
         RrpConfig.Proxy p = new RrpConfig.Proxy();
         p.setName("ss");
 //        p.setType(1);
-        p.setRemotePort(6013);
+        p.setRemotePort(2090);
         p.setAuth("lezhi:lezhi2020");
-        c.setProxies(Collections.singletonList(p));
-        log.info("client conf {}", toJsonString(Collections.singletonMap("k", toJsonString(c))));
+        cConf.setProxies(Collections.singletonList(p));
+        log.info("client conf {}", toJsonString(Collections.singletonMap("k", toJsonString(cConf))));
 
-        RrpClient client = new RrpClient(c);
+        RrpClient client = new RrpClient(cConf);
         client.connectAsync();
 
         System.in.read();
