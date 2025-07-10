@@ -157,7 +157,7 @@ public class RrpClient extends Disposable {
                 RrpConfig conf = Sys.deepClone(config);
 //                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
                 conf.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags());
-                ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf, proxyCtx.localEndpoint).pipeline()
+                ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf).pipeline()
                         .addLast(SocksClientHandler.DEFAULT)).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
                 Channel ch = connF.channel();
                 ch.attr(ATTR_CLI_CONN).set(connF);
@@ -232,7 +232,7 @@ public class RrpClient extends Disposable {
         config.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH));
 //        config.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags());
         bootstrap = Sockets.bootstrap(config, channel -> {
-            Sockets.addClientHandler(channel, config, Sockets.parseEndpoint(config.getServerEndpoint())).pipeline()
+            Sockets.addClientHandler(channel, config).pipeline()
 //                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
 //                    .addLast(new HttpPseudoHeaderDecoder(), HttpPseudoHeaderEncoder.DEFAULT)
                     .addLast(new ClientHandler());

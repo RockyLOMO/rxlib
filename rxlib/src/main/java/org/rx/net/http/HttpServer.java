@@ -237,18 +237,11 @@ public class HttpServer extends Disposable {
     final Map<String, Handler> mapping = new ConcurrentHashMap<>();
 
     @SneakyThrows
-    public HttpServer(int port, boolean ssl) {
-        final SslContext sslCtx;
-        if (ssl) {
-            SelfSignedCertificate ssc = new SelfSignedCertificate();
-            sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
-        } else {
-            sslCtx = null;
-        }
+    public HttpServer(int port, boolean tls) {
         serverBootstrap = Sockets.serverBootstrap(ch -> {
             ChannelPipeline p = ch.pipeline();
-            if (sslCtx != null) {
-                p.addLast(sslCtx.newHandler(ch.alloc()));
+            if (tls) {
+                p.addLast(Sockets.getSelfSignedTls().newHandler(ch.alloc()));
             }
             p.addLast(new HttpServerCodec(),
                     new HttpServerExpectContinueHandler(),

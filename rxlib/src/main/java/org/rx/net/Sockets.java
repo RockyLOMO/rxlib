@@ -270,10 +270,8 @@ public final class Sockets {
         //入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
         //出站事件（如数据写入、连接关闭等）由 ChannelOutboundHandler 处理，传播方向是从 pipeline 的 tail 到 head。
         ChannelPipeline pipeline = channel.pipeline();
-        if (flags.has(TransportFlags.FRONTEND_SSL)) {
-            SelfSignedCertificate ssc = new SelfSignedCertificate();
-            SslContext sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
-            pipeline.addLast(sslCtx.newHandler(channel.alloc()));
+        if (flags.has(TransportFlags.SERVER_TLS)) {
+            pipeline.addLast(getSelfSignedTls().newHandler(channel.alloc()));
         }
 
         if (flags.has(TransportFlags.SERVER_HTTP_PSEUDO_READ)) {
@@ -310,17 +308,24 @@ public final class Sockets {
         return channel;
     }
 
+    public static Channel addClientHandler(Channel channel, SocketConfig config) {
+        return addClientHandler(channel, config, null);
+    }
+
     @SneakyThrows
-    public static Channel addClientHandler(Channel channel, SocketConfig config, InetSocketAddress remoteEndpoint) {
+    public static Channel addClientHandler(Channel channel, SocketConfig config, InetSocketAddress SNISpoofing) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
             return channel;
         }
 
         ChannelPipeline pipeline = channel.pipeline();
-        if (flags.has(TransportFlags.BACKEND_SSL)) {
-            SslContext sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-            pipeline.addLast(sslCtx.newHandler(channel.alloc(), remoteEndpoint.getHostString(), remoteEndpoint.getPort()));
+        if (flags.has(TransportFlags.CLIENT_TLS)) {
+            SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
+            if (SNISpoofing == null) {
+                SNISpoofing = Sockets.parseEndpoint("qq.com:443");
+            }
+            pipeline.addLast(tls.newHandler(channel.alloc(), SNISpoofing.getHostString(), SNISpoofing.getPort()));
         }
 
         if (flags.has(TransportFlags.CLIENT_HTTP_PSEUDO_READ)) {
@@ -353,6 +358,12 @@ public final class Sockets {
         }
 //        dumpPipeline("client", channel);
         return channel;
+    }
+
+    @SneakyThrows
+    public static SslContext getSelfSignedTls() {
+        SelfSignedCertificate ssc = new SelfSignedCertificate("qq.com");
+        return SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
     }
 
     public static void dumpPipeline(String prefix, Channel channel) {
