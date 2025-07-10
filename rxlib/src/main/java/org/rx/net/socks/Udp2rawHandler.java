@@ -43,7 +43,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             return;
         }
 
-        SocksProxyServer server = SocksContext.getAttr(inbound.channel(), SocksContext.SOCKS_SVR);
+        SocksProxyServer server = Sockets.getAttr(inbound.channel(), SocksContext.SOCKS_SVR);
         final InetSocketAddress srcEp0 = in.sender();
 
         List<InetSocketAddress> udp2rawServers = server.config.getUdp2rawServers();

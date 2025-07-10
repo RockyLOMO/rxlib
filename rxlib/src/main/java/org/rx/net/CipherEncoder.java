@@ -20,7 +20,7 @@ public class CipherEncoder extends MessageToByteEncoder<ByteBuf> {
 
     @Override
     protected void encode(ChannelHandlerContext ctx, ByteBuf msg, ByteBuf out) throws Exception {
-        SocketConfig conf = SocksContext.getAttr(ctx.channel(), SocketConfig.ATTR_CONF);
+        SocketConfig conf = Sockets.getAttr(ctx.channel(), SocketConfig.ATTR_CONF);
         byte[] k;
         if ((k = conf.getCipherKey()) == null) {
             throw new InvalidException("Cipher key is empty");

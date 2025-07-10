@@ -38,22 +38,6 @@ public final class SocksContext extends EventArgs {
     //ss
     static final AttributeKey<ShadowsocksServer> SS_SVR = AttributeKey.valueOf("ssSvr");
 
-    public static <T> T getAttr(Channel chnl, AttributeKey<T> key) {
-        return getAttr(chnl, key, true);
-    }
-
-    public static <T> T getAttr(Channel chnl, AttributeKey<T> key, boolean throwOnEmpty) {
-        T v = chnl.attr(key).get();
-        Channel parent;
-        if (v == null && (parent = chnl.parent()) != null) {
-            v = parent.attr(key).get();
-            if (v == null && throwOnEmpty) {
-                throw new InvalidException("Attr {} not exist", key);
-            }
-        }
-        return v;
-    }
-
     /**
      * call this method before bind & connect
      *

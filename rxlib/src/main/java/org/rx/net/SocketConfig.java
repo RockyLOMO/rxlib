@@ -23,9 +23,9 @@ public class SocketConfig implements Extends {
     public static final AttributeKey<Boolean> ATTR_PSEUDO_SVR = AttributeKey.valueOf("pseudoSvr");
     public static final int DELAY_TIMEOUT_MILLIS = 30000;
 
+    private boolean debug;
     //Set true if live with current process.
     private boolean useSharedTcpEventLoop = true;
-    private boolean enableLog;
     private MemoryMode memoryMode = MemoryMode.LOW;
     private int connectTimeoutMillis;
     private FlagsEnum<TransportFlags> transportFlags = TransportFlags.NONE.flags();
@@ -50,7 +50,7 @@ public class SocketConfig implements Extends {
 
     public SocketConfig() {
         RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
-        enableLog = conf.isEnableLog();
+        debug = conf.isEnableLog();
         connectTimeoutMillis = conf.getConnectTimeoutMillis();
     }
 }

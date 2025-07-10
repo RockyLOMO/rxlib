@@ -6,10 +6,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
-import org.rx.net.CipherDecoder;
-import org.rx.net.CipherEncoder;
-import org.rx.net.Sockets;
-import org.rx.net.TransportFlags;
+import org.rx.net.*;
 import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -28,7 +25,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         ChannelPipeline pipeline = inbound.pipeline();
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
-        SocksProxyServer server = SocksContext.getAttr(inbound.channel(), SocksContext.SOCKS_SVR);
+        SocksProxyServer server = Sockets.getAttr(inbound.channel(), SocksContext.SOCKS_SVR);
 //        log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
@@ -72,7 +69,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e) {
-        SocksProxyServer server = SocksContext.getAttr(inbound, SocksContext.SOCKS_SVR);
+        SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
 
         Sockets.bootstrap(inbound.eventLoop(), server.getConfig(), outbound -> {
             e.getUpstream().initChannel(outbound);
@@ -105,7 +102,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             if (server.cipherRoute(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
                     if (config.getTransportFlags().has(TransportFlags.CLIENT_COMPRESS_BOTH)) {
-                        outbound.attr(SocksContext.SOCKS_CONF).set(config);
+                        outbound.attr(SocketConfig.ATTR_CONF).set(config);
                         ChannelHandler[] handlers = new CipherDecoder().channelHandlers();
                         for (int i = handlers.length - 1; i > -1; i--) {
                             ChannelHandler handler = handlers[i];
@@ -139,10 +136,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
 
-            SocksProxyServer server = SocksContext.getAttr(inbound, SocksContext.SOCKS_SVR);
+            SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.getConfig();
             if (server.cipherRoute(e.firstDestination) && config.getTransportFlags().has(TransportFlags.SERVER_COMPRESS_BOTH)) {
-                outbound.attr(SocksContext.SOCKS_CONF).set(config);
+                outbound.attr(SocketConfig.ATTR_CONF).set(config);
                 ChannelHandler[] handlers = new CipherDecoder().channelHandlers();
                 for (int i = handlers.length - 1; i > -1; i--) {
                     ChannelHandler handler = handlers[i];
