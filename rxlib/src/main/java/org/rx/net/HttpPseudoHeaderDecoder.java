@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 @Slf4j
 public class HttpPseudoHeaderDecoder extends ByteToMessageDecoder {
     private static final int MAX_HEADER_SIZE = 8192;
-    private static final Pattern CONTENT_LENGTH_PATTERN = Pattern.compile("Content-Length:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+//    private static final Pattern CONTENT_LENGTH_PATTERN = Pattern.compile("Content-Length:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
 
     private boolean headerParsed = false;
     private int contentLength = -1;
@@ -40,12 +40,18 @@ public class HttpPseudoHeaderDecoder extends ByteToMessageDecoder {
             String headers = in.toString(in.readerIndex(), headerLen, StandardCharsets.US_ASCII);
             log.debug("pseudo decode {}", headers);
 
-            Matcher matcher = CONTENT_LENGTH_PATTERN.matcher(headers);
-            if (!matcher.find()) {
+//            Matcher matcher = CONTENT_LENGTH_PATTERN.matcher(headers);
+//            if (!matcher.find()) {
+//                throw new IllegalArgumentException("Missing Content-Length header");
+//            }
+//            contentLength = Integer.parseInt(matcher.group(1));
+            String cl = "Content-Length: ";
+            idx = headers.lastIndexOf(cl);
+            if (idx == -1) {
                 throw new IllegalArgumentException("Missing Content-Length header");
             }
+            contentLength = Integer.parseInt(headers.substring(idx + cl.length()).trim());
 
-            contentLength = Integer.parseInt(matcher.group(1));
             headerEndIndex = in.readerIndex() + headerLen;
             headerParsed = true;
         }

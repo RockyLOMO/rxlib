@@ -151,18 +151,18 @@ public class HttpPseudoHeaderEncoder extends MessageToByteEncoder<ByteBuf> {
     //endregion
 
     static final String GET_REQUEST_PSEUDO_HEADER = "GET %s HTTP/1.1\r\n" +
-            "Content-Length: %s\r\n" +
+            "Connection: keep-alive\r\n" +
             "Host: %s\r\n" +
             "Accept: */*\r\n" +
             "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n" +
-            "Connection: keep-alive\r\n\r\n";
+            "Content-Length: %s\r\n\r\n";
     static final String POST_REQUEST_PSEUDO_HEADER = "POST %s HTTP/1.1\r\n" +
-            "Content-Length: %s\r\n" +
+            "Connection: keep-alive\r\n" +
             "Host: %s\r\n" +
             "Accept: */*\r\n" +
             "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n" +
             "Content-Type: application/json\r\n" +
-            "Connection: keep-alive\r\n\r\n";
+            "Content-Length: %s\r\n\r\n";
     static final String RESPONSE_PSEUDO_HEADER = "HTTP/1.1 200 OK\r\n" +
             "Content-Length: %s\r\n" +
             "Content-Type: application/json\r\n" +
@@ -188,9 +188,9 @@ public class HttpPseudoHeaderEncoder extends MessageToByteEncoder<ByteBuf> {
             headers = String.format(RESPONSE_PSEUDO_HEADER, msg.readableBytes(), generateDateHeader());
         } else {
             if (ThreadLocalRandom.current().nextInt(0, 100) >= 20) {
-                headers = String.format(GET_REQUEST_PSEUDO_HEADER, generateRandomPath(), msg.readableBytes(), generateRandomHost());
+                headers = String.format(GET_REQUEST_PSEUDO_HEADER, generateRandomPath(), generateRandomHost(), msg.readableBytes());
             } else {
-                headers = String.format(POST_REQUEST_PSEUDO_HEADER, generateRandomPath(), msg.readableBytes(), generateRandomHost());
+                headers = String.format(POST_REQUEST_PSEUDO_HEADER, generateRandomPath(), generateRandomHost(), msg.readableBytes());
             }
         }
         log.debug("pseudo encode {}", headers);
