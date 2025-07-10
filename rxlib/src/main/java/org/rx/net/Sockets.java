@@ -38,6 +38,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
+import org.rx.core.StringBuilder;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
@@ -297,7 +298,7 @@ public final class Sockets {
             if (config.getCipherKey() == null) {
                 throw new InvalidException("Cipher key is empty");
             }
-            channel.attr(SocksContext.SOCKS_CONF).set(config);
+            channel.attr(SocketConfig.ATTR_CONF).set(config);
         }
         if (hasCipherR) {
             pipeline.addLast(new CipherDecoder().channelHandlers());
@@ -305,7 +306,7 @@ public final class Sockets {
         if (hasCipherW) {
             pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
         }
-        //        log.debug("server pipeline: {}", channel.pipeline());
+//        dumpPipeline("server", channel);
         return channel;
     }
 
@@ -342,7 +343,7 @@ public final class Sockets {
             if (config.getCipherKey() == null) {
                 throw new InvalidException("Cipher key is empty");
             }
-            channel.attr(SocksContext.SOCKS_CONF).set(config);
+            channel.attr(SocketConfig.ATTR_CONF).set(config);
         }
         if (hasCipherR) {
             pipeline.addLast(new CipherDecoder().channelHandlers());
@@ -350,7 +351,51 @@ public final class Sockets {
         if (hasCipherW) {
             pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
         }
+//        dumpPipeline("client", channel);
         return channel;
+    }
+
+    public static void dumpPipeline(String prefix, Channel channel) {
+        if (log.isDebugEnabled()) {
+            ChannelPipeline pipeline = channel.pipeline();
+            StringBuilder in = new StringBuilder();
+            StringBuilder out = new StringBuilder();
+            for (Map.Entry<String, ChannelHandler> entry : pipeline) {
+                String handlerName = entry.getKey();
+                ChannelHandler handler = entry.getValue();
+                if (handler instanceof ChannelInboundHandler) {
+                    in.append(handlerName).append(", ");
+//                    in.appendMessageFormat(" {}[{}]", handlerName, handler);
+                }
+                if (handler instanceof ChannelOutboundHandler) {
+                    out.append(handlerName).append(", ");
+//                    out.appendMessageFormat(" {}[{}]", handlerName, handler);
+                }
+            }
+            if (!in.isEmpty()) {
+                in.setLength(in.length() - 2);
+            }
+            if (!out.isEmpty()) {
+                out.setLength(out.length() - 2);
+            }
+            log.debug("Dump pipeline {}\nInbound: {}\nOutbound: {}", prefix, in, out);
+        }
+    }
+
+    public static <T> T getAttr(Channel chnl, AttributeKey<T> key) {
+        return getAttr(chnl, key, true);
+    }
+
+    public static <T> T getAttr(Channel chnl, AttributeKey<T> key, boolean throwOnEmpty) {
+        T v = chnl.attr(key).get();
+        Channel parent;
+        if (v == null && (parent = chnl.parent()) != null) {
+            v = parent.attr(key).get();
+            if (v == null && throwOnEmpty) {
+                throw new InvalidException("Attr {} not exist", key);
+            }
+        }
+        return v;
     }
     //endregion
 
@@ -449,53 +494,14 @@ public final class Sockets {
 
     public static ChannelFutureListener logBind(int port) {
         return f -> {
-            String pn = protocolName(f.channel());
+            Channel ch = f.channel();
+            String pn = Sockets.protocolName(ch);
             if (!f.isSuccess()) {
-                log.error("{} Listen on port {} fail", pn, port, f.cause());
+                log.error("Server[{}] {} listen on {} fail", ch.id(), pn, port, f.cause());
                 return;
             }
-            log.info("{} Listened on {}", pn, f.channel().localAddress());
+            log.info("Server[{}] {} listened on {}", ch.id(), pn, port);
         };
-    }
-
-    public static ChannelFutureListener logConnect(InetSocketAddress endpoint) {
-        return f -> {
-            if (!f.isSuccess()) {
-                log.error("TCP Connect {} fail", endpoint, f.cause());
-                return;
-            }
-            log.info("TCP Connected {}", endpoint);
-        };
-    }
-
-    public static void dumpPipeline(String name, Channel channel) {
-        if (log.isTraceEnabled()) {
-            ChannelPipeline pipeline = channel.pipeline();
-            List<ChannelInboundHandler> inboundHandlers = new LinkedList<>();
-            List<ChannelOutboundHandler> outboundHandlers = new LinkedList<>();
-            log.trace(name + " list:");
-            for (Map.Entry<String, ChannelHandler> entry : pipeline) {
-                String prefix;
-                ChannelHandler handler = entry.getValue();
-                if (handler instanceof ChannelInboundHandler) {
-                    prefix = "in";
-                    inboundHandlers.add((ChannelInboundHandler) handler);
-                } else if (handler instanceof ChannelOutboundHandler) {
-                    prefix = "out";
-                    outboundHandlers.add((ChannelOutboundHandler) handler);
-                } else {
-                    prefix = "?";
-                    log.trace(String.format("%s %s: %s", prefix, entry.getKey(), entry.getValue()));
-                }
-            }
-            log.trace(name + " sorted:");
-            for (ChannelInboundHandler handler : inboundHandlers) {
-                log.trace(String.format("in %s", handler));
-            }
-            for (ChannelOutboundHandler handler : outboundHandlers) {
-                log.trace(String.format("out %s", handler));
-            }
-        }
     }
     //endregion
 
