@@ -21,7 +21,8 @@ public class HttpPseudoHeaderDecoder extends ByteToMessageDecoder {
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
-//        log.info("sadasdasd {}",in.readableBytes());
+//        throw new InvalidException("decode ex");
+
         if (!headerParsed) {
             int readableBytes = in.readableBytes();
             int maxScanLen = Math.min(readableBytes, MAX_HEADER_SIZE);
@@ -33,9 +34,10 @@ public class HttpPseudoHeaderDecoder extends ByteToMessageDecoder {
             }
 
             int headerLen = idx - in.readerIndex() + 4;
-            byte[] headerBytes = new byte[headerLen];
-            in.getBytes(in.readerIndex(), headerBytes);
-            String headers = new String(headerBytes, StandardCharsets.US_ASCII);
+//            byte[] headerBytes = new byte[headerLen];
+//            in.getBytes(in.readerIndex(), headerBytes);
+//            String headers = new String(headerBytes, StandardCharsets.US_ASCII);
+            String headers = in.toString(in.readerIndex(), headerLen, StandardCharsets.US_ASCII);
             log.debug("pseudo decode {}", headers);
 
             Matcher matcher = CONTENT_LENGTH_PATTERN.matcher(headers);
