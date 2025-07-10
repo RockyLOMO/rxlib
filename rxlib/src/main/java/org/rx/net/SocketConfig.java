@@ -28,7 +28,7 @@ public class SocketConfig implements Extends {
     private boolean useSharedTcpEventLoop = true;
     private MemoryMode memoryMode = MemoryMode.LOW;
     private int connectTimeoutMillis;
-    private FlagsEnum<TransportFlags> transportFlags = TransportFlags.NONE.flags();
+    private FlagsEnum<TransportFlags> transportFlags;
     // 1 = AES, 2 = XChaCha20Poly1305
     private short cipher = 2;
     private byte[] cipherKey;
@@ -37,6 +37,13 @@ public class SocketConfig implements Extends {
 
     private Set<String> bypassHosts() {
         return new CopyOnWriteArraySet<>(RxConfig.INSTANCE.getNet().getBypassHosts());
+    }
+
+    public FlagsEnum<TransportFlags> getTransportFlags() {
+        if (transportFlags == null) {
+            transportFlags = TransportFlags.NONE.flags();
+        }
+        return transportFlags;
     }
 
     public byte[] getCipherKey() {
@@ -50,7 +57,7 @@ public class SocketConfig implements Extends {
 
     public SocketConfig() {
         RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
-        debug = conf.isEnableLog();
+//        debug = conf.isEnableLog();
         connectTimeoutMillis = conf.getConnectTimeoutMillis();
     }
 }
