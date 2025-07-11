@@ -30,12 +30,8 @@ public enum TransportFlags implements NEnum<TransportFlags> {
     CLIENT_HTTP_PSEUDO_WRITE(1 << 11),
     CLIENT_HTTP_PSEUDO_BOTH(CLIENT_HTTP_PSEUDO_READ.value | CLIENT_HTTP_PSEUDO_WRITE.value),
 
-    FRONTEND_SSL(1 << 12),
-    BACKEND_SSL(1 << 13),
-//    FRONTEND_AES_COMBO(SERVER_COMPRESS_BOTH.value | SERVER_CIPHER_BOTH.value),
-//    BACKEND_AES_COMBO(CLIENT_COMPRESS_BOTH.value | CLIENT_CIPHER_BOTH.value),
-//    BOTH_AES_COMBO(FRONTEND_AES_COMBO.value | BACKEND_AES_COMBO.value)
-    ;
+    SERVER_TLS(1 << 12),
+    CLIENT_TLS(1 << 13);
 
     final int value;
 }

@@ -164,10 +164,10 @@ public class HttpPseudoHeaderEncoder extends MessageToByteEncoder<ByteBuf> {
             "Content-Type: application/json\r\n" +
             "Content-Length: %s\r\n\r\n";
     static final String RESPONSE_PSEUDO_HEADER = "HTTP/1.1 200 OK\r\n" +
-            "Content-Length: %s\r\n" +
+            "Date: %s\r\n" +
+            "Server: Tengine\r\n" +
             "Content-Type: application/json\r\n" +
-            "Date: %s\n" +
-            "Server: Tengine\r\n\r\n";
+            "Content-Length: %s\r\n\r\n";
 
     private static String generateDateHeader() {
         return FastDateFormat.getInstance("EEE, dd MMM yyyy HH:mm:ss 'GMT'", TimeZone.getTimeZone("GMT"), Locale.US).format(new Date());
@@ -185,7 +185,7 @@ public class HttpPseudoHeaderEncoder extends MessageToByteEncoder<ByteBuf> {
 
         String headers;
         if (Boolean.TRUE.equals(Sockets.getAttr(ctx.channel(), SocketConfig.ATTR_PSEUDO_SVR, false))) {
-            headers = String.format(RESPONSE_PSEUDO_HEADER, msg.readableBytes(), generateDateHeader());
+            headers = String.format(RESPONSE_PSEUDO_HEADER, generateDateHeader(), msg.readableBytes());
         } else {
             if (ThreadLocalRandom.current().nextInt(0, 100) >= 20) {
                 headers = String.format(GET_REQUEST_PSEUDO_HEADER, generateRandomPath(), generateRandomHost(), msg.readableBytes());
