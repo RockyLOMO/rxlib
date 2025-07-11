@@ -15,7 +15,9 @@ import org.rx.core.Disposable;
 import org.rx.core.Linq;
 import org.rx.exception.InvalidException;
 import org.rx.io.Serializer;
-import org.rx.net.*;
+import org.rx.net.SocketConfig;
+import org.rx.net.Sockets;
+import org.rx.net.TransportFlags;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;

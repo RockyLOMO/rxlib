@@ -14,8 +14,6 @@ import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.io.Serializer;
-import org.rx.net.HttpPseudoHeaderDecoder;
-import org.rx.net.HttpPseudoHeaderEncoder;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 
