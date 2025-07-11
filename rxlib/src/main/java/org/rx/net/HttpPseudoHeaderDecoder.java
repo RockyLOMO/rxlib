@@ -69,7 +69,7 @@ public class HttpPseudoHeaderDecoder extends ByteToMessageDecoder {
         int readerIndex = in.readerIndex();
         int actualFrameLength = frameLengthInt;
         ByteBuf frame = in.retainedSlice(readerIndex, actualFrameLength);
-        log.debug("Extract frame offset{} + length{}", readerIndex, actualFrameLength);
+        log.debug("Extract frame offset[{}] + length[{}]", readerIndex, actualFrameLength);
         in.readerIndex(readerIndex + actualFrameLength);
         frameLengthInt = -1; // start processing the next frame
         out.add(frame);

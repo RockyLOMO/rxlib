@@ -701,17 +701,25 @@ public class TestSocks extends AbstractTester {
         RrpConfig cConf = new RrpConfig();
         cConf.setToken("youfanX");
         cConf.setServerEndpoint("127.0.0.1:9000");
-//        c.setServerEndpoint("cloud.f-li.cn:4001");
         RrpConfig.Proxy p = new RrpConfig.Proxy();
-        p.setName("ss");
-//        p.setType(1);
+        p.setName("devLocal");
         p.setRemotePort(2090);
         p.setAuth("lezhi:lezhi2020");
         cConf.setProxies(Collections.singletonList(p));
-        log.info("client conf {}", toJsonString(Collections.singletonMap("k", toJsonString(cConf))));
-
         RrpClient client = new RrpClient(cConf);
         client.connectAsync();
+
+        RrpConfig cConfR = new RrpConfig();
+        cConfR.setToken("youfanX");
+        cConfR.setServerEndpoint("cloud.f-li.cn:4001");
+        RrpConfig.Proxy pR = new RrpConfig.Proxy();
+        pR.setName("devRemote");
+        pR.setRemotePort(6015);
+        pR.setAuth("lezhi:lezhi2020");
+        cConfR.setProxies(Collections.singletonList(pR));
+        log.info("client conf {}", toJsonString(Collections.singletonMap("k", toJsonString(cConfR))));
+        RrpClient clientR = new RrpClient(cConfR);
+        clientR.connectAsync();
 
         System.in.read();
     }
