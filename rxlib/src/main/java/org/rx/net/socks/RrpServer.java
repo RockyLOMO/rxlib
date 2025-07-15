@@ -102,8 +102,20 @@ public class RrpServer extends Disposable {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             Channel inbound = ctx.channel();
+            RpClient rpClient = Sockets.getAttr(inbound, ATTR_SVR_CLI);
             RpClientProxy rpClientProxy = Sockets.getAttr(inbound, ATTR_SVR_PROXY);
-            rpClientProxy.remoteClients.remove(inbound.id().asShortText());
+            Channel outbound = rpClient.clientChannel;
+            //step7 remoteClose
+            ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
+            buf.writeByte(RrpConfig.ACTION_SYNC_CLOSE);
+            buf.writeInt(rpClientProxy.p.remotePort);
+            String channelId = inbound.id().asShortText();
+            byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
+            buf.writeInt(bytes.length);
+            buf.writeBytes(bytes);
+            outbound.writeAndFlush(buf);
+
+            rpClientProxy.remoteClients.remove(channelId);
         }
 
         @Override
@@ -153,8 +165,19 @@ public class RrpServer extends Disposable {
                 int idLen = buf.readInt();
                 String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
                 Channel remoteChannel = server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(channelId);
-                remoteChannel.writeAndFlush(buf);
+                if (remoteChannel != null) {
+                    remoteChannel.writeAndFlush(buf);
+                }
                 log.debug("RrpServer step6 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
+            }
+            else if (action == RrpConfig.ACTION_SYNC_CLOSE){
+                //step10
+                int remotePort = buf.readInt();
+                int idLen = buf.readInt();
+                String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
+                Channel remoteChannel = server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(channelId);
+                Sockets.closeOnFlushed(remoteChannel);
+                log.debug("RrpServer step10 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
             }
         }
 
@@ -168,9 +191,8 @@ public class RrpServer extends Disposable {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel clientChannel = ctx.channel();
-            RrpServer server = Sockets.getAttr(clientChannel, ATTR_SVR);
             log.warn("RELAY {} => ALL thrown", clientChannel.remoteAddress(), cause);
-            tryClose(server.clients.remove(clientChannel));
+            Sockets.closeOnFlushed(clientChannel);
         }
     }
 
