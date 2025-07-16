@@ -1,4 +1,4 @@
-package org.rx.spring;
+package org.springframework.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -42,7 +42,7 @@ import static org.rx.core.Sys.toJsonObject;
 
 @RequiredArgsConstructor
 @RestController
-@RequestMapping("mx")
+@RequestMapping("api")
 public class MxController {
     @SneakyThrows
     @RequestMapping("health")

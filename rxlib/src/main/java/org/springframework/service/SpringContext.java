@@ -1,4 +1,4 @@
-package org.rx.spring;
+package org.springframework.service;
 
 import lombok.Setter;
 import org.rx.core.Linq;

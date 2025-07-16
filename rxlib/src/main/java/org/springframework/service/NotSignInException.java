@@ -1,4 +1,4 @@
-package org.rx.spring;
+package org.springframework.service;
 
 import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;

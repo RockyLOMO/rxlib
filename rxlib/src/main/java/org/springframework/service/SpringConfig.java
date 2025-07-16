@@ -1,14 +1,11 @@
-package org.rx.spring;
+package org.springframework.service;
 
 import org.rx.bean.Decimal;
 import org.rx.core.Reflects;
 import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.EnableAspectJAutoProxy;
-import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.*;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Component;
@@ -21,6 +18,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 @Configuration
+@ComponentScan("org.springframework.service")
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
 public class SpringConfig
 //        implements AsyncConfigurer

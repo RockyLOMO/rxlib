@@ -1,4 +1,4 @@
-package org.rx.spring;
+package org.springframework.service;
 
 import lombok.RequiredArgsConstructor;
 import org.rx.core.Constants;

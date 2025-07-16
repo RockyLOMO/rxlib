@@ -3,7 +3,7 @@
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
 
-    <bean id="springContext" class="org.rx.spring.SpringContext"/>
+    <bean id="springContext" class="org.springframework.service.SpringContext"/>
     <!--    <bean id="logInterceptor" class="org.rx.spring.Interceptors.LogInterceptor"/>-->
     <!--    <bean id="controllerInterceptor" class="org.rx.spring.ControllerInterceptor"/>-->
     <!--    execution(public * org.rx..*.*(..)) and !execution(* org.rx.util.Validator.*(..))-->
