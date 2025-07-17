@@ -5,7 +5,10 @@ import org.rx.core.Reflects;
 import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.boot.web.servlet.ServletComponentScan;
 import org.springframework.context.annotation.*;
+import org.springframework.core.Ordered;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Component;
@@ -19,20 +22,9 @@ import java.util.concurrent.Future;
 
 @Configuration
 @ComponentScan("org.springframework.service")
+@ServletComponentScan
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
-public class SpringConfig
-//        implements AsyncConfigurer
-{
-//    @Override
-//    public Executor getAsyncExecutor() {
-//        return new ThreadPool("rx-spring-1");
-//    }
-//
-//    @Override
-//    public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
-//        return (e, m, a) -> TraceHandler.INSTANCE.log(e);
-//    }
-
+public class SpringConfig {
     @Primary
     @Bean
     public AsyncTaskExecutor asyncTaskExecutorEx() {
@@ -63,6 +55,15 @@ public class SpringConfig
     @Bean
     public ExecutorService executorServiceEx() {
         return Tasks.executor();
+    }
+
+    @Bean
+    public FilterRegistrationBean<RWebFilter> rWebFilter() {
+        FilterRegistrationBean<RWebFilter> bean = new FilterRegistrationBean<>(new RWebFilter());
+        bean.setName("rWebFilter");
+        bean.addUrlPatterns("/*");
+        bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return bean;
     }
 
     @Bean

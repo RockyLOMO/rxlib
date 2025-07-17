@@ -12,18 +12,17 @@ import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 
-//ServletComponentScan
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @WebFilter(urlPatterns = "/*")
-public class MxWebFilter implements Filter {
+public class RWebFilter implements Filter {
     @Override
-    public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
-        if (Strings.startsWithIgnoreCase(servletRequest.getContentType(), HttpHeaderValues.APPLICATION_JSON)
-                && !(servletRequest instanceof ContentCachingRequestWrapper)) {
-            servletRequest = new ContentCachingRequestWrapper((HttpServletRequest) servletRequest);
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+        if (Strings.startsWithIgnoreCase(request.getContentType(), HttpHeaderValues.APPLICATION_JSON)
+                && !(request instanceof ContentCachingRequestWrapper)) {
+            request = new ContentCachingRequestWrapper((HttpServletRequest) request);
 //            log.info("MxWebFilter exchange ContentCachingRequest");
         }
-        filterChain.doFilter(servletRequest, servletResponse);
+        chain.doFilter(request, response);
     }
 }
