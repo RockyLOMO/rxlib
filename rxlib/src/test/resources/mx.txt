@@ -1,0 +1,2 @@
+Sys.diagnosticMx.setVMOption(request.getParameter("k"), request.getParameter("v"));
+CpuWatchman.startWatch(); / CpuWatchman.stopWatch();
