@@ -1,9 +1,11 @@
 package org.springframework.service;
 
+import lombok.SneakyThrows;
+import org.rx.annotation.Subscribe;
 import org.rx.bean.Decimal;
-import org.rx.core.Reflects;
-import org.rx.core.Tasks;
+import org.rx.core.*;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.socks.SocksContext;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.web.servlet.ServletComponentScan;
@@ -13,6 +15,7 @@ import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.PostConstruct;
 import javax.validation.Validation;
 import javax.validation.Validator;
 import java.io.File;
@@ -106,5 +109,23 @@ public class SpringConfig {
         public Class<?> convert(String s) {
             return Reflects.loadClass(s, false);
         }
+    }
+
+    @SneakyThrows
+    @PostConstruct
+    public void init() {
+        Class.forName(Sys.class.getName());
+        ObjectChangeTracker.DEFAULT.register(this);
+    }
+
+    @Subscribe(topicClass = RxConfig.class)
+    void onChanged(ObjectChangedEvent event) {
+        //todo all topic
+        Tasks.setTimeout(() -> {
+            String omega = event.<RxConfig>source().getOmega();
+            if (omega != null) {
+                SocksContext.omega(omega);
+            }
+        }, 60 * 1000);
     }
 }
