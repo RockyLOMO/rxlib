@@ -4,7 +4,6 @@ import org.rx.core.Tasks;
 import org.rx.exception.TraceHandler;
 import org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler;
 import org.springframework.scheduling.annotation.AsyncConfigurer;
-import org.springframework.stereotype.Component;
 
 import java.util.concurrent.Executor;
 

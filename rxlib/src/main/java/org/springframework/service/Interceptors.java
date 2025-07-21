@@ -78,13 +78,13 @@ public class Interceptors {
             if (ms == null || skipMethods.contains(signature.getName())) {
                 return joinPoint.proceed();
             }
-
-            if (Strings.equals(httpEnv.left.getParameter("rmx"), Constants.ENABLE_FLAG)) {
-                MxController controller = SpringContext.getBean(MxController.class, false);
-                if (controller != null) {
-                    return controller.health(httpEnv.left);
-                }
-            }
+//todo
+//            if (Strings.equals(httpEnv.left.getParameter("rmx"), Constants.ENABLE_FLAG)) {
+//                RWebHandler controller = SpringContext.getBean(RWebHandler.class, false);
+//                if (controller != null) {
+//                    return controller.health(httpEnv.left);
+//                }
+//            }
             Map<String, String> fts = RxConfig.INSTANCE.getMxHttpForwards().get(ms.getDeclaringType().getName());
             if (fts != null) {
                 String fu = fts.get(ms.getName());

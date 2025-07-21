@@ -8,23 +8,23 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.bean.DateTime;
 import org.rx.codec.CodecUtil;
 import org.rx.codec.XChaCha20Poly1305Util;
-import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.rx.core.*;
 import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
 import org.rx.io.IOStream;
+import org.rx.net.NetEventWait;
+import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
-import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-
 import java.io.PrintWriter;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.Method;
@@ -32,28 +32,49 @@ import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.eq;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Sys.*;
 
 @Slf4j
-public class HandlerAspect {
+@Component
+public class HandlerUtil {
     static final String AUTH_NAME = "x-token";
     static final String PARAMS_NAME = "_p";
-    static final String PARAMS_XCHACHA = "_x";
-    static final String s = ".";
+    static final String DOT = ".";
 
     @SneakyThrows
     public boolean around(HttpServletRequest request, HttpServletResponse response) {
+        boolean xcha = "1".equals(request.getParameter("_c"));
         JSONObject params;
-        if (!auth(request) || (params = getParams(request)) == null) {
+        if (!auth(request) || (params = getParams(request, xcha)) == null) {
             return false;
         }
 
-        final String rt = "1";
-        Object resText;
+        Object resText = "0";
         ThreadPool.startTrace(null);
         try {
             switch (params.getIntValue("x")) {
+                case 1:
+                    String multicast = request.getParameter("multicast");
+                    if (multicast != null) {
+                        String group = request.getParameter("group");
+                        Integer mcId = Reflects.changeType(request.getParameter("mcId"), Integer.class);
+                        NetEventWait.multicastLocal(Sockets.parseEndpoint(multicast), group, ifNull(mcId, 0));
+                        resText = "1";
+                    }
+                    break;
+                case 2:
+                    String fu = request.getParameter("url");
+                    if (fu != null) {
+                        HttpClient client = new HttpClient();
+                        Integer tm = Reflects.convertQuietly(request.getParameter("timeout"), Integer.class);
+                        if (tm != null) {
+                            client.withTimeoutMillis(tm);
+                        }
+                        client.forward(request, response, fu);
+                    }
+                    break;
                 case 3:
                     String type = request.getParameter("type");
                     String jsonVal = request.getParameter("jsonVal");
@@ -71,10 +92,10 @@ public class HandlerAspect {
                         }
                     }
                     resText = target;
+                    break;
                 case 5:
                     resText = Linq.from(InetAddress.getAllByName(request.getParameter("host"))).select(p -> p.getHostAddress()).toArray();
-                case 6:
-                    return new ResponseEntity<>(exec(request), headers, HttpStatus.OK);
+                    break;
                 case 10:
                     String startTime = request.getParameter("startTime");
                     DateTime st = startTime == null ? null : DateTime.valueOf(startTime);
@@ -87,16 +108,21 @@ public class HandlerAspect {
                     String methodNamePrefix = request.getParameter("methodNamePrefix");
                     String metricsName = request.getParameter("metricsName");
                     Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
-                    return queryTraces(st, et, level, kw, newest, methodOccurMost, methodNamePrefix, metricsName, take);
+                    resText = queryTraces(st, et, level, kw, newest, methodOccurMost, methodNamePrefix, metricsName, take);
+                    break;
                 case 11:
                     DateTime begin = Reflects.changeType(request.getParameter("begin"), DateTime.class);
-                    Strings.simpleEval()
                     DateTime end = Reflects.changeType(request.getParameter("end"), DateTime.class);
-                    return findTopUsage(begin, end);
+                    resText = findTopUsage(begin, end);
+                    break;
                 case 12:
                     resText = invokeEx(params.getString("expr"), params.getJSONArray("args"));
+                    break;
+                case 13:
+                    resText = exec(params.getString("cmd"), params.getString("workspace"));
+                    break;
                 default:
-                    resText = svrState(request);
+                    resText = svrState(request, params);
                     break;
             }
         } catch (Throwable e) {
@@ -104,14 +130,19 @@ public class HandlerAspect {
         } finally {
             ThreadPool.endTrace();
         }
+        String r = resText instanceof String ? (String) resText : toJsonString(resText);
+        if (xcha) {
+            r = CodecUtil.convertToBase64(XChaCha20Poly1305Util.encrypt(r.getBytes(StandardCharsets.UTF_8)));
+        }
+        response.setContentType(MediaType.TEXT_PLAIN_VALUE);
         response.setCharacterEncoding("UTF-8");
         PrintWriter out = response.getWriter();
-        out.write(resText instanceof String ? (String) resText : toJsonString(resText));
+        out.write(r);
         out.flush();
         return true;
     }
 
-    Map<String, Object> svrState(HttpServletRequest request) {
+    Map<String, Object> svrState(HttpServletRequest request, JSONObject params) {
         Map<String, Object> j = new LinkedHashMap<>();
         j.put("jarFile", Sys.getJarFile(this));
         j.put("inputArguments", ManagementFactory.getRuntimeMXBean().getInputArguments());
@@ -156,6 +187,7 @@ public class HandlerAspect {
         threadInfo.put("topBlockedTime", ts.orderByDescending(ThreadEntity::getBlockedTime).take(take).select(p -> p.toString()));
         threadInfo.put("topWaitedTime", ts.orderByDescending(ThreadEntity::getWaitedTime).take(take).select(p -> p.toString()));
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames())).select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
+        j.put("requestBody", params);
         j.putAll(queryTraces(null, null, null, null, null, null, null, null, take));
         return j;
     }
@@ -179,9 +211,24 @@ public class HandlerAspect {
         return result;
     }
 
+    Map<String, Object> findTopUsage(Date begin, Date end) {
+        Map<String, Object> result = new LinkedHashMap<>(5);
+        Linq<CpuWatchman.ThreadUsageView> topUsage = CpuWatchman.findTopUsage(begin, end);
+        result.put("deadlocked", topUsage.where(p -> p.getBegin().isDeadlocked() || p.getEnd().isDeadlocked()).select(CpuWatchman.ThreadUsageView::toString));
+
+        result.put("topCpuTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getCpuNanosElapsed).select(CpuWatchman.ThreadUsageView::toString));
+
+        result.put("topUserTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getUserNanosElapsed).select(CpuWatchman.ThreadUsageView::toString));
+
+        result.put("topBlockedTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getBlockedElapsed).select(CpuWatchman.ThreadUsageView::toString));
+
+        result.put("topWaitedTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getWaitedElapsed).select(CpuWatchman.ThreadUsageView::toString));
+        return result;
+    }
+
     @SneakyThrows
     Object invokeEx(String expr, List<Object> args) {
-        int ms = expr.lastIndexOf(s);
+        int ms = expr.lastIndexOf(DOT);
         if (ms == -1) {
             throw new InvalidException("Class name not fund");
         }
@@ -196,7 +243,7 @@ public class HandlerAspect {
                 kls = Class.forName(cls);
                 break;
             } catch (ClassNotFoundException e) {
-                if ((cs = cls.lastIndexOf(s)) == -1) {
+                if ((cs = cls.lastIndexOf(DOT)) == -1) {
                     throw e;
                 }
                 cls = cls.substring(0, cs);
@@ -208,7 +255,7 @@ public class HandlerAspect {
         if (cs != ms) {
             String fieldExpr = expr.substring(cs + 1, ms);
             while (true) {
-                int f = fieldExpr.indexOf(s);
+                int f = fieldExpr.indexOf(DOT);
                 boolean end = f == -1;
                 String fn = end ? fieldExpr : fieldExpr.substring(0, f);
                 if (member == null) {
@@ -250,68 +297,16 @@ public class HandlerAspect {
         return Reflects.invokeMethod(method, ai, a);
     }
 
-//    @SneakyThrows
-//    void xx(String expr){
-//        String cls = expr;
-//        int cs ;
-//        Class<?> kls;
-//        while (true) {
-//            try {
-//                kls = Class.forName(cls);
-//                break;
-//            } catch (ClassNotFoundException e) {
-//                if ((cs = cls.lastIndexOf(s)) == -1) {
-//                    throw e;
-//                }
-//                cls = cls.substring(0, cs);
-//            }
-//        }
-//
-//        Object inst = ifNull(SpringContext.getBean(kls, false), kls);
-//        Object member = null;
-//        if (cls.length() != expr.length()) {
-//            String fieldExpr = expr.substring(cls.length()+1);
-//            while (true) {
-//                int f = fieldExpr.indexOf(s);
-//                boolean end = f == -1;
-//                String fn = end ? fieldExpr : fieldExpr.substring(0, f);
-//                if (member == null) {
-//                    member = inst instanceof Class ? Reflects.readStaticField((Class<?>) inst, fn) : Reflects.readField(inst, fn);
-//                } else {
-//                    member = Reflects.readField(member, fn);
-//                }
-//                if (end) {
-//                    break;
-//                }
-//                fieldExpr = fieldExpr.substring(f + 1);
-//            }
-//        }
-//
-//        Object ai;
-//        Class<?> at;
-//        if (member != null) {
-//            ai = member;
-//            at = member.getClass();
-//        } else if (inst instanceof Class) {
-//            ai = inst;
-//            at = (Class<?>) inst;
-//        } else {
-//            ai = inst;
-//            at = inst.getClass();
-//        }
-//    }
-
-    Object exec(HttpServletRequest request) {
-        JSONObject params = getParams(request);
+    Object exec(String cmd, String workspace) {
         StringBuilder echo = new StringBuilder();
-        ShellCommand cmd = new ShellCommand(params.getString("cmd"), params.getString("workspace"));
-        cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
-        cmd.start().waitFor(30000);
+        ShellCommand sc = new ShellCommand(cmd, workspace);
+        sc.onPrintOut.combine((s, e) -> echo.append(e.toString()));
+        sc.start().waitFor(30000);
         return echo.toString();
     }
 
     @SneakyThrows
-    JSONObject getParams(HttpServletRequest request) {
+    JSONObject getParams(HttpServletRequest request, boolean xcha) {
         try {
             String b = request.getParameter(PARAMS_NAME);
             if (b == null) {
@@ -321,9 +316,7 @@ public class HandlerAspect {
                 return null;
             }
 
-            b = "1".equals(request.getParameter(PARAMS_XCHACHA))
-                    ? new String(XChaCha20Poly1305Util.decrypt(CodecUtil.convertFromBase64(b)), StandardCharsets.UTF_8)
-                    : b;
+            b = xcha ? new String(XChaCha20Poly1305Util.decrypt(CodecUtil.convertFromBase64(b)), StandardCharsets.UTF_8) : b;
             if (Strings.startsWith(b, "https")) {
                 b = new HttpClient().get(b).toString();
             }
