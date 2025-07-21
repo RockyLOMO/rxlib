@@ -43,8 +43,11 @@ public class SpringContext implements ApplicationContextAware {
 
     public static <T> T getBean(Class<T> clazz, boolean throwOnEmpty) {
         Map<String, T> beanMaps = getApplicationContext().getBeansOfType(clazz);
-        if (throwOnEmpty && beanMaps.isEmpty()) {
-            throw new InvalidException("Bean {} not registered", clazz);
+        if (beanMaps.isEmpty()) {
+            if (throwOnEmpty) {
+                throw new InvalidException("Bean {} not registered", clazz);
+            }
+            return null;
         }
         return beanMaps.values().iterator().next();
     }

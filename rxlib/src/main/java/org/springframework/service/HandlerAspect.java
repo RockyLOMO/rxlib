@@ -9,6 +9,7 @@ import org.rx.bean.DateTime;
 import org.rx.codec.CodecUtil;
 import org.rx.codec.XChaCha20Poly1305Util;
 import org.rx.core.*;
+import org.rx.core.StringBuilder;
 import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -37,12 +38,14 @@ import static org.rx.core.Sys.*;
 @Slf4j
 public class HandlerAspect {
     static final String AUTH_NAME = "x-token";
-    static final String PARAMS_NAME = "_r";
+    static final String PARAMS_NAME = "_p";
+    static final String PARAMS_XCHACHA = "_x";
+    static final String s = ".";
 
     @SneakyThrows
     public boolean around(HttpServletRequest request, HttpServletResponse response) {
-        JSONObject p;
-        if (!auth(request) || (p = getParams(request)) == null) {
+        JSONObject params;
+        if (!auth(request) || (params = getParams(request)) == null) {
             return false;
         }
 
@@ -50,7 +53,7 @@ public class HandlerAspect {
         Object resText;
         ThreadPool.startTrace(null);
         try {
-            switch (p.getIntValue("x")) {
+            switch (params.getIntValue("x")) {
                 case 3:
                     String type = request.getParameter("type");
                     String jsonVal = request.getParameter("jsonVal");
@@ -58,10 +61,7 @@ public class HandlerAspect {
                     if (!Strings.isBlank(type)) {
                         Class<?> clazz = Class.forName(type);
                         target = SpringContext.getBean(clazz, false);
-                        if (target == null) {
-                            return null;
-                        }
-                        if (jsonVal != null) {
+                        if (target != null && jsonVal != null) {
                             BeanMapper.DEFAULT.map(fromJson(jsonVal, clazz), target, BeanMapFlag.SKIP_NULL.flags());
                         }
                     } else {
@@ -70,14 +70,11 @@ public class HandlerAspect {
                             RxConfig.INSTANCE.refreshFrom(toJsonObject(jsonVal));
                         }
                     }
-                    return target;
+                    resText = target;
                 case 5:
-                    return Linq.from(InetAddress.getAllByName(request.getParameter("host"))).select(p -> p.getHostAddress()).toArray();
+                    resText = Linq.from(InetAddress.getAllByName(request.getParameter("host"))).select(p -> p.getHostAddress()).toArray();
                 case 6:
                     return new ResponseEntity<>(exec(request), headers, HttpStatus.OK);
-                case 7:
-                    SocksContext.omegax(Reflects.convertQuietly(request.getParameter("p"), Integer.class, 22));
-                    return rt;
                 case 10:
                     String startTime = request.getParameter("startTime");
                     DateTime st = startTime == null ? null : DateTime.valueOf(startTime);
@@ -93,12 +90,15 @@ public class HandlerAspect {
                     return queryTraces(st, et, level, kw, newest, methodOccurMost, methodNamePrefix, metricsName, take);
                 case 11:
                     DateTime begin = Reflects.changeType(request.getParameter("begin"), DateTime.class);
+                    Strings.simpleEval()
                     DateTime end = Reflects.changeType(request.getParameter("end"), DateTime.class);
                     return findTopUsage(begin, end);
                 case 12:
-                    return invoke(request);
+                    resText = invokeEx(params.getString("expr"), params.getJSONArray("args"));
+                default:
+                    resText = svrState(request);
+                    break;
             }
-            resText = svrState(request);
         } catch (Throwable e) {
             resText = String.format("%s\n%s", e, ExceptionUtils.getStackTrace(e));
         } finally {
@@ -180,8 +180,7 @@ public class HandlerAspect {
     }
 
     @SneakyThrows
-    Object invokeEx(String expr, Object[] args) {
-        final String s = ".";
+    Object invokeEx(String expr, List<Object> args) {
         int ms = expr.lastIndexOf(s);
         if (ms == -1) {
             throw new InvalidException("Class name not fund");
@@ -204,14 +203,7 @@ public class HandlerAspect {
             }
         }
 
-        Object inst;
-        try {
-            inst = SpringContext.getBean(kls);
-        } catch (Throwable e) {
-            log.debug("invokeEx {}", e.toString());
-            inst = kls;
-        }
-
+        Object inst = ifNull(SpringContext.getBean(kls, false), kls);
         Object member = null;
         if (cs != ms) {
             String fieldExpr = expr.substring(cs + 1, ms);
@@ -243,10 +235,10 @@ public class HandlerAspect {
             ai = inst;
             at = inst.getClass();
         }
-        Method method = Reflects.getMethodMap(at).get(mn).where(p -> p.getParameterCount() == args.length).first();
+        Method method = Reflects.getMethodMap(at).get(mn).where(p -> p.getParameterCount() == args.size()).first();
         Class<?>[] parameterTypes = method.getParameterTypes();
         Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> {
-            Object o = args[i];
+            Object o = args.get(i);
             try {
                 return fromJson(o, p);
             } catch (Exception e) {
@@ -256,6 +248,66 @@ public class HandlerAspect {
         }).toArray();
         log.debug("invokeEx {}({})", method, toJsonString(a));
         return Reflects.invokeMethod(method, ai, a);
+    }
+
+//    @SneakyThrows
+//    void xx(String expr){
+//        String cls = expr;
+//        int cs ;
+//        Class<?> kls;
+//        while (true) {
+//            try {
+//                kls = Class.forName(cls);
+//                break;
+//            } catch (ClassNotFoundException e) {
+//                if ((cs = cls.lastIndexOf(s)) == -1) {
+//                    throw e;
+//                }
+//                cls = cls.substring(0, cs);
+//            }
+//        }
+//
+//        Object inst = ifNull(SpringContext.getBean(kls, false), kls);
+//        Object member = null;
+//        if (cls.length() != expr.length()) {
+//            String fieldExpr = expr.substring(cls.length()+1);
+//            while (true) {
+//                int f = fieldExpr.indexOf(s);
+//                boolean end = f == -1;
+//                String fn = end ? fieldExpr : fieldExpr.substring(0, f);
+//                if (member == null) {
+//                    member = inst instanceof Class ? Reflects.readStaticField((Class<?>) inst, fn) : Reflects.readField(inst, fn);
+//                } else {
+//                    member = Reflects.readField(member, fn);
+//                }
+//                if (end) {
+//                    break;
+//                }
+//                fieldExpr = fieldExpr.substring(f + 1);
+//            }
+//        }
+//
+//        Object ai;
+//        Class<?> at;
+//        if (member != null) {
+//            ai = member;
+//            at = member.getClass();
+//        } else if (inst instanceof Class) {
+//            ai = inst;
+//            at = (Class<?>) inst;
+//        } else {
+//            ai = inst;
+//            at = inst.getClass();
+//        }
+//    }
+
+    Object exec(HttpServletRequest request) {
+        JSONObject params = getParams(request);
+        StringBuilder echo = new StringBuilder();
+        ShellCommand cmd = new ShellCommand(params.getString("cmd"), params.getString("workspace"));
+        cmd.onPrintOut.combine((s, e) -> echo.append(e.toString()));
+        cmd.start().waitFor(30000);
+        return echo.toString();
     }
 
     @SneakyThrows
@@ -269,7 +321,9 @@ public class HandlerAspect {
                 return null;
             }
 
-            b = new String(XChaCha20Poly1305Util.decrypt(CodecUtil.convertFromBase64(b)), StandardCharsets.UTF_8);
+            b = "1".equals(request.getParameter(PARAMS_XCHACHA))
+                    ? new String(XChaCha20Poly1305Util.decrypt(CodecUtil.convertFromBase64(b)), StandardCharsets.UTF_8)
+                    : b;
             if (Strings.startsWith(b, "https")) {
                 b = new HttpClient().get(b).toString();
             }
