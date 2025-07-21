@@ -8,6 +8,9 @@
     </parent>
     <artifactId>daemon</artifactId>
 
+    <!-- Add this element -->
+    <name>Daemon Project</name>
+
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
         <lombok.version>1.18.26</lombok.version>
