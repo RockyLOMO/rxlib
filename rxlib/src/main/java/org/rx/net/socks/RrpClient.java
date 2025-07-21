@@ -181,8 +181,8 @@ public class RrpClient extends Disposable {
             } else if (action == RrpConfig.ACTION_SYNC_CLOSE) {
                 //step8
                 Channel localChannel = proxyCtx.localChannels.get(channelId);
-                Sockets.closeOnFlushed(localChannel);
                 log.debug("RrpClient step8 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
+                Sockets.closeOnFlushed(localChannel);
             } else {
                 log.warn("Invalid action {}", action);
                 serverChannel.close();

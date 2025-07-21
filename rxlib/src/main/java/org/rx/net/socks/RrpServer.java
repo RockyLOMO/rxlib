@@ -176,8 +176,8 @@ public class RrpServer extends Disposable {
                 int idLen = buf.readInt();
                 String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
                 Channel remoteChannel = server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(channelId);
-                Sockets.closeOnFlushed(remoteChannel);
                 log.debug("RrpServer step10 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
+                Sockets.closeOnFlushed(remoteChannel);
             }
         }
 

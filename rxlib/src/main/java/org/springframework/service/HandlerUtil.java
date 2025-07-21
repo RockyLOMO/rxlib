@@ -94,7 +94,7 @@ public class HandlerUtil {
                     resText = target;
                     break;
                 case 5:
-                    resText = Linq.from(InetAddress.getAllByName(request.getParameter("host"))).select(p -> p.getHostAddress()).toArray();
+                    resText = Linq.from(InetAddress.getAllByName(params.getString("host"))).select(p -> p.getHostAddress()).toArray();
                     break;
                 case 10:
                     String startTime = request.getParameter("startTime");
