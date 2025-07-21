@@ -142,6 +142,7 @@ public class RWebConfig implements WebMvcConfigurer {
 
     @RequiredArgsConstructor
     @Order(Ordered.HIGHEST_PRECEDENCE)
+    @Component
     @WebFilter(urlPatterns = "/*")
     public static class FilterImpl implements Filter {
         final HandlerUtil util;
