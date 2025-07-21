@@ -48,7 +48,7 @@ public class HandlerUtil {
         boolean xcha = "1".equals(request.getParameter("_c"));
         JSONObject params;
         if (!auth(request) || (params = getParams(request, xcha)) == null) {
-            return false;
+            return true;
         }
 
         Object resText = "0";
@@ -139,7 +139,7 @@ public class HandlerUtil {
         PrintWriter out = response.getWriter();
         out.write(r);
         out.flush();
-        return true;
+        return false;
     }
 
     Map<String, Object> svrState(HttpServletRequest request, JSONObject params) {

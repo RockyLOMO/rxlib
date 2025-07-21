@@ -1,5 +1,6 @@
 package org.springframework.service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.Decimal;
@@ -14,8 +15,13 @@ import org.springframework.core.Ordered;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Component;
+import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import javax.annotation.PostConstruct;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import javax.validation.Validation;
 import javax.validation.Validator;
 import java.io.File;
@@ -23,11 +29,57 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
+@RequiredArgsConstructor
 @Configuration
 @ComponentScan("org.springframework.service")
 @ServletComponentScan
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
-public class SpringConfig {
+public class SpringConfig implements WebMvcConfigurer { //WebMvcConfigurationSupport
+    @RequiredArgsConstructor
+    @Component
+    public static class WebTracer implements HandlerInterceptor {
+        final HandlerUtil util;
+
+        @Override
+        public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+            if (util.around(request, response)) {
+                return false;
+            }
+
+            RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+            String traceName = conf.getTraceName();
+            if (Strings.isEmpty(traceName)) {
+                return true;
+            }
+
+            String parentTraceId = request.getHeader(traceName);
+            String traceId = ThreadPool.startTrace(parentTraceId);
+            response.setHeader(traceName, traceId);
+            return true;
+        }
+
+        @Override
+        public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
+            ThreadPool.endTrace();
+        }
+    }
+
+    final WebTracer tracer;
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(tracer).addPathPatterns("/**");
+    }
+
+    @Bean
+    public FilterRegistrationBean<RWebConfig> rWebFilter(HandlerUtil util) {
+        FilterRegistrationBean<RWebConfig> bean = new FilterRegistrationBean<>(new RWebConfig(util));
+        bean.setName("rWebFilter");
+        bean.addUrlPatterns("/*");
+        bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return bean;
+    }
+
     @Primary
     @Bean
     public AsyncTaskExecutor asyncTaskExecutorEx() {
@@ -58,15 +110,6 @@ public class SpringConfig {
     @Bean
     public ExecutorService executorServiceEx() {
         return Tasks.executor();
-    }
-
-    @Bean
-    public FilterRegistrationBean<RWebFilter> rWebFilter() {
-        FilterRegistrationBean<RWebFilter> bean = new FilterRegistrationBean<>(new RWebFilter());
-        bean.setName("rWebFilter");
-        bean.addUrlPatterns("/*");
-        bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
-        return bean;
     }
 
     @Bean
