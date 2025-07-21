@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rx</artifactId>
-    <version>2.21.4-SNAPSHOT</version>
+    <version>2.21.4</version>
     <packaging>pom</packaging>
 
     <parent>
@@ -32,7 +32,7 @@
         <url>https://github.com/RockyLOMO/rxlib</url>
         <connection>scm:git:https://github.com/RockyLOMO/rxlib.git</connection>
         <developerConnection>scm:git:https://github.com/RockyLOMO/rxlib.git</developerConnection>
-        <tag>HEAD</tag>
+        <tag>rx-2.21.4</tag>
     </scm>
     <organization>
         <name>com.github.rockylomo</name>
