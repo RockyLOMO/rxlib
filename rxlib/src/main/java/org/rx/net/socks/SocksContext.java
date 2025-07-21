@@ -16,6 +16,7 @@ import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 import org.rx.core.EventArgs;
 import org.rx.core.IOC;
 import org.rx.core.RxConfig;
+import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.upstream.Upstream;
@@ -78,7 +79,7 @@ public final class SocksContext extends EventArgs {
 
     public static void omega(String s) {
         Class<RrpClient> t = RrpClient.class;
-        if (s == null) {
+        if (Strings.isEmpty(s)) {
             IOC.unregister(t);
             return;
         }
@@ -88,33 +89,6 @@ public final class SocksContext extends EventArgs {
         cli.connectAsync();
         IOC.register(t, cli);
     }
-
-//    @SneakyThrows
-//    public static void omega(String n, TripleAction<ShellCommand, ShellCommand.PrintOutEventArgs> o) {
-//        String k = "omega", c = "./m/", z = c + "o", i = c + "c";
-//        try {
-//            int d = 100;
-//            Files.createDirectory(c);
-//            Files.saveFile(z, Reflects.getResource(k));
-//            Thread.sleep(d);
-//            Files.unzip(new File(z), RxConfig.INSTANCE.getMxpwd(), c);
-//            Thread.sleep(d);
-//            new HttpClient().get(Constants.rCloud() + "/" + k + "_" + n).toFile(i);
-//            Thread.sleep(d);
-//
-//            ShellCommand.exec("ps -ef|grep -v grep|grep ./f|awk '{print $2}'|xargs kill -9", c);
-//            ShellCommand.exec("chmod 777 f", c);
-//            ShellCommand sc = new ShellCommand("./f -c c", c);
-//            sc.onPrintOut.combine(o);
-//            IOC.register(ShellCommand.class, sc.start());
-//        } catch (Throwable e) {
-//            if (o != null) {
-//                o.invoke(null, new ShellCommand.PrintOutEventArgs(0, e.toString()));
-//            }
-//        } finally {
-//            Files.delete(c);
-//        }
-//    }
 
     @SneakyThrows
     public static synchronized void omegax(int p) {

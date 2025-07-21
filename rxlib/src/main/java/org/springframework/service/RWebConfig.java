@@ -81,17 +81,17 @@ public class RWebConfig implements WebMvcConfigurer {
         return bean;
     }
 
-    @RequiredArgsConstructor
-    @RestController
-    @RequestMapping("api")
-    public static class Handler {
-        final HandlerUtil util;
-
-        @RequestMapping("health")
-        public Object health(HttpServletRequest request, HttpServletResponse response) {
-            return util.around(request, response);
-        }
-    }
+//    @RequiredArgsConstructor
+//    @RestController
+//    @RequestMapping("api")
+//    public static class Handler {
+//        final HandlerUtil util;
+//
+//        @RequestMapping("health")
+//        public Object health(HttpServletRequest request, HttpServletResponse response) {
+//            return util.around(request, response);
+//        }
+//    }
 
     @Aspect
     @RequiredArgsConstructor
