@@ -12,6 +12,8 @@ import org.rx.core.*;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
+import org.rx.util.function.QuadraFunc;
+import org.rx.util.function.TripleFunc;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -100,7 +102,7 @@ public class RWebConfig implements WebMvcConfigurer {
 
     @Order(Ordered.LOWEST_PRECEDENCE)
     @ControllerAdvice
-    @Component
+//    @Component
     public static class ExceptionAdvice {
         @ExceptionHandler({Throwable.class})
         @ResponseStatus(HttpStatus.OK)
@@ -127,8 +129,9 @@ public class RWebConfig implements WebMvcConfigurer {
                 msg = ApplicationException.getMessage(e);
             }
 
-            if (SpringContext.controllerExceptionHandler != null) {
-                return SpringContext.controllerExceptionHandler.apply(e, msg);
+            TripleFunc<Throwable, String, Object> exceptionHandle = SpringContext.exceptionHandle;
+            if (exceptionHandle != null) {
+                return exceptionHandle.apply(e, msg);
             }
             TraceHandler.INSTANCE.log(e);
             return new ResponseEntity<>(msg, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -169,6 +172,13 @@ public class RWebConfig implements WebMvcConfigurer {
             }
 
             beginTrace(ra.getRequest(), ra.getResponse());
+            TripleFunc<HttpServletRequest, HttpServletResponse, Object> preHandle = SpringContext.preHandle;
+            if (preHandle != null) {
+                Object r = preHandle.apply(ra.getRequest(), ra.getResponse());
+                if (r != null) {
+                    return r;
+                }
+            }
             try {
                 IRequireSignIn requireSignIn = as(joinPoint.getTarget(), IRequireSignIn.class);
                 if (requireSignIn != null && !requireSignIn.isSignIn(ms.getMethod(), joinPoint.getArgs())) {
@@ -195,7 +205,15 @@ public class RWebConfig implements WebMvcConfigurer {
                 }
 
                 logCtx("url", ra.getRequest().getRequestURL().toString());
-                return super.around(joinPoint);
+                Object result = super.around(joinPoint);
+                QuadraFunc<HttpServletRequest, HttpServletResponse, Object, Object> postHandle = SpringContext.postHandle;
+                if (postHandle != null) {
+                    Object r = postHandle.apply(ra.getRequest(), ra.getResponse(), result);
+                    if (r != null) {
+                        return r;
+                    }
+                }
+                return result;
             } finally {
                 endTrace(ra.getRequest(), ra.getResponse());
             }

@@ -1,9 +1,9 @@
 package org.springframework.service;
 
-import lombok.Setter;
 import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
+import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleFunc;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -11,6 +11,8 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.util.Map;
 
 import static org.rx.core.Extends.require;
@@ -22,6 +24,9 @@ import static org.rx.core.Extends.require;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class SpringContext implements ApplicationContextAware {
+    public static TripleFunc<HttpServletRequest, HttpServletResponse, Object> preHandle;
+    public static QuadraFunc<HttpServletRequest, HttpServletResponse, Object, Object> postHandle;
+    public static TripleFunc<Throwable, String, Object> exceptionHandle;
     private static ApplicationContext applicationContext;
 
     public static boolean isInitiated() {
@@ -67,7 +72,4 @@ public class SpringContext implements ApplicationContextAware {
     public void setApplicationContext(ApplicationContext applicationContext) {
         SpringContext.applicationContext = applicationContext;
     }
-
-    @Setter
-    static TripleFunc<Throwable, String, Object> controllerExceptionHandler;
 }
