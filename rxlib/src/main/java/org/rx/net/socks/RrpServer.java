@@ -123,7 +123,7 @@ public class RrpServer extends Disposable {
             Channel inbound = ctx.channel();
             RpClient rpClient = Sockets.getAttr(inbound, ATTR_SVR_CLI);
             Channel outbound = rpClient.clientChannel;
-            log.warn("RELAY {} => {}[{}] thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
+            log.warn("RrpServer error remote RELAY {} => {}[{}] thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
             Sockets.closeOnFlushed(inbound);
         }
     }
@@ -191,7 +191,7 @@ public class RrpServer extends Disposable {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel clientChannel = ctx.channel();
-            log.warn("RELAY {} => ALL thrown", clientChannel.remoteAddress(), cause);
+            log.warn("RrpServer error main RELAY {} => ALL thrown", clientChannel.remoteAddress(), cause);
             Sockets.closeOnFlushed(clientChannel);
         }
     }
