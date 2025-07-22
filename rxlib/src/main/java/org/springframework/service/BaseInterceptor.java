@@ -5,6 +5,7 @@ import org.apache.commons.lang3.BooleanUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.bean.LogStrategy;
 import org.rx.core.Reflects;
 import org.rx.core.Sys;
 
@@ -14,8 +15,9 @@ import static org.rx.core.Sys.*;
 public abstract class BaseInterceptor {
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
     protected CallLogBuilder logBuilder = Sys.DEFAULT_LOG_BUILDER;
+    protected LogStrategy logStrategy;
 
-    public Object doAround(ProceedingJoinPoint joinPoint) throws Throwable {
+    public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
         if (BooleanUtils.isTrue(idempotent.get())) {
             return joinPoint.proceed();
         }
@@ -34,7 +36,7 @@ public abstract class BaseInterceptor {
                 public Object invoke() throws Throwable {
                     return joinPoint.proceed(args);
                 }
-            }, logBuilder, null);
+            }, logBuilder, logStrategy);
         } finally {
             clearLogCtx();
             idempotent.remove();

@@ -2,6 +2,7 @@ package org.springframework.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -42,9 +43,13 @@ public class HandlerUtil {
     static final String AUTH_NAME = "x-token";
     static final String PARAMS_NAME = "_p";
     static final String DOT = ".";
+    static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
 
     @SneakyThrows
     public boolean around(HttpServletRequest request, HttpServletResponse response) {
+        if (Boolean.TRUE.equals(idempotent.get())) {
+            return false;
+        }
         boolean xcha = "1".equals(request.getParameter("_c"));
         JSONObject params;
         if (!auth(request) || (params = getParams(request, xcha)) == null) {
@@ -52,7 +57,7 @@ public class HandlerUtil {
         }
 
         Object resText = "0";
-        ThreadPool.startTrace(null);
+        idempotent.set(Boolean.TRUE);
         try {
             switch (params.getIntValue("x")) {
                 case 1:
@@ -128,7 +133,7 @@ public class HandlerUtil {
         } catch (Throwable e) {
             resText = String.format("%s\n%s", e, ExceptionUtils.getStackTrace(e));
         } finally {
-            ThreadPool.endTrace();
+            idempotent.remove();
         }
         String r = resText instanceof String ? (String) resText : toJsonString(resText);
         if (xcha) {

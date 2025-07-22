@@ -4,33 +4,50 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.rx.core.Constants;
-import org.rx.core.RxConfig;
-import org.rx.core.Strings;
-import org.rx.core.ThreadPool;
+import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.core.*;
+import org.rx.exception.ApplicationException;
+import org.rx.exception.TraceHandler;
+import org.rx.net.http.HttpClient;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.BindException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.util.ContentCachingRequestWrapper;
 
+import javax.annotation.PostConstruct;
 import javax.servlet.*;
 import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.validation.ConstraintViolation;
+import javax.validation.ConstraintViolationException;
 import java.io.IOException;
+import java.util.Map;
+import java.util.stream.Collectors;
 
+import static org.rx.core.Extends.as;
 import static org.rx.core.Sys.logCtx;
 
 //WebMvcConfigurationSupport
@@ -81,37 +98,104 @@ public class RWebConfig implements WebMvcConfigurer {
         return bean;
     }
 
-//    @RequiredArgsConstructor
-//    @RestController
-//    @RequestMapping("api")
-//    public static class Handler {
-//        final HandlerUtil util;
-//
-//        @RequestMapping("health")
-//        public Object health(HttpServletRequest request, HttpServletResponse response) {
-//            return util.around(request, response);
-//        }
-//    }
+    @Order(Ordered.LOWEST_PRECEDENCE)
+    @ControllerAdvice
+    @Component
+    public static class ExceptionAdvice {
+        @ExceptionHandler({Throwable.class})
+        @ResponseStatus(HttpStatus.OK)
+        @ResponseBody
+        public Object onException(Throwable e) {
+            String msg = null;
+            if (e instanceof ConstraintViolationException) {
+                ConstraintViolationException error = (ConstraintViolationException) e;
+                msg = error.getConstraintViolations().stream().map(ConstraintViolation::getMessage).collect(Collectors.joining());
+            } else if (e instanceof MethodArgumentNotValidException) {
+                FieldError fieldError = ((MethodArgumentNotValidException) e).getBindingResult().getFieldError();
+                if (fieldError != null) {
+                    msg = String.format("Field '%s' %s", fieldError.getField(), fieldError.getDefaultMessage());
+                }
+            } else if (e instanceof BindException) {
+                FieldError fieldError = ((BindException) e).getFieldError();
+                if (fieldError != null) {
+                    msg = String.format("Field '%s' %s", fieldError.getField(), fieldError.getDefaultMessage());
+                }
+            } else if (e instanceof HttpMessageNotReadableException) {
+                msg = "Request body not readable";
+            }
+            if (msg == null) {
+                msg = ApplicationException.getMessage(e);
+            }
 
+            if (SpringContext.controllerExceptionHandler != null) {
+                return SpringContext.controllerExceptionHandler.apply(e, msg);
+            }
+            TraceHandler.INSTANCE.log(e);
+            return new ResponseEntity<>(msg, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    //@within class level, @annotation method level
     @Aspect
     @RequiredArgsConstructor
     @Component
-    public static class HandlerAspect {
+    public static class HandlerAspect extends BaseInterceptor {
         final HandlerUtil util;
 
-        @Around("within(@org.springframework.web.bind.annotation.RestController *)")
+        @PostConstruct
+        public void init() {
+            logBuilder = new Sys.DefaultCallLogBuilder() {
+                @Override
+                protected Object shortArg(Class<?> declaringType, String methodName, Object arg) {
+                    if (arg instanceof MultipartFile) {
+                        return "[MultipartFile]";
+                    }
+                    return super.shortArg(declaringType, methodName, arg);
+                }
+            };
+        }
+
+        @Around("within(@org.springframework.web.bind.annotation.RestController *) && execution(public * *(..))")
+        @Override
         public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
             ServletRequestAttributes ra = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-            if (ra == null) {
+            Signature signature = joinPoint.getSignature();
+            MethodSignature ms = as(signature, MethodSignature.class);
+            if (ra == null || ms == null) {
                 return joinPoint.proceed();
             }
+            if (!util.around(ra.getRequest(), ra.getResponse())) {
+                return null;
+            }
+
+            beginTrace(ra.getRequest(), ra.getResponse());
             try {
-                if (!util.around(ra.getRequest(), ra.getResponse())) {
-                    return null;
+                IRequireSignIn requireSignIn = as(joinPoint.getTarget(), IRequireSignIn.class);
+                if (requireSignIn != null && !requireSignIn.isSignIn(ms.getMethod(), joinPoint.getArgs())) {
+                    throw new NotSignInException();
                 }
 
-                beginTrace(ra.getRequest(), ra.getResponse());
-                return joinPoint.proceed();
+                RxConfig.RestConfig conf = RxConfig.INSTANCE.getRest();
+
+                String declaringTypeName = ms.getDeclaringType().getName();
+                Map<String, String> fts = conf.getForwards().get(declaringTypeName);
+                if (fts != null) {
+                    String fu = fts.get(ms.getName());
+                    if (fu != null) {
+                        new HttpClient().forward(ra.getRequest(), ra.getResponse(), fu);
+                        return null;
+                    }
+                }
+
+                int logMode = conf.getLogMode();
+                if (logMode == 0
+                        || (logMode == 1 && conf.getBlackMatcher().matches(declaringTypeName))
+                        || (logMode == 2 && !conf.getWhiteMatcher().matches(declaringTypeName))) {
+                    return joinPoint.proceed();
+                }
+
+                logCtx("url", ra.getRequest().getRequestURL().toString());
+                return super.around(joinPoint);
             } finally {
                 endTrace(ra.getRequest(), ra.getResponse());
             }
@@ -130,13 +214,13 @@ public class RWebConfig implements WebMvcConfigurer {
                 return false;
             }
 
-            beginTrace(request, response);
+//            beginTrace(request, response);
             return true;
         }
 
         @Override
         public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
-            endTrace(request, response);
+//            endTrace(request, response);
         }
     }
 
