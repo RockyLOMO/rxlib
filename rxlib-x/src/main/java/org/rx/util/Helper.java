@@ -9,8 +9,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.rx.core.Numbers;
 import org.rx.exception.InvalidException;
 import org.rx.spring.MiddlewareConfig;
-import org.rx.spring.SpringContext;
-import org.rx.util.function.QuadraFunc;
+import org.springframework.service.SpringContext;
 import org.rx.util.function.TripleFunc;
 
 import javax.mail.*;

@@ -56,7 +56,7 @@ import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Socks5UdpUpstream;
-import org.rx.net.socks.upstream.Socks5Upstream;
+import org.rx.net.socks.upstream.Socks5TcpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.IPSearcher;
 import org.rx.net.support.SocksSupport;
@@ -561,7 +561,7 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), backConf, () -> new UpstreamSupport(srvEp, null)));
+            e.setUpstream(new Socks5TcpUpstream(e.getFirstDestination(), backConf, () -> new UpstreamSupport(srvEp, null)));
 //            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), backConf, shadowServers::next));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
@@ -634,7 +634,7 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, shadowServers::next));
+            e.setUpstream(new Socks5TcpUpstream(e.getFirstDestination(), frontConf, shadowServers::next));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {

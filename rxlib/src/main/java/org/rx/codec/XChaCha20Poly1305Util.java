@@ -3,6 +3,8 @@ package org.rx.codec;
 import org.bouncycastle.crypto.macs.Poly1305;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.params.ParametersWithIV;
+import org.rx.core.Linq;
+import org.rx.core.RxConfig;
 
 import java.security.SecureRandom;
 import java.util.Arrays;
@@ -79,5 +81,15 @@ public class XChaCha20Poly1305Util {
         byte[] key = new byte[KEY_LEN];
         secureRandom.nextBytes(key);
         return key;
+    }
+
+    public static byte[] encrypt(byte[] plaintext) {
+        return encrypt(Linq.from(RxConfig.INSTANCE.getNet().getCiphers()).where(p -> p.startsWith("2,"))
+                .select(p -> CodecUtil.convertFromBase64(p.substring(2))).first(), plaintext);
+    }
+
+    public static byte[] decrypt(byte[] input) {
+        return decrypt(Linq.from(RxConfig.INSTANCE.getNet().getCiphers()).where(p -> p.startsWith("2,"))
+                .select(p -> CodecUtil.convertFromBase64(p.substring(2))).first(), input);
     }
 }

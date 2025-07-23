@@ -95,7 +95,17 @@ public class RrpClient extends Disposable {
             Tuple<RpClientProxy, String> attr = Sockets.getAttr(localChannel, ATTR_CLI_PROXY);
             RpClientProxy proxyCtx = attr.left;
             String channelId = attr.right;
-            tryClose(proxyCtx.localChannels.remove(channelId));
+            Channel serverChannel = proxyCtx.serverChannel;
+            //step9 localClose
+            ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
+            buf.writeByte(RrpConfig.ACTION_SYNC_CLOSE);
+            buf.writeInt(proxyCtx.p.remotePort);
+            byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
+            buf.writeInt(bytes.length);
+            buf.writeBytes(bytes);
+            serverChannel.writeAndFlush(buf);
+
+            Sockets.closeOnFlushed(proxyCtx.localChannels.remove(channelId));
         }
 
         @Override
@@ -105,7 +115,7 @@ public class RrpClient extends Disposable {
             RpClientProxy proxyCtx = attr.left;
 //            String channelId = attr.right;
             Channel serverChannel = proxyCtx.serverChannel;
-            log.warn("RELAY {} => {}[{}] thrown", localChannel.remoteAddress(), serverChannel.localAddress(), serverChannel.remoteAddress(), cause);
+            log.warn("RrpClient error RELAY {} => {}[{}] thrown", localChannel.remoteAddress(), serverChannel.localAddress(), serverChannel.remoteAddress(), cause);
         }
     }
 
@@ -139,46 +149,44 @@ public class RrpClient extends Disposable {
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel serverChannel = ctx.channel();
             ByteBuf buf = (ByteBuf) msg;
-            //step4
             byte action = buf.readByte();
-            if (action != RrpConfig.ACTION_FORWARD) {
-                log.warn("Invalid action {}", action);
-                serverChannel.close();
-                return;
-            }
-
             int remotePort = buf.readInt();
             int idLen = buf.readInt();
             String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
             RpClientProxy proxyCtx = proxyMap.get(remotePort);
-            Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
-                RrpConfig conf = Sys.deepClone(config);
+            if (action == RrpConfig.ACTION_FORWARD) {
+                //step4
+                Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
+                    RrpConfig conf = Sys.deepClone(config);
 //                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
-                conf.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags());
-                ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf).pipeline()
-                        .addLast(SocksClientHandler.DEFAULT)).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
-                Channel ch = connF.channel();
-                ch.attr(ATTR_CLI_CONN).set(connF);
-                connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CLI_CONN).set(null));
-                return ch;
-            });
-            ChannelFuture connF = localChannel.attr(ATTR_CLI_CONN).get();
-            if (connF == null) {
-                localChannel.writeAndFlush(buf);
-            } else {
-//                ByteBuf finalBuf = Unpooled.copiedBuffer(buf);
-                connF.addListener((ChannelFutureListener) f -> {
-                    if (f.isSuccess()) {
-                        f.channel().writeAndFlush(buf);
-                    }
+                    conf.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags());
+                    ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf).pipeline()
+                            .addLast(SocksClientHandler.DEFAULT)).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
+                    Channel ch = connF.channel();
+                    ch.attr(ATTR_CLI_CONN).set(connF);
+                    connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CLI_CONN).set(null));
+                    return ch;
                 });
+                ChannelFuture connF = localChannel.attr(ATTR_CLI_CONN).get();
+                if (connF == null) {
+                    localChannel.writeAndFlush(buf);
+                } else {
+                    connF.addListener((ChannelFutureListener) f -> {
+                        if (f.isSuccess()) {
+                            f.channel().writeAndFlush(buf);
+                        }
+                    });
+                }
+                log.debug("RrpClient step4 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
+            } else if (action == RrpConfig.ACTION_SYNC_CLOSE) {
+                //step8
+                Channel localChannel = proxyCtx.localChannels.get(channelId);
+                log.debug("RrpClient step8 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
+                Sockets.closeOnFlushed(localChannel);
+            } else {
+                log.warn("RrpClient error Invalid action {}", action);
+                serverChannel.close();
             }
-
-//            Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> Sockets.bootstrap(config, ch -> ch.pipeline()
-//                            .addLast(new SocksClientHandler(proxyCtx, channelId)))
-//                    .connect(proxyCtx.localEndpoint).syncUninterruptibly().channel());
-//            localChannel.writeAndFlush(buf);
-            log.debug("RrpClient step4 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
         }
 
         @Override
@@ -192,7 +200,7 @@ public class RrpClient extends Disposable {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel serverChannel = ctx.channel();
-            log.warn("RELAY {} => ALL thrown", serverChannel.remoteAddress(), cause);
+            log.warn("RrpClient error RELAY {} => ALL thrown", serverChannel.remoteAddress(), cause);
         }
     }
 

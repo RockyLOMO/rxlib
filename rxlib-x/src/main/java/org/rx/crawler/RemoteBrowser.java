@@ -11,7 +11,7 @@ import org.rx.net.Sockets;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.spring.MiddlewareConfig;
-import org.rx.spring.SpringContext;
+import org.springframework.service.SpringContext;
 import org.rx.util.function.*;
 
 import java.net.InetSocketAddress;

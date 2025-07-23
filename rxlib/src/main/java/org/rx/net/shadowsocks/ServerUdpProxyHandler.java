@@ -11,6 +11,7 @@ import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.ProxyChannelIdleHandler;
 import org.rx.net.socks.SocksContext;
+import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.UdpManager;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -63,7 +64,6 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
 
             return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
                 SocksContext.ssServer(ob, server);
-                e.onClose = () -> UdpManager.closeChannel(srcEp);
                 SocksContext.mark(inbound, ob, e, false);
 
                 upstream.initChannel(ob);
@@ -80,6 +80,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
 //            SocksContext.mark(inbound, ob2, e, true);
 //            return ob2;
         });
+        outbound.closeFuture().addListener(f -> UdpManager.closeChannel(srcEp));
 
         SocksContext sc = SocksContext.ctx(outbound);
         UnresolvedEndpoint upDstEp = sc.getUpstream().getDestination();

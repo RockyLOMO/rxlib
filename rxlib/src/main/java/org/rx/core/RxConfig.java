@@ -11,6 +11,7 @@ import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Metadata;
 import org.rx.bean.IntWaterMark;
 import org.rx.bean.LogStrategy;
+import org.rx.bean.TriePrefixMatcher;
 import org.rx.net.Sockets;
 import org.springframework.core.env.Environment;
 
@@ -73,12 +74,15 @@ public final class RxConfig {
         String NTP_SERVERS = "app.net.ntp.servers";
         String DNS_INLAND_SERVERS = "app.net.dns.inlandServers";
         String DNS_OUTLAND_SERVERS = "app.net.dns.outlandServers";
+        String REST_LOG_MODE = "app.rest.logMode";
+        String REST_LOG_NAME_LIST = "app.rest.logNameList";
+        String REST_FORWARDS = "app.rest.forwards";
 
         String APP_ID = "app.id";
         String MX_SAMPLING_PERIOD = "app.mxSamplingPeriod";
-        String MX_HTTP_FORWARDS = "app.mxHttpForwards";
         String DATE_FORMAT = "app.dateFormat";
         String LOG_STRATEGY = "app.logStrategy";
+        String LOG_NAME_LIST = "app.logNameList";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String OMEGA = "app.omega";
         String MXPWD = "app.mxpwd";
@@ -182,6 +186,25 @@ public final class RxConfig {
         final List<String> outlandServers = newConcurrentList(true);
     }
 
+    @Getter
+    @Setter
+    @ToString
+    public static class RestConfig {
+        //0 disable, 1 whiteList, 2 blackList
+        int logMode;
+        final Set<String> logNameList = ConcurrentHashMap.newKeySet();
+        //key1: controller, key2: method, value: url
+        final Map<String, Map<String, String>> forwards = new ConcurrentHashMap<>(8);
+        private TriePrefixMatcher logNameMatcher;
+
+        public TriePrefixMatcher getLogNameMatcher() {
+            if (logNameMatcher == null) {
+                logNameMatcher = new TriePrefixMatcher(logNameList, logMode == 1);
+            }
+            return logNameMatcher;
+        }
+    }
+
     public static final RxConfig INSTANCE;
 
     static {
@@ -201,17 +224,17 @@ public final class RxConfig {
     String dateFormat;
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
-    final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
+    final Set<String> logNameList = ConcurrentHashMap.newKeySet();
+    private TriePrefixMatcher logNameMatcher;
     String omega;
     String mxpwd;
     long mxSamplingPeriod;
-    //key1: controller, key2: method, value: url
-    Map<String, Map<String, String>> mxHttpForwards = new ConcurrentHashMap<>(8);
     TraceConfig trace = new TraceConfig();
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
     DiskConfig disk = new DiskConfig();
     NetConfig net = new NetConfig();
+    RestConfig rest = new RestConfig();
 
     public int getIntId() {
         Integer v = Integer.getInteger(id);
@@ -219,6 +242,13 @@ public final class RxConfig {
             return v;
         }
         return id.hashCode();
+    }
+
+    public TriePrefixMatcher getLogNameMatcher() {
+        if (logNameMatcher == null) {
+            logNameMatcher = new TriePrefixMatcher(logNameList, logStrategy == LogStrategy.WHITELIST);
+        }
+        return logNameMatcher;
     }
 
     private RxConfig() {
@@ -332,6 +362,10 @@ public final class RxConfig {
         reset(net.dns.inlandServers, ConfigNames.DNS_INLAND_SERVERS);
         reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
 
+        rest.logMode = SystemPropertyUtil.getInt(ConfigNames.REST_LOG_MODE, rest.logMode);
+        reset(rest.logNameList, ConfigNames.REST_LOG_NAME_LIST);
+        rest.logNameMatcher = null;
+
         id = SystemPropertyUtil.get(ConfigNames.APP_ID, id);
         omega = SystemPropertyUtil.get(ConfigNames.OMEGA, omega);
         mxpwd = SystemPropertyUtil.get(ConfigNames.MXPWD, mxpwd);
@@ -347,6 +381,8 @@ public final class RxConfig {
         if (v != null) {
             logStrategy = LogStrategy.valueOf(v);
         }
+        reset(logNameList, ConfigNames.LOG_NAME_LIST);
+        logNameMatcher = null;
 
         afterSet();
     }

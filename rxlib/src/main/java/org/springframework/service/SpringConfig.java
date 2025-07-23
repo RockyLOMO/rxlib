@@ -1,18 +1,20 @@
-package org.rx.spring;
+package org.springframework.service;
 
+import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
+import org.rx.annotation.Subscribe;
 import org.rx.bean.Decimal;
-import org.rx.core.Reflects;
-import org.rx.core.Tasks;
+import org.rx.core.*;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.socks.SocksContext;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.EnableAspectJAutoProxy;
-import org.springframework.context.annotation.Primary;
+import org.springframework.boot.web.servlet.ServletComponentScan;
+import org.springframework.context.annotation.*;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.PostConstruct;
 import javax.validation.Validation;
 import javax.validation.Validator;
 import java.io.File;
@@ -20,21 +22,12 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
+@RequiredArgsConstructor
 @Configuration
+@ComponentScan("org.springframework.service")
+@ServletComponentScan
 @EnableAspectJAutoProxy(proxyTargetClass = true, exposeProxy = true)
-public class SpringConfig
-//        implements AsyncConfigurer
-{
-//    @Override
-//    public Executor getAsyncExecutor() {
-//        return new ThreadPool("rx-spring-1");
-//    }
-//
-//    @Override
-//    public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
-//        return (e, m, a) -> TraceHandler.INSTANCE.log(e);
-//    }
-
+public class SpringConfig {
     @Primary
     @Bean
     public AsyncTaskExecutor asyncTaskExecutorEx() {
@@ -107,5 +100,23 @@ public class SpringConfig
         public Class<?> convert(String s) {
             return Reflects.loadClass(s, false);
         }
+    }
+
+    @SneakyThrows
+    @PostConstruct
+    public void init() {
+        Class.forName(Sys.class.getName());
+        ObjectChangeTracker.DEFAULT.register(this);
+    }
+
+    @Subscribe(topicClass = RxConfig.class)
+    void onChanged(ObjectChangedEvent event) {
+        //todo all topic
+        Tasks.setTimeout(() -> {
+            String omega = event.<RxConfig>source().getOmega();
+            if (omega != null) {
+                SocksContext.omega(omega);
+            }
+        }, 60 * 1000);
     }
 }

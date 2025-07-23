@@ -19,12 +19,13 @@ public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         Channel outbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(outbound);
-        if (CollectionUtils.isEmpty(sc.pendingPackages)) {
-            return;
-        }
+//        if (CollectionUtils.isEmpty(sc.pendingPackages)) {
+//            return;
+//        }
 
-        log.debug("RELAY {} => {}[{}] flush packets", sc.inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
-        Sockets.writeAndFlush(outbound, sc.pendingPackages);
+//        log.debug("RELAY {} => {}[{}] flush packets", sc.inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
+//        Sockets.writeAndFlush(outbound, sc.pendingPackages);
+//        sc.pendingPackages = null;
         super.channelActive(ctx);
     }
 

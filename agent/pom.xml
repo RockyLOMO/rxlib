@@ -5,9 +5,12 @@
     <parent>
         <groupId>com.github.rockylomo</groupId>
         <artifactId>rx</artifactId>
-        <version>2.20.11</version>
+        <version>2.21.1</version>
     </parent>
     <artifactId>agent</artifactId>
+
+    <!-- Add this element -->
+    <name>Agent Project</name>
 
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>

@@ -520,12 +520,12 @@ public final class Sys extends SystemUtils {
                     case ALWAYS:
                         doWrite = true;
                         break;
-                    default:
+                    case NONE:
                         doWrite = false;
                         break;
-                }
-                if (doWrite && !CollectionUtils.isEmpty(conf.logTypeWhitelist)) {
-                    doWrite = Linq.from(conf.logTypeWhitelist).any(p -> declaringType.getName().startsWith(p));
+                    default:
+                        doWrite = conf.getLogNameMatcher().matches(declaringType.getName());
+                        break;
                 }
                 if (doWrite) {
                     try {

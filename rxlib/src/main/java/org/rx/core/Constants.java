@@ -43,8 +43,6 @@ public interface Constants {
     int ADVICE_SHARE_TIME_INDEX = 0;
     int ADVICE_SHARE_FORK_JOIN_FUNC_INDEX = 1;
 
-    String ENABLE_FLAG = "1";
-
     String CACHE_REGION_ERROR_CODE = "ERR";
     String CACHE_REGION_BEAN_PROPERTIES = "PROP";
     String CACHE_REGION_INTERFACE_METHOD = "IM";

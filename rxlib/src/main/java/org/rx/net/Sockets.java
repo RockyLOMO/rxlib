@@ -505,13 +505,20 @@ public final class Sockets {
 
     public static ChannelFutureListener logBind(int port) {
         return f -> {
+            int realPort;
             Channel ch = f.channel();
+            InetSocketAddress locAddr;
+            if ((locAddr = (InetSocketAddress) ch.localAddress()) != null) {
+                realPort = locAddr.getPort();
+            } else {
+                realPort = port;
+            }
             String pn = Sockets.protocolName(ch);
             if (!f.isSuccess()) {
-                log.error("Server[{}] {} listen on {} fail", ch.id(), pn, port, f.cause());
+                log.error("Server[{}] {} listen on {} fail", ch.id(), pn, realPort, f.cause());
                 return;
             }
-            log.info("Server[{}] {} listened on {}", ch.id(), pn, port);
+            log.info("Server[{}] {} listened on {}", ch.id(), pn, realPort);
         };
     }
     //endregion

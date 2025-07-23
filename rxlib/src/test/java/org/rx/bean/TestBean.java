@@ -14,6 +14,7 @@ import org.rx.test.PersonGender;
 import java.time.DayOfWeek;
 import java.time.Month;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.CountDownLatch;
@@ -25,6 +26,25 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class TestBean extends AbstractTester {
+    @Test
+    public void triePrefixMatcher() {
+        List<String> prefixes = Arrays.toList("org.rx.net", "com.example");
+        TriePrefixMatcher matcher = new TriePrefixMatcher(prefixes, true);
+
+        // 测试用例
+        String[] testClasses = {
+                "org.rx.net.class1",
+                "org.rx.net.xxx.class2",
+                "org.rx.network.class3", // 不应匹配
+                "com.example.test",
+                "invalid.class"
+        };
+
+        for (String className : testClasses) {
+            System.out.println("类名: " + className + " -> 匹配: " + matcher.matches(className));
+        }
+    }
+
     @SneakyThrows
     @Test
     public void randomList() {

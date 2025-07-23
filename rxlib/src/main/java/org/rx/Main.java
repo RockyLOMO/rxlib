@@ -24,7 +24,7 @@ import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Socks5UdpUpstream;
-import org.rx.net.socks.upstream.Socks5Upstream;
+import org.rx.net.socks.upstream.Socks5TcpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.transport.TcpClientConfig;
@@ -235,7 +235,7 @@ public final class Main implements SocksSupport {
             return () -> shadowServers.next(srcHost, conf.steeringTTL, true);
         };
         frontSvr.onRoute.replace(firstRoute, (s, e) -> {
-            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), frontConf, routerFn.apply(e)));
+            e.setUpstream(new Socks5TcpUpstream(e.getFirstDestination(), frontConf, routerFn.apply(e)));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
@@ -324,7 +324,7 @@ public final class Main implements SocksSupport {
                     return;
                 }
 
-                e.setUpstream(new Socks5Upstream(e.getFirstDestination(), directConf, () -> new UpstreamSupport(srvEp, null)));
+                e.setUpstream(new Socks5TcpUpstream(e.getFirstDestination(), directConf, () -> new UpstreamSupport(srvEp, null)));
             });
             server.onUdpRoute.replace(ssFirstRoute, (s, e) -> {
                 e.setUpstream(new Upstream(e.getFirstDestination(), srvEp));

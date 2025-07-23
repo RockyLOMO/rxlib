@@ -30,9 +30,9 @@ import static org.rx.core.Extends.quietly;
 public class Servlets extends ServletRequestUtils {
     static final FastThreadLocal<Tuple<HttpServletRequest, HttpServletResponse>> CTX = new FastThreadLocal<>();
 
-    public static void setRequest(HttpServletRequest request, HttpServletResponse response) {
-        CTX.set(Tuple.of(request, response));
-    }
+//    public static void setRequest(HttpServletRequest request, HttpServletResponse response) {
+//        CTX.set(Tuple.of(request, response));
+//    }
 
     public static Tuple<HttpServletRequest, HttpServletResponse> currentRequest() {
         Tuple<HttpServletRequest, HttpServletResponse> tuple = CTX.getIfExists();
