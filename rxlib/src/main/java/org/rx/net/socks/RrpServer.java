@@ -150,7 +150,7 @@ public class RrpServer extends Disposable {
                 int tokenLen = buf.readInt();
                 String token = tokenLen > 0 ? buf.readCharSequence(tokenLen, StandardCharsets.US_ASCII).toString() : null;
                 if (!eq(token, server.config.getToken())) {
-                    log.warn("Invalid token {}", token);
+                    log.warn("RrpServer error Invalid token {}", token);
                     clientChannel.close();
                     return;
                 }

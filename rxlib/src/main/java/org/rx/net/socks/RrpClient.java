@@ -115,7 +115,7 @@ public class RrpClient extends Disposable {
             RpClientProxy proxyCtx = attr.left;
 //            String channelId = attr.right;
             Channel serverChannel = proxyCtx.serverChannel;
-            log.warn("RELAY {} => {}[{}] thrown", localChannel.remoteAddress(), serverChannel.localAddress(), serverChannel.remoteAddress(), cause);
+            log.warn("RrpClient error RELAY {} => {}[{}] thrown", localChannel.remoteAddress(), serverChannel.localAddress(), serverChannel.remoteAddress(), cause);
         }
     }
 
@@ -184,7 +184,7 @@ public class RrpClient extends Disposable {
                 log.debug("RrpClient step8 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
                 Sockets.closeOnFlushed(localChannel);
             } else {
-                log.warn("Invalid action {}", action);
+                log.warn("RrpClient error Invalid action {}", action);
                 serverChannel.close();
             }
         }
@@ -200,7 +200,7 @@ public class RrpClient extends Disposable {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             Channel serverChannel = ctx.channel();
-            log.warn("RELAY {} => ALL thrown", serverChannel.remoteAddress(), cause);
+            log.warn("RrpClient error RELAY {} => ALL thrown", serverChannel.remoteAddress(), cause);
         }
     }
 
