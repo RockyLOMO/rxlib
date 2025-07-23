@@ -24,7 +24,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         Channel inbound = ctx.channel();
-        ShadowsocksServer server = SocksContext.ssServer(inbound, true);
+        ShadowsocksServer server = Sockets.getAttr(inbound, SocksContext.SS_SVR);
         InetSocketAddress realEp = inbound.attr(SSCommon.REMOTE_DEST).get();
 
         SocksContext e = new SocksContext((InetSocketAddress) inbound.remoteAddress(), new UnresolvedEndpoint(realEp));
