@@ -75,14 +75,14 @@ public final class RxConfig {
         String DNS_INLAND_SERVERS = "app.net.dns.inlandServers";
         String DNS_OUTLAND_SERVERS = "app.net.dns.outlandServers";
         String REST_LOG_MODE = "app.rest.logMode";
-        String REST_BLACK_LIST = "app.rest.blackList";
-        String REST_WHITE_LIST = "app.rest.whiteList";
+        String REST_LOG_NAME_LIST = "app.rest.logNameList";
         String REST_FORWARDS = "app.rest.forwards";
 
         String APP_ID = "app.id";
         String MX_SAMPLING_PERIOD = "app.mxSamplingPeriod";
         String DATE_FORMAT = "app.dateFormat";
         String LOG_STRATEGY = "app.logStrategy";
+        String LOG_NAME_LIST = "app.logNameList";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String OMEGA = "app.omega";
         String MXPWD = "app.mxpwd";
@@ -190,26 +190,18 @@ public final class RxConfig {
     @Setter
     @ToString
     public static class RestConfig {
-        //0 disable, 1 blackList, 2 whiteList
+        //0 disable, 1 whiteList, 2 blackList
         int logMode;
-        final List<String> blackList = newConcurrentList(true);
-        final List<String> whiteList = newConcurrentList(true);
+        final Set<String> logNameList = ConcurrentHashMap.newKeySet();
         //key1: controller, key2: method, value: url
         final Map<String, Map<String, String>> forwards = new ConcurrentHashMap<>(8);
-        private TriePrefixMatcher blackMatcher, whiteMatcher;
+        private TriePrefixMatcher logNameMatcher;
 
-        public TriePrefixMatcher getBlackMatcher() {
-            if (blackMatcher == null) {
-                blackMatcher = new TriePrefixMatcher(blackList);
+        public TriePrefixMatcher getLogNameMatcher() {
+            if (logNameMatcher == null) {
+                logNameMatcher = new TriePrefixMatcher(logNameList, logMode == 1);
             }
-            return blackMatcher;
-        }
-
-        public TriePrefixMatcher getWhiteMatcher() {
-            if (whiteMatcher == null) {
-                whiteMatcher = new TriePrefixMatcher(whiteList);
-            }
-            return whiteMatcher;
+            return logNameMatcher;
         }
     }
 
@@ -232,7 +224,8 @@ public final class RxConfig {
     String dateFormat;
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
-    final Set<String> logTypeWhitelist = ConcurrentHashMap.newKeySet();
+    final Set<String> logNameList = ConcurrentHashMap.newKeySet();
+    private TriePrefixMatcher logNameMatcher;
     String omega;
     String mxpwd;
     long mxSamplingPeriod;
@@ -249,6 +242,13 @@ public final class RxConfig {
             return v;
         }
         return id.hashCode();
+    }
+
+    public TriePrefixMatcher getLogNameMatcher() {
+        if (logNameMatcher == null) {
+            logNameMatcher = new TriePrefixMatcher(logNameList, logStrategy == LogStrategy.WHITELIST);
+        }
+        return logNameMatcher;
     }
 
     private RxConfig() {
@@ -363,8 +363,8 @@ public final class RxConfig {
         reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
 
         rest.logMode = SystemPropertyUtil.getInt(ConfigNames.REST_LOG_MODE, rest.logMode);
-        reset(rest.blackList, ConfigNames.REST_BLACK_LIST);
-        reset(rest.whiteList, ConfigNames.REST_WHITE_LIST);
+        reset(rest.logNameList, ConfigNames.REST_LOG_NAME_LIST);
+        rest.logNameMatcher = null;
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID, id);
         omega = SystemPropertyUtil.get(ConfigNames.OMEGA, omega);
@@ -381,6 +381,8 @@ public final class RxConfig {
         if (v != null) {
             logStrategy = LogStrategy.valueOf(v);
         }
+        reset(logNameList, ConfigNames.LOG_NAME_LIST);
+        logNameMatcher = null;
 
         afterSet();
     }

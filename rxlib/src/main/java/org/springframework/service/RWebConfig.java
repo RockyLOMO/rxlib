@@ -199,8 +199,7 @@ public class RWebConfig implements WebMvcConfigurer {
 
                 int logMode = conf.getLogMode();
                 if (logMode == 0
-                        || (logMode == 1 && conf.getBlackMatcher().matches(declaringTypeName))
-                        || (logMode == 2 && !conf.getWhiteMatcher().matches(declaringTypeName))) {
+                        || conf.getLogNameMatcher().matches(declaringTypeName)) {
                     return joinPoint.proceed();
                 }
 

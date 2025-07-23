@@ -29,7 +29,7 @@ public class TestBean extends AbstractTester {
     @Test
     public void triePrefixMatcher() {
         List<String> prefixes = Arrays.toList("org.rx.net", "com.example");
-        TriePrefixMatcher matcher = new TriePrefixMatcher(prefixes);
+        TriePrefixMatcher matcher = new TriePrefixMatcher(prefixes, true);
 
         // 测试用例
         String[] testClasses = {

@@ -1,25 +1,23 @@
 package org.rx.bean;
 
-import lombok.Getter;
-
+import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class TriePrefixMatcher {
     // Trie 节点
     private static class TrieNode {
-        Map<String, TrieNode> children = new HashMap<>();
+        final Map<String, TrieNode> children = new HashMap<>();
         boolean isEnd = false;
     }
 
     private final TrieNode root;
-    boolean empty;
+    boolean isWhitelistMode;
 
     // 构造函数，初始化 Trie
-    public TriePrefixMatcher(List<String> prefixes) {
+    public TriePrefixMatcher(Collection<String> prefixes, boolean isWhitelistMode) {
         root = new TrieNode();
-        empty = prefixes.isEmpty();
+        this.isWhitelistMode = isWhitelistMode;
         for (String prefix : prefixes) {
             insert(prefix);
         }
@@ -42,7 +40,12 @@ public class TriePrefixMatcher {
      * @return true 如果匹配，false 如果不匹配
      */
     public boolean matches(String className) {
-        if (empty || className == null || className.isEmpty()) {
+        boolean matches = innerMatches(className);
+        return isWhitelistMode ? matches : !matches;
+    }
+
+    boolean innerMatches(String className) {
+        if (className == null || className.isEmpty() || root.children.isEmpty()) {
             return false;
         }
 
