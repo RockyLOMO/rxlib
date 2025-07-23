@@ -17,7 +17,6 @@ import org.rx.core.EventArgs;
 import org.rx.core.IOC;
 import org.rx.core.RxConfig;
 import org.rx.core.Strings;
-import org.rx.exception.InvalidException;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -36,7 +35,7 @@ public final class SocksContext extends EventArgs {
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sProxyCtx");
     //ss
-    static final AttributeKey<ShadowsocksServer> SS_SVR = AttributeKey.valueOf("ssSvr");
+    public static final AttributeKey<ShadowsocksServer> SS_SVR = AttributeKey.valueOf("ssSvr");
 
     /**
      * call this method before bind & connect
@@ -62,18 +61,6 @@ public final class SocksContext extends EventArgs {
 
     public static SocksContext ctx(Channel channel, boolean throwOnEmpty) {
         return throwOnEmpty ? require(channel.attr(SOCKS_CTX).get()) : channel.attr(SOCKS_CTX).get();
-    }
-
-    public static ShadowsocksServer ssServer(Channel channel, boolean throwOnEmpty) {
-        ShadowsocksServer shadowsocksServer = channel.attr(SS_SVR).get();
-        if (throwOnEmpty && shadowsocksServer == null) {
-            throw new InvalidException("Set ssServer first");
-        }
-        return shadowsocksServer;
-    }
-
-    public static void ssServer(Channel channel, ShadowsocksServer server) {
-        channel.attr(SS_SVR).set(server);
     }
 
     public static void omega(String s) {

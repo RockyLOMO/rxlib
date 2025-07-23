@@ -35,11 +35,10 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
             channel.pipeline().addLast(new ProxyChannelIdleHandler(config.getTcpTimeoutSeconds(), 0));
 
-            SocksContext.ssServer(channel, ShadowsocksServer.this);
             channel.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
                     CipherCodec.DEFAULT, new ProtocolCodec(), ServerTcpProxyHandler.DEFAULT);
         });
-        bootstrap.bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
+        bootstrap.attr(SocksContext.SS_SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
         //udp server
         udpChannel = Sockets.udpBootstrap(Sockets.ReactorNames.SS, MemoryMode.HIGH, ctx -> {
@@ -49,10 +48,9 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             _crypto.setForUdp(true);
             ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-            SocksContext.ssServer(ctx, ShadowsocksServer.this);
             ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
                     CipherCodec.DEFAULT, new ProtocolCodec(), ServerUdpProxyHandler.DEFAULT);
-        }).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort())).channel();
+        }).attr(SocksContext.SS_SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort())).channel();
     }
 
     @Override

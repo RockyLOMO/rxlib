@@ -11,7 +11,6 @@ import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.ProxyChannelIdleHandler;
 import org.rx.net.socks.SocksContext;
-import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.UdpManager;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -55,7 +54,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         Channel inbound = ctx.channel();
         InetSocketAddress srcEp = inbound.attr(SSCommon.REMOTE_ADDRESS).get();
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(SSCommon.REMOTE_DEST).get());
-        ShadowsocksServer server = SocksContext.ssServer(inbound, true);
+        ShadowsocksServer server = Sockets.getAttr(inbound, SocksContext.SS_SVR);
 
         Channel outbound = UdpManager.openChannel(srcEp, k -> {
             SocksContext e = new SocksContext(srcEp, dstEp);
@@ -63,12 +62,11 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             Upstream upstream = e.getUpstream();
 
             return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
-                SocksContext.ssServer(ob, server);
                 SocksContext.mark(inbound, ob, e, false);
 
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0), UdpBackendRelayHandler.DEFAULT);
-            }).bind(0).syncUninterruptibly().channel();
+            }).attr(SocksContext.SS_SVR, server).bind(0).syncUninterruptibly().channel();
 
 //            Channel ob2 = Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
 //                SocksContext.ssServer(ob, server);
