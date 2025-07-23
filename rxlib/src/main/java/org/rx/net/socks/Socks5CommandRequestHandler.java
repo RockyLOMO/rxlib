@@ -96,12 +96,13 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
             Channel outbound = f.channel();
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
-            StringBuilder aesMsg = new StringBuilder();
+            StringBuilder exMsg = new StringBuilder();
             Socks5ProxyHandler proxyHandler;
             SocksConfig config = server.getConfig();
             if (server.cipherRoute(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
                     if (config.getTransportFlags().has(TransportFlags.CLIENT_COMPRESS_BOTH)) {
+                        //todo 解依赖ZIP
                         outbound.attr(SocketConfig.ATTR_CONF).set(config);
                         ChannelHandler[] handlers = new CipherDecoder().channelHandlers();
                         for (int i = handlers.length - 1; i > -1; i--) {
@@ -113,19 +114,18 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                             ChannelHandler handler = handlers[i];
                             outbound.pipeline().addAfter(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
                         }
-//                        aesMsg.append("[BACKEND_AES] %s", Strings.join(outbound.pipeline().names()));
-                        aesMsg.append("[BACKEND_AES]");
+                        exMsg.append("[BACKEND_CIPHER]");
                     }
-                    relay(inbound, outbound, dstAddrType, e, aesMsg);
+                    relay(inbound, outbound, dstAddrType, e, exMsg);
                 });
                 return;
             }
 
-            relay(inbound, outbound, dstAddrType, e, aesMsg);
+            relay(inbound, outbound, dstAddrType, e, exMsg);
         });
     }
 
-    private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e, StringBuilder extMsg) {
+    private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e, StringBuilder exMsg) {
         //initChannel may change dstEp
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
         outbound.pipeline().addLast(BackendRelayHandler.DEFAULT);
@@ -150,10 +150,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     ChannelHandler handler = handlers[i];
                     outbound.pipeline().addAfter(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
                 }
-//                extMsg.append("[FRONTEND_AES] %s", Strings.join(inbound.channel().pipeline().names()));
-                extMsg.append("[FRONTEND_AES]");
+                exMsg.append("[FRONTEND_CIPHER]");
             }
-            log.info("socks5[{}] {} => {} connected, dstEp={}[{}] {}", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination, extMsg.toString());
+            log.info("socks5[{}] {} => {} connected, dstEp={}[{}] {}", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination, exMsg.toString());
         });
     }
 }

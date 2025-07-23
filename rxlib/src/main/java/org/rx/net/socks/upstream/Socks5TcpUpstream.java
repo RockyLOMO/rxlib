@@ -20,20 +20,19 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
-public class Socks5Upstream extends Upstream {
+public class Socks5TcpUpstream extends Upstream {
     final SocksConfig config; //Maybe frontend have a different configuration from backend
     final Func<UpstreamSupport> router;
 
-    public Socks5Upstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull Func<UpstreamSupport> router) {
+    public Socks5TcpUpstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull Func<UpstreamSupport> router) {
         super(dstEp);
         this.config = config;
         this.router = router;
     }
 
-    @SneakyThrows
     @Override
     public void initChannel(Channel channel) {
-        UpstreamSupport next = router.invoke();
+        UpstreamSupport next = router.get();
         if (next == null) {
             throw new InvalidException("ProxyHandlers is empty");
         }
@@ -68,7 +67,7 @@ public class Socks5Upstream extends Upstream {
                     TraceHandler.INSTANCE.log(e);
                 }
             }
-//            Cache.getOrSet(hash, k -> awaitQuietly(() -> {
+//            Cache.getOrSet(hash, k -> Tasks.awaitQuietly(() -> {
 //                try {
 //                    Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
 //                    support.fakeEndpoint(hash, dstEpStr);
@@ -77,7 +76,7 @@ public class Socks5Upstream extends Upstream {
 //                    TraceHandler.INSTANCE.log(e);
 //                    return null;
 //                }
-//            }, SocksSupport.ASYNC_TIMEOUT));
+//            }, SocksSupport.ASYNC_TIMEOUT), CachePolicy.absolute(SocksSupport.FAKE_EXPIRE_SECONDS));
         }
 
         Socks5ProxyHandler proxyHandler = new Socks5ProxyHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());

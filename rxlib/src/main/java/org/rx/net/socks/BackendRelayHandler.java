@@ -25,6 +25,7 @@ public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
 
         log.debug("RELAY {} => {}[{}] flush packets", sc.inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
         Sockets.writeAndFlush(outbound, sc.pendingPackages);
+        sc.pendingPackages = null;
         super.channelActive(ctx);
     }
 
