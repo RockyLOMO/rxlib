@@ -84,7 +84,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         Sockets.bootstrap(inbound.eventLoop(), server.getConfig(), outbound -> {
             e.getUpstream().initChannel(outbound);
 
-            SocksContext.mark(inbound, outbound, e, true);
+            SocksContext.mark(inbound, outbound, e, false);
             inbound.pipeline().addLast(FrontendRelayHandler.DEFAULT);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
