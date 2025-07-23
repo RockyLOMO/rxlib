@@ -6,6 +6,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
+import org.rx.core.TimeoutFuture;
 import org.rx.net.*;
 import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.support.SocksSupport;
@@ -23,9 +24,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     @Override
     protected void channelRead0(ChannelHandlerContext inbound, DefaultSocks5CommandRequest msg) {
         ChannelPipeline pipeline = inbound.pipeline();
+        Channel inCh = inbound.channel();
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
-        SocksProxyServer server = Sockets.getAttr(inbound.channel(), SocksContext.SOCKS_SVR);
+        SocksProxyServer server = Sockets.getAttr(inCh, SocksContext.SOCKS_SVR);
 //        log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
@@ -45,22 +47,30 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
         }
 
+        InetSocketAddress srcEp = (InetSocketAddress) inCh.remoteAddress();
         if (msg.type() == Socks5CommandType.CONNECT) {
-            SocksContext e = new SocksContext((InetSocketAddress) inbound.channel().remoteAddress(), dstEp);
+            SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onRoute, e);
-            connect(inbound.channel(), msg.dstAddrType(), e);
+            connect(inCh, msg.dstAddrType(), e);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
             log.info("socks5[{}] UdpAssociate {}", server.getConfig().getListenPort(), msg);
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
-            pipeline.addLast(new Socks5UdpAssociateHandler(Tasks.setTimeout(() -> {
-                log.info("UdpAssociate close by maxLife, tcp:{}", inbound.channel());
-                Sockets.closeOnFlushed(inbound.channel());
-            }, server.config.getUdpAssociateMaxLifeSeconds() * 1000L)));
+
+            //todo udp reg
+            TimeoutFuture<?> maxLifeFn = Tasks.setTimeout(() -> {
+                log.info("socks5[{}] UDP close {} by maxLife", server.config.getListenPort(), srcEp);
+                Sockets.closeOnFlushed(inCh);
+            }, server.config.getUdpAssociateMaxLifeSeconds() * 1000L);
+            inCh.closeFuture().addListener(f -> {
+                maxLifeFn.cancel();
+                log.info("socks5[{}] UDP close {} by UDP_ASSOCIATE", server.config.getListenPort(), srcEp);
+                UdpManager.closeChannel(srcEp);
+            });
 
             Socks5AddressType bindAddrType = msg.dstAddrType();
             //msg.dstAddr(), msg.dstPort() = 0.0.0.0:0 客户端希望绑定
             //ipv4
-            InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
+            InetSocketAddress bindEp = (InetSocketAddress) inCh.localAddress();
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, bindAddrType, bindEp.getHostString(), bindEp.getPort()));
         } else {
             log.warn("Command {} not support", msg.type());
