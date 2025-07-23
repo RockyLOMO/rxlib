@@ -57,10 +57,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 Sockets.closeOnFlushed(inbound.channel());
             }, server.config.getUdpAssociateMaxLifeSeconds() * 1000L)));
 
-            InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
-//            Socks5AddressType bindAddrType = bindEp.getAddress() instanceof Inet6Address ? Socks5AddressType.IPv6 : Socks5AddressType.IPv4;
             Socks5AddressType bindAddrType = msg.dstAddrType();
-            // msg.dstAddr(), msg.dstPort() = 0.0.0.0:0
+            //msg.dstAddr(), msg.dstPort() = 0.0.0.0:0 客户端希望绑定
+            //ipv4
+            InetSocketAddress bindEp = (InetSocketAddress) inbound.channel().localAddress();
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, bindAddrType, bindEp.getHostString(), bindEp.getPort()));
         } else {
             log.warn("Command {} not support", msg.type());

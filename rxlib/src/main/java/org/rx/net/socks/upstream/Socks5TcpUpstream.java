@@ -2,7 +2,6 @@ package org.rx.net.socks.upstream;
 
 import io.netty.channel.Channel;
 import lombok.NonNull;
-import lombok.SneakyThrows;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;

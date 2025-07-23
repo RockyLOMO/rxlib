@@ -83,12 +83,16 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
 
             return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
                 SocksContext.mark(inbound, ob, e, false);
-                e.onClose = () -> UdpManager.closeChannel(srcEp);
 
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0)).syncUninterruptibly().channel();
+        });
+        log.debug("socks5[{}] UDP open {}", server.config.getListenPort(), srcEp);
+        outbound.closeFuture().addListener(f -> {
+            log.debug("socks5[{}] UDP close {}", server.config.getListenPort(), srcEp);
+            UdpManager.closeChannel(srcEp);
         });
 
         SocksContext sc = SocksContext.ctx(outbound);

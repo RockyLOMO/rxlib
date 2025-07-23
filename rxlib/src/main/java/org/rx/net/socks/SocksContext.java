@@ -21,7 +21,6 @@ import org.rx.exception.InvalidException;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.util.function.Action;
 
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
@@ -122,7 +121,6 @@ public final class SocksContext extends EventArgs {
     public transient Channel inbound;
     public transient Channel outbound;
     transient ConcurrentLinkedQueue<Object> pendingPackages;
-    public transient Action onClose;
 
     public synchronized Upstream getUpstream() {
         return upstream;

@@ -83,7 +83,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
         });
-        tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(config.getListenPort()).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
+        tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
             if (f.isSuccess() && onBind != null) {
                 onBind.accept(f.channel());
             }
