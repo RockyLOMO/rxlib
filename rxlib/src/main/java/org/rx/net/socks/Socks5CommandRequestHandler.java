@@ -65,11 +65,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             //todo new udp port
 //            int refCnt = UdpManager.active(srcAddr);
 //            log.info("socks5[{}] UDP active {}[{}]", server.config.getListenPort(), srcAddr, refCnt);
-//            inCh.closeFuture().addListener(f -> {
-//                maxLifeFn.cancel();
+            inCh.closeFuture().addListener(f -> {
+                maxLifeFn.cancel();
 //                int rc = UdpManager.inactive(srcAddr);
 //                log.info("socks5[{}] UDP inactive {}[{}]", server.config.getListenPort(), srcAddr, rc);
-//            });
+            });
 
             Socks5AddressType bindAddrType = msg.dstAddrType();
             //msg.dstAddr(), msg.dstPort() = 0.0.0.0:0 客户端希望绑定

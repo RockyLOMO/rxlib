@@ -26,7 +26,7 @@ import org.rx.util.function.TripleAction;
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public static final PredicateFunc<UnresolvedEndpoint> DNS_CIPHER_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
-//            || dstEp.getPort() == 80
+            || dstEp.getPort() == 80
             ;
     public final Delegate<SocksProxyServer, SocksContext> onRoute = Delegate.create(DIRECT_ROUTER),
             onUdpRoute = Delegate.create(DIRECT_ROUTER);
