@@ -13,6 +13,7 @@ import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.math.BigInteger;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 @Slf4j
@@ -56,15 +57,16 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             log.info("socks5[{}] UdpAssociate {}", server.getConfig().getListenPort(), msg);
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
 
-            //todo udp reg
+            InetAddress srcAddr = srcEp.getAddress();
+            UdpManager.active(srcAddr);
             TimeoutFuture<?> maxLifeFn = Tasks.setTimeout(() -> {
-                log.info("socks5[{}] UDP close {} by maxLife", server.config.getListenPort(), srcEp);
+                log.info("socks5[{}] UDP inactive {} by maxLife", server.config.getListenPort(), srcAddr);
                 Sockets.closeOnFlushed(inCh);
             }, server.config.getUdpAssociateMaxLifeSeconds() * 1000L);
             inCh.closeFuture().addListener(f -> {
                 maxLifeFn.cancel();
-                log.info("socks5[{}] UDP close {} by UDP_ASSOCIATE", server.config.getListenPort(), srcEp);
-                UdpManager.closeChannel(srcEp);
+                log.info("socks5[{}] UDP inactive {} by UDP_ASSOCIATE", server.config.getListenPort(), srcAddr);
+                UdpManager.inactive(srcAddr);
             });
 
             Socks5AddressType bindAddrType = msg.dstAddrType();
