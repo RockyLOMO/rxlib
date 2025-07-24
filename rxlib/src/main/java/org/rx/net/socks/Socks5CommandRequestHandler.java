@@ -58,16 +58,18 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
 
             InetAddress srcAddr = srcEp.getAddress();
-            UdpManager.active(srcAddr);
             TimeoutFuture<?> maxLifeFn = Tasks.setTimeout(() -> {
-                log.info("socks5[{}] UDP inactive {} by maxLife", server.config.getListenPort(), srcAddr);
+                log.info("socks5[{}] UdpAssociate {} by maxLife", server.config.getListenPort(), srcAddr);
                 Sockets.closeOnFlushed(inCh);
             }, server.config.getUdpAssociateMaxLifeSeconds() * 1000L);
-            inCh.closeFuture().addListener(f -> {
-                maxLifeFn.cancel();
-                log.info("socks5[{}] UDP inactive {} by UDP_ASSOCIATE", server.config.getListenPort(), srcAddr);
-                UdpManager.inactive(srcAddr);
-            });
+            //todo new udp port
+//            int refCnt = UdpManager.active(srcAddr);
+//            log.info("socks5[{}] UDP active {}[{}]", server.config.getListenPort(), srcAddr, refCnt);
+//            inCh.closeFuture().addListener(f -> {
+//                maxLifeFn.cancel();
+//                int rc = UdpManager.inactive(srcAddr);
+//                log.info("socks5[{}] UDP inactive {}[{}]", server.config.getListenPort(), srcAddr, rc);
+//            });
 
             Socks5AddressType bindAddrType = msg.dstAddrType();
             //msg.dstAddr(), msg.dstPort() = 0.0.0.0:0 客户端希望绑定
