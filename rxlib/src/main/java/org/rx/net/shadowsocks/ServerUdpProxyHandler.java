@@ -61,12 +61,14 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
 
-            return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
+            Channel ch = Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
                 SocksContext.mark(inbound, ob, e, false);
 
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0), UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SS_SVR, server).bind(0).syncUninterruptibly().channel();
+            ch.closeFuture().addListener(f -> UdpManager.closeChannel(srcEp));
+            return ch;
 
 //            Channel ob2 = Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
 //                SocksContext.ssServer(ob, server);
@@ -78,7 +80,6 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
 //            SocksContext.mark(inbound, ob2, e, true);
 //            return ob2;
         });
-        outbound.closeFuture().addListener(f -> UdpManager.closeChannel(srcEp));
 
         SocksContext sc = SocksContext.ctx(outbound);
         UnresolvedEndpoint upDstEp = sc.getUpstream().getDestination();
