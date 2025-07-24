@@ -16,13 +16,13 @@ public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         Channel inbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(inbound);
-//        if (!sc.outbound.isActive()) {
-//            if (sc.pendingPackages != null) {
-//                log.debug("PENDING_QUEUE {} => {} pend a packet", inbound.remoteAddress(), sc.outbound);
-//                sc.pendingPackages.add(msg);
-//            }
-//            return;
-//        }
+        if (!sc.outbound.isActive()) {
+            if (sc.pendingPackages != null) {
+                log.debug("PENDING_QUEUE {} => {} pend a packet", inbound.remoteAddress(), sc.outbound);
+                sc.pendingPackages.add(msg);
+            }
+            return;
+        }
 
         log.debug("RELAY {} => {}[{}]", inbound.remoteAddress(), sc.outbound.localAddress(), sc.outbound.remoteAddress());
         sc.outbound.writeAndFlush(msg);
