@@ -7,6 +7,8 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 
+import java.util.concurrent.ConcurrentLinkedQueue;
+
 @Slf4j
 @ChannelHandler.Sharable
 public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
@@ -17,9 +19,10 @@ public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
         Channel inbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(inbound);
         if (!sc.outbound.isActive()) {
-            if (sc.pendingPackages != null) {
+            ConcurrentLinkedQueue<Object> pending = sc.pendingPackages;
+            if (pending != null) {
                 log.debug("PENDING_QUEUE {} => {} pend a packet", inbound.remoteAddress(), sc.outbound);
-                sc.pendingPackages.add(msg);
+                pending.add(msg);
             }
             return;
         }

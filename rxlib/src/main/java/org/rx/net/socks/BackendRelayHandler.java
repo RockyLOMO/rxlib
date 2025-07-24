@@ -10,6 +10,8 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.Strings;
 import org.rx.net.Sockets;
 
+import java.util.concurrent.ConcurrentLinkedQueue;
+
 @Slf4j
 @ChannelHandler.Sharable
 public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
@@ -19,12 +21,12 @@ public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         Channel outbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(outbound);
-        if (CollectionUtils.isEmpty(sc.pendingPackages)) {
+        ConcurrentLinkedQueue<Object> pending = sc.pendingPackages;
+        if (CollectionUtils.isEmpty(pending)) {
             return;
         }
-
         log.debug("RELAY {} => {}[{}] flush packets", sc.inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
-        Sockets.writeAndFlush(outbound, sc.pendingPackages);
+        Sockets.writeAndFlush(outbound, pending);
         sc.pendingPackages = null;
         super.channelActive(ctx);
     }

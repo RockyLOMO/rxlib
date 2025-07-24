@@ -9,11 +9,13 @@ import io.netty.handler.codec.socksx.v5.Socks5AddressType;
 import io.netty.util.NetUtil;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,30 +45,68 @@ public final class UdpManager {
             log.info("PENDING_QUEUE {} => {} flush {} packets", sc.source, sc.firstDestination, size);
         }
     };
-    static final Map<InetSocketAddress, Channel> holder = new ConcurrentHashMap<>();
 
-    public static void pendOrWritePacket(Channel outbound, Object packet) {
-        SocksContext sc = SocksContext.ctx(outbound);
-        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
-        if (queue != null && queue.add(packet)) {
-            log.debug("PENDING_QUEUE {} => {} pend a packet", sc.source, sc.firstDestination);
-            return;
+    static class WhitelistItem implements AutoCloseable {
+        int refCnt;
+        final Map<InetSocketAddress, Channel> channels = new ConcurrentHashMap<>();
+
+        @Override
+        public void close() {
+            for (Channel ch : channels.values()) {
+                ch.close();
+            }
+            channels.clear();
         }
-        outbound.writeAndFlush(packet);
+    }
+
+    static final Map<InetAddress, WhitelistItem> whitelist = new ConcurrentHashMap<>();
+
+    public static synchronized void active(InetAddress srcAddr) {
+        WhitelistItem item = whitelist.computeIfAbsent(srcAddr, k -> new WhitelistItem());
+        item.refCnt++;
+    }
+
+    public static synchronized void inactive(InetAddress srcAddr) {
+        WhitelistItem item = whitelist.get(srcAddr);
+        item.refCnt--;
+        if (item.refCnt == 0) {
+            item.close();
+        }
     }
 
     public static Channel openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
-        return holder.computeIfAbsent(incomingEp, loadFn);
+        WhitelistItem item = whitelist.get(incomingEp.getAddress());
+        if (item == null) {
+            throw new InvalidException("UDP security error, package from {}", incomingEp);
+        }
+
+        return item.channels.computeIfAbsent(incomingEp, loadFn);
     }
 
     public static void closeChannel(InetSocketAddress incomingEp) {
-        Channel channel = holder.remove(incomingEp);
+        WhitelistItem item = whitelist.get(incomingEp.getAddress());
+        if (item == null) {
+            log.warn("UDP security error, package from {}", incomingEp);
+            return;
+        }
+
+        Channel channel = item.channels.remove(incomingEp);
         if (channel == null) {
-            log.error("CloseChannel fail {} <> {}", incomingEp, holder.keySet());
+            log.warn("UDP close fail {}", incomingEp);
             return;
         }
         tryClose(SocksContext.ctx(channel).upstream);
         channel.close();
+    }
+
+    public static void pendOrWritePacket(Channel outbound, Object packet) {
+        SocksContext sc = SocksContext.ctx(outbound);
+        ConcurrentLinkedQueue<Object> pending = sc.pendingPackages;
+        if (pending != null && pending.add(packet)) {
+            log.debug("PENDING_QUEUE {} => {} pend a packet", sc.source, sc.firstDestination);
+            return;
+        }
+        outbound.writeAndFlush(packet);
     }
 
     public static ByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {

@@ -71,7 +71,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         InetAddress saddr = srcEp.getAddress();
         if (!saddr.isLoopbackAddress() && !Sockets.isPrivateIp(saddr)
                 && !server.config.getWhiteList().contains(saddr)) {
-            log.warn("security error, package from {}", srcEp);
+            log.warn("UDP security error, package from {}", srcEp);
             return;
         }
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
@@ -82,14 +82,13 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             Upstream upstream = e.getUpstream();
 
             Channel ch = Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
-                        SocksContext.mark(inbound, ob, e, false);
-
                         upstream.initChannel(ob);
                         ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                                 UdpBackendRelayHandler.DEFAULT);
                     }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0))
 //                    .syncUninterruptibly()
                     .channel();
+            SocksContext.mark(inbound, ch, e, false);
             log.debug("socks5[{}] UDP open {}", server.config.getListenPort(), srcEp);
             ch.closeFuture().addListener(f -> {
                 log.debug("socks5[{}] UDP close {}", server.config.getListenPort(), srcEp);
