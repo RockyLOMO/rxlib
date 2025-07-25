@@ -141,7 +141,7 @@ public final class Main implements SocksSupport {
                 RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1),
                         conf.rpcMinSize, conf.rpcMaxSize);
                 TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
-                tcpConfig.setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags());
+                tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CLIENT_CIPHER_BOTH).flags());
 //                tcpConfig.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags(TransportFlags.CLIENT_CIPHER_BOTH));
                 int weight = Reflects.convertQuietly(shadowServer.getParameters().get("w"), int.class, 0);
                 if (weight <= 0) {
@@ -201,7 +201,7 @@ public final class Main implements SocksSupport {
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
-        frontConf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
+        frontConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CLIENT_COMPRESS_BOTH).flags());
         frontConf.setMemoryMode(MemoryMode.MEDIUM);
         frontConf.setConnectTimeoutMillis(connectTimeout);
         frontConf.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
@@ -372,7 +372,7 @@ public final class Main implements SocksSupport {
         ssUser.setMaxIpCount(-1);
 
         SocksConfig backConf = new SocksConfig(port);
-        backConf.setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
+        backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.SERVER_COMPRESS_BOTH).flags());
         backConf.setMemoryMode(MemoryMode.MEDIUM);
         backConf.setConnectTimeoutMillis(connectTimeout);
         backConf.setEnableUdp2raw(udp2raw);
@@ -381,7 +381,7 @@ public final class Main implements SocksSupport {
 
         //server port + 1 = rpc
         RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(port + 1));
-        rpcConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags());
+        rpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.SERVER_CIPHER_BOTH).flags());
 //        rpcConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH.flags(TransportFlags.SERVER_CIPHER_BOTH));
         Main app = new Main(backSvr);
         Remoting.register(app, rpcConf);
