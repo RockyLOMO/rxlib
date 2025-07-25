@@ -31,7 +31,9 @@ public enum TransportFlags implements NEnum<TransportFlags> {
     CLIENT_HTTP_PSEUDO_BOTH(CLIENT_HTTP_PSEUDO_READ.value | CLIENT_HTTP_PSEUDO_WRITE.value),
 
     SERVER_TLS(1 << 12),
-    CLIENT_TLS(1 << 13);
+    CLIENT_TLS(1 << 13),
+
+    GFW(1 << 14);
 
     final int value;
 }

@@ -283,11 +283,14 @@ public final class Sockets {
 
         //先压缩再加密
         //支持LengthField?
-        if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
-            pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-        }
-        if (flags.has(TransportFlags.SERVER_COMPRESS_WRITE)) {
-            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+        boolean g = flags.has(TransportFlags.GFW);
+        if (!g) {
+            if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
+                pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            }
+            if (flags.has(TransportFlags.SERVER_COMPRESS_WRITE)) {
+                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+            }
         }
 
         boolean hasCipherR = flags.has(TransportFlags.SERVER_CIPHER_READ),
@@ -303,6 +306,15 @@ public final class Sockets {
         }
         if (hasCipherW) {
             pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
+        }
+
+        if (g) {
+            if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
+                pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            }
+            if (flags.has(TransportFlags.SERVER_COMPRESS_WRITE)) {
+                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+            }
         }
 //        dumpPipeline("server", channel);
         return channel;
@@ -335,11 +347,14 @@ public final class Sockets {
             pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
         }
 
-        if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
-            pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
-        }
-        if (flags.has(TransportFlags.CLIENT_COMPRESS_WRITE)) {
-            pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+        boolean g = flags.has(TransportFlags.GFW);
+        if (!g) {
+            if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
+                pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            }
+            if (flags.has(TransportFlags.CLIENT_COMPRESS_WRITE)) {
+                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+            }
         }
 
         boolean hasCipherR = flags.has(TransportFlags.CLIENT_CIPHER_READ),
@@ -355,6 +370,15 @@ public final class Sockets {
         }
         if (hasCipherW) {
             pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
+        }
+
+        if (g) {
+            if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
+                pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
+            }
+            if (flags.has(TransportFlags.CLIENT_COMPRESS_WRITE)) {
+                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
+            }
         }
 //        dumpPipeline("client", channel);
         return channel;

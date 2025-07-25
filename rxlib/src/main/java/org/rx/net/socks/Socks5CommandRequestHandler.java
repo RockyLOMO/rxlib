@@ -121,12 +121,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         ChannelHandler[] handlers = new CipherDecoder().channelHandlers();
                         for (int i = handlers.length - 1; i > -1; i--) {
                             ChannelHandler handler = handlers[i];
-                            outbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+                            outbound.pipeline().addBefore(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
                         }
                         handlers = CipherEncoder.DEFAULT.channelHandlers();
                         for (int i = handlers.length - 1; i > -1; i--) {
                             ChannelHandler handler = handlers[i];
-                            outbound.pipeline().addAfter(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
+                            outbound.pipeline().addBefore(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
                         }
                         exMsg.append("[BACKEND_CIPHER]");
                     }
@@ -157,12 +157,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 ChannelHandler[] handlers = new CipherDecoder().channelHandlers();
                 for (int i = handlers.length - 1; i > -1; i--) {
                     ChannelHandler handler = handlers[i];
-                    outbound.pipeline().addAfter(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
+                    outbound.pipeline().addBefore(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
                 }
                 handlers = CipherEncoder.DEFAULT.channelHandlers();
                 for (int i = handlers.length - 1; i > -1; i--) {
                     ChannelHandler handler = handlers[i];
-                    outbound.pipeline().addAfter(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
+                    outbound.pipeline().addBefore(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
                 }
                 exMsg.append("[FRONTEND_CIPHER]");
             }
