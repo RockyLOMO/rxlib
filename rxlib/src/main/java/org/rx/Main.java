@@ -213,7 +213,8 @@ public final class Main implements SocksSupport {
             AuthenticEndpoint udp2rawSvrEp = AuthenticEndpoint.valueOf(conf.udp2rawEndpoint);
             frontConf.getUdp2rawServers().add(udp2rawSvrEp.getEndpoint());
         }
-        SocksProxyServer frontSvr = new SocksProxyServer(frontConf, new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList()));
+        DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
+        SocksProxyServer frontSvr = new SocksProxyServer(frontConf, authenticator);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
@@ -331,13 +332,15 @@ public final class Main implements SocksSupport {
             });
         }
 
-        clientInit();
+        clientInit(authenticator);
         log.info("Server started..");
         app.await();
     }
 
-    static void clientInit() {
+    static void clientInit(DefaultSocksAuthenticator authenticator) {
         Tasks.schedulePeriod(() -> {
+            log.info(authenticator.toString());
+
             if (conf == null) {
                 log.warn("conf is null");
             }

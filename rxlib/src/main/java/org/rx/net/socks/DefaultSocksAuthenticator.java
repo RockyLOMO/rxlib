@@ -1,6 +1,8 @@
 package org.rx.net.socks;
 
 import org.rx.bean.DateTime;
+import org.rx.core.StringBuilder;
+import org.rx.core.Sys;
 import org.rx.core.Tasks;
 
 import java.net.InetAddress;
@@ -68,5 +70,15 @@ public class DefaultSocksAuthenticator implements Authenticator {
             }
             usr.lastResetTime = DateTime.now();
         }
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder buf = new StringBuilder();
+        buf.append("--SocksUsers--");
+        for (SocksUser usr : store.values()) {
+            buf.appendMessageFormat("\nusr:{} -> {}", usr.getUsername(), Sys.toJsonString(usr));
+        }
+        return buf.toString();
     }
 }
