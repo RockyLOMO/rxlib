@@ -1,8 +1,8 @@
 package org.rx.net.socks;
 
+import com.alibaba.fastjson2.JSON;
 import org.rx.bean.DateTime;
 import org.rx.core.StringBuilder;
-import org.rx.core.Sys;
 import org.rx.core.Tasks;
 
 import java.net.InetAddress;
@@ -77,7 +77,7 @@ public class DefaultSocksAuthenticator implements Authenticator {
         StringBuilder buf = new StringBuilder();
         buf.append("--SocksUsers--");
         for (SocksUser usr : store.values()) {
-            buf.appendMessageFormat("\nusr:{} -> {}", usr.getUsername(), Sys.toJsonString(usr));
+            buf.appendMessageFormat("\nusr:{} -> {}", usr.getUsername(), JSON.toJSONString(usr));
         }
         return buf.toString();
     }

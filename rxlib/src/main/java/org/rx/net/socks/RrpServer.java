@@ -169,8 +169,7 @@ public class RrpServer extends Disposable {
                     remoteChannel.writeAndFlush(buf);
                 }
                 log.debug("RrpServer step6 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
-            }
-            else if (action == RrpConfig.ACTION_SYNC_CLOSE){
+            } else if (action == RrpConfig.ACTION_SYNC_CLOSE) {
                 //step10
                 int remotePort = buf.readInt();
                 int idLen = buf.readInt();
@@ -184,6 +183,7 @@ public class RrpServer extends Disposable {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             Channel clientChannel = ctx.channel();
+            log.info("RrpServer disconnected {}", clientChannel);
             RrpServer server = Sockets.getAttr(clientChannel, ATTR_SVR);
             tryClose(server.clients.remove(clientChannel));
         }
