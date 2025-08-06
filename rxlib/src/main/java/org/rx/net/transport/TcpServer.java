@@ -206,7 +206,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         Sockets.closeOnFlushed(serverChannel);
         Sockets.closeBootstrap(bootstrap);
         raiseEvent(onClosed, EventArgs.EMPTY);

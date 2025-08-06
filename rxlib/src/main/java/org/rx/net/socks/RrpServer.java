@@ -39,7 +39,7 @@ public class RrpServer extends Disposable {
         Channel remoteServerChannel;
 
         @Override
-        protected void freeObjects() throws Throwable {
+        protected void dispose() throws Throwable {
             Sockets.closeOnFlushed(remoteServerChannel);
             Sockets.closeBootstrap(remoteServer);
             remoteClients.clear();
@@ -52,7 +52,7 @@ public class RrpServer extends Disposable {
         final Map<Integer, RpClientProxy> proxyMap = new ConcurrentHashMap<>();
 
         @Override
-        protected void freeObjects() throws Throwable {
+        protected void dispose() throws Throwable {
             Sockets.closeOnFlushed(clientChannel);
             for (RpClientProxy v : proxyMap.values()) {
                 v.close();
@@ -218,7 +218,7 @@ public class RrpServer extends Disposable {
     }
 
     @Override
-    protected void freeObjects() throws Throwable {
+    protected void dispose() throws Throwable {
         Sockets.closeOnFlushed(serverChannel);
         Sockets.closeBootstrap(bootstrap);
     }
