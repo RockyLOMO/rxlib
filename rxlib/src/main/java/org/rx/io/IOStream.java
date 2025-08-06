@@ -87,11 +87,12 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
 
         ByteBuf buf = Bytes.heapBuffer();
         try {
-            byte[] sb = Bytes.arrayBuffer();
-            int r;
-            while ((r = in.read(sb)) != Constants.IO_EOF) {
-                buf.writeBytes(sb, 0, r);
-            }
+            buf.writeBytes(in, in.available());
+//            byte[] sb = Bytes.arrayBuffer();
+//            int r;
+//            while ((r = in.read(sb)) != Constants.IO_EOF) {
+//                buf.writeBytes(sb, 0, r);
+//            }
             return buf.toString(charset);
         } finally {
             buf.release();
@@ -239,6 +240,20 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
             throw new EOFException();
         }
         return ((ch1 << 24) + (ch2 << 16) + (ch3 << 8) + (ch4 << 0));
+    }
+
+    public String readString(int length) {
+        return readString(length, StandardCharsets.UTF_8);
+    }
+
+    public String readString(int length, Charset charset) {
+        ByteBuf buf = Bytes.heapBuffer();
+        try {
+            read(buf, length);
+            return buf.toString(charset);
+        } finally {
+            buf.release();
+        }
     }
 
     @SneakyThrows
