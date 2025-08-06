@@ -8,7 +8,7 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.rx.core.Numbers;
 import org.rx.exception.InvalidException;
-import org.rx.spring.MiddlewareConfig;
+import org.springframework.service.MiddlewareConfig;
 import org.springframework.service.SpringContext;
 import org.rx.util.function.TripleFunc;
 

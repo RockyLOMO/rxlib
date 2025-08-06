@@ -9,7 +9,7 @@ public abstract class SuperJdbc extends Disposable implements Wrapper {
     public static final String CATALOG = "def";
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
     }
 
     @Override

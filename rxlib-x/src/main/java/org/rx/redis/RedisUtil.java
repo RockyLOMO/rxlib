@@ -10,6 +10,7 @@ import org.rx.core.Strings;
 import org.rx.core.Sys;
 import org.rx.core.cache.MemoryCache;
 import org.rx.util.Lazy;
+import org.rx.util.RateLimiterAdapter;
 
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;

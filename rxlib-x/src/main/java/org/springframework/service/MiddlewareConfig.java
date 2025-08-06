@@ -1,4 +1,4 @@
-package org.rx.spring;
+package org.springframework.service;
 
 import lombok.Data;
 import org.springframework.service.SpringContext;
@@ -11,7 +11,6 @@ import org.springframework.stereotype.Component;
 //@Order(Ordered.HIGHEST_PRECEDENCE)
 public class MiddlewareConfig {
     private String redisUrl;
-    private String storeUrl;
 
     private int limiterPermits = 12;
     private String limiterWhiteList;

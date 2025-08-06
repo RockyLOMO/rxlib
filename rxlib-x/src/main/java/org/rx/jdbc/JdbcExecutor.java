@@ -141,7 +141,7 @@ public class JdbcExecutor extends Disposable implements EventPublisher<JdbcExecu
 
     @SneakyThrows
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         if (closeDataSource) {
             tryClose(dataSource);
         }

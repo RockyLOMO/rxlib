@@ -13,7 +13,7 @@ public abstract class Disposable implements AutoCloseable {
         return closed;
     }
 
-    protected abstract void freeObjects() throws Throwable;
+    protected abstract void dispose() throws Throwable;
 
     @ErrorCode
     protected void checkNotClosed() {
@@ -28,14 +28,17 @@ public abstract class Disposable implements AutoCloseable {
         if (closed) {
             return;
         }
-        //todo fields may be null
-        freeObjects();
+        dispose();
         closed = true;
     }
 
-    @Override
-    protected void finalize() throws Throwable {
-        super.finalize();
-        close();
-    }
+    //java 9 不建议
+//    @Override
+//    protected void finalize() throws Throwable {
+//        try {
+//            close();
+//        } finally {
+//            super.finalize();
+//        }
+//    }
 }
