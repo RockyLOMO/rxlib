@@ -83,7 +83,7 @@ public class CodecUtil {
     }
 
     public static long hash64(long data) {
-        return hash64(Bytes.getBytes(data));
+        return hash64(Bytes.toBytes(data));
     }
 
     public static long hash64(byte[] buf) {

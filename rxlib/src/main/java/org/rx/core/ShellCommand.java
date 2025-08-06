@@ -52,18 +52,18 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
         }
 
         @Override
-        protected void freeObjects() {
+        protected void dispose() {
             fileStream.close();
         }
 
         @Override
         public void invoke(ShellCommand s, PrintOutEventArgs e) throws Throwable {
             ByteBuf buf = Bytes.directBuffer();
-            buf.writeInt(e.lineNumber);
-            buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
-            buf.writeCharSequence(e.line, StandardCharsets.UTF_8);
-            buf.writeCharSequence("\n", StandardCharsets.UTF_8);
             try {
+                buf.writeInt(e.lineNumber);
+                buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
+                buf.writeCharSequence(e.line, StandardCharsets.UTF_8);
+                buf.writeCharSequence("\n", StandardCharsets.UTF_8);
                 fileStream.write(buf);
             } finally {
                 buf.release();
@@ -219,7 +219,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         onPrintOut.close();
         kill();
         KILL_LIST.remove(this);

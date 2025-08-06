@@ -31,7 +31,7 @@ public final class MemoryStream extends IOStream implements Serializable {
         in.defaultReadObject();
         int pos = in.readInt();
         int len = in.readInt();
-        buffer = directBuffer ? Bytes.directBuffer(len) : Bytes.heapBuffer(len, true);
+        buffer = directBuffer ? Bytes.directBuffer(len) : Bytes.heapBuffer(len);
         setLength(len);
         write(in);
         setPosition(pos);
@@ -161,7 +161,7 @@ public final class MemoryStream extends IOStream implements Serializable {
     }
 
     public MemoryStream(int initialCapacity, boolean directBuffer) {
-        buffer = (this.directBuffer = directBuffer) ? Bytes.directBuffer(initialCapacity) : Bytes.heapBuffer(initialCapacity, true);
+        buffer = (this.directBuffer = directBuffer) ? Bytes.directBuffer(initialCapacity) : Bytes.heapBuffer(initialCapacity);
     }
 
     public MemoryStream(byte[] buffer, int offset, int length) {
@@ -176,10 +176,8 @@ public final class MemoryStream extends IOStream implements Serializable {
     }
 
     @Override
-    protected void freeObjects() {
-        if (buffer != null && buffer.refCnt() > 0) {
-            buffer.release();
-        }
+    protected void dispose() {
+        Bytes.release(buffer);
     }
 
     @Override

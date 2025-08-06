@@ -77,7 +77,7 @@ public final class HybridStream extends IOStream implements Serializable {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         tryClose(stream);
     }
 

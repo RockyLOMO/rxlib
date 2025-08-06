@@ -2,7 +2,6 @@ package org.rx.core.cache;
 
 import lombok.Getter;
 import lombok.Setter;
-import lombok.ToString;
 import org.rx.annotation.DbColumn;
 import org.rx.codec.CodecUtil;
 import org.rx.core.CachePolicy;

@@ -11,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
+import org.rx.io.IOStream;
+import org.rx.io.Serializer;
 
 import java.io.Serializable;
 import java.lang.reflect.Type;
@@ -61,9 +63,11 @@ public final class ULID implements Serializable, Comparable<ULID> {
             return newULID(((String) name).getBytes(), timestamp);
         }
         if (name instanceof Long) {
-            return newULID(Bytes.getBytes((Long) name), timestamp);
+            return newULID(Bytes.toBytes((Long) name), timestamp);
         }
-        return newULID(org.rx.io.Serializer.DEFAULT.serialize(name).toArray(), timestamp);
+        try (IOStream stream = Serializer.DEFAULT.serialize(name)) {
+            return newULID(stream.toArray(), timestamp);
+        }
     }
 
     public static ULID newULID(byte[] name, long timestamp) {
@@ -92,8 +96,8 @@ public final class ULID implements Serializable, Comparable<ULID> {
 
     public static ULID valueOf(UUID uuid) {
         byte[] buf = new byte[16];
-        Bytes.getBytes(uuid.getMostSignificantBits(), buf, 0);
-        Bytes.getBytes(uuid.getLeastSignificantBits(), buf, 8);
+        Bytes.writeLong(buf, 0, uuid.getMostSignificantBits());
+        Bytes.writeLong(buf, 8, uuid.getLeastSignificantBits());
         return new ULID(buf);
     }
 

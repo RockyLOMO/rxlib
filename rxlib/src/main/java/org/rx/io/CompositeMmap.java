@@ -98,8 +98,8 @@ public final class CompositeMmap extends IOStream {
                 @Override
                 public void write(int b) {
                     ByteBuf buf = Bytes.directBuffer(1);
-                    buf.writeByte(b);
                     try {
+                        buf.writeByte(b);
                         position += CompositeMmap.this.write(position, buf);
                     } finally {
                         buf.release();
@@ -157,11 +157,11 @@ public final class CompositeMmap extends IOStream {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         // java.io.IOException: 请求的操作无法在使用用户映射区域打开的文件上执行 (Windows need to run unmap() first)
         // A mapping, once established, is not dependent upon the file channel that was used to create it. Closing the channel, in particular, has no effect upon the validity of the mapping.
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
-            release(tuple.left);
+            Bytes.release(tuple.left);
         }
     }
 
@@ -256,7 +256,7 @@ public final class CompositeMmap extends IOStream {
             }
             switch (buf.nioBufferCount()) {
                 case 0:
-                    mbuf.put(ByteBuffer.wrap(Bytes.getBytes(buf)));
+                    mbuf.put(ByteBuffer.wrap(Bytes.toBytes(buf)));
                     break;
                 case 1:
                     mbuf.put(buf.nioBuffer());

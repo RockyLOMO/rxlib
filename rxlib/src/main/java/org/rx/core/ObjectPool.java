@@ -113,7 +113,7 @@ public class ObjectPool<T> extends Disposable {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         for (IdentityWrapper<T> wrapper : stack) {
             doRetire(wrapper, 0);
         }

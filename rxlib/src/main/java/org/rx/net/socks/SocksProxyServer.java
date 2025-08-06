@@ -108,7 +108,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         Sockets.closeOnFlushed(tcpChannel);
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();

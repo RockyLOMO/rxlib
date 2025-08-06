@@ -13,7 +13,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.MultiValueMap;
 import org.rx.core.Arrays;
-import org.rx.core.Constants;
 import org.rx.core.Disposable;
 import org.rx.core.Strings;
 import org.rx.io.Bytes;
@@ -122,7 +121,7 @@ public class HttpServer extends Disposable {
                 } else {
                     ByteBuf buf = req.getContent();
                     if (buf == null) {
-                        req.setContent(buf = Bytes.heapBuffer(Constants.HEAP_BUF_SIZE, true));
+                        req.setContent(buf = Bytes.heapBuffer());
                     }
                     buf.writeBytes(content.content());
                 }
@@ -147,6 +146,9 @@ public class HttpServer extends Disposable {
                         log.error("handle", e);
                         sendError(ctx, INTERNAL_SERVER_ERROR);
                         return;
+                    }
+                    finally {
+                        Bytes.release(req.getContent());
                     }
 
                     DefaultFullHttpResponse response = new DefaultFullHttpResponse(request.protocolVersion(), OK, ifNull(res.getContent(), Unpooled.EMPTY_BUFFER));
@@ -250,7 +252,7 @@ public class HttpServer extends Disposable {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         Sockets.closeBootstrap(serverBootstrap);
     }
 

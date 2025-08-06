@@ -75,7 +75,7 @@ public class FileWatcher extends Disposable implements EventPublisher<FileWatche
     }
 
     @Override
-    protected void freeObjects() throws Throwable {
+    protected void dispose() throws Throwable {
         future.cancel(true);
         service.close();
     }

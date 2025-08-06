@@ -3,6 +3,7 @@ package org.rx.net.http;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.annotation.JSONField;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import kotlin.Pair;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
@@ -15,12 +16,14 @@ import org.rx.bean.Tuple;
 import org.rx.core.Arrays;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.io.Bytes;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
 import org.rx.util.function.BiFunc;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import javax.servlet.ServletInputStream;
 import javax.servlet.ServletOutputStream;
@@ -37,11 +40,11 @@ import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
+import static org.rx.core.Extends.tryClose;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
@@ -76,7 +79,7 @@ public class HttpClient {
     }
 
     @RequiredArgsConstructor
-    public static class FormContent implements RequestContent {
+    public static class FormContent implements RequestContent, AutoCloseable {
         final Map<String, Object> forms;
         final Map<String, IOStream> files;
         @Getter
@@ -84,7 +87,8 @@ public class HttpClient {
 
         @Override
         public RequestBody toBody() {
-            if (MapUtils.isEmpty(files)) {
+            boolean hasFiles = !MapUtils.isEmpty(files);
+            if (!hasFiles) {
                 String formString = buildUrl(null, forms);
                 if (!Strings.isEmpty(formString)) {
                     formString = formString.substring(1);
@@ -100,26 +104,29 @@ public class HttpClient {
                     builder.addFormDataPart(entry.getKey(), entry.getValue().toString());
                 }
             }
-            if (!MapUtils.isEmpty(files)) {
-                for (Map.Entry<String, IOStream> entry : files.entrySet()) {
-                    IOStream stream = entry.getValue();
-                    if (stream == null) {
-                        continue;
-                    }
-                    builder.addFormDataPart(entry.getKey(), stream.getName(), new RequestBody() {
-                        @Override
-                        public MediaType contentType() {
-                            return MediaType.parse(Files.getMediaTypeFromName(stream.getName()));
-                        }
-
-                        @Override
-                        public void writeTo(BufferedSink bufferedSink) {
-                            stream.read(bufferedSink.outputStream());
-                        }
-                    });
+            for (Map.Entry<String, IOStream> entry : files.entrySet()) {
+                IOStream stream = entry.getValue();
+                if (stream == null) {
+                    continue;
                 }
+                builder.addFormDataPart(entry.getKey(), stream.getName(), new RequestBody() {
+                    @Override
+                    public MediaType contentType() {
+                        return MediaType.parse(Files.getMediaTypeFromName(stream.getName()));
+                    }
+
+                    @Override
+                    public void writeTo(BufferedSink bufferedSink) {
+                        stream.read(bufferedSink.outputStream());
+                    }
+                });
             }
             return builder.build();
+        }
+
+        @Override
+        public void close() {
+            tryClose(files.values());
         }
 
         @Override
@@ -240,22 +247,6 @@ public class HttpClient {
     public static final CookieContainer COOKIES = new CookieContainer();
     static final ConnectionPool POOL = new ConnectionPool(RxConfig.INSTANCE.getNet().getPoolMaxSize(), RxConfig.INSTANCE.getNet().getPoolKeepAliveSeconds(), TimeUnit.SECONDS);
     static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded;charset=UTF-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
-    static final X509TrustManager[] TRUST_ALL_CERTS = new X509TrustManager[]{new X509TrustManager() {
-        final X509Certificate[] empty = new X509Certificate[0];
-
-        @Override
-        public void checkClientTrusted(X509Certificate[] chain, String authType) {
-        }
-
-        @Override
-        public void checkServerTrusted(X509Certificate[] chain, String authType) {
-        }
-
-        @Override
-        public X509Certificate[] getAcceptedIssuers() {
-            return empty;
-        }
-    }};
 
     //region StaticMembers
     public static String encodeCookie(List<Cookie> cookies) {
@@ -379,11 +370,12 @@ public class HttpClient {
 
     @SneakyThrows
     static OkHttpClient createClient(long connectTimeoutMillis, long readWriteTimeoutMillis, boolean enableCookie, Proxy proxy) {
-        SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(null, TRUST_ALL_CERTS, new SecureRandom());
+        SSLContext tls = SSLContext.getInstance("TLS");
+        TrustManager[] trustManagers = InsecureTrustManagerFactory.INSTANCE.getTrustManagers();
+        tls.init(null, trustManagers, new SecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
-                .sslSocketFactory(sslContext.getSocketFactory(), TRUST_ALL_CERTS[0]).hostnameVerifier((hostname, session) -> true)
+                .sslSocketFactory(tls.getSocketFactory(), (X509TrustManager) trustManagers[0]).hostnameVerifier((hostname, session) -> true)
                 .connectionPool(POOL).retryOnConnectionFailure(true) //unexpected end of stream
                 .connectTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS)
                 .readTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS)
@@ -513,7 +505,7 @@ public class HttpClient {
             throw new UnsupportedOperationException();
         }
         if (resContent != null) {
-            resContent.response.close();
+            tryClose(resContent.response);
         }
         if ((featureFlags & ENABLE_LOG_FLAG) == ENABLE_LOG_FLAG) {
             resContent = Sys.callLog(this.getClass(), String.format("%s %s", method, url), new Object[]{content instanceof JsonContent ? ((JsonContent) content).json : content.toString()}, () -> {
@@ -526,6 +518,7 @@ public class HttpClient {
             rc.cachingStream = (featureFlags & CACHING_STREAM_FLAG) == CACHING_STREAM_FLAG;
             resContent = rc;
         }
+        tryClose(content);
         return resContent;
     }
 
@@ -608,7 +601,7 @@ public class HttpClient {
         String requestContentType = servletRequest.getContentType();
         ServletInputStream inStream = servletRequest.getInputStream();
         byte[] inBytes;
-        if (inStream != null && (inBytes = IOStream.wrap(Strings.EMPTY, inStream).toArray()).length > 0) {
+        if (inStream != null && (inBytes = Bytes.toBytes(inStream)).length > 0) {
             reqContent = new RequestContent() {
                 @Override
                 public HttpHeaders getHeaders() {

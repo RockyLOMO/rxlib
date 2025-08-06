@@ -54,7 +54,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();
     }

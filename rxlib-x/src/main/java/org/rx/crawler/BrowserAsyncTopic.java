@@ -14,6 +14,7 @@ import org.rx.redis.RedisCache;
 import org.rx.util.function.TripleAction;
 import org.rx.util.function.TripleFunc;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.service.BeanRegister;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
@@ -25,7 +26,7 @@ import static org.rx.core.Sys.toJsonString;
 
 @RequiredArgsConstructor
 @Component
-@ConditionalOnProperty(name = org.rx.spring.BeanRegister.REDIS_PROP_NAME)
+@ConditionalOnProperty(name = BeanRegister.REDIS_PROP_NAME)
 @Slf4j
 public class BrowserAsyncTopic {
     @RequiredArgsConstructor

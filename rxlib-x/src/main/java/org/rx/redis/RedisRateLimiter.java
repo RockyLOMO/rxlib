@@ -7,6 +7,7 @@ import org.redisson.api.RateIntervalUnit;
 import org.redisson.api.RateLimiterConfig;
 import org.redisson.api.RateType;
 import org.rx.core.Constants;
+import org.rx.util.RateLimiterAdapter;
 
 @Slf4j
 public class RedisRateLimiter implements RateLimiterAdapter {

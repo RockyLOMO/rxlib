@@ -63,7 +63,7 @@ public class BinaryStream extends IOStream {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         if (!leaveOpen) {
             baseStream.close();
         }

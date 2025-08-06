@@ -64,7 +64,7 @@ public class GZIPStream extends IOStream {
     }
 
     @Override
-    protected void freeObjects() throws Throwable {
+    protected void dispose() throws Throwable {
         if (reader != null) {
             reader.close();
         }
@@ -88,9 +88,13 @@ public class GZIPStream extends IOStream {
         long pos = getPosition();
         setPosition(0);
         ByteBuf buf = Bytes.heapBuffer();
-        while (read(buf, Constants.HEAP_BUF_SIZE) != Constants.IO_EOF) {
+        try {
+            while (read(buf, Constants.HEAP_BUF_SIZE) != Constants.IO_EOF) {
+            }
+            setPosition(pos);
+            return Bytes.toBytes(buf);
+        } finally {
+            buf.release();
         }
-        setPosition(pos);
-        return Bytes.getBytes(buf);
     }
 }

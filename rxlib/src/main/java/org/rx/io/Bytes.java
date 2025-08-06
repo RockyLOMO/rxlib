@@ -1,20 +1,28 @@
 package org.rx.io;
 
-import io.netty.buffer.*;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import lombok.SneakyThrows;
 import org.rx.core.Constants;
+import org.rx.core.Strings;
 
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Set;
 
 public class Bytes {
-    static final SecureRandom DEF = new SecureRandom();
+    static final SecureRandom RANDOM = new SecureRandom();
 
+    //region ByteBuf
     public static String hexDump(ByteBuf buf) {
         return ByteBufUtil.prettyHexDump(buf);
     }
@@ -27,7 +35,19 @@ public class Bytes {
         return Unpooled.wrappedBuffer(buffer);
     }
 
-    public static byte[] getBytes(ByteBuf buf) {
+    @SneakyThrows
+    public static ByteBuf wrap(InputStream in) {
+        return wrap(in, in.available());
+    }
+
+    @SneakyThrows
+    public static ByteBuf wrap(InputStream in, int length) {
+        ByteBuf buf = directBuffer(length);
+        buf.writeBytes(in, length);
+        return buf;
+    }
+
+    public static byte[] toBytes(ByteBuf buf) {
         return ByteBufUtil.getBytes(buf, buf.readerIndex(), buf.readableBytes(), false);
     }
 
@@ -36,48 +56,71 @@ public class Bytes {
     }
 
     public static ByteBuf heapBuffer() {
-        return heapBuffer(Constants.HEAP_BUF_SIZE, false);
+        return heapBuffer(Constants.HEAP_BUF_SIZE);
     }
 
-    public static ByteBuf heapBuffer(int initialCapacity, boolean unpool) {
-        ByteBufAllocator allocator = unpool ? UnpooledByteBufAllocator.DEFAULT : PooledByteBufAllocator.DEFAULT;
-        return allocator.heapBuffer(initialCapacity, Constants.MAX_HEAP_BUF_SIZE);
+    public static ByteBuf heapBuffer(int initialCapacity) {
+        return PooledByteBufAllocator.DEFAULT.heapBuffer(initialCapacity, Constants.MAX_HEAP_BUF_SIZE);
     }
 
     public static ByteBuf directBuffer() {
-        return directBuffer(Constants.SMALL_BUF);
+        return directBuffer(Constants.HEAP_BUF_SIZE);
     }
 
     public static ByteBuf directBuffer(int initialCapacity) {
+        //AdaptiveByteBufAllocator.DEFAULT
+        //UnpooledByteBufAllocator.DEFAULT
         return PooledByteBufAllocator.DEFAULT.directBuffer(initialCapacity);
     }
 
-    @SneakyThrows
-    public static ByteBuf copyInputStream(InputStream in) {
-        return copyInputStream(in, in.available());
+    public static void release(ByteBuf buf) {
+        if (buf != null && buf.refCnt() > 0) {
+            buf.release();
+        }
     }
 
-    @SneakyThrows
-    public static ByteBuf copyInputStream(InputStream in, int length) {
-        ByteBuf buf = directBuffer(length);
-        buf.writeBytes(in, length);
-        return buf;
+    //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
+    public static void release(ByteBuffer buffer) {
+        if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {
+            return;
+        }
+
+        invoke(invoke(viewed(buffer), "cleaner"), "clean");
     }
 
-    public static long wrap(int high, int low) {
-        return (((long) high) << 32) | (low & 0xffffffffL);
+    private static Object invoke(final Object target, final String methodName, final Class<?>... args) {
+        return AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
+            try {
+                Method method;
+                try {
+                    method = target.getClass().getMethod(methodName, args);
+                } catch (NoSuchMethodException e) {
+                    method = target.getClass().getDeclaredMethod(methodName, args);
+                }
+                method.setAccessible(true);
+                return method.invoke(target);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
     }
 
-    public static int[] unwrap(long n) {
-        return new int[]{(int) (n >> 32), (int) n};
-    }
+    private static ByteBuffer viewed(ByteBuffer buffer) {
+        String methodName = "viewedBuffer";
+        Method[] methods = buffer.getClass().getMethods();
+        for (Method method : methods) {
+            if (Strings.hashEquals(method.getName(), "attachment")) {
+                methodName = "attachment";
+                break;
+            }
+        }
 
-    public static int wrap(short high, short low) {
-        return (high << 16) | (low & 0xffff);
-    }
-
-    public static short[] unwrap(int n) {
-        return new short[]{(short) (n >> 16), (short) n};
+        ByteBuffer viewedBuffer = (ByteBuffer) invoke(buffer, methodName);
+        if (viewedBuffer == null) {
+            return buffer;
+        } else {
+            return viewed(viewedBuffer);
+        }
     }
 
     public static int findText(ByteBuf byteBuf, String str) {
@@ -113,8 +156,87 @@ public class Bytes {
         byteBuf.writeBytes(end);
         return byteBuf;
     }
+    //endregion
 
-    //region heap
+    public static long wrap(int high, int low) {
+        return (((long) high) << 32) | (low & 0xffffffffL);
+    }
+
+    public static int[] unwrap(long n) {
+        return new int[]{(int) (n >> 32), (int) n};
+    }
+
+    public static int wrap(short high, short low) {
+        return (high << 16) | (low & 0xffff);
+    }
+
+    public static short[] unwrap(int n) {
+        return new short[]{(short) (n >> 16), (short) n};
+    }
+
+    public static int readInt(byte[] bytes, int offset) {
+        return ((bytes[offset] & 0xFF) << 24) |
+                ((bytes[offset + 1] & 0xFF) << 16) |
+                ((bytes[offset + 2] & 0xFF) << 8) |
+                (bytes[offset + 3] & 0xFF);
+    }
+
+    /**
+     * Writes an int value to a byte array at the specified offset in big-endian order.
+     */
+    public static void writeInt(byte[] bytes, int offset, int value) {
+        bytes[offset] = (byte) (value >> 24);
+        bytes[offset + 1] = (byte) (value >> 16);
+        bytes[offset + 2] = (byte) (value >> 8);
+        bytes[offset + 3] = (byte) value;
+    }
+
+    public static long readLong(byte[] bytes, int offset) {
+        return ((long) (bytes[offset] & 0xFF) << 56) |
+                ((long) (bytes[offset + 1] & 0xFF) << 48) |
+                ((long) (bytes[offset + 2] & 0xFF) << 40) |
+                ((long) (bytes[offset + 3] & 0xFF) << 32) |
+                ((long) (bytes[offset + 4] & 0xFF) << 24) |
+                ((long) (bytes[offset + 5] & 0xFF) << 16) |
+                ((long) (bytes[offset + 6] & 0xFF) << 8) |
+                (bytes[offset + 7] & 0xFF);
+    }
+
+    public static void writeLong(byte[] bytes, int offset, long value) {
+        bytes[offset] = (byte) (value >> 56);
+        bytes[offset + 1] = (byte) (value >> 48);
+        bytes[offset + 2] = (byte) (value >> 40);
+        bytes[offset + 3] = (byte) (value >> 32);
+        bytes[offset + 4] = (byte) (value >> 24);
+        bytes[offset + 5] = (byte) (value >> 16);
+        bytes[offset + 6] = (byte) (value >> 8);
+        bytes[offset + 7] = (byte) value;
+    }
+
+    //region byte[]
+    public static byte[] toBytes(int val) {
+        byte[] buffer = new byte[Integer.BYTES];
+        writeInt(buffer, 0, val);
+        return buffer;
+    }
+
+    public static byte[] toBytes(long val) {
+        byte[] buffer = new byte[Long.BYTES];
+        writeLong(buffer, 0, val);
+        return buffer;
+    }
+
+    public static byte[] toBytes(InputStream in) {
+        return toBytes(in, IOStream.NON_READ_FULLY);
+    }
+
+    public static byte[] toBytes(InputStream in, int length) {
+        try (MemoryStream s = new MemoryStream()) {
+            s.write(in, length);
+            return s.toArray();
+        }
+    }
+
     public static String readLine(byte[] buffer) {
         return readLine(buffer, 0, buffer.length);
     }
@@ -138,40 +260,6 @@ public class Bytes {
         return new String(buffer, offset, length, StandardCharsets.UTF_8);
     }
 
-    public static byte[] getBytes(int val) {
-        byte[] buffer = new byte[Integer.BYTES];
-        getBytes(val, buffer, 0);
-        return buffer;
-    }
-
-    public static void getBytes(int val, byte[] buffer, int offset) {
-        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, Integer.BYTES);
-        buf.writerIndex(0);
-        buf.writeInt(val);
-    }
-
-    public static int getInt(byte[] buffer, int offset) {
-        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, Integer.BYTES);
-        return buf.readInt();
-    }
-
-    public static byte[] getBytes(long val) {
-        byte[] buffer = new byte[Long.BYTES];
-        getBytes(val, buffer, 0);
-        return buffer;
-    }
-
-    public static void getBytes(long val, byte[] buffer, int offset) {
-        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, Long.BYTES);
-        buf.writerIndex(0);
-        buf.writeLong(val);
-    }
-
-    public static long getLong(byte[] buffer, int offset) {
-        ByteBuf buf = Unpooled.wrappedBuffer(buffer, offset, Long.BYTES);
-        return buf.readLong();
-    }
-
     public static void reverse(byte[] array, int offset, int length) {
         for (int i = offset; i < length / 2; i++) {
             byte temp = array[i];
@@ -182,7 +270,7 @@ public class Bytes {
 
     public static byte[] randomBytes(int size) {
         byte[] bytes = new byte[size];
-        DEF.nextBytes(bytes);
+        RANDOM.nextBytes(bytes);
         return bytes;
     }
 

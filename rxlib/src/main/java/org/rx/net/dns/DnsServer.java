@@ -92,7 +92,7 @@ public class DnsServer extends Disposable {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         Sockets.closeBootstrap(serverBootstrap);
     }
 

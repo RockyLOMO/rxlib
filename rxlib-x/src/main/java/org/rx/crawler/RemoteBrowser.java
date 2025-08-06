@@ -10,7 +10,7 @@ import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
-import org.rx.spring.MiddlewareConfig;
+import org.springframework.service.MiddlewareConfig;
 import org.springframework.service.SpringContext;
 import org.rx.util.function.*;
 

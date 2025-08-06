@@ -19,6 +19,9 @@ import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
 import org.springframework.http.MediaType;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.Charset;
@@ -240,5 +243,51 @@ public class Files extends FilenameUtils {
         try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
             zip.extractAll(destPath);
         }
+    }
+
+    @SneakyThrows
+    public static MemoryStream createTextImage(String text, String fontName, int fontSize, float fontOpacity,
+                                               int paddingX, int paddingY) {
+        // 设置字体
+        Font font = new Font(fontName, Font.PLAIN, fontSize);
+
+        // 创建临时图片以测量文本大小
+        BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2d = image.createGraphics();
+        g2d.setFont(font);
+        // 计算文字的像素大小
+        FontMetrics metrics = g2d.getFontMetrics();
+        int textWidth = metrics.stringWidth(text);
+        int textHeight = metrics.getHeight();
+        int ascent = metrics.getAscent(); // 上部高度，用于基线定位
+        g2d.dispose();
+
+        int width = textWidth + 2 * paddingX; // 总宽度 = 文字宽度 + 左右内边距
+        int height = textHeight + 2 * paddingY; // 总高度 = 文字高度 + 上下内边距
+
+        // 创建透明图片
+        image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        g2d = image.createGraphics();
+        //设置抗锯齿
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        // 显式填充透明背景
+        g2d.setColor(new Color(0, 0, 0, 0)); // 透明色
+        g2d.fillRect(0, 0, width, height);
+        // 设置文字透明度
+        g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, fontOpacity));
+
+        // 绘制文本
+        g2d.setFont(font);
+        g2d.setColor(Color.BLACK);
+        int x = (width - textWidth) / 2; // 水平居中
+        g2d.drawString(text, x, ascent + paddingY);
+
+        // 保存为 PNG
+        MemoryStream s = new MemoryStream();
+        ImageIO.write(image, "png", s.getWriter());
+        g2d.dispose();
+        return s;
     }
 }

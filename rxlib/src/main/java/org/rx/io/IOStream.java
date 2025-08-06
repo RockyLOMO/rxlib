@@ -12,12 +12,8 @@ import org.rx.core.Strings;
 import org.rx.exception.ApplicationException;
 
 import java.io.*;
-import java.lang.reflect.Method;
-import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.zip.CRC32;
 import java.util.zip.CheckedInputStream;
 
@@ -91,11 +87,12 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
 
         ByteBuf buf = Bytes.heapBuffer();
         try {
-            byte[] sb = Bytes.arrayBuffer();
-            int r;
-            while ((r = in.read(sb)) != Constants.IO_EOF) {
-                buf.writeBytes(sb, 0, r);
-            }
+            buf.writeBytes(in, in.available());
+//            byte[] sb = Bytes.arrayBuffer();
+//            int r;
+//            while ((r = in.read(sb)) != Constants.IO_EOF) {
+//                buf.writeBytes(sb, 0, r);
+//            }
             return buf.toString(charset);
         } finally {
             buf.release();
@@ -124,50 +121,6 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         return remaining >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) remaining;
     }
 
-    //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
-    public static void release(ByteBuffer buffer) {
-        if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {
-            return;
-        }
-
-        invoke(invoke(viewed(buffer), "cleaner"), "clean");
-    }
-
-    private static Object invoke(final Object target, final String methodName, final Class<?>... args) {
-        return AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
-            try {
-                Method method;
-                try {
-                    method = target.getClass().getMethod(methodName, args);
-                } catch (NoSuchMethodException e) {
-                    method = target.getClass().getDeclaredMethod(methodName, args);
-                }
-                method.setAccessible(true);
-                return method.invoke(target);
-            } catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
-        });
-    }
-
-    private static ByteBuffer viewed(ByteBuffer buffer) {
-        String methodName = "viewedBuffer";
-        Method[] methods = buffer.getClass().getMethods();
-        for (Method method : methods) {
-            if (Strings.hashEquals(method.getName(), "attachment")) {
-                methodName = "attachment";
-                break;
-            }
-        }
-
-        ByteBuffer viewedBuffer = (ByteBuffer) invoke(buffer, methodName);
-        if (viewedBuffer == null) {
-            return buffer;
-        } else {
-            return viewed(viewedBuffer);
-        }
-    }
-
     public abstract InputStream getReader();
 
     public abstract OutputStream getWriter();
@@ -194,7 +147,7 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
     }
 
     @Override
-    protected void freeObjects() throws Throwable {
+    protected void dispose() throws Throwable {
         flush();
         tryClose(getWriter());
         tryClose(getReader());
@@ -287,6 +240,20 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
             throw new EOFException();
         }
         return ((ch1 << 24) + (ch2 << 16) + (ch3 << 8) + (ch4 << 0));
+    }
+
+    public String readString(int length) {
+        return readString(length, StandardCharsets.UTF_8);
+    }
+
+    public String readString(int length, Charset charset) {
+        ByteBuf buf = Bytes.heapBuffer();
+        try {
+            read(buf, length);
+            return buf.toString(charset);
+        } finally {
+            buf.release();
+        }
     }
 
     @SneakyThrows

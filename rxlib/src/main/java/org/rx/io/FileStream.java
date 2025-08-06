@@ -212,7 +212,7 @@ public class FileStream extends IOStream implements Serializable {
     }
 
     @Override
-    protected void freeObjects() throws Throwable {
+    protected void dispose() throws Throwable {
         tryClose(randomAccessFile);
     }
 
@@ -283,7 +283,7 @@ public class FileStream extends IOStream implements Serializable {
         long w;
         switch (buf.nioBufferCount()) {
             case 0:
-                w = ch.write(ByteBuffer.wrap(Bytes.getBytes(buf)));
+                w = ch.write(ByteBuffer.wrap(Bytes.toBytes(buf)));
                 break;
             case 1:
                 w = ch.write(buf.nioBuffer());

@@ -37,7 +37,7 @@ public class RrpClient extends Disposable {
         SocksProxyServer localSS;
 
         @Override
-        protected void freeObjects() throws Throwable {
+        protected void dispose() throws Throwable {
             Sockets.closeOnFlushed(serverChannel);
             localChannels.clear();
             tryClose(localSS);
@@ -225,7 +225,7 @@ public class RrpClient extends Disposable {
     }
 
     @Override
-    protected void freeObjects() throws Throwable {
+    protected void dispose() throws Throwable {
         config.setEnableReconnect(false);
         Sockets.closeOnFlushed(channel);
     }

@@ -150,7 +150,7 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         config.setEnableReconnect(false); //import
         Sockets.closeOnFlushed(channel);
 //        bootstrap.config().group().shutdownGracefully();

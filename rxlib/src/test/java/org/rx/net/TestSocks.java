@@ -1023,6 +1023,7 @@ public class TestSocks extends AbstractTester {
             response.jsonBody(jbody);
 
             wait.set();
+            System.out.println("set..");
         });
 
         RxConfig.INSTANCE.setLogStrategy(LogStrategy.ALWAYS);
@@ -1037,6 +1038,7 @@ public class TestSocks extends AbstractTester {
         assert jbody.equals(resJson);
 
         wait.waitOne();
+        System.out.println("wait..");
         System.in.read();
     }
 
@@ -1163,12 +1165,12 @@ public class TestSocks extends AbstractTester {
         //bytes
         int a = 1;
         long b = Integer.MAX_VALUE + 1L;
-        byte[] bytes = Bytes.getBytes(a);
+        byte[] bytes = Bytes.toBytes(a);
         System.out.println(Arrays.toString(bytes));
-        assert Bytes.getInt(bytes, 0) == a;
-        bytes = Bytes.getBytes(b);
+        assert Bytes.readInt(bytes, 0) == a;
+        bytes = Bytes.toBytes(b);
         System.out.println(Arrays.toString(bytes));
-        assert Bytes.getLong(bytes, 0) == b;
+        assert Bytes.readLong(bytes, 0) == b;
     }
 
     @Test

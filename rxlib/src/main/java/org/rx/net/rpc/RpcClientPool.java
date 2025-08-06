@@ -44,7 +44,7 @@ class RpcClientPool extends Disposable implements TcpClientPool {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         pool.close();
     }
 

@@ -158,12 +158,12 @@ public class TestBean extends AbstractTester {
 
         for (int i = 0; i < 20; i++) {
             long ts = System.currentTimeMillis();
-            assert ULID.newULID(Bytes.getBytes(i), ts).equals(ULID.newULID(Bytes.getBytes(i), ts));
+            assert ULID.newULID(Bytes.toBytes(i), ts).equals(ULID.newULID(Bytes.toBytes(i), ts));
         }
 
         for (int i = 0; i < 20; i++) {
             long ts = System.currentTimeMillis();
-            assert ts == ULID.newULID(Bytes.getBytes(i), ts).getTimestamp();
+            assert ts == ULID.newULID(Bytes.toBytes(i), ts).getTimestamp();
         }
     }
 
