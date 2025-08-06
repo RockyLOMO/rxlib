@@ -497,7 +497,7 @@ public class TestIO extends AbstractTester {
     @Test
     public void releaseBuffer() {
         ByteBuffer buffer = ByteBuffer.allocateDirect(64);
-        IOStream.release(buffer);
+        Bytes.release(buffer);
     }
 
     @SneakyThrows

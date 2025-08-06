@@ -222,15 +222,33 @@ public interface Extends extends Serializable {
     //endregion
 
     static boolean tryClose(Object obj) {
-        return tryAs(obj, AutoCloseable.class, p -> quietly(p::close));
+        return tryClose(as(obj, AutoCloseable.class));
     }
 
-    static boolean tryClose(AutoCloseable obj) {
-        if (obj == null) {
+    static boolean tryClose(AutoCloseable c) {
+        if (c == null) {
             return false;
         }
-        quietly(obj::close);
-        return true;
+        try {
+            c.close();
+            return true;
+        } catch (Throwable e) {
+            TraceHandler.INSTANCE.log(e);
+            return false;
+        }
+    }
+
+    static boolean tryClose(Iterable<? extends AutoCloseable> col) {
+        if (col == null) {
+            return false;
+        }
+        boolean ok = true;
+        for (AutoCloseable c : col) {
+            if (!tryClose(c)) {
+                ok = false;
+            }
+        }
+        return ok;
     }
 
     static <T> boolean tryAs(Object obj, Class<T> type) {

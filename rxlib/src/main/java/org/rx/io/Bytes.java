@@ -3,11 +3,15 @@ package org.rx.io;
 import io.netty.buffer.*;
 import lombok.SneakyThrows;
 import org.rx.core.Constants;
+import org.rx.core.Strings;
 
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Set;
@@ -69,6 +73,50 @@ public class Bytes {
     public static void release(ByteBuf buf) {
         if (buf != null && buf.refCnt() > 0) {
             buf.release();
+        }
+    }
+
+    //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
+    public static void release(ByteBuffer buffer) {
+        if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {
+            return;
+        }
+
+        invoke(invoke(viewed(buffer), "cleaner"), "clean");
+    }
+
+    private static Object invoke(final Object target, final String methodName, final Class<?>... args) {
+        return AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
+            try {
+                Method method;
+                try {
+                    method = target.getClass().getMethod(methodName, args);
+                } catch (NoSuchMethodException e) {
+                    method = target.getClass().getDeclaredMethod(methodName, args);
+                }
+                method.setAccessible(true);
+                return method.invoke(target);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+    }
+
+    private static ByteBuffer viewed(ByteBuffer buffer) {
+        String methodName = "viewedBuffer";
+        Method[] methods = buffer.getClass().getMethods();
+        for (Method method : methods) {
+            if (Strings.hashEquals(method.getName(), "attachment")) {
+                methodName = "attachment";
+                break;
+            }
+        }
+
+        ByteBuffer viewedBuffer = (ByteBuffer) invoke(buffer, methodName);
+        if (viewedBuffer == null) {
+            return buffer;
+        } else {
+            return viewed(viewedBuffer);
         }
     }
 

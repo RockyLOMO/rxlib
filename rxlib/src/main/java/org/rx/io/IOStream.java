@@ -124,50 +124,6 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         return remaining >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) remaining;
     }
 
-    //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
-    public static void release(ByteBuffer buffer) {
-        if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {
-            return;
-        }
-
-        invoke(invoke(viewed(buffer), "cleaner"), "clean");
-    }
-
-    private static Object invoke(final Object target, final String methodName, final Class<?>... args) {
-        return AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
-            try {
-                Method method;
-                try {
-                    method = target.getClass().getMethod(methodName, args);
-                } catch (NoSuchMethodException e) {
-                    method = target.getClass().getDeclaredMethod(methodName, args);
-                }
-                method.setAccessible(true);
-                return method.invoke(target);
-            } catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
-        });
-    }
-
-    private static ByteBuffer viewed(ByteBuffer buffer) {
-        String methodName = "viewedBuffer";
-        Method[] methods = buffer.getClass().getMethods();
-        for (Method method : methods) {
-            if (Strings.hashEquals(method.getName(), "attachment")) {
-                methodName = "attachment";
-                break;
-            }
-        }
-
-        ByteBuffer viewedBuffer = (ByteBuffer) invoke(buffer, methodName);
-        if (viewedBuffer == null) {
-            return buffer;
-        } else {
-            return viewed(viewedBuffer);
-        }
-    }
-
     public abstract InputStream getReader();
 
     public abstract OutputStream getWriter();
