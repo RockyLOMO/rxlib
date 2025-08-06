@@ -92,7 +92,7 @@ public class GZIPStream extends IOStream {
             while (read(buf, Constants.HEAP_BUF_SIZE) != Constants.IO_EOF) {
             }
             setPosition(pos);
-            return Bytes.getBytes(buf);
+            return Bytes.toBytes(buf);
         } finally {
             buf.release();
         }

@@ -122,12 +122,12 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                         throw new EOFException();
                     }
                     HashKey<TK> k = new HashKey<>();
-                    k.hashId = Bytes.getLong(buf, 0);
+                    k.hashId = Bytes.readLong(buf, 0);
                     if (k.hashId == 0) {
                         break;
                     }
-                    k.logPosition = Bytes.getLong(buf, 8);
-                    k.keyPos = Bytes.getLong(buf, 16);
+                    k.logPosition = Bytes.readLong(buf, 8);
+                    k.keyPos = Bytes.readLong(buf, 16);
                     keys.add(k);
                 }
 
@@ -169,7 +169,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
 //                    }
                     ktf.logPosition = newLogPos;
                     wal.setPosition(ktf.keyPos + 8);
-                    wal.write(Bytes.getBytes(ktf.logPosition));
+                    wal.write(Bytes.toBytes(ktf.logPosition));
 
                     HashKey<TK>[] ks;
                     WeakReference<HashKey<TK>[]> ref = this.ref;
@@ -196,9 +196,9 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
                     byte[] buf = new byte[HashKey.BYTES];
                     for (HashKey<TK> fk : ks) {
                         fk.keyPos = wal.getPosition();
-                        Bytes.getBytes(fk.hashId, buf, 0);
-                        Bytes.getBytes(fk.logPosition, buf, 8);
-                        Bytes.getBytes(fk.keyPos, buf, 16);
+                        Bytes.writeLong(buf, 0, fk.hashId);
+                        Bytes.writeLong(buf, 8, fk.logPosition);
+                        Bytes.writeLong(buf, 16, fk.keyPos);
                         wal.write(buf);
                     }
 

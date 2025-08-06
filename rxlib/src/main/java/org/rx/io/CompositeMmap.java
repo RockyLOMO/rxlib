@@ -256,7 +256,7 @@ public final class CompositeMmap extends IOStream {
             }
             switch (buf.nioBufferCount()) {
                 case 0:
-                    mbuf.put(ByteBuffer.wrap(Bytes.getBytes(buf)));
+                    mbuf.put(ByteBuffer.wrap(Bytes.toBytes(buf)));
                     break;
                 case 1:
                     mbuf.put(buf.nioBuffer());

@@ -283,7 +283,7 @@ public class FileStream extends IOStream implements Serializable {
         long w;
         switch (buf.nioBufferCount()) {
             case 0:
-                w = ch.write(ByteBuffer.wrap(Bytes.getBytes(buf)));
+                w = ch.write(ByteBuffer.wrap(Bytes.toBytes(buf)));
                 break;
             case 1:
                 w = ch.write(buf.nioBuffer());
