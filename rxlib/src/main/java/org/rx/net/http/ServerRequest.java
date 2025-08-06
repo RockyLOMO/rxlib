@@ -39,6 +39,8 @@ public final class ServerRequest {
     private MultiValueMap<String, FileUpload> files;
     @Setter(AccessLevel.PROTECTED)
     private ByteBuf content;
+    @Getter(AccessLevel.NONE)
+    String jsonBody;
 
     private Set<Cookie> cookiesLazy() {
         String cookie = headers.get(HttpHeaderNames.COOKIE);
@@ -59,7 +61,10 @@ public final class ServerRequest {
     }
 
     public String jsonBody() {
-        require(content);
-        return content.toString(CharsetUtil.UTF_8);
+        if (jsonBody == null) {
+            require(content);
+            jsonBody = content.toString(CharsetUtil.UTF_8);
+        }
+        return jsonBody;
     }
 }

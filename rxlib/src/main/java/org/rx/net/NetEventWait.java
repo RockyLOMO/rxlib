@@ -109,7 +109,7 @@ public final class NetEventWait extends Disposable implements WaitHandle {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         channel.attr(REF).get().remove(this);
     }
 

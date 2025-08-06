@@ -199,7 +199,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         releaseReaderAndWriter();
         file.close();
     }

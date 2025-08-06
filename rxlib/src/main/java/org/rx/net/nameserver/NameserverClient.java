@@ -72,7 +72,7 @@ public final class NameserverClient extends Disposable {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         group.remove(holder);
         for (NsInfo tuple : holder) {
             tryClose(tuple.ns);

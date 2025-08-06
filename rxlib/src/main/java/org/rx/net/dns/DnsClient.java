@@ -67,7 +67,7 @@ public class DnsClient extends Disposable {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         nameResolver.close();
     }
 

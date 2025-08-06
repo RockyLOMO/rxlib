@@ -194,7 +194,7 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
     }
 
     @Override
-    protected void freeObjects() throws Throwable {
+    protected void dispose() throws Throwable {
         flush();
         tryClose(getWriter());
         tryClose(getReader());
