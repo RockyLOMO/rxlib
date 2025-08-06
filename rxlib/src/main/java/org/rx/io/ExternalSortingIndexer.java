@@ -234,7 +234,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         wal.close();
     }
 

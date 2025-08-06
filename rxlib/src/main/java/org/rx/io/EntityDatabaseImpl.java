@@ -275,7 +275,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     @Override
-    protected void freeObjects() {
+    protected void dispose() {
         if (connPool != null) {
             connPool.dispose();
         }

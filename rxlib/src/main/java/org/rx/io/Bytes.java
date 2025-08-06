@@ -13,7 +13,7 @@ import java.util.EnumSet;
 import java.util.Set;
 
 public class Bytes {
-    static final SecureRandom DEF = new SecureRandom();
+    static final SecureRandom RANDOM = new SecureRandom();
 
     public static String hexDump(ByteBuf buf) {
         return ByteBufUtil.prettyHexDump(buf);
@@ -36,20 +36,27 @@ public class Bytes {
     }
 
     public static ByteBuf heapBuffer() {
-        return heapBuffer(Constants.HEAP_BUF_SIZE, false);
+        return heapBuffer(Constants.HEAP_BUF_SIZE);
     }
 
-    public static ByteBuf heapBuffer(int initialCapacity, boolean unpool) {
-        ByteBufAllocator allocator = unpool ? UnpooledByteBufAllocator.DEFAULT : PooledByteBufAllocator.DEFAULT;
-        return allocator.heapBuffer(initialCapacity, Constants.MAX_HEAP_BUF_SIZE);
+    public static ByteBuf heapBuffer(int initialCapacity) {
+        return PooledByteBufAllocator.DEFAULT.heapBuffer(initialCapacity, Constants.MAX_HEAP_BUF_SIZE);
     }
 
     public static ByteBuf directBuffer() {
-        return directBuffer(Constants.SMALL_BUF);
+        return directBuffer(Constants.HEAP_BUF_SIZE);
     }
 
     public static ByteBuf directBuffer(int initialCapacity) {
+        //AdaptiveByteBufAllocator.DEFAULT
+        //UnpooledByteBufAllocator.DEFAULT
         return PooledByteBufAllocator.DEFAULT.directBuffer(initialCapacity);
+    }
+
+    public static void release(ByteBuf buf) {
+        if (buf != null && buf.refCnt() > 0) {
+            buf.release();
+        }
     }
 
     @SneakyThrows
@@ -182,7 +189,7 @@ public class Bytes {
 
     public static byte[] randomBytes(int size) {
         byte[] bytes = new byte[size];
-        DEF.nextBytes(bytes);
+        RANDOM.nextBytes(bytes);
         return bytes;
     }
 

@@ -212,7 +212,7 @@ public class FileStream extends IOStream implements Serializable {
     }
 
     @Override
-    protected void freeObjects() throws Throwable {
+    protected void dispose() throws Throwable {
         tryClose(randomAccessFile);
     }
 
