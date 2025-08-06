@@ -1023,6 +1023,7 @@ public class TestSocks extends AbstractTester {
             response.jsonBody(jbody);
 
             wait.set();
+            System.out.println("set..");
         });
 
         RxConfig.INSTANCE.setLogStrategy(LogStrategy.ALWAYS);
@@ -1037,6 +1038,7 @@ public class TestSocks extends AbstractTester {
         assert jbody.equals(resJson);
 
         wait.waitOne();
+        System.out.println("wait..");
         System.in.read();
     }
 
