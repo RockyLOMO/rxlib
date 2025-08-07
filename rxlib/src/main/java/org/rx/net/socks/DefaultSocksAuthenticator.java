@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
+import static org.rx.core.Sys.toJsonString;
 
 public class DefaultSocksAuthenticator implements Authenticator {
     final Map<String, SocksUser> store = new ConcurrentHashMap<>();
@@ -77,7 +78,7 @@ public class DefaultSocksAuthenticator implements Authenticator {
         StringBuilder buf = new StringBuilder();
         buf.append("--SocksUsers--");
         for (SocksUser usr : store.values()) {
-            buf.appendMessageFormat("\nusr:{} -> {}", usr.getUsername(), JSON.toJSONString(usr));
+            buf.appendMessageFormat("\nusr:{} -> {}", usr.getUsername(), toJsonString(usr));
         }
         return buf.toString();
     }
