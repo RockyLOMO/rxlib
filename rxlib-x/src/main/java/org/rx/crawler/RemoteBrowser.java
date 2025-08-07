@@ -10,6 +10,7 @@ import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
+import org.rx.util.Snowflake;
 import org.springframework.service.MiddlewareConfig;
 import org.springframework.service.SpringContext;
 import org.rx.util.function.*;
@@ -28,29 +29,29 @@ import static org.rx.core.Sys.proxy;
 public abstract class RemoteBrowser implements Browser {
     private static final ConcurrentHashMap<String, BrowserPoolListener> FACADE = new ConcurrentHashMap<>();
 
-    public static Future<?> invokeAsync(String url, TripleAction<RemoteBrowser, String> callback) {
-        return invokeAsync(url, callback, Thread.NORM_PRIORITY);
+    public static Future<?> invokeAsync(BiAction<RemoteBrowser> callback, String cookieRegion) {
+        return invokeAsync(callback, cookieRegion, Thread.NORM_PRIORITY);
     }
 
-    public static Future<?> invokeAsync(String url, TripleAction<RemoteBrowser, String> callback, int priority) {
+    public static Future<?> invokeAsync(BiAction<RemoteBrowser> callback, String cookieRegion, int priority) {
         BrowserAsyncTopic asyncTopic = SpringContext.getBean(BrowserAsyncTopic.class);
 
-        UUID asyncId = UUID.randomUUID();
+        long asyncId = Snowflake.DEFAULT.nextId();
         Future<?> future = asyncTopic.listen(asyncId, callback);
-        asyncTopic.add(new BrowserAsyncRequest(asyncId, priority, url));
+        asyncTopic.add(new BrowserAsyncRequest(asyncId, priority, cookieRegion));
         return future;
     }
 
-    public static <T> Future<T> invokeAsync(String url, TripleFunc<RemoteBrowser, String, T> callback) {
-        return invokeAsync(url, callback, Thread.NORM_PRIORITY);
+    public static <T> Future<T> invokeAsync(BiFunc<RemoteBrowser, T> callback, String cookieRegion) {
+        return invokeAsync(callback, cookieRegion, Thread.NORM_PRIORITY);
     }
 
-    public static <T> Future<T> invokeAsync(String url, TripleFunc<RemoteBrowser, String, T> callback, int priority) {
+    public static <T> Future<T> invokeAsync(BiFunc<RemoteBrowser, T> callback, String cookieRegion, int priority) {
         BrowserAsyncTopic asyncTopic = SpringContext.getBean(BrowserAsyncTopic.class);
 
-        UUID asyncId = UUID.randomUUID();
+        long asyncId = Snowflake.DEFAULT.nextId();
         Future<T> future = asyncTopic.listen(asyncId, callback);
-        asyncTopic.add(new BrowserAsyncRequest(asyncId, priority, url));
+        asyncTopic.add(new BrowserAsyncRequest(asyncId, priority, cookieRegion));
         return future;
     }
 

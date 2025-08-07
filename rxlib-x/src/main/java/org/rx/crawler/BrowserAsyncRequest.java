@@ -10,9 +10,9 @@ import java.util.UUID;
 @Getter
 @RequiredArgsConstructor
 public class BrowserAsyncRequest implements Serializable, Comparable<BrowserAsyncRequest> {
-    private final UUID asyncId;
+    private final long asyncId;
     private final int priority;
-    private final String url;
+    private final String cookieRegion;
 
     @Override
     public int compareTo(@NonNull BrowserAsyncRequest o) {

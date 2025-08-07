@@ -11,6 +11,8 @@ import org.rx.core.Constants;
 import org.rx.core.ResetEventWait;
 import org.rx.exception.TraceHandler;
 import org.rx.redis.RedisCache;
+import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 import org.rx.util.function.TripleAction;
 import org.rx.util.function.TripleFunc;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,7 +33,7 @@ import static org.rx.core.Sys.toJsonString;
 public class BrowserAsyncTopic {
     @RequiredArgsConstructor
     private class AsyncFuture<T> implements Future<T> {
-        private final UUID asyncId;
+        private final long asyncId;
         private final Object callback;
         private final ResetEventWait waiter = new ResetEventWait();
         @Getter
@@ -77,7 +79,7 @@ public class BrowserAsyncTopic {
     private RPriorityBlockingQueue<BrowserAsyncRequest> queue;
     private RTopic topic;
     private RSetCache<Integer> publishSet;
-    private final ConcurrentHashMap<UUID, AsyncFuture> callbacks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, AsyncFuture> callbacks = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
@@ -96,11 +98,15 @@ public class BrowserAsyncTopic {
                     if (future.isCancelled()) {
                         return;
                     }
-                    if (future.callback instanceof TripleFunc) {
-                        future.result = ((TripleFunc<RemoteBrowser, String, Object>) future.callback).invoke(browser, asyncResponse.getRequest().getUrl());
+                    String cookieRegion = asyncResponse.getRequest().getCookieRegion();
+                    if (cookieRegion != null) {
+                        browser.setCookieRegion(cookieRegion);
+                    }
+                    if (future.callback instanceof BiFunc) {
+                        future.result = ((BiFunc<RemoteBrowser, Object>) future.callback).invoke(browser);
                         return;
                     }
-                    ((TripleAction<RemoteBrowser, String>) future.callback).invoke(browser, asyncResponse.getRequest().getUrl());
+                    ((BiAction<RemoteBrowser>) future.callback).invoke(browser);
                 } catch (Throwable e) {
                     TraceHandler.INSTANCE.log("Async {} error", future.asyncId, e);
                     future.exception = e;
@@ -121,13 +127,13 @@ public class BrowserAsyncTopic {
         queue.add(request);
     }
 
-    public Future listen(UUID asyncId, TripleAction<RemoteBrowser, String> callback) {
+    public Future listen(long asyncId, BiAction<RemoteBrowser> callback) {
         AsyncFuture future = new AsyncFuture(asyncId, callback);
         callbacks.put(asyncId, future);
         return future;
     }
 
-    public <T> Future<T> listen(UUID asyncId, TripleFunc<RemoteBrowser, String, T> callback) {
+    public <T> Future<T> listen(long asyncId, BiFunc<RemoteBrowser, T> callback) {
         AsyncFuture<T> future = new AsyncFuture<>(asyncId, callback);
         callbacks.put(asyncId, future);
         return future;
@@ -148,7 +154,7 @@ public class BrowserAsyncTopic {
     }
 
     public void publish(BrowserAsyncResponse response) {
-        if (response == null || response.getRequest() == null || response.getRequest().getAsyncId() == null || response.getEndpoint() == null) {
+        if (response == null || response.getRequest() == null || response.getRequest().getAsyncId() == 0 || response.getEndpoint() == null) {
             log.warn("Async publish invalid response {}", toJsonString(response));
             return;
         }
