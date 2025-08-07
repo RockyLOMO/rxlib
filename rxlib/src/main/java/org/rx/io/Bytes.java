@@ -5,6 +5,7 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import lombok.SneakyThrows;
+import org.rx.codec.CodecUtil;
 import org.rx.core.Constants;
 import org.rx.core.Strings;
 
@@ -20,8 +21,6 @@ import java.util.EnumSet;
 import java.util.Set;
 
 public class Bytes {
-    static final SecureRandom RANDOM = new SecureRandom();
-
     //region ByteBuf
     public static String hexDump(ByteBuf buf) {
         return ByteBufUtil.prettyHexDump(buf);
@@ -266,12 +265,6 @@ public class Bytes {
             array[i] = array[array.length - i - 1];
             array[array.length - i - 1] = temp;
         }
-    }
-
-    public static byte[] randomBytes(int size) {
-        byte[] bytes = new byte[size];
-        RANDOM.nextBytes(bytes);
-        return bytes;
     }
 
     //https://stackoverflow.com/a/5599842/1253611

@@ -9,6 +9,7 @@ import org.bouncycastle.crypto.modes.AEADCipher;
 import org.bouncycastle.crypto.params.AEADParameters;
 import org.bouncycastle.crypto.params.HKDFParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
+import org.rx.codec.CodecUtil;
 import org.rx.io.Bytes;
 
 import java.nio.ByteBuffer;
@@ -85,7 +86,7 @@ public abstract class CryptoAeadBase implements ICrypto {
         synchronized (encLock) {
             stream.clear();
             if (!_encryptSaltSet || forUdp) {
-                byte[] salt = Bytes.randomBytes(getSaltLength());
+                byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
                 stream.writeBytes(salt);
                 encSubkey = genSubkey(salt);
                 encCipher = getCipher(true);
