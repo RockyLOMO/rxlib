@@ -848,7 +848,7 @@ public final class Sys extends SystemUtils {
     static Object jsonValueFilter(Object o, String k, Object v) {
         if (v != null) {
             if (v instanceof InetAddress) {
-                return v.toString();
+                return ((InetAddress) v).getHostAddress();
             }
             if (Linq.from(RxConfig.INSTANCE.jsonSkipTypes).any(t -> Reflects.isInstance(v, t))) {
                 return v.getClass().getName();
