@@ -15,13 +15,10 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Set;
 
 public class Bytes {
-    static final SecureRandom RANDOM = new SecureRandom();
-
     //region ByteBuf
     public static String hexDump(ByteBuf buf) {
         return ByteBufUtil.prettyHexDump(buf);
@@ -266,12 +263,6 @@ public class Bytes {
             array[i] = array[array.length - i - 1];
             array[array.length - i - 1] = temp;
         }
-    }
-
-    public static byte[] randomBytes(int size) {
-        byte[] bytes = new byte[size];
-        RANDOM.nextBytes(bytes);
-        return bytes;
     }
 
     //https://stackoverflow.com/a/5599842/1253611

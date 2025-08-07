@@ -51,7 +51,7 @@ public final class ULID implements Serializable, Comparable<ULID> {
     private static final long serialVersionUID = -8408685951892844844L;
 
     public static ULID randomULID() {
-        return new ULID(Bytes.randomBytes(16), System.currentTimeMillis());
+        return new ULID(CodecUtil.secureRandomBytes(16), System.currentTimeMillis());
     }
 
     public static ULID nameULID(String name) {

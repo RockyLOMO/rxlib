@@ -6,22 +6,19 @@ import org.bouncycastle.crypto.params.ParametersWithIV;
 import org.rx.core.Linq;
 import org.rx.core.RxConfig;
 
-import java.security.SecureRandom;
 import java.util.Arrays;
 
 public class XChaCha20Poly1305Util {
     private static final int KEY_LEN = XChaCha20Engine.KEY_SIZE_BYTES; // 32 bytes for XChaCha20
     private static final int NONCE_LEN = XChaCha20Engine.NONCE_SIZE_BYTES; // 24 bytes for XChaCha20
     private static final int TAG_LEN = 16; // 16 bytes for Poly1305 MAC
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     public static byte[] encrypt(byte[] key, byte[] plaintext) {
         if (key == null || key.length != KEY_LEN) {
             throw new IllegalArgumentException("Key must be " + KEY_LEN + " bytes");
         }
 
-        byte[] nonce = new byte[NONCE_LEN];
-        RANDOM.nextBytes(nonce);
+        byte[] nonce = CodecUtil.secureRandomBytes(NONCE_LEN);
         ParametersWithIV parametersWithIV = new ParametersWithIV(new KeyParameter(key), nonce);
 
         XChaCha20Engine cipher = new XChaCha20Engine();
@@ -78,9 +75,7 @@ public class XChaCha20Poly1305Util {
     }
 
     public static byte[] generateKey() {
-        byte[] key = new byte[KEY_LEN];
-        RANDOM.nextBytes(key);
-        return key;
+        return CodecUtil.secureRandomBytes(KEY_LEN);
     }
 
     public static byte[] encrypt(byte[] plaintext) {

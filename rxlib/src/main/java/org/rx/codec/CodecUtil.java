@@ -1,6 +1,7 @@
 package org.rx.codec;
 
 import io.netty.buffer.ByteBufUtil;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.bouncycastle.util.encoders.HexTranslator;
@@ -14,10 +15,26 @@ import java.io.File;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Base64;
 
 public class CodecUtil {
     public static final HexTranslator HEX = new HexTranslator();
+    static final FastThreadLocal<SecureRandom> secureRandom = new FastThreadLocal<>();
+
+    public static SecureRandom threadLocalSecureRandom() {
+        SecureRandom rnd = secureRandom.get();
+        if (rnd == null) {
+            secureRandom.set(rnd = new SecureRandom());
+        }
+        return rnd;
+    }
+
+    public static byte[] secureRandomBytes(int size) {
+        byte[] bytes = new byte[size];
+        CodecUtil.threadLocalSecureRandom().nextBytes(bytes);
+        return bytes;
+    }
 
     //org.apache.commons.codec.binary.Base64.isBase64(base64String) may not right
     public static String convertToBase64(byte[] data) {

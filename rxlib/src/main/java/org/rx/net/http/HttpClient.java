@@ -13,6 +13,7 @@ import okio.BufferedSink;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.Tuple;
+import org.rx.codec.CodecUtil;
 import org.rx.core.Arrays;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
@@ -39,7 +40,6 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -372,7 +372,7 @@ public class HttpClient {
     static OkHttpClient createClient(long connectTimeoutMillis, long readWriteTimeoutMillis, boolean enableCookie, Proxy proxy) {
         SSLContext tls = SSLContext.getInstance("TLS");
         TrustManager[] trustManagers = InsecureTrustManagerFactory.INSTANCE.getTrustManagers();
-        tls.init(null, trustManagers, new SecureRandom());
+        tls.init(null, trustManagers, CodecUtil.threadLocalSecureRandom());
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .sslSocketFactory(tls.getSocketFactory(), (X509TrustManager) trustManagers[0]).hostnameVerifier((hostname, session) -> true)

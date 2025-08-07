@@ -46,8 +46,7 @@ public class SocksUser implements Serializable {
     @ToString
     public static class LoginInfo implements Serializable {
         private static final long serialVersionUID = 1264936011170722186L;
-        final InetAddress ip;
-        IPAddress ipInfo;
+        final IPAddress ipInfo;
         DateTime latestTime;
         int refCnt;
         final AtomicLong totalActiveSeconds = new AtomicLong();
@@ -55,7 +54,6 @@ public class SocksUser implements Serializable {
         final AtomicLong totalWriteBytes = new AtomicLong();
 
         public LoginInfo(InetAddress ip) {
-            this.ip = ip;
             ipInfo = IPSearcher.DEFAULT.resolve(ip.getHostAddress());
         }
     }

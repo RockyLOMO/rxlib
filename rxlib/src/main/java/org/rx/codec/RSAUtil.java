@@ -20,7 +20,7 @@ public final class RSAUtil {
     @SneakyThrows
     public static String[] generateKeyPair() {
         KeyPairGenerator keygen = KeyPairGenerator.getInstance("RSA");
-        keygen.initialize(1024, new SecureRandom());
+        keygen.initialize(1024, CodecUtil.threadLocalSecureRandom());
         KeyPair keys = keygen.genKeyPair();
         PublicKey pubkey = keys.getPublic();
         PrivateKey prikey = keys.getPrivate();

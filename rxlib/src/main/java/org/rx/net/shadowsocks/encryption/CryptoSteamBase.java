@@ -7,7 +7,7 @@ import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.StreamCipher;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.params.ParametersWithIV;
-import org.rx.io.Bytes;
+import org.rx.codec.CodecUtil;
 
 import javax.crypto.SecretKey;
 import java.util.Arrays;
@@ -44,7 +44,7 @@ public abstract class CryptoSteamBase implements ICrypto {
             stream.clear();
             if (!_encryptIVSet || forUdp) {
                 _encryptIVSet = true;
-                byte[] iv = Bytes.randomBytes(_ivLength);
+                byte[] iv = CodecUtil.secureRandomBytes(_ivLength);
                 setIV(iv, true);
                 stream.writeBytes(iv);
             }
