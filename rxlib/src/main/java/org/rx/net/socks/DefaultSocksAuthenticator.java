@@ -1,6 +1,5 @@
 package org.rx.net.socks;
 
-import com.alibaba.fastjson2.JSON;
 import org.rx.bean.DateTime;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;

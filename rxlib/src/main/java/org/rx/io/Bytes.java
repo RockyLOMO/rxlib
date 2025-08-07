@@ -5,7 +5,6 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import lombok.SneakyThrows;
-import org.rx.codec.CodecUtil;
 import org.rx.core.Constants;
 import org.rx.core.Strings;
 
@@ -16,7 +15,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.security.SecureRandom;
 import java.util.EnumSet;
 import java.util.Set;
 

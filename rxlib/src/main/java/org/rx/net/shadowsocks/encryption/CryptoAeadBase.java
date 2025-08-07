@@ -10,7 +10,6 @@ import org.bouncycastle.crypto.params.AEADParameters;
 import org.bouncycastle.crypto.params.HKDFParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.rx.codec.CodecUtil;
-import org.rx.io.Bytes;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;

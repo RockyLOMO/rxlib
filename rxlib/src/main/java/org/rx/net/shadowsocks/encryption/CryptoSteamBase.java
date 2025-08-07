@@ -8,7 +8,6 @@ import org.bouncycastle.crypto.StreamCipher;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.crypto.params.ParametersWithIV;
 import org.rx.codec.CodecUtil;
-import org.rx.io.Bytes;
 
 import javax.crypto.SecretKey;
 import java.util.Arrays;
