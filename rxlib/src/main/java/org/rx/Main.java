@@ -367,19 +367,48 @@ public final class Main implements SocksSupport {
 //        AuthenticProxy p = conf.godaddyProxy != null
 //                ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
 //                : null;
+        JSONObject curDns = getDDns(apiKey, domain);
+        log.info("ddns curDns {}", curDns);
+        JSONArray mDomains = Sys.readJsonValue(curDns, "data.name_server_settings.main_domains");
+        JSONArray sDomains = Sys.readJsonValue(curDns, "data.name_server_settings.sub_domains");
+
         String url = "https://api.dynadot.com/restful/v1/domains/" + domain + "/records";
         JSONObject requestBody = new JSONObject();
-        requestBody.put("dns_main_list", new JSONArray());
         requestBody.put("ttl", 300);
-        JSONArray sub_list = new JSONArray();
-        for (String subDomain : subDomains) {
-            JSONObject sub_item = new JSONObject();
-            sub_item.put("sub_host", subDomain);
-            sub_item.put("record_type", "a");
-            sub_item.put("record_value1", ip);
-            sub_list.add(sub_item);
+
+        if (mDomains == null) {
+            mDomains = new JSONArray();
         }
-        requestBody.put("sub_list", sub_list);
+        for (int i = 0; i < mDomains.size(); i++) {
+            JSONObject md = mDomains.getJSONObject(i);
+            md.put("record_value1", md.getString("value"));
+        }
+        requestBody.put("dns_main_list", mDomains);
+
+        if (sDomains == null) {
+            sDomains = new JSONArray();
+        }
+        for (int i = 0; i < sDomains.size(); i++) {
+            JSONObject sd = sDomains.getJSONObject(i);
+            String subHost = sd.getString("sub_host");
+            int j;
+            if ((j = subDomains.indexOf(subHost)) != -1
+                    && "a".equals(sd.getString("record_type"))) {
+                sd.put("record_value1", ip);
+                subDomains.remove(j);
+            } else {
+                sd.put("record_value1", sd.getString("value"));
+            }
+        }
+        for (String subDomain : subDomains) {
+            JSONObject sd = new JSONObject();
+            sd.put("sub_host", subDomain);
+            sd.put("record_type", "a");
+            sd.put("record_value1", ip);
+            sDomains.add(sd);
+        }
+        requestBody.put("sub_list", sDomains);
+        log.info("ddns update all {}", requestBody);
 //        HttpClient client = new HttpClient();
 //        client.requestHeaders().set("Content-Type", "application/json");
 //        client.requestHeaders().set("Accept", "application/json");
