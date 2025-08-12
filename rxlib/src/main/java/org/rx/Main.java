@@ -1,12 +1,16 @@
 package org.rx;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.$;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
+import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.io.IOStream;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
@@ -34,10 +38,10 @@ import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 
+import java.io.OutputStream;
 import java.math.BigInteger;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.Proxy;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -94,10 +98,10 @@ public final class Main implements SocksSupport {
         public List<String> directList;
         public boolean autoGfw;
         public int waitIpInfoMillis = 1000;
-        public int ddnsSeconds;
+        public int ddnsJobSeconds;
         public List<String> ddnsDomains;
-        public String godaddyProxy;
-        public String godaddyKey;
+        public String ddnsApiKey;
+        public String ddnsApiProxy;
 
         public String pcapSourceIp;
         public boolean pcapUdpDirect;
@@ -346,20 +350,75 @@ public final class Main implements SocksSupport {
             }
 
             InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.getPublicIp());
-            for (String ddns : conf.ddnsDomains) {
-                List<InetAddress> currentIps = DnsClient.inlandClient().resolveAll(ddns);
-                if (currentIps.contains(wanIp)) {
-                    continue;
-                }
-                int i = ddns.indexOf(".");
-                String domain = ddns.substring(i + 1), name = ddns.substring(0, i);
-                log.info("ddns-{}.{}: {}->{}", name, domain, currentIps, wanIp);
-                AuthenticProxy p = conf.godaddyProxy != null
-                        ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
-                        : null;
-                IPSearcher.godaddyDns(conf.getGodaddyKey(), domain, name, wanIp.getHostAddress(), p);
+            List<String> subDomains = Linq.from(conf.ddnsDomains).where(sd -> !DnsClient.inlandClient().resolveAll(sd).contains(wanIp))
+                    .select(sd -> sd.substring(0, sd.indexOf("."))).toList();
+            if (subDomains.isEmpty()) {
+                return;
             }
-        }, conf.ddnsSeconds * 1000L);
+            String oneSd = conf.ddnsDomains.get(0);
+            String domain = oneSd.substring(oneSd.indexOf(".") + 1);
+            String res = setDDns(conf.ddnsApiKey, domain, subDomains, wanIp.getHostAddress());
+            log.info("ddns set {} + {} @ {} -> {}", domain, subDomains, wanIp.getHostAddress(), res);
+        }, conf.ddnsJobSeconds * 1000L);
+    }
+
+    @SneakyThrows
+    static String setDDns(String apiKey, String domain, List<String> subDomains, String ip) {
+//        AuthenticProxy p = conf.godaddyProxy != null
+//                ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
+//                : null;
+        String url = "https://api.dynadot.com/restful/v1/domains/" + domain + "/records";
+        JSONObject requestBody = new JSONObject();
+        requestBody.put("dns_main_list", new JSONArray());
+        requestBody.put("ttl", 300);
+        JSONArray sub_list = new JSONArray();
+        for (String subDomain : subDomains) {
+            JSONObject sub_item = new JSONObject();
+            sub_item.put("sub_host", subDomain);
+            sub_item.put("record_type", "a");
+            sub_item.put("record_value1", ip);
+            sub_list.add(sub_item);
+        }
+        requestBody.put("sub_list", sub_list);
+//        HttpClient client = new HttpClient();
+//        client.requestHeaders().set("Content-Type", "application/json");
+//        client.requestHeaders().set("Accept", "application/json");
+//        client.requestHeaders().set("Authorization", "Bearer " + apiKey);
+//        client.requestHeaders().set("X-Signature", dynadotSign(apiKey, url, requestBody.toString()));
+//        return client.postJson(url, requestBody).toString();
+
+        URL u = new URL(url);
+        HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+        try {
+            conn.setDoOutput(true);
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+            conn.setRequestProperty("X-Signature", dynadotSign(apiKey, url, requestBody.toString()));
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            return IOStream.readString(conn.getInputStream(), StandardCharsets.UTF_8);
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    static JSONObject getDDns(String apiKey, String domain) {
+        String url = "https://api.dynadot.com/restful/v1/domains/" + domain + "/records";
+        HttpClient client = new HttpClient();
+        client.requestHeaders().set("Accept", "application/json");
+        client.requestHeaders().set("Authorization", "Bearer " + apiKey);
+        client.requestHeaders().set("X-Signature", dynadotSign(apiKey, url, ""));
+        return client.get(url).toJson();
+    }
+
+    static String dynadotSign(String apiKey, String url, String requestBody) {
+        int startIndex = url.indexOf("/", url.indexOf("//") + 2);
+        String fullPathAndQuery = startIndex != -1 ? url.substring(startIndex) : "/";
+        String stringToSign = apiKey + "\n" + fullPathAndQuery + "\n\n" + requestBody;
+        return CodecUtil.toHex(CodecUtil.hmacSHA256(apiKey, stringToSign));
     }
 
     static HttpServer httpServer;
