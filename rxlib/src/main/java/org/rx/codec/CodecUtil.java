@@ -11,6 +11,7 @@ import org.rx.io.MemoryStream;
 import org.rx.io.Serializer;
 import org.rx.third.open.CrcModel;
 
+import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.File;
 import java.math.BigInteger;
