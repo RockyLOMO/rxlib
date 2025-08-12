@@ -85,7 +85,7 @@ public final class ULID implements Serializable, Comparable<ULID> {
             case 32:
                 byte[] hexBytes = ulid.getBytes();
                 buf = new byte[16];
-                CodecUtil.HEX.decode(hexBytes, 0, hexBytes.length, buf, 0);
+                CodecUtil.decodeHex(hexBytes, 0, hexBytes.length, buf, 0);
                 break;
         }
         if (buf == null) {
@@ -154,7 +154,7 @@ public final class ULID implements Serializable, Comparable<ULID> {
     public String toString() {
         if (hexString == null) {
             byte[] hexBytes = new byte[32];
-            CodecUtil.HEX.encode(buf, 0, buf.length, hexBytes, 0);
+            CodecUtil.encodeHex(buf, 0, buf.length, hexBytes, 0);
             hexString = new String(hexBytes);
         }
         return hexString;

@@ -11,6 +11,8 @@ import org.rx.io.MemoryStream;
 import org.rx.io.Serializer;
 import org.rx.third.open.CrcModel;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.File;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -19,7 +21,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 public class CodecUtil {
-    public static final HexTranslator HEX = new HexTranslator();
+    static final HexTranslator HEX = new HexTranslator();
     static final FastThreadLocal<SecureRandom> secureRandom = new FastThreadLocal<>();
 
     public static SecureRandom threadLocalSecureRandom() {
@@ -34,6 +36,24 @@ public class CodecUtil {
         byte[] bytes = new byte[size];
         CodecUtil.threadLocalSecureRandom().nextBytes(bytes);
         return bytes;
+    }
+
+    public static String toHex(byte[] data) {
+        return ByteBufUtil.hexDump(data, 0, data.length);
+    }
+
+    public static byte[] fromHex(String hex) {
+        return ByteBufUtil.decodeHexDump(hex, 0, hex.length());
+    }
+
+    public static int encodeHex(byte[] in, int inOff, int length,
+                                byte[] out, int outOff) {
+        return HEX.encode(in, inOff, length, out, outOff);
+    }
+
+    public static int decodeHex(byte[] in, int inOff, int length,
+                                byte[] out, int outOff) {
+        return HEX.decode(in, inOff, length, out, outOff);
     }
 
     //org.apache.commons.codec.binary.Base64.isBase64(base64String) may not right
@@ -140,6 +160,14 @@ public class CodecUtil {
 
     public static String hexMd5(byte[] data) {
         return ByteBufUtil.hexDump(md5(data));
+    }
+
+    @SneakyThrows
+    public static byte[] hmacSHA256(String secretKey, String message) {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        SecretKeySpec secretKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+        mac.init(secretKeySpec);
+        return mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
     }
 
 //    /**

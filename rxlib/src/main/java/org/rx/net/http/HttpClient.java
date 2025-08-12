@@ -66,6 +66,9 @@ public class HttpClient {
 
         @Override
         public RequestBody toBody() {
+//            String ct = headers.getAsString(HttpHeaderNames.CONTENT_TYPE);
+//            System.out.println("ct:+" + ct);
+//            return RequestBody.create(ct == null ? JSON_TYPE : MediaType.parse(ct), toString());
             return RequestBody.create(JSON_TYPE, toString());
         }
 
