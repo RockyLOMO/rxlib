@@ -9,6 +9,7 @@ import org.rx.net.Sockets;
 import org.rx.net.socks.BackendRelayHandler;
 import org.rx.net.socks.FrontendRelayHandler;
 import org.rx.net.socks.SocksContext;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -31,12 +32,13 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
         server.raiseEvent(server.onRoute, e);
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
 
-        if (SocksSupport.FAKE_IPS.contains(dstEp.getHost()) || !Sockets.isValidIp(dstEp.getHost())) {
-            BigInteger hash = CodecUtil.hashUnsigned64(dstEp.toString().getBytes(StandardCharsets.UTF_8));
-            SocksSupport.fakeDict().putIfAbsent(hash, dstEp);
-//            log.info("fakeEp {} {}", hash, dstEp);
-            dstEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
-        }
+//        if (doFake && (SocksSupport.FAKE_IPS.contains(dstEp.getHost())
+//                || !Sockets.isValidIp(dstEp.getHost()))) {
+//            BigInteger hash = CodecUtil.hashUnsigned64(dstEp.toString().getBytes(StandardCharsets.UTF_8));
+//            SocksSupport.fakeDict().putIfAbsent(hash, dstEp);
+////            log.info("fakeEp {} {}", hash, dstEp);
+//            dstEp = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
+//        }
 
         UnresolvedEndpoint finalDestinationEp = dstEp;
         Sockets.bootstrap(inbound.eventLoop(), server.config, outbound -> {
