@@ -543,6 +543,7 @@ public class TestSocks extends AbstractTester {
         AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
         ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(2090),
                 CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
+        frontConf.getBypassHosts().add("*qq*");
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<ShadowsocksServer, SocksContext> firstRoute = (s, e) -> {
