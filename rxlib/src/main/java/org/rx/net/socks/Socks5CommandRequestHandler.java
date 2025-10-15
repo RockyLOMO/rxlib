@@ -118,16 +118,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     if (config.getTransportFlags().has(TransportFlags.CLIENT_COMPRESS_BOTH)) {
                         //todo 解依赖ZIP
                         outbound.attr(SocketConfig.ATTR_CONF).set(config);
-                        ChannelHandler[] handlers = new CipherDecoder().channelHandlers();
-                        for (int i = handlers.length - 1; i > -1; i--) {
-                            ChannelHandler handler = handlers[i];
-                            outbound.pipeline().addBefore(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
-                        }
-                        handlers = CipherEncoder.DEFAULT.channelHandlers();
-                        for (int i = handlers.length - 1; i > -1; i--) {
-                            ChannelHandler handler = handlers[i];
-                            outbound.pipeline().addBefore(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
-                        }
+                        Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
+                        Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
                         exMsg.append("[BACKEND_CIPHER]");
                     }
                     relay(inbound, outbound, dstAddrType, e, exMsg);
@@ -153,17 +145,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.getConfig();
             if (server.cipherRoute(e.firstDestination) && config.getTransportFlags().has(TransportFlags.SERVER_COMPRESS_BOTH)) {
-                outbound.attr(SocketConfig.ATTR_CONF).set(config);
-                ChannelHandler[] handlers = new CipherDecoder().channelHandlers();
-                for (int i = handlers.length - 1; i > -1; i--) {
-                    ChannelHandler handler = handlers[i];
-                    outbound.pipeline().addBefore(Sockets.ZIP_DECODER, handler.getClass().getSimpleName(), handler);
-                }
-                handlers = CipherEncoder.DEFAULT.channelHandlers();
-                for (int i = handlers.length - 1; i > -1; i--) {
-                    ChannelHandler handler = handlers[i];
-                    outbound.pipeline().addBefore(Sockets.ZIP_ENCODER, handler.getClass().getSimpleName(), handler);
-                }
+                inbound.attr(SocketConfig.ATTR_CONF).set(config);
+                Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
+                Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
                 exMsg.append("[FRONTEND_CIPHER]");
             }
             log.info("socks5[{}] {} => {} connected, dstEp={}[{}] {}", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination, exMsg.toString());

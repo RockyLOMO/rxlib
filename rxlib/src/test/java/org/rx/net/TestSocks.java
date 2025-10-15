@@ -596,7 +596,7 @@ public class TestSocks extends AbstractTester {
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
         backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null);
-//        backSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
+        backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
         rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH));
@@ -618,6 +618,7 @@ public class TestSocks extends AbstractTester {
             frontConf.setUdp2rawServers(Collections.emptyList());
         }
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf);
+        frontSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
