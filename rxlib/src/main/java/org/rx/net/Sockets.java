@@ -260,6 +260,20 @@ public final class Sockets {
         return b;
     }
 
+    public static void addBefore(ChannelPipeline pipeline, String baseName, ChannelHandler... handlers) {
+        for (int i = 0; i < handlers.length; i++) {
+            ChannelHandler handler = handlers[i];
+            pipeline.addBefore(baseName, handler.getClass().getSimpleName(), handler);
+        }
+    }
+
+    public static void addAfter(ChannelPipeline pipeline, String baseName, ChannelHandler... handlers) {
+        for (int i = handlers.length - 1; i > -1; i--) {
+            ChannelHandler handler = handlers[i];
+            pipeline.addBefore(baseName, handler.getClass().getSimpleName(), handler);
+        }
+    }
+
     @SneakyThrows
     public static Channel addServerHandler(Channel channel, SocketConfig config) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();

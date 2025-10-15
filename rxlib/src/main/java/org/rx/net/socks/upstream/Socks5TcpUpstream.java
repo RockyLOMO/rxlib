@@ -66,16 +66,6 @@ public class Socks5TcpUpstream extends Upstream {
                     TraceHandler.INSTANCE.log(e);
                 }
             }
-//            Cache.getOrSet(hash, k -> Tasks.awaitQuietly(() -> {
-//                try {
-//                    Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
-//                    support.fakeEndpoint(hash, dstEpStr);
-//                    return true;
-//                } catch (Throwable e) {
-//                    TraceHandler.INSTANCE.log(e);
-//                    return null;
-//                }
-//            }, SocksSupport.ASYNC_TIMEOUT), CachePolicy.absolute(SocksSupport.FAKE_EXPIRE_SECONDS));
         }
 
         Socks5ProxyHandler proxyHandler = new Socks5ProxyHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());
