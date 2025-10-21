@@ -234,9 +234,13 @@ public final class Main implements SocksSupport {
                 e.setHandled(true);
             }
         };
+        int[] httpPorts = {80, 443};
         BiFunc<SocksContext, Func<UpstreamSupport>> routerFn = e -> {
-            InetAddress srcHost = e.getSource().getAddress();
+            if (Arrays.contains(httpPorts, e.getFirstDestination().getPort())) {
+                return shadowServers::next;
+            }
 //            String destHost = e.getFirstDestination().getHost();
+            InetAddress srcHost = e.getSource().getAddress();
             return () -> shadowServers.next(srcHost, conf.steeringTTL, true);
         };
         frontSvr.onRoute.replace(firstRoute, (s, e) -> {
