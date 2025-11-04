@@ -7,6 +7,8 @@ import io.netty.handler.codec.CorruptedFrameException;
 import io.netty.handler.codec.TooLongFrameException;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
+import org.rx.core.Strings;
+import org.rx.exception.InvalidException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -77,9 +79,9 @@ public class HttpPseudoHeaderDecoder extends ByteToMessageDecoder {
 
     private int parseContentLength(String headersStr) {
         String cl = "Content-Length: ";
-        int idx = headersStr.lastIndexOf(cl);
+        int idx = Strings.lastIndexOfIgnoreCase(headersStr, cl);
         if (idx == -1) {
-            throw new IllegalArgumentException("Missing Content-Length header");
+            throw new InvalidException("Missing Content-Length from header {}", headersStr);
         }
         return Integer.parseInt(headersStr.substring(idx + cl.length()));
     }
