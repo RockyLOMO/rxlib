@@ -36,14 +36,50 @@ import static org.rx.core.Sys.*;
 
 @Slf4j
 public class TestUtil extends AbstractTester {
+    final double[] weightP = {1, 0.75, 0.7};
+    final int[] reps = {5, 10, 12};
+    final double[] warmUpP = {0.5, 0.7, 0.9};
+
     @Test
     public void gym() {
-        double kg = 85;
-        double[] p = {0.5d, 0.7d, 0.9d};
-        for (double v : p) {
-            Decimal percent = Decimal.valueOf(v);
-            log.info("热身组 {} {}kg", percent.toPercentString(), Decimal.valueOf(kg).multiply(percent).toString());
+        double curWeightKg = 100;
+        int curReps = 10;
+        Decimal oneRM = Decimal.valueOf(brzycki1RM(curWeightKg, curReps));
+        log.info("1RM {}kg", oneRM);
+
+        print(oneRM, 0);
+        print(oneRM, 1);
+//        print(oneRM,2);
+    }
+
+    void print(Decimal oneRM, int type) {
+        String name;
+        switch (type) {
+            case 1:
+                name = "Medium";
+                break;
+            case 2:
+                name = "Low";
+                break;
+            default:
+                name = "High";
+                break;
         }
+        Decimal weightKg = getWeight(oneRM, reps[type]);//.multiply(weightP[type]);
+        log.info("{} intensity {}kg x {}:", name, weightKg, reps[type]);
+        for (double p : warmUpP) {
+            Decimal percent = Decimal.valueOf(p);
+            log.info("\t热身组 {} {}kg", percent.toPercentString(), weightKg.multiply(percent).toString());
+        }
+        log.info("----------");
+    }
+
+    double brzycki1RM(double w, int r) {
+        return w * (36d / (37 - r));
+    }
+
+    Decimal getWeight(Decimal oneRM, int r) {
+        return oneRM.divide(36d / (37 - r));
     }
 
     //region BeanMapper
