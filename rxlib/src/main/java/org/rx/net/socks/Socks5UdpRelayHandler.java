@@ -37,7 +37,8 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             } else {
                 outBuf.retain();
             }
-            sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp), ctx.voidPromise());
+//            sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp), ctx.voidPromise());
+            sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp));
 
             log.debug("socks5[{}] UDP IN {}[{}] => {}", server.config.getListenPort(), out.sender(), dstEp, srcEp);
 //            log.debug("socks5[{}] UDP IN {}[{}] => {}\n{}", server.config.getListenPort(), out.sender(), dstEp, srcEp, Bytes.hexDump(outBuf.retain()));

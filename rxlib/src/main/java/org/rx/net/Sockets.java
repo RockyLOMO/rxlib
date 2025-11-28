@@ -64,7 +64,6 @@ public final class Sockets {
         String SHARED_UDP = "_UDP";
         String RPC = "RPC";
         String DNS = "DNS";
-        String SS = "SS";
     }
 
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
