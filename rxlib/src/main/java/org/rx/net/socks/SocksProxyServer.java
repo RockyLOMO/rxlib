@@ -96,7 +96,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
         //udp server
         int udpPort = config.getListenPort();
-        udpChannel = Sockets.udpBootstrap(Sockets.ReactorNames.SS, MemoryMode.HIGH, channel -> {
+        udpChannel = Sockets.udpBootstrap(MemoryMode.HIGH, channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);

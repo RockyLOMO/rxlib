@@ -41,7 +41,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                 sc.inbound.attr(SSCommon.REMOTE_SRC).set(out.sender());
             }
 
-            sc.inbound.writeAndFlush(outBuf.retain());
+            sc.inbound.writeAndFlush(outBuf.retain(), ctx.voidPromise());
 //            log.info("UDP IN {}[{}] => {}", out.sender(), dstEp, srcEp);
 //            log.info("UDP IN {}[{}] => {}\n{}", out.sender(), dstEp, srcEp, Bytes.hexDump(outBuf));
         }

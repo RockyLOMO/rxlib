@@ -41,7 +41,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
         bootstrap.attr(SocksContext.SS_SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
         //udp server
-        udpChannel = Sockets.udpBootstrap(Sockets.ReactorNames.SS, MemoryMode.HIGH, ctx -> {
+        udpChannel = Sockets.udpBootstrap(MemoryMode.HIGH, ctx -> {
             ctx.attr(SSCommon.IS_UDP).set(true);
 
             ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
