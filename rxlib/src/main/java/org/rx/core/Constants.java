@@ -14,6 +14,7 @@ public interface Constants {
     int KB = 1024, MB = KB * 1024, GB = MB * 1024;
     long TB = GB * 1024L;
     int SIZE_4K = KB * 4;
+    int SIZE_64K = KB * 64;
 
     String[] DEFAULT_CONFIG_FILES = {"rx.yml", "application.yml", "bootstrap.yml"};
     int CPU_THREADS = Runtime.getRuntime().availableProcessors();
