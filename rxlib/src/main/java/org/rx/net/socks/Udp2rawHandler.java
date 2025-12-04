@@ -107,7 +107,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             SocksContext e = new SocksContext(srcEp.socketAddress(), dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
-            return Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
+            return Sockets.udpBootstrap(server.config.getOptimalSettings(), ob -> {
                         upstream.initChannel(ob);
 
 //                ob.pipeline().addLast(new IdleStateHandler(0, 0, server.config.getUdpTimeoutSeconds()) {

@@ -209,7 +209,7 @@ public class TestSocks extends AbstractTester {
         InetSocketAddress multiCastEp = Sockets.parseEndpoint("239.0.0.1:8888");
         NioDatagramChannel c1, c2, c3;
         MultiCastInboundHandler inHandler = new MultiCastInboundHandler();
-        c1 = (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, true, c -> c.pipeline().addLast(inHandler))
+        c1 = (NioDatagramChannel) Sockets.udpBootstrap(null, true, c -> c.pipeline().addLast(inHandler))
                 .bind(multiCastEp.getPort()).addListener((ChannelFutureListener) f -> {
                     if (!f.isSuccess()) {
                         log.info("multicast bind error", f.cause());
@@ -220,7 +220,7 @@ public class TestSocks extends AbstractTester {
                     log.info("multicast join {}", multiCastEp);
                 }).channel();
 
-        c2 = (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, true, c -> {
+        c2 = (NioDatagramChannel) Sockets.udpBootstrap(null, true, c -> {
                     c.pipeline().addLast(inHandler);
                     log.info("c2 inHandler");
                 })
@@ -234,7 +234,7 @@ public class TestSocks extends AbstractTester {
                     log.info("multicast join {}", multiCastEp);
                 }).channel();
 
-        c3 = (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, false, c -> c.pipeline().addLast(inHandler))
+        c3 = (NioDatagramChannel) Sockets.udpBootstrap(null, false, c -> c.pipeline().addLast(inHandler))
                 .bind(0).channel();
 
         Tasks.setTimeout(() -> {
@@ -512,6 +512,15 @@ public class TestSocks extends AbstractTester {
     int connectTimeoutMillis = 30000;
     String socks5Usr = "rocky";
     String socks5Pwd = "123456";
+
+    @Test
+    public void optimalSettings(){
+        OptimalSettings[] a = {Main.A,Main.B};
+        for (OptimalSettings ops : a) {
+            ops.calculate();
+            System.out.println(ops);
+        }
+    }
 
     @SneakyThrows
     @Test

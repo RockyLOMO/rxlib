@@ -8,7 +8,9 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -81,8 +83,8 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
-
-            Channel ch = Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {
+            SocketConfig conf = upstream instanceof Socks5UdpUpstream ? ((Socks5UdpUpstream) upstream).getConfig() : server.config;
+            Channel ch = Sockets.udpBootstrap(conf.getOptimalSettings(), ob -> {
                         upstream.initChannel(ob);
                         ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                                 UdpBackendRelayHandler.DEFAULT);

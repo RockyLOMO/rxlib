@@ -154,8 +154,8 @@ public final class RxConfig {
     @Setter
     @ToString
     public static class NetConfig {
-        int reactorThreadAmount;
         boolean enableLog;
+        int reactorThreadAmount;
         int connectTimeoutMillis;
         int readWriteTimeoutMillis;
         int poolMaxSize;

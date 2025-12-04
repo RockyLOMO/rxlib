@@ -7,11 +7,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
-import io.netty.channel.epoll.Epoll;
-import io.netty.channel.epoll.EpollEventLoopGroup;
-import io.netty.channel.epoll.EpollServerSocketChannel;
-import io.netty.channel.epoll.EpollSocketChannel;
+import io.netty.channel.epoll.*;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.InternetProtocolFamily;
 import io.netty.channel.socket.SocketChannel;
@@ -63,7 +61,6 @@ public final class Sockets {
         String SHARED_TCP = "_TCP";
         String SHARED_UDP = "_UDP";
         String RPC = "RPC";
-        String DNS = "DNS";
     }
 
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
@@ -132,9 +129,13 @@ public final class Sockets {
     }
 
     public static EventLoopGroup reactor(String reactorName, boolean isTcp) {
+//        return reactors.computeIfAbsent(reactorName, k -> {
+//            int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
+//            return isTcp && Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
+//        });
         return reactors.computeIfAbsent(reactorName, k -> {
             int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
-            return isTcp && Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
+            return Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
         });
     }
 
@@ -143,8 +144,12 @@ public final class Sockets {
         return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
     }
 
-    public static Class<? extends SocketChannel> channelClass() {
+    public static Class<? extends SocketChannel> tcpChannelClass() {
         return Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
+    }
+
+    public static Class<? extends DatagramChannel> udpChannelClass() {
+        return Epoll.isAvailable() ? EpollDatagramChannel.class : NioDatagramChannel.class;
     }
 
     //region tcp
@@ -156,24 +161,27 @@ public final class Sockets {
         if (config == null) {
             config = new SocketConfig();
         }
-        MemoryMode mode = config.getMemoryMode();
-        int connectTimeoutMillis = config.getConnectTimeoutMillis();
-        boolean highNetwork = connectTimeoutMillis <= SocketConfig.DELAY_TIMEOUT_MILLIS;
+        if (config.getOptimalSettings() == null) {
+            config.setOptimalSettings(OptimalSettings.EMPTY);
+        }
 
-        int bossThreadAmount = 1; //Equal to the number of bind(), default 1
-        AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
-        WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
+        OptimalSettings op = config.getOptimalSettings();
+        op.calculate();
+        int backlog = op.backlog;
+        WriteBufferWaterMark writeBufferWaterMark = op.writeBufferWaterMark;
+        AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
+        int connectTimeoutMillis = config.getConnectTimeoutMillis();
+        final int bossThreadAmount = 1; //Equal to the number of bind(), default 1
         ServerBootstrap b = new ServerBootstrap()
                 .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(ReactorNames.SHARED_TCP, true) : newEventLoop(0))
                 .channel(Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
-                .option(ChannelOption.SO_BACKLOG, mode.getBacklog())
+                .option(ChannelOption.SO_BACKLOG, backlog)
 //                .option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .childOption(ChannelOption.TCP_NODELAY, highNetwork)
-//                .childOption(ChannelOption.SO_KEEPALIVE, !highNetwork)
+                .childOption(ChannelOption.TCP_NODELAY, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
@@ -225,18 +233,20 @@ public final class Sockets {
         if (config == null) {
             config = new SocketConfig();
         }
-        MemoryMode mode = config.getMemoryMode();
-        int connectTimeoutMillis = config.getConnectTimeoutMillis();
-        boolean highNetwork = connectTimeoutMillis <= SocketConfig.DELAY_TIMEOUT_MILLIS;
+        if (config.getOptimalSettings() == null) {
+            config.setOptimalSettings(OptimalSettings.EMPTY);
+        }
 
-        AdaptiveRecvByteBufAllocator recvByteBufAllocator = mode.adaptiveRecvByteBufAllocator(false);
-        WriteBufferWaterMark writeBufferWaterMark = mode.writeBufferWaterMark();
+        OptimalSettings op = config.getOptimalSettings();
+        op.calculate();
+        WriteBufferWaterMark writeBufferWaterMark = op.writeBufferWaterMark;
+        AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
+        int connectTimeoutMillis = config.getConnectTimeoutMillis();
         Bootstrap b = new Bootstrap()
                 .group(eventLoopGroup)
-                .channel(channelClass())
+                .channel(tcpChannelClass())
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
-                .option(ChannelOption.TCP_NODELAY, highNetwork)
-//                .option(ChannelOption.SO_KEEPALIVE, !highNetwork)
+                .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
@@ -447,25 +457,28 @@ public final class Sockets {
     }
     //endregion
 
-    public static Bootstrap udpBootstrap(MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(ReactorNames.SHARED_UDP, mode, false, initChannel);
+    public static Bootstrap udpBootstrap(OptimalSettings op, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(ReactorNames.SHARED_UDP, op, false, initChannel);
     }
 
-    public static Bootstrap udpBootstrap(String reactorName, MemoryMode mode, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(reactorName, mode, false, initChannel);
+    public static Bootstrap udpBootstrap(String reactorName, OptimalSettings op, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(reactorName, op, false, initChannel);
     }
 
-    public static Bootstrap udpBootstrap(MemoryMode mode, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(ReactorNames.SHARED_UDP, mode, multicast, initChannel);
+    public static Bootstrap udpBootstrap(OptimalSettings op, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(ReactorNames.SHARED_UDP, op, multicast, initChannel);
     }
 
     //BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
     //DefaultDatagramChannelConfig
     @SneakyThrows
-    static Bootstrap udpBootstrap(@NonNull String reactorName, MemoryMode mode, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
-        if (mode == null) {
-            mode = MemoryMode.LOW;
+    static Bootstrap udpBootstrap(@NonNull String reactorName, OptimalSettings op, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
+        if (op == null) {
+            op = OptimalSettings.EMPTY;
         }
+
+        op.calculate();
+        AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
         NetworkInterface mif = null;
         if (multicast) {
 //            MulticastSocket ms = new MulticastSocket();
@@ -473,17 +486,20 @@ public final class Sockets {
             mif = NetworkInterface.getByInetAddress(Sockets.getLocalAddress(true));
         }
 
-        Bootstrap b = new Bootstrap().group(reactor(reactorName, false))
+        //writeBufferWaterMark UDP无效
+        Bootstrap b = new Bootstrap()
+                .group(reactor(reactorName, false))
 //                .option(ChannelOption.SO_BROADCAST, true)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, mode.adaptiveRecvByteBufAllocator(true))
-                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, mode.writeBufferWaterMark())
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .handler(WaterMarkHandler.DEFAULT);
         if (multicast) {
-            b.channelFactory(() -> new NioDatagramChannel(InternetProtocolFamily.IPv4))
+            b.channelFactory(() -> Epoll.isAvailable()
+                            ? new EpollDatagramChannel(InternetProtocolFamily.IPv4)
+                            : new NioDatagramChannel(InternetProtocolFamily.IPv4))
                     .option(ChannelOption.IP_MULTICAST_IF, mif)
                     .option(ChannelOption.SO_REUSEADDR, true);
         } else {
-            b.channel(NioDatagramChannel.class);
+            b.channel(Sockets.udpChannelClass());
         }
         b.handler(DEFAULT_LOG);
         if (initChannel != null) {

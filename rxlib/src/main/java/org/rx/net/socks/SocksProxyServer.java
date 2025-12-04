@@ -13,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;
 import org.rx.core.Disposable;
 import org.rx.core.EventPublisher;
-import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
@@ -96,7 +95,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
         //udp server
         int udpPort = config.getListenPort();
-        udpChannel = Sockets.udpBootstrap(MemoryMode.HIGH, channel -> {
+        udpChannel = Sockets.udpBootstrap(config.getOptimalSettings(), channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);

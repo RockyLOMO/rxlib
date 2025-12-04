@@ -88,7 +88,7 @@ public final class NetEventWait extends Disposable implements WaitHandle {
         this.group = group;
         this.multicastEndpoint = multicastEndpoint;
         idString = group + "@" + Integer.toHexString(hashCode());
-        channel = channels.computeIfAbsent(multicastEndpoint, k -> (NioDatagramChannel) Sockets.udpBootstrap(MemoryMode.LOW, true, c -> {
+        channel = channels.computeIfAbsent(multicastEndpoint, k -> (NioDatagramChannel) Sockets.udpBootstrap(null, true, c -> {
                     c.attr(REF).set(Collections.newSetFromMap(Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.WEAK, AbstractReferenceMap.ReferenceStrength.HARD))));
                     c.pipeline().addLast(Handler.DEFAULT);
                 })

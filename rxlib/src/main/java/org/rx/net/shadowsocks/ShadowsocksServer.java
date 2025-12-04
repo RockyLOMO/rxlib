@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;
 import org.rx.core.Disposable;
 import org.rx.core.EventPublisher;
-import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
@@ -41,7 +40,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
         bootstrap.attr(SocksContext.SS_SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
         //udp server
-        udpChannel = Sockets.udpBootstrap(MemoryMode.HIGH, ctx -> {
+        udpChannel = Sockets.udpBootstrap(config.getOptimalSettings(), ctx -> {
             ctx.attr(SSCommon.IS_UDP).set(true);
 
             ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());

@@ -21,12 +21,11 @@ public class SocketConfig implements Extends {
 
     public static final AttributeKey<SocketConfig> ATTR_CONF = AttributeKey.valueOf("conf");
     public static final AttributeKey<Boolean> ATTR_PSEUDO_SVR = AttributeKey.valueOf("pseudoSvr");
-    public static final int DELAY_TIMEOUT_MILLIS = 30000;
 
     private boolean debug;
     //Set true if live with current process.
     private boolean useSharedTcpEventLoop = true;
-    private MemoryMode memoryMode = MemoryMode.LOW;
+    private OptimalSettings optimalSettings;
     private int connectTimeoutMillis;
     private FlagsEnum<TransportFlags> transportFlags;
     // 1 = AES, 2 = XChaCha20Poly1305

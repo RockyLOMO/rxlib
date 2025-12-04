@@ -1,7 +1,6 @@
 package org.rx.net.dns;
 
 import io.netty.channel.AddressedEnvelope;
-import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.dns.DnsQuestion;
 import io.netty.handler.codec.dns.DnsResponse;
 import io.netty.resolver.dns.*;
@@ -62,8 +61,8 @@ public class DnsClient extends Disposable {
         nameResolver = new DnsNameResolverBuilder(Sockets.reactor(Sockets.ReactorNames.SHARED_UDP, false).next())
                 .nameServerProvider(!serverEndpoints.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverEndpoints)
                         : DnsServerAddressStreamProviders.platformDefault())
-                .channelType(NioDatagramChannel.class)
-                .socketChannelType(Sockets.channelClass()).build();
+                .channelType(Sockets.udpChannelClass())
+                .socketChannelType(Sockets.tcpChannelClass()).build();
     }
 
     @Override
