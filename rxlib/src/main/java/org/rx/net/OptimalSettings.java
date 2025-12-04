@@ -26,7 +26,7 @@ public class OptimalSettings implements Serializable {
         final int maxHighWaterMark;
     }
 
-    public static final OptimalSettings EMPTY = new OptimalSettings(0, 0, 0, null) {
+    public static final OptimalSettings EMPTY = new OptimalSettings(0, 0, 0, 0, null) {
         @Override
         public void calculate(int usableMemoryMB, int rttMillis, int perConnSpeedMbps, int maxConnections, double writeBufferRatio, Mode mode, Integer backlogMemoryMB) {
             writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
@@ -35,6 +35,9 @@ public class OptimalSettings implements Serializable {
         }
     };
 
+    @Getter
+    @Setter
+    int usableMemoryMB;
     @Getter
     @Setter
     int rttMillis;
@@ -52,7 +55,8 @@ public class OptimalSettings implements Serializable {
     transient AdaptiveRecvByteBufAllocator recvByteBufAllocator;
     transient int backlog;
 
-    public OptimalSettings(int rttMillis, int perConnSpeedMbps, int maxConnections, Mode mode) {
+    public OptimalSettings(int usableMemoryMB, int rttMillis, int perConnSpeedMbps, int maxConnections, Mode mode) {
+        this.usableMemoryMB = usableMemoryMB;
         this.rttMillis = rttMillis;
         this.perConnSpeedMbps = perConnSpeedMbps;
         this.maxConnections = maxConnections;
@@ -60,7 +64,7 @@ public class OptimalSettings implements Serializable {
     }
 
     public void calculate() {
-        calculate(0.75, rttMillis, perConnSpeedMbps, maxConnections, mode);
+        calculate(usableMemoryMB, rttMillis, perConnSpeedMbps, maxConnections, mode);
     }
 
     public void calculate(double bufferAllocationRatio, int rttMillis, int perConnSpeedMbps, int maxConnections, Mode mode) {
@@ -88,6 +92,7 @@ public class OptimalSettings implements Serializable {
                           Integer backlogMemoryMB) {
         if (usableMemoryMB <= 0) {
             throw new IllegalArgumentException("usableMemoryMB");
+            //usableMemoryMB = (int) (PlatformDependent.maxDirectMemory() / Constants.MB * 0.75); //max 0.8
         }
         if (rttMillis <= 0) {
             throw new IllegalArgumentException("rttMillis");

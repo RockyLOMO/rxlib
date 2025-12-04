@@ -513,6 +513,15 @@ public class TestSocks extends AbstractTester {
     String socks5Usr = "rocky";
     String socks5Pwd = "123456";
 
+    @Test
+    public void optimalSettings(){
+        OptimalSettings[] a = {Main.A,Main.B};
+        for (OptimalSettings ops : a) {
+            ops.calculate();
+            System.out.println(ops);
+        }
+    }
+
     @SneakyThrows
     @Test
     public void ssProxy() {

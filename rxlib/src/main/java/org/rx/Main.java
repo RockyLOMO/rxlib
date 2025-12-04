@@ -112,8 +112,8 @@ public final class Main implements SocksSupport {
 
     static boolean udp2raw = false;
     static RSSConf conf;
-    static OptimalSettings B = new OptimalSettings(150, 60, 2000, OptimalSettings.Mode.LOW_LATENCY);
-    static OptimalSettings A = new OptimalSettings(30, 200, 10000, OptimalSettings.Mode.BALANCED);
+    public static final OptimalSettings B = new OptimalSettings(640, 150, 60, 2000, OptimalSettings.Mode.LOW_LATENCY);
+    public static final OptimalSettings A = new OptimalSettings(8192, 30, 200, 5000, OptimalSettings.Mode.BALANCED);
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
