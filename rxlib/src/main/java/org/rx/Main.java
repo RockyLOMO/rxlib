@@ -12,12 +12,11 @@ import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.IOStream;
 import org.rx.net.AuthenticEndpoint;
-import org.rx.net.MemoryMode;
+import org.rx.net.OptimalSettings;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.http.AuthenticProxy;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
@@ -40,7 +39,10 @@ import org.rx.util.function.TripleAction;
 
 import java.io.OutputStream;
 import java.math.BigInteger;
-import java.net.*;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
@@ -110,6 +112,8 @@ public final class Main implements SocksSupport {
 
     static boolean udp2raw = false;
     static RSSConf conf;
+    static OptimalSettings B = new OptimalSettings(150, 60, 2000, OptimalSettings.Mode.LOW_LATENCY);
+    static OptimalSettings A = new OptimalSettings(30, 200, 10000, OptimalSettings.Mode.BALANCED);
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
@@ -206,7 +210,7 @@ public final class Main implements SocksSupport {
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
         frontConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CLIENT_COMPRESS_BOTH).flags());
-        frontConf.setMemoryMode(MemoryMode.MEDIUM);
+        frontConf.setOptimalSettings(A);
         frontConf.setConnectTimeoutMillis(connectTimeout);
         frontConf.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
         frontConf.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
@@ -243,8 +247,10 @@ public final class Main implements SocksSupport {
             InetAddress srcHost = e.getSource().getAddress();
             return () -> shadowServers.next(srcHost, conf.steeringTTL, true);
         };
+        SocksConfig backConf = Sys.deepClone(frontConf);
+        backConf.setOptimalSettings(B);
         frontSvr.onRoute.replace(firstRoute, (s, e) -> {
-            e.setUpstream(new Socks5TcpUpstream(e.getFirstDestination(), frontConf, routerFn.apply(e)));
+            e.setUpstream(new Socks5TcpUpstream(e.getFirstDestination(), backConf, routerFn.apply(e)));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
@@ -274,7 +280,7 @@ public final class Main implements SocksSupport {
 //              }
 //              return;
 //          }
-            e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, routerFn.apply(e)));
+            e.setUpstream(new Socks5UdpUpstream(dstEp, backConf, routerFn.apply(e)));
         });
         frontSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         Main app = new Main(frontSvr);
@@ -288,16 +294,14 @@ public final class Main implements SocksSupport {
 
         InetSocketAddress frontSvrEp = Sockets.newLoopbackEndpoint(port);
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
-            ShadowsocksConfig ssConfig = tuple.left;
+            ShadowsocksConfig ssConf = tuple.left;
             SocksUser user = tuple.right;
             AuthenticEndpoint srvEp = new AuthenticEndpoint(frontSvrEp, user.getUsername(), user.getPassword());
 
-            ssConfig.setMemoryMode(MemoryMode.MEDIUM);
-            ssConfig.setConnectTimeoutMillis(connectTimeout);
+            ssConf.setOptimalSettings(A);
+            ssConf.setConnectTimeoutMillis(connectTimeout);
             SocksConfig directConf = new SocksConfig(port);
-            frontConf.setMemoryMode(MemoryMode.MEDIUM);
-            frontConf.setConnectTimeoutMillis(connectTimeout);
-            ShadowsocksServer server = new ShadowsocksServer(ssConfig);
+            ShadowsocksServer server = new ShadowsocksServer(ssConf);
             TripleAction<ShadowsocksServer, SocksContext> ssFirstRoute = (s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
                 //must first
@@ -307,7 +311,7 @@ public final class Main implements SocksSupport {
                     return;
                 }
                 //bypass
-                if (Sockets.isBypass(ssConfig.getBypassHosts(), dstEp.getHost())) {
+                if (Sockets.isBypass(ssConf.getBypassHosts(), dstEp.getHost())) {
 //                    log.info("ss bypass: {}", dstEp);
                     e.setUpstream(new Upstream(dstEp));
                     e.setHandled(true);
@@ -468,7 +472,7 @@ public final class Main implements SocksSupport {
 
         SocksConfig backConf = new SocksConfig(port);
         backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.SERVER_COMPRESS_BOTH).flags());
-        backConf.setMemoryMode(MemoryMode.MEDIUM);
+        backConf.setOptimalSettings(B);
         backConf.setConnectTimeoutMillis(connectTimeout);
         backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS);

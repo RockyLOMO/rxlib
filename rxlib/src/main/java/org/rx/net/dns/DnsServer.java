@@ -14,7 +14,6 @@ import org.rx.bean.RandomList;
 import org.rx.core.*;
 import org.rx.core.cache.DiskCache;
 import org.rx.io.Files;
-import org.rx.net.MemoryMode;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
@@ -87,7 +86,7 @@ public class DnsServer extends Disposable {
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
         DnsHandler udpHandler = new DnsHandler(DnsServer.this, false, nameServerList);
-        Sockets.udpBootstrap(Sockets.ReactorNames.DNS, MemoryMode.MEDIUM, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), udpHandler))
+        Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), udpHandler))
                 .bind(port).addListener(Sockets.logBind(port));
     }
 

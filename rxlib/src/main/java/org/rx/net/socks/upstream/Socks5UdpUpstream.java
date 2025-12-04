@@ -1,6 +1,7 @@
 package org.rx.net.socks.upstream;
 
 import io.netty.channel.Channel;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.exception.InvalidException;
@@ -12,6 +13,7 @@ import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Func;
 
 public class Socks5UdpUpstream extends Upstream {
+    @Getter
     final SocksConfig config;
     final Func<UpstreamSupport> router;
 

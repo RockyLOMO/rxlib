@@ -5,10 +5,16 @@ import io.netty.channel.WriteBufferWaterMark;
 import io.netty.util.internal.PlatformDependent;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import org.rx.core.Constants;
 
-@Getter
-public class OptimalSettings {
+import java.io.Serializable;
+
+@ToString
+public class OptimalSettings implements Serializable {
+    private static final long serialVersionUID = 7463099214399469671L;
+
     @RequiredArgsConstructor
     public enum Mode {
         //192K
@@ -20,21 +26,49 @@ public class OptimalSettings {
         final int maxHighWaterMark;
     }
 
-    WriteBufferWaterMark writeBufferWaterMark;
-    AdaptiveRecvByteBufAllocator recvByteBufAllocator;
-    int backlog;
+    public static final OptimalSettings EMPTY = new OptimalSettings(0, 0, 0, null) {
+        @Override
+        public void calculate(int usableMemoryMB, int rttMillis, int perConnSpeedMbps, int maxConnections, double writeBufferRatio, Mode mode, Integer backlogMemoryMB) {
+            writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
+            recvByteBufAllocator = AdaptiveRecvByteBufAllocator.DEFAULT;
+            backlog = 2048;
+        }
+    };
 
-    public void calculate(long rttMillis, int perConnSpeedMbps, int maxConnections, Mode mode) {
+    @Getter
+    @Setter
+    int rttMillis;
+    @Getter
+    @Setter
+    int perConnSpeedMbps;
+    @Getter
+    @Setter
+    int maxConnections;
+    @Getter
+    @Setter
+    Mode mode;
+
+    transient WriteBufferWaterMark writeBufferWaterMark;
+    transient AdaptiveRecvByteBufAllocator recvByteBufAllocator;
+    transient int backlog;
+
+    public OptimalSettings(int rttMillis, int perConnSpeedMbps, int maxConnections, Mode mode) {
+        this.rttMillis = rttMillis;
+        this.perConnSpeedMbps = perConnSpeedMbps;
+        this.maxConnections = maxConnections;
+        this.mode = mode;
+    }
+
+    public void calculate() {
         calculate(0.75, rttMillis, perConnSpeedMbps, maxConnections, mode);
     }
 
-    public void calculate(double bufferAllocationRatio, long rttMillis, int perConnSpeedMbps, int maxConnections, Mode mode) {
+    public void calculate(double bufferAllocationRatio, int rttMillis, int perConnSpeedMbps, int maxConnections, Mode mode) {
         int usableMemoryMB = (int) (PlatformDependent.maxDirectMemory() / Constants.MB * Math.min(Math.max(bufferAllocationRatio, 0.8), 0.1));
         calculate(usableMemoryMB, rttMillis, perConnSpeedMbps, maxConnections, mode);
     }
 
-    public void calculate(int usableMemoryMB,
-                          long rttMillis, int perConnSpeedMbps, int maxConnections, Mode mode) {
+    public void calculate(int usableMemoryMB, int rttMillis, int perConnSpeedMbps, int maxConnections, Mode mode) {
         calculate(usableMemoryMB, rttMillis, perConnSpeedMbps, maxConnections, 1d, mode, null);
     }
 
@@ -50,8 +84,27 @@ public class OptimalSettings {
      * @return 包含最佳 WriteBufferWaterMark 和 RecvByteBufAllocator 的 Map
      */
     public void calculate(int usableMemoryMB,
-                          long rttMillis, int perConnSpeedMbps, int maxConnections, double writeBufferRatio, Mode mode,
+                          int rttMillis, int perConnSpeedMbps, int maxConnections, double writeBufferRatio, Mode mode,
                           Integer backlogMemoryMB) {
+        if (usableMemoryMB <= 0) {
+            throw new IllegalArgumentException("usableMemoryMB");
+        }
+        if (rttMillis <= 0) {
+            throw new IllegalArgumentException("rttMillis");
+        }
+        if (perConnSpeedMbps <= 0) {
+            throw new IllegalArgumentException("perConnSpeedMbps");
+        }
+        if (maxConnections <= 0) {
+            throw new IllegalArgumentException("maxConnections");
+        }
+        if (writeBufferRatio <= 0 || writeBufferRatio > 1) {
+            writeBufferRatio = 1;
+        }
+        if (mode == null) {
+            mode = Mode.BALANCED;
+        }
+
         // --- I. WriteBufferWaterMark (HWM & LWM) ---
         // A. 1. 理论 BDP (网络效率要求)
         double perConnBytesPerSec = perConnSpeedMbps * Constants.MB / 8d;
