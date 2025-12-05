@@ -5,8 +5,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
+import lombok.Setter;
 import org.rx.core.Constants;
-import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.TripleAction;
 
@@ -18,9 +18,13 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     // 使用一个抖动阈值，防止高低水位频繁震荡
     static final long COOLDOWN_MILLIS = 60 + MIN_SPAN_MILLIS;
     final AtomicReference<ScheduledFuture<?>> timer = new AtomicReference<>();
+    @Setter
+    boolean disableSelfAutoRead;
     //可以通知队列暂停、暂停 SS/HTTP 上游读取、标记对侧 channel
+    @Setter
     BiAction<Channel> onBackpressureStart;
     //恢复队列、恢复 SS 上游读取…
+    @Setter
     TripleAction<Channel, Throwable> onBackpressureEnd;
     volatile long lastEventTs;
     // 是否暂停写入（用于业务层，如队列暂停）
@@ -31,12 +35,10 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
         Channel ch = ctx.channel();
 
-        if(!ch.isWritable()){
-            
-        }
-
         ScheduledFuture<?> t = timer.get();
-        if (t != null && !t.isDone()) {
+        if (t != null
+//                && !t.isDone()
+        ) {
             return;
         }
 
@@ -74,9 +76,10 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
             }
             // ---- 写入过载 ----
             paused = true;
-
-            // 优雅暂停 inbound read，防止数据继续进来
-            Sockets.disableAutoRead(ch);
+            if (disableSelfAutoRead) {
+                // 优雅暂停 inbound read，防止数据继续进来
+                Sockets.disableAutoRead(ch);
+            }
             lastEventTs = nowNano;
             BiAction<Channel> fn = onBackpressureStart;
             if (fn != null) {
@@ -93,8 +96,9 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
         }
         // ---- 恢复 ----
         paused = false;
-
-        Sockets.enableAutoRead(ch);
+        if (disableSelfAutoRead) {
+            Sockets.enableAutoRead(ch);
+        }
         lastEventTs = nowNano;
         TripleAction<Channel, Throwable> fn = onBackpressureEnd;
         if (fn != null) {
