@@ -186,7 +186,7 @@ public final class Sockets {
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .childHandler(WaterMarkHandler.DEFAULT);
+                .childHandler(new BackpressureHandler(true));
         if (config.isDebug()) {
             //netty log
             b.handler(DEFAULT_LOG);
@@ -251,7 +251,7 @@ public final class Sockets {
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .handler(WaterMarkHandler.DEFAULT);
+                .handler(new BackpressureHandler(true));
         if (config.isDebug()) {
             b.handler(DEFAULT_LOG);
         }
@@ -490,8 +490,7 @@ public final class Sockets {
         Bootstrap b = new Bootstrap()
                 .group(reactor(reactorName, false))
 //                .option(ChannelOption.SO_BROADCAST, true)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .handler(WaterMarkHandler.DEFAULT);
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (multicast) {
             b.channelFactory(() -> Epoll.isAvailable()
                             ? new EpollDatagramChannel(InternetProtocolFamily.IPv4)
@@ -532,6 +531,28 @@ public final class Sockets {
             }
             channel.flush();
         });
+    }
+
+    /**
+     * 优雅暂停 read（避免重复调用 setAutoRead）
+     */
+    public static void disableAutoRead(Channel ch) {
+        ChannelConfig config = ch.config();
+        if (config.isAutoRead()) {
+            config.setAutoRead(false);
+        }
+    }
+
+    /**
+     * 优雅恢复 read
+     */
+    public static void enableAutoRead(Channel ch) {
+        ChannelConfig config = ch.config();
+        if (!config.isAutoRead()) {
+            config.setAutoRead(true);
+            // 可选：如果之前有积压的 read，可以主动触发一次
+            ch.read();  // 立即拉数据，减少一个 EventLoop 轮次延迟
+        }
     }
 
     //ctx.channel()会为null

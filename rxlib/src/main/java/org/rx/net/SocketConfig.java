@@ -6,17 +6,17 @@ import lombok.Setter;
 import lombok.ToString;
 import org.rx.bean.FlagsEnum;
 import org.rx.codec.CodecUtil;
-import org.rx.core.Extends;
 import org.rx.core.Linq;
 import org.rx.core.RxConfig;
 
+import java.io.Serializable;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 @Getter
 @Setter
 @ToString
-public class SocketConfig implements Extends {
+public class SocketConfig implements Serializable {
     private static final long serialVersionUID = 5312790348211652335L;
 
     public static final AttributeKey<SocketConfig> ATTR_CONF = AttributeKey.valueOf("conf");
