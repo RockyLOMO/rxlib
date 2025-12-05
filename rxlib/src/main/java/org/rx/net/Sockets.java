@@ -186,7 +186,7 @@ public final class Sockets {
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .childHandler(WaterMarkHandler.DEFAULT);
+                .childHandler(new BackpressureHandler(true));
         if (config.isDebug()) {
             //netty log
             b.handler(DEFAULT_LOG);
@@ -251,7 +251,7 @@ public final class Sockets {
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
                 .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .handler(WaterMarkHandler.DEFAULT);
+                .handler(new BackpressureHandler(true));
         if (config.isDebug()) {
             b.handler(DEFAULT_LOG);
         }
@@ -490,8 +490,7 @@ public final class Sockets {
         Bootstrap b = new Bootstrap()
                 .group(reactor(reactorName, false))
 //                .option(ChannelOption.SO_BROADCAST, true)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .handler(WaterMarkHandler.DEFAULT);
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (multicast) {
             b.channelFactory(() -> Epoll.isAvailable()
                             ? new EpollDatagramChannel(InternetProtocolFamily.IPv4)

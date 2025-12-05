@@ -5,6 +5,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.rx.core.Constants;
 import org.rx.util.function.BiAction;
@@ -13,13 +14,13 @@ import org.rx.util.function.TripleAction;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+@RequiredArgsConstructor
 public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     static final int MIN_SPAN_MILLIS = 20;
     // 使用一个抖动阈值，防止高低水位频繁震荡
     static final long COOLDOWN_MILLIS = 60 + MIN_SPAN_MILLIS;
     final AtomicReference<ScheduledFuture<?>> timer = new AtomicReference<>();
-    @Setter
-    boolean disableSelfAutoRead;
+    final boolean disableSelfAutoRead;
     //可以通知队列暂停、暂停 SS/HTTP 上游读取、标记对侧 channel
     @Setter
     BiAction<Channel> onBackpressureStart;
