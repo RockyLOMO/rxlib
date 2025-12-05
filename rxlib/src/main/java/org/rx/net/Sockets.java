@@ -534,6 +534,28 @@ public final class Sockets {
         });
     }
 
+    /**
+     * 优雅暂停 read（避免重复调用 setAutoRead）
+     */
+    public static void disableAutoRead(Channel ch) {
+        ChannelConfig config = ch.config();
+        if (config.isAutoRead()) {
+            config.setAutoRead(false);
+        }
+    }
+
+    /**
+     * 优雅恢复 read
+     */
+    public static void enableAutoRead(Channel ch) {
+        ChannelConfig config = ch.config();
+        if (!config.isAutoRead()) {
+            config.setAutoRead(true);
+            // 可选：如果之前有积压的 read，可以主动触发一次
+            ch.read();  // 立即拉数据，减少一个 EventLoop 轮次延迟
+        }
+    }
+
     //ctx.channel()会为null
     public static void closeOnFlushed(Channel channel) {
         if (channel == null || !channel.isActive()) {

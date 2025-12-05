@@ -1,6 +1,8 @@
 package org.rx.net;
 
 import io.netty.channel.AdaptiveRecvByteBufAllocator;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelConfig;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.util.internal.PlatformDependent;
 import lombok.Getter;
@@ -113,11 +115,11 @@ public class OptimalSettings implements Serializable {
         // --- I. WriteBufferWaterMark (HWM & LWM) ---
         // A. 1. 理论 BDP (网络效率要求)
         double perConnBytesPerSec = perConnSpeedMbps * Constants.MB / 8d;
-        double rttSec = rttMillis / 1000D;
+        double rttSec = rttMillis / 1000d;
         double sMinBDP = perConnBytesPerSec * rttSec;
 
         // A. 2. 资源约束要求 (每个连接的预算)
-        double usableMemoryBytes = usableMemoryMB * Constants.MB;
+        double usableMemoryBytes = (double) usableMemoryMB * Constants.MB;
         double perConnMaxBudget = usableMemoryBytes / maxConnections;
 
         // A. 3. 基础高水位 (取两者最小值，并应用模式因子)
