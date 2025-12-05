@@ -1,24 +1,28 @@
 package org.rx.net;
 
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 import org.rx.core.Constants;
 import org.rx.util.function.Action;
+import org.rx.util.function.BiAction;
+import org.rx.util.function.TripleAction;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     static final int MIN_SPAN_MILLIS = 20;
     // 使用一个抖动阈值，防止高低水位频繁震荡
-    static final long COOLDOWN_MILLIS = 50 + MIN_SPAN_MILLIS;
+    static final long COOLDOWN_MILLIS = 60 + MIN_SPAN_MILLIS;
+    final AtomicReference<ScheduledFuture<?>> timer = new AtomicReference<>();
     //可以通知队列暂停、暂停 SS/HTTP 上游读取、标记对侧 channel
-    Action onBackpressureStart;
+    BiAction<Channel> onBackpressureStart;
     //恢复队列、恢复 SS 上游读取…
-    Action onBackpressureEnd;
+    TripleAction<Channel, Throwable> onBackpressureEnd;
     volatile long lastEventTs;
-    volatile boolean lastWritable;
-    volatile ScheduledFuture<?> timer;
     // 是否暂停写入（用于业务层，如队列暂停）
     @Getter
     volatile boolean paused;
@@ -27,62 +31,81 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
         Channel ch = ctx.channel();
 
-        ScheduledFuture<?> t = timer;
-        if (t != null) {
-            lastWritable = ch.isWritable();
+        if(!ch.isWritable()){
+            
+        }
+
+        ScheduledFuture<?> t = timer.get();
+        if (t != null && !t.isDone()) {
             return;
         }
 
         long now = System.nanoTime();
-        long spanMs = (now - lastEventTs) / Constants.NANO_TO_MILLIS;
-        if (spanMs < COOLDOWN_MILLIS) {
-            stopTimer();
-            long nextMs = COOLDOWN_MILLIS - spanMs;
-            if (nextMs > MIN_SPAN_MILLIS) {
-                timer = ctx.executor().schedule(() -> {
-                    if (timer == null) {
+        long spanMs = (now - lastEventTs) / Constants.NANO_TO_MILLIS, nextMs;
+        if (spanMs < COOLDOWN_MILLIS
+                && (nextMs = COOLDOWN_MILLIS - spanMs) > MIN_SPAN_MILLIS) {
+            ScheduledFuture<?> schedule = ctx.executor().schedule(() -> {
+                try {
+                    if (!ch.isActive()) {
                         return;
                     }
                     onEvent(ch, System.nanoTime());
-                }, nextMs, TimeUnit.MILLISECONDS);
-                return;
+                } finally {
+                    timer.lazySet(null);
+                }
+            }, nextMs, TimeUnit.MILLISECONDS);
+            // 如果 CAS 失败（意味着别处刚写入 timer），我们仍然要把 scheduled 取消，
+            // 并把 pendingWritable 保持（因为我们已经 set 了）
+            if (!timer.compareAndSet(null, schedule)) {
+                schedule.cancel(false);
             }
+            return;
         }
+
         onEvent(ch, now);
 
         super.channelWritabilityChanged(ctx);
     }
 
     void onEvent(Channel ch, long nowNano) {
-        stopTimer();
-        lastEventTs = nowNano;
         if (!ch.isWritable()) {
+            if (paused) {
+                return;
+            }
             // ---- 写入过载 ----
             paused = true;
 
             // 优雅暂停 inbound read，防止数据继续进来
             Sockets.disableAutoRead(ch);
-            Action fn = onBackpressureStart;
+            lastEventTs = nowNano;
+            BiAction<Channel> fn = onBackpressureStart;
             if (fn != null) {
-                fn.run();
+                fn.accept(ch);
             }
         } else {
-            // ---- 恢复 ----
-            paused = false;
+            handleRecovery(ch, nowNano, null);
+        }
+    }
 
-            Sockets.enableAutoRead(ch);
-            Action fn = onBackpressureEnd;
-            if (fn != null) {
-                fn.run();
-            }
+    void handleRecovery(Channel ch, long nowNano, Throwable cause) {
+        if (!paused) {
+            return;
+        }
+        // ---- 恢复 ----
+        paused = false;
+
+        Sockets.enableAutoRead(ch);
+        lastEventTs = nowNano;
+        TripleAction<Channel, Throwable> fn = onBackpressureEnd;
+        if (fn != null) {
+            fn.accept(ch, cause);
         }
     }
 
     void stopTimer() {
-        ScheduledFuture<?> f = timer;
-        if (f != null) {
-            f.cancel(true);
-            timer = null;
+        ScheduledFuture<?> t = timer.getAndSet(null);
+        if (t != null) {
+            t.cancel(false);
         }
     }
 
@@ -94,9 +117,20 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     }
 
     @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        stopTimer();
+        if (paused) {
+            paused = false; // 防止外部系统死等
+        }
+        super.channelInactive(ctx);
+    }
+
+    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        // 异常时也尝试清理定时器，并通知外部系统恢复
+        stopTimer();
         // 任何异常都强制恢复 autoRead，防止通道永久卡死
-        Sockets.enableAutoRead(ctx.channel());
+        handleRecovery(ctx.channel(), 0, cause);
         super.exceptionCaught(ctx, cause);
     }
 }

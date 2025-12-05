@@ -1,8 +1,6 @@
 package org.rx.net;
 
 import io.netty.channel.AdaptiveRecvByteBufAllocator;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelConfig;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.util.internal.PlatformDependent;
 import lombok.Getter;
