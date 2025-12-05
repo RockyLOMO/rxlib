@@ -17,14 +17,21 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     //恢复队列、恢复 SS 上游读取…
     Action onBackpressureEnd;
     volatile long lastEventTs;
-    // 是否暂停写入（用于业务层，如队列暂停）
+    volatile boolean lastWritable;
     volatile ScheduledFuture<?> timer;
+    // 是否暂停写入（用于业务层，如队列暂停）
     @Getter
     volatile boolean paused;
 
     @Override
     public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
         Channel ch = ctx.channel();
+
+        ScheduledFuture<?> t = timer;
+        if (t != null) {
+            lastWritable = ch.isWritable();
+            return;
+        }
 
         long now = System.nanoTime();
         long spanMs = (now - lastEventTs) / Constants.NANO_TO_MILLIS;
