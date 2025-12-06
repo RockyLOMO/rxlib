@@ -51,7 +51,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.quietly;
 import static org.rx.core.Sys.fastCacheKey;
 import static org.rx.core.Sys.toJsonString;
@@ -130,10 +129,6 @@ public final class Sockets {
     }
 
     public static EventLoopGroup reactor(String reactorName, boolean isTcp) {
-//        return reactors.computeIfAbsent(reactorName, k -> {
-//            int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
-//            return isTcp && Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
-//        });
         return reactors.computeIfAbsent(reactorName, k -> {
             int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
             return Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
