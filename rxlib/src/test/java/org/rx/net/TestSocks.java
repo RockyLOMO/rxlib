@@ -448,7 +448,7 @@ public class TestSocks extends AbstractTester {
 
     <T> void startServer(T svcImpl, InetSocketAddress ep) {
         RpcServerConfig svr = new RpcServerConfig(new TcpServerConfig(ep.getPort()));
-        svr.getTcpConfig().setUseSharedTcpEventLoop(false);
+        svr.getTcpConfig().setReactorName("temp");
         serverHost.computeIfAbsent(svcImpl, k -> Remoting.register(k, svr));
         System.out.println("Start server on port " + ep.getPort());
     }
@@ -514,8 +514,8 @@ public class TestSocks extends AbstractTester {
     String socks5Pwd = "123456";
 
     @Test
-    public void optimalSettings(){
-        OptimalSettings[] a = {Main.A,Main.B};
+    public void optimalSettings() {
+        OptimalSettings[] a = {Main.AF, Main.B};
         for (OptimalSettings ops : a) {
             ops.calculate();
             System.out.println(ops);
@@ -571,7 +571,7 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new Socks5TcpUpstream(e.getFirstDestination(), backConf, () -> new UpstreamSupport(srvEp, null)));
+            e.setUpstream(new Socks5TcpUpstream(backConf, e.getFirstDestination(), () -> new UpstreamSupport(srvEp, null)));
 //            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), backConf, shadowServers::next));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
@@ -645,7 +645,7 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new Socks5TcpUpstream(e.getFirstDestination(), frontConf, shadowServers::next));
+            e.setUpstream(new Socks5TcpUpstream(frontConf, e.getFirstDestination(), shadowServers::next));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
@@ -660,7 +660,7 @@ public class TestSocks extends AbstractTester {
                 }
                 return;
             }
-            e.setUpstream(new Socks5UdpUpstream(dstEp, frontConf, shadowServers::next));
+            e.setUpstream(new Socks5UdpUpstream(frontConf, dstEp, shadowServers::next));
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
