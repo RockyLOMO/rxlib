@@ -51,6 +51,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.bean.$.$;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.quietly;
 import static org.rx.core.Sys.fastCacheKey;
 import static org.rx.core.Sys.toJsonString;
@@ -166,17 +167,14 @@ public final class Sockets {
 
     public static ServerBootstrap serverBootstrap(SocketConfig config, BiAction<SocketChannel> initChannel) {
         if (config == null) {
-            config = new SocketConfig();
+            config = SocketConfig.EMPTY;
         }
         String rn = config.getReactorName();
         if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_UDP)) {
             rn = ReactorNames.SHARED_TCP;
         }
-        if (config.getOptimalSettings() == null) {
-            config.setOptimalSettings(OptimalSettings.EMPTY);
-        }
 
-        OptimalSettings op = config.getOptimalSettings();
+        OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         op.calculate();
         int backlog = op.backlog;
         WriteBufferWaterMark writeBufferWaterMark = op.writeBufferWaterMark;
@@ -242,20 +240,17 @@ public final class Sockets {
 
     public static Bootstrap bootstrap(EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
         if (config == null) {
-            config = new SocketConfig();
+            config = SocketConfig.EMPTY;
         }
         String rn = config.getReactorName();
         if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_UDP)) {
             rn = ReactorNames.SHARED_TCP;
         }
-        if (config.getOptimalSettings() == null) {
-            config.setOptimalSettings(OptimalSettings.EMPTY);
-        }
         if (eventLoopGroup == null) {
             eventLoopGroup = reactor(rn, true);
         }
 
-        OptimalSettings op = config.getOptimalSettings();
+        OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         op.calculate();
         WriteBufferWaterMark writeBufferWaterMark = op.writeBufferWaterMark;
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
@@ -488,17 +483,14 @@ public final class Sockets {
     @SneakyThrows
     static Bootstrap udpBootstrap(SocketConfig config, boolean multicast, BiAction<DatagramChannel> initChannel) {
         if (config == null) {
-            config = new SocketConfig();
+            config = SocketConfig.EMPTY;
         }
         String rn = config.getReactorName();
         if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_TCP)) {
             rn = ReactorNames.SHARED_UDP;
         }
-        if (config.getOptimalSettings() == null) {
-            config.setOptimalSettings(OptimalSettings.EMPTY);
-        }
 
-        OptimalSettings op = config.getOptimalSettings();
+        OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         op.calculate();
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
         NetworkInterface mif = null;

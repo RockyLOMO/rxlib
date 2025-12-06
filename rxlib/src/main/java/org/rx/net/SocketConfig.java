@@ -25,6 +25,8 @@ public class SocketConfig implements Serializable {
     public static final AttributeKey<Boolean> ATTR_PSEUDO_SVR = AttributeKey.valueOf("pseudoSvr");
     static final AttributeKey<BiAction<Channel>> ATTR_INIT_FN = AttributeKey.valueOf("_initFn");
 
+    public static final SocketConfig EMPTY = new SocketConfig();
+
     private boolean debug;
     private String reactorName;
     private OptimalSettings optimalSettings;
