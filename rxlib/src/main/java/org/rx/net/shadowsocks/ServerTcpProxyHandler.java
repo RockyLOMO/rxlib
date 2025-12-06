@@ -7,6 +7,7 @@ import org.rx.net.Sockets;
 import org.rx.net.socks.BackendRelayHandler;
 import org.rx.net.socks.FrontendRelayHandler;
 import org.rx.net.socks.SocksContext;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -27,8 +28,9 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
         server.raiseEvent(server.onRoute, e);
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
 
-        Sockets.bootstrap(inbound.eventLoop(), server.config, outbound -> {
-            e.getUpstream().initChannel(outbound);
+        Upstream upstream = e.getUpstream();
+        Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), outbound -> {
+            upstream.initChannel(outbound);
 
             SocksContext.mark(inbound, outbound, e, true);
             inbound.pipeline().addLast(FrontendRelayHandler.DEFAULT);

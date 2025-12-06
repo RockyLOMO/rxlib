@@ -578,7 +578,7 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new Upstream(e.getFirstDestination(), srvEp));
+            e.setUpstream(new Upstream(backConf, e.getFirstDestination(), srvEp));
 //            e.setUpstream(new Upstream(e.getFirstDestination()));
         });
 
@@ -654,7 +654,7 @@ public class TestSocks extends AbstractTester {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (frontConf.isEnableUdp2raw()) {
                 if (!udp2rawDirect) {
-                    e.setUpstream(new Upstream(dstEp, shadowServers.next().getEndpoint()));
+                    e.setUpstream(new Upstream(frontConf, dstEp, shadowServers.next().getEndpoint()));
                 } else {
                     e.setUpstream(new Upstream(dstEp));
                 }

@@ -1,5 +1,6 @@
 package org.rx.net;
 
+import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.Setter;
@@ -8,6 +9,7 @@ import org.rx.bean.FlagsEnum;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Linq;
 import org.rx.core.RxConfig;
+import org.rx.util.function.BiAction;
 
 import java.io.Serializable;
 import java.util.Set;
@@ -21,10 +23,12 @@ public class SocketConfig implements Serializable {
 
     public static final AttributeKey<SocketConfig> ATTR_CONF = AttributeKey.valueOf("conf");
     public static final AttributeKey<Boolean> ATTR_PSEUDO_SVR = AttributeKey.valueOf("pseudoSvr");
+    static final AttributeKey<BiAction<Channel>> ATTR_INIT_FN = AttributeKey.valueOf("_initFn");
 
     private boolean debug;
     private String reactorName;
     private OptimalSettings optimalSettings;
+    private boolean customBackpressure;
     private int connectTimeoutMillis;
     private FlagsEnum<TransportFlags> transportFlags;
     // 1 = AES, 2 = XChaCha20Poly1305

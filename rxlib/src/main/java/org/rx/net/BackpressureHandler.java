@@ -7,6 +7,7 @@ import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.TripleAction;
@@ -14,6 +15,7 @@ import org.rx.util.function.TripleAction;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+@Slf4j
 @RequiredArgsConstructor
 public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     static final int MIN_SPAN_MILLIS = 20;
@@ -86,8 +88,10 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
             if (fn != null) {
                 fn.accept(ch);
             }
+            log.warn("Backpressure {} not writable", ch);
         } else {
             handleRecovery(ch, nowNano, null);
+            log.info("Backpressure {} writable", ch);
         }
     }
 

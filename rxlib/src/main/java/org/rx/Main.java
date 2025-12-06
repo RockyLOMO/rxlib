@@ -294,8 +294,6 @@ public final class Main implements SocksSupport {
         Tasks.schedulePeriod(fn, conf.autoWhiteListSeconds * 1000L);
 
         InetSocketAddress frontSvrEp = Sockets.newLoopbackEndpoint(port);
-        SocksConfig directConf = new SocksConfig(port);
-        directConf.setOptimalSettings(AB);
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
@@ -319,6 +317,9 @@ public final class Main implements SocksSupport {
                     e.setHandled(true);
                 }
             };
+            SocksConfig toAFConf = new SocksConfig(port);
+            toAFConf.setOptimalSettings(AB);
+//            toAFConf.setTransportFlags(conf.getTransportFlags());
             svr.onRoute.replace(ssFirstRoute, (s, e) -> {
                 //gateway
                 boolean gfw;
@@ -339,10 +340,10 @@ public final class Main implements SocksSupport {
                     return;
                 }
 
-                e.setUpstream(new Socks5TcpUpstream(directConf, e.getFirstDestination(), () -> new UpstreamSupport(srvEp, null)));
+                e.setUpstream(new Socks5TcpUpstream(toAFConf, e.getFirstDestination(), () -> new UpstreamSupport(srvEp, null)));
             });
             svr.onUdpRoute.replace(ssFirstRoute, (s, e) -> {
-                e.setUpstream(new Upstream(e.getFirstDestination(), srvEp));
+                e.setUpstream(new Upstream(toAFConf, e.getFirstDestination(), srvEp));
             });
         }
 

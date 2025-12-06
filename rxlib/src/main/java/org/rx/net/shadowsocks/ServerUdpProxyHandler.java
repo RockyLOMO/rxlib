@@ -8,12 +8,10 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
-import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 import org.rx.net.socks.ProxyChannelIdleHandler;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.UdpManager;
-import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -62,8 +60,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
-            SocketConfig conf = upstream instanceof Socks5UdpUpstream ? ((Socks5UdpUpstream) upstream).getConfig() : server.config;
-            Channel ch = Sockets.udpBootstrap(conf, ob -> {
+            Channel ch = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 SocksContext.mark(inbound, ob, e, false);
 
                 upstream.initChannel(ob);

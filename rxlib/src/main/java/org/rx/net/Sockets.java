@@ -63,6 +63,17 @@ public final class Sockets {
         String RPC = "RPC";
     }
 
+    @ChannelHandler.Sharable
+    static class SocketChannelInitializer extends ChannelInitializer<Channel> {
+        public static final SocketChannelInitializer DEFAULT = new SocketChannelInitializer();
+
+        @Override
+        protected void initChannel(Channel ch) {
+            ch.pipeline().addLast(GlobalChannelHandler.DEFAULT);
+            getAttr(ch, SocketConfig.ATTR_INIT_FN).accept(ch);
+        }
+    }
+
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
     public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
@@ -186,23 +197,25 @@ public final class Sockets {
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (writeBufferWaterMark != null) {
-            b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                    .childHandler(new BackpressureHandler(true));
+            b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+            if (!config.isCustomBackpressure()) {
+                b.childHandler(new BackpressureHandler(true));
+            }
         }
         if (config.isDebug()) {
             //netty log
             b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
-            b.childHandler(new ChannelInitializer<SocketChannel>() {
-                @SneakyThrows
-                @Override
-                protected void initChannel(SocketChannel socketChannel) {
-                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
-                    initChannel.invoke(socketChannel);
-//                    socketChannel.pipeline().addLast(ChannelExceptionHandler.DEFAULT);
-                }
-            });
+            b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
+            b.childHandler(SocketChannelInitializer.DEFAULT);
+//            b.childHandler(new ChannelInitializer<SocketChannel>() {
+//                @Override
+//                protected void initChannel(SocketChannel socketChannel) {
+//                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
+//                    initChannel.accept(socketChannel);
+//                }
+//            });
         }
         return b;
     }
@@ -256,22 +269,24 @@ public final class Sockets {
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (writeBufferWaterMark != null) {
-            b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                    .handler(new BackpressureHandler(true));
+            b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+            if (!config.isCustomBackpressure()) {
+                b.handler(new BackpressureHandler(true));
+            }
         }
         if (config.isDebug()) {
             b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
-            b.handler(new ChannelInitializer<SocketChannel>() {
-                @SneakyThrows
-                @Override
-                protected void initChannel(SocketChannel socketChannel) {
-                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
-                    initChannel.invoke(socketChannel);
-//                    socketChannel.pipeline().addLast(ChannelExceptionHandler.DEFAULT);
-                }
-            });
+            b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
+            b.handler(SocketChannelInitializer.DEFAULT);
+//            b.handler(new ChannelInitializer<SocketChannel>() {
+//                @Override
+//                protected void initChannel(SocketChannel socketChannel) {
+//                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
+//                    initChannel.accept(socketChannel);
+//                }
+//            });
         }
         return b;
     }
@@ -464,14 +479,14 @@ public final class Sockets {
     }
     //endregion
 
-    public static Bootstrap udpBootstrap(SocketConfig config, BiAction<NioDatagramChannel> initChannel) {
+    public static Bootstrap udpBootstrap(SocketConfig config, BiAction<DatagramChannel> initChannel) {
         return udpBootstrap(config, false, initChannel);
     }
 
     //BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
     //DefaultDatagramChannelConfig
     @SneakyThrows
-    static Bootstrap udpBootstrap(SocketConfig config, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
+    static Bootstrap udpBootstrap(SocketConfig config, boolean multicast, BiAction<DatagramChannel> initChannel) {
         if (config == null) {
             config = new SocketConfig();
         }
@@ -507,15 +522,18 @@ public final class Sockets {
         } else {
             b.channel(Sockets.udpChannelClass());
         }
-        b.handler(DEFAULT_LOG);
+        if (config.isDebug()) {
+            b.handler(DEFAULT_LOG);
+        }
         if (initChannel != null) {
-            b.handler(new ChannelInitializer<NioDatagramChannel>() {
-                @SneakyThrows
-                @Override
-                protected void initChannel(NioDatagramChannel socketChannel) {
-                    initChannel.invoke(socketChannel);
-                }
-            });
+            b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
+            b.handler(SocketChannelInitializer.DEFAULT);
+//            b.handler(new ChannelInitializer<DatagramChannel>() {
+//                @Override
+//                protected void initChannel(DatagramChannel socketChannel) {
+//                    initChannel.accept(socketChannel);
+//                }
+//            });
         }
         return b;
     }
@@ -581,7 +599,7 @@ public final class Sockets {
     }
 
     public static String protocolName(Channel channel) {
-        return channel instanceof NioDatagramChannel ? "UDP" : "TCP";
+        return channel instanceof DatagramChannel ? "UDP" : "TCP";
     }
 
     public static ChannelFutureListener logBind(int port) {
