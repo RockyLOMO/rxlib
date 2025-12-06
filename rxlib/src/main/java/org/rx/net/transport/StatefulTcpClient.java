@@ -162,8 +162,9 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             throw new InvalidException("{} has connected", this);
         }
 
+        config.setReactorName(Sockets.ReactorNames.RPC);
         config.setServerEndpoint(remoteEp);
-        bootstrap = Sockets.bootstrap(Sockets.ReactorNames.RPC, config, channel -> {
+        bootstrap = Sockets.bootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
             Sockets.addClientHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
@@ -190,8 +191,9 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
             throw new InvalidException("{} has connected", this);
         }
 
+        config.setReactorName(Sockets.ReactorNames.RPC);
         config.setServerEndpoint(remoteEp);
-        bootstrap = Sockets.bootstrap(Sockets.ReactorNames.RPC, config, channel -> {
+        bootstrap = Sockets.bootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
             Sockets.addClientHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,

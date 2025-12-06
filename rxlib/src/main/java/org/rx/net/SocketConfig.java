@@ -23,8 +23,7 @@ public class SocketConfig implements Serializable {
     public static final AttributeKey<Boolean> ATTR_PSEUDO_SVR = AttributeKey.valueOf("pseudoSvr");
 
     private boolean debug;
-    //Set true if live with current process.
-    private boolean useSharedTcpEventLoop = true;
+    private String reactorName;
     private OptimalSettings optimalSettings;
     private int connectTimeoutMillis;
     private FlagsEnum<TransportFlags> transportFlags;

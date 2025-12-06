@@ -51,6 +51,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.bean.$.$;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.quietly;
 import static org.rx.core.Sys.fastCacheKey;
 import static org.rx.core.Sys.toJsonString;
@@ -161,6 +162,10 @@ public final class Sockets {
         if (config == null) {
             config = new SocketConfig();
         }
+        String rn = config.getReactorName();
+        if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_UDP)) {
+            rn = ReactorNames.SHARED_TCP;
+        }
         if (config.getOptimalSettings() == null) {
             config.setOptimalSettings(OptimalSettings.EMPTY);
         }
@@ -173,7 +178,7 @@ public final class Sockets {
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
         final int bossThreadAmount = 1; //Equal to the number of bind(), default 1
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(ReactorNames.SHARED_TCP, true) : newEventLoop(0))
+                .group(newEventLoop(bossThreadAmount), reactor(rn, true))
                 .channel(Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
                 .option(ChannelOption.SO_BACKLOG, backlog)
 //                .option(ChannelOption.SO_REUSEADDR, true)
@@ -224,19 +229,22 @@ public final class Sockets {
     }
 
     public static Bootstrap bootstrap(SocketConfig config, BiAction<SocketChannel> initChannel) {
-        return bootstrap(ReactorNames.SHARED_TCP, config, initChannel);
+        return bootstrap(null, config, initChannel);
     }
 
-    public static Bootstrap bootstrap(String reactorName, SocketConfig config, BiAction<SocketChannel> initChannel) {
-        return bootstrap(reactor(reactorName, true), config, initChannel);
-    }
-
-    public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
+    public static Bootstrap bootstrap(EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
         if (config == null) {
             config = new SocketConfig();
         }
+        String rn = config.getReactorName();
+        if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_UDP)) {
+            rn = ReactorNames.SHARED_TCP;
+        }
         if (config.getOptimalSettings() == null) {
             config.setOptimalSettings(OptimalSettings.EMPTY);
+        }
+        if (eventLoopGroup == null) {
+            eventLoopGroup = reactor(rn, true);
         }
 
         OptimalSettings op = config.getOptimalSettings();
@@ -461,26 +469,26 @@ public final class Sockets {
     }
     //endregion
 
-    public static Bootstrap udpBootstrap(OptimalSettings op, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(ReactorNames.SHARED_UDP, op, false, initChannel);
-    }
-
-    public static Bootstrap udpBootstrap(String reactorName, OptimalSettings op, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(reactorName, op, false, initChannel);
-    }
-
-    public static Bootstrap udpBootstrap(OptimalSettings op, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(ReactorNames.SHARED_UDP, op, multicast, initChannel);
+    public static Bootstrap udpBootstrap(SocketConfig config, BiAction<NioDatagramChannel> initChannel) {
+        return udpBootstrap(config, false, initChannel);
     }
 
     //BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
     //DefaultDatagramChannelConfig
     @SneakyThrows
-    static Bootstrap udpBootstrap(@NonNull String reactorName, OptimalSettings op, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
-        if (op == null) {
-            op = OptimalSettings.EMPTY;
+    static Bootstrap udpBootstrap(SocketConfig config, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
+        if (config == null) {
+            config = new SocketConfig();
+        }
+        String rn = config.getReactorName();
+        if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_TCP)) {
+            rn = ReactorNames.SHARED_UDP;
+        }
+        if (config.getOptimalSettings() == null) {
+            config.setOptimalSettings(OptimalSettings.EMPTY);
         }
 
+        OptimalSettings op = config.getOptimalSettings();
         op.calculate();
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
         NetworkInterface mif = null;
@@ -492,7 +500,7 @@ public final class Sockets {
 
         //writeBufferWaterMark UDP无效
         Bootstrap b = new Bootstrap()
-                .group(reactor(reactorName, false))
+                .group(reactor(rn, false))
 //                .option(ChannelOption.SO_BROADCAST, true)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (multicast) {

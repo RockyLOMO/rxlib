@@ -26,14 +26,20 @@ public class OptimalSettings implements Serializable {
         final int maxHighWaterMark;
     }
 
-    public static final OptimalSettings EMPTY = new OptimalSettings(0, 0, 0, 0, null) {
-        @Override
-        public void calculate(int usableMemoryMB, int rttMillis, int perConnSpeedMbps, int maxConnections, double writeBufferRatio, Mode mode, Integer backlogMemoryMB) {
-            writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
+    private static class EmptyOptimalSettings extends OptimalSettings {
+        public EmptyOptimalSettings() {
+            super(0, 0, 0, 0, null);
+//            writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
             recvByteBufAllocator = AdaptiveRecvByteBufAllocator.DEFAULT;
             backlog = 2048;
         }
-    };
+
+        @Override
+        public void calculate(int usableMemoryMB, int rttMillis, int perConnSpeedMbps, int maxConnections, double writeBufferRatio, Mode mode, Integer backlogMemoryMB) {
+        }
+    }
+
+    public static final OptimalSettings EMPTY = new EmptyOptimalSettings();
 
     @Getter
     @Setter

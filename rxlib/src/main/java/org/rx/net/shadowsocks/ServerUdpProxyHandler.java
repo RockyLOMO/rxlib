@@ -63,7 +63,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
             SocketConfig conf = upstream instanceof Socks5UdpUpstream ? ((Socks5UdpUpstream) upstream).getConfig() : server.config;
-            Channel ch = Sockets.udpBootstrap(conf.getOptimalSettings(), ob -> {
+            Channel ch = Sockets.udpBootstrap(conf, ob -> {
                 SocksContext.mark(inbound, ob, e, false);
 
                 upstream.initChannel(ob);
