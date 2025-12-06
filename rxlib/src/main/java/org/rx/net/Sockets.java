@@ -184,9 +184,11 @@ public final class Sockets {
                 .childOption(ChannelOption.TCP_NODELAY, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .childHandler(new BackpressureHandler(true));
+                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+        if (writeBufferWaterMark != null) {
+            b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
+                    .childHandler(new BackpressureHandler(true));
+        }
         if (config.isDebug()) {
             //netty log
             b.handler(DEFAULT_LOG);
@@ -249,9 +251,11 @@ public final class Sockets {
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .handler(new BackpressureHandler(true));
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+        if (writeBufferWaterMark != null) {
+            b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
+                    .handler(new BackpressureHandler(true));
+        }
         if (config.isDebug()) {
             b.handler(DEFAULT_LOG);
         }

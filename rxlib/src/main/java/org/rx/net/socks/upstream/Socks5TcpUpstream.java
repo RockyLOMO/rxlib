@@ -1,6 +1,7 @@
 package org.rx.net.socks.upstream;
 
 import io.netty.channel.Channel;
+import lombok.Getter;
 import lombok.NonNull;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.codec.CodecUtil;
@@ -20,10 +21,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 public class Socks5TcpUpstream extends Upstream {
+    @Getter
     final SocksConfig config; //Maybe frontend have a different configuration from backend
     final Func<UpstreamSupport> router;
 
-    public Socks5TcpUpstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull Func<UpstreamSupport> router) {
+    public Socks5TcpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
         super(dstEp);
         this.config = config;
         this.router = router;

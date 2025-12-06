@@ -17,7 +17,7 @@ public class Socks5UdpUpstream extends Upstream {
     final SocksConfig config;
     final Func<UpstreamSupport> router;
 
-    public Socks5UdpUpstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull Func<UpstreamSupport> router) {
+    public Socks5UdpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
         super(dstEp);
         this.config = config;
         this.router = router;
