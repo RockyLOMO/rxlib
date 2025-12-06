@@ -4,7 +4,10 @@ import io.netty.channel.Channel;
 import lombok.NonNull;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.codec.CodecUtil;
-import org.rx.core.*;
+import org.rx.core.Arrays;
+import org.rx.core.Cache;
+import org.rx.core.CachePolicy;
+import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.AuthenticEndpoint;
@@ -20,12 +23,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 public class Socks5TcpUpstream extends Upstream {
-    final SocksConfig config; //Maybe frontend have a different configuration from backend
     final Func<UpstreamSupport> router;
 
-    public Socks5TcpUpstream(@NonNull UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull Func<UpstreamSupport> router) {
-        super(dstEp);
-        this.config = config;
+    public Socks5TcpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
+        super(config, dstEp);
         this.router = router;
     }
 
@@ -54,7 +55,7 @@ public class Socks5TcpUpstream extends Upstream {
                 try {
                     //Write the value after the current thread has timed out and the asynchronous thread is still executing successfully
                     Tasks.runAsync(() -> {
-                        Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
+//                        Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
                         support.fakeEndpoint(hash, dstEpStr);
                         return true;
                     }).whenCompleteAsync((r, e) -> {

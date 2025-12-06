@@ -9,6 +9,7 @@ import org.rx.core.Tasks;
 import org.rx.core.TimeoutFuture;
 import org.rx.net.*;
 import org.rx.net.socks.upstream.Socks5ProxyHandler;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -85,8 +86,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e) {
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
 
-        Sockets.bootstrap(inbound.eventLoop(), server.getConfig(), outbound -> {
-            e.getUpstream().initChannel(outbound);
+        Upstream upstream = e.getUpstream();
+        Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), outbound -> {
+            upstream.initChannel(outbound);
 
             SocksContext.mark(inbound, outbound, e, true);
             inbound.pipeline().addLast(FrontendRelayHandler.DEFAULT);

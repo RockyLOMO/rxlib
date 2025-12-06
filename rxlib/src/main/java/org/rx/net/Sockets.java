@@ -51,6 +51,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.bean.$.$;
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.quietly;
 import static org.rx.core.Sys.fastCacheKey;
 import static org.rx.core.Sys.toJsonString;
@@ -61,6 +62,17 @@ public final class Sockets {
         String SHARED_TCP = "_TCP";
         String SHARED_UDP = "_UDP";
         String RPC = "RPC";
+    }
+
+    @ChannelHandler.Sharable
+    static class SocketChannelInitializer extends ChannelInitializer<Channel> {
+        public static final SocketChannelInitializer DEFAULT = new SocketChannelInitializer();
+
+        @Override
+        protected void initChannel(Channel ch) {
+            ch.pipeline().addLast(GlobalChannelHandler.DEFAULT);
+            getAttr(ch, SocketConfig.ATTR_INIT_FN).accept(ch);
+        }
     }
 
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
@@ -129,10 +141,6 @@ public final class Sockets {
     }
 
     public static EventLoopGroup reactor(String reactorName, boolean isTcp) {
-//        return reactors.computeIfAbsent(reactorName, k -> {
-//            int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
-//            return isTcp && Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
-//        });
         return reactors.computeIfAbsent(reactorName, k -> {
             int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
             return Epoll.isAvailable() ? new EpollEventLoopGroup(amount) : new NioEventLoopGroup(amount);
@@ -159,13 +167,14 @@ public final class Sockets {
 
     public static ServerBootstrap serverBootstrap(SocketConfig config, BiAction<SocketChannel> initChannel) {
         if (config == null) {
-            config = new SocketConfig();
+            config = SocketConfig.EMPTY;
         }
-        if (config.getOptimalSettings() == null) {
-            config.setOptimalSettings(OptimalSettings.EMPTY);
+        String rn = config.getReactorName();
+        if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_UDP)) {
+            rn = ReactorNames.SHARED_TCP;
         }
 
-        OptimalSettings op = config.getOptimalSettings();
+        OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         op.calculate();
         int backlog = op.backlog;
         WriteBufferWaterMark writeBufferWaterMark = op.writeBufferWaterMark;
@@ -173,7 +182,7 @@ public final class Sockets {
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
         final int bossThreadAmount = 1; //Equal to the number of bind(), default 1
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), config.isUseSharedTcpEventLoop() ? reactor(ReactorNames.SHARED_TCP, true) : newEventLoop(0))
+                .group(newEventLoop(bossThreadAmount), reactor(rn, true))
                 .channel(Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
                 .option(ChannelOption.SO_BACKLOG, backlog)
 //                .option(ChannelOption.SO_REUSEADDR, true)
@@ -184,23 +193,27 @@ public final class Sockets {
                 .childOption(ChannelOption.TCP_NODELAY, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .childHandler(new BackpressureHandler(true));
+                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+        if (writeBufferWaterMark != null) {
+            b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+            if (!config.isCustomBackpressure()) {
+                b.childHandler(new BackpressureHandler(true));
+            }
+        }
         if (config.isDebug()) {
             //netty log
             b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
-            b.childHandler(new ChannelInitializer<SocketChannel>() {
-                @SneakyThrows
-                @Override
-                protected void initChannel(SocketChannel socketChannel) {
-                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
-                    initChannel.invoke(socketChannel);
-//                    socketChannel.pipeline().addLast(ChannelExceptionHandler.DEFAULT);
-                }
-            });
+            b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
+            b.childHandler(SocketChannelInitializer.DEFAULT);
+//            b.childHandler(new ChannelInitializer<SocketChannel>() {
+//                @Override
+//                protected void initChannel(SocketChannel socketChannel) {
+//                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
+//                    initChannel.accept(socketChannel);
+//                }
+//            });
         }
         return b;
     }
@@ -222,22 +235,22 @@ public final class Sockets {
     }
 
     public static Bootstrap bootstrap(SocketConfig config, BiAction<SocketChannel> initChannel) {
-        return bootstrap(ReactorNames.SHARED_TCP, config, initChannel);
+        return bootstrap(null, config, initChannel);
     }
 
-    public static Bootstrap bootstrap(String reactorName, SocketConfig config, BiAction<SocketChannel> initChannel) {
-        return bootstrap(reactor(reactorName, true), config, initChannel);
-    }
-
-    public static Bootstrap bootstrap(@NonNull EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
+    public static Bootstrap bootstrap(EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
         if (config == null) {
-            config = new SocketConfig();
+            config = SocketConfig.EMPTY;
         }
-        if (config.getOptimalSettings() == null) {
-            config.setOptimalSettings(OptimalSettings.EMPTY);
+        String rn = config.getReactorName();
+        if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_UDP)) {
+            rn = ReactorNames.SHARED_TCP;
+        }
+        if (eventLoopGroup == null) {
+            eventLoopGroup = reactor(rn, true);
         }
 
-        OptimalSettings op = config.getOptimalSettings();
+        OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         op.calculate();
         WriteBufferWaterMark writeBufferWaterMark = op.writeBufferWaterMark;
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
@@ -249,22 +262,26 @@ public final class Sockets {
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark)
-                .handler(new BackpressureHandler(true));
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+        if (writeBufferWaterMark != null) {
+            b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+            if (!config.isCustomBackpressure()) {
+                b.handler(new BackpressureHandler(true));
+            }
+        }
         if (config.isDebug()) {
             b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
-            b.handler(new ChannelInitializer<SocketChannel>() {
-                @SneakyThrows
-                @Override
-                protected void initChannel(SocketChannel socketChannel) {
-                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
-                    initChannel.invoke(socketChannel);
-//                    socketChannel.pipeline().addLast(ChannelExceptionHandler.DEFAULT);
-                }
-            });
+            b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
+            b.handler(SocketChannelInitializer.DEFAULT);
+//            b.handler(new ChannelInitializer<SocketChannel>() {
+//                @Override
+//                protected void initChannel(SocketChannel socketChannel) {
+//                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
+//                    initChannel.accept(socketChannel);
+//                }
+//            });
         }
         return b;
     }
@@ -457,26 +474,23 @@ public final class Sockets {
     }
     //endregion
 
-    public static Bootstrap udpBootstrap(OptimalSettings op, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(ReactorNames.SHARED_UDP, op, false, initChannel);
-    }
-
-    public static Bootstrap udpBootstrap(String reactorName, OptimalSettings op, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(reactorName, op, false, initChannel);
-    }
-
-    public static Bootstrap udpBootstrap(OptimalSettings op, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
-        return udpBootstrap(ReactorNames.SHARED_UDP, op, multicast, initChannel);
+    public static Bootstrap udpBootstrap(SocketConfig config, BiAction<DatagramChannel> initChannel) {
+        return udpBootstrap(config, false, initChannel);
     }
 
     //BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
     //DefaultDatagramChannelConfig
     @SneakyThrows
-    static Bootstrap udpBootstrap(@NonNull String reactorName, OptimalSettings op, boolean multicast, BiAction<NioDatagramChannel> initChannel) {
-        if (op == null) {
-            op = OptimalSettings.EMPTY;
+    static Bootstrap udpBootstrap(SocketConfig config, boolean multicast, BiAction<DatagramChannel> initChannel) {
+        if (config == null) {
+            config = SocketConfig.EMPTY;
+        }
+        String rn = config.getReactorName();
+        if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_TCP)) {
+            rn = ReactorNames.SHARED_UDP;
         }
 
+        OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         op.calculate();
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
         NetworkInterface mif = null;
@@ -488,7 +502,7 @@ public final class Sockets {
 
         //writeBufferWaterMark UDP无效
         Bootstrap b = new Bootstrap()
-                .group(reactor(reactorName, false))
+                .group(reactor(rn, false))
 //                .option(ChannelOption.SO_BROADCAST, true)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (multicast) {
@@ -500,15 +514,18 @@ public final class Sockets {
         } else {
             b.channel(Sockets.udpChannelClass());
         }
-        b.handler(DEFAULT_LOG);
+        if (config.isDebug()) {
+            b.handler(DEFAULT_LOG);
+        }
         if (initChannel != null) {
-            b.handler(new ChannelInitializer<NioDatagramChannel>() {
-                @SneakyThrows
-                @Override
-                protected void initChannel(NioDatagramChannel socketChannel) {
-                    initChannel.invoke(socketChannel);
-                }
-            });
+            b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
+            b.handler(SocketChannelInitializer.DEFAULT);
+//            b.handler(new ChannelInitializer<DatagramChannel>() {
+//                @Override
+//                protected void initChannel(DatagramChannel socketChannel) {
+//                    initChannel.accept(socketChannel);
+//                }
+//            });
         }
         return b;
     }
@@ -574,7 +591,7 @@ public final class Sockets {
     }
 
     public static String protocolName(Channel channel) {
-        return channel instanceof NioDatagramChannel ? "UDP" : "TCP";
+        return channel instanceof DatagramChannel ? "UDP" : "TCP";
     }
 
     public static ChannelFutureListener logBind(int port) {
