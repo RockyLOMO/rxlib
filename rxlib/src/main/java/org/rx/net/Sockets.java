@@ -319,8 +319,8 @@ public final class Sockets {
             }
         }
 
-        boolean hasCipherR = flags.has(TransportFlags.SERVER_CIPHER_READ),
-                hasCipherW = flags.has(TransportFlags.SERVER_CIPHER_WRITE);
+        boolean hasCipherR = flags.has(TransportFlags.CIPHER_READ),
+                hasCipherW = flags.has(TransportFlags.CIPHER_WRITE);
         if (hasCipherR || hasCipherW) {
             if (config.getCipherKey() == null) {
                 throw new InvalidException("Cipher key is empty");
@@ -383,8 +383,8 @@ public final class Sockets {
             }
         }
 
-        boolean hasCipherR = flags.has(TransportFlags.CLIENT_CIPHER_READ),
-                hasCipherW = flags.has(TransportFlags.CLIENT_CIPHER_WRITE);
+        boolean hasCipherR = flags.has(TransportFlags.CIPHER_READ),
+                hasCipherW = flags.has(TransportFlags.CIPHER_WRITE);
         if (hasCipherR || hasCipherW) {
             if (config.getCipherKey() == null) {
                 throw new InvalidException("Cipher key is empty");
