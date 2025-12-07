@@ -87,7 +87,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
 
         Upstream upstream = e.getUpstream();
-        Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), outbound -> {
+        SocketConfig config = upstream.getConfig();
+        Sockets.bootstrap(inbound.eventLoop(), config, outbound -> {
             upstream.initChannel(outbound);
 
             SocksContext.mark(inbound, outbound, e, true);
@@ -114,10 +115,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
             StringBuilder exMsg = new StringBuilder();
             Socks5ProxyHandler proxyHandler;
-            SocksConfig config = server.getConfig();
             if (server.cipherRoute(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
-                    if (config.getTransportFlags().has(TransportFlags.CLIENT_COMPRESS_BOTH)) {
+                    if (config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
                         //todo 解依赖ZIP
                         outbound.attr(SocketConfig.ATTR_CONF).set(config);
                         Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
@@ -146,7 +146,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.getConfig();
-            if (server.cipherRoute(e.firstDestination) && config.getTransportFlags().has(TransportFlags.SERVER_COMPRESS_BOTH)) {
+            if (server.cipherRoute(e.firstDestination) && config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
                 inbound.attr(SocketConfig.ATTR_CONF).set(config);
                 Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
                 Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());

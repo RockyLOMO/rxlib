@@ -210,7 +210,7 @@ public final class Main implements SocksSupport {
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
-        frontBConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CLIENT_COMPRESS_BOTH).flags());
+        frontBConf.setTransportFlags(null);
         frontBConf.setOptimalSettings(AB);
         frontBConf.setConnectTimeoutMillis(connectTimeout);
         frontBConf.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
@@ -249,6 +249,7 @@ public final class Main implements SocksSupport {
             return () -> shadowServers.next(srcHost, conf.steeringTTL, true);
         };
         SocksConfig backConf = Sys.deepClone(frontBConf);
+        backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         backConf.setOptimalSettings(B);
         frontBSvr.onRoute.replace(firstRoute, (s, e) -> {
             e.setUpstream(new Socks5TcpUpstream(backConf, e.getFirstDestination(), routerFn.apply(e)));
@@ -474,7 +475,7 @@ public final class Main implements SocksSupport {
         ssUser.setMaxIpCount(-1);
 
         SocksConfig backConf = new SocksConfig(port);
-        backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.SERVER_COMPRESS_BOTH).flags());
+        backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         backConf.setOptimalSettings(B);
         backConf.setConnectTimeoutMillis(connectTimeout);
         backConf.setEnableUdp2raw(udp2raw);

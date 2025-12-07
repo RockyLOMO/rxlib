@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     static final int MIN_SPAN_MILLIS = 20;
     // 使用一个抖动阈值，防止高低水位频繁震荡
-    static final long COOLDOWN_MILLIS = 60 + MIN_SPAN_MILLIS;
+    static final long COOLDOWN_MILLIS = 50;
     final AtomicReference<ScheduledFuture<?>> timer = new AtomicReference<>();
     final boolean disableSelfAutoRead;
     //可以通知队列暂停、暂停 SS/HTTP 上游读取、标记对侧 channel
@@ -59,11 +59,11 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
                     timer.lazySet(null);
                 }
             }, nextMs, TimeUnit.MILLISECONDS);
-            // 如果 CAS 失败（意味着别处刚写入 timer），我们仍然要把 scheduled 取消，
-            // 并把 pendingWritable 保持（因为我们已经 set 了）
+            // 如果 CAS 失败（意味着别处刚写入 timer），我们仍然要把 scheduled 取消
             if (!timer.compareAndSet(null, schedule)) {
                 schedule.cancel(false);
             }
+            log.info("Backpressure setTimeout[{}]", nextMs);
             return;
         }
 
