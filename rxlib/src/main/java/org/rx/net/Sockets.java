@@ -207,13 +207,6 @@ public final class Sockets {
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
             b.childHandler(SocketChannelInitializer.DEFAULT);
-//            b.childHandler(new ChannelInitializer<SocketChannel>() {
-//                @Override
-//                protected void initChannel(SocketChannel socketChannel) {
-//                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
-//                    initChannel.accept(socketChannel);
-//                }
-//            });
         }
         return b;
     }
@@ -275,13 +268,6 @@ public final class Sockets {
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
             b.handler(SocketChannelInitializer.DEFAULT);
-//            b.handler(new ChannelInitializer<SocketChannel>() {
-//                @Override
-//                protected void initChannel(SocketChannel socketChannel) {
-//                    socketChannel.pipeline().addLast(GlobalChannelHandler.DEFAULT);
-//                    initChannel.accept(socketChannel);
-//                }
-//            });
         }
         return b;
     }
@@ -325,16 +311,16 @@ public final class Sockets {
         //支持LengthField?
         boolean g = flags.has(TransportFlags.GFW);
         if (!g) {
-            if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
+            if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
-            if (flags.has(TransportFlags.SERVER_COMPRESS_WRITE)) {
+            if (flags.has(TransportFlags.COMPRESS_WRITE)) {
                 pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
             }
         }
 
-        boolean hasCipherR = flags.has(TransportFlags.SERVER_CIPHER_READ),
-                hasCipherW = flags.has(TransportFlags.SERVER_CIPHER_WRITE);
+        boolean hasCipherR = flags.has(TransportFlags.CIPHER_READ),
+                hasCipherW = flags.has(TransportFlags.CIPHER_WRITE);
         if (hasCipherR || hasCipherW) {
             if (config.getCipherKey() == null) {
                 throw new InvalidException("Cipher key is empty");
@@ -349,10 +335,10 @@ public final class Sockets {
         }
 
         if (g) {
-            if (flags.has(TransportFlags.SERVER_COMPRESS_READ)) {
+            if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
-            if (flags.has(TransportFlags.SERVER_COMPRESS_WRITE)) {
+            if (flags.has(TransportFlags.COMPRESS_WRITE)) {
                 pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
             }
         }
@@ -389,16 +375,16 @@ public final class Sockets {
 
         boolean g = flags.has(TransportFlags.GFW);
         if (!g) {
-            if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
+            if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
-            if (flags.has(TransportFlags.CLIENT_COMPRESS_WRITE)) {
+            if (flags.has(TransportFlags.COMPRESS_WRITE)) {
                 pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
             }
         }
 
-        boolean hasCipherR = flags.has(TransportFlags.CLIENT_CIPHER_READ),
-                hasCipherW = flags.has(TransportFlags.CLIENT_CIPHER_WRITE);
+        boolean hasCipherR = flags.has(TransportFlags.CIPHER_READ),
+                hasCipherW = flags.has(TransportFlags.CIPHER_WRITE);
         if (hasCipherR || hasCipherW) {
             if (config.getCipherKey() == null) {
                 throw new InvalidException("Cipher key is empty");
@@ -413,10 +399,10 @@ public final class Sockets {
         }
 
         if (g) {
-            if (flags.has(TransportFlags.CLIENT_COMPRESS_READ)) {
+            if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));
             }
-            if (flags.has(TransportFlags.CLIENT_COMPRESS_WRITE)) {
+            if (flags.has(TransportFlags.COMPRESS_WRITE)) {
                 pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));
             }
         }
@@ -520,12 +506,6 @@ public final class Sockets {
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
             b.handler(SocketChannelInitializer.DEFAULT);
-//            b.handler(new ChannelInitializer<DatagramChannel>() {
-//                @Override
-//                protected void initChannel(DatagramChannel socketChannel) {
-//                    initChannel.accept(socketChannel);
-//                }
-//            });
         }
         return b;
     }

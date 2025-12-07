@@ -540,13 +540,13 @@ public class TestSocks extends AbstractTester {
         SocksProxyServer backSvr = new SocksProxyServer(backConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
@@ -601,24 +601,24 @@ public class TestSocks extends AbstractTester {
         //backend
         InetSocketAddress backSrvEp = Sockets.newLoopbackEndpoint(2080);
         SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
-        backConf.setTransportFlags(TransportFlags.SERVER_COMPRESS_BOTH.flags());
+        backConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
         backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null);
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_CIPHER_BOTH.flags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH));
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH));
         Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CLIENT_CIPHER_BOTH.flags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH));
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH));
         shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);
-        frontConf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_BOTH.flags());
+        frontConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
         frontConf.setEnableUdp2raw(udp2raw);
         if (!udp2rawDirect) {
