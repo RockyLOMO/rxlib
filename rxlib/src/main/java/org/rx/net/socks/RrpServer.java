@@ -203,7 +203,7 @@ public class RrpServer extends Disposable {
 
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
-        config.setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH));
+        config.setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
 //        config.setTransportFlags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH.flags());
         bootstrap = Sockets.serverBootstrap(channel -> {
                     Sockets.addServerHandler(channel, config).pipeline()
