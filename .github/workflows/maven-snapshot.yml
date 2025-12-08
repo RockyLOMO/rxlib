@@ -50,7 +50,7 @@ jobs:
             -Dmaven.javadoc.skip=true \
             --no-transfer-progress \
             --batch-mode
-			
+
       - name: Success
         if: success() && steps.version.outputs.is_snapshot == 'true'
         run: echo "SNAPSHOT 已成功发布（无签名）"
