@@ -10,7 +10,7 @@ jobs:
   publish-snapshot:
     runs-on: ubuntu-latest
     # 只有版本号以 -SNAPSHOT 结尾才执行部署
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    if: "contains(github.event.head_commit.message, '[skip ci]') != true"
 
     steps:
       - name: Checkout code
@@ -43,12 +43,14 @@ jobs:
           OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}      # Sonatype Token（强烈推荐）
         run: |
           mvn clean deploy \
-            -pl rxlib-x -am -Dmaven.test.skip=true -Dgpg.skip=true
-            -DskipTests -Dmaven.gpg.skip=true -Darguments="-Dmaven.gpg.skip=true" \
+            -pl rxlib-x -am \
+            -DskipTests \
+            -Dgpg.skip=true \
+            -Dmaven.gpg.skip=true \
             -Dmaven.javadoc.skip=true \
             --no-transfer-progress \
-            --batch-mode \
-
+            --batch-mode
+			
       - name: Success
         if: success() && steps.version.outputs.is_snapshot == 'true'
         run: echo "SNAPSHOT 已成功发布（无签名）"
