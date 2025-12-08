@@ -46,8 +46,7 @@ jobs:
           OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}   # Sonatype 用户名
           OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}      # Sonatype Token（强烈推荐）
         run: |
-          mvn clean deploy \
-            -pl rxlib-x -am \
+          mvn clean deploy -pl rxlib-x -am \
             -DskipTests \
             -Dgpg.skip=true \
             -Dmaven.gpg.skip=true \
