@@ -39,13 +39,6 @@ jobs:
             echo "is_snapshot=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: 【调试】列出当前仓库所有 Secrets 名字
-        run: |
-          echo "当前仓库所有 Secret 名称如下："
-          gh secret list --repo ${{ github.repository }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - name: Deploy SNAPSHOT to Maven Central (no sign)
         if: steps.version.outputs.is_snapshot == 'true'
         env:
