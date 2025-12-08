@@ -35,6 +35,10 @@ jobs:
           else
             echo "is_snapshot=false" >> $GITHUB_OUTPUT
           fi
+      - name: Debug credentials (仅测试时打开)
+        run: |
+          echo "Username: ${{ secrets.OSSRH_USERNAME }}"
+          echo "Token: ${{ secrets.OSSRH_TOKEN }}"
 
       - name: Deploy SNAPSHOT to Maven Central (no sign)
         if: steps.version.outputs.is_snapshot == 'true'
