@@ -45,13 +45,11 @@ jobs:
           OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}   # Sonatype 用户名
           OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}      # Sonatype Token（强烈推荐）
         run: |
-          mvn clean deploy -pl rxlib-x -am \
-            -DskipTests \
+          mvn clean deploy -pl rxlib-x -am -DskipTests \
             -Dgpg.skip=true \
             -Dmaven.gpg.skip=true \
             -Dmaven.javadoc.skip=true \
-            --no-transfer-progress \
-            --batch-mode
+            --no-transfer-progress --batch-mode
 
       - name: Success
         if: success() && steps.version.outputs.is_snapshot == 'true'
