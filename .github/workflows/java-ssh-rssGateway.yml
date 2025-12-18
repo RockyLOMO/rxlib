@@ -1,0 +1,124 @@
+name: Build & Push to ssh - rssGateway
+
+on:
+  workflow_dispatch:    # 支持手动触发
+  push:
+    branches: [ rxsocks ]
+
+jobs:
+  build-and-push:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'pub rss-gateway')
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 设置 JDK 11
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'   # Eclipse Temurin (推荐) 或 'zulu'
+          cache: maven              # 如果是 Maven 项目自动缓存依赖
+
+      # 3. 编译并打包（根据实际项目选择其一）
+      - name: Set environment variables
+        run: |
+          echo "APP_MODULE=rxlib" >> $GITHUB_ENV
+          echo "REMOTE_DIR=rss" >> $GITHUB_ENV
+          echo "HEALTH_URL=cloud.f-li.cn:6899" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+      - name: Build with Maven
+        run: |
+          mvn clean package -pl ${{ env.APP_MODULE }} -am -DskipTests --no-transfer-progress --batch-mode  # Maven 项目
+          # 自动查找 target 目录下的 jar 文件名（通常只有一个）
+          JAR_FULL_PATH=$(ls ${PWD}/${{ env.APP_MODULE }}/target/*.jar | head -n1) || { echo "Error: No JAR file found in target directory"; exit 1; }
+          if [[ -z "${JAR_FULL_PATH}" ]]; then
+            echo "Error: JAR file path is empty"
+            exit 1
+          fi
+          echo "APP_JAR_PATH=${JAR_FULL_PATH}" >> $GITHUB_ENV
+
+      - name: Copy JAR to context root
+        run: |
+          cp -f ${{ env.APP_JAR_PATH }} ./app.jar.publish
+          cp deploy/${{ env.REMOTE_DIR }}/start.sh ./
+          cp deploy/${{ env.REMOTE_DIR }}/rollback.sh ./
+
+      # 4. 复制 JAR 到远程服务器
+      - name: Copy JAR to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          source: app.jar.publish,start.sh,rollback.sh
+          target: /home/${{ env.REMOTE_DIR }}/
+          overwrite: true
+      - name: Initial Wait for Service Startup
+        run: sleep 2s  # 等待 60 秒，支持格式如 60、60s 或 1m
+
+      # 5. 在远程服务器执行命令（示例：备份旧 JAR、停止服务、启动新服务）
+      - name: Execute remote commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd /home/${{ env.REMOTE_DIR }}/
+            chmod 755 start.sh
+            ./start.sh
+            echo "Deployment completed"
+
+      - name: Initial Wait for Service Startup
+        run: sleep 30s  # 等待 60 秒，支持格式如 60、60s 或 1m
+      - name: Health Check After Initial Delay
+        id: health-check
+        continue-on-error: true  # 允许失败后继续执行后续步骤
+        run: |
+          HOST=$(echo "${{ env.HEALTH_URL }}" | cut -d: -f1)
+          PORT=$(echo "${{ env.HEALTH_URL }}" | cut -d: -f2)
+          # 若端口未指定，默认使用常见端口（可选，根据实际需求调整或移除）
+          if [[ -z "$PORT" ]]; then
+            echo "Error: Port not specified in ENDPOINT '$ENDPOINT'."
+            echo "healthy=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          MAX_ATTEMPTS=20                     # 最大重试次数
+          RETRY_DELAY=10                      # 每次重试间隔（秒）
+          TIMEOUT_PER_ATTEMPT=5               # 单次连接超时（秒）
+          
+          echo "Starting TCP health check for $HOST:$PORT (max $MAX_ATTEMPTS attempts, interval ${RETRY_DELAY}s)..."
+          
+          for ((i=1; i<=MAX_ATTEMPTS; i++)); do
+            if timeout $TIMEOUT_PER_ATTEMPT bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" >/dev/null 2>&1; then
+              echo "Success: TCP port $HOST:$PORT is reachable after $i attempt(s)."
+              echo "healthy=true" >> $GITHUB_OUTPUT
+              exit 0
+            else
+              echo "Attempt $i/$MAX_ATTEMPTS: TCP port $HOST:$PORT not reachable. Retrying in ${RETRY_DELAY}s..."
+              sleep $RETRY_DELAY
+            fi
+          done
+          
+          echo "Failure: TCP port $HOST:$PORT is not reachable after $MAX_ATTEMPTS attempts."
+          echo "healthy=false" >> $GITHUB_OUTPUT
+          exit 1
+      - name: Rollback to latest on Health Check Failure
+        if: steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd /home/${{ env.REMOTE_DIR }}/
+            chmod 755 rollback.sh
+            ./rollback.sh
+            echo "Health check failed. Rolling back to latest tag."
