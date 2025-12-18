@@ -88,7 +88,8 @@ public final class Main implements SocksSupport {
     @ToString
     public static class RSSConf {
         //socks
-        public List<String> shadowServer;
+        public List<String> shadowUsers;
+        public List<String> socksServer;
         public String socksPwd;
         public int tcpTimeoutSeconds = 60 * 2;
         public int udpTimeoutSeconds = 60 * 10;
@@ -121,12 +122,6 @@ public final class Main implements SocksSupport {
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
-        String[] arg1 = Strings.split(options.get("shadowUsers"), ",");
-        if (arg1.length == 0) {
-            log.info("Invalid shadowUsers arg");
-            return;
-        }
-
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         $<UpstreamSupport> defSS = $();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
@@ -139,7 +134,7 @@ public final class Main implements SocksSupport {
             }
 
             rssConf = changed;
-            Linq<AuthenticEndpoint> svrs = Linq.from(rssConf.shadowServer).select(p -> Reflects.convertQuietly(p, AuthenticEndpoint.class));
+            Linq<AuthenticEndpoint> svrs = Linq.from(rssConf.socksServer).select(p -> Reflects.convertQuietly(p, AuthenticEndpoint.class));
             if (!svrs.any() || svrs.any(Objects::isNull)) {
                 throw new InvalidException("Invalid shadowServer arg");
             }
@@ -149,18 +144,18 @@ public final class Main implements SocksSupport {
             shadowServers.clear();
             dnsInterceptors.clear();
             int defW = 0;
-            for (AuthenticEndpoint shadowServer : svrs) {
-                RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(shadowServer.getEndpoint(), shadowServer.getEndpoint().getPort() + 1),
+            for (AuthenticEndpoint socksServer : svrs) {
+                RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(socksServer.getEndpoint(), socksServer.getEndpoint().getPort() + 1),
                         rssConf.rpcMinSize, rssConf.rpcMaxSize);
                 TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
                 tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
 //                tcpConfig.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags(TransportFlags.CLIENT_CIPHER_BOTH));
-                int weight = Reflects.convertQuietly(shadowServer.getParameters().get("w"), int.class, 0);
+                int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
                 if (weight <= 0) {
                     continue;
                 }
                 SocksSupport facade = Remoting.createFacade(SocksSupport.class, rpcConf);
-                UpstreamSupport upstream = new UpstreamSupport(shadowServer, new SocksSupport() {
+                UpstreamSupport upstream = new UpstreamSupport(socksServer, new SocksSupport() {
                     @Override
                     public void fakeEndpoint(BigInteger hash, String realEndpoint) {
                         facade.fakeEndpoint(hash, realEndpoint);
@@ -193,7 +188,7 @@ public final class Main implements SocksSupport {
             }
         });
         watcher.raiseChange();
-        Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(arg1).select(shadowUser -> {
+        Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(rssConf.shadowUsers).select(shadowUser -> {
             String[] sArgs = Strings.split(shadowUser, ":", 4);
             ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(Integer.parseInt(sArgs[0])),
                     CipherKind.AES_256_GCM.getCipherName(), sArgs[1]);
