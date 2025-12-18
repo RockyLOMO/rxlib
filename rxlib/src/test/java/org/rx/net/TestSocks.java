@@ -945,8 +945,6 @@ public class TestSocks extends AbstractTester {
         String expr = RxConfig.INSTANCE.getNet().getBypassHosts().get(3);
         assert Pattern.matches(expr, "192.168.31.7");
 
-        System.out.println(Strings.cas("f-li.cn"));
-
         SocketConfig conf = new SocketConfig();
         assert Sockets.isBypass(conf.getBypassHosts(), "127.0.0.1");
         assert Sockets.isBypass(conf.getBypassHosts(), "192.168.31.1");
@@ -957,12 +955,11 @@ public class TestSocks extends AbstractTester {
         assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
 
-        GeoLite2 geoLite2 = (GeoLite2)IPSearcher.DEFAULT;
+        GeoLite2 geoLite2 = (GeoLite2) IPSearcher.DEFAULT;
         geoLite2.waitDownload();
         System.out.println(geoLite2.resolve("8.8.8.8"));
-        System.out.println(geoLite2.resolve("61.169.146.210"));
         System.out.println(geoLite2.resolve("192.168.31.2"));
-        log.info(geoLite2.getPublicIp());
+        log.info("{}", geoLite2.resolve(geoLite2.getPublicIp()));
         log.info(geoLite2.getPublicIp());
         log.info(geoLite2.getPublicIp());
 

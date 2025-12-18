@@ -62,7 +62,7 @@ public class SocksUser implements Serializable {
     public static final SocksUser ANONYMOUS = new SocksUser("anonymous");
 
     final String username;
-    final Map<InetAddress, LoginInfo> loginIps = new ConcurrentHashMap<>(8);
+    final Map<InetAddress, LoginInfo> loginIps = new ConcurrentHashMap<>(4);
     String password;
     /**
      * 默认0 = 不启用账号

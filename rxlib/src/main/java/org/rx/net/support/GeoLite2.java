@@ -93,7 +93,7 @@ public class GeoLite2 implements IPSearcher {
         }
 
         String[] services = resolveServer != null
-                ? new String[]{resolveServer + "/getPublicIp", "https://checkip.amazonaws.com", "https://api.seeip.org"}
+                ? new String[]{"https://" + resolveServer + "/getPublicIp", "https://checkip.amazonaws.com", "https://api.seeip.org"}
                 : new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
         HttpClient client = new HttpClient().withTimeoutMillis(5000);
         for (String service : services) {
