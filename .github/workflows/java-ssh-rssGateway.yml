@@ -71,7 +71,7 @@ jobs:
           script: |
             cd /home/${{ env.REMOTE_DIR }}/
             chmod 755 start.sh
-            ./start.sh
+            ./start.sh publish
             echo "Deployment completed"
 
       - name: Initial Wait for Service Startup

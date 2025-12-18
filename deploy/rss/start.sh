@@ -25,8 +25,8 @@ DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=
 # 用法提示
 usage() {
     echo "用法: $0 [publish|start]"
-    echo "  publish : 发布模式（会先终止占用 ${PORT} 端口的旧进程，然后启动）"
-    echo "  start   : 普通启动模式（不终止旧进程，直接启动）"
+    echo "  publish : 发布模式（会先终止端口 ${PORT} 的旧进程，然后启动）"
+    echo "  start   : 启动模式（不终止端口 ${PORT} 的进程，不存在则启动）"
     exit 1
 }
 # 检查是否提供参数
@@ -58,7 +58,7 @@ else
 fi
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
-java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -connectTimeout=20000 -shadowUsers="6899:T^yEqd52HM0O\$Ovz:rocky:-1,6898:T^yEqd52HM0O\$Ovz:ccy:6" -shadowDnsPort=$DNS_PORT &
+java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowDnsPort=$DNS_PORT &
 sleep 2
 
 if fuser ${PORT}/tcp >/dev/null 2>&1; then
