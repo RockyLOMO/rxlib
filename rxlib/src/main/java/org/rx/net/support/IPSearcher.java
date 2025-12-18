@@ -1,13 +1,16 @@
 package org.rx.net.support;
 
+import javax.validation.constraints.NotNull;
+
 public interface IPSearcher {
-    IPSearcher DEFAULT = new GeoLite2();
+    IPSearcher DEFAULT = GeoLite2.INSTANCE;
 
     String getPublicIp();
 
-    default IPAddress resolvePublicIp() {
-        return resolve(getPublicIp());
-    }
+//    default IpGeolocation resolvePublicIp() {
+//        return resolve(getPublicIp());
+//    }
 
-    IPAddress resolve(String host);
+    @NotNull
+    IpGeolocation resolve(String host);
 }

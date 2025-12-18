@@ -11,7 +11,7 @@ import org.rx.bean.DateTime;
 import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.io.Bytes;
-import org.rx.net.support.IPAddress;
+import org.rx.net.support.IpGeolocation;
 import org.rx.net.support.IPSearcher;
 import org.rx.util.BeanMapper;
 
@@ -46,7 +46,7 @@ public class SocksUser implements Serializable {
     @ToString
     public static class LoginInfo implements Serializable {
         private static final long serialVersionUID = 1264936011170722186L;
-        final IPAddress ipInfo;
+        final IpGeolocation ipInfo;
         DateTime latestTime;
         int refCnt;
         final AtomicLong totalActiveSeconds = new AtomicLong();
@@ -62,7 +62,7 @@ public class SocksUser implements Serializable {
     public static final SocksUser ANONYMOUS = new SocksUser("anonymous");
 
     final String username;
-    final Map<InetAddress, LoginInfo> loginIps = new ConcurrentHashMap<>(8);
+    final Map<InetAddress, LoginInfo> loginIps = new ConcurrentHashMap<>(4);
     String password;
     /**
      * 默认0 = 不启用账号

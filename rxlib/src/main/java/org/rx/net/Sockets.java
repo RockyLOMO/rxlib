@@ -296,14 +296,14 @@ public final class Sockets {
         //入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
         //出站事件（如数据写入、连接关闭等）由 ChannelOutboundHandler 处理，传播方向是从 pipeline 的 tail 到 head。
         ChannelPipeline pipeline = channel.pipeline();
-        if (flags.has(TransportFlags.SERVER_TLS)) {
+        if (flags.has(TransportFlags.TLS)) {
             pipeline.addLast(getSelfSignedTls().newHandler(channel.alloc()));
         }
 
-        if (flags.has(TransportFlags.SERVER_HTTP_PSEUDO_READ)) {
+        if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
             pipeline.addLast(new HttpPseudoHeaderDecoder());
         }
-        if (flags.has(TransportFlags.SERVER_HTTP_PSEUDO_WRITE)) {
+        if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
             pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
         }
 
@@ -358,7 +358,7 @@ public final class Sockets {
         }
 
         ChannelPipeline pipeline = channel.pipeline();
-        if (flags.has(TransportFlags.CLIENT_TLS)) {
+        if (flags.has(TransportFlags.TLS)) {
             SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             if (SNISpoofing == null) {
                 SNISpoofing = Sockets.parseEndpoint("qq.com:443");
@@ -366,10 +366,10 @@ public final class Sockets {
             pipeline.addLast(tls.newHandler(channel.alloc(), SNISpoofing.getHostString(), SNISpoofing.getPort()));
         }
 
-        if (flags.has(TransportFlags.CLIENT_HTTP_PSEUDO_READ)) {
+        if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
             pipeline.addLast(new HttpPseudoHeaderDecoder());
         }
-        if (flags.has(TransportFlags.CLIENT_HTTP_PSEUDO_WRITE)) {
+        if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
             pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
         }
 

@@ -58,10 +58,7 @@ import org.rx.net.socks.*;
 import org.rx.net.socks.upstream.Socks5UdpUpstream;
 import org.rx.net.socks.upstream.Socks5TcpUpstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.IPSearcher;
-import org.rx.net.support.SocksSupport;
-import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.net.support.UpstreamSupport;
+import org.rx.net.support.*;
 import org.rx.net.transport.SftpClient;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
@@ -608,13 +605,13 @@ public class TestSocks extends AbstractTester {
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH));
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
         Remoting.register(new Main(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH));
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
         shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         SocksConfig frontConf = new SocksConfig(2090);
@@ -958,10 +955,13 @@ public class TestSocks extends AbstractTester {
         assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
 
-        System.out.println(IPSearcher.DEFAULT.resolve("8.8.8.8"));
-        System.out.println(IPSearcher.DEFAULT.resolve("61.169.146.210"));
-        System.out.println(IPSearcher.DEFAULT.resolve("192.168.31.2"));
-        System.out.println(IPSearcher.DEFAULT.getPublicIp());
+        GeoLite2 geoLite2 = (GeoLite2) IPSearcher.DEFAULT;
+        geoLite2.waitDownload();
+        System.out.println(geoLite2.resolve("8.8.8.8"));
+        System.out.println(geoLite2.resolve("192.168.31.2"));
+        log.info("{}", geoLite2.resolve(geoLite2.getPublicIp()));
+        log.info(geoLite2.getPublicIp());
+        log.info(geoLite2.getPublicIp());
 
 //        String h = "google.com";
 //        System.out.println(IPSearcher.DEFAULT.search(h));

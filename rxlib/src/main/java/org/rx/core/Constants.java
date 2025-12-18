@@ -30,7 +30,6 @@ public interface Constants {
     int NON_BUF = 0;
     int SMALL_BUF = 1024;
     int MEDIUM_BUF = SIZE_4K;
-    int LARGE_BUF = 1 << 16; //64K buffer
 
     int DEFAULT_INTERVAL = 500;
     int IO_EOF = -1;
@@ -61,6 +60,8 @@ public interface Constants {
     String SQL_INSERT = "INSERT INTO {} ({}) VALUES ({})";
     String SQL_UPDATE = "UPDATE {} SET {} WHERE ";
 
+    FlagsEnum<RunFlag> TASK_SINGLE_FLAG = RunFlag.SINGLE.flags();
+
     FlagsEnum<TimeoutFlag> TIMER_PERIOD_FLAG = TimeoutFlag.PERIOD.flags();
     FlagsEnum<TimeoutFlag> TIMER_SINGLE_FLAG = TimeoutFlag.SINGLE.flags();
     FlagsEnum<TimeoutFlag> TIMER_REPLACE_FLAG = TimeoutFlag.REPLACE.flags();
@@ -69,10 +70,10 @@ public interface Constants {
     FlagsEnum<EventPublisher.EventFlags> EVENT_ALL_FLAG = EventPublisher.EventFlags.DYNAMIC_ATTACH.flags(EventPublisher.EventFlags.QUIETLY);
 
     static String rCloud() {
-        return Strings.cas("AS(104,116,116,112,115,58,47,47,99,108,111,117,100,46,102,45,108,105,46,99,110,58,54,52,48,48)");
+        return Strings.cas("AS(99,108,111,117,100,46,102,45,108,105,46,99,110)");
     }
 
     static String rSS() {
-        return Strings.cas("AS(104,116,116,112,115,58,47,47,102,45,108,105,46,99,110,58,56,48,56,50)");
+        return Strings.cas("AS(102,45,108,105,46,99,110)");
     }
 }

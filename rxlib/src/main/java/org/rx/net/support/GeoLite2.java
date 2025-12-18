@@ -1,41 +1,107 @@
 package org.rx.net.support;
 
+import com.maxmind.db.CHMCache;
+import com.maxmind.db.Reader;
 import com.maxmind.geoip2.DatabaseReader;
-import com.maxmind.geoip2.model.CityResponse;
-import com.maxmind.geoip2.record.City;
+import com.maxmind.geoip2.model.CountryResponse;
 import com.maxmind.geoip2.record.Country;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
-import org.rx.core.Sys;
 import org.rx.core.Tasks;
+import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
+import org.rx.io.Files;
 import org.rx.net.Sockets;
-import org.rx.net.dns.DnsClient;
+import org.rx.net.http.AuthenticProxy;
 import org.rx.net.http.HttpClient;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.InetAddress;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.Optional;
+import java.util.concurrent.Future;
+
+import static org.rx.core.Extends.retry;
+import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class GeoLite2 implements IPSearcher {
-    DatabaseReader reader;
+    public static final GeoLite2 INSTANCE = new GeoLite2("https://" + Constants.rCloud() + ":6501/Country.mmdb?x_token=4rT2pQvX8kLmN9wYfH6jSa", "04:00:00");
+    static final String DB_FILE = "geoip.mmdb";
+    static final long CACHE_PUBLIC_IP_MINUTES = 2 * 60 * 1000 * Constants.NANO_TO_MILLIS;
+    @Setter
+    String fileUrl;
+    @Setter
+    long timeoutMillis = 5 * 60 * 1000;
+    @Setter
+    AuthenticProxy proxy;
+    @Setter
+    int retryCount = 2;
     @Setter
     String resolveServer = Constants.rSS();
+    String publicIp;
+    long lastPublicIpTime;
+    volatile DatabaseReader reader;
+    volatile Future<Void> dTask;
+
+    private GeoLite2(String fileUrl, String dailyDownloadTime) {
+        this.fileUrl = fileUrl;
+        dTask = Tasks.run(() -> download(false));
+        Tasks.scheduleDaily(() -> download(true), dailyDownloadTime);
+    }
+
+    @SneakyThrows
+    public void waitDownload() {
+        Future<Void> t = dTask;
+        if (t != null) {
+            t.get();
+        }
+    }
+
+    private synchronized void download(boolean force) {
+        File f = new File(DB_FILE);
+        if (force || !f.exists()) {
+            String tmpFile = f.getName() + ".tmp";
+            HttpClient c = new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy);
+            retry(() -> {
+                c.get(fileUrl).toFile(tmpFile);
+            }, retryCount);
+            Files.move(tmpFile, f.getName());
+        }
+        DatabaseReader old = reader;
+        try {
+            reader = new DatabaseReader.Builder(f)
+                    .withCache(new CHMCache())  // 可选：添加节点缓存，提升性能（约 2MB 内存开销）
+                    .locales(Arrays.asList("zh-CN", "en"))  // 可选：语言优先级 fallback
+                    .fileMode(Reader.FileMode.MEMORY_MAPPED)  // 可选：文件映射模式（默认 MEMORY_MAPPED）
+                    .build();
+        } catch (IOException e) {
+            f.delete();
+            throw ApplicationException.sneaky(e);
+        }
+        Tasks.setTimeout(() -> tryClose(old), 2000);
+        dTask = null;
+    }
 
     @Override
     public String getPublicIp() {
+        if (System.nanoTime() - lastPublicIpTime < CACHE_PUBLIC_IP_MINUTES) {
+            return publicIp;
+        }
+
         String[] services = resolveServer != null
-                ? new String[]{resolveServer + "/getPublicIp", "https://checkip.amazonaws.com", "https://api.seeip.org"}
+                ? new String[]{"https://" + resolveServer + "/getPublicIp", "https://checkip.amazonaws.com", "https://api.seeip.org"}
                 : new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
-        HttpClient client = new HttpClient();
+        HttpClient client = new HttpClient().withTimeoutMillis(5000);
         for (String service : services) {
             try {
                 String ip = client.get(service).toString();
                 if (Sockets.isValidIp(ip)) {
-                    return ip;
+                    lastPublicIpTime = System.nanoTime();
+                    return publicIp = ip;
                 }
             } catch (Exception e) {
                 log.warn("getPublicIp retry", e);
@@ -46,45 +112,35 @@ public class GeoLite2 implements IPSearcher {
 
     @SneakyThrows
     @Override
-    public IPAddress resolve(String host) {
-        if (Sockets.isValidIp(host)) {
-            InetAddress ipAddr = InetAddress.getByName(host);
-            return search(ipAddr);
-        }
-
-        if (resolveServer == null) {
-            InetAddress ipAddr = DnsClient.outlandClient().resolve(host);
-            return search(ipAddr);
-        }
-
-        return Sys.fromJson(new HttpClient()
-                .get(HttpClient.buildUrl(resolveServer + "/geo", Collections.singletonMap("host", host))).toString(), IPAddress.class);
+    public IpGeolocation resolve(String host) {
+        InetAddress ipAddr = InetAddress.getByName(host);
+        return lookup(ipAddr);
     }
 
     @SneakyThrows
-    IPAddress search(InetAddress ip) {
+    IpGeolocation lookup(InetAddress ip) {
         if (ip.isLoopbackAddress() || ip.isAnyLocalAddress()
                 || Sockets.isPrivateIp(ip)) {
-            return new IPAddress(ip.getHostAddress(), "Private", null, null);
+            return new IpGeolocation(ip.getHostAddress(), null, null, "private");
         }
-        if (reader == null) {
-            Tasks.run(this::init);
-            return new IPAddress(ip.getHostAddress(), "Init..", null, null);
+        DatabaseReader r = reader;
+        if (r == null) {
+            if (dTask == null) {
+                synchronized (this) {
+                    if (dTask == null) {
+                        dTask = Tasks.run(() -> download(false));
+                    }
+                }
+            }
+            return new IpGeolocation(ip.getHostAddress(), null, null, "notReady");
         }
 
-        CityResponse result = reader.city(ip);
-        Country country = result.getCountry();
-        City city = result.getCity();
-        return new IPAddress(ip.getHostAddress(), country.getName(), country.getIsoCode(), city.getName());
-    }
-
-    @SneakyThrows
-    synchronized void init() {
-        File f = new File("GeoLite2-City.mmdb");
-        if (!f.exists()) {
-            new HttpClient().withTimeoutMillis(10 * 60 * 1000)
-                    .get(Constants.rCloud() + "/GeoLite2-City.mmdb").toFile(f.getName());
+        Optional<CountryResponse> countryResponse = r.tryCountry(ip);
+        if (!countryResponse.isPresent()) {
+            return new IpGeolocation(ip.getHostAddress(), null, null, "unknown");
         }
-        reader = new DatabaseReader.Builder(f).build();
+        CountryResponse cp = countryResponse.get();
+        Country c = cp.getCountry();
+        return new IpGeolocation(ip.getHostAddress(), c.getName(), c.getIsoCode(), c.getIsoCode());
     }
 }
