@@ -35,12 +35,21 @@ jobs:
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
       - name: Build with Maven
         run: |
-          mvn clean package -pl ${{ env.APP_MODULE }} -am -DskipTests \
-            -Dmaven.javadoc.skip=true --no-transfer-progress --batch-mode  # Maven 项目
+          mvn clean package -pl ${{ env.APP_MODULE }} -am -DskipTests -Dmaven.javadoc.skip=true --no-transfer-progress --batch-mode
+
+          echo "target 目录完整路径: ${PWD}/${{ env.APP_MODULE }}/target"
+          echo "=== 文件列表（详细）==="
+          ls -la ${PWD}/${{ env.APP_MODULE }}/target/
+          echo "=== 仅 JAR 文件 ==="
+          ls -la ${PWD}/${{ env.APP_MODULE }}/target/*.jar || echo "未找到任何 JAR 文件"
+    
           # 自动查找 target 目录下的 jar 文件名（通常只有一个）
-          JAR_FULL_PATH=$(find ${PWD}/${{ env.APP_MODULE }}/target -maxdepth 1 -type f -name '*.jar' ! -name '*-*.jar' | head -n1) || { echo "Error: No main JAR file found"; exit 1; }
+          JAR_FULL_PATH=$(find ${PWD}/${{ env.APP_MODULE }}/target -maxdepth 1 -type f -name "*.jar" \
+            ! -name "*-javadoc.jar" \
+            ! -name "*-sources.jar" \
+            ! -name "*-tests.jar" | head -n1)
           if [[ -z "${JAR_FULL_PATH}" ]]; then
-            echo "Error: JAR file path is empty"
+            echo "Error: No main JAR file found"
             exit 1
           fi
           echo "APP_JAR_PATH=${JAR_FULL_PATH}" >> $GITHUB_ENV
@@ -80,7 +89,7 @@ jobs:
             echo "Deployment completed"
 
       - name: Initial Wait for Service Startup
-        run: sleep 30s  # 等待 60 秒，支持格式如 60、60s 或 1m
+        run: sleep 15s  # 等待 60 秒，支持格式如 60、60s 或 1m
       - name: Health Check After Initial Delay
         id: health-check
         continue-on-error: true  # 允许失败后继续执行后续步骤
