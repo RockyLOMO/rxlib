@@ -62,28 +62,31 @@ public class GeoLite2 implements IPSearcher {
     }
 
     private synchronized void download(boolean force) {
-        File f = new File(DB_FILE);
-        if (force || !f.exists()) {
-            String tmpFile = f.getName() + ".tmp";
-            HttpClient c = new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy);
-            retry(() -> {
-                c.get(fileUrl).toFile(tmpFile);
-            }, retryCount);
-            Files.move(tmpFile, f.getName());
-        }
-        DatabaseReader old = reader;
         try {
-            reader = new DatabaseReader.Builder(f)
-                    .withCache(new CHMCache())  // 可选：添加节点缓存，提升性能（约 2MB 内存开销）
-                    .locales(Arrays.asList("zh-CN", "en"))  // 可选：语言优先级 fallback
-                    .fileMode(Reader.FileMode.MEMORY_MAPPED)  // 可选：文件映射模式（默认 MEMORY_MAPPED）
-                    .build();
-        } catch (IOException e) {
-            f.delete();
-            throw ApplicationException.sneaky(e);
+            File f = new File(DB_FILE);
+            if (force || !f.exists()) {
+                String tmpFile = f.getName() + ".tmp";
+                HttpClient c = new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy);
+                retry(() -> {
+                    c.get(fileUrl).toFile(tmpFile);
+                }, retryCount);
+                Files.move(tmpFile, f.getName());
+            }
+            DatabaseReader old = reader;
+            try {
+                reader = new DatabaseReader.Builder(f)
+                        .withCache(new CHMCache())  // 可选：添加节点缓存，提升性能（约 2MB 内存开销）
+                        .locales(Arrays.asList("zh-CN", "en"))  // 可选：语言优先级 fallback
+                        .fileMode(Reader.FileMode.MEMORY_MAPPED)  // 可选：文件映射模式（默认 MEMORY_MAPPED）
+                        .build();
+            } catch (IOException e) {
+                f.delete();
+                throw ApplicationException.sneaky(e);
+            }
+            Tasks.setTimeout(() -> tryClose(old), 2000);
+        } finally {
+            dTask = null;
         }
-        Tasks.setTimeout(() -> tryClose(old), 2000);
-        dTask = null;
     }
 
     @Override
