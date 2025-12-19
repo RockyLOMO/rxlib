@@ -14,7 +14,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: rxsocks
+          ref: rss-11
       - name: 显示当前分支
         run: git branch --show-current
 
