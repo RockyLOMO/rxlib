@@ -1,15 +1,15 @@
 name: Publish SNAPSHOT to Maven Central
 
 on:
+  workflow_dispatch:    # 支持手动触发
   push:
     branches:
       - master
-  workflow_dispatch:    # 支持手动触发
 
 jobs:
   publish-snapshot:
     runs-on: ubuntu-latest
-    #if: "contains(github.event.head_commit.message, '[skip ci]') != true"
+    if: "contains(github.event.head_commit.message, 'skip ci') != true"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
