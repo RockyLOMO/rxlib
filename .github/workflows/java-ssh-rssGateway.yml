@@ -27,7 +27,7 @@ jobs:
         run: |
           echo "APP_MODULE=rxlib" >> $GITHUB_ENV
           echo "REMOTE_DIR=rss" >> $GITHUB_ENV
-          echo "HEALTH_URL=cloud.f-li.cn:6899" >> $GITHUB_ENV
+          echo "HEALTH_URL=f-li.cn:6899" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
       - name: Build with Maven
         run: |
