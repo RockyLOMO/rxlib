@@ -13,6 +13,10 @@ jobs:
       # 1. 检出代码
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: rxsocks
+      - name: 显示当前分支
+        run: git branch --show-current
 
       # 2. 设置 JDK 11
       - name: Set up JDK 11
