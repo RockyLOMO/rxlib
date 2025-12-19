@@ -89,7 +89,7 @@ jobs:
             echo "Deployment completed"
 
       - name: Initial Wait for Service Startup
-        run: sleep 30s  # 等待 60 秒，支持格式如 60、60s 或 1m
+        run: sleep 15s  # 等待 60 秒，支持格式如 60、60s 或 1m
       - name: Health Check After Initial Delay
         id: health-check
         continue-on-error: true  # 允许失败后继续执行后续步骤
