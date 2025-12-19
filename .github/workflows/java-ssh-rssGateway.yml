@@ -37,7 +37,7 @@ jobs:
         run: |
           mvn clean package -pl ${{ env.APP_MODULE }} -am -DskipTests --no-transfer-progress --batch-mode  # Maven 项目
           # 自动查找 target 目录下的 jar 文件名（通常只有一个）
-          JAR_FULL_PATH=$(ls ${PWD}/${{ env.APP_MODULE }}/target/*.jar | head -n1) || { echo "Error: No JAR file found in target directory"; exit 1; }
+          JAR_FULL_PATH=$(find ${PWD}/${{ env.APP_MODULE }}/target -maxdepth 1 -type f -name '*.jar' ! -name '*-*.jar' | head -n1) || { echo "Error: No main JAR file found"; exit 1; }
           if [[ -z "${JAR_FULL_PATH}" ]]; then
             echo "Error: JAR file path is empty"
             exit 1
