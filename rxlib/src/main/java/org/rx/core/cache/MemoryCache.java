@@ -122,7 +122,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public boolean containsKey(Object key) {
-        return cache.getIfPresent(key) != null;
+        return cache.getIfPresent((TK) key) != null;
     }
 
     @Override
@@ -132,7 +132,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public TV get(Object key) {
-        return cache.getIfPresent(key);
+        return cache.getIfPresent((TK) key);
     }
 
     @Override
