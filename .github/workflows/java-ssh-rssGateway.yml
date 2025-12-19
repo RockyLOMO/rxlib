@@ -3,7 +3,7 @@ name: Build & Push to ssh - rssGateway
 on:
   workflow_dispatch:    # 支持手动触发
   push:
-    branches: [ rxsocks ]
+    branches: [ rss-11 ]
 
 jobs:
   build-and-push:

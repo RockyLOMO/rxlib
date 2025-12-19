@@ -62,8 +62,8 @@ public class GeoLite2 implements IPSearcher {
     }
 
     private synchronized void download(boolean force) {
+        File f = new File(DB_FILE);
         try {
-            File f = new File(DB_FILE);
             if (force || !f.exists()) {
                 String tmpFile = f.getName() + ".tmp";
                 HttpClient c = new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy);
@@ -73,19 +73,18 @@ public class GeoLite2 implements IPSearcher {
                 Files.move(tmpFile, f.getName());
             }
             DatabaseReader old = reader;
-            try {
-                reader = new DatabaseReader.Builder(f)
-                        .withCache(new CHMCache())  // 可选：添加节点缓存，提升性能（约 2MB 内存开销）
-                        .locales(Arrays.asList("zh-CN", "en"))  // 可选：语言优先级 fallback
-                        .fileMode(Reader.FileMode.MEMORY_MAPPED)  // 可选：文件映射模式（默认 MEMORY_MAPPED）
-                        .build();
-            } catch (IOException e) {
-                f.delete();
-                throw ApplicationException.sneaky(e);
-            }
+            reader = new DatabaseReader.Builder(f)
+                    .withCache(new CHMCache())  // 可选：添加节点缓存，提升性能（约 2MB 内存开销）
+                    .locales(Arrays.asList("zh-CN", "en"))  // 可选：语言优先级 fallback
+                    .fileMode(Reader.FileMode.MEMORY_MAPPED)  // 可选：文件映射模式（默认 MEMORY_MAPPED）
+                    .build();
             Tasks.setTimeout(() -> tryClose(old), 2000);
+        } catch (IOException e) {
+            log.error("geo download error", e);
+            throw ApplicationException.sneaky(e);
         } finally {
             dTask = null;
+            f.delete();
         }
     }
 
