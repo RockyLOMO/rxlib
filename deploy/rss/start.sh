@@ -59,7 +59,7 @@ fi
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
 nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowDnsPort=$DNS_PORT >/dev/null 2>&1 &
-sleep 2
+sleep 5
 
 if fuser ${PORT}/tcp >/dev/null 2>&1; then
     PID=$(fuser ${PORT}/tcp 2>/dev/null | awk '{print $1}' | head -1)
