@@ -215,7 +215,7 @@ public class TestBean extends AbstractTester {
         DateTime d2 = a.addYears(1);
         assert a.getYear() == 2010;
         assert d2.getYear() == 2011;
-        assert a.subtract(b).getTotalHours() == 24;
+        assert a.subtract(b).toHours() == 24;
 
         long ts = a.getTime();
         System.out.println(ts);

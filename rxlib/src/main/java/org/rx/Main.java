@@ -10,6 +10,7 @@ import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.io.Files;
 import org.rx.io.IOStream;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.OptimalSettings;
@@ -352,7 +353,8 @@ public final class Main implements SocksSupport {
 
     static void clientInit(DefaultSocksAuthenticator authenticator) {
         Tasks.schedulePeriod(() -> {
-            log.info(authenticator.toString());
+//            log.info(authenticator.toString());
+            Files.writeLines("usr-info.txt", Collections.singletonList(authenticator.toString()));
 
             if (rssConf == null) {
                 log.warn("conf is null");

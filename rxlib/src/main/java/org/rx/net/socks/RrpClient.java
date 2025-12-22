@@ -47,7 +47,6 @@ public class RrpClient extends Disposable {
             this.p = p;
             this.serverChannel = serverChannel;
             SocksConfig conf = new SocksConfig(0);
-//            conf.setTransportFlags(TransportFlags.SERVER_COMPRESS_READ.flags());
             conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
             localSS = new SocksProxyServer(conf, (u, w) -> {
                 if (!eq(p.getAuth(), u + ":" + w)) {
@@ -62,6 +61,15 @@ public class RrpClient extends Disposable {
                 log.debug("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
                 localEndpoint = Sockets.newLoopbackEndpoint(bindPort);
             });
+//            localSS = new SocksProxyServer(conf, (u, w) -> {
+//                if (!eq(p.getAuth(), u + ":" + w)) {
+//                    log.debug("RrpClient check {}!={}:{}", p.getAuth(), u, w);
+//                    return null;
+//                }
+//                SocksUser usr = new SocksUser(u);
+//                usr.setMaxIpCount(-1);
+//                return usr;
+//            }, serverChannel);
         }
     }
 
@@ -158,7 +166,6 @@ public class RrpClient extends Disposable {
                 //step4
                 Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
                     RrpConfig conf = Sys.deepClone(config);
-//                conf.setTransportFlags(TransportFlags.CLIENT_COMPRESS_WRITE.flags());
                     conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
                     ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf).pipeline()
                             .addLast(SocksClientHandler.DEFAULT)).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);

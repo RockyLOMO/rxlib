@@ -127,7 +127,7 @@ public class Servlets extends ServletRequestUtils {
 //        cookie.setSecure(true);
         cookie.setHttpOnly(true);
         if (expire != null) {
-            cookie.setMaxAge((int) DateTime.of(expire).subtract(DateTime.now()).getTotalSeconds());
+            cookie.setMaxAge((int) DateTime.of(expire).subtract(DateTime.now()).getSeconds());
         }
         currentRequest().right.addCookie(cookie);
     }
