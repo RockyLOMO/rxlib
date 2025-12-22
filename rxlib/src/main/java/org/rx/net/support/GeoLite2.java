@@ -64,13 +64,14 @@ public class GeoLite2 implements IPSearcher {
     private synchronized void download(boolean force) {
         File f = new File(DB_FILE);
         try {
+            log.info("geo download file {} begin", f.getAbsolutePath());
             if (force || !f.exists()) {
                 String tmpFile = f.getName() + ".tmp";
                 HttpClient c = new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy);
                 retry(() -> {
                     c.get(fileUrl).toFile(tmpFile);
                 }, retryCount);
-                log.info("geo download file {} ok", f.getAbsolutePath());
+                log.info("geo download file {} end", f.getAbsolutePath());
                 Files.move(tmpFile, f.getName());
             }
             DatabaseReader old = reader;

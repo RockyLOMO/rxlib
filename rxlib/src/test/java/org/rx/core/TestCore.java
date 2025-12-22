@@ -25,6 +25,7 @@ import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
 import org.rx.io.MemoryStream;
 import org.rx.net.Sockets;
+import org.rx.net.socks.SocksUser;
 import org.rx.test.*;
 import org.rx.third.open.CrcModel;
 import org.rx.util.function.Func;
@@ -939,6 +940,7 @@ public class TestCore extends AbstractTester {
     }
     //endregion
 
+    @SneakyThrows
     @Test
     public void json() {
         System.out.println(DateTime.valueOf("2020-02-04 00:00:00"));
@@ -993,6 +995,11 @@ public class TestCore extends AbstractTester {
                 + JSON.toJSONString(iter) + " & " + JSON.toJSONString(Collections.singletonMap("list", iter)));
         InetAddress addr = Sockets.getLocalAddress();
         System.out.println(toJsonString(addr) + ", " + toJsonString(Collections.singletonList(addr)) + " & " + JSON.toJSONString(addr));
+
+        SocksUser r = new SocksUser("r");
+        r.setLastResetTime(DateTime.now());
+        r.getLoginIps().put(InetAddress.getByName("18.12.3.4"), new SocksUser.LoginInfo(InetAddress.getByName("baidu.com")));
+        System.out.println(toJsonString(r));
     }
 
     @Test
