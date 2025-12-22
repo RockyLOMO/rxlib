@@ -183,10 +183,6 @@ public final class Main implements SocksSupport {
             }
             dnsInterceptors.addAll(Linq.from(shadowServers).<DnsServer.ResolveInterceptor>select(UpstreamSupport::getSupport).toList());
             log.info("reload svrs {}", toJsonString(svrs));
-
-            if (rssConf.routeDstBypassList != null) {
-                frontBConf.getBypassHosts().addAll(rssConf.routeDstBypassList);
-            }
         });
         watcher.raiseChange();
         Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(rssConf.shadowUsers).select(shadowUser -> {
@@ -233,7 +229,8 @@ public final class Main implements SocksSupport {
                 return;
             }
             //bypass
-            if (Sockets.isBypass(frontBConf.getBypassHosts(), dstEp.getHost())) {
+            if (Sockets.isBypass(rssConf.routeDstBypassList, dstEp.getHost())) {
+                log.info("route frontBSvr dst {} DIRECT <- bypassList", dstEp.getHost());
                 e.setUpstream(new Upstream(dstEp));
                 e.setHandled(true);
             }
@@ -301,7 +298,7 @@ public final class Main implements SocksSupport {
 
             conf.setOptimalSettings(AF);
             conf.setConnectTimeoutMillis(connectTimeout);
-            ShadowsocksServer svr = new ShadowsocksServer(conf);
+            ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
             TripleAction<ShadowsocksServer, SocksContext> ssFirstRoute = (s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
                 //must first
@@ -311,8 +308,8 @@ public final class Main implements SocksSupport {
                     return;
                 }
                 //bypass
-                if (Sockets.isBypass(conf.getBypassHosts(), dstEp.getHost())) {
-//                    log.info("ss bypass: {}", dstEp);
+                if (Sockets.isBypass(rssConf.routeDstBypassList, dstEp.getHost())) {
+                    log.info("route ss dst {} DIRECT <- bypassList", dstEp.getHost());
                     e.setUpstream(new Upstream(dstEp));
                     e.setHandled(true);
                 }
@@ -320,7 +317,7 @@ public final class Main implements SocksSupport {
             SocksConfig toAFConf = new SocksConfig(port);
             toAFConf.setOptimalSettings(AB);
 //            toAFConf.setTransportFlags(conf.getTransportFlags());
-            svr.onRoute.replace(ssFirstRoute, (s, e) -> {
+            ssSvr.onRoute.replace(ssFirstRoute, (s, e) -> {
                 if (rssConf.enableRoute) {
                     boolean outProxy;
                     String ext;
@@ -328,15 +325,12 @@ public final class Main implements SocksSupport {
                     if (Sockets.isBypass(rssConf.routeDstProxyList, host)) {
                         outProxy = true;
                         ext = "proxyList";
-                    } else if (Sockets.isBypass(rssConf.routeDstBypassList, host)) {
-                        outProxy = false;
-                        ext = "bypassList";
                     } else {
                         IpGeolocation geo = IPSearcher.DEFAULT.resolve(host);
                         outProxy = !geo.isChina();
-                        ext = "geoCn";
+                        ext = "geo:cn";
                     }
-                    log.info("route dst {} outProxy:{} {}", host, outProxy, ext);
+                    log.info("route ss dst {} {} <- {}", host, outProxy ? "PROXY" : "DIRECT", ext);
                     if (!outProxy) {
                         e.setUpstream(new Upstream(e.getFirstDestination()));
                         return;
@@ -345,7 +339,7 @@ public final class Main implements SocksSupport {
 
                 e.setUpstream(new Socks5TcpUpstream(toAFConf, e.getFirstDestination(), () -> new UpstreamSupport(srvEp, null)));
             });
-            svr.onUdpRoute.replace(ssFirstRoute, (s, e) -> {
+            ssSvr.onUdpRoute.replace(ssFirstRoute, (s, e) -> {
                 e.setUpstream(new Upstream(toAFConf, e.getFirstDestination(), srvEp));
             });
         }
