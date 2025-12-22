@@ -318,26 +318,29 @@ public final class Main implements SocksSupport {
             toAFConf.setOptimalSettings(AB);
 //            toAFConf.setTransportFlags(conf.getTransportFlags());
             ssSvr.onRoute.replace(ssFirstRoute, (s, e) -> {
+                UnresolvedEndpoint dstEp = e.getFirstDestination();
+                boolean outProxy;
+                String ext;
                 if (rssConf.enableRoute) {
-                    boolean outProxy;
-                    String ext;
-                    String host = e.getFirstDestination().getHost();
-                    if (Sockets.isBypass(rssConf.routeDstProxyList, host)) {
+                    if (Sockets.isBypass(rssConf.routeDstProxyList, dstEp.getHost())) {
                         outProxy = true;
                         ext = "proxyList";
                     } else {
-                        IpGeolocation geo = IPSearcher.DEFAULT.resolve(host);
+                        IpGeolocation geo = IPSearcher.DEFAULT.resolve(dstEp.getHost());
                         outProxy = !geo.isChina();
                         ext = "geo:cn";
                     }
-                    log.info("route ss dst {} {} <- {}", host, outProxy ? "PROXY" : "DIRECT", ext);
-                    if (!outProxy) {
-                        e.setUpstream(new Upstream(e.getFirstDestination()));
-                        return;
-                    }
+                } else {
+                    outProxy = true;
+                    ext = "disabledRoute";
                 }
 
-                e.setUpstream(new Socks5TcpUpstream(toAFConf, e.getFirstDestination(), () -> new UpstreamSupport(srvEp, null)));
+                log.info("route ss dst {} {} <- {}", dstEp.getHost(), outProxy ? "PROXY" : "DIRECT", ext);
+                if (outProxy) {
+                    e.setUpstream(new Socks5TcpUpstream(toAFConf, dstEp, () -> new UpstreamSupport(srvEp, null)));
+                } else {
+                    e.setUpstream(new Upstream(dstEp));
+                }
             });
             ssSvr.onUdpRoute.replace(ssFirstRoute, (s, e) -> {
                 e.setUpstream(new Upstream(toAFConf, e.getFirstDestination(), srvEp));
