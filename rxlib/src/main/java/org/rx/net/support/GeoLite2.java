@@ -70,6 +70,7 @@ public class GeoLite2 implements IPSearcher {
                 retry(() -> {
                     c.get(fileUrl).toFile(tmpFile);
                 }, retryCount);
+                log.info("geo download file {} ok", f.getAbsolutePath());
                 Files.move(tmpFile, f.getName());
             }
             DatabaseReader old = reader;
