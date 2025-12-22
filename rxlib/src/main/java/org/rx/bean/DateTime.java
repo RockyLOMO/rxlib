@@ -2,6 +2,8 @@ package org.rx.bean;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.apache.commons.lang3.time.DateFormatUtils;
+import org.apache.commons.lang3.time.DateUtils;
 import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.RxConfig;
@@ -10,6 +12,7 @@ import org.rx.exception.ApplicationException;
 
 import java.text.ParseException;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Month;
 import java.util.Calendar;
 import java.util.Date;
@@ -161,25 +164,25 @@ public final class DateTime extends Date {
         }
     }
 
-    public double getTotalDays() {
-        return super.getTime() / (24 * 60 * 60 * 1000d);
-    }
-
-    public double getTotalHours() {
-        return super.getTime() / (60 * 60 * 1000d);
-    }
-
-    public double getTotalMinutes() {
-        return super.getTime() / (60 * 1000d);
-    }
-
-    public double getTotalSeconds() {
-        return super.getTime() / (1000d);
-    }
-
-    public double getTotalMilliseconds() {
-        return super.getTime();
-    }
+//    public double getTotalDays() {
+//        return super.getTime() / (24 * 60 * 60 * 1000d);
+//    }
+//
+//    public double getTotalHours() {
+//        return super.getTime() / (60 * 60 * 1000d);
+//    }
+//
+//    public double getTotalMinutes() {
+//        return super.getTime() / (60 * 1000d);
+//    }
+//
+//    public double getTotalSeconds() {
+//        return super.getTime() / (1000d);
+//    }
+//
+//    public double getTotalMilliseconds() {
+//        return super.getTime();
+//    }
 
     public DateTime(int year, Month month, int day, int hour, int minute, int second, TimeZone zone) {
         Calendar c = getCalendar();
@@ -217,6 +220,10 @@ public final class DateTime extends Date {
         return getCalendar().getTimeZone();
     }
 
+    public Duration subtract(@NonNull Date value) {
+        return Duration.between(value.toInstant(), this.toInstant());
+    }
+
     public DateTime getDatePart() {
         return new DateTime(getYear(), getMonthEnum(), getDay(), 0, 0, 0, getTimeZone());
     }
@@ -247,6 +254,30 @@ public final class DateTime extends Date {
         return n.getYear() == getYear() && n.getMonth() == getMonth() && n.getDay() == getDay();
     }
 
+    public DateTime nextDayOfWeek() {
+//        System.out.println("n:" + LocalDate.parse(toDateString()).with(TemporalAdjusters.next(getDayOfWeek())));
+//        int dayOfWeek = getCalendar().get(Calendar.DAY_OF_WEEK);
+//        return addDays((9 - dayOfWeek) % 7);
+        return addDays(7);
+    }
+
+    public DateTime lastDayOfMonth() {
+//        System.out.println("n:" + LocalDate.parse(toDateString()).with(TemporalAdjusters.lastDayOfMonth()));
+        return set(Calendar.DAY_OF_MONTH, getCalendar().getActualMaximum(Calendar.DAY_OF_MONTH));
+    }
+
+    private DateTime set(int field, int value) {
+        Calendar c = getCalendar();
+        long mark = c.getTimeInMillis();
+        c.setLenient(false);
+        c.set(field, value);
+        try {
+            return new DateTime(c.getTimeInMillis(), getTimeZone());
+        } finally {
+            c.setTimeInMillis(mark);
+        }
+    }
+
     public DateTime addYears(int value) {
         return add(Calendar.YEAR, value);
     }
@@ -275,46 +306,16 @@ public final class DateTime extends Date {
         return add(Calendar.MILLISECOND, value);
     }
 
-    public DateTime nextDayOfWeek() {
-//        System.out.println("n:" + LocalDate.parse(toDateString()).with(TemporalAdjusters.next(getDayOfWeek())));
-//        int dayOfWeek = getCalendar().get(Calendar.DAY_OF_WEEK);
-//        return addDays((9 - dayOfWeek) % 7);
-        return addDays(7);
-    }
-
-    public DateTime lastDayOfMonth() {
-//        System.out.println("n:" + LocalDate.parse(toDateString()).with(TemporalAdjusters.lastDayOfMonth()));
-        return set(Calendar.DAY_OF_MONTH, getCalendar().getActualMaximum(Calendar.DAY_OF_MONTH));
-    }
-
     private DateTime add(int field, int value) {
         Calendar c = getCalendar();
         long mark = c.getTimeInMillis();
-        c.set(field, c.get(field) + value);
+//        c.set(field, c.get(field) + value);
+        c.add(field, value);
         try {
             return new DateTime(c.getTimeInMillis(), getTimeZone());
         } finally {
             c.setTimeInMillis(mark);
         }
-    }
-
-    private DateTime set(int field, int value) {
-        Calendar c = getCalendar();
-        long mark = c.getTimeInMillis();
-        c.set(field, value);
-        try {
-            return new DateTime(c.getTimeInMillis(), getTimeZone());
-        } finally {
-            c.setTimeInMillis(mark);
-        }
-    }
-
-    public DateTime add(@NonNull Date value) {
-        return new DateTime(super.getTime() + value.getTime(), getTimeZone());
-    }
-
-    public DateTime subtract(@NonNull Date value) {
-        return new DateTime(super.getTime() - value.getTime(), getTimeZone());
     }
 
     public String toDateString() {

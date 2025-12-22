@@ -20,7 +20,7 @@
         <commons-lang3.version>3.18.0</commons-lang3.version>
         <commons-collections4.version>4.4</commons-collections4.version>
         <commons-io.version>2.18.0</commons-io.version>
-        <byte-buddy.version>1.15.7</byte-buddy.version>
+        <byte-buddy.version>1.15.11</byte-buddy.version>
         <zip4j.version>2.11.3</zip4j.version>
         <caffeine.version>2.9.3</caffeine.version>
         <h2.version>2.2.224</h2.version>
@@ -30,7 +30,7 @@
         <!--1.78.1有问题-->
         <bcprov.version>1.78</bcprov.version>
         <okhttp.version>4.12.0</okhttp.version>
-        <sshd.version>2.15.0</sshd.version>
+        <sshd.version>2.16.0</sshd.version>
         <geoip2.version>2.17.0</geoip2.version>
 
         <spring.boot.version>2.5.15</spring.boot.version>
