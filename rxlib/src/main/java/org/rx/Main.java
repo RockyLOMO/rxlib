@@ -323,16 +323,20 @@ public final class Main implements SocksSupport {
             svr.onRoute.replace(ssFirstRoute, (s, e) -> {
                 if (rssConf.enableRoute) {
                     boolean outProxy;
+                    String ext;
                     String host = e.getFirstDestination().getHost();
                     if (Sockets.isBypass(rssConf.routeDstProxyList, host)) {
-//                    log.info("ss gfw: {}", host);
                         outProxy = true;
+                        ext = "proxyList";
                     } else if (Sockets.isBypass(rssConf.routeDstBypassList, host)) {
                         outProxy = false;
+                        ext = "bypassList";
                     } else {
                         IpGeolocation geo = IPSearcher.DEFAULT.resolve(host);
                         outProxy = !geo.isChina();
+                        ext = "geoCn";
                     }
+                    log.info("route dst {} outProxy:{} {}", host, outProxy, ext);
                     if (!outProxy) {
                         e.setUpstream(new Upstream(e.getFirstDestination()));
                         return;

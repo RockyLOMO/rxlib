@@ -956,8 +956,9 @@ public class TestSocks extends AbstractTester {
         assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
 
         GeoLite2 geoLite2 = (GeoLite2) IPSearcher.DEFAULT;
-        geoLite2.waitDownload();
+//        geoLite2.waitDownload();
         System.out.println(geoLite2.resolve("8.8.8.8"));
+        sleep(10 * 1000);
         System.out.println(geoLite2.resolve("192.168.31.2"));
         log.info("{}", geoLite2.resolve(geoLite2.getPublicIp()));
         log.info(geoLite2.getPublicIp());
