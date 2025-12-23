@@ -11,8 +11,9 @@ import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Metadata;
 import org.rx.bean.IntWaterMark;
 import org.rx.bean.LogStrategy;
-import org.rx.bean.TriePrefixMatcher;
+import org.rx.bean.TrieMatcher;
 import org.rx.net.Sockets;
+import org.rx.util.function.BiFunc;
 import org.springframework.core.env.Environment;
 
 import java.util.*;
@@ -195,17 +196,21 @@ public final class RxConfig {
         final Set<String> logNameList = ConcurrentHashMap.newKeySet();
         //key1: controller, key2: method, value: url
         final Map<String, Map<String, String>> forwards = new ConcurrentHashMap<>(8);
-        private TriePrefixMatcher logNameMatcher;
+        private TrieMatcher.PrefixMatcher logNameMatcher;
 
-        public TriePrefixMatcher getLogNameMatcher() {
+        public TrieMatcher.PrefixMatcher getLogNameMatcher() {
             if (logNameMatcher == null) {
-                logNameMatcher = new TriePrefixMatcher(logNameList, logMode == 1);
+                logNameMatcher = new TrieMatcher.PrefixMatcher(logMode == 1, logClassNameFn);
+                for (String p : logNameList) {
+                    logNameMatcher.insert(p);
+                }
             }
             return logNameMatcher;
         }
     }
 
     public static final RxConfig INSTANCE;
+    static final BiFunc<String, Object[]> logClassNameFn = className -> className.split("\\.", -1);
 
     static {
         JSONFactory.getDefaultObjectReaderProvider().addAutoTypeAccept("org.springframework");
@@ -225,7 +230,7 @@ public final class RxConfig {
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
     final Set<String> logNameList = ConcurrentHashMap.newKeySet();
-    private TriePrefixMatcher logNameMatcher;
+    private TrieMatcher.PrefixMatcher logNameMatcher;
     String omega;
     String mxpwd;
     long mxSamplingPeriod;
@@ -244,9 +249,12 @@ public final class RxConfig {
         return id.hashCode();
     }
 
-    public TriePrefixMatcher getLogNameMatcher() {
+    public TrieMatcher.PrefixMatcher getLogNameMatcher() {
         if (logNameMatcher == null) {
-            logNameMatcher = new TriePrefixMatcher(logNameList, logStrategy == LogStrategy.WHITELIST);
+            logNameMatcher = new TrieMatcher.PrefixMatcher(logStrategy == LogStrategy.WHITELIST, logClassNameFn);
+            for (String p : logNameList) {
+                logNameMatcher.insert(p);
+            }
         }
         return logNameMatcher;
     }

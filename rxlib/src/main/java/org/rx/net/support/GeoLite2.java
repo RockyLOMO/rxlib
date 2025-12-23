@@ -120,8 +120,7 @@ public class GeoLite2 implements IPSearcher {
 
     @SneakyThrows
     IpGeolocation lookup(InetAddress ip) {
-        if (ip.isLoopbackAddress() || ip.isAnyLocalAddress()
-                || Sockets.isPrivateIp(ip)) {
+        if (Sockets.isPrivateIp(ip) || ip.isAnyLocalAddress()) {
             return new IpGeolocation(ip.getHostAddress(), null, null, "private");
         }
         DatabaseReader r = reader;

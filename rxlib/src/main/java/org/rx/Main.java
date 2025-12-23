@@ -88,6 +88,8 @@ public final class Main implements SocksSupport {
     @Setter
     @ToString
     public static class RSSConf {
+        public int logFlags;
+
         //socks
         public List<String> shadowUsers;
         public List<String> socksServer;
@@ -97,6 +99,7 @@ public final class Main implements SocksSupport {
         public int rpcMinSize = 2;
         public int rpcMaxSize = 6;
         public int rpcAutoWhiteListSeconds = 120;
+        public int shadowDnsPort = 753;
 
         //route
         public boolean enableRoute = true;
@@ -113,6 +116,10 @@ public final class Main implements SocksSupport {
         public String pcapSourceIp;
         public boolean pcapUdpDirect;
         public String udp2rawEndpoint;
+
+        public boolean hasRouteFlag() {
+            return (logFlags & 1) == 1;
+        }
     }
 
     static boolean udp2raw = false;
@@ -197,12 +204,11 @@ public final class Main implements SocksSupport {
             return Tuple.of(config, user);
         });
 
-        Integer shadowDnsPort = Reflects.convertQuietly(options.get("shadowDnsPort"), Integer.class, 53);
-        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
+        DnsServer dnsSvr = new DnsServer(rssConf.shadowDnsPort);
         dnsSvr.setTtl(60 * 60 * 10); //12 hour
         dnsSvr.setInterceptors(dnsInterceptors);
         dnsSvr.addHostsFile("hosts.txt");
-        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
+        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(rssConf.shadowDnsPort);
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
         frontBConf.setTransportFlags(null);
@@ -230,7 +236,9 @@ public final class Main implements SocksSupport {
             }
             //bypass
             if (Sockets.isBypass(rssConf.routeDstBypassList, dstEp.getHost())) {
-                log.info("route frontBSvr dst {} DIRECT <- bypassList", dstEp.getHost());
+                if (rssConf.hasRouteFlag()) {
+                    log.info("route frontBSvr dst {} DIRECT <- bypassList", dstEp.getHost());
+                }
                 e.setUpstream(new Upstream(dstEp));
                 e.setHandled(true);
             }
@@ -309,7 +317,9 @@ public final class Main implements SocksSupport {
                 }
                 //bypass
                 if (Sockets.isBypass(rssConf.routeDstBypassList, dstEp.getHost())) {
-                    log.info("route ss dst {} DIRECT <- bypassList", dstEp.getHost());
+                    if (rssConf.hasRouteFlag()) {
+                        log.info("route ss dst {} DIRECT <- bypassList", dstEp.getHost());
+                    }
                     e.setUpstream(new Upstream(dstEp));
                     e.setHandled(true);
                 }
@@ -332,10 +342,12 @@ public final class Main implements SocksSupport {
                     }
                 } else {
                     outProxy = true;
-                    ext = "disabledRoute";
+                    ext = "routeDisabled";
                 }
 
-                log.info("route ss dst {} {} <- {}", dstEp.getHost(), outProxy ? "PROXY" : "DIRECT", ext);
+                if (rssConf.hasRouteFlag()) {
+                    log.info("route ss dst {} {} <- {}", dstEp.getHost(), outProxy ? "PROXY" : "DIRECT", ext);
+                }
                 if (outProxy) {
                     e.setUpstream(new Socks5TcpUpstream(toAFConf, dstEp, () -> new UpstreamSupport(srvEp, null)));
                 } else {
