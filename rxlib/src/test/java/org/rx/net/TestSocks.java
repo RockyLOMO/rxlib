@@ -79,6 +79,7 @@ import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -519,6 +520,10 @@ public class TestSocks extends AbstractTester {
         }
     }
 
+    CopyOnWriteArraySet<String> bypassHosts = new CopyOnWriteArraySet<String>(RxConfig.INSTANCE.getNet().getBypassHosts()) {{
+        add("*qq*");
+    }};
+
     @SneakyThrows
     @Test
     public void ssProxy() {
@@ -549,7 +554,6 @@ public class TestSocks extends AbstractTester {
         AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
         ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(2090),
                 CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
-        frontConf.getBypassHosts().add("*qq*");
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<ShadowsocksServer, SocksContext> firstRoute = (s, e) -> {
@@ -560,7 +564,7 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             //bypass
-            if (Sockets.isBypass(frontConf.getBypassHosts(), dstEp.getHost())) {
+            if (Sockets.isBypass(bypassHosts, dstEp.getHost())) {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
@@ -634,7 +638,7 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             //bypass
-            if (Sockets.isBypass(frontConf.getBypassHosts(), dstEp.getHost())) {
+            if (Sockets.isBypass(bypassHosts, dstEp.getHost())) {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
@@ -945,12 +949,11 @@ public class TestSocks extends AbstractTester {
         String expr = RxConfig.INSTANCE.getNet().getBypassHosts().get(3);
         assert Pattern.matches(expr, "192.168.31.7");
 
-        SocketConfig conf = new SocketConfig();
-        assert Sockets.isBypass(conf.getBypassHosts(), "127.0.0.1");
-        assert Sockets.isBypass(conf.getBypassHosts(), "192.168.31.1");
-        assert !Sockets.isBypass(conf.getBypassHosts(), "192.169.31.1");
-        assert Sockets.isBypass(conf.getBypassHosts(), "localhost");
-        assert !Sockets.isBypass(conf.getBypassHosts(), "google.cn");
+        assert Sockets.isBypass(bypassHosts, "127.0.0.1");
+        assert Sockets.isBypass(bypassHosts, "192.168.31.1");
+        assert !Sockets.isBypass(bypassHosts, "192.169.31.1");
+        assert Sockets.isBypass(bypassHosts, "localhost");
+        assert !Sockets.isBypass(bypassHosts, "google.cn");
         assert !Sockets.isBypass(Arrays.toList("*google.com"), "google.cn");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
