@@ -328,7 +328,7 @@ public final class Main implements SocksSupport {
                     } else {
                         IpGeolocation geo = IPSearcher.DEFAULT.resolve(dstEp.getHost());
                         outProxy = !geo.isChina();
-                        ext = "geo:cn";
+                        ext = String.format("geo:%s", geo.getCategory());
                     }
                 } else {
                     outProxy = true;

@@ -22,9 +22,11 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.Extends.retry;
 import static org.rx.core.Extends.tryClose;
 
 @Slf4j
@@ -39,8 +41,6 @@ public class GeoLite2 implements IPSearcher {
     @Setter
     AuthenticProxy proxy;
     @Setter
-    int retryCount = 2;
-    @Setter
     String resolveServer = Constants.rSS();
     String publicIp;
     long lastPublicIpTime;
@@ -53,27 +53,25 @@ public class GeoLite2 implements IPSearcher {
         Tasks.scheduleDaily(() -> download(true), dailyDownloadTime);
     }
 
-    @SneakyThrows
-    public void waitDownload() {
+    public void waitDownload() throws ExecutionException, InterruptedException, TimeoutException {
         Future<Void> t = dTask;
         if (t != null) {
-            t.get();
+            t.get(timeoutMillis, TimeUnit.MILLISECONDS);
         }
     }
 
     private synchronized void download(boolean force) {
         File f = new File(DB_FILE);
         try {
-            log.info("geo download file {} begin", f.getAbsolutePath());
             if (force || !f.exists()) {
-                String tmpFile = f.getName() + ".tmp";
-                HttpClient c = new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy);
-                retry(() -> {
-                    c.get(fileUrl).toFile(tmpFile);
-                }, retryCount);
-                log.info("geo download file {} end", f.getAbsolutePath());
-                Files.move(tmpFile, f.getName());
+                File tmp = new File(f.getPath() + ".tmp");
+                log.info("geo download file {} -> {} begin", tmp.getAbsolutePath(), f.getAbsolutePath());
+                new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy)
+                        .get(fileUrl).toFile(tmp.getPath());
+                f = Files.moveFile(tmp, f);
+                log.info("geo download file {} -> {} end", tmp.getAbsolutePath(), f.getAbsolutePath());
             }
+
             DatabaseReader old = reader;
             reader = new DatabaseReader.Builder(f)
                     .withCache(new CHMCache())  // 可选：添加节点缓存，提升性能（约 2MB 内存开销）
@@ -86,7 +84,6 @@ public class GeoLite2 implements IPSearcher {
             throw ApplicationException.sneaky(e);
         } finally {
             dTask = null;
-            f.delete();
         }
     }
 

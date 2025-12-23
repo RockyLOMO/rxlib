@@ -23,11 +23,13 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.Date;
@@ -77,6 +79,10 @@ public class Files extends FilenameUtils {
         return p.toString();
     }
 
+//    public static String changeBaseName(@NonNull String filePath, String newName) {
+//        get getBaseName (filePath);
+//    }
+
     public static String changeExtension(@NonNull String filePath, String ext) {
         return String.format("%s.%s", removeExtension(filePath), ext);
     }
@@ -106,10 +112,14 @@ public class Files extends FilenameUtils {
         FileUtils.copyFile(src, dest);
     }
 
-    //Don't use File.renameTo()
-    @SneakyThrows
     public static void move(String srcPath, String destPath) {
         File src = new File(srcPath), dest = new File(destPath);
+        move(src, dest);
+    }
+
+    //Don't use File.renameTo()
+    @SneakyThrows
+    public static void move(File src, File dest) {
         if (src.isDirectory()) {
 //            FileUtils.moveDirectoryToDirectory(src, dest, true);
             FileUtils.moveDirectory(src, dest);
@@ -121,6 +131,34 @@ public class Files extends FilenameUtils {
         }
         FileUtils.moveFile(src, dest);
     }
+
+    public static File moveFile(File src, File dest) throws IOException {
+        IOException last = null;
+        for (int i = 0; i < 2; i++) {
+            try {
+                FileUtils.moveFile(src, dest, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                return dest;
+            } catch (IOException e) {
+                String dn = dest.getName();
+                String newName = getBaseName(dn) + "_" + i + getExtension(dn);
+                dest = new File(dest.getParentFile(), newName);
+                last = e;
+            }
+        }
+        throw last;
+    }
+
+//    public static void replaceFileAtomically(String originalPath, byte[] newContent) throws IOException {
+//        Path original = Paths.get(originalPath);
+//
+//        // 创建临时文件（同一目录，确保跨设备移动支持）
+//        Path temp = Files.createTempFile(original.getParent(), "tmp_", ".tmp");
+//        // 写入新内容
+//        Files.write(temp, newContent);
+//
+//        // 原子移动替换（REPLACE_EXISTING 覆盖原文件）
+//        Files.move(temp, original, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+//    }
 
     public static void deleteBefore(String directoryPath, Date time) {
         deleteBefore(directoryPath, time, null);
