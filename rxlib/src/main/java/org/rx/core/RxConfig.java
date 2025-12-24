@@ -86,7 +86,7 @@ public final class RxConfig {
         String LOG_NAME_LIST = "app.logNameList";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String OMEGA = "app.omega";
-        String MXPWD = "app.mxpwd";
+        String RTOKEN = "app.rtoken";
 
         static String getWithoutPrefix(String name) {
             return name.substring(4);
@@ -232,7 +232,7 @@ public final class RxConfig {
     final Set<String> logNameList = ConcurrentHashMap.newKeySet();
     private TrieMatcher.PrefixMatcher logNameMatcher;
     String omega;
-    String mxpwd;
+    String rtoken;
     long mxSamplingPeriod;
     TraceConfig trace = new TraceConfig();
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
@@ -376,7 +376,7 @@ public final class RxConfig {
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID, id);
         omega = SystemPropertyUtil.get(ConfigNames.OMEGA, omega);
-        mxpwd = SystemPropertyUtil.get(ConfigNames.MXPWD, mxpwd);
+        rtoken = SystemPropertyUtil.get(ConfigNames.RTOKEN, rtoken);
         mxSamplingPeriod = SystemPropertyUtil.getLong(ConfigNames.MX_SAMPLING_PERIOD, mxSamplingPeriod);
         dateFormat = SystemPropertyUtil.get(ConfigNames.DATE_FORMAT, dateFormat);
         v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);

@@ -136,7 +136,7 @@ public class DnsServer extends Disposable {
     }
 
     public void addHostsFile(String filePath) {
-        Files.readLines(filePath).forEach(line -> {
+        Files.readLines(filePath, line -> {
             if (line.startsWith("#")) {
                 return;
             }

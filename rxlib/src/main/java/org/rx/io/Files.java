@@ -12,11 +12,14 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.FileFilterUtils;
 import org.apache.commons.io.filefilter.IOFileFilter;
 import org.apache.commons.io.filefilter.WildcardFileFilter;
+import org.apache.commons.lang3.BooleanUtils;
 import org.rx.core.Arrays;
 import org.rx.core.Linq;
 import org.rx.core.StringBuilder;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
+import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 import org.springframework.http.MediaType;
 
 import javax.imageio.ImageIO;
@@ -33,6 +36,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -212,14 +216,34 @@ public class Files extends FilenameUtils {
         return MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }
 
-    @SneakyThrows
-    public static Stream<String> readLines(String filePath) {
-        return readLines(filePath, StandardCharsets.UTF_8);
+    public static void readLines(String filePath, BiAction<String> eachFn) {
+        readLines(filePath, eachFn, StandardCharsets.UTF_8);
     }
 
     @SneakyThrows
-    public static Stream<String> readLines(String filePath, Charset charset) {
-        return java.nio.file.Files.lines(Paths.get(filePath), charset);
+    public static void readLines(String filePath, BiAction<String> eachFn, Charset charset) {
+        try (Stream<String> lineStream = java.nio.file.Files.lines(Paths.get(filePath), charset)) {
+            Iterator<String> it = lineStream.iterator();
+            while (it.hasNext()) {
+                eachFn.accept(it.next());
+            }
+        }
+    }
+
+    public static void readLines(String filePath, BiFunc<String, Boolean> eachFn) {
+        readLines(filePath, eachFn, StandardCharsets.UTF_8);
+    }
+
+    @SneakyThrows
+    public static void readLines(String filePath, BiFunc<String, Boolean> eachFn, Charset charset) {
+        try (Stream<String> lineStream = java.nio.file.Files.lines(Paths.get(filePath), charset)) {
+            Iterator<String> it = lineStream.iterator();
+            while (it.hasNext()) {
+                if (BooleanUtils.isFalse(eachFn.apply(it.next()))) {
+                    break;
+                }
+            }
+        }
     }
 
     public static void writeLines(String filePath, Iterable<CharSequence> lines) {
