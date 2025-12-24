@@ -1,7 +1,12 @@
 package org.rx.net.support;
 
-public class DomainTrieMatcher {
-    static class CompactTrieNode {
+import java.io.Serializable;
+
+public class DomainTrieMatcher implements Serializable {
+    private static final long serialVersionUID = -2577041860871978500L;
+
+    static class CompactTrieNode implements Serializable{
+        private static final long serialVersionUID = 1237957363773921057L;
         CompactTrieNode[] children;
         boolean isEnd;
 

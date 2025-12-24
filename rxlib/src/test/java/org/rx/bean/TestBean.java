@@ -8,6 +8,7 @@ import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
+import org.rx.net.support.V2RayDomainRuleMatcher;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
 
@@ -27,10 +28,12 @@ import static org.rx.core.Sys.toJsonString;
 @Slf4j
 public class TestBean extends AbstractTester {
     @Test
-    public void triePrefixMatcher() {
+    public void trieMatcher() {
         List<String> prefixes = Arrays.toList("org.rx.net", "com.example");
-        TriePrefixMatcher matcher = new TriePrefixMatcher(prefixes, true);
-
+        TrieMatcher.PrefixMatcher matcher = new TrieMatcher.PrefixMatcher(true, className -> className.split("\\.", -1));
+        for (String p : prefixes) {
+            matcher.insert(p);
+        }
         // 测试用例
         String[] testClasses = {
                 "org.rx.net.class1",
@@ -39,10 +42,26 @@ public class TestBean extends AbstractTester {
                 "com.example.test",
                 "invalid.class"
         };
-
         for (String className : testClasses) {
             System.out.println("类名: " + className + " -> 匹配: " + matcher.matches(className));
         }
+
+
+        List<String> rules = Arrays.toList(
+                "full:www.google.com",
+                "example.com",
+                "keyword:google",
+                "regexp:^test\\."
+        );
+        V2RayDomainRuleMatcher domainMatcher = new V2RayDomainRuleMatcher(rules);
+        assert domainMatcher.matches("www.google.com");    // full
+        assert domainMatcher.matches("mail.example.com");  // domain
+        assert domainMatcher.matches("xgooglex.com");      // keyword
+        assert domainMatcher.matches("test.abc");          // regexp
+        assert !domainMatcher.matches("www.googl2.com");   // full
+        assert !domainMatcher.matches("mail.exampl2.com"); // domain
+        assert !domainMatcher.matches("xgoogl2x.com");     // keyword
+        assert !domainMatcher.matches("2test.abc");        // regexp
     }
 
     @SneakyThrows
