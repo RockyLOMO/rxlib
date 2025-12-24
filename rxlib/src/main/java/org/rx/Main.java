@@ -242,6 +242,7 @@ public final class Main implements SocksSupport {
             String host = dstEp.getHost();
             boolean outProxy;
             String ext;
+            long begin = System.nanoTime();
             if (rssConf.enableRoute) {
                 if (!Sockets.isValidIp(host)) {
                     if (geoMgr.matchSiteDirect(host)) {
@@ -266,7 +267,7 @@ public final class Main implements SocksSupport {
                 ext = "routeDisabled";
             }
             if (rssConf.hasRouteFlag()) {
-                log.info("route dst TCP {} {} <- {}", host, outProxy ? "PROXY" : "DIRECT", ext);
+                log.info("route dst TCP {} {} <- {} {}", host, outProxy ? "PROXY" : "DIRECT", ext, Sys.formatNanosElapsed(System.nanoTime() - be));
             }
             if (outProxy) {
                 e.setUpstream(new Socks5TcpUpstream(backConf, dstEp, routerFn.apply(e)));
