@@ -92,7 +92,7 @@ public final class SocksContext extends EventArgs {
         sd.setCommandFactory(new ScpCommandFactory());
 
         sd.setPort(p);
-        sd.setPasswordAuthenticator((u, w, s) -> w.equals(RxConfig.INSTANCE.getMxpwd()));
+        sd.setPasswordAuthenticator((u, w, s) -> w.equals(RxConfig.INSTANCE.getRtoken()));
         sd.start();
         IOC.register(t, sd);
     }

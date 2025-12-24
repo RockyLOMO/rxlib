@@ -63,7 +63,7 @@ app:
       outlandServers:
         - "8.8.8.8:53"
         - "1.1.1.1:53"
-  mxpwd: 691c887e
+  rtoken: 691c887e
   mxSamplingPeriod: 60000
   dateFormat: yyyy-MM-dd HH:mm:ss
   jsonSkipTypes:

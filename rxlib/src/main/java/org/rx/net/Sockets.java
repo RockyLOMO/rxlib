@@ -608,29 +608,15 @@ public final class Sockets {
     }
 
     /**
-     * 10.0.0.0/8
-     * 172.16.0.0/12
-     * 192.168.0.0/16
+     * isSiteLocalAddress()IPv4: 10/8, 172.16/12, 192.168/16 IPv6: fc00::/7 (ULA)是（最常用私有地址）常规内网地址
+     * isLoopbackAddress()127.0.0.0/8, ::1是（本机回环）通常也算作本地地址
+     * isLinkLocalAddress()IPv4: 169.254.0.0/16 IPv6: fe80::/10是（链路本地）自动分配的临时地址，无路由
      *
      * @param ip
      * @return
      */
     public static boolean isPrivateIp(InetAddress ip) {
-        byte[] ipBytes = ip.getAddress();
-        // 将字节数组转换为无符号整数，用于比较
-        int first = ipBytes[0] & 0xFF;  // 第一段
-        int second = ipBytes[1] & 0xFF; // 第二段
-
-        // 检查是否在 10.0.0.0 - 10.255.255.255 范围内
-        if (first == 10) {
-            return true;
-        }
-        // 检查是否在 172.16.0.0 - 172.31.255.255 范围内
-        if (first == 172 && second >= 16 && second <= 31) {
-            return true;
-        }
-        // 检查是否在 192.168.0.0 - 192.168.255.255 范围内
-        return first == 192 && second == 168;
+        return ip.isSiteLocalAddress() || ip.isLoopbackAddress() || ip.isLinkLocalAddress();
     }
 
     public static boolean isValidIp(String ip) {

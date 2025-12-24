@@ -11,8 +11,9 @@ import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Metadata;
 import org.rx.bean.IntWaterMark;
 import org.rx.bean.LogStrategy;
-import org.rx.bean.TriePrefixMatcher;
+import org.rx.bean.TrieMatcher;
 import org.rx.net.Sockets;
+import org.rx.util.function.BiFunc;
 import org.springframework.core.env.Environment;
 
 import java.util.*;
@@ -85,7 +86,7 @@ public final class RxConfig {
         String LOG_NAME_LIST = "app.logNameList";
         String JSON_SKIP_TYPES = "app.jsonSkipTypes";
         String OMEGA = "app.omega";
-        String MXPWD = "app.mxpwd";
+        String RTOKEN = "app.rtoken";
 
         static String getWithoutPrefix(String name) {
             return name.substring(4);
@@ -195,17 +196,21 @@ public final class RxConfig {
         final Set<String> logNameList = ConcurrentHashMap.newKeySet();
         //key1: controller, key2: method, value: url
         final Map<String, Map<String, String>> forwards = new ConcurrentHashMap<>(8);
-        private TriePrefixMatcher logNameMatcher;
+        private TrieMatcher.PrefixMatcher logNameMatcher;
 
-        public TriePrefixMatcher getLogNameMatcher() {
+        public TrieMatcher.PrefixMatcher getLogNameMatcher() {
             if (logNameMatcher == null) {
-                logNameMatcher = new TriePrefixMatcher(logNameList, logMode == 1);
+                logNameMatcher = new TrieMatcher.PrefixMatcher(logMode == 1, logClassNameFn);
+                for (String p : logNameList) {
+                    logNameMatcher.insert(p);
+                }
             }
             return logNameMatcher;
         }
     }
 
     public static final RxConfig INSTANCE;
+    static final BiFunc<String, Object[]> logClassNameFn = className -> className.split("\\.", -1);
 
     static {
         JSONFactory.getDefaultObjectReaderProvider().addAutoTypeAccept("org.springframework");
@@ -225,9 +230,9 @@ public final class RxConfig {
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
     final Set<String> logNameList = ConcurrentHashMap.newKeySet();
-    private TriePrefixMatcher logNameMatcher;
+    private TrieMatcher.PrefixMatcher logNameMatcher;
     String omega;
-    String mxpwd;
+    String rtoken;
     long mxSamplingPeriod;
     TraceConfig trace = new TraceConfig();
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
@@ -244,9 +249,12 @@ public final class RxConfig {
         return id.hashCode();
     }
 
-    public TriePrefixMatcher getLogNameMatcher() {
+    public TrieMatcher.PrefixMatcher getLogNameMatcher() {
         if (logNameMatcher == null) {
-            logNameMatcher = new TriePrefixMatcher(logNameList, logStrategy == LogStrategy.WHITELIST);
+            logNameMatcher = new TrieMatcher.PrefixMatcher(logStrategy == LogStrategy.WHITELIST, logClassNameFn);
+            for (String p : logNameList) {
+                logNameMatcher.insert(p);
+            }
         }
         return logNameMatcher;
     }
@@ -368,7 +376,7 @@ public final class RxConfig {
 
         id = SystemPropertyUtil.get(ConfigNames.APP_ID, id);
         omega = SystemPropertyUtil.get(ConfigNames.OMEGA, omega);
-        mxpwd = SystemPropertyUtil.get(ConfigNames.MXPWD, mxpwd);
+        rtoken = SystemPropertyUtil.get(ConfigNames.RTOKEN, rtoken);
         mxSamplingPeriod = SystemPropertyUtil.getLong(ConfigNames.MX_SAMPLING_PERIOD, mxSamplingPeriod);
         dateFormat = SystemPropertyUtil.get(ConfigNames.DATE_FORMAT, dateFormat);
         v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);

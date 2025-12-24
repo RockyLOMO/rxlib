@@ -79,6 +79,7 @@ import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -519,6 +520,10 @@ public class TestSocks extends AbstractTester {
         }
     }
 
+    CopyOnWriteArraySet<String> bypassHosts = new CopyOnWriteArraySet<String>(RxConfig.INSTANCE.getNet().getBypassHosts()) {{
+        add("*qq*");
+    }};
+
     @SneakyThrows
     @Test
     public void ssProxy() {
@@ -549,7 +554,6 @@ public class TestSocks extends AbstractTester {
         AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
         ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(2090),
                 CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
-        frontConf.getBypassHosts().add("*qq*");
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<ShadowsocksServer, SocksContext> firstRoute = (s, e) -> {
@@ -560,7 +564,7 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             //bypass
-            if (Sockets.isBypass(frontConf.getBypassHosts(), dstEp.getHost())) {
+            if (Sockets.isBypass(bypassHosts, dstEp.getHost())) {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
@@ -587,7 +591,7 @@ public class TestSocks extends AbstractTester {
     public void socks5Proxy() {
         boolean udp2raw = false;
         boolean udp2rawDirect = false;
-        Udp2rawHandler.DEFAULT.setGzipMinLength(40);
+//        Udp2rawHandler.DEFAULT.setGzipMinLength(40);
 
         //dns
         int shadowDnsPort = 853;
@@ -600,7 +604,7 @@ public class TestSocks extends AbstractTester {
         SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
         backConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
-        backConf.setEnableUdp2raw(udp2raw);
+//        backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null);
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
@@ -617,12 +621,12 @@ public class TestSocks extends AbstractTester {
         SocksConfig frontConf = new SocksConfig(2090);
         frontConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
-        frontConf.setEnableUdp2raw(udp2raw);
-        if (!udp2rawDirect) {
-            frontConf.setUdp2rawServers(Arrays.toList(backSrvEp));
-        } else {
-            frontConf.setUdp2rawServers(Collections.emptyList());
-        }
+//        frontConf.setEnableUdp2raw(udp2raw);
+//        if (!udp2rawDirect) {
+//            frontConf.setUdp2rawServers(Arrays.toList(backSrvEp));
+//        } else {
+//            frontConf.setUdp2rawServers(Collections.emptyList());
+//        }
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf);
         frontSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
@@ -634,7 +638,7 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             //bypass
-            if (Sockets.isBypass(frontConf.getBypassHosts(), dstEp.getHost())) {
+            if (Sockets.isBypass(bypassHosts, dstEp.getHost())) {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
@@ -649,14 +653,14 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            if (frontConf.isEnableUdp2raw()) {
-                if (!udp2rawDirect) {
-                    e.setUpstream(new Upstream(frontConf, dstEp, shadowServers.next().getEndpoint()));
-                } else {
-                    e.setUpstream(new Upstream(dstEp));
-                }
-                return;
-            }
+//            if (frontConf.isEnableUdp2raw()) {
+//                if (!udp2rawDirect) {
+//                    e.setUpstream(new Upstream(frontConf, dstEp, shadowServers.next().getEndpoint()));
+//                } else {
+//                    e.setUpstream(new Upstream(dstEp));
+//                }
+//                return;
+//            }
             e.setUpstream(new Socks5UdpUpstream(frontConf, dstEp, shadowServers::next));
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
@@ -806,7 +810,7 @@ public class TestSocks extends AbstractTester {
         }, 6000);
 
         DnsClient inlandClient = DnsClient.inlandClient();
-        InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.getPublicIp());
+        InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
         List<InetAddress> currentIps = inlandClient.resolveAll(host_devops);
         System.out.println("ddns: " + wanIp + " = " + currentIps);
         //注入InetAddress.getAllByName()变更要查询的dnsServer的地址，支持非53端口
@@ -945,24 +949,23 @@ public class TestSocks extends AbstractTester {
         String expr = RxConfig.INSTANCE.getNet().getBypassHosts().get(3);
         assert Pattern.matches(expr, "192.168.31.7");
 
-        SocketConfig conf = new SocketConfig();
-        assert Sockets.isBypass(conf.getBypassHosts(), "127.0.0.1");
-        assert Sockets.isBypass(conf.getBypassHosts(), "192.168.31.1");
-        assert !Sockets.isBypass(conf.getBypassHosts(), "192.169.31.1");
-        assert Sockets.isBypass(conf.getBypassHosts(), "localhost");
-        assert !Sockets.isBypass(conf.getBypassHosts(), "google.cn");
+        assert Sockets.isBypass(bypassHosts, "127.0.0.1");
+        assert Sockets.isBypass(bypassHosts, "192.168.31.1");
+        assert !Sockets.isBypass(bypassHosts, "192.169.31.1");
+        assert Sockets.isBypass(bypassHosts, "localhost");
+        assert !Sockets.isBypass(bypassHosts, "google.cn");
         assert !Sockets.isBypass(Arrays.toList("*google.com"), "google.cn");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
 
-        GeoLite2 geoLite2 = (GeoLite2) IPSearcher.DEFAULT;
+        GeoManager geoIPSearcher = GeoManager.INSTANCE;
 //        geoLite2.waitDownload();
-        System.out.println(geoLite2.resolve("8.8.8.8"));
+        System.out.println(geoIPSearcher.resolveIp("8.8.8.8"));
         sleep(10 * 1000);
-        System.out.println(geoLite2.resolve("192.168.31.2"));
-        log.info("{}", geoLite2.resolve(geoLite2.getPublicIp()));
-        log.info(geoLite2.getPublicIp());
-        log.info(geoLite2.getPublicIp());
+        System.out.println(geoIPSearcher.resolveIp("192.168.31.2"));
+        log.info("{}", geoIPSearcher.resolveIp(geoIPSearcher.getPublicIp()));
+        log.info(geoIPSearcher.getPublicIp());
+        log.info(geoIPSearcher.getPublicIp());
 
 //        String h = "google.com";
 //        System.out.println(IPSearcher.DEFAULT.search(h));

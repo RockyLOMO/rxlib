@@ -40,7 +40,6 @@ import static org.rx.core.Sys.*;
 @Slf4j
 @Component
 public class HandlerUtil {
-    static final String AUTH_NAME = "x-token";
     static final String PARAMS_NAME = "_p";
     static final String DOT = ".";
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
@@ -333,7 +332,8 @@ public class HandlerUtil {
     }
 
     boolean auth(HttpServletRequest request) {
-        String s = RxConfig.INSTANCE.getMxpwd();
-        return eq(request.getHeader(AUTH_NAME), s) || eq(request.getParameter(AUTH_NAME), s);
+        String h = RxConfig.ConfigNames.RTOKEN;
+        String t = RxConfig.INSTANCE.getRtoken();
+        return eq(request.getHeader(h), t) || eq(request.getParameter(h), t);
     }
 }

@@ -12,8 +12,6 @@ import org.rx.core.RxConfig;
 import org.rx.util.function.BiAction;
 
 import java.io.Serializable;
-import java.util.Set;
-import java.util.concurrent.CopyOnWriteArraySet;
 
 @Getter
 @Setter
@@ -36,12 +34,6 @@ public class SocketConfig implements Serializable {
     // 1 = AES, 2 = XChaCha20Poly1305
     private short cipher = 2;
     private byte[] cipherKey;
-    @Getter(lazy = true)
-    private final Set<String> bypassHosts = bypassHosts();
-
-    private Set<String> bypassHosts() {
-        return new CopyOnWriteArraySet<>(RxConfig.INSTANCE.getNet().getBypassHosts());
-    }
 
     public FlagsEnum<TransportFlags> getTransportFlags() {
         if (transportFlags == null) {

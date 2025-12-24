@@ -70,8 +70,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
         final InetSocketAddress srcEp = in.sender();
         InetAddress saddr = srcEp.getAddress();
-        if (!saddr.isLoopbackAddress() && !Sockets.isPrivateIp(saddr)
-                && !server.config.getWhiteList().contains(saddr)) {
+        if (!Sockets.isPrivateIp(saddr) && !server.config.getWhiteList().contains(saddr)) {
             log.warn("UDP security error, package from {}", srcEp);
             return;
         }

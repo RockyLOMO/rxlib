@@ -8,8 +8,6 @@ import org.rx.core.cache.DiskCache;
 import org.rx.net.SocketConfig;
 
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.util.List;
 import java.util.Set;
 
 @RequiredArgsConstructor
@@ -25,8 +23,6 @@ public class SocksConfig extends SocketConfig {
     private int udpAssociateMaxLifeSeconds = 60 * 60 * 24;
     private int udpReadTimeoutSeconds = 60 * 20;
     private int udpWriteTimeoutSeconds;
-    private boolean enableUdp2raw;
-    private List<InetSocketAddress> udp2rawServers;
     @Getter(lazy = true)
     private final Set<InetAddress> whiteList = whiteList();
 

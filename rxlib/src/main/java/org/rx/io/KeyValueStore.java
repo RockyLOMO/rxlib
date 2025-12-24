@@ -255,7 +255,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
                         .appendMessageFormat("{} {} KeyValueStore hash collision {}",
                                 DateTime.now().toDateTimeString(), logName, k).toString();
                 Files.writeLines("./rx_err.log", Linq.from(msg),
-                        StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 return null;
             }
             return val;
