@@ -267,7 +267,8 @@ public final class Main implements SocksSupport {
                 ext = "routeDisabled";
             }
             if (rssConf.hasRouteFlag()) {
-                log.info("route dst TCP {} {} <- {} {}", host, outProxy ? "PROXY" : "DIRECT", ext, Sys.formatNanosElapsed(System.nanoTime() - be));
+                log.info("route dst TCP {} {} <- {} {}", host, outProxy ? "PROXY" : "DIRECT", ext,
+                        Sys.formatNanosElapsed(System.nanoTime() - begin));
             }
             if (outProxy) {
                 e.setUpstream(new Socks5TcpUpstream(backConf, dstEp, routerFn.apply(e)));
