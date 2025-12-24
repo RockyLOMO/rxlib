@@ -1,14 +1,17 @@
 package org.rx.net.support;
 
 import lombok.NonNull;
+import org.rx.core.Constants;
+import org.rx.core.RxConfig;
 import org.rx.third.hankcs.AhoCorasickDoubleArrayTrie;
 
 import java.io.Serializable;
 import java.util.*;
 import java.util.regex.Pattern;
 
-public class V2RayDomainRuleMatcher implements Serializable {
+public class GeoSiteMatcher implements Serializable {
     private static final long serialVersionUID = 3722729671665278648L;
+    public static final GeoSiteMatcher DIRECT = new GeoSiteMatcher("https://" + Constants.rCloud() + ":6501/geosite-direct.txt?" + RxConfig.ConfigNames.RTOKEN + "=" + RxConfig.INSTANCE.getRtoken());
     static final String fullRule = "full:";
     static final String kwRule = "keyword:";
     static final String regexpRule = "regexp:";
@@ -18,7 +21,11 @@ public class V2RayDomainRuleMatcher implements Serializable {
     final AhoCorasickDoubleArrayTrie<String> keywords = new AhoCorasickDoubleArrayTrie<>();
     final List<Pattern> regexps = new ArrayList<>();
 
-    public V2RayDomainRuleMatcher(@NonNull List<String> rules) {
+    public GeoSiteMatcher(String ruleUrl) {
+
+    }
+
+    public GeoSiteMatcher(@NonNull List<String> rules) {
         // 构建 keyword map 供 AC 自动机使用
         TreeMap<String, String> keywordMap = new TreeMap<>();
         for (String rule : rules) {
