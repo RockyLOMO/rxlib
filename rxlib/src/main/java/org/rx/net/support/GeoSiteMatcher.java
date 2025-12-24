@@ -1,8 +1,6 @@
 package org.rx.net.support;
 
 import lombok.NonNull;
-import org.rx.core.Constants;
-import org.rx.core.RxConfig;
 import org.rx.third.hankcs.AhoCorasickDoubleArrayTrie;
 
 import java.io.Serializable;
@@ -11,7 +9,6 @@ import java.util.regex.Pattern;
 
 public class GeoSiteMatcher implements Serializable {
     private static final long serialVersionUID = 3722729671665278648L;
-    public static final GeoSiteMatcher DIRECT = new GeoSiteMatcher("https://" + Constants.rCloud() + ":6501/geosite-direct.txt?" + RxConfig.ConfigNames.RTOKEN + "=" + RxConfig.INSTANCE.getRtoken());
     static final String fullRule = "full:";
     static final String kwRule = "keyword:";
     static final String regexpRule = "regexp:";
@@ -21,24 +18,24 @@ public class GeoSiteMatcher implements Serializable {
     final AhoCorasickDoubleArrayTrie<String> keywords = new AhoCorasickDoubleArrayTrie<>();
     final List<Pattern> regexps = new ArrayList<>();
 
-    public GeoSiteMatcher(String ruleUrl) {
-
-    }
-
-    public GeoSiteMatcher(@NonNull List<String> rules) {
-        // 构建 keyword map 供 AC 自动机使用
+    @SafeVarargs
+    public GeoSiteMatcher(@NonNull Iterator<String>... rulesSet) {
+        // 构建 AC自动机 要求一次性传入全部关键词
         TreeMap<String, String> keywordMap = new TreeMap<>();
-        for (String rule : rules) {
-            if (rule.startsWith(fullRule)) {
-                fulls.add(rule.substring(fullRule.length()).toLowerCase());
-            } else if (rule.startsWith(kwRule)) {
-                String kw = rule.substring(kwRule.length()).toLowerCase();
-                keywordMap.put(kw, kw);
-            } else if (rule.startsWith(regexpRule)) {
-                String r = rule.substring(regexpRule.length());
-                regexps.add(Pattern.compile(r, Pattern.CASE_INSENSITIVE));
-            } else {
-                domains.insert(rule.toLowerCase());
+        for (Iterator<String> rules : rulesSet) {
+            while (rules.hasNext()) {
+                String rule = rules.next();
+                if (rule.startsWith(fullRule)) {
+                    fulls.add(rule.substring(fullRule.length()).toLowerCase());
+                } else if (rule.startsWith(kwRule)) {
+                    String kw = rule.substring(kwRule.length()).toLowerCase();
+                    keywordMap.put(kw, kw);
+                } else if (rule.startsWith(regexpRule)) {
+                    String r = rule.substring(regexpRule.length());
+                    regexps.add(Pattern.compile(r, Pattern.CASE_INSENSITIVE));
+                } else {
+                    domains.insert(rule.toLowerCase());
+                }
             }
         }
         keywords.build(keywordMap);

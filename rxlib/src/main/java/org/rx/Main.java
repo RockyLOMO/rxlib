@@ -4,11 +4,11 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.bean.$;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
+import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
@@ -45,15 +45,11 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Extends.*;
 import static org.rx.core.Sys.toJsonString;
-import static org.rx.core.Tasks.awaitQuietly;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -103,8 +99,7 @@ public final class Main implements SocksSupport {
 
         //route
         public boolean enableRoute = true;
-        public List<String> routeDstProxyList;
-        public List<String> routeDstBypassList;
+        public Set<String> routeDstGeoSiteDirectRules;
         public int routeSrcSteeringTTL;
 
         //ddns
@@ -115,14 +110,12 @@ public final class Main implements SocksSupport {
 
         public String pcapSourceIp;
         public boolean pcapUdpDirect;
-        public String udp2rawEndpoint;
 
         public boolean hasRouteFlag() {
             return (logFlags & 1) == 1;
         }
     }
 
-    static boolean udp2raw = false;
     static RSSConf rssConf;
     public static final OptimalSettings B = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
     public static final OptimalSettings AF = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
@@ -130,10 +123,11 @@ public final class Main implements SocksSupport {
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
+        //Udp2raw 将 UDP 转换为 FakeTCP、ICMP
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
-        $<UpstreamSupport> defSS = $();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
-        SocksConfig frontBConf = new SocksConfig(port);
+        GeoManager geoMgr = GeoManager.INSTANCE;
+
         YamlConfiguration watcher = new YamlConfiguration("conf.yml").enableWatch();
         watcher.onChanged.combine((s, e) -> {
             RSSConf changed = s.readAs(RSSConf.class);
@@ -146,12 +140,11 @@ public final class Main implements SocksSupport {
             if (!svrs.any() || svrs.any(Objects::isNull)) {
                 throw new InvalidException("Invalid shadowServer arg");
             }
-            for (UpstreamSupport support : shadowServers) {
-                tryClose(support.getSupport());
-            }
-            shadowServers.clear();
-            dnsInterceptors.clear();
-            int defW = 0;
+            geoMgr.setGeoSiteDirectRules(rssConf.routeDstGeoSiteDirectRules);
+
+            List<UpstreamSupport> oldSvrs = shadowServers.aliveList();
+            List<DnsServer.ResolveInterceptor> oldDnss = dnsInterceptors.aliveList();
+
             for (AuthenticEndpoint socksServer : svrs) {
                 RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(socksServer.getEndpoint(), socksServer.getEndpoint().getPort() + 1),
                         rssConf.rpcMinSize, rssConf.rpcMaxSize);
@@ -163,7 +156,7 @@ public final class Main implements SocksSupport {
                     continue;
                 }
                 SocksSupport facade = Remoting.createFacade(SocksSupport.class, rpcConf);
-                UpstreamSupport upstream = new UpstreamSupport(socksServer, new SocksSupport() {
+                UpstreamSupport us = new UpstreamSupport(socksServer, new SocksSupport() {
                     @Override
                     public void fakeEndpoint(BigInteger hash, String realEndpoint) {
                         facade.fakeEndpoint(hash, realEndpoint);
@@ -171,9 +164,10 @@ public final class Main implements SocksSupport {
 
                     @Override
                     public List<InetAddress> resolveHost(String host) {
-                        if (Sockets.isBypass(rssConf.routeDstBypassList, host)) {
+                        if (geoMgr.matchSiteDirect(host)) {
                             return DnsClient.inlandClient().resolveAll(host);
                         }
+
                         return facade.resolveHost(host);
                     }
 
@@ -182,13 +176,15 @@ public final class Main implements SocksSupport {
                         facade.addWhiteList(endpoint);
                     }
                 });
-                shadowServers.add(upstream, weight);
-                if (defW < weight) {
-                    defSS.v = upstream;
-                    defW = weight;
-                }
+                shadowServers.add(us, weight);
+                dnsInterceptors.add(us.getSupport());
             }
-            dnsInterceptors.addAll(Linq.from(shadowServers).<DnsServer.ResolveInterceptor>select(UpstreamSupport::getSupport).toList());
+
+            shadowServers.removeAll(oldSvrs);
+            dnsInterceptors.removeAll(oldDnss);
+            for (UpstreamSupport support : oldSvrs) {
+                tryClose(support.getSupport());
+            }
             log.info("reload svrs {}", toJsonString(svrs));
         });
         watcher.raiseChange();
@@ -211,18 +207,12 @@ public final class Main implements SocksSupport {
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(rssConf.shadowDnsPort);
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
+        SocksConfig frontBConf = new SocksConfig(port);
         frontBConf.setTransportFlags(null);
         frontBConf.setOptimalSettings(AB);
         frontBConf.setConnectTimeoutMillis(connectTimeout);
         frontBConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
         frontBConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
-        frontBConf.setEnableUdp2raw(udp2raw);
-        frontBConf.setUdp2rawServers(Linq.from(shadowServers).select(p -> p.getEndpoint().getEndpoint()).toList());
-        if (frontBConf.isEnableUdp2raw() && rssConf.udp2rawEndpoint != null) {
-            log.info("udp2rawEndpoint: {}", rssConf.udp2rawEndpoint);
-            AuthenticEndpoint udp2rawSvrEp = AuthenticEndpoint.valueOf(rssConf.udp2rawEndpoint);
-            frontBConf.getUdp2rawServers().add(udp2rawSvrEp.getEndpoint());
-        }
         DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
         SocksProxyServer frontBSvr = new SocksProxyServer(frontBConf, authenticator);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
@@ -232,15 +222,7 @@ public final class Main implements SocksSupport {
             if (dstEp.getPort() == SocksSupport.DNS_PORT) {
                 e.setUpstream(shadowDnsUpstream);
                 e.setHandled(true);
-                return;
-            }
-            //bypass
-            if (Sockets.isBypass(rssConf.routeDstBypassList, dstEp.getHost())) {
-                if (rssConf.hasRouteFlag()) {
-                    log.info("route frontBSvr dst {} DIRECT <- bypassList", dstEp.getHost());
-                }
-                e.setUpstream(new Upstream(dstEp));
-                e.setHandled(true);
+//                return;
             }
         };
         int[] httpPorts = {80, 443};
@@ -256,18 +238,51 @@ public final class Main implements SocksSupport {
         backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         backConf.setOptimalSettings(B);
         frontBSvr.onRoute.replace(firstRoute, (s, e) -> {
-            e.setUpstream(new Socks5TcpUpstream(backConf, e.getFirstDestination(), routerFn.apply(e)));
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            String host = dstEp.getHost();
+            boolean outProxy;
+            String ext;
+            if (rssConf.enableRoute) {
+                if (!Sockets.isValidIp(host)) {
+                    if (geoMgr.matchSiteDirect(host)) {
+                        outProxy = false;
+                        ext = "geosite:direct";
+                    } else {
+                        outProxy = true;
+                        ext = "geosite:proxy";
+                    }
+                } else {
+                    IpGeolocation geo = geoMgr.resolveIp(host);
+                    String category = geo.getCategory();
+                    if (Strings.equalsIgnoreCase(category, "cn") || Strings.equalsIgnoreCase(category, "private")) {
+                        outProxy = false;
+                    } else {
+                        outProxy = true;
+                    }
+                    ext = "geoip:" + category;
+                }
+            } else {
+                outProxy = true;
+                ext = "routeDisabled";
+            }
+            if (rssConf.hasRouteFlag()) {
+                log.info("route dst TCP {} {} <- {}", host, outProxy ? "PROXY" : "DIRECT", ext);
+            }
+            if (outProxy) {
+                e.setUpstream(new Socks5TcpUpstream(backConf, dstEp, routerFn.apply(e)));
+            } else {
+                e.setUpstream(new Upstream(dstEp));
+            }
         });
         frontBSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
-            if (rssConf.pcapSourceIp != null
-                    && InetAddress.getByName(rssConf.pcapSourceIp).equals(e.getSource().getAddress())) {
-                log.info("pcap pack {}", e.getSource());
-                if (rssConf.pcapUdpDirect) {
-                    e.setUpstream(new Upstream(dstEp));
-                    return;
-                }
-            }
+//            if (rssConf.pcapSourceIp != null
+//                    && InetAddress.getByName(rssConf.pcapSourceIp).equals(e.getSource().getAddress())) {
+//                log.info("pcap pack {}", e.getSource());
+//                if (rssConf.pcapUdpDirect) {
+//                    e.setUpstream(new Upstream(dstEp));
+//                    return;
+//                }
+//            }
 //          if (conf.pcap2socks && e.getSource().getAddress().isLoopbackAddress()) {
 //              Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
 //              if (cache.get(hashKey("pcap", e.getSource().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
@@ -278,21 +293,47 @@ public final class Main implements SocksSupport {
 //                  return;
 //              }
 //          }
-//          if (frontConf.isEnableUdp2raw()) {
-//              if (udp2rawSvrEp != null) {
-//                  e.setValue(new Upstream(dstEp, udp2rawSvrEp));
-//              } else {
-//                  e.setValue(new Upstream(dstEp, shadowServers.next().getEndpoint()));
-//              }
-//              return;
-//          }
-            e.setUpstream(new Socks5UdpUpstream(backConf, dstEp, routerFn.apply(e)));
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            String host = dstEp.getHost();
+            boolean outProxy;
+            String ext;
+            if (rssConf.enableRoute) {
+                if (!Sockets.isValidIp(host)) {
+                    if (geoMgr.matchSiteDirect(host)) {
+                        outProxy = false;
+                        ext = "geosite:direct";
+                    } else {
+                        outProxy = true;
+                        ext = "geosite:proxy";
+                    }
+                } else {
+                    IpGeolocation geo = geoMgr.resolveIp(host);
+                    String category = geo.getCategory();
+                    if (Strings.equalsIgnoreCase(category, "cn") || Strings.equalsIgnoreCase(category, "private")) {
+                        outProxy = false;
+                    } else {
+                        outProxy = true;
+                    }
+                    ext = "geoip:" + category;
+                }
+            } else {
+                outProxy = true;
+                ext = "routeDisabled";
+            }
+            if (rssConf.hasRouteFlag()) {
+                log.info("route dst UDP {} {} <- {}", host, outProxy ? "PROXY" : "DIRECT", ext);
+            }
+            if (outProxy) {
+                e.setUpstream(new Socks5UdpUpstream(backConf, dstEp, routerFn.apply(e)));
+            } else {
+                e.setUpstream(new Upstream(dstEp));
+            }
         });
         frontBSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         Main app = new Main(frontBSvr);
 
         Action fn = () -> {
-            InetAddress addr = InetAddress.getByName(IPSearcher.DEFAULT.getPublicIp());
+            InetAddress addr = InetAddress.getByName(geoMgr.getPublicIp());
             eachQuietly(shadowServers, p -> p.getSupport().addWhiteList(addr));
         };
         fn.invoke();
@@ -302,60 +343,20 @@ public final class Main implements SocksSupport {
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
-            AuthenticEndpoint srvEp = new AuthenticEndpoint(frontSvrEp, usr.getUsername(), usr.getPassword());
+            AuthenticEndpoint svrEp = new AuthenticEndpoint(frontSvrEp, usr.getUsername(), usr.getPassword());
 
             conf.setOptimalSettings(AF);
             conf.setConnectTimeoutMillis(connectTimeout);
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
-            TripleAction<ShadowsocksServer, SocksContext> ssFirstRoute = (s, e) -> {
-                UnresolvedEndpoint dstEp = e.getFirstDestination();
-                //must first
-                if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                    e.setUpstream(shadowDnsUpstream);
-                    e.setHandled(true);
-                    return;
-                }
-                //bypass
-                if (Sockets.isBypass(rssConf.routeDstBypassList, dstEp.getHost())) {
-                    if (rssConf.hasRouteFlag()) {
-                        log.info("route ss dst {} DIRECT <- bypassList", dstEp.getHost());
-                    }
-                    e.setUpstream(new Upstream(dstEp));
-                    e.setHandled(true);
-                }
-            };
             SocksConfig toAFConf = new SocksConfig(port);
             toAFConf.setOptimalSettings(AB);
 //            toAFConf.setTransportFlags(conf.getTransportFlags());
-            ssSvr.onRoute.replace(ssFirstRoute, (s, e) -> {
-                UnresolvedEndpoint dstEp = e.getFirstDestination();
-                boolean outProxy;
-                String ext;
-                if (rssConf.enableRoute) {
-                    if (Sockets.isBypass(rssConf.routeDstProxyList, dstEp.getHost())) {
-                        outProxy = true;
-                        ext = "proxyList";
-                    } else {
-                        IpGeolocation geo = IPSearcher.DEFAULT.resolve(dstEp.getHost());
-                        outProxy = !geo.isChina();
-                        ext = String.format("geo:%s", geo.getCategory());
-                    }
-                } else {
-                    outProxy = true;
-                    ext = "routeDisabled";
-                }
-
-                if (rssConf.hasRouteFlag()) {
-                    log.info("route ss dst {} {} <- {}", dstEp.getHost(), outProxy ? "PROXY" : "DIRECT", ext);
-                }
-                if (outProxy) {
-                    e.setUpstream(new Socks5TcpUpstream(toAFConf, dstEp, () -> new UpstreamSupport(srvEp, null)));
-                } else {
-                    e.setUpstream(new Upstream(dstEp));
-                }
+            UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
+            ssSvr.onRoute.replace((s, e) -> {
+                e.setUpstream(new Socks5TcpUpstream(toAFConf, e.getFirstDestination(), () -> svrSupport));
             });
-            ssSvr.onUdpRoute.replace(ssFirstRoute, (s, e) -> {
-                e.setUpstream(new Upstream(toAFConf, e.getFirstDestination(), srvEp));
+            ssSvr.onUdpRoute.replace((s, e) -> {
+                e.setUpstream(new Upstream(toAFConf, e.getFirstDestination(), svrEp));
             });
         }
 
@@ -366,14 +367,13 @@ public final class Main implements SocksSupport {
 
     static void clientInit(DefaultSocksAuthenticator authenticator) {
         Tasks.schedulePeriod(() -> {
-//            log.info(authenticator.toString());
             Files.writeLines("usr-info.txt", Collections.singletonList(authenticator.toString()));
 
             if (rssConf == null) {
                 log.warn("conf is null");
             }
 
-            InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.getPublicIp());
+            InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
             List<String> subDomains = Linq.from(rssConf.ddnsDomains).where(sd -> !DnsClient.inlandClient().resolveAll(sd).contains(wanIp))
                     .select(sd -> sd.substring(0, sd.indexOf("."))).toList();
             if (subDomains.isEmpty()) {
@@ -490,7 +490,6 @@ public final class Main implements SocksSupport {
         backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         backConf.setOptimalSettings(B);
         backConf.setConnectTimeoutMillis(connectTimeout);
-        backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS);
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 

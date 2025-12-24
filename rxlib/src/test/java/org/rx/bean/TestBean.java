@@ -8,7 +8,7 @@ import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
-import org.rx.net.support.V2RayDomainRuleMatcher;
+import org.rx.net.support.GeoSiteMatcher;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
 
@@ -53,7 +53,7 @@ public class TestBean extends AbstractTester {
                 "keyword:google",
                 "regexp:^test\\."
         );
-        V2RayDomainRuleMatcher domainMatcher = new V2RayDomainRuleMatcher(rules);
+        GeoSiteMatcher domainMatcher = new GeoSiteMatcher(rules.iterator());
         assert domainMatcher.matches("www.google.com");    // full
         assert domainMatcher.matches("mail.example.com");  // domain
         assert domainMatcher.matches("xgooglex.com");      // keyword

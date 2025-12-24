@@ -591,7 +591,7 @@ public class TestSocks extends AbstractTester {
     public void socks5Proxy() {
         boolean udp2raw = false;
         boolean udp2rawDirect = false;
-        Udp2rawHandler.DEFAULT.setGzipMinLength(40);
+//        Udp2rawHandler.DEFAULT.setGzipMinLength(40);
 
         //dns
         int shadowDnsPort = 853;
@@ -604,7 +604,7 @@ public class TestSocks extends AbstractTester {
         SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
         backConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         backConf.setConnectTimeoutMillis(connectTimeoutMillis);
-        backConf.setEnableUdp2raw(udp2raw);
+//        backConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(backConf, null);
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
@@ -621,12 +621,12 @@ public class TestSocks extends AbstractTester {
         SocksConfig frontConf = new SocksConfig(2090);
         frontConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         frontConf.setConnectTimeoutMillis(connectTimeoutMillis);
-        frontConf.setEnableUdp2raw(udp2raw);
-        if (!udp2rawDirect) {
-            frontConf.setUdp2rawServers(Arrays.toList(backSrvEp));
-        } else {
-            frontConf.setUdp2rawServers(Collections.emptyList());
-        }
+//        frontConf.setEnableUdp2raw(udp2raw);
+//        if (!udp2rawDirect) {
+//            frontConf.setUdp2rawServers(Arrays.toList(backSrvEp));
+//        } else {
+//            frontConf.setUdp2rawServers(Collections.emptyList());
+//        }
         SocksProxyServer frontSvr = new SocksProxyServer(frontConf);
         frontSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
@@ -653,14 +653,14 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            if (frontConf.isEnableUdp2raw()) {
-                if (!udp2rawDirect) {
-                    e.setUpstream(new Upstream(frontConf, dstEp, shadowServers.next().getEndpoint()));
-                } else {
-                    e.setUpstream(new Upstream(dstEp));
-                }
-                return;
-            }
+//            if (frontConf.isEnableUdp2raw()) {
+//                if (!udp2rawDirect) {
+//                    e.setUpstream(new Upstream(frontConf, dstEp, shadowServers.next().getEndpoint()));
+//                } else {
+//                    e.setUpstream(new Upstream(dstEp));
+//                }
+//                return;
+//            }
             e.setUpstream(new Socks5UdpUpstream(frontConf, dstEp, shadowServers::next));
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
@@ -810,7 +810,7 @@ public class TestSocks extends AbstractTester {
         }, 6000);
 
         DnsClient inlandClient = DnsClient.inlandClient();
-        InetAddress wanIp = InetAddress.getByName(IPSearcher.DEFAULT.getPublicIp());
+        InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
         List<InetAddress> currentIps = inlandClient.resolveAll(host_devops);
         System.out.println("ddns: " + wanIp + " = " + currentIps);
         //注入InetAddress.getAllByName()变更要查询的dnsServer的地址，支持非53端口
@@ -958,14 +958,14 @@ public class TestSocks extends AbstractTester {
         assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
 
-        GeoLite2 geoLite2 = (GeoLite2) IPSearcher.DEFAULT;
+        GeoManager geoIPSearcher = GeoManager.INSTANCE;
 //        geoLite2.waitDownload();
-        System.out.println(geoLite2.resolve("8.8.8.8"));
+        System.out.println(geoIPSearcher.resolveIp("8.8.8.8"));
         sleep(10 * 1000);
-        System.out.println(geoLite2.resolve("192.168.31.2"));
-        log.info("{}", geoLite2.resolve(geoLite2.getPublicIp()));
-        log.info(geoLite2.getPublicIp());
-        log.info(geoLite2.getPublicIp());
+        System.out.println(geoIPSearcher.resolveIp("192.168.31.2"));
+        log.info("{}", geoIPSearcher.resolveIp(geoIPSearcher.getPublicIp()));
+        log.info(geoIPSearcher.getPublicIp());
+        log.info(geoIPSearcher.getPublicIp());
 
 //        String h = "google.com";
 //        System.out.println(IPSearcher.DEFAULT.search(h));

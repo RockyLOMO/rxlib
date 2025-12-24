@@ -216,13 +216,9 @@ public class Files extends FilenameUtils {
         return MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }
 
-    public static void readLines(String filePath, BiAction<String> eachFn) {
-        readLines(filePath, eachFn, StandardCharsets.UTF_8);
-    }
-
     @SneakyThrows
-    public static void readLines(String filePath, BiAction<String> eachFn, Charset charset) {
-        try (Stream<String> lineStream = java.nio.file.Files.lines(Paths.get(filePath), charset)) {
+    public static void readLines(String filePath, BiAction<String> eachFn) {
+        try (Stream<String> lineStream = java.nio.file.Files.lines(Paths.get(filePath), StandardCharsets.UTF_8)) {
             Iterator<String> it = lineStream.iterator();
             while (it.hasNext()) {
                 eachFn.accept(it.next());
@@ -230,13 +226,9 @@ public class Files extends FilenameUtils {
         }
     }
 
-    public static void readLines(String filePath, BiFunc<String, Boolean> eachFn) {
-        readLines(filePath, eachFn, StandardCharsets.UTF_8);
-    }
-
     @SneakyThrows
-    public static void readLines(String filePath, BiFunc<String, Boolean> eachFn, Charset charset) {
-        try (Stream<String> lineStream = java.nio.file.Files.lines(Paths.get(filePath), charset)) {
+    public static void readLines(String filePath, BiFunc<String, Boolean> eachFn) {
+        try (Stream<String> lineStream = java.nio.file.Files.lines(Paths.get(filePath), StandardCharsets.UTF_8)) {
             Iterator<String> it = lineStream.iterator();
             while (it.hasNext()) {
                 if (BooleanUtils.isFalse(eachFn.apply(it.next()))) {
@@ -246,13 +238,9 @@ public class Files extends FilenameUtils {
         }
     }
 
-    public static void writeLines(String filePath, Iterable<CharSequence> lines) {
-        writeLines(filePath, lines, StandardCharsets.UTF_8);
-    }
-
     @SneakyThrows
-    public static void writeLines(String filePath, Iterable<CharSequence> lines, Charset charset, StandardOpenOption... options) {
-        java.nio.file.Files.write(Paths.get(filePath), lines, charset, options);
+    public static void writeLines(String filePath, Iterable<CharSequence> lines, StandardOpenOption... options) {
+        java.nio.file.Files.write(Paths.get(filePath), lines, StandardCharsets.UTF_8, options);
     }
 
     public static void zip(String zipFile, String srcPath) {

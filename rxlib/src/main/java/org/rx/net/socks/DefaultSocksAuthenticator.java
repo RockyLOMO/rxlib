@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import lombok.ToString;
 import org.rx.bean.DateTime;
 import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
@@ -12,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Sys.toJsonString;
 
+@ToString
 public class DefaultSocksAuthenticator implements Authenticator {
     final Map<String, SocksUser> store = new ConcurrentHashMap<>();
 
@@ -70,15 +72,5 @@ public class DefaultSocksAuthenticator implements Authenticator {
             }
             usr.lastResetTime = DateTime.now();
         }
-    }
-
-    @Override
-    public String toString() {
-        StringBuilder buf = new StringBuilder();
-        buf.append("--SocksUsers--");
-        for (SocksUser usr : store.values()) {
-            buf.appendMessageFormat("\nusr:{} -> {}", usr.getUsername(), toJsonString(usr));
-        }
-        return buf.toString();
     }
 }

@@ -9,32 +9,22 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
-import org.rx.core.RxConfig;
-import org.rx.core.Tasks;
-import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
-import org.rx.io.Files;
 import org.rx.net.Sockets;
-import org.rx.net.http.AuthenticProxy;
 import org.rx.net.http.HttpClient;
 
 import java.io.Closeable;
 import java.io.File;
-import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.Optional;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class GeoIPSearcher implements Closeable {
     static final long CACHE_PUBLIC_IP_MINUTES = 2 * 60 * 1000 * Constants.NANO_TO_MILLIS;
-    static final IPGeolocation EMPTY = new IPGeolocation(null, null, "privateOrUnknown");
+    static final IpGeolocation PRIVATE_IP = new IpGeolocation(null, null, "private");
 
     final DatabaseReader reader;
     @Setter
@@ -80,23 +70,18 @@ public class GeoIPSearcher implements Closeable {
     }
 
     @SneakyThrows
-    public IPGeolocation resolve(String host) {
-        InetAddress ipAddr = InetAddress.getByName(host);
-        return lookup(ipAddr);
-    }
-
-    @SneakyThrows
-    IPGeolocation lookup(InetAddress ip) {
-        if (Sockets.isPrivateIp(ip) || ip.isAnyLocalAddress()) {
-            return EMPTY;
+    public IpGeolocation lookup(String host) {
+        InetAddress ip = InetAddress.getByName(host);
+        if (Sockets.isPrivateIp(ip)) {
+            return PRIVATE_IP;
         }
 
-        Optional<CountryResponse> countryResponse = reader.tryCountry(ip);
-        if (!countryResponse.isPresent()) {
-            return EMPTY;
+        Optional<CountryResponse> countryResponse;
+        if (ip.isAnyLocalAddress() || !(countryResponse = reader.tryCountry(ip)).isPresent()) {
+            return new IpGeolocation(null, null, "unknown");
         }
         CountryResponse cp = countryResponse.get();
         Country c = cp.getCountry();
-        return new IPGeolocation(c.getName(), c.getIsoCode(), c.getIsoCode());
+        return new IpGeolocation(c.getName(), c.getIsoCode(), c.getIsoCode());
     }
 }

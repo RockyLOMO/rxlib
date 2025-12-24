@@ -11,8 +11,9 @@ import org.rx.bean.DateTime;
 import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.io.Bytes;
+import org.rx.net.support.GeoIPSearcher;
+import org.rx.net.support.GeoManager;
 import org.rx.net.support.IpGeolocation;
-import org.rx.net.support.IPSearcher;
 import org.rx.util.BeanMapper;
 
 import java.io.Serializable;
@@ -54,7 +55,7 @@ public class SocksUser implements Serializable {
         final AtomicLong totalWriteBytes = new AtomicLong();
 
         public LoginInfo(InetAddress ip) {
-            ipInfo = IPSearcher.DEFAULT.resolve(ip.getHostAddress());
+            ipInfo = GeoManager.INSTANCE.resolveIp(ip.getHostAddress());
         }
     }
 
