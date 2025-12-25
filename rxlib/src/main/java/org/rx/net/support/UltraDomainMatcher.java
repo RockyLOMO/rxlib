@@ -37,6 +37,9 @@ public class UltraDomainMatcher implements Serializable {
             // 1. 初始化容量为 2 的幂次，负载因子 0.5 保证性能
             int capacity = 1;
             while (capacity < size * 2) capacity <<= 1;
+            // 安全检查
+            if (capacity < 0) capacity = 1 << 30;
+
             this.mask = capacity - 1;
             this.hashSlots = new int[capacity];
 
@@ -57,8 +60,7 @@ public class UltraDomainMatcher implements Serializable {
             // 3. 填充哈希槽 (线性探测法解决冲突)
             for (int id = 1; id < idToLabel.size(); id++) {
                 String label = idToLabel.get(id);
-                // 使用与 Window 相同的 Hash 算法
-                int h = calcHash(label);
+                int h = mixHash(label, 0, label.length());
                 int slot = h & mask;
                 while (hashSlots[slot] != 0) {
                     slot = (slot + 1) & mask;
@@ -76,24 +78,10 @@ public class UltraDomainMatcher implements Serializable {
             while (true) {
                 int id = hashSlots[slot];
                 if (id == 0) return -1; // 遇到空槽，说明不存在
-
                 // 校验 Key 是否相等 (解决哈希冲突)
-                if (equals(id, w)) {
-                    return id;
-                }
+                if (equals(id, w)) return id;
                 slot = (slot + 1) & mask;
             }
-        }
-
-        // 内部 Hash 算法 (必须与 Window.hashCode 保持一致)
-        private int calcHash(String s) {
-            int h = 0;
-            for (int i = 0; i < s.length(); i++) {
-                char c = s.charAt(i);
-                if (c >= 'A' && c <= 'Z') c += 32;
-                h = 31 * h + c;
-            }
-            return h;
         }
 
         // 比较 labelData[id] 与 Window 是否相等
@@ -112,6 +100,7 @@ public class UltraDomainMatcher implements Serializable {
         }
     }
 
+    // 构建期 Strategy，仅用于 Object2IntMap，逻辑需与 mixHash 兼容但 equals 区分对象
     private static class LabelStrategy implements Object2IntOpenCustomHashMap.Strategy<Object> {
         public int hashCode(Object o) {
             return o.hashCode();
@@ -148,7 +137,6 @@ public class UltraDomainMatcher implements Serializable {
     private int[] base;   // 复用：Tail 节点存 tailData 偏移量
     private int[] check;
     private char[] tailData; // 扁平化的 Tail 数据
-
     // --- Label 映射 (替换了 Object2IntMap) ---
     private CompactLabelMap compactLabelMap;
 
@@ -160,16 +148,21 @@ public class UltraDomainMatcher implements Serializable {
     public UltraDomainMatcher() {
     }
 
-    public void build(List<String> domains) {
-        // 1. 初始化临时构建器
+    public void build(Collection<String> rawDomains) {
+        // 1. 预处理：标准化输入 (转小写 + 去重)
+        Set<String> domains = new HashSet<>();
+        for (String d : rawDomains) {
+            if (d != null && !d.isEmpty()) domains.add(d.toLowerCase());
+        }
+
+        // 2. 初始化构建器
         tempBuildPool = new Object2IntOpenCustomHashMap<>(domains.size() * 2, 0.75f, new LabelStrategy());
         tempBuildPool.defaultReturnValue(-1);
         tempIdToLabel = new ArrayList<>(domains.size() * 2);
         tempIdToLabel.add(null); // 占位 0 号 ID
-
         InternalNode rootNode = new InternalNode();
 
-        // 2. 构建 Trie 树结构
+        // 3. 构建 Trie
         for (String domain : domains) {
             String[] labels = Strings.split(domain, ".");
             InternalNode curr = rootNode;
@@ -186,16 +179,16 @@ public class UltraDomainMatcher implements Serializable {
             curr.isEnd = true;
         }
 
-        // 3. 将 Map 固化为 CompactLabelMap
+        // 4. 固化 CompactLabelMap
         this.compactLabelMap = new CompactLabelMap(tempBuildPool, tempIdToLabel);
 
-        // 4. 初始化 DAT 数组
+        // 5. 初始化 DAT 数组
         int size = (int) (tempBuildPool.size() * 1.5) + 65536;
         resizeArrays(size);
         tailData = new char[size * 4];
         int tailCursor = 0;
 
-        // 5. 标准 DAT 构建 (BFS)
+        // 6. DAT BFS 构建
         PriorityQueue<NodePlan> pq = new PriorityQueue<>((a, b) -> b.node.children.size() - a.node.children.size());
         pq.add(new NodePlan(0, rootNode));
         int posCursor = 1;
@@ -216,8 +209,8 @@ public class UltraDomainMatcher implements Serializable {
 
                 InternalNode childNode = parentNode.children.get(lid);
 
-                // Tail 压缩
                 if (childNode.children.size() == 1 && !childNode.isEnd) {
+                    // Tail 压缩
                     int startOffset = tailCursor;
                     // 写入 tailData
                     InternalNode temp = childNode;
@@ -230,7 +223,6 @@ public class UltraDomainMatcher implements Serializable {
                         if (tailCursor + labelStr.length() + 2 >= tailData.length) {
                             tailData = Arrays.copyOf(tailData, tailData.length * 2);
                         }
-
                         if (!first) tailData[tailCursor++] = '.';
                         // 倒序写入
                         for (int k = labelStr.length() - 1; k >= 0; k--) {
@@ -255,7 +247,7 @@ public class UltraDomainMatcher implements Serializable {
             }
         }
 
-        // 6. 清理构建临时内存
+        // 7. 清理
         tempBuildPool = null;
         tempIdToLabel = null;
         nextLabelId = 1;
@@ -269,13 +261,11 @@ public class UltraDomainMatcher implements Serializable {
         try {
             int end = domain.length();
             int curr = 0;
-
             for (int i = domain.length() - 1; i >= -1; i--) {
                 if (i == -1 || domain.charAt(i) == '.') {
                     int start = i + 1;
                     if (start < end) {
                         w.set(domain, start, end);
-
                         // 使用 CompactLabelMap 进行零拷贝查询
                         int lid = compactLabelMap.getInt(w);
                         if (lid == -1) return false;
@@ -315,7 +305,6 @@ public class UltraDomainMatcher implements Serializable {
         }
     }
 
-    // --- 辅助方法 ---
     private int findBase(List<Integer> lids, int start) {
         int b = start;
         while (true) {
@@ -342,7 +331,6 @@ public class UltraDomainMatcher implements Serializable {
         if (oldSize < newSize) Arrays.fill(check, oldSize, newSize, EMPTY_CHECK);
     }
 
-    // --- Window 类 (核心) ---
     private static class Window {
         String s;
         int start;
@@ -356,13 +344,7 @@ public class UltraDomainMatcher implements Serializable {
 
         @Override
         public int hashCode() {
-            int h = 0;
-            for (int i = start; i < end; i++) {
-                char c = s.charAt(i);
-                if (c >= 'A' && c <= 'Z') c += 32;
-                h = 31 * h + c;
-            }
-            return h;
+            return mixHash(s, start, end);
         }
     }
 
