@@ -298,7 +298,7 @@ public class DomainDoubleArrayTrie implements Serializable {
 
     // --- 测试方法 ---
     public static void main(String[] args) {
-        DomainDATMatcher matcher = new DomainDATMatcher();
+        DomainDoubleArrayTrie matcher = new DomainDoubleArrayTrie();
         matcher.build(Arrays.asList("google.com", "baidu.com", "my.site.cn", "long.suffix.domain.net"));
 
         System.out.println("True: " + matcher.matchSuffix("www.google.com"));

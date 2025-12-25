@@ -14,7 +14,7 @@ public class GeoSiteMatcher implements Serializable {
     static final String regexpRule = "regexp:";
 
     final Set<String> fulls = new HashSet<>();
-    final DomainTrieMatcher domains = new DomainTrieMatcher();
+    final DomainDoubleArrayTrie domains = new DomainDoubleArrayTrie();
     final AhoCorasickDoubleArrayTrie<String> keywords = new AhoCorasickDoubleArrayTrie<>();
     final List<Pattern> regexps = new ArrayList<>();
 
@@ -22,6 +22,7 @@ public class GeoSiteMatcher implements Serializable {
     public GeoSiteMatcher(@NonNull Iterator<String>... rulesSet) {
         // 构建 AC自动机 要求一次性传入全部关键词
         TreeMap<String, String> keywordMap = new TreeMap<>();
+        ArrayList<String> domainRules = new ArrayList<>();
         for (Iterator<String> rules : rulesSet) {
             while (rules.hasNext()) {
                 String rule = rules.next();
@@ -34,10 +35,12 @@ public class GeoSiteMatcher implements Serializable {
                     String r = rule.substring(regexpRule.length());
                     regexps.add(Pattern.compile(r, Pattern.CASE_INSENSITIVE));
                 } else {
-                    domains.insert(rule.toLowerCase());
+//                    domains.insert(rule.toLowerCase());
+                    domainRules.add(rule.toLowerCase());
                 }
             }
         }
+        domains.build(domainRules);
         keywords.build(keywordMap);
     }
 
