@@ -13,3 +13,4 @@ rx.mv.db
 *.log
 rxlib/GeoLite2-City.mmdb
 rxlib/geoip.mmdb
+rxlib/geosite-direct.txt

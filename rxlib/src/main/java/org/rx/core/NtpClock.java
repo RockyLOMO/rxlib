@@ -50,7 +50,7 @@ public class NtpClock extends Clock implements Serializable {
                             Process proc = Runtime.getRuntime().exec("java -cp rxdaemon-1.0.jar org.rx.daemon.Application");
                             byte[] buf = new byte[128];
                             int len = proc.getInputStream().read(buf);
-                            String[] pair = new String(buf, 0, len).split(",");
+                            String[] pair = Strings.split(new String(buf, 0, len), ",");
                             time[1] = Long.parseLong(pair[0]);
                             time[0] = Long.parseLong(pair[1]);
 

@@ -1,9 +1,11 @@
 package org.rx.bean;
 
 import lombok.RequiredArgsConstructor;
+import org.rx.third.hankcs.AhoCorasickDoubleArrayTrie;
 import org.rx.util.function.BiFunc;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 
 public class TrieMatcher {
@@ -98,40 +100,39 @@ public class TrieMatcher {
         boolean isEnd;
     }
 
-//    private final TrieNode root;
-//    boolean isWhitelistMode;
+//    public static class SuffixACDoubleArrayTrie<V> extends AhoCorasickDoubleArrayTrie<V> {
+//        final Map<String, String> reversedCache = new HashMap<>();
 //
-//    // 构造函数，初始化 Trie
-//    public TriePrefixMatcher(Collection<String> prefixes, boolean isWhitelistMode) {
-//        root = new TrieNode();
-//        this.isWhitelistMode = isWhitelistMode;
-//        for (String prefix : prefixes) {
-//            insert(prefix);
+//        @Override
+//        public void build(Map<String, V> map) {
+//            for (String k : new HashSet<>(map.keySet())) {
+//                map.put(reverse(k), map.remove(k));
+//            }
+//            super.build(map);
 //        }
-//    }
 //
-//    // 插入前缀到 Trie
-//    private void insert(String prefix) {
-//        TrieNode node = root;
-//        String[] parts = prefix.split("\\.", -1);
-//        for (String part : parts) {
-//            node = node.children.computeIfAbsent(part, k -> new TrieNode());
+//        private String reverse(CharSequence k) {
+//            char[] chars = k.toCharArray();
+//            int left = 0, right = chars.length - 1;
+//            while (left < right) {
+//                char temp = chars[left];
+//                chars[left++] = chars[right];
+//                chars[right--] = temp;
+//            }
+//            return new String(chars);
 //        }
-//        node.isEnd = true;
-//    }
-
-//    /**
-//     * 检查类名是否以某个前缀开头
-//     *
-//     * @param className 完整类名（如 org.rx.net.class1）
-//     * @return true 如果匹配，false 如果不匹配
-//     */
-//    public boolean matches(String className) {
-//        boolean matches = innerMatches(className);
-//        return isWhitelistMode ? matches : !matches;
-//    }
 //
-//    boolean innerMatches(String className) {
-//
+//        @Override
+//        public boolean matches(CharSequence text) {
+//            return super.matches(reverse(text));
+//        }for (Hit<Integer> hit : hits) {
+//    int end = hit.end;  // 模式结束位置（在 input 文本中）
+//    int start = hit.begin;
+//    // 检查这是否是合法后缀边界
+//    if (end == domain.length() ||
+//        domain.charAt(end) == '.') {
+//        // 合法后缀匹配
+//    }
+//}
 //    }
 }

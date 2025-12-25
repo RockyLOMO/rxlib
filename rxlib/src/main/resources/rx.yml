@@ -94,8 +94,6 @@ org:
         changeType[enumError]: Not found {0} of {1} enum
         changeType<NoSuchMethodException>: Not found ValueOf method of {0}
         changeType<ReflectiveOperationException>: Convert {0} from {1} to {2} error
-      Strings:
-        split[lengthError]: Result array not fit {0} length
       YamlConfig:
         readAs[keyError]: Not found key {0} with type {1}
         readAs[partialKeyError]: Not found partial key {0} with type {1}

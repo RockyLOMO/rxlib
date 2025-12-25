@@ -210,7 +210,7 @@ public final class RxConfig {
     }
 
     public static final RxConfig INSTANCE;
-    static final BiFunc<String, Object[]> logClassNameFn = className -> className.split("\\.", -1);
+    static final BiFunc<String, Object[]> logClassNameFn = className -> Strings.split(className, ".", -1);
 
     static {
         JSONFactory.getDefaultObjectReaderProvider().addAutoTypeAccept("org.springframework");
