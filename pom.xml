@@ -12,8 +12,8 @@
         <version>9</version>
     </parent>
     <modules>
-        <module>daemon</module>
-        <module>agent</module>
+<!--        <module>daemon</module>-->
+<!--        <module>agent</module>-->
         <module>rxlib</module>
         <module>rxlib-x</module>
     </modules>
