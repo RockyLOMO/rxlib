@@ -14,7 +14,7 @@ public class GeoSiteMatcher implements Serializable {
     static final String regexpRule = "regexp:";
 
     final Set<String> fulls = new HashSet<>();
-    final DomainDoubleArrayTrie domains = new DomainDoubleArrayTrie();
+    final UltraDomainMatcher domains = new UltraDomainMatcher();
     final AhoCorasickDoubleArrayTrie<String> keywords = new AhoCorasickDoubleArrayTrie<>();
     final List<Pattern> regexps = new ArrayList<>();
 

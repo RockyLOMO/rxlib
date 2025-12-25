@@ -11,6 +11,7 @@ import org.rx.core.Tasks;
 import org.rx.io.Bytes;
 import org.rx.net.support.GeoManager;
 import org.rx.net.support.GeoSiteMatcher;
+import org.rx.net.support.UltraDomainMatcher;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
 
@@ -50,12 +51,22 @@ public class TestBean extends AbstractTester {
         }
 
 
-        List<String> rules = Arrays.toList(
-                "full:www.google.com",
-                "example.com",
-                "keyword:google",
-                "regexp:^test\\."
-        );
+        UltraDomainMatcher m = new UltraDomainMatcher();
+        m.build(Arrays.toList("google.com", "baidu.com", "my.site.cn", "long.suffix.domain.net"));
+        System.out.println("True: " + m.matchSuffix("www.google.com"));
+        System.out.println("True: " + m.matchSuffix("mail.baidu.com"));
+        System.out.println("True: " + m.matchSuffix("test.my.site.cn"));
+        System.out.println("False: " + m.matchSuffix("mygoogle.com"));
+        System.out.println("False: " + m.matchSuffix("site.cn"));
+        System.out.println("True: " + m.matchSuffix("a.b.long.suffix.domain.net"));
+
+
+//        List<String> rules = Arrays.toList(
+//                "full:www.google.com",
+//                "example.com",
+//                "keyword:google",
+//                "regexp:^test\\."
+//        );
 //        GeoSiteMatcher domainMatcher = new GeoSiteMatcher(rules.iterator());
 //        assert domainMatcher.matches("www.google.com");    // full
 //        assert domainMatcher.matches("mail.example.com");  // domain
