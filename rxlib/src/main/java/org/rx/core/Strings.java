@@ -320,23 +320,20 @@ public class Strings extends StringUtils {
         return text.replaceFirst("(?s)" + regex + "(?!.*?" + regex + ")", replacement);
     }
 
-    public static String[] split(String str, String delimiter) {
-        return split(str, delimiter, -1);
-    }
-
-    @ErrorCode("lengthError")
-    public static String[] split(String str, String delimiter, int fixedLength) {
-        String[] result;
-        if (str == null) { //"" split result length is 1
-            result = Arrays.EMPTY_STRING_ARRAY;
-        } else {
-            result = str.split(Pattern.quote(delimiter));
-        }
-        if (fixedLength > -1 && fixedLength != result.length) {
-            throw new ApplicationException("lengthError", values(fixedLength));
-        }
-        return result;
-    }
+    //StringUtils.split() //性能更好
+//    @ErrorCode("lengthError")
+//    public static String[] split(String str, String delimiter, int fixedLength) {
+//        String[] result;
+//        if (str == null) { //"" split result length is 1
+//            result = Arrays.EMPTY_STRING_ARRAY;
+//        } else {
+//            result = str.split(Pattern.quote(delimiter));
+//        }
+//        if (fixedLength > -1 && fixedLength != result.length) {
+//            throw new ApplicationException("lengthError", values(fixedLength));
+//        }
+//        return result;
+//    }
 
     public static String subStringByByteLen(String text, int length) {
         if (Strings.isEmpty(text)) {
@@ -378,7 +375,7 @@ public class Strings extends StringUtils {
         final String s = "AS(", e = ")";
         StringBuilder sb = new StringBuilder();
         if (input.startsWith(s) && input.endsWith(e)) {
-            for (String c : input.substring(3, input.length() - 1).split(",")) {
+            for (String c : Strings.split(input.substring(3, input.length() - 1), ",")) {
                 sb.append((char) Integer.parseInt(c));
             }
         } else {

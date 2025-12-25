@@ -263,7 +263,7 @@ public class HttpClient {
     public static List<Cookie> decodeCookie(@NonNull HttpUrl httpUrl, @NonNull String raw) {
         List<Cookie> cookies = new ArrayList<>();
         String domain = httpUrl.topPrivateDomain();
-        for (String pair : raw.split(Pattern.quote("; "))) {
+        for (String pair : Strings.split(raw, "; ")) {
             int i = pair.indexOf("=");
             if (i == -1) {
                 continue;
@@ -313,7 +313,7 @@ public class HttpClient {
         if (i != -1) {
             url = url.substring(i + 1);
         }
-        String[] pairs = url.split("&");
+        String[] pairs = Strings.split(url, "&");
         for (String pair : pairs) {
             int idx = pair.indexOf("=");
             String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name()) : pair;
@@ -324,7 +324,7 @@ public class HttpClient {
     }
 
     public static Map<String, String> decodeHeader(String raw) {
-        return decodeHeader(Arrays.toList(raw.trim().split(Pattern.quote("\n"))));
+        return decodeHeader(Arrays.toList(Strings.split(raw.trim(), "\n")));
     }
 
     @SneakyThrows

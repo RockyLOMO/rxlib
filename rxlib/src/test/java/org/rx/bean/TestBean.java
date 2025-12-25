@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
+import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
+import org.rx.net.support.GeoManager;
 import org.rx.net.support.GeoSiteMatcher;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
@@ -27,10 +29,11 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class TestBean extends AbstractTester {
+    @SneakyThrows
     @Test
     public void trieMatcher() {
         List<String> prefixes = Arrays.toList("org.rx.net", "com.example");
-        TrieMatcher.PrefixMatcher matcher = new TrieMatcher.PrefixMatcher(true, className -> className.split("\\.", -1));
+        TrieMatcher.PrefixMatcher matcher = new TrieMatcher.PrefixMatcher(true, className -> Strings.split(className, ".", -1));
         for (String p : prefixes) {
             matcher.insert(p);
         }
@@ -53,15 +56,23 @@ public class TestBean extends AbstractTester {
                 "keyword:google",
                 "regexp:^test\\."
         );
-        GeoSiteMatcher domainMatcher = new GeoSiteMatcher(rules.iterator());
-        assert domainMatcher.matches("www.google.com");    // full
-        assert domainMatcher.matches("mail.example.com");  // domain
-        assert domainMatcher.matches("xgooglex.com");      // keyword
-        assert domainMatcher.matches("test.abc");          // regexp
-        assert !domainMatcher.matches("www.googl2.com");   // full
-        assert !domainMatcher.matches("mail.exampl2.com"); // domain
-        assert !domainMatcher.matches("xgoogl2x.com");     // keyword
-        assert !domainMatcher.matches("2test.abc");        // regexp
+//        GeoSiteMatcher domainMatcher = new GeoSiteMatcher(rules.iterator());
+//        assert domainMatcher.matches("www.google.com");    // full
+//        assert domainMatcher.matches("mail.example.com");  // domain
+//        assert domainMatcher.matches("xgooglex.com");      // keyword
+//        assert domainMatcher.matches("test.abc");          // regexp
+//        assert !domainMatcher.matches("www.googl2.com");   // full
+//        assert !domainMatcher.matches("mail.exampl2.com"); // domain
+//        assert !domainMatcher.matches("xgoogl2x.com");     // keyword
+//        assert !domainMatcher.matches("2test.abc");        // regexp
+
+        GeoManager geoMgr = GeoManager.INSTANCE;
+        geoMgr.waitLoad();
+        assert !geoMgr.matchSiteDirect("www.google.com");
+        assert !geoMgr.matchSiteDirect("www.Google.com");
+        assert geoMgr.matchSiteDirect("2google.com");
+        assert geoMgr.matchSiteDirect("2Google.com");
+        assert !geoMgr.matchSiteDirect("google.com");
     }
 
     @SneakyThrows

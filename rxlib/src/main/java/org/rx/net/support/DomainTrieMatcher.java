@@ -1,11 +1,13 @@
 package org.rx.net.support;
 
+import org.rx.exception.InvalidException;
+
 import java.io.Serializable;
 
 public class DomainTrieMatcher implements Serializable {
     private static final long serialVersionUID = -2577041860871978500L;
 
-    static class CompactTrieNode implements Serializable{
+    static class CompactTrieNode implements Serializable {
         private static final long serialVersionUID = 1237957363773921057L;
         CompactTrieNode[] children;
         boolean isEnd;
@@ -21,14 +23,16 @@ public class DomainTrieMatcher implements Serializable {
         }
     }
 
-    // 字符映射：只支持 a-z 0-9 . （37 个字符）
-    static final int ALPHABET_SIZE = 37;
+    // 字符映射：只支持 a-z 0-9 . -（38 个字符）
+    static final int ALPHABET_SIZE = 38;
 
     private static int charToIndex(char c) {
         if (c >= 'a' && c <= 'z') return c - 'a';
+        if (c >= 'A' && c <= 'Z') return c - 'A'; // 处理大写
         if (c >= '0' && c <= '9') return 26 + (c - '0');
         if (c == '.') return 36;
-        return -1;
+        if (c == '-') return 37;
+        throw new InvalidException("Char {} not supported", c);
     }
 
     final CompactTrieNode root = new CompactTrieNode();
@@ -39,9 +43,7 @@ public class DomainTrieMatcher implements Serializable {
     public void insert(String domain) {
         CompactTrieNode node = root;
         for (int i = domain.length() - 1; i >= 0; i--) {
-            char c = domain.charAt(i);
-            int idx = charToIndex(c);
-            if (idx < 0) return; // 非法字符，跳过
+            int idx = charToIndex(domain.charAt(i));
             node = node.getOrCreate(idx);
         }
         node.isEnd = true;
@@ -53,16 +55,19 @@ public class DomainTrieMatcher implements Serializable {
     public boolean matchSuffix(String domain) {
         CompactTrieNode node = root;
         for (int i = domain.length() - 1; i >= 0; i--) {
-            char c = domain.charAt(i);
-            int idx = charToIndex(c);
-            if (idx < 0 || node.children == null || node.children[idx] == null) {
+            if (node.children == null
+                    || (node = node.children[charToIndex(domain.charAt(i))]) == null) {
                 return false;
             }
-            node = node.children[idx];
             if (node.isEnd) {
-                return true;
+
+                if (i == 0 || domain.charAt(i - 1) == '.') {
+                    return true;
+                }
+//                return true;
             }
         }
-        return node.isEnd;
+//        return node.isEnd;
+        return false;
     }
 }

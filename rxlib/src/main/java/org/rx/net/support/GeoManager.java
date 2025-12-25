@@ -33,11 +33,11 @@ public class GeoManager {
     @Setter
     AuthenticProxy proxy;
     @Setter
-    String geoIpFileUrl = "https://" + Constants.rCloud() + ":6501/Country.mmdb?" + RxConfig.ConfigNames.RTOKEN + "=" + RxConfig.INSTANCE.getRtoken();
+    String geoIpFileUrl = "https://" + Constants.rCloud() + ":6501/Country.mmdb?rtoken=" + RxConfig.INSTANCE.getRtoken();
     @Setter
     String geoIpFile = "geoip.mmdb";
     @Setter
-    String geoSiteDirectFileUrl = "https://" + Constants.rCloud() + ":6501/geosite-direct.txt?" + RxConfig.ConfigNames.RTOKEN + "=" + RxConfig.INSTANCE.getRtoken();
+    String geoSiteDirectFileUrl = "https://" + Constants.rCloud() + ":6501/geosite-direct.txt?rtoken=" + RxConfig.INSTANCE.getRtoken();
     @Setter
     String geoSiteDirectFile = "geosite-direct.txt";
     Set<String> geoSiteDirectRules;

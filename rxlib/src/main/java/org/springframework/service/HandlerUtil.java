@@ -332,7 +332,7 @@ public class HandlerUtil {
     }
 
     boolean auth(HttpServletRequest request) {
-        String h = RxConfig.ConfigNames.RTOKEN;
+        String h = "rtoken";
         String t = RxConfig.INSTANCE.getRtoken();
         return eq(request.getHeader(h), t) || eq(request.getParameter(h), t);
     }

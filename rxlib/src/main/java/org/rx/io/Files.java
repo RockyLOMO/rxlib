@@ -217,6 +217,11 @@ public class Files extends FilenameUtils {
     }
 
     @SneakyThrows
+    public static List<String> readLines(String filePath) {
+        return java.nio.file.Files.readAllLines(Paths.get(filePath), StandardCharsets.UTF_8);
+    }
+
+    @SneakyThrows
     public static void readLines(String filePath, BiAction<String> eachFn) {
         try (Stream<String> lineStream = java.nio.file.Files.lines(Paths.get(filePath), StandardCharsets.UTF_8)) {
             Iterator<String> it = lineStream.iterator();
