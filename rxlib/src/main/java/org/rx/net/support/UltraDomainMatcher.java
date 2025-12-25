@@ -1,6 +1,7 @@
 package org.rx.net.support;
 
 import io.netty.util.collection.IntObjectHashMap;
+import io.netty.util.concurrent.FastThreadLocal;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenCustomHashMap;
 import org.rx.core.Strings;
@@ -14,9 +15,7 @@ import java.util.*;
 public class UltraDomainMatcher implements Serializable {
     private static final long serialVersionUID = 7L;
 
-    private static class LabelStrategy implements Object2IntOpenCustomHashMap.Strategy<Object>, Serializable {
-        private static final long serialVersionUID = -7029659537305091771L;
-
+    private static class LabelStrategy implements Object2IntOpenCustomHashMap.Strategy<Object> {
         @Override
         public int hashCode(Object o) {
             if (o instanceof String) {
@@ -91,13 +90,24 @@ public class UltraDomainMatcher implements Serializable {
     private static final int MASK_TAIL = 0x40000000;
     private static final int MASK_VAL = 0x3FFFFFFF;
     private static final int EMPTY_CHECK = -1;
-    private static final ThreadLocal<Window> windowThreadLocal = ThreadLocal.withInitial(Window::new);
+    private static final FastThreadLocal<Window> windowThreadLocal = new FastThreadLocal<Window>() {
+        @Override
+        protected Window initialValue() {
+            return new Window();
+        }
+    };
+    private static final FastThreadLocal<Window> tailWindowThreadLocal = new FastThreadLocal<Window>() {
+        @Override
+        protected Window initialValue() {
+            return new Window();
+        }
+    };
 
     private int[] base;
     private int[] check;
     private String[][] tailTable;
 
-    private final LabelStrategy strategy = new LabelStrategy();
+    private final transient LabelStrategy strategy = new LabelStrategy();
     private final Object2IntMap<Object> labelPool;
     private String[] idToLabel;
     private int nextLabelId = 1;
@@ -119,7 +129,7 @@ public class UltraDomainMatcher implements Serializable {
             String[] labels = Strings.split(domain, ".");
             InternalNode curr = rootNode;
             for (int i = labels.length - 1; i >= 0; i--) {
-                String label = labels[i].toLowerCase();
+                String label = labels[i];
                 int lid = labelPool.getInt(label);
                 if (lid == -1) {
                     lid = nextLabelId++;
@@ -210,54 +220,63 @@ public class UltraDomainMatcher implements Serializable {
     public boolean matchSuffix(String domain) {
         if (domain == null || domain.isEmpty()) return false;
         Window w = windowThreadLocal.get();
-        int end = domain.length();
-        int curr = 0;
+        try {
+            int end = domain.length();
+            int curr = 0;
 
-        for (int i = domain.length() - 1; i >= -1; i--) {
-            if (i == -1 || domain.charAt(i) == '.') {
-                int start = i + 1;
-                if (start < end) {
-                    w.set(domain, start, end);
-                    int lid = labelPool.getInt(w);
-                    if (lid == -1) return false;
+            for (int i = domain.length() - 1; i >= -1; i--) {
+                if (i == -1 || domain.charAt(i) == '.') {
+                    int start = i + 1;
+                    if (start < end) {
+                        w.set(domain, start, end);
+                        int lid = labelPool.getInt(w);
+                        if (lid == -1) return false;
 
-                    int next = base[curr] + lid;
-                    if (next >= check.length || (check[next] & MASK_VAL) != curr) return false;
+                        int next = base[curr] + lid;
+                        if (next >= check.length || (check[next] & MASK_VAL) != curr) return false;
 
-                    if ((check[next] & MASK_TAIL) != 0) {
-                        return matchTail(domain, i, tailTable[next]);
+                        if ((check[next] & MASK_TAIL) != 0) {
+                            return matchTail(domain, i, tailTable[next]);
+                        }
+                        curr = next;
+                        if ((check[curr] & MASK_END) != 0) return true;
                     }
-                    curr = next;
-                    if ((check[curr] & MASK_END) != 0) return true;
+                    end = i;
                 }
-                end = i;
             }
+            return false;
+        } finally {
+            w.set(null, 0, 0); // 清空对 domain String 的引用，方便 GC
         }
-        return false;
     }
 
     private boolean matchTail(String domain, int dotPos, String[] tails) {
         int end = dotPos;
-        for (String tail : tails) {
-            int start = -1;
-            for (int i = end - 1; i >= -1; i--) {
-                if (i == -1 || domain.charAt(i) == '.') {
-                    start = i + 1;
-                    break;
+        // 临时借用一个 Window 进行比较
+        Window tempWin = tailWindowThreadLocal.get();
+        try {
+            for (String tail : tails) {
+                int start = -1;
+                for (int i = end - 1; i >= -1; i--) {
+                    if (i == -1 || domain.charAt(i) == '.') {
+                        start = i + 1;
+                        break;
+                    }
                 }
-            }
-            if (start == -1 || start >= end) return false;
+                if (start == -1 || start >= end) return false;
 
-            Window w = new Window();
-            w.set(domain, start, end);
-            if (!strategy.equals(tail, w)) return false;
-            end = start - 1;
+                tempWin.set(domain, start, end);
+                if (!strategy.equals(tail, tempWin)) return false;
+                end = start - 1;
+            }
+            return true;
+        } finally {
+            tempWin.set(null, 0, 0);
         }
-        return true;
     }
 
     static class InternalNode {
-//        Map<Integer, InternalNode> children = new HashMap<>();
+        //        Map<Integer, InternalNode> children = new HashMap<>();
         IntObjectHashMap<InternalNode> children = new IntObjectHashMap<>();
         boolean isEnd = false;
     }
