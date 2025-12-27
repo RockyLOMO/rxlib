@@ -20,6 +20,7 @@ import static org.rx.core.Sys.toJsonString;
 @ChannelHandler.Sharable
 public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5InitialRequest> {
     public static final Socks5InitialRequestHandler DEFAULT = new Socks5InitialRequestHandler();
+    static final DefaultSocks5InitialResponse AUTH = new DefaultSocks5InitialResponse(Socks5AuthMethod.PASSWORD);
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DefaultSocks5InitialRequest msg) {
@@ -43,6 +44,6 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
             ctx.writeAndFlush(new DefaultSocks5InitialResponse(Socks5AuthMethod.UNACCEPTED)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        ctx.writeAndFlush(new DefaultSocks5InitialResponse(server.isAuthEnabled() ? Socks5AuthMethod.PASSWORD : Socks5AuthMethod.NO_AUTH));
+        ctx.writeAndFlush(server.isAuthEnabled() ? AUTH : new DefaultSocks5InitialResponse(Socks5AuthMethod.NO_AUTH));
     }
 }
