@@ -21,6 +21,9 @@ import java.net.InetSocketAddress;
 @ChannelHandler.Sharable
 public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5CommandRequest> {
     public static final Socks5CommandRequestHandler DEFAULT = new Socks5CommandRequestHandler();
+    static final DefaultSocks5CommandResponse SUCCESS_IPv4 = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv4);
+    static final DefaultSocks5CommandResponse SUCCESS_DOMAIN = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.DOMAIN);
+    static final DefaultSocks5CommandResponse SUCCESS_IPv6 = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv6);
 
     @SneakyThrows
     @Override
@@ -112,7 +115,6 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
             Channel outbound = f.channel();
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
-            StringBuilder exMsg = new StringBuilder();
             Socks5ProxyHandler proxyHandler;
             if (server.cipherRoute(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
@@ -121,23 +123,38 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         outbound.attr(SocketConfig.ATTR_CONF).set(config);
                         Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
                         Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
-                        exMsg.append("[BACKEND_CIPHER]");
+                        log.info("socks5[{}] {} => {} BACKEND_CIPHER", server.getConfig().getListenPort(), inbound.localAddress(), outbound.remoteAddress());
                     }
-                    relay(inbound, outbound, dstAddrType, e, exMsg);
+                    relay(inbound, outbound, dstAddrType, e);
                 });
                 return;
             }
 
-            relay(inbound, outbound, dstAddrType, e, exMsg);
+            relay(inbound, outbound, dstAddrType, e);
         });
     }
 
-    private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e, StringBuilder exMsg) {
+    private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e) {
         //initChannel may change dstEp
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
         outbound.pipeline().addLast(BackendRelayHandler.DEFAULT);
 
-        inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, dstAddrType)).addListener((ChannelFutureListener) f -> {
+        DefaultSocks5CommandResponse commandResponse;
+        switch (dstAddrType.byteValue()) {
+            case 1:
+                commandResponse = SUCCESS_IPv4;
+                break;
+            case 3:
+                commandResponse = SUCCESS_DOMAIN;
+                break;
+            case 4:
+                commandResponse = SUCCESS_IPv6;
+                break;
+            default:
+                commandResponse = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, dstAddrType);
+                break;
+        }
+        inbound.writeAndFlush(commandResponse).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 Sockets.closeOnFlushed(f.channel());
                 return;
@@ -149,9 +166,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 inbound.attr(SocketConfig.ATTR_CONF).set(config);
                 Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
                 Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
-                exMsg.append("[FRONTEND_CIPHER]");
+                log.info("socks5[{}] {} => {} FRONTEND_CIPHER", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress());
             }
-            log.info("socks5[{}] {} => {} connected, dstEp={}[{}] {}", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination, exMsg.toString());
+            log.info("socks5[{}] {} => {} connected, dstEp={}[{}]", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination);
         });
     }
 }
