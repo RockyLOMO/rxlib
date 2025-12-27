@@ -12,6 +12,7 @@ import org.rx.net.Sockets;
 @ChannelHandler.Sharable
 public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5PasswordAuthRequest> {
     public static final Socks5PasswordAuthRequestHandler DEFAULT = new Socks5PasswordAuthRequestHandler();
+    static final DefaultSocks5PasswordAuthResponse SUCCESS = new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.SUCCESS);
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DefaultSocks5PasswordAuthRequest msg) {
@@ -26,7 +27,7 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.SUCCESS));
+        ctx.writeAndFlush(SUCCESS);
         ProxyManageHandler.get(ctx).setUser(user, ctx);
     }
 }
