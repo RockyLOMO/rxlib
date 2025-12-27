@@ -579,7 +579,9 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new Upstream(backConf, e.getFirstDestination(), srvEp));
+            Upstream upstream = new Upstream(backConf, e.getFirstDestination());
+            upstream.setSocksServer(srvEp);
+            e.setUpstream(upstream);
 //            e.setUpstream(new Upstream(e.getFirstDestination()));
         });
 
