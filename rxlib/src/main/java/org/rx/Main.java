@@ -119,8 +119,9 @@ public final class Main implements SocksSupport {
     public static final OptimalSettings AF = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
     public static final OptimalSettings AB = null;
     static final FastThreadLocal<Upstream> frontBTcpUpstream = new FastThreadLocal<>(),
-            frontBUdpUpstream = new FastThreadLocal<>();
-    static final FastThreadLocal<Socks5TcpUpstream> frontBTcpProxyUpstream = new FastThreadLocal<>();
+            frontBUdpUpstream = new FastThreadLocal<>(), ssUdpUpstream = new FastThreadLocal<>();
+    static final FastThreadLocal<Socks5TcpUpstream> frontBTcpProxyUpstream = new FastThreadLocal<>(),
+            ssTcpProxyUpstream = new FastThreadLocal<>();
     static final FastThreadLocal<Socks5UdpUpstream> frontBUdpProxyUpstream = new FastThreadLocal<>();
 
     @SneakyThrows
@@ -356,11 +357,27 @@ public final class Main implements SocksSupport {
             toAFConf.setOptimalSettings(AB);
 //            toAFConf.setTransportFlags(conf.getTransportFlags());
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
+            Func<UpstreamSupport> rFn = () -> svrSupport;
             ssSvr.onRoute.replace((s, e) -> {
-                e.setUpstream(new Socks5TcpUpstream(toAFConf, e.getFirstDestination(), () -> svrSupport));
+                UnresolvedEndpoint dstEp = e.getFirstDestination();
+                Socks5TcpUpstream upstream = ssTcpProxyUpstream.get();
+                if (upstream == null) {
+                    upstream = new Socks5TcpUpstream(toAFConf, dstEp, rFn);
+                } else {
+                    upstream.reuse(toAFConf, dstEp, rFn);
+                }
+                e.setUpstream(upstream);
             });
             ssSvr.onUdpRoute.replace((s, e) -> {
-                e.setUpstream(new Upstream(toAFConf, e.getFirstDestination(), svrEp));
+                UnresolvedEndpoint dstEp = e.getFirstDestination();
+                Upstream upstream = ssUdpUpstream.get();
+                if (upstream == null) {
+                    upstream = new Upstream(toAFConf, dstEp);
+                } else {
+                    upstream.reuse(toAFConf, dstEp);
+                }
+                upstream.setSocksServer(svrEp);
+                e.setUpstream(upstream);
             });
         }
 

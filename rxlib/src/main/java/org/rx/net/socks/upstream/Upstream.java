@@ -1,19 +1,19 @@
 package org.rx.net.socks.upstream;
 
 import io.netty.channel.Channel;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
+import lombok.Setter;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 
-@AllArgsConstructor
 @Getter
 public class Upstream {
     //Maybe frontend have a different configuration from backend
     protected SocketConfig config;
     protected volatile UnresolvedEndpoint destination;
+    @Setter
     protected volatile AuthenticEndpoint socksServer;
 
     public Upstream(UnresolvedEndpoint dstEp) {
