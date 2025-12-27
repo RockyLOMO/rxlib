@@ -23,10 +23,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 public class Socks5TcpUpstream extends Upstream {
-    final Func<UpstreamSupport> router;
+    private Func<UpstreamSupport> router;
 
     public Socks5TcpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
         super(config, dstEp);
+        this.router = router;
+    }
+
+    public void reuse(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
+        super.config = config;
+        super.destination = dstEp;
         this.router = router;
     }
 

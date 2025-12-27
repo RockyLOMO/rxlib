@@ -20,7 +20,11 @@ public class Upstream {
         this(null, dstEp);
     }
 
-    public Upstream(SocketConfig conf, @NonNull UnresolvedEndpoint dstEp) {
+    public Upstream(SocketConfig conf, UnresolvedEndpoint dstEp) {
+        reuse(conf, dstEp);
+    }
+
+    public void reuse(SocketConfig conf, @NonNull UnresolvedEndpoint dstEp) {
         config = conf;
         destination = dstEp;
     }
