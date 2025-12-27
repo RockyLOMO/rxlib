@@ -12,11 +12,16 @@ import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Func;
 
 public class Socks5UdpUpstream extends Upstream {
-    final Func<UpstreamSupport> router;
+    private Func<UpstreamSupport> router;
 
     public Socks5UdpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
         super(config, dstEp);
-        this.config = config;
+        this.router = router;
+    }
+
+    public void reuse(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
+        super.config = config;
+        super.destination = dstEp;
         this.router = router;
     }
 

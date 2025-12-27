@@ -103,7 +103,6 @@ public final class SocksContext extends EventArgs {
     final UnresolvedEndpoint firstDestination;
     Upstream upstream;
     boolean upstreamChanged;
-    int upstreamFailCount;
 
     public transient Channel inbound;
     public transient Channel outbound;
@@ -118,12 +117,11 @@ public final class SocksContext extends EventArgs {
         this.upstream = upstream;
     }
 
-    public synchronized boolean isUpstreamChanged() {
-        return upstreamChanged;
-    }
-
-    public synchronized void reset() {
-        upstreamChanged = false;
-        upstreamFailCount++;
+    synchronized boolean isUpstreamChanged() {
+        boolean r = upstreamChanged;
+        if (r) {
+            upstreamChanged = false;
+        }
+        return r;
     }
 }

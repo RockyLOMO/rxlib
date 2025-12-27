@@ -2,6 +2,7 @@ package org.rx;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
@@ -33,10 +34,7 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.transport.TcpClientConfig;
 import org.rx.net.transport.TcpServerConfig;
-import org.rx.util.function.Action;
-import org.rx.util.function.BiFunc;
-import org.rx.util.function.Func;
-import org.rx.util.function.TripleAction;
+import org.rx.util.function.*;
 
 import java.io.OutputStream;
 import java.math.BigInteger;
@@ -120,6 +118,10 @@ public final class Main implements SocksSupport {
     public static final OptimalSettings B = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
     public static final OptimalSettings AF = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
     public static final OptimalSettings AB = null;
+    static final FastThreadLocal<Upstream> frontBTcpUpstream = new FastThreadLocal<>(),
+            frontBUdpUpstream = new FastThreadLocal<>();
+    static final FastThreadLocal<Socks5TcpUpstream> frontBTcpProxyUpstream = new FastThreadLocal<>();
+    static final FastThreadLocal<Socks5UdpUpstream> frontBUdpProxyUpstream = new FastThreadLocal<>();
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
@@ -237,13 +239,13 @@ public final class Main implements SocksSupport {
         SocksConfig backConf = Sys.deepClone(frontBConf);
         backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         backConf.setOptimalSettings(B);
-        frontBSvr.onRoute.replace(firstRoute, (s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+        TripleFunc<UnresolvedEndpoint, String, Boolean> routeingFn = (dstEp, transType) -> {
             String host = dstEp.getHost();
             boolean outProxy;
+            long begin;
             String ext;
-            long begin = System.nanoTime();
             if (rssConf.enableRoute) {
+                begin = System.nanoTime();
                 if (!Sockets.isValidIp(host)) {
                     if (geoMgr.matchSiteDirect(host)) {
                         outProxy = false;
@@ -264,16 +266,33 @@ public final class Main implements SocksSupport {
                 }
             } else {
                 outProxy = true;
+                begin = 0;
                 ext = "routeDisabled";
             }
             if (rssConf.hasRouteFlag()) {
-                log.info("route dst TCP {} {} <- {} {}", host, outProxy ? "PROXY" : "DIRECT", ext,
+                log.info("route dst {} {} {} <- {} {}", transType, host, outProxy ? "PROXY" : "DIRECT", ext,
                         Sys.formatNanosElapsed(System.nanoTime() - begin));
             }
-            if (outProxy) {
-                e.setUpstream(new Socks5TcpUpstream(backConf, dstEp, routerFn.apply(e)));
+            return outProxy;
+        };
+        frontBSvr.onRoute.replace(firstRoute, (s, e) -> {
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            if (routeingFn.apply(dstEp, "TCP")) {
+                Socks5TcpUpstream upstream = frontBTcpProxyUpstream.get();
+                if (upstream == null) {
+                    upstream = new Socks5TcpUpstream(backConf, dstEp, routerFn.apply(e));
+                } else {
+                    upstream.reuse(backConf, dstEp, routerFn.apply(e));
+                }
+                e.setUpstream(upstream);
             } else {
-                e.setUpstream(new Upstream(dstEp));
+                Upstream upstream = frontBTcpUpstream.get();
+                if (upstream == null) {
+                    upstream = new Upstream(dstEp);
+                } else {
+                    upstream.reuse(null, dstEp);
+                }
+                e.setUpstream(upstream);
             }
         });
         frontBSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
@@ -296,39 +315,22 @@ public final class Main implements SocksSupport {
 //              }
 //          }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            String host = dstEp.getHost();
-            boolean outProxy;
-            String ext;
-            if (rssConf.enableRoute) {
-                if (!Sockets.isValidIp(host)) {
-                    if (geoMgr.matchSiteDirect(host)) {
-                        outProxy = false;
-                        ext = "geosite:direct";
-                    } else {
-                        outProxy = true;
-                        ext = "geosite:proxy";
-                    }
+            if (routeingFn.apply(dstEp, "UDP")) {
+                Socks5UdpUpstream upstream = frontBUdpProxyUpstream.get();
+                if (upstream == null) {
+                    upstream = new Socks5UdpUpstream(backConf, dstEp, routerFn.apply(e));
                 } else {
-                    IpGeolocation geo = geoMgr.resolveIp(host);
-                    String category = geo.getCategory();
-                    if (Strings.equalsIgnoreCase(category, "cn") || Strings.equalsIgnoreCase(category, "private")) {
-                        outProxy = false;
-                    } else {
-                        outProxy = true;
-                    }
-                    ext = "geoip:" + category;
+                    upstream.reuse(backConf, dstEp, routerFn.apply(e));
                 }
+                e.setUpstream(upstream);
             } else {
-                outProxy = true;
-                ext = "routeDisabled";
-            }
-            if (rssConf.hasRouteFlag()) {
-                log.info("route dst UDP {} {} <- {}", host, outProxy ? "PROXY" : "DIRECT", ext);
-            }
-            if (outProxy) {
-                e.setUpstream(new Socks5UdpUpstream(backConf, dstEp, routerFn.apply(e)));
-            } else {
-                e.setUpstream(new Upstream(dstEp));
+                Upstream upstream = frontBUdpUpstream.get();
+                if (upstream == null) {
+                    upstream = new Upstream(dstEp);
+                } else {
+                    upstream.reuse(null, dstEp);
+                }
+                e.setUpstream(upstream);
             }
         });
         frontBSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
