@@ -27,7 +27,7 @@ jobs:
         run: |
           echo "APP_MODULE=rxlib" >> $GITHUB_ENV
           echo "REMOTE_DIR=rss" >> $GITHUB_ENV
-          echo "HEALTH_URL=cloud.f-li.cn:6899" >> $GITHUB_ENV
+          echo "HEALTH_URL=f-li.cn:9900" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
       - name: Build with Maven
         run: |
@@ -60,10 +60,10 @@ jobs:
       - name: Copy JAR to server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.SSH_HOST }}
+          host: ${{ secrets.SSH_RSS_SVR_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_PORT }}
+          port: ${{ secrets.SSH_RSS_SVR_PORT }}
           source: app.jar.publish,start.sh,rollback.sh
           target: /home/${{ env.REMOTE_DIR }}/
           overwrite: true
@@ -74,10 +74,10 @@ jobs:
       - name: Execute remote commands
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
+          host: ${{ secrets.SSH_RSS_SVR_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_PORT }}
+          port: ${{ secrets.SSH_RSS_SVR_PORT }}
           script: |
             cd /home/${{ env.REMOTE_DIR }}/
             chmod 755 start.sh
@@ -123,10 +123,10 @@ jobs:
         if: steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure'
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
+          host: ${{ secrets.SSH_RSS_SVR_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_PORT }}
+          port: ${{ secrets.SSH_RSS_SVR_PORT }}
           script: |
             cd /home/${{ env.REMOTE_DIR }}/
             chmod 755 rollback.sh

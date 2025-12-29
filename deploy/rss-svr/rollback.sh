@@ -16,11 +16,10 @@ LOCAL_TIME=$(date +"%Y-%m-%d %H:%M:%S")
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd $SCRIPT_DIR
 
-PORT=6885
-DNS_PORT=753
-MEM_OPTIONS="-Xms512m -Xmx896m -Xss512k -XX:MaxMetaspaceSize=128m -XX:MaxDirectMemorySize=1g -XX:-OmitStackTraceInFastThrow -XX:+UseCompressedClassPointers -XX:+UseStringDeduplication"
-APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.connectTimeoutMillis=10000 -Djava.net.preferIPv4Stack=true"
-DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$SCRIPT_DIR/heapdump-$(date +%Y%m%d_%H%M%S).hprof -XX:ErrorFile=$SCRIPT_DIR/hs_err_pid%p.log -XX:+CreateCoredumpOnCrash --add-exports java.base/jdk.internal.ref=ALL-UNNAMED"
+PORT=9900
+MEM_OPTIONS="-Xms64m -Xmx128m -Xss256k -XX:MaxMetaspaceSize=64m -XX:MaxDirectMemorySize=640m -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+UseCompressedClassPointers -XX:+UseStringDeduplication"
+APP_OPTIONS="-Dapp.disk.h2Settings=CACHE_SIZE=4096;COMPRESS=false;PAGE_SIZE=2048;MAX_COMPACT_TIME=100 -Dapp.net.reactorThreadAmount=2 -Dapp.net.connectTimeoutMillis=15000 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dapp.net.dns.outlandServers=1.1.1.1:53 -Djava.net.preferIPv4Stack=true"
+DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./heapdump-$(date +%Y%m%d_%H%M%S).hprof -XX:ErrorFile=./hs_err_pid%p.log -XX:+CreateCoredumpOnCrash"
 
 echo "${RED}[${LOCAL_TIME}] 发布模式：正在终止端口 ${PORT}/tcp 的旧进程..."
 sudo fuser -k ${PORT}/tcp >/dev/null 2>&1 || true
@@ -32,7 +31,7 @@ if [ -f "app.jar.latest" ]; then
 fi
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
-nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} >/dev/null 2>&1 &
+nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >/dev/null 2>&1 &
 sleep 5
 
 if fuser ${PORT}/tcp >/dev/null 2>&1; then
