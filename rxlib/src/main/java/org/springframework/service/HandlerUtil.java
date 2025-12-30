@@ -24,7 +24,6 @@ import org.rx.util.BeanMapper;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.PrintWriter;
@@ -44,11 +43,6 @@ public class HandlerUtil {
     static final String PARAMS_NAME = "_p";
     static final String DOT = ".";
     static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
-
-    @PostConstruct
-    public void init() {
-        log.info("rauth init");
-    }
 
     @SneakyThrows
     public boolean around(HttpServletRequest request, HttpServletResponse response) {
@@ -340,7 +334,7 @@ public class HandlerUtil {
     boolean auth(HttpServletRequest request) {
         String h = "rtoken";
         String t = RxConfig.INSTANCE.getRtoken();
-        log.info("rauth {} = {}", request.getHeader(h), t);
+        log.info("rauth {} = {} -> {}", request.getHeader(h), t, eq(request.getHeader(h), t));
         return eq(request.getHeader(h), t) || eq(request.getParameter(h), t);
     }
 }
