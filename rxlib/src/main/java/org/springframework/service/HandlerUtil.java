@@ -316,7 +316,7 @@ public class HandlerUtil {
             if (b == null) {
                 b = IOStream.readString(request.getInputStream(), StandardCharsets.UTF_8);
             }
-            log.info("rauth body:{}", b);
+//            log.info("rauth body:{}", b);
             if (Strings.isBlank(b)) {
                 return null;
             }
@@ -328,7 +328,7 @@ public class HandlerUtil {
             return toJsonObject(b);
         } catch (Throwable e) {
             log.debug("around {}", e.toString());
-            log.error("around",e);
+//            log.warn("around", e);
             return null;
         }
     }
