@@ -42,7 +42,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 
 import static org.rx.core.Extends.tryClose;
 import static org.rx.core.Sys.toJsonString;

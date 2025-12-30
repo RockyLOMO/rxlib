@@ -33,7 +33,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
     public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
         this.user = user;
         InetSocketAddress realEp = SocksSupport.ENDPOINT_TRACER.head(ctx.channel());
-        info = user.getLoginIps().computeIfAbsent(realEp.getAddress(), SocksUser.LoginInfo::new);
+        info = user.getLoginIps().computeIfAbsent(realEp.getAddress(), ip -> new SocksUser.LoginInfo());
         if (user.getMaxIpCount() != -1 && user.getLoginIps().size() > user.getMaxIpCount()) {
             log.error("SocksUser {} maxIpCount={}\nconnectedIps={} incomingIp={}", user.getUsername(), user.getMaxIpCount(), user.getLoginIps().keySet(), realEp);
             Sockets.closeOnFlushed(ctx.channel());

@@ -4,7 +4,6 @@ import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
 import org.rx.core.TimeoutFuture;
 import org.rx.net.*;
