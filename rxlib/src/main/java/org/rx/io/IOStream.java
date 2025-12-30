@@ -87,12 +87,11 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
 
         ByteBuf buf = Bytes.heapBuffer();
         try {
-            buf.writeBytes(in, in.available());
-//            byte[] sb = Bytes.arrayBuffer();
-//            int r;
-//            while ((r = in.read(sb)) != Constants.IO_EOF) {
-//                buf.writeBytes(sb, 0, r);
-//            }
+//            buf.writeBytes(in, in.available());
+            int chunkSize = Constants.KB;
+            while (buf.writeBytes(in, chunkSize) != Constants.IO_EOF) {
+
+            }
             return buf.toString(charset);
         } finally {
             buf.release();
