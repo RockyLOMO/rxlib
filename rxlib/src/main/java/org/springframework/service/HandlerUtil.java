@@ -334,6 +334,7 @@ public class HandlerUtil {
     boolean auth(HttpServletRequest request) {
         String h = "rtoken";
         String t = RxConfig.INSTANCE.getRtoken();
+        log.info("rauth {} = {}", request.getHeader(h), t);
         return eq(request.getHeader(h), t) || eq(request.getParameter(h), t);
     }
 }

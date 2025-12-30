@@ -2,8 +2,8 @@ name: Build & Push to ssh - rssGateway
 # copy logback
 on:
   workflow_dispatch:    # 支持手动触发
-  push:
-    branches: [ rss-11 ]
+#  push:
+#    branches: [ rss-11 ]
 
 jobs:
   build-and-push:
