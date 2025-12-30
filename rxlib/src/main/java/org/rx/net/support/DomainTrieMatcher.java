@@ -4,8 +4,6 @@ import org.rx.exception.InvalidException;
 
 import java.io.Serializable;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 
 ///**
 // * 方案一：哈希偏移扁平化 Trie

@@ -2,7 +2,6 @@ package org.rx.net.socks;
 
 import lombok.ToString;
 import org.rx.bean.DateTime;
-import org.rx.core.StringBuilder;
 import org.rx.core.Tasks;
 
 import java.net.InetAddress;
@@ -11,7 +10,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
-import static org.rx.core.Sys.toJsonString;
 
 @ToString
 public class DefaultSocksAuthenticator implements Authenticator {
