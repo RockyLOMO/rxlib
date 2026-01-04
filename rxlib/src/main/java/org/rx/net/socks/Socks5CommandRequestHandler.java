@@ -52,7 +52,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (msg.type() == Socks5CommandType.CONNECT) {
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onRoute, e);
-            connect(inCh, msg.dstAddrType(), e);
+            connect(inCh, msg.dstAddrType(), e, null);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
             log.info("socks5[{}] UdpAssociate {}", server.getConfig().getListenPort(), msg);
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
@@ -75,7 +75,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }
     }
 
-    private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e) {
+    private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
 
         Upstream upstream = e.getUpstream();
@@ -89,8 +89,13 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
-                    if (!e.isCancel() && e.isUpstreamChanged()) {
-                        connect(inbound, dstAddrType, e);
+                    short[] attempts = reconnectionAttempts;
+                    if (attempts == null) {
+                        attempts = new short[]{0};
+                    }
+                    if (!e.isCancel() && attempts[0] < 16) {
+                        attempts[0]++;
+                        connect(inbound, dstAddrType, e, attempts);
                         return;
                     }
                 }

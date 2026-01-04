@@ -998,7 +998,7 @@ public class TestCore extends AbstractTester {
 
         SocksUser r = new SocksUser("r");
         r.setLastResetTime(DateTime.now());
-        r.getLoginIps().put(InetAddress.getByName("18.12.3.4"), new SocksUser.LoginInfo(InetAddress.getByName("baidu.com")));
+        r.getLoginIps().put(InetAddress.getByName("18.12.3.4"), new SocksUser.LoginInfo());
         System.out.println(toJsonString(r));
     }
 

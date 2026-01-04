@@ -89,7 +89,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         } else {
             inBuf.retain();
         }
-        UdpManager.pendOrWritePacket(outbound, new DatagramPacket(inBuf, upDstEp.socketAddress()));
+        outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
 //        log.info("UDP OUT {} => {}[{}]", srcEp, upDstEp, dstEp);
     }
 }

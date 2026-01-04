@@ -60,16 +60,6 @@ public final class UdpManager {
         ch.close();
     }
 
-    public static void pendOrWritePacket(Channel outbound, Object packet) {
-        SocksContext sc = SocksContext.ctx(outbound);
-        ConcurrentLinkedQueue<Object> pending = sc.pendingPackages;
-        if (pending != null && pending.add(packet)) {
-            log.debug("PENDING_QUEUE {} => {} pend a packet", sc.source, sc.firstDestination);
-            return;
-        }
-        outbound.writeAndFlush(packet);
-    }
-
     public static ByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {
         ByteBuf outBuf = Bytes.directBuffer(64 + buf.readableBytes());
         outBuf.writeZero(3);

@@ -105,7 +105,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
             inBuf.readerIndex(0);
         }
-        UdpManager.pendOrWritePacket(outbound, new DatagramPacket(inBuf.retain(), upDstEp.socketAddress()));
+        outbound.writeAndFlush(new DatagramPacket(inBuf.retain(), upDstEp.socketAddress()));
         log.debug("socks5[{}] UDP OUT {} => {}[{}]", server.config.getListenPort(), srcEp, upDstEp, dstEp);
     }
 }
