@@ -21,7 +21,7 @@ public class FrontendRelayHandler extends ChannelInboundHandlerAdapter {
         if (!sc.outbound.isActive()) {
             ConcurrentLinkedQueue<Object> pending = sc.pendingPackages;
             if (pending != null) {
-                log.debug("PENDING_QUEUE {} => {} pend a packet", inbound.remoteAddress(), sc.outbound);
+                log.info("TCP outbound pending ADD_PACK {} => {}", inbound.remoteAddress(), sc.outbound);
                 pending.add(msg);
             }
             return;
