@@ -54,7 +54,7 @@ public final class UdpManager {
     public static void close(InetSocketAddress srcEp) {
         ChannelFuture chf = channels.remove(srcEp);
         if (chf == null) {
-            log.warn("UDP close fail {}", srcEp);
+            log.warn("UDP error close fail {}", srcEp);
             return;
         }
         Channel ch = chf.channel();
