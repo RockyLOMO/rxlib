@@ -4,8 +4,6 @@ import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Tasks;
-import org.rx.core.TimeoutFuture;
 import org.rx.net.*;
 import org.rx.net.socks.upstream.Socks5ProxyHandler;
 import org.rx.net.socks.upstream.Upstream;
@@ -13,7 +11,6 @@ import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.math.BigInteger;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 @Slf4j
@@ -55,28 +52,21 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (msg.type() == Socks5CommandType.CONNECT) {
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onRoute, e);
-            connect(inCh, msg.dstAddrType(), e);
+            connect(inCh, msg.dstAddrType(), e, null);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
             log.info("socks5[{}] UdpAssociate {}", server.getConfig().getListenPort(), msg);
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
 
-            InetAddress srcAddr = srcEp.getAddress();
-            TimeoutFuture<?> maxLifeFn = Tasks.setTimeout(() -> {
-                log.info("socks5[{}] UdpAssociate {} by maxLife", server.config.getListenPort(), srcAddr);
-                Sockets.closeOnFlushed(inCh);
-            }, server.config.getUdpAssociateMaxLifeSeconds() * 1000L);
-            //todo new udp port
-//            int refCnt = UdpManager.active(srcAddr);
-//            log.info("socks5[{}] UDP active {}[{}]", server.config.getListenPort(), srcAddr, refCnt);
-            inCh.closeFuture().addListener(f -> {
-                maxLifeFn.cancel();
-//                int rc = UdpManager.inactive(srcAddr);
-//                log.info("socks5[{}] UDP inactive {}[{}]", server.config.getListenPort(), srcAddr, rc);
-            });
+//            InetAddress srcAddr = srcEp.getAddress();
+//            TimeoutFuture<?> maxLifeFn = Tasks.setTimeout(() -> {
+//                log.info("socks5[{}] UdpAssociate {} by maxLife", server.config.getListenPort(), srcAddr);
+//                Sockets.closeOnFlushed(inCh);
+//            }, server.config.getUdpAssociateMaxLifeSeconds() * 1000L);
+//            inCh.closeFuture().addListener(f -> maxLifeFn.cancel());
 
             Socks5AddressType bindAddrType = msg.dstAddrType();
             //msg.dstAddr(), msg.dstPort() = 0.0.0.0:0 客户端希望绑定
-            //ipv4
+            //ipv4 udp svr 单个udp性能高
             InetSocketAddress bindEp = (InetSocketAddress) inCh.localAddress();
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, bindAddrType, bindEp.getHostString(), bindEp.getPort()));
         } else {
@@ -85,7 +75,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }
     }
 
-    private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e) {
+    private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
 
         Upstream upstream = e.getUpstream();
@@ -99,8 +89,13 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
-                    if (!e.isCancel() && e.isUpstreamChanged()) {
-                        connect(inbound, dstAddrType, e);
+                    short[] attempts = reconnectionAttempts;
+                    if (attempts == null) {
+                        attempts = new short[]{0};
+                    }
+                    if (!e.isCancel() && attempts[0] < 16) {
+                        attempts[0]++;
+                        connect(inbound, dstAddrType, e, attempts);
                         return;
                     }
                 }

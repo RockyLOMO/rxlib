@@ -9,7 +9,6 @@ import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
-import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetAddress;
@@ -69,29 +68,31 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         Channel inbound = ctx.channel();
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
         final InetSocketAddress srcEp = in.sender();
-        InetAddress saddr = srcEp.getAddress();
-        if (!Sockets.isPrivateIp(saddr) && !server.config.getWhiteList().contains(saddr)) {
-            log.warn("UDP security error, package from {}", srcEp);
+        InetAddress srcIp = srcEp.getAddress();
+        //client in
+        if (!Sockets.isPrivateIp(srcIp) && !server.config.getWhiteList().contains(srcIp)) {
+            log.warn("socks5[{}] UDP security error, package from {}", server.config.getListenPort(), srcEp);
             return;
         }
-        final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
 
-        Channel outbound = UdpManager.openChannel(srcEp, k -> {
+        //不要尝试UPD白名单，会有未知dstEp发送包的情况
+        //不要尝试简化outbound，不改包的情况下srcEp没法关联
+        final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
+        Channel outbound = UdpManager.open(srcEp, k -> {
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
-            Upstream upstream = e.getUpstream();
-            Channel ch = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
-                        upstream.initChannel(ob);
+            Channel ch = Sockets.udpBootstrap(e.getUpstream().getConfig(), ob -> {
+                        e.getUpstream().initChannel(ob);
                         ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                                 UdpBackendRelayHandler.DEFAULT);
                     }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0))
 //                    .syncUninterruptibly()
                     .channel();
             SocksContext.mark(inbound, ch, e, false);
-            log.debug("socks5[{}] UDP open {}", server.config.getListenPort(), srcEp);
+            log.info("socks5[{}] UDP open {}", server.config.getListenPort(), k);
             ch.closeFuture().addListener(f -> {
-                log.debug("socks5[{}] UDP close {}", server.config.getListenPort(), srcEp);
-                UdpManager.closeChannel(srcEp);
+                log.info("socks5[{}] UDP close {}", server.config.getListenPort(), k);
+                UdpManager.close(k);
             });
             return ch;
         });
@@ -104,7 +105,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
             inBuf.readerIndex(0);
         }
-        UdpManager.pendOrWritePacket(outbound, new DatagramPacket(inBuf.retain(), upDstEp.socketAddress()));
+        outbound.writeAndFlush(new DatagramPacket(inBuf.retain(), upDstEp.socketAddress()));
         log.debug("socks5[{}] UDP OUT {} => {}[{}]", server.config.getListenPort(), srcEp, upDstEp, dstEp);
     }
 }

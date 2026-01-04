@@ -5,6 +5,7 @@ import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory;
 import org.apache.sshd.scp.server.ScpCommandFactory;
@@ -101,27 +102,11 @@ public final class SocksContext extends EventArgs {
     final InetSocketAddress source;
     @Getter
     final UnresolvedEndpoint firstDestination;
-    Upstream upstream;
-    boolean upstreamChanged;
+    @Getter
+    @Setter
+    transient Upstream upstream;
 
     public transient Channel inbound;
     public transient Channel outbound;
     transient ConcurrentLinkedQueue<Object> pendingPackages;
-
-    public synchronized Upstream getUpstream() {
-        return upstream;
-    }
-
-    public synchronized void setUpstream(Upstream upstream) {
-        upstreamChanged = upstreamChanged || this.upstream != upstream;
-        this.upstream = upstream;
-    }
-
-    synchronized boolean isUpstreamChanged() {
-        boolean r = upstreamChanged;
-        if (r) {
-            upstreamChanged = false;
-        }
-        return r;
-    }
 }

@@ -21,7 +21,7 @@ public class UnresolvedEndpoint implements Serializable {
     private final String host;
     @Getter
     private final int port;
-    private InetSocketAddress cache;
+    private transient InetSocketAddress cache;
 
     public UnresolvedEndpoint(@NonNull InetSocketAddress socketAddress) {
         host = socketAddress.getHostString();

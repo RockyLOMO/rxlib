@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.github.rockylomo</groupId>
     <artifactId>rx</artifactId>
-    <version>2.21.9-SNAPSHOT</version>
+    <version>2.21.10-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <parent>

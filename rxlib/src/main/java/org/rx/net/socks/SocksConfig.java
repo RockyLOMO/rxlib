@@ -1,9 +1,6 @@
 package org.rx.net.socks;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
-import lombok.ToString;
+import lombok.*;
 import org.rx.core.cache.DiskCache;
 import org.rx.net.SocketConfig;
 
@@ -20,8 +17,7 @@ public class SocksConfig extends SocketConfig {
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = 60 * 4;
     private int writeTimeoutSeconds;
-    private int udpAssociateMaxLifeSeconds = 60 * 60 * 24;
-    private int udpReadTimeoutSeconds = 60 * 20;
+    private int udpReadTimeoutSeconds = 60 * 60 * 12;
     private int udpWriteTimeoutSeconds;
     @Getter(lazy = true)
     private final Set<InetAddress> whiteList = whiteList();
