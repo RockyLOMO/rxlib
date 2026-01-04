@@ -28,7 +28,7 @@ public final class UdpManager {
         SocksContext sc = SocksContext.ctx(outbound);
         if (!f.isSuccess()) {
 //            sc.pendingPackages = null;
-            closeChannel(sc.source);
+            close(sc.source);
             return;
         }
 
@@ -44,74 +44,20 @@ public final class UdpManager {
         }
     };
 
-//    static class WhitelistItem implements AutoCloseable {
-//        int refCnt;
-//        final Map<InetSocketAddress, Channel> channels = new ConcurrentHashMap<>();
-//
-//        @Override
-//        public void close() {
-//            for (Channel ch : channels.values()) {
-//                ch.close();
-//            }
-//            channels.clear();
-//        }
-//    }
-//
-//    static final Map<InetAddress, WhitelistItem> whitelist = new ConcurrentHashMap<>();
-//
-//    public static synchronized int active(InetAddress srcAddr) {
-//        WhitelistItem item = whitelist.computeIfAbsent(srcAddr, k -> new WhitelistItem());
-//        return item.refCnt++;
-//    }
-//
-//    public static synchronized int inactive(InetAddress srcAddr) {
-//        WhitelistItem item = whitelist.get(srcAddr);
-//        item.refCnt--;
-//        if (item.refCnt == 0) {
-//            item.close();
-//        }
-//        return item.refCnt;
-//    }
-//
-//    public static Channel openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
-//        WhitelistItem item = whitelist.get(incomingEp.getAddress());
-//        if (item == null) {
-//            throw new InvalidException("UDP security error, package from {}", incomingEp);
-//        }
-//
-//        return item.channels.computeIfAbsent(incomingEp, loadFn);
-//    }
-//
-//    public static void closeChannel(InetSocketAddress incomingEp) {
-//        WhitelistItem item = whitelist.get(incomingEp.getAddress());
-//        if (item == null) {
-//            log.warn("UDP security error, package from {}", incomingEp);
-//            return;
-//        }
-//
-//        Channel channel = item.channels.remove(incomingEp);
-//        if (channel == null) {
-//            log.warn("UDP close fail {}", incomingEp);
-//            return;
-//        }
-//        tryClose(SocksContext.ctx(channel).upstream);
-//        channel.close();
-//    }
-
     static final Map<InetSocketAddress, Channel> channels = new ConcurrentHashMap<>();
 
-    public static Channel openChannel(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
+    public static Channel open(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
         return channels.computeIfAbsent(incomingEp, loadFn);
     }
 
-    public static void closeChannel(InetSocketAddress incomingEp) {
-        Channel channel = channels.remove(incomingEp);
-        if (channel == null) {
+    public static void close(InetSocketAddress incomingEp) {
+        Channel ch = channels.remove(incomingEp);
+        if (ch == null) {
             log.warn("UDP close fail {}", incomingEp);
             return;
         }
-        tryClose(SocksContext.ctx(channel).upstream);
-        channel.close();
+        tryClose(SocksContext.ctx(ch).upstream);
+        ch.close();
     }
 
     public static void pendOrWritePacket(Channel outbound, Object packet) {

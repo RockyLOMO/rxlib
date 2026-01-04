@@ -56,7 +56,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(SSCommon.REMOTE_DEST).get());
         ShadowsocksServer server = Sockets.getAttr(inbound, SocksContext.SS_SVR);
 
-        Channel outbound = UdpManager.openChannel(srcEp, k -> {
+        Channel outbound = UdpManager.open(srcEp, k -> {
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
@@ -66,7 +66,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0), UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SS_SVR, server).bind(0).syncUninterruptibly().channel();
-            ch.closeFuture().addListener(f -> UdpManager.closeChannel(srcEp));
+            ch.closeFuture().addListener(f -> UdpManager.close(srcEp));
             return ch;
 
 //            Channel ob2 = Sockets.udpBootstrap(server.config.getMemoryMode(), ob -> {

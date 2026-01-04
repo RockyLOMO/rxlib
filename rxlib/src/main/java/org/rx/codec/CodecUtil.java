@@ -111,8 +111,12 @@ public class CodecUtil {
         return bigInt;
     }
 
-    public static long hash64(Object... dataArray) {
-        return hash64(Serializer.DEFAULT.serializeToBytes(dataArray));
+    public static long hash64(Object... array) {
+        return hash64(Serializer.DEFAULT.serializeToBytes(array));
+    }
+
+    public static long hash64(Object single) {
+        return hash64(Serializer.DEFAULT.serializeToBytes(single));
     }
 
     public static long hash64(String data) {
