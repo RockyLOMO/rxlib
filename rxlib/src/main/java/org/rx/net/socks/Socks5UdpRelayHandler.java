@@ -79,11 +79,13 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             ChannelFuture chf = Sockets.udpBootstrap(e.getUpstream().getConfig(), ob -> {
+                SocksContext.mark(inbound, ob, e, false);
                 e.getUpstream().initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
-            }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0));
-            SocksContext.mark(inbound, chf.channel(), e, false);
+            }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListeners(Sockets.logBind(0), f -> {
+                e.outboundActive = f.isSuccess();
+            });
             log.info("socks5[{}] UDP open {}", server.config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
                 log.info("socks5[{}] UDP close {}", server.config.getListenPort(), k);
@@ -104,7 +106,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             upDstEp = dstEp;
         }
         inBuf.retain();
-        if (outboundFuture.isSuccess()) {
+        if (sc.outboundActive) {
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             outboundFuture.addListener(f -> {

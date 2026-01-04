@@ -17,6 +17,6 @@ public class ShadowsocksConfig extends SocketConfig {
     private final InetSocketAddress serverEndpoint;
     private final String method;
     private final String password;
-    private int tcpTimeoutSeconds = 60 * 2;
-    private int udpTimeoutSeconds = 60 * 10;
+    private int tcpTimeoutSeconds = 60 * 4;
+    private int udpTimeoutSeconds = 60 * 60 * 6;
 }

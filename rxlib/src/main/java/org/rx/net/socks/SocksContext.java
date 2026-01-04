@@ -108,5 +108,6 @@ public final class SocksContext extends EventArgs {
 
     public transient Channel inbound;
     public transient Channel outbound;
+    public volatile transient boolean outboundActive;
     transient ConcurrentLinkedQueue<Object> pendingPackages;
 }
