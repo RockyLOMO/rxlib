@@ -17,7 +17,7 @@ public class SocksConfig extends SocketConfig {
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = 60 * 4;
     private int writeTimeoutSeconds;
-    private int udpReadTimeoutSeconds = 60 * 60 * 12;
+    private int udpReadTimeoutSeconds = 60 * 60 * 6;
     private int udpWriteTimeoutSeconds;
     @Getter(lazy = true)
     private final Set<InetAddress> whiteList = whiteList();

@@ -2,6 +2,7 @@ package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
@@ -44,18 +45,19 @@ public final class UdpManager {
         }
     };
 
-    static final Map<InetSocketAddress, Channel> channels = new ConcurrentHashMap<>();
+    static final Map<InetSocketAddress, ChannelFuture> channels = new ConcurrentHashMap<>();
 
-    public static Channel open(InetSocketAddress incomingEp, BiFunc<InetSocketAddress, Channel> loadFn) {
-        return channels.computeIfAbsent(incomingEp, loadFn);
+    public static ChannelFuture open(InetSocketAddress srcEp, BiFunc<InetSocketAddress, ChannelFuture> loadFn) {
+        return channels.computeIfAbsent(srcEp, loadFn);
     }
 
-    public static void close(InetSocketAddress incomingEp) {
-        Channel ch = channels.remove(incomingEp);
-        if (ch == null) {
-            log.warn("UDP close fail {}", incomingEp);
+    public static void close(InetSocketAddress srcEp) {
+        ChannelFuture chf = channels.remove(srcEp);
+        if (chf == null) {
+            log.warn("UDP close fail {}", srcEp);
             return;
         }
+        Channel ch = chf.channel();
         tryClose(SocksContext.ctx(ch).upstream);
         ch.close();
     }
