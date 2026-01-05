@@ -6,28 +6,25 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.proxy.ProxyConnectException;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
 import org.rx.core.Strings;
 import org.rx.net.Sockets;
 
-import java.util.concurrent.ConcurrentLinkedQueue;
-
 @Slf4j
 @ChannelHandler.Sharable
-public class BackendRelayHandler extends ChannelInboundHandlerAdapter {
-    public static final BackendRelayHandler DEFAULT = new BackendRelayHandler();
+public class TcpBackendRelayHandler extends ChannelInboundHandlerAdapter {
+    public static final TcpBackendRelayHandler DEFAULT = new TcpBackendRelayHandler();
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        Channel outbound = ctx.channel();
-        SocksContext sc = SocksContext.ctx(outbound);
-        ConcurrentLinkedQueue<Object> pending = sc.pendingPackages;
-        if (CollectionUtils.isEmpty(pending)) {
-            return;
-        }
-        log.info("TCP outbound pending FLUSH_PACKS {} => {}[{}]", sc.inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
-        Sockets.writeAndFlush(outbound, pending);
-        sc.pendingPackages = null;
+//        Channel outbound = ctx.channel();
+//        SocksContext sc = SocksContext.ctx(outbound);
+//        ConcurrentLinkedQueue<Object> pending = sc.pendingPackages;
+//        if (CollectionUtils.isEmpty(pending)) {
+//            return;
+//        }
+//        log.info("TCP outbound pending FLUSH_PACKS {} => {}[{}]", sc.inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
+//        Sockets.writeAndFlush(outbound, pending);
+//        sc.pendingPackages = null;
         super.channelActive(ctx);
     }
 
