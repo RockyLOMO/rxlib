@@ -124,7 +124,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             relay(inbound, outbound, dstAddrType, e);
         });
-        SocksContext.mark(inbound, outboundFuture, e, true);
+        SocksContext.mark(inbound, outboundFuture, e);
     }
 
     private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e) {

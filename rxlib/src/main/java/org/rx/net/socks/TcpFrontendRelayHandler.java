@@ -18,14 +18,9 @@ public class TcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
                 if (!f.isSuccess()) {
                     return;
                 }
-                log.info("TCP outbound pending FLUSH_PACK {} => {}", inbound.remoteAddress(), sc.outbound);
+                log.debug("TCP outbound pending FLUSH_PACK {} => {}", inbound.remoteAddress(), sc.outbound);
                 f.channel().writeAndFlush(msg);
             });
-//            ConcurrentLinkedQueue<Object> pending = sc.pendingPackages;
-//            if (pending != null) {
-//                log.info("TCP outbound pending ADD_PACK {} => {}", inbound.remoteAddress(), sc.outbound);
-//                pending.add(msg);
-//            }
             return;
         }
 

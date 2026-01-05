@@ -1,10 +1,14 @@
 package org.rx.net.socks;
 
-import lombok.*;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import org.rx.core.cache.DiskCache;
 import org.rx.net.SocketConfig;
 
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.Set;
 
 @RequiredArgsConstructor
@@ -21,6 +25,7 @@ public class SocksConfig extends SocketConfig {
     private int udpWriteTimeoutSeconds;
     @Getter(lazy = true)
     private final Set<InetAddress> whiteList = whiteList();
+    private InetSocketAddress udp2rawClient;
 
     private Set<InetAddress> whiteList() {
         return DiskCache.DEFAULT.asSet();

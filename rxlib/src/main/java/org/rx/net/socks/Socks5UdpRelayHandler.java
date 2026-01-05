@@ -79,13 +79,14 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         ChannelFuture outboundFuture = UdpManager.open(srcEp, k -> {
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
+            //todo 根据dstEp支持多upstream
             Upstream upstream = e.getUpstream();
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0));
-            SocksContext.mark(inbound, chf, e, false);
+            SocksContext.mark(inbound, chf, e);
             log.info("socks5[{}] UDP open {}", config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
                 log.info("socks5[{}] UDP close {}", config.getListenPort(), k);
