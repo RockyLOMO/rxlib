@@ -24,27 +24,6 @@ import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public final class UdpManager {
-    public static final ChannelFutureListener FLUSH_PENDING_QUEUE = f -> {
-        Channel outbound = f.channel();
-        SocksContext sc = SocksContext.ctx(outbound);
-        if (!f.isSuccess()) {
-//            sc.pendingPackages = null;
-            close(sc.source);
-            return;
-        }
-
-        ConcurrentLinkedQueue<Object> queue = sc.pendingPackages;
-        if (queue == null) {
-            return;
-        }
-        int size = queue.size();
-        Sockets.writeAndFlush(outbound, queue);
-        sc.pendingPackages = null;
-        if (size > 0) {
-            log.info("PENDING_QUEUE {} => {} flush {} packets", sc.source, sc.firstDestination, size);
-        }
-    };
-
     static final Map<InetSocketAddress, ChannelFuture> channels = new ConcurrentHashMap<>();
 
     public static ChannelFuture open(InetSocketAddress srcEp, BiFunc<InetSocketAddress, ChannelFuture> loadFn) {

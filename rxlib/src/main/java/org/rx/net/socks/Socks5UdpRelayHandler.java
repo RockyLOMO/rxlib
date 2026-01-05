@@ -82,8 +82,8 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
                 e.getUpstream().initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
-            }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListeners(Sockets.logBind(0), f -> e.outboundActive = f.isSuccess());
-            SocksContext.mark(inbound, chf.channel(), e, false);
+            }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0));
+            SocksContext.mark(inbound, chf, e, false);
             log.info("socks5[{}] UDP open {}", config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
                 log.info("socks5[{}] UDP close {}", config.getListenPort(), k);
@@ -107,9 +107,9 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         if (sc.outboundActive) {
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
-            outboundFuture.addListener(f -> {
+            outboundFuture.addListener((ChannelFutureListener) f -> {
                 log.info("socks5[{}] UDP outbound pending {} => {}", config.getListenPort(), srcEp, upDstEp);
-                outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
+                f.channel().writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
             });
         }
         log.debug("socks5[{}] UDP OUT {} => {}[{}]", config.getListenPort(), srcEp, upDstEp, dstEp);

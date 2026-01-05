@@ -60,8 +60,8 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                 e.getUpstream().initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
                         UdpBackendRelayHandler.DEFAULT);
-            }).attr(SocksContext.SS_SVR, server).bind(0).addListener(f -> e.outboundActive = f.isSuccess());
-            SocksContext.mark(inbound, chf.channel(), e, false);
+            }).attr(SocksContext.SS_SVR, server).bind(0);
+            SocksContext.mark(inbound, chf, e, false);
             chf.channel().closeFuture().addListener(f -> UdpManager.close(srcEp));
             return chf;
         });
@@ -77,11 +77,11 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             inBuf.retain();
             upDstEp = sc.getUpstream().getDestination();
         }
-        if (sc.outboundActive) {
+        if (sc.isOutboundActive()) {
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             ByteBuf finalInBuf = inBuf;
-            outboundFuture.addListener(f -> outbound.writeAndFlush(new DatagramPacket(finalInBuf, upDstEp.socketAddress())));
+            outboundFuture.addListener((ChannelFutureListener) f -> f.channel().writeAndFlush(new DatagramPacket(finalInBuf, upDstEp.socketAddress())));
         }
 //        log.info("UDP OUT {} => {}[{}]", srcEp, upDstEp, dstEp);
     }

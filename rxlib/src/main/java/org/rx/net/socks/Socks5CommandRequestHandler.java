@@ -84,7 +84,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             upstream.initChannel(outbound);
 
             SocksContext.mark(inbound, outbound, e, true);
-            inbound.pipeline().addLast(FrontendRelayHandler.DEFAULT);
+            inbound.pipeline().addLast(TcpFrontendRelayHandler.DEFAULT);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
@@ -131,7 +131,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e) {
         //initChannel may change dstEp
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
-        outbound.pipeline().addLast(BackendRelayHandler.DEFAULT);
+        outbound.pipeline().addLast(TcpBackendRelayHandler.DEFAULT);
 
         DefaultSocks5CommandResponse commandResponse;
         switch (dstAddrType.byteValue()) {

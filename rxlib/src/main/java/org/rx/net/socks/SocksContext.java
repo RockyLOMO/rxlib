@@ -2,6 +2,7 @@ package org.rx.net.socks;
 
 import com.alibaba.fastjson2.TypeReference;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -46,14 +47,14 @@ public final class SocksContext extends EventArgs {
      * @param sc
      * @param pendingQueue
      */
-    public static void mark(Channel inbound, Channel outbound, SocksContext sc, boolean pendingQueue) {
-        if (pendingQueue) {
-            sc.pendingPackages = new ConcurrentLinkedQueue<>();
-        }
+    public static void mark(Channel inbound, ChannelFuture outbound, SocksContext sc, boolean pendingQueue) {
+//        if (pendingQueue) {
+//            sc.pendingPackages = new ConcurrentLinkedQueue<>();
+//        }
         sc.inbound = inbound;
-        sc.outbound = outbound;
+        sc.outbound = outbound.addListener(f -> sc.outboundActive = f.isSuccess());
         inbound.attr(SOCKS_CTX).set(sc);
-        outbound.attr(SOCKS_CTX).set(sc);
+        outbound.channel().attr(SOCKS_CTX).set(sc);
     }
 
     public static SocksContext ctx(Channel channel) {
@@ -107,7 +108,8 @@ public final class SocksContext extends EventArgs {
     transient Upstream upstream;
 
     public transient Channel inbound;
-    public transient Channel outbound;
-    public volatile transient boolean outboundActive;
-    transient ConcurrentLinkedQueue<Object> pendingPackages;
+    public transient ChannelFuture outbound;
+    @Getter
+    transient volatile boolean outboundActive;
+//    transient ConcurrentLinkedQueue<Object> pendingPackages;
 }
