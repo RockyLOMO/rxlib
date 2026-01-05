@@ -4,9 +4,9 @@ import io.netty.channel.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
+import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.TcpBackendRelayHandler;
 import org.rx.net.socks.TcpFrontendRelayHandler;
-import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -43,7 +43,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
             outbound.pipeline().addLast(TcpBackendRelayHandler.DEFAULT);
         });
-        SocksContext.mark(inbound, outboundFuture, e, true);
+        SocksContext.mark(inbound, outboundFuture, e);
 
         ctx.fireChannelRead(msg).pipeline().remove(this);
     }

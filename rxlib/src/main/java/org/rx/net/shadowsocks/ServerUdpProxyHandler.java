@@ -62,7 +62,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
                         UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SS_SVR, server).bind(0);
-            SocksContext.mark(inbound, chf, e, false);
+            SocksContext.mark(inbound, chf, e);
             chf.channel().closeFuture().addListener(f -> UdpManager.close(srcEp));
             return chf;
         });

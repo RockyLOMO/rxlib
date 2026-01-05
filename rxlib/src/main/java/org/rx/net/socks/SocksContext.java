@@ -26,7 +26,6 @@ import org.rx.net.support.UnresolvedEndpoint;
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
 import java.util.Collections;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.rx.core.Extends.require;
 import static org.rx.core.Sys.fromJson;
@@ -45,12 +44,8 @@ public final class SocksContext extends EventArgs {
      * @param inbound
      * @param outbound
      * @param sc
-     * @param pendingQueue
      */
-    public static void mark(Channel inbound, ChannelFuture outbound, SocksContext sc, boolean pendingQueue) {
-//        if (pendingQueue) {
-//            sc.pendingPackages = new ConcurrentLinkedQueue<>();
-//        }
+    public static void mark(Channel inbound, ChannelFuture outbound, SocksContext sc) {
         sc.inbound = inbound;
         sc.outbound = outbound.addListener(f -> sc.outboundActive = f.isSuccess());
         inbound.attr(SOCKS_CTX).set(sc);
@@ -111,5 +106,4 @@ public final class SocksContext extends EventArgs {
     public transient ChannelFuture outbound;
     @Getter
     transient volatile boolean outboundActive;
-//    transient ConcurrentLinkedQueue<Object> pendingPackages;
 }
