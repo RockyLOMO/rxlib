@@ -80,10 +80,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
         Upstream upstream = e.getUpstream();
         SocketConfig config = upstream.getConfig();
-        Sockets.bootstrap(inbound.eventLoop(), config, outbound -> {
+        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), config, outbound -> {
             upstream.initChannel(outbound);
-
-            SocksContext.mark(inbound, outbound, e, true);
             inbound.pipeline().addLast(TcpFrontendRelayHandler.DEFAULT);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
@@ -99,7 +97,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         return;
                     }
                 }
-                if (f.cause() instanceof io.netty.channel.ConnectTimeoutException) {
+                if (f.cause() instanceof ConnectTimeoutException) {
                     log.warn("socks5[{}] connect {}[{}] fail\n{}", server.getConfig().getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause().getMessage());
                 } else {
                     log.error("socks5[{}] connect {}[{}] fail", server.getConfig().getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause());
@@ -126,6 +124,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             relay(inbound, outbound, dstAddrType, e);
         });
+        SocksContext.mark(inbound, outboundFuture, e, true);
     }
 
     private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e) {

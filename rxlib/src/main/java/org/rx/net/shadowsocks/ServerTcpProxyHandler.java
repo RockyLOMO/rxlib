@@ -26,13 +26,11 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
 
         SocksContext e = new SocksContext((InetSocketAddress) inbound.remoteAddress(), new UnresolvedEndpoint(realEp));
         server.raiseEvent(server.onRoute, e);
-        UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
-
         Upstream upstream = e.getUpstream();
-        Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), outbound -> {
-            upstream.initChannel(outbound);
+        UnresolvedEndpoint dstEp = upstream.getDestination();
 
-            SocksContext.mark(inbound, outbound, e, true);
+        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), outbound -> {
+            upstream.initChannel(outbound);
             inbound.pipeline().addLast(TcpFrontendRelayHandler.DEFAULT);
         }).connect(dstEp.socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
@@ -45,6 +43,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
             outbound.pipeline().addLast(TcpBackendRelayHandler.DEFAULT);
         });
+        SocksContext.mark(inbound, outboundFuture, e, true);
 
         ctx.fireChannelRead(msg).pipeline().remove(this);
     }

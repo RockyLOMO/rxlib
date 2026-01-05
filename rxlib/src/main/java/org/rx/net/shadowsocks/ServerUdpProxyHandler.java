@@ -56,8 +56,9 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         ChannelFuture outboundFuture = UdpManager.open(srcEp, k -> {
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
-            ChannelFuture chf = Sockets.udpBootstrap(e.getUpstream().getConfig(), ob -> {
-                e.getUpstream().initChannel(ob);
+            Upstream upstream = e.getUpstream();
+            ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
+                upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
                         UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SS_SVR, server).bind(0);
