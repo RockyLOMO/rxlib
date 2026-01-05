@@ -38,7 +38,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                 sc.inbound.attr(SSCommon.REMOTE_SRC).set(out.sender());
             }
 
-            sc.inbound.writeAndFlush(outBuf.retain(), ctx.voidPromise());
+            sc.inbound.writeAndFlush(outBuf.retain());
 //            log.info("UDP IN {}[{}] => {}", out.sender(), dstEp, srcEp);
 //            log.info("UDP IN {}[{}] => {}\n{}", out.sender(), dstEp, srcEp, Bytes.hexDump(outBuf));
         }
@@ -57,30 +57,31 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             ChannelFuture chf = Sockets.udpBootstrap(e.getUpstream().getConfig(), ob -> {
-                SocksContext.mark(inbound, ob, e, false);
                 e.getUpstream().initChannel(ob);
-                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0), UdpBackendRelayHandler.DEFAULT);
+                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
+                        UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SS_SVR, server).bind(0).addListener(f -> e.outboundActive = f.isSuccess());
+            SocksContext.mark(inbound, chf.channel(), e, false);
             chf.channel().closeFuture().addListener(f -> UdpManager.close(srcEp));
             return chf;
         });
         Channel outbound = outboundFuture.channel();
 
         SocksContext sc = SocksContext.ctx(outbound);
-        UnresolvedEndpoint upDstEp = sc.getUpstream().getDestination();
+        UnresolvedEndpoint upDstEp;
         AuthenticEndpoint upSvrEp = sc.getUpstream().getSocksServer();
         if (upSvrEp != null) {
             inBuf = UdpManager.socks5Encode(inBuf, dstEp);
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
         } else {
             inBuf.retain();
+            upDstEp = sc.getUpstream().getDestination();
         }
         if (sc.outboundActive) {
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
-            UnresolvedEndpoint finalUpDstEp = upDstEp;
             ByteBuf finalInBuf = inBuf;
-            outboundFuture.addListener(f -> outbound.writeAndFlush(new DatagramPacket(finalInBuf, finalUpDstEp.socketAddress())));
+            outboundFuture.addListener(f -> outbound.writeAndFlush(new DatagramPacket(finalInBuf, upDstEp.socketAddress())));
         }
 //        log.info("UDP OUT {} => {}[{}]", srcEp, upDstEp, dstEp);
     }
