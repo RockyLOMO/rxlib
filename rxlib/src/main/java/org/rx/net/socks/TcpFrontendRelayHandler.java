@@ -15,6 +15,9 @@ public class TcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
         SocksContext sc = SocksContext.ctx(inbound);
         if (!sc.outboundActive) {
             sc.outbound.addListener((ChannelFutureListener) f -> {
+                if (!f.isSuccess()) {
+                    return;
+                }
                 log.info("TCP outbound pending FLUSH_PACK {} => {}", inbound.remoteAddress(), sc.outbound);
                 f.channel().writeAndFlush(msg);
             });
