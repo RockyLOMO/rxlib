@@ -33,7 +33,6 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             } else {
                 outBuf.retain();
             }
-//            sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp), ctx.voidPromise());
             sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp));
 
             log.debug("socks5[{}] UDP IN {}[{}] => {}", server.config.getListenPort(), out.sender(), dstEp, srcEp);
@@ -64,11 +63,12 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
 
         Channel inbound = ctx.channel();
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
+        SocksConfig config = server.config;
         final InetSocketAddress srcEp = in.sender();
         InetAddress srcIp = srcEp.getAddress();
         //client in
-        if (!Sockets.isPrivateIp(srcIp) && !server.config.getWhiteList().contains(srcIp)) {
-            log.warn("socks5[{}] UDP security error, package from {}", server.config.getListenPort(), srcEp);
+        if (!Sockets.isPrivateIp(srcIp) && !config.getWhiteList().contains(srcIp)) {
+            log.warn("socks5[{}] UDP security error, package from {}", config.getListenPort(), srcEp);
             return;
         }
 
@@ -79,16 +79,14 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             ChannelFuture chf = Sockets.udpBootstrap(e.getUpstream().getConfig(), ob -> {
-                SocksContext.mark(inbound, ob, e, false);
                 e.getUpstream().initChannel(ob);
-                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
+                ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
-            }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListeners(Sockets.logBind(0), f -> {
-                e.outboundActive = f.isSuccess();
-            });
-            log.info("socks5[{}] UDP open {}", server.config.getListenPort(), k);
+            }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListeners(Sockets.logBind(0), f -> e.outboundActive = f.isSuccess());
+            SocksContext.mark(inbound, chf.channel(), e, false);
+            log.info("socks5[{}] UDP open {}", config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
-                log.info("socks5[{}] UDP close {}", server.config.getListenPort(), k);
+                log.info("socks5[{}] UDP close {}", config.getListenPort(), k);
                 UdpManager.close(k);
             });
             return chf;
@@ -110,10 +108,10 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             outboundFuture.addListener(f -> {
-                log.info("socks5[{}] UDP outbound pending {} => {}", server.config.getListenPort(), srcEp, upDstEp);
+                log.info("socks5[{}] UDP outbound pending {} => {}", config.getListenPort(), srcEp, upDstEp);
                 outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
             });
         }
-        log.debug("socks5[{}] UDP OUT {} => {}[{}]", server.config.getListenPort(), srcEp, upDstEp, dstEp);
+        log.debug("socks5[{}] UDP OUT {} => {}[{}]", config.getListenPort(), srcEp, upDstEp, dstEp);
     }
 }
