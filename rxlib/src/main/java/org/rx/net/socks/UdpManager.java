@@ -1,6 +1,8 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
@@ -38,12 +40,14 @@ public final class UdpManager {
         ch.close();
     }
 
-    public static ByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {
-        ByteBuf outBuf = Bytes.directBuffer(64 + buf.readableBytes());
-        outBuf.writeZero(3);
-        encode(outBuf, dstEp);
-        outBuf.writeBytes(buf);
-        return outBuf;
+    public static CompositeByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {
+        PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
+        ByteBuf header = allocator.directBuffer(64);
+        header.writeZero(3);
+        encode(header, dstEp);
+        CompositeByteBuf compositeBuf = allocator.compositeDirectBuffer();
+        compositeBuf.addComponents(true, header, buf);
+        return compositeBuf;
     }
 
     public static UnresolvedEndpoint socks5Decode(ByteBuf buf) {
@@ -63,6 +67,22 @@ public final class UdpManager {
         }
         buf.writeByte(addrType.byteValue());
         Socks5AddressEncoder.DEFAULT.encodeAddress(addrType, ep.getHost(), buf);
+        buf.writeShort(ep.getPort());
+    }
+
+    @SneakyThrows
+    public static void encode(ByteBuf buf, InetSocketAddress ep) {
+        String host = ep.getHostString();
+        Socks5AddressType addrType;
+        if (NetUtil.isValidIpV4Address(host)) {
+            addrType = Socks5AddressType.IPv4;
+        } else if (NetUtil.isValidIpV6Address(host)) {
+            addrType = Socks5AddressType.IPv6;
+        } else {
+            addrType = Socks5AddressType.DOMAIN;
+        }
+        buf.writeByte(addrType.byteValue());
+        Socks5AddressEncoder.DEFAULT.encodeAddress(addrType, host, buf);
         buf.writeShort(ep.getPort());
     }
 

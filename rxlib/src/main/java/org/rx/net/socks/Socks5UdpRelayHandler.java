@@ -79,6 +79,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         ChannelFuture outboundFuture = UdpManager.open(srcEp, k -> {
             SocksContext e = new SocksContext(srcEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
+            //todo 根据dstEp支持多upstream
             Upstream upstream = e.getUpstream();
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
