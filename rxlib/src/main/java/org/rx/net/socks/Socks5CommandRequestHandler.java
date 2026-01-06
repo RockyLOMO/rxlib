@@ -5,7 +5,7 @@ import io.netty.handler.codec.socksx.v5.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.*;
-import org.rx.net.socks.upstream.Socks5ProxyHandler;
+import org.rx.net.socks.upstream.Socks5ClientHandler;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -82,7 +82,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         SocketConfig config = upstream.getConfig();
         ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), config, outbound -> {
             upstream.initChannel(outbound);
-            inbound.pipeline().addLast(TcpFrontendRelayHandler.DEFAULT);
+            inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
@@ -107,8 +107,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
             Channel outbound = f.channel();
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
-            Socks5ProxyHandler proxyHandler;
-            if (server.cipherRoute(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ProxyHandler.class)) != null) {
+            Socks5ClientHandler proxyHandler;
+            if (server.cipherRoute(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
                     if (config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
                         //todo 解依赖ZIP
@@ -130,7 +130,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e) {
         //initChannel may change dstEp
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
-        outbound.pipeline().addLast(TcpBackendRelayHandler.DEFAULT);
+        outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
 
         DefaultSocks5CommandResponse commandResponse;
         switch (dstAddrType.byteValue()) {

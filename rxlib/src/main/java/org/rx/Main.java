@@ -28,8 +28,8 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.upstream.Socks5TcpUpstream;
-import org.rx.net.socks.upstream.Socks5UdpUpstream;
+import org.rx.net.socks.upstream.SocksTcpUpstream;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.transport.TcpClientConfig;
@@ -120,9 +120,9 @@ public final class Main implements SocksSupport {
     public static final OptimalSettings AB = null;
     static final FastThreadLocal<Upstream> frontBTcpUpstream = new FastThreadLocal<>(),
             frontBUdpUpstream = new FastThreadLocal<>(), ssUdpUpstream = new FastThreadLocal<>();
-    static final FastThreadLocal<Socks5TcpUpstream> frontBTcpProxyUpstream = new FastThreadLocal<>(),
+    static final FastThreadLocal<SocksTcpUpstream> frontBTcpProxyUpstream = new FastThreadLocal<>(),
             ssTcpProxyUpstream = new FastThreadLocal<>();
-    static final FastThreadLocal<Socks5UdpUpstream> frontBUdpProxyUpstream = new FastThreadLocal<>();
+    static final FastThreadLocal<SocksUdpUpstream> frontBUdpProxyUpstream = new FastThreadLocal<>();
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
@@ -279,9 +279,9 @@ public final class Main implements SocksSupport {
         frontBSvr.onRoute.replace(firstRoute, (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "TCP")) {
-                Socks5TcpUpstream upstream = frontBTcpProxyUpstream.get();
+                SocksTcpUpstream upstream = frontBTcpProxyUpstream.get();
                 if (upstream == null) {
-                    upstream = new Socks5TcpUpstream(backConf, dstEp, routerFn.apply(e));
+                    upstream = new SocksTcpUpstream(backConf, dstEp, routerFn.apply(e));
                 } else {
                     upstream.reuse(backConf, dstEp, routerFn.apply(e));
                 }
@@ -317,9 +317,9 @@ public final class Main implements SocksSupport {
 //          }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "UDP")) {
-                Socks5UdpUpstream upstream = frontBUdpProxyUpstream.get();
+                SocksUdpUpstream upstream = frontBUdpProxyUpstream.get();
                 if (upstream == null) {
-                    upstream = new Socks5UdpUpstream(backConf, dstEp, routerFn.apply(e));
+                    upstream = new SocksUdpUpstream(backConf, dstEp, routerFn.apply(e));
                 } else {
                     upstream.reuse(backConf, dstEp, routerFn.apply(e));
                 }
@@ -360,9 +360,9 @@ public final class Main implements SocksSupport {
             Func<UpstreamSupport> rFn = () -> svrSupport;
             ssSvr.onRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
-                Socks5TcpUpstream upstream = ssTcpProxyUpstream.get();
+                SocksTcpUpstream upstream = ssTcpProxyUpstream.get();
                 if (upstream == null) {
-                    upstream = new Socks5TcpUpstream(toAFConf, dstEp, rFn);
+                    upstream = new SocksTcpUpstream(toAFConf, dstEp, rFn);
                 } else {
                     upstream.reuse(toAFConf, dstEp, rFn);
                 }
@@ -376,7 +376,7 @@ public final class Main implements SocksSupport {
                 } else {
                     upstream.reuse(toAFConf, dstEp);
                 }
-                upstream.setSocksServer(svrEp);
+                upstream.setUdpSocksServer(svrEp);
                 e.setUpstream(upstream);
             });
         }

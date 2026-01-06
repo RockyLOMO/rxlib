@@ -106,4 +106,5 @@ public final class SocksContext extends EventArgs {
     public transient ChannelFuture outbound;
     @Getter
     transient volatile boolean outboundActive;
+    transient InetSocketAddress udp2rawServer;
 }

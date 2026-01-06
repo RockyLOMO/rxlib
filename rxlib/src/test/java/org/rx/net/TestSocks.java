@@ -55,8 +55,8 @@ import org.rx.net.shadowsocks.ShadowsocksConfig;
 import org.rx.net.shadowsocks.ShadowsocksServer;
 import org.rx.net.shadowsocks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.upstream.Socks5UdpUpstream;
-import org.rx.net.socks.upstream.Socks5TcpUpstream;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.*;
 import org.rx.net.transport.SftpClient;
@@ -572,7 +572,7 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new Socks5TcpUpstream(backConf, e.getFirstDestination(), () -> new UpstreamSupport(srvEp, null)));
+            e.setUpstream(new SocksTcpUpstream(backConf, e.getFirstDestination(), () -> new UpstreamSupport(srvEp, null)));
 //            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), backConf, shadowServers::next));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
@@ -580,7 +580,7 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             Upstream upstream = new Upstream(backConf, e.getFirstDestination());
-            upstream.setSocksServer(srvEp);
+            upstream.setUdpSocksServer(srvEp);
             e.setUpstream(upstream);
 //            e.setUpstream(new Upstream(e.getFirstDestination()));
         });
@@ -648,7 +648,7 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new Socks5TcpUpstream(frontConf, e.getFirstDestination(), shadowServers::next));
+            e.setUpstream(new SocksTcpUpstream(frontConf, e.getFirstDestination(), shadowServers::next));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
@@ -663,7 +663,7 @@ public class TestSocks extends AbstractTester {
 //                }
 //                return;
 //            }
-            e.setUpstream(new Socks5UdpUpstream(frontConf, dstEp, shadowServers::next));
+            e.setUpstream(new SocksUdpUpstream(frontConf, dstEp, shadowServers::next));
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 

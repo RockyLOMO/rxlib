@@ -100,7 +100,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 //                pipeline.addLast(Udp2rawHandler.DEFAULT);
 //            } else {
                 Sockets.addServerHandler(channel, config);
-                pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
+                pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
 //            }
         }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
     }
@@ -136,7 +136,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 //                pipeline.addLast(Udp2rawHandler.DEFAULT);
 //            } else {
                 Sockets.addServerHandler(channel, config);
-                pipeline.addLast(Socks5UdpRelayHandler.DEFAULT);
+                pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
 //            }
         }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
     }

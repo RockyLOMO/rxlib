@@ -6,8 +6,8 @@ import org.rx.net.Sockets;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class TcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
-    public static final TcpFrontendRelayHandler DEFAULT = new TcpFrontendRelayHandler();
+public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
+    public static final SocksTcpFrontendRelayHandler DEFAULT = new SocksTcpFrontendRelayHandler();
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {

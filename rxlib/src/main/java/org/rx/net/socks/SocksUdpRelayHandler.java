@@ -14,7 +14,7 @@ import java.net.InetSocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     @Slf4j
     @ChannelHandler.Sharable
     public static class UdpBackendRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
@@ -28,11 +28,11 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
             UnresolvedEndpoint dstEp = sc.firstDestination;
             ByteBuf outBuf = out.content();
             SocksProxyServer server = Sockets.getAttr(outbound, SocksContext.SOCKS_SVR);
-            if (sc.upstream.getSocksServer() == null) {
+            if (sc.upstream.getUdpSocksServer() != null) {
+                outBuf.retain();
+            } else {
 //                log.debug("socks5[{}] UDP IN {}", server.config.getListenPort(), Bytes.hexDump(outBuf.retain()));
                 outBuf = UdpManager.socks5Encode(outBuf, dstEp);
-            } else {
-                outBuf.retain();
             }
             sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp));
 
@@ -41,7 +41,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         }
     }
 
-    public static final Socks5UdpRelayHandler DEFAULT = new Socks5UdpRelayHandler();
+    public static final SocksUdpRelayHandler DEFAULT = new SocksUdpRelayHandler();
 
     /**
      * https://datatracker.ietf.org/doc/html/rfc1928
@@ -99,7 +99,7 @@ public class Socks5UdpRelayHandler extends SimpleChannelInboundHandler<DatagramP
         SocksContext sc = SocksContext.ctx(outbound);
         //udp dstEp可能多个，但upstream.getDestination()只有一个，所以直接用dstEp。
         UnresolvedEndpoint upDstEp;
-        AuthenticEndpoint upSvrEp = sc.getUpstream().getSocksServer();
+        AuthenticEndpoint upSvrEp = sc.upstream.getUdpSocksServer();
         if (upSvrEp != null) {
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
             inBuf.readerIndex(0);
