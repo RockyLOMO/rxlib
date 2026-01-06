@@ -37,7 +37,7 @@
     <logger name="org.rx.core.CpuWatchman" level="INFO"/>
     <logger name="org.rx.io.EntityDatabaseImpl" level="INFO"/>
     <!--    <logger name="org.rx.net" level="DEBUG"/>-->
-    <!--    <logger name="org.rx.net.socks.Socks5UdpRelayHandler" level="DEBUG"/>-->
+    <!--    <logger name="org.rx.net.socks.SocksUdpRelayHandler" level="DEBUG"/>-->
 
     <root level="${logLevel}">
         <appender-ref ref="STDOUT"/>

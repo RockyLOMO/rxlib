@@ -14,7 +14,7 @@ public class Upstream {
     protected SocketConfig config;
     protected volatile UnresolvedEndpoint destination;
     @Setter
-    protected volatile AuthenticEndpoint socksServer;
+    protected volatile AuthenticEndpoint udpSocksServer;
 
     public Upstream(UnresolvedEndpoint dstEp) {
         this(null, dstEp);

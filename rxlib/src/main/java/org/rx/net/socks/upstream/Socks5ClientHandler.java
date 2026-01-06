@@ -31,7 +31,7 @@ import java.net.SocketAddress;
 import java.util.Arrays;
 import java.util.Collections;
 
-public final class Socks5ProxyHandler extends ProxyHandler {
+public final class Socks5ClientHandler extends ProxyHandler {
     private static final String PROTOCOL = "socks5";
     private static final String AUTH_PASSWORD = "password";
     private static final String AUTH_NONE = "none";
@@ -48,11 +48,11 @@ public final class Socks5ProxyHandler extends ProxyHandler {
     @Setter
     private Action handshakeCallback;
 
-    public Socks5ProxyHandler(SocketAddress proxyAddress) {
+    public Socks5ClientHandler(SocketAddress proxyAddress) {
         this(proxyAddress, null, null);
     }
 
-    public Socks5ProxyHandler(SocketAddress proxyAddress, String username, String password) {
+    public Socks5ClientHandler(SocketAddress proxyAddress, String username, String password) {
         super(proxyAddress);
         if (username != null && username.isEmpty()) {
             username = null;

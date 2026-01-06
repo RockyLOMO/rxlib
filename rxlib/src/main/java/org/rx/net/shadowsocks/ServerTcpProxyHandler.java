@@ -5,8 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksContext;
-import org.rx.net.socks.TcpBackendRelayHandler;
-import org.rx.net.socks.TcpFrontendRelayHandler;
+import org.rx.net.socks.SocksTcpBackendRelayHandler;
+import org.rx.net.socks.SocksTcpFrontendRelayHandler;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -31,7 +31,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
 
         ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), outbound -> {
             upstream.initChannel(outbound);
-            inbound.pipeline().addLast(TcpFrontendRelayHandler.DEFAULT);
+            inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         }).connect(dstEp.socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 TraceHandler.INSTANCE.log("connect to backend {}[{}] fail", dstEp, realEp, f.cause());
@@ -41,7 +41,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
             log.debug("connect to backend {}[{}]", dstEp, realEp);
             Channel outbound = f.channel();
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
-            outbound.pipeline().addLast(TcpBackendRelayHandler.DEFAULT);
+            outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
         });
         SocksContext.mark(inbound, outboundFuture, e);
 

@@ -22,10 +22,10 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
-public class Socks5TcpUpstream extends Upstream {
+public class SocksTcpUpstream extends Upstream {
     private Func<UpstreamSupport> router;
 
-    public Socks5TcpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
+    public SocksTcpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
         super(config, dstEp);
         this.router = router;
     }
@@ -75,7 +75,7 @@ public class Socks5TcpUpstream extends Upstream {
             }
         }
 
-        Socks5ProxyHandler proxyHandler = new Socks5ProxyHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());
+        Socks5ClientHandler proxyHandler = new Socks5ClientHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());
         proxyHandler.setConnectTimeoutMillis(config.getConnectTimeoutMillis());
         channel.pipeline().addLast(proxyHandler);
     }

@@ -11,10 +11,10 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Func;
 
-public class Socks5UdpUpstream extends Upstream {
+public class SocksUdpUpstream extends Upstream {
     private Func<UpstreamSupport> router;
 
-    public Socks5UdpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
+    public SocksUdpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
         super(config, dstEp);
         this.router = router;
     }
@@ -33,7 +33,7 @@ public class Socks5UdpUpstream extends Upstream {
             throw new InvalidException("ProxyHandlers is empty");
         }
 
-        AuthenticEndpoint svrEp = socksServer = next.getEndpoint();
+        AuthenticEndpoint svrEp = udpSocksServer = next.getEndpoint();
         Sockets.addClientHandler(channel, config, svrEp.getEndpoint());
     }
 }

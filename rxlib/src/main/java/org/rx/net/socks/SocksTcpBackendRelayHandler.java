@@ -11,8 +11,8 @@ import org.rx.net.Sockets;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class TcpBackendRelayHandler extends ChannelInboundHandlerAdapter {
-    public static final TcpBackendRelayHandler DEFAULT = new TcpBackendRelayHandler();
+public class SocksTcpBackendRelayHandler extends ChannelInboundHandlerAdapter {
+    public static final SocksTcpBackendRelayHandler DEFAULT = new SocksTcpBackendRelayHandler();
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
