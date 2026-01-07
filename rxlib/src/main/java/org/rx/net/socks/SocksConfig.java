@@ -25,6 +25,7 @@ public class SocksConfig extends SocketConfig {
     private int udpWriteTimeoutSeconds;
     @Getter(lazy = true)
     private final Set<InetAddress> whiteList = whiteList();
+    private boolean enableUdp2raw;
     private InetSocketAddress udp2rawClient;
 
     private Set<InetAddress> whiteList() {
