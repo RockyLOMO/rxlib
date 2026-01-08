@@ -25,7 +25,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             Channel outbound = ctx.channel();
             SocksContext sc = SocksContext.ctx(outbound);
             InetSocketAddress srcEp = sc.source;
-            UnresolvedEndpoint dstEp = sc.firstDestination;
+//            UnresolvedEndpoint dstEp = sc.firstDestination;
+            InetSocketAddress dstEp = out.sender();
             ByteBuf outBuf = out.content();
             SocksProxyServer server = Sockets.getAttr(outbound, SocksContext.SOCKS_SVR);
             if (sc.upstream.getUdpSocksServer() != null) {
