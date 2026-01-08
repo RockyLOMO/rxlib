@@ -36,7 +36,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final ServerBootstrap bootstrap;
     final Channel tcpChannel;
     final Channel udpChannel;
-    Channel udp2rawChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     //只有压缩时一定要用
@@ -135,20 +134,13 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         int udpPort = config.getListenPort();
         udpChannel = Sockets.udpBootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline();
-//            if (config.isEnableUdp2raw()) {
-//                pipeline.addLast(Udp2rawHandler.DEFAULT);
-//            } else {
-            Sockets.addServerHandler(channel, config);
-            pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
-//            }
-        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(udpPort)).channel();
-        if (config.isEnableUdp2raw()) {
-            int udp2rawPort = udpPort + 1;
-            udp2rawChannel = Sockets.udpBootstrap(config, channel -> {
-                ChannelPipeline pipeline = channel.pipeline();
+            if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
-            }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udp2rawPort)).addListener(Sockets.logBind(udp2rawPort)).channel();
-        }
+            } else {
+                Sockets.addServerHandler(channel, config);
+                pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
+            }
+        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(udpPort)).channel();
     }
 
     @Override
@@ -156,7 +148,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         Sockets.closeOnFlushed(tcpChannel);
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();
-        tryClose(udp2rawChannel);
     }
 
     @SneakyThrows

@@ -218,10 +218,7 @@ public final class Main implements SocksSupport {
         inConf.setConnectTimeoutMillis(connectTimeout);
         inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
         inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
-        inConf.setEnableUdp2raw(enableUdp2raw);
-        inConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
         DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
-        SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
@@ -232,6 +229,66 @@ public final class Main implements SocksSupport {
 //                return;
             }
         };
+        Main app = new Main(createInSvr(inConf, authenticator, firstRoute, shadowServers, geoMgr));
+        SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
+        inUdp2rawConf.setListenPort(port + 10);
+        inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
+        inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
+        SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, shadowServers, geoMgr);
+
+        Action fn = () -> {
+            InetAddress addr = InetAddress.getByName(geoMgr.getPublicIp());
+            eachQuietly(shadowServers, p -> p.getSupport().addWhiteList(addr));
+        };
+        fn.invoke();
+        Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
+
+        InetSocketAddress frontSvrEp = Sockets.newLoopbackEndpoint(port);
+        for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
+            ShadowsocksConfig conf = tuple.left;
+            SocksUser usr = tuple.right;
+            AuthenticEndpoint svrEp = new AuthenticEndpoint(frontSvrEp, usr.getUsername(), usr.getPassword());
+
+            conf.setOptimalSettings(SS_IN_OPS);
+            conf.setConnectTimeoutMillis(connectTimeout);
+            ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
+            SocksConfig toInConf = new SocksConfig(port);
+//            toInConf.setTransportFlags(null);
+            toInConf.setOptimalSettings(IN_OPS);
+            UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
+            Func<UpstreamSupport> rFn = () -> svrSupport;
+            ssSvr.onRoute.replace((s, e) -> {
+                UnresolvedEndpoint dstEp = e.getFirstDestination();
+                SocksTcpUpstream upstream = ssTcpProxyUpstream.get();
+                if (upstream == null) {
+                    upstream = new SocksTcpUpstream(toInConf, dstEp, rFn);
+                } else {
+                    upstream.reuse(toInConf, dstEp, rFn);
+                }
+                e.setUpstream(upstream);
+            });
+            ssSvr.onUdpRoute.replace((s, e) -> {
+                UnresolvedEndpoint dstEp = e.getFirstDestination();
+                Upstream upstream = ssUdpUpstream.get();
+                if (upstream == null) {
+                    upstream = new Upstream(toInConf, dstEp);
+                } else {
+                    upstream.reuse(toInConf, dstEp);
+                }
+                upstream.setUdpSocksServer(svrEp);
+                e.setUpstream(upstream);
+            });
+        }
+
+        clientInit(authenticator);
+        log.info("Server started..");
+        app.await();
+    }
+
+    static SocksProxyServer createInSvr(SocksConfig inConf, DefaultSocksAuthenticator authenticator,
+                                        TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> shadowServers,
+                                        GeoManager geoMgr) {
+        SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
         int[] httpPorts = {80, 443};
         BiFunc<SocksContext, Func<UpstreamSupport>> routerFn = e -> {
             if (Arrays.contains(httpPorts, e.getFirstDestination().getPort())) {
@@ -339,55 +396,7 @@ public final class Main implements SocksSupport {
             }
         });
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-        Main app = new Main(inSvr);
-
-        Action fn = () -> {
-            InetAddress addr = InetAddress.getByName(geoMgr.getPublicIp());
-            eachQuietly(shadowServers, p -> p.getSupport().addWhiteList(addr));
-        };
-        fn.invoke();
-        Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
-
-        InetSocketAddress frontSvrEp = Sockets.newLoopbackEndpoint(port);
-        for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
-            ShadowsocksConfig conf = tuple.left;
-            SocksUser usr = tuple.right;
-            AuthenticEndpoint svrEp = new AuthenticEndpoint(frontSvrEp, usr.getUsername(), usr.getPassword());
-
-            conf.setOptimalSettings(SS_IN_OPS);
-            conf.setConnectTimeoutMillis(connectTimeout);
-            ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
-            SocksConfig toInConf = new SocksConfig(port);
-//            toInConf.setTransportFlags(null);
-            toInConf.setOptimalSettings(IN_OPS);
-            UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
-            Func<UpstreamSupport> rFn = () -> svrSupport;
-            ssSvr.onRoute.replace((s, e) -> {
-                UnresolvedEndpoint dstEp = e.getFirstDestination();
-                SocksTcpUpstream upstream = ssTcpProxyUpstream.get();
-                if (upstream == null) {
-                    upstream = new SocksTcpUpstream(toInConf, dstEp, rFn);
-                } else {
-                    upstream.reuse(toInConf, dstEp, rFn);
-                }
-                e.setUpstream(upstream);
-            });
-            ssSvr.onUdpRoute.replace((s, e) -> {
-                UnresolvedEndpoint dstEp = e.getFirstDestination();
-                Upstream upstream = ssUdpUpstream.get();
-                if (upstream == null) {
-                    upstream = new Upstream(toInConf, dstEp);
-                } else {
-                    upstream.reuse(toInConf, dstEp);
-                }
-                upstream.setUdpSocksServer(svrEp);
-                e.setUpstream(upstream);
-            });
-        }
-
-        clientInit(authenticator);
-        log.info("Server started..");
-        app.await();
+        return inSvr;
     }
 
     static void clientInit(DefaultSocksAuthenticator authenticator) {
