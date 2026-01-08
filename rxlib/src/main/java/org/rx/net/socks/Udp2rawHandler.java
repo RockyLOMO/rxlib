@@ -6,9 +6,6 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.io.Bytes;
-import org.rx.io.GZIPStream;
-import org.rx.io.MemoryStream;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
@@ -45,10 +42,10 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                 header.writeShort(STREAM_MAGIC);
                 header.writeByte(STREAM_VERSION);
                 UdpManager.encode(header, clientEp);
-                UdpManager.encode(header, dstEp);
+//                UdpManager.encode(header, dstEp);
                 CompositeByteBuf outBufCom = allocator.compositeDirectBuffer();
                 outBufCom.addComponents(true, header, outBuf);
-                log.debug("UDP2RAW[{}] server recv {} => {}[{}]", server.config.getListenPort(), dstEp, udp2rawServer, clientEp);
+                log.info("UDP2RAW[{}] server recv {} => {}[{}]", server.config.getListenPort(), dstEp, udp2rawServer, clientEp);
                 sc.inbound.writeAndFlush(new DatagramPacket(outBufCom, udp2rawServer));
             } finally {
                 header.release();
@@ -119,8 +116,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             return;
         }
         final UnresolvedEndpoint clientEp = UdpManager.decode(inBuf);
-        final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
-        log.info("UDP2RAW[{}] client recv {}[{}] => {}", server.config.getListenPort(), in.sender(), dstEp, clientEp);
+//        final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
+//        log.info("UDP2RAW[{}] client recv {}[{}] => {}", server.config.getListenPort(), in.sender(), dstEp, clientEp);
+        log.info("UDP2RAW[{}] client recv {} => {}", server.config.getListenPort(), in.sender(), clientEp);
         inbound.writeAndFlush(new DatagramPacket(inBuf, clientEp.socketAddress()));
     }
 
@@ -168,7 +166,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
         inBuf.retain();
         if (sc.outboundActive) {
-            log.debug("UDP2RAW[{}] server send {}[{}] => {}", config.getListenPort(), srcEp, clientEp, dstEp);
+            log.info("UDP2RAW[{}] server send {}[{}] => {}", config.getListenPort(), srcEp, clientEp, dstEp);
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             outboundFuture.addListener((ChannelFutureListener) f -> {

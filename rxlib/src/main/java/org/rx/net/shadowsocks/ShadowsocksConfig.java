@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.SocketConfig;
+import org.rx.net.socks.SocksConfig;
 
 import java.net.InetSocketAddress;
 
@@ -17,6 +18,6 @@ public class ShadowsocksConfig extends SocketConfig {
     private final InetSocketAddress serverEndpoint;
     private final String method;
     private final String password;
-    private int tcpTimeoutSeconds = 60 * 4;
-    private int udpTimeoutSeconds = 60 * 60 * 6;
+    private int tcpTimeoutSeconds = SocksConfig.DEF_READ_TIMEOUT_SECONDS;
+    private int udpTimeoutSeconds = SocksConfig.DEF_UDP_READ_TIMEOUT_SECONDS;
 }

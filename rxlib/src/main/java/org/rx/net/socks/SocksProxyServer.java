@@ -21,6 +21,8 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
+import static org.rx.core.Extends.tryClose;
+
 @Slf4j
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
@@ -34,6 +36,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final ServerBootstrap bootstrap;
     final Channel tcpChannel;
     final Channel udpChannel;
+    Channel udp2rawChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     //只有压缩时一定要用
@@ -96,13 +99,13 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         int udpPort = config.getListenPort();
         udpChannel = Sockets.udpBootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline();
-//            if (config.isEnableUdp2raw()) {
-//                pipeline.addLast(Udp2rawHandler.DEFAULT);
-//            } else {
+            if (config.isEnableUdp2raw()) {
+                pipeline.addLast(Udp2rawHandler.DEFAULT);
+            } else {
                 Sockets.addServerHandler(channel, config);
                 pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
-//            }
-        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
+            }
+        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(udpPort)).channel();
     }
 
     public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, @NonNull Channel tcpChannel) {
@@ -135,10 +138,17 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 //            if (config.isEnableUdp2raw()) {
 //                pipeline.addLast(Udp2rawHandler.DEFAULT);
 //            } else {
-                Sockets.addServerHandler(channel, config);
-                pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
+            Sockets.addServerHandler(channel, config);
+            pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
 //            }
-        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(config.getListenPort())).channel();
+        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(udpPort)).channel();
+        if (config.isEnableUdp2raw()) {
+            int udp2rawPort = udpPort + 1;
+            udp2rawChannel = Sockets.udpBootstrap(config, channel -> {
+                ChannelPipeline pipeline = channel.pipeline();
+                pipeline.addLast(Udp2rawHandler.DEFAULT);
+            }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udp2rawPort)).addListener(Sockets.logBind(udp2rawPort)).channel();
+        }
     }
 
     @Override
@@ -146,6 +156,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         Sockets.closeOnFlushed(tcpChannel);
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();
+        tryClose(udp2rawChannel);
     }
 
     @SneakyThrows

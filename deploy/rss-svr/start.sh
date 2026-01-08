@@ -57,7 +57,7 @@ else
 fi
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
-nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >/dev/null 2>&1 &
+nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 -udp2raw=1 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >/dev/null 2>&1 &
 sleep 5
 
 if fuser ${PORT}/tcp >/dev/null 2>&1; then

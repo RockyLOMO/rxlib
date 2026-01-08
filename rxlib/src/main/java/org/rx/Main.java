@@ -94,6 +94,7 @@ public final class Main implements SocksSupport {
         public int rpcMaxSize = 6;
         public int rpcAutoWhiteListSeconds = 120;
         public int shadowDnsPort = 753;
+        public String udp2rawClient = "127.0.0.1:9900";
 
         //route
         public boolean enableRoute = true;
@@ -115,9 +116,9 @@ public final class Main implements SocksSupport {
     }
 
     static RSSConf rssConf;
-    public static final OptimalSettings B = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
-    public static final OptimalSettings AF = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
-    public static final OptimalSettings AB = null;
+    public static final OptimalSettings OUT_OPS = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
+    public static final OptimalSettings IN_OPS = null;
+    public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
     static final FastThreadLocal<Upstream> frontBTcpUpstream = new FastThreadLocal<>(),
             frontBUdpUpstream = new FastThreadLocal<>(), ssUdpUpstream = new FastThreadLocal<>();
     static final FastThreadLocal<SocksTcpUpstream> frontBTcpProxyUpstream = new FastThreadLocal<>(),
@@ -127,6 +128,7 @@ public final class Main implements SocksSupport {
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
         //Udp2raw 将 UDP 转换为 FakeTCP、ICMP
+        boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
         RandomList<UpstreamSupport> shadowServers = new RandomList<>();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
         GeoManager geoMgr = GeoManager.INSTANCE;
@@ -210,14 +212,16 @@ public final class Main implements SocksSupport {
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(rssConf.shadowDnsPort);
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
-        SocksConfig frontBConf = new SocksConfig(port);
-        frontBConf.setTransportFlags(null);
-        frontBConf.setOptimalSettings(AB);
-        frontBConf.setConnectTimeoutMillis(connectTimeout);
-        frontBConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
-        frontBConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
+        SocksConfig inConf = new SocksConfig(port);
+//        inConf.setTransportFlags(null);
+        inConf.setOptimalSettings(IN_OPS);
+        inConf.setConnectTimeoutMillis(connectTimeout);
+        inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
+        inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
+        inConf.setEnableUdp2raw(enableUdp2raw);
+        inConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
         DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
-        SocksProxyServer frontBSvr = new SocksProxyServer(frontBConf, authenticator);
+        SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
@@ -237,9 +241,9 @@ public final class Main implements SocksSupport {
             InetAddress srcHost = e.getSource().getAddress();
             return () -> shadowServers.next(srcHost, rssConf.routeSrcSteeringTTL, true);
         };
-        SocksConfig backConf = Sys.deepClone(frontBConf);
-        backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
-        backConf.setOptimalSettings(B);
+        SocksConfig outConf = Sys.deepClone(inConf);
+        outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        outConf.setOptimalSettings(OUT_OPS);
         TripleFunc<UnresolvedEndpoint, String, Boolean> routeingFn = (dstEp, transType) -> {
             String host = dstEp.getHost();
             boolean outProxy;
@@ -276,14 +280,14 @@ public final class Main implements SocksSupport {
             }
             return outProxy;
         };
-        frontBSvr.onRoute.replace(firstRoute, (s, e) -> {
+        inSvr.onRoute.replace(firstRoute, (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "TCP")) {
                 SocksTcpUpstream upstream = frontBTcpProxyUpstream.get();
                 if (upstream == null) {
-                    upstream = new SocksTcpUpstream(backConf, dstEp, routerFn.apply(e));
+                    upstream = new SocksTcpUpstream(outConf, dstEp, routerFn.apply(e));
                 } else {
-                    upstream.reuse(backConf, dstEp, routerFn.apply(e));
+                    upstream.reuse(outConf, dstEp, routerFn.apply(e));
                 }
                 e.setUpstream(upstream);
             } else {
@@ -296,7 +300,7 @@ public final class Main implements SocksSupport {
                 e.setUpstream(upstream);
             }
         });
-        frontBSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
+        inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
 //            if (rssConf.pcapSourceIp != null
 //                    && InetAddress.getByName(rssConf.pcapSourceIp).equals(e.getSource().getAddress())) {
 //                log.info("pcap pack {}", e.getSource());
@@ -319,9 +323,9 @@ public final class Main implements SocksSupport {
             if (routeingFn.apply(dstEp, "UDP")) {
                 SocksUdpUpstream upstream = frontBUdpProxyUpstream.get();
                 if (upstream == null) {
-                    upstream = new SocksUdpUpstream(backConf, dstEp, routerFn.apply(e));
+                    upstream = new SocksUdpUpstream(outConf, dstEp, routerFn.apply(e));
                 } else {
-                    upstream.reuse(backConf, dstEp, routerFn.apply(e));
+                    upstream.reuse(outConf, dstEp, routerFn.apply(e));
                 }
                 e.setUpstream(upstream);
             } else {
@@ -334,8 +338,8 @@ public final class Main implements SocksSupport {
                 e.setUpstream(upstream);
             }
         });
-        frontBSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-        Main app = new Main(frontBSvr);
+        inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
+        Main app = new Main(inSvr);
 
         Action fn = () -> {
             InetAddress addr = InetAddress.getByName(geoMgr.getPublicIp());
@@ -350,21 +354,21 @@ public final class Main implements SocksSupport {
             SocksUser usr = tuple.right;
             AuthenticEndpoint svrEp = new AuthenticEndpoint(frontSvrEp, usr.getUsername(), usr.getPassword());
 
-            conf.setOptimalSettings(AF);
+            conf.setOptimalSettings(SS_IN_OPS);
             conf.setConnectTimeoutMillis(connectTimeout);
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
-            SocksConfig toAFConf = new SocksConfig(port);
-            toAFConf.setOptimalSettings(AB);
-//            toAFConf.setTransportFlags(conf.getTransportFlags());
+            SocksConfig toInConf = new SocksConfig(port);
+//            toInConf.setTransportFlags(null);
+            toInConf.setOptimalSettings(IN_OPS);
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
             Func<UpstreamSupport> rFn = () -> svrSupport;
             ssSvr.onRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
                 SocksTcpUpstream upstream = ssTcpProxyUpstream.get();
                 if (upstream == null) {
-                    upstream = new SocksTcpUpstream(toAFConf, dstEp, rFn);
+                    upstream = new SocksTcpUpstream(toInConf, dstEp, rFn);
                 } else {
-                    upstream.reuse(toAFConf, dstEp, rFn);
+                    upstream.reuse(toInConf, dstEp, rFn);
                 }
                 e.setUpstream(upstream);
             });
@@ -372,9 +376,9 @@ public final class Main implements SocksSupport {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
                 Upstream upstream = ssUdpUpstream.get();
                 if (upstream == null) {
-                    upstream = new Upstream(toAFConf, dstEp);
+                    upstream = new Upstream(toInConf, dstEp);
                 } else {
-                    upstream.reuse(toAFConf, dstEp);
+                    upstream.reuse(toInConf, dstEp);
                 }
                 upstream.setUdpSocksServer(svrEp);
                 e.setUpstream(upstream);
@@ -498,6 +502,7 @@ public final class Main implements SocksSupport {
     static HttpServer httpServer;
 
     static void launchServer(Map<String, String> options, Integer port, Integer connectTimeout) {
+        boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
         AuthenticEndpoint shadowUser = Reflects.convertQuietly(options.get("shadowUser"), AuthenticEndpoint.class);
         if (shadowUser == null) {
             log.info("Invalid shadowUser arg");
@@ -507,18 +512,19 @@ public final class Main implements SocksSupport {
         ssUser.setPassword(shadowUser.getPassword());
         ssUser.setMaxIpCount(-1);
 
-        SocksConfig backConf = new SocksConfig(port);
-        backConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
-        backConf.setOptimalSettings(B);
-        backConf.setConnectTimeoutMillis(connectTimeout);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS);
-        backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
+        SocksConfig outConf = new SocksConfig(port);
+        outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        outConf.setOptimalSettings(OUT_OPS);
+        outConf.setConnectTimeoutMillis(connectTimeout);
+        outConf.setEnableUdp2raw(enableUdp2raw);
+        SocksProxyServer outSvr = new SocksProxyServer(outConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS);
+        outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
         //server port + 1 = rpc
         RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(port + 1));
         rpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
 //        rpcConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH.flags(TransportFlags.SERVER_CIPHER_BOTH));
-        Main app = new Main(backSvr);
+        Main app = new Main(outSvr);
         Remoting.register(app, rpcConf);
         serverInit();
         app.await();

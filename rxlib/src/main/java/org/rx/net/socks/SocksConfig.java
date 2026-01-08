@@ -16,15 +16,19 @@ import java.util.Set;
 @Setter
 @ToString
 public class SocksConfig extends SocketConfig {
+    public static final int DEF_READ_TIMEOUT_SECONDS = 60 * 4;
+    public static final int DEF_UDP_READ_TIMEOUT_SECONDS = 60 * 30;
+
     private static final long serialVersionUID = 3526543718065617052L;
     private final int listenPort;
     private int trafficShapingInterval = 10000;
-    private int readTimeoutSeconds = 60 * 4;
+    private int readTimeoutSeconds = DEF_READ_TIMEOUT_SECONDS;
     private int writeTimeoutSeconds;
-    private int udpReadTimeoutSeconds = 60 * 60 * 6;
+    private int udpReadTimeoutSeconds = DEF_UDP_READ_TIMEOUT_SECONDS;
     private int udpWriteTimeoutSeconds;
     @Getter(lazy = true)
     private final Set<InetAddress> whiteList = whiteList();
+    private boolean enableUdp2raw;
     private InetSocketAddress udp2rawClient;
 
     private Set<InetAddress> whiteList() {
