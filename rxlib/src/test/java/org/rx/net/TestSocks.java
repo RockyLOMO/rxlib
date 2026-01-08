@@ -513,7 +513,7 @@ public class TestSocks extends AbstractTester {
 
     @Test
     public void optimalSettings() {
-        OptimalSettings[] a = {Main.AF, Main.B};
+        OptimalSettings[] a = {Main.SS_IN_OPS, Main.OUT_OPS};
         for (OptimalSettings ops : a) {
             ops.calculate();
             System.out.println(ops);
