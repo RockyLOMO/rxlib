@@ -99,20 +99,13 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         int udpPort = config.getListenPort();
         udpChannel = Sockets.udpBootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline();
-//            if (config.isEnableUdp2raw()) {
-//                pipeline.addLast(Udp2rawHandler.DEFAULT);
-//            } else {
-            Sockets.addServerHandler(channel, config);
-            pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
-//            }
-        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(udpPort)).channel();
-        if (config.isEnableUdp2raw()) {
-            int udp2rawPort = udpPort + 1;
-            udp2rawChannel = Sockets.udpBootstrap(config, channel -> {
-                ChannelPipeline pipeline = channel.pipeline();
+            if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
-            }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udp2rawPort)).addListener(Sockets.logBind(udp2rawPort)).channel();
-        }
+            } else {
+                Sockets.addServerHandler(channel, config);
+                pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
+            }
+        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(udpPort)).channel();
     }
 
     public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, @NonNull Channel tcpChannel) {

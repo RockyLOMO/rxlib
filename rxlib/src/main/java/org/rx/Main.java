@@ -94,6 +94,7 @@ public final class Main implements SocksSupport {
         public int rpcMaxSize = 6;
         public int rpcAutoWhiteListSeconds = 120;
         public int shadowDnsPort = 753;
+        public String udp2rawClient = "127.0.0.1:9900";
 
         //route
         public boolean enableRoute = true;
@@ -218,6 +219,7 @@ public final class Main implements SocksSupport {
         inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
         inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
         inConf.setEnableUdp2raw(enableUdp2raw);
+        inConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
         DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
