@@ -96,7 +96,7 @@ public final class Main implements SocksSupport {
         public int shadowDnsPort = 753;
 
         public List<String> udp2rawSocksServers;
-        public String udp2rawClient = "127.0.0.1:9900";
+        public String udp2rawClient;
 
         //route
         public boolean enableRoute = true;
@@ -253,11 +253,13 @@ public final class Main implements SocksSupport {
         };
         SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
         Main app = new Main(inSvr);
-        SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
-        inUdp2rawConf.setListenPort(port + 10);
-        inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
-        inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
-        SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+        if (enableUdp2raw) {
+            SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
+            inUdp2rawConf.setListenPort(port + 10);
+            inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
+            inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
+            SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+        }
 
         Action fn = () -> {
             InetAddress addr = InetAddress.getByName(geoMgr.getPublicIp());
@@ -359,6 +361,9 @@ public final class Main implements SocksSupport {
             return outProxy;
         };
         inSvr.onRoute.replace(firstRoute, (s, e) -> {
+            if (e.getUpstream() != null) {
+                return;
+            }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "TCP")) {
                 SocksTcpUpstream upstream = inTcpProxyUpstream.get();
@@ -379,6 +384,9 @@ public final class Main implements SocksSupport {
             }
         });
         inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
+            if (e.getUpstream() != null) {
+                return;
+            }
 //            if (rssConf.pcapSourceIp != null
 //                    && InetAddress.getByName(rssConf.pcapSourceIp).equals(e.getSource().getAddress())) {
 //                log.info("pcap pack {}", e.getSource());
@@ -549,12 +557,13 @@ public final class Main implements SocksSupport {
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-
-        SocksConfig outUdp2rawConf = Sys.deepClone(outConf);
-        outUdp2rawConf.setListenPort(port + 10);
-        outUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
-        SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outUdp2rawConf, defAuth);
-        outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
+        if (enableUdp2raw) {
+            SocksConfig outUdp2rawConf = Sys.deepClone(outConf);
+            outUdp2rawConf.setListenPort(port + 10);
+            outUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
+            SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outUdp2rawConf, defAuth);
+            outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
+        }
 
         //server port + 1 = rpc
         RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(port + 1));

@@ -520,8 +520,8 @@ public class TestSocks extends AbstractTester {
     @Test
     public void tstUdp() {
         createSocksSvr();
-
-        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
+//        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
+        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2092");
         InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
 
         long[] result = new long[2];
@@ -585,69 +585,6 @@ public class TestSocks extends AbstractTester {
     @SneakyThrows
     @Test
     public void ssProxy() {
-        //dns
-        int shadowDnsPort = 853;
-        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
-        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
-
-        //backend
-        InetSocketAddress backSrvEp = Sockets.newLoopbackEndpoint(2080);
-        SocksConfig backConf = new SocksConfig(backSrvEp.getPort());
-        backConf.setConnectTimeoutMillis(connectTimeoutMillis);
-        SocksUser usr = new SocksUser(socks5Usr);
-        usr.setPassword(socks5Pwd);
-        usr.setMaxIpCount(-1);
-        SocksProxyServer backSvr = new SocksProxyServer(backConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
-
-        RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(backSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
-        Remoting.register(new Main(backSvr), rpcServerConf);
-
-        //frontend
-        RandomList<UpstreamSupport> shadowServers = new RandomList<>();
-        RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(backSrvEp, backSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
-        shadowServers.add(new UpstreamSupport(new AuthenticEndpoint(backSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
-
-        AuthenticEndpoint srvEp = new AuthenticEndpoint(backSrvEp, usr.getUsername(), usr.getPassword());
-        ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(2090),
-                CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
-        ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
-        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
-        TripleAction<ShadowsocksServer, SocksContext> firstRoute = (s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
-            //must first
-            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
-                e.setUpstream(shadowDnsUpstream);
-                return;
-            }
-            //bypass
-            if (Sockets.isBypass(bypassHosts, dstEp.getHost())) {
-                e.setUpstream(new Upstream(dstEp));
-            }
-        };
-        frontSvr.onRoute.replace(firstRoute, (s, e) -> {
-            if (e.getUpstream() != null) {
-                return;
-            }
-            e.setUpstream(new SocksTcpUpstream(backConf, e.getFirstDestination(), new UpstreamSupport(srvEp, null)));
-//            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), backConf, shadowServers::next));
-        });
-        frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
-            if (e.getUpstream() != null) {
-                return;
-            }
-            SocksUdpUpstream upstream = new SocksUdpUpstream(backConf, e.getFirstDestination(), new UpstreamSupport(srvEp, null));
-            e.setUpstream(upstream);
-//            e.setUpstream(new Upstream(e.getFirstDestination()));
-        });
-
-        System.in.read();
-    }
-
-    @SneakyThrows
-    @Test
-    public void socksProxy() {
         createSocksSvr();
         System.in.read();
     }
@@ -659,6 +596,7 @@ public class TestSocks extends AbstractTester {
         int shadowDnsPort = 853;
         int outSvrPort = 2080;
         int inSvrPort = 2090;
+        int ssPort = 2092;
 
         //dns
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
@@ -670,8 +608,11 @@ public class TestSocks extends AbstractTester {
         SocksConfig outConf = new SocksConfig(outSrvEp.getPort());
         outConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         outConf.setConnectTimeoutMillis(connectTimeoutMillis);
+        SocksUser usr = new SocksUser(socks5Usr);
+        usr.setPassword(socks5Pwd);
+        usr.setMaxIpCount(-1);
 //        backConf.setEnableUdp2raw(udp2raw);
-        SocksProxyServer backSvr = new SocksProxyServer(outConf, null);
+        SocksProxyServer backSvr = new SocksProxyServer(outConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(outSrvEp.getPort() + 1));
@@ -682,7 +623,7 @@ public class TestSocks extends AbstractTester {
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
         RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(outSrvEp, outSrvEp.getPort() + 1), 2, 2);
         rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
-        socksServers.add(new UpstreamSupport(new AuthenticEndpoint(outSrvEp), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
+        socksServers.add(new UpstreamSupport(new AuthenticEndpoint(outSrvEp, socks5Usr, socks5Pwd), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
 
         SocksConfig inConf = new SocksConfig(inSvrPort);
         inConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
@@ -712,22 +653,27 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new SocksTcpUpstream(inConf, e.getFirstDestination(), socksServers.next()));
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            e.setUpstream(new SocksTcpUpstream(inConf, dstEp, socksServers.next()));
         });
         inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-//            if (frontConf.isEnableUdp2raw()) {
-//                if (!udp2rawDirect) {
-//                    e.setUpstream(new Upstream(frontConf, dstEp, shadowServers.next().getEndpoint()));
-//                } else {
-//                    e.setUpstream(new Upstream(dstEp));
-//                }
-//                return;
-//            }
             e.setUpstream(new SocksUdpUpstream(inConf, dstEp, socksServers.next()));
+        });
+
+
+        AuthenticEndpoint inSrvEp = new AuthenticEndpoint(Sockets.newLoopbackEndpoint(inSvrPort));
+        ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
+                CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
+        ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
+        frontSvr.onRoute.replace((s, e) -> {
+            e.setUpstream(new SocksTcpUpstream(inConf, e.getFirstDestination(), new UpstreamSupport(inSrvEp, null)));
+        });
+        frontSvr.onUdpRoute.replace((s, e) -> {
+            e.setUpstream(new SocksUdpUpstream(inConf, e.getFirstDestination(), new UpstreamSupport(inSrvEp, null)));
         });
     }
 
