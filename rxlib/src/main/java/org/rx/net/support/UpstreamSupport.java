@@ -1,16 +1,13 @@
 package org.rx.net.support;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
-import lombok.ToString;
+import lombok.*;
 import org.rx.net.AuthenticEndpoint;
 
-@RequiredArgsConstructor
+@AllArgsConstructor
 @Getter
 @Setter
 @ToString
 public class UpstreamSupport {
-    private final AuthenticEndpoint endpoint;
-    private final SocksSupport support;
+    private AuthenticEndpoint endpoint;
+    private SocksSupport support;
 }

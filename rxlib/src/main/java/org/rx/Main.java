@@ -97,6 +97,7 @@ public final class Main implements SocksSupport {
 
         public List<String> udp2rawSocksServers;
         public String udp2rawClient;
+        public String kcptunClient;
 
         //route
         public boolean enableRoute = true;
@@ -251,14 +252,15 @@ public final class Main implements SocksSupport {
 //                return;
             }
         };
-        SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
+        SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr, false);
         Main app = new Main(inSvr);
         if (enableUdp2raw) {
             SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
             inUdp2rawConf.setListenPort(port + 10);
             inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
             inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
-            SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+            inUdp2rawConf.setKcptunClient(Sockets.parseEndpoint(rssConf.kcptunClient));
+            SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr, true);
         }
 
         Action fn = () -> {
@@ -309,21 +311,29 @@ public final class Main implements SocksSupport {
     }
 
     static SocksProxyServer createInSvr(SocksConfig inConf, DefaultSocksAuthenticator authenticator,
-                                        TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> shadowServers,
-                                        GeoManager geoMgr) {
+                                        TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> socksServers,
+                                        GeoManager geoMgr, boolean kcptun) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
-        int[] httpPorts = {80, 443};
+//        int[] httpPorts = {80, 443};
+        UpstreamSupport kcpUpstream = new UpstreamSupport(new AuthenticEndpoint(inConf.getKcptunClient()), null);
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
-            if (Arrays.contains(httpPorts, e.getFirstDestination().getPort())) {
-                return shadowServers.next();
-            }
+//            if (Arrays.contains(httpPorts, e.getFirstDestination().getPort())) {
+//                return socksServers.next();
+//            }
 //            String destHost = e.getFirstDestination().getHost();
             InetAddress srcHost = e.getSource().getAddress();
-            return shadowServers.next(srcHost, rssConf.routeSrcSteeringTTL, true);
+            UpstreamSupport next = socksServers.next(srcHost, rssConf.routeSrcSteeringTTL, true);
+            if (kcptun) {
+                kcpUpstream.setSupport(next.getSupport());
+                return kcpUpstream;
+            }
+            return next;
         };
         SocksConfig outConf = Sys.deepClone(inConf);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
-        outConf.setOptimalSettings(OUT_OPS);
+        if (!kcptun) {
+            outConf.setOptimalSettings(OUT_OPS);
+        }
         TripleFunc<UnresolvedEndpoint, String, Boolean> routeingFn = (dstEp, transType) -> {
             String host = dstEp.getHost();
             boolean outProxy;
