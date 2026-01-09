@@ -12,28 +12,19 @@ import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Func;
 
 public class SocksUdpUpstream extends Upstream {
-    private Func<UpstreamSupport> router;
-
-    public SocksUdpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
+    public SocksUdpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull UpstreamSupport next) {
         super(config, dstEp);
-        this.router = router;
+        udpSocksServer = next.getEndpoint();
     }
 
-    public void reuse(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
+    public void reuse(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull UpstreamSupport next) {
         super.config = config;
         super.destination = dstEp;
-        this.router = router;
+        udpSocksServer = next.getEndpoint();
     }
 
-    @SneakyThrows
     @Override
     public void initChannel(Channel channel) {
-        UpstreamSupport next = router.invoke();
-        if (next == null) {
-            throw new InvalidException("ProxyHandlers is empty");
-        }
-
-        AuthenticEndpoint svrEp = udpSocksServer = next.getEndpoint();
-        Sockets.addClientHandler(channel, config, svrEp.getEndpoint());
+        Sockets.addClientHandler(channel, config, udpSocksServer.getEndpoint());
     }
 }

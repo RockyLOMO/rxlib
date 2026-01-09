@@ -64,7 +64,7 @@ public final class UdpManager {
             compositeBuf.addComponents(true, header, buf);
             return compositeBuf;
         } finally {
-            header.release();
+//            header.release();
         }
     }
 

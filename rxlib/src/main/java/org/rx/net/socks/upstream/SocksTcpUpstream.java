@@ -23,26 +23,21 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 public class SocksTcpUpstream extends Upstream {
-    private Func<UpstreamSupport> router;
+    private UpstreamSupport next;
 
-    public SocksTcpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
+    public SocksTcpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull UpstreamSupport next) {
         super(config, dstEp);
-        this.router = router;
+        this.next = next;
     }
 
-    public void reuse(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull Func<UpstreamSupport> router) {
+    public void reuse(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull UpstreamSupport next) {
         super.config = config;
         super.destination = dstEp;
-        this.router = router;
+        this.next = next;
     }
 
     @Override
     public void initChannel(Channel channel) {
-        UpstreamSupport next = router.get();
-        if (next == null) {
-            throw new InvalidException("ProxyHandlers is empty");
-        }
-
         AuthenticEndpoint svrEp = next.getEndpoint();
         SocksSupport support = next.getSupport();
 

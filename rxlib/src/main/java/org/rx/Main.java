@@ -229,7 +229,8 @@ public final class Main implements SocksSupport {
 //                return;
             }
         };
-        Main app = new Main(createInSvr(inConf, authenticator, firstRoute, shadowServers, geoMgr));
+        SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, shadowServers, geoMgr);
+        Main app = new Main(inSvr);
         SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
         inUdp2rawConf.setListenPort(port + 10);
         inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
@@ -256,14 +257,13 @@ public final class Main implements SocksSupport {
 //            toInConf.setTransportFlags(null);
             toInConf.setOptimalSettings(IN_OPS);
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
-            Func<UpstreamSupport> rFn = () -> svrSupport;
             ssSvr.onRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
                 SocksTcpUpstream upstream = ssTcpProxyUpstream.get();
                 if (upstream == null) {
-                    upstream = new SocksTcpUpstream(toInConf, dstEp, rFn);
+                    upstream = new SocksTcpUpstream(toInConf, dstEp, svrSupport);
                 } else {
-                    upstream.reuse(toInConf, dstEp, rFn);
+                    upstream.reuse(toInConf, dstEp, svrSupport);
                 }
                 e.setUpstream(upstream);
             });
@@ -290,13 +290,13 @@ public final class Main implements SocksSupport {
                                         GeoManager geoMgr) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
         int[] httpPorts = {80, 443};
-        BiFunc<SocksContext, Func<UpstreamSupport>> routerFn = e -> {
+        BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
             if (Arrays.contains(httpPorts, e.getFirstDestination().getPort())) {
-                return shadowServers::next;
+                return shadowServers.next();
             }
 //            String destHost = e.getFirstDestination().getHost();
             InetAddress srcHost = e.getSource().getAddress();
-            return () -> shadowServers.next(srcHost, rssConf.routeSrcSteeringTTL, true);
+            return shadowServers.next(srcHost, rssConf.routeSrcSteeringTTL, true);
         };
         SocksConfig outConf = Sys.deepClone(inConf);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
