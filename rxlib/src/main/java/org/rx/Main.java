@@ -525,9 +525,14 @@ public final class Main implements SocksSupport {
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setOptimalSettings(OUT_OPS);
         outConf.setConnectTimeoutMillis(connectTimeout);
-        outConf.setEnableUdp2raw(enableUdp2raw);
-        SocksProxyServer outSvr = new SocksProxyServer(outConf, (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS);
+        Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
+        SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
+        SocksConfig outUdp2rawConf = Sys.deepClone(outConf);
+        outUdp2rawConf.setListenPort(port + 10);
+        outUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
+        SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outUdp2rawConf, defAuth);
+        outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
         //server port + 1 = rpc
         RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(port + 1));
