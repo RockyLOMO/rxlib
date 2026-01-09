@@ -32,8 +32,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             if (sc.tryGetUdpSocksServer() != null) {
                 outBuf.retain();
             } else {
-//                log.debug("socks5[{}] UDP IN {}", server.config.getListenPort(), Bytes.hexDump(outBuf.retain()));
-                outBuf = UdpManager.socks5Encode(outBuf, dstEp);
+                outBuf = UdpManager.socks5Encode(outBuf.retain(), dstEp);
             }
             sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp));
 
@@ -113,7 +112,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             outboundFuture.addListener((ChannelFutureListener) f -> {
-                log.info("socks5[{}] UDP outbound pending {} => {}", config.getListenPort(), srcEp, upDstEp);
+                log.info("socks5[{}] UDP outbound pending {} => {}[{}]", config.getListenPort(), srcEp, upDstEp, dstEp);
                 f.channel().writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
             });
         }
