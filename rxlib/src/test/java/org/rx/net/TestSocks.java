@@ -627,7 +627,7 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new SocksTcpUpstream(backConf, e.getFirstDestination(), () -> new UpstreamSupport(srvEp, null)));
+            e.setUpstream(new SocksTcpUpstream(backConf, e.getFirstDestination(), new UpstreamSupport(srvEp, null)));
 //            e.setUpstream(new Socks5Upstream(e.getFirstDestination(), backConf, shadowServers::next));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
@@ -703,7 +703,7 @@ public class TestSocks extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            e.setUpstream(new SocksTcpUpstream(frontConf, e.getFirstDestination(), shadowServers::next));
+            e.setUpstream(new SocksTcpUpstream(frontConf, e.getFirstDestination(), shadowServers.next()));
         });
         frontSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
@@ -718,7 +718,7 @@ public class TestSocks extends AbstractTester {
 //                }
 //                return;
 //            }
-            e.setUpstream(new SocksUdpUpstream(frontConf, dstEp, shadowServers::next));
+            e.setUpstream(new SocksUdpUpstream(frontConf, dstEp, shadowServers.next()));
         });
 //        frontSvr.setAesRouter(SocksProxyServer.DNS_AES_ROUTER);
 
