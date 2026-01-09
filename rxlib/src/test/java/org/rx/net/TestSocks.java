@@ -520,7 +520,8 @@ public class TestSocks extends AbstractTester {
     @Test
     public void tstUdp() {
         createSocksSvr(true);
-        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
+//        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
+        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("s.f-li.cn:6895");
         InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
 
         long[] result = new long[2];
