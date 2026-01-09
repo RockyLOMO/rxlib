@@ -19,7 +19,9 @@ import org.rx.core.EventArgs;
 import org.rx.core.IOC;
 import org.rx.core.RxConfig;
 import org.rx.core.Strings;
+import org.rx.net.AuthenticEndpoint;
 import org.rx.net.shadowsocks.ShadowsocksServer;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -107,4 +109,11 @@ public final class SocksContext extends EventArgs {
     @Getter
     transient volatile boolean outboundActive;
     transient InetSocketAddress udp2rawServer;
+
+    public AuthenticEndpoint tryGetUdpSocksServer() {
+        if (upstream instanceof SocksUdpUpstream) {
+            return ((SocksUdpUpstream) upstream).getUdpSocksServer();
+        }
+        return null;
+    }
 }

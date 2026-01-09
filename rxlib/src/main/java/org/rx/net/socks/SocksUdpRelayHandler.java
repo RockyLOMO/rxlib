@@ -29,7 +29,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             InetSocketAddress dstEp = out.sender();
             ByteBuf outBuf = out.content();
             SocksProxyServer server = Sockets.getAttr(outbound, SocksContext.SOCKS_SVR);
-            if (sc.upstream.getUdpSocksServer() != null) {
+            if (sc.tryGetUdpSocksServer() != null) {
                 outBuf.retain();
             } else {
 //                log.debug("socks5[{}] UDP IN {}", server.config.getListenPort(), Bytes.hexDump(outBuf.retain()));
@@ -100,7 +100,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         SocksContext sc = SocksContext.ctx(outbound);
         //udp dstEp可能多个，但upstream.getDestination()只有一个，所以直接用dstEp。
         UnresolvedEndpoint upDstEp;
-        AuthenticEndpoint upSvrEp = sc.upstream.getUdpSocksServer();
+        AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
         if (upSvrEp != null) {
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
             inBuf.readerIndex(0);

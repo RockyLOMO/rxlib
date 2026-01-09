@@ -120,10 +120,11 @@ public final class Main implements SocksSupport {
     public static final OptimalSettings IN_OPS = null;
     public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
     static final FastThreadLocal<Upstream> frontBTcpUpstream = new FastThreadLocal<>(),
-            frontBUdpUpstream = new FastThreadLocal<>(), ssUdpUpstream = new FastThreadLocal<>();
-    static final FastThreadLocal<SocksTcpUpstream> frontBTcpProxyUpstream = new FastThreadLocal<>(),
-            ssTcpProxyUpstream = new FastThreadLocal<>();
-    static final FastThreadLocal<SocksUdpUpstream> frontBUdpProxyUpstream = new FastThreadLocal<>();
+            frontBUdpUpstream = new FastThreadLocal<>();
+    static final FastThreadLocal<SocksTcpUpstream> inTcpProxyUpstream = new FastThreadLocal<>(),
+            ssTcpUpstream = new FastThreadLocal<>();
+    static final FastThreadLocal<SocksUdpUpstream> inUdpProxyUpstream = new FastThreadLocal<>(),
+            ssUdpUpstream = new FastThreadLocal<>();
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
@@ -244,11 +245,11 @@ public final class Main implements SocksSupport {
         fn.invoke();
         Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
 
-        InetSocketAddress frontSvrEp = Sockets.newLoopbackEndpoint(port);
+        InetSocketAddress inSvrEp = Sockets.newLoopbackEndpoint(port);
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
-            AuthenticEndpoint svrEp = new AuthenticEndpoint(frontSvrEp, usr.getUsername(), usr.getPassword());
+            AuthenticEndpoint svrEp = new AuthenticEndpoint(inSvrEp, usr.getUsername(), usr.getPassword());
 
             conf.setOptimalSettings(SS_IN_OPS);
             conf.setConnectTimeoutMillis(connectTimeout);
@@ -259,7 +260,7 @@ public final class Main implements SocksSupport {
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
             ssSvr.onRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
-                SocksTcpUpstream upstream = ssTcpProxyUpstream.get();
+                SocksTcpUpstream upstream = ssTcpUpstream.get();
                 if (upstream == null) {
                     upstream = new SocksTcpUpstream(toInConf, dstEp, svrSupport);
                 } else {
@@ -269,13 +270,12 @@ public final class Main implements SocksSupport {
             });
             ssSvr.onUdpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
-                Upstream upstream = ssUdpUpstream.get();
+                SocksUdpUpstream upstream = ssUdpUpstream.get();
                 if (upstream == null) {
-                    upstream = new Upstream(toInConf, dstEp);
+                    upstream = new SocksUdpUpstream(toInConf, dstEp, svrSupport);
                 } else {
-                    upstream.reuse(toInConf, dstEp);
+                    upstream.reuse(toInConf, dstEp, svrSupport);
                 }
-                upstream.setUdpSocksServer(svrEp);
                 e.setUpstream(upstream);
             });
         }
@@ -340,7 +340,7 @@ public final class Main implements SocksSupport {
         inSvr.onRoute.replace(firstRoute, (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "TCP")) {
-                SocksTcpUpstream upstream = frontBTcpProxyUpstream.get();
+                SocksTcpUpstream upstream = inTcpProxyUpstream.get();
                 if (upstream == null) {
                     upstream = new SocksTcpUpstream(outConf, dstEp, routerFn.apply(e));
                 } else {
@@ -378,7 +378,7 @@ public final class Main implements SocksSupport {
 //          }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "UDP")) {
-                SocksUdpUpstream upstream = frontBUdpProxyUpstream.get();
+                SocksUdpUpstream upstream = inUdpProxyUpstream.get();
                 if (upstream == null) {
                     upstream = new SocksUdpUpstream(outConf, dstEp, routerFn.apply(e));
                 } else {
