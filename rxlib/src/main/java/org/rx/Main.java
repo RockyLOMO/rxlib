@@ -271,15 +271,17 @@ public final class Main implements SocksSupport {
         Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
 
         InetSocketAddress inSvrEp = Sockets.newLoopbackEndpoint(port);
+        InetSocketAddress inUdp2rawSvrEp = Sockets.newLoopbackEndpoint(port + 10);
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
-            AuthenticEndpoint svrEp = new AuthenticEndpoint(inSvrEp, usr.getUsername(), usr.getPassword());
+            InetSocketAddress upSvrEp = usr.getUsername().startsWith("tun") ? inUdp2rawSvrEp : inSvrEp;
+            AuthenticEndpoint svrEp = new AuthenticEndpoint(upSvrEp, usr.getUsername(), usr.getPassword());
 
             conf.setOptimalSettings(SS_IN_OPS);
             conf.setConnectTimeoutMillis(connectTimeout);
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
-            SocksConfig toInConf = new SocksConfig(port);
+            SocksConfig toInConf = new SocksConfig(svrEp.getEndpoint().getPort());
 //            toInConf.setTransportFlags(null);
             toInConf.setOptimalSettings(IN_OPS);
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
