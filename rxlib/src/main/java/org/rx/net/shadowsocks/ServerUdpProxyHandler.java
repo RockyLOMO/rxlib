@@ -28,7 +28,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             SocksContext sc = SocksContext.ctx(outbound);
             UnresolvedEndpoint dstEp = sc.getFirstDestination();
             ByteBuf outBuf = out.content();
-            if (sc.getUpstream().getUdpSocksServer() != null) {
+            if (sc.tryGetUdpSocksServer() != null) {
                 UnresolvedEndpoint tmp = UdpManager.socks5Decode(outBuf);
                 if (!dstEp.equals(tmp)) {
                     log.error("UDP error dstEp not matched {} != {}", dstEp, tmp);
@@ -70,7 +70,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
 
         SocksContext sc = SocksContext.ctx(outbound);
         UnresolvedEndpoint upDstEp;
-        AuthenticEndpoint upSvrEp = sc.getUpstream().getUdpSocksServer();
+        AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
         if (upSvrEp != null) {
             inBuf = UdpManager.socks5Encode(inBuf, dstEp);
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());

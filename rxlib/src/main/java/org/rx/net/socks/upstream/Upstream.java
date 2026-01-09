@@ -13,8 +13,6 @@ public class Upstream {
     //Maybe frontend have a different configuration from backend
     protected SocketConfig config;
     protected volatile UnresolvedEndpoint destination;
-    @Setter
-    protected volatile AuthenticEndpoint udpSocksServer;
 
     public Upstream(UnresolvedEndpoint dstEp) {
         this(null, dstEp);
