@@ -6,10 +6,7 @@ import com.alibaba.fastjson2.JSONWriter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandler;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.codec.http.multipart.FileUpload;
@@ -27,10 +24,7 @@ import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.Main;
-import org.rx.bean.LogStrategy;
-import org.rx.bean.MultiValueMap;
-import org.rx.bean.RandomList;
-import org.rx.bean.ULID;
+import org.rx.bean.*;
 import org.rx.codec.AESUtil;
 import org.rx.codec.CodecUtil;
 import org.rx.codec.XChaCha20Poly1305Util;
@@ -526,50 +520,63 @@ public class TestSocks extends AbstractTester {
     @SneakyThrows
     @Test
     public void tstUdp() {
-        String socksUdpEp = "s.f-li.cn:6885";
-        String ntpServer = "pool.ntp.org:123";
+        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("s.f-li.cn:6885");
+        InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
 
-        DatagramSocket socket = new DatagramSocket();
+        long[] result = new long[2];
+        Channel channel = Sockets.udpBootstrap(null, ob -> {
+            ob.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
+                @Override
+                protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) throws Exception {
+                    Channel ch = ctx.channel();
 
-        // 构造NTP请求数据包（48字节，大部分为0）
-        byte[] buffer = new byte[48];
-        buffer[0] = 0x1B;  // LI=00 (无跃秒), VN=011 (版本3), Mode=011 (客户端模式)
-        CompositeByteBuf sendBuf = UdpManager.socks5Encode(Unpooled.wrappedBuffer(buffer), new UnresolvedEndpoint(Sockets.parseEndpoint(ntpServer)));
-        byte[] sbuffer = new byte[sendBuf.readableBytes()];
-        sendBuf.getBytes(sendBuf.readerIndex(), sbuffer);
+                    ByteBuf buf = msg.content();
+                    if (buf.readableBytes() < 48) {
+//                        promise.tryFailure(new IllegalStateException("NTP响应过短"));
+                        return;
+                    }
+                    result[0] = System.currentTimeMillis();
+                    UnresolvedEndpoint dstEp = UdpManager.socks5Decode(buf);
+                    System.out.println("from dstEp: " + dstEp);
 
-        java.net.DatagramPacket requestPacket = new java.net.DatagramPacket(sbuffer, sbuffer.length, Sockets.parseEndpoint(socksUdpEp));
-        socket.send(requestPacket);
+                    // 解析Transmit Timestamp（偏移40-47字节：秒整数部分 + 秒小数部分）
+                    buf.skipBytes(40);
+                    long transmitTimestamp = buf.readLong();
 
-        // 接收响应
-        java.net.DatagramPacket responsePacket = new java.net.DatagramPacket(sbuffer, sbuffer.length);
-        socket.receive(responsePacket);
+                    // NTP时间：整数秒（高32位） + 小数秒（低32位）
+                    long ntpSeconds = transmitTimestamp >>> 32;
+                    long ntpFraction = transmitTimestamp & 0xFFFFFFFFL;
 
-        ByteBuf recvBuf = Unpooled.wrappedBuffer(sbuffer);
-        UnresolvedEndpoint dstEp = UdpManager.socks5Decode(recvBuf);
-        byte[] rbuffer = new byte[recvBuf.readableBytes()];
-        recvBuf.getBytes(recvBuf.readerIndex(), rbuffer);
+                    // 转换为毫秒
+                    long milliseconds = (ntpSeconds * 1000) + ((ntpFraction * 1000) / 0x100000000L);
 
-        // 解析Transmit Timestamp（偏移40-47字节：秒整数部分 + 秒小数部分）
-        long transmitTimestamp = 0;
-        for (int i = 40; i <= 47; i++) {
-            transmitTimestamp = (transmitTimestamp << 8) | (rbuffer[i] & 0xFF);
+                    // NTP纪元从1900-01-01开始，Java Date从1970-01-01开始，偏移70年（包括闰秒调整）
+                    long epochOffset = 2208988800000L;  // 1900到1970的毫秒偏移
+                    long serverTimeMillis = milliseconds - epochOffset;
+                    result[1] = serverTimeMillis;
+
+                    synchronized (ch) {
+                        ch.notify();
+                    }
+                }
+            });
+        }).bind(0).sync().channel();
+
+        // 构造NTP请求（48字节，首字节0x1B）
+        ByteBuf buf = channel.alloc().directBuffer(48);
+        buf.writeByte(0x1B);// LI=00, VN=3, Mode=3 (客户端)
+        buf.writeZero(47);
+
+//        channel.writeAndFlush(new DatagramPacket(buf, ntpServer));
+        channel.writeAndFlush(new DatagramPacket(UdpManager.socks5Encode(buf, ntpServer), socksUdpEp));
+        synchronized (channel) {
+            channel.wait();
         }
 
-        // NTP时间：整数秒（高32位） + 小数秒（低32位）
-        long ntpSeconds = transmitTimestamp >>> 32;
-        long ntpFraction = transmitTimestamp & 0xFFFFFFFFL;
-
-        // 转换为毫秒
-        long milliseconds = (ntpSeconds * 1000) + ((ntpFraction * 1000) / 0x100000000L);
-
-        // NTP纪元从1900-01-01开始，Java Date从1970-01-01开始，偏移70年（包括闰秒调整）
-        long epochOffset = 2208988800000L;  // 1900到1970的毫秒偏移
-        long serverTimeMillis = milliseconds - epochOffset;
-
-        Date serverTime = new Date(serverTimeMillis);
-        System.out.println("NTP服务器" + dstEp + "时间: " + serverTime);
-        System.out.println("本地系统时间: " + new Date());
+        DateTime localTime = new DateTime(result[0]);
+        DateTime serverTime = new DateTime(result[1]);
+        System.out.println("NTP服务器" + ntpServer + "时间: " + serverTime);
+        System.out.println("本地系统时间: " + localTime);
     }
 
     @SneakyThrows
