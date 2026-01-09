@@ -519,9 +519,8 @@ public class TestSocks extends AbstractTester {
     @SneakyThrows
     @Test
     public void tstUdp() {
-        createSocksSvr();
-//        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
-        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2092");
+        createSocksSvr(true);
+        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
         InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
 
         long[] result = new long[2];
@@ -585,14 +584,11 @@ public class TestSocks extends AbstractTester {
     @SneakyThrows
     @Test
     public void ssProxy() {
-        createSocksSvr();
+        createSocksSvr(false);
         System.in.read();
     }
 
-    void createSocksSvr() {
-        boolean udp2raw = false;
-        boolean udp2rawDirect = false;
-//        Udp2rawHandler.DEFAULT.setGzipMinLength(40);
+    void createSocksSvr(boolean udp2raw) {
         int shadowDnsPort = 853;
         int outSvrPort = 2080;
         int inSvrPort = 2090;
@@ -611,7 +607,7 @@ public class TestSocks extends AbstractTester {
         SocksUser usr = new SocksUser(socks5Usr);
         usr.setPassword(socks5Pwd);
         usr.setMaxIpCount(-1);
-//        backConf.setEnableUdp2raw(udp2raw);
+        outConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(outConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
@@ -628,12 +624,8 @@ public class TestSocks extends AbstractTester {
         SocksConfig inConf = new SocksConfig(inSvrPort);
         inConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
         inConf.setConnectTimeoutMillis(connectTimeoutMillis);
-//        frontConf.setEnableUdp2raw(udp2raw);
-//        if (!udp2rawDirect) {
-//            frontConf.setUdp2rawServers(Arrays.toList(backSrvEp));
-//        } else {
-//            frontConf.setUdp2rawServers(Collections.emptyList());
-//        }
+        inConf.setEnableUdp2raw(udp2raw);
+        inConf.setUdp2rawClient(outSrvEp);
         SocksProxyServer inSvr = new SocksProxyServer(inConf);
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
