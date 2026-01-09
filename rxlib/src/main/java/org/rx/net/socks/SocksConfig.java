@@ -30,7 +30,7 @@ public class SocksConfig extends SocketConfig {
     private final Set<InetAddress> whiteList = whiteList();
     private boolean enableUdp2raw;
     private InetSocketAddress udp2rawClient;
-    private InetSocketAddress kcptunClient;
+    private String kcptunClient;
 
     private Set<InetAddress> whiteList() {
         return DiskCache.DEFAULT.asSet();

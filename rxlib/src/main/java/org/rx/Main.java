@@ -259,7 +259,7 @@ public final class Main implements SocksSupport {
             inUdp2rawConf.setListenPort(port + 10);
             inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
             inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
-            inUdp2rawConf.setKcptunClient(Sockets.parseEndpoint(rssConf.kcptunClient));
+            inUdp2rawConf.setKcptunClient(rssConf.kcptunClient);
             SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr, true);
         }
 
@@ -317,7 +317,7 @@ public final class Main implements SocksSupport {
                                         GeoManager geoMgr, boolean kcptun) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
 //        int[] httpPorts = {80, 443};
-        UpstreamSupport kcpUpstream = new UpstreamSupport(new AuthenticEndpoint(inConf.getKcptunClient()), null);
+        UpstreamSupport kcpUpstream = new UpstreamSupport(AuthenticEndpoint.valueOf(inConf.getKcptunClient()), null);
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
 //            if (Arrays.contains(httpPorts, e.getFirstDestination().getPort())) {
 //                return socksServers.next();
