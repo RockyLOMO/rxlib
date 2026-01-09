@@ -71,11 +71,11 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         SocksContext sc = SocksContext.ctx(outbound);
         UnresolvedEndpoint upDstEp;
         AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
+        inBuf.retain();
         if (upSvrEp != null) {
             inBuf = UdpManager.socks5Encode(inBuf, dstEp);
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
         } else {
-            inBuf.retain();
             upDstEp = sc.getUpstream().getDestination();
         }
         if (sc.isOutboundActive()) {
