@@ -317,7 +317,8 @@ public final class Main implements SocksSupport {
                                         GeoManager geoMgr, boolean kcptun) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
 //        int[] httpPorts = {80, 443};
-        UpstreamSupport kcpUpstream = new UpstreamSupport(AuthenticEndpoint.valueOf(inConf.getKcptunClient()), null);
+        UpstreamSupport kcpUpstream = kcptun ? new UpstreamSupport(AuthenticEndpoint.valueOf(inConf.getKcptunClient()), null)
+                : null;
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
 //            if (Arrays.contains(httpPorts, e.getFirstDestination().getPort())) {
 //                return socksServers.next();
