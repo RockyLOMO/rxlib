@@ -43,28 +43,32 @@ public final class UdpManager {
     public static CompositeByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {
         PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
         ByteBuf header = allocator.directBuffer(64);
+        CompositeByteBuf compositeBuf = allocator.compositeDirectBuffer(2);
         try {
             header.writeZero(3);
             encode(header, dstEp);
-            CompositeByteBuf compositeBuf = allocator.compositeDirectBuffer();
             compositeBuf.addComponents(true, header, buf);
             return compositeBuf;
-        } finally {
-//            header.release();
+        } catch (Exception e) {
+            header.release();
+            compositeBuf.release();
+            throw e;
         }
     }
 
     public static CompositeByteBuf socks5Encode(ByteBuf buf, InetSocketAddress dstEp) {
         PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
         ByteBuf header = allocator.directBuffer(64);
+        CompositeByteBuf compositeBuf = allocator.compositeDirectBuffer(2);
         try {
             header.writeZero(3);
             encode(header, dstEp);
-            CompositeByteBuf compositeBuf = allocator.compositeDirectBuffer();
             compositeBuf.addComponents(true, header, buf);
             return compositeBuf;
-        } finally {
-//            header.release();
+        } catch (Exception e) {
+            header.release();
+            compositeBuf.release();
+            throw e;
         }
     }
 
