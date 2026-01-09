@@ -252,7 +252,7 @@ public final class Main implements SocksSupport {
 //                return;
             }
         };
-        SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr, false);
+        SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
         Main app = new Main(inSvr);
         if (enableUdp2raw) {
             SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
@@ -260,7 +260,7 @@ public final class Main implements SocksSupport {
             inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
             inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
             inUdp2rawConf.setKcptunClient(rssConf.kcptunClient);
-            SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr, true);
+            SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
         }
 
         Action fn = () -> {
@@ -314,14 +314,12 @@ public final class Main implements SocksSupport {
 
     static SocksProxyServer createInSvr(SocksConfig inConf, DefaultSocksAuthenticator authenticator,
                                         TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> socksServers,
-                                        GeoManager geoMgr, boolean kcptun) {
+                                        GeoManager geoMgr) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
-//        int[] httpPorts = {80, 443};
-        UpstreamSupport kcpUpstream = new UpstreamSupport(AuthenticEndpoint.valueOf(inConf.getKcptunClient()), null);
+        boolean kcptun = inConf.getKcptunClient() != null;
+        UpstreamSupport kcpUpstream = kcptun ? new UpstreamSupport(AuthenticEndpoint.valueOf(inConf.getKcptunClient()), null)
+                : null;
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
-//            if (Arrays.contains(httpPorts, e.getFirstDestination().getPort())) {
-//                return socksServers.next();
-//            }
 //            String destHost = e.getFirstDestination().getHost();
             InetAddress srcHost = e.getSource().getAddress();
             UpstreamSupport next = socksServers.next(srcHost, rssConf.routeSrcSteeringTTL, true);
