@@ -86,7 +86,7 @@ public final class Main implements SocksSupport {
 
         //socks
         public List<String> shadowUsers;
-        public List<String> socksServer;
+        public List<String> socksServers;
         public String socksPwd;
         public int tcpTimeoutSeconds = 60 * 2;
         public int udpTimeoutSeconds = 60 * 10;
@@ -94,6 +94,8 @@ public final class Main implements SocksSupport {
         public int rpcMaxSize = 6;
         public int rpcAutoWhiteListSeconds = 120;
         public int shadowDnsPort = 753;
+
+        public List<String> udp2rawSocksServers;
         public String udp2rawClient = "127.0.0.1:9900";
 
         //route
@@ -130,7 +132,8 @@ public final class Main implements SocksSupport {
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
         //Udp2raw 将 UDP 转换为 FakeTCP、ICMP
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
-        RandomList<UpstreamSupport> shadowServers = new RandomList<>();
+        RandomList<UpstreamSupport> socksServers = new RandomList<>();
+        RandomList<UpstreamSupport> udp2rawSocksServers = new RandomList<>();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
         GeoManager geoMgr = GeoManager.INSTANCE;
 
@@ -142,15 +145,18 @@ public final class Main implements SocksSupport {
             }
 
             rssConf = changed;
-            Linq<AuthenticEndpoint> svrs = Linq.from(rssConf.socksServer).select(p -> Reflects.convertQuietly(p, AuthenticEndpoint.class));
-            if (!svrs.any() || svrs.any(Objects::isNull)) {
+            Linq<AuthenticEndpoint> svrs = Linq.from(rssConf.socksServers).where(Objects::nonNull).select(p -> Reflects.convertQuietly(p, AuthenticEndpoint.class));
+            if (!svrs.any()) {
                 throw new InvalidException("Invalid shadowServer arg");
             }
+            Linq<AuthenticEndpoint> udp2rawSvrs = Linq.from(rssConf.udp2rawSocksServers).where(Objects::nonNull).select(p -> Reflects.convertQuietly(p, AuthenticEndpoint.class));
             geoMgr.setGeoSiteDirectRules(rssConf.routeDstGeoSiteDirectRules);
 
-            List<UpstreamSupport> oldSvrs = shadowServers.aliveList();
+            List<UpstreamSupport> oldSvrs = socksServers.aliveList();
+            List<UpstreamSupport> oldUdp2rawSvrs = udp2rawSocksServers.aliveList();
             List<DnsServer.ResolveInterceptor> oldDnss = dnsInterceptors.aliveList();
 
+            SocksSupport firstSupport = null;
             for (AuthenticEndpoint socksServer : svrs) {
                 RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(socksServer.getEndpoint(), socksServer.getEndpoint().getPort() + 1),
                         rssConf.rpcMinSize, rssConf.rpcMaxSize);
@@ -162,6 +168,9 @@ public final class Main implements SocksSupport {
                     continue;
                 }
                 SocksSupport facade = Remoting.createFacade(SocksSupport.class, rpcConf);
+                if (firstSupport == null) {
+                    firstSupport = facade;
+                }
                 UpstreamSupport us = new UpstreamSupport(socksServer, new SocksSupport() {
                     @Override
                     public void fakeEndpoint(BigInteger hash, String realEndpoint) {
@@ -182,13 +191,25 @@ public final class Main implements SocksSupport {
                         facade.addWhiteList(endpoint);
                     }
                 });
-                shadowServers.add(us, weight);
+                socksServers.add(us, weight);
                 dnsInterceptors.add(us.getSupport());
             }
+            for (AuthenticEndpoint socksServer : udp2rawSvrs) {
+                int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
+                if (weight <= 0) {
+                    continue;
+                }
+                UpstreamSupport us = new UpstreamSupport(socksServer, firstSupport);
+                udp2rawSocksServers.add(us, weight);
+            }
 
-            shadowServers.removeAll(oldSvrs);
+            socksServers.removeAll(oldSvrs);
+            udp2rawSocksServers.removeAll(oldUdp2rawSvrs);
             dnsInterceptors.removeAll(oldDnss);
             for (UpstreamSupport support : oldSvrs) {
+                tryClose(support.getSupport());
+            }
+            for (UpstreamSupport support : oldUdp2rawSvrs) {
                 tryClose(support.getSupport());
             }
             log.info("reload svrs {}", toJsonString(svrs));
@@ -230,17 +251,17 @@ public final class Main implements SocksSupport {
 //                return;
             }
         };
-        SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, shadowServers, geoMgr);
+        SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
         Main app = new Main(inSvr);
         SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
         inUdp2rawConf.setListenPort(port + 10);
         inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
         inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
-        SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, shadowServers, geoMgr);
+        SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
 
         Action fn = () -> {
             InetAddress addr = InetAddress.getByName(geoMgr.getPublicIp());
-            eachQuietly(shadowServers, p -> p.getSupport().addWhiteList(addr));
+            eachQuietly(socksServers, p -> p.getSupport().addWhiteList(addr));
         };
         fn.invoke();
         Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
@@ -528,6 +549,7 @@ public final class Main implements SocksSupport {
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
+
         SocksConfig outUdp2rawConf = Sys.deepClone(outConf);
         outUdp2rawConf.setListenPort(port + 10);
         outUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
