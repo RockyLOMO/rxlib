@@ -64,7 +64,6 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
     @Override
     protected void decode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
         ByteBuf buf = Sockets.getMessageBuf(msg);
-
         if (buf.readableBytes() < 1 + 1 + 2) {// [1-byte type][variable-length host][2-byte port]
             return;
         }
@@ -73,15 +72,17 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
         boolean isUdp = inbound instanceof DatagramChannel;
 
         if (isUdp || !tcpAddressed) {
-            UnresolvedEndpoint addrRequest = UdpManager.decode(buf);
-            //IDN.toUnicode(this.host);
-            if (addrRequest == null) {
-                log.warn("fail to decode address request from {}, pls check client's cipher setting", inbound.remoteAddress());
+            UnresolvedEndpoint addrRequest;
+            try {
+                addrRequest = UdpManager.decode(buf);
+            } catch (Exception e) {
+                log.warn("protocol error, fail to decode address request from {}, pls check client's cipher setting", inbound.remoteAddress(), e);
                 if (!isUdp) {
                     ctx.close();
                 }
                 return;
             }
+            //IDN.toUnicode(this.host);
 
             InetSocketAddress addr = addrRequest.socketAddress();
             inbound.attr(ShadowsocksConfig.REMOTE_DEST).set(addr);
