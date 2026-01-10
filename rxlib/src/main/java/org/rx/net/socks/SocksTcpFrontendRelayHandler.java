@@ -25,7 +25,7 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
         }
 
         Channel outbound = sc.outbound.channel();
-        log.debug("RELAY {} => {}[{}]", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
+        log.debug("TCP RELAY {} => {}[{}]", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
         outbound.writeAndFlush(msg);
     }
 
@@ -42,7 +42,7 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
         Channel inbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(inbound);
         Channel outbound = sc.outbound.channel();
-        log.warn("RELAY {} => {}[{}] thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
+        log.warn("TCP RELAY {} => {}[{}] thrown", inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress(), cause);
         Sockets.closeOnFlushed(inbound);
     }
 }

@@ -94,6 +94,7 @@ public final class Main implements SocksSupport {
         public int rpcMaxSize = 6;
         public int rpcAutoWhiteListSeconds = 120;
         public int shadowDnsPort = 753;
+        public int dnsTtlMinutes = 600;
 
         public List<String> udp2rawSocksServers;
         public String udp2rawClient;
@@ -116,9 +117,12 @@ public final class Main implements SocksSupport {
         public boolean hasRouteFlag() {
             return (logFlags & 1) == 1;
         }
+
+        public boolean hasDebugFlag() {
+            return (logFlags & 2) == 2;
+        }
     }
 
-    static RSSConf rssConf;
     public static final OptimalSettings OUT_OPS = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
     public static final OptimalSettings IN_OPS = null;
     public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
@@ -128,16 +132,19 @@ public final class Main implements SocksSupport {
             ssTcpUpstream = new FastThreadLocal<>();
     static final FastThreadLocal<SocksUdpUpstream> inUdpProxyUpstream = new FastThreadLocal<>(),
             ssUdpUpstream = new FastThreadLocal<>();
+    static RSSConf rssConf;
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
         //Udp2raw 将 UDP 转换为 FakeTCP、ICMP
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
+        int udp2rawPort = port + 10;
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
         RandomList<UpstreamSupport> udp2rawSocksServers = new RandomList<>();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
         GeoManager geoMgr = GeoManager.INSTANCE;
 
+        List<Object> svrRefs = new ArrayList<>();
         YamlConfiguration watcher = new YamlConfiguration("conf.yml").enableWatch();
         watcher.onChanged.combine((s, e) -> {
             RSSConf changed = s.readAs(RSSConf.class);
@@ -214,26 +221,35 @@ public final class Main implements SocksSupport {
                 tryClose(support.getSupport());
             }
             log.info("reload svrs {}", toJsonString(svrs));
+
+            boolean debugFlag = rssConf.hasDebugFlag();
+            for (Object svrRef : svrRefs) {
+                if (svrRef instanceof ShadowsocksServer) {
+                    ((ShadowsocksServer) svrRef).getConfig().setDebug(debugFlag);
+                } else {
+                    ((SocksProxyServer) svrRef).getConfig().setDebug(debugFlag);
+                }
+            }
         });
         watcher.raiseChange();
+
+        DnsServer dnsSvr = new DnsServer(rssConf.shadowDnsPort);
+        dnsSvr.setTtl(60 * rssConf.dnsTtlMinutes);
+        dnsSvr.setInterceptors(dnsInterceptors);
+        dnsSvr.addHostsFile("hosts.txt");
+        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(rssConf.shadowDnsPort);
+        Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
+
         Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(rssConf.shadowUsers).select(shadowUser -> {
             String[] sArgs = Strings.split(shadowUser, ":", 4);
             ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(Integer.parseInt(sArgs[0])),
                     CipherKind.AES_256_GCM.getCipherName(), sArgs[1]);
-            config.setTcpTimeoutSeconds(rssConf.tcpTimeoutSeconds);
             config.setUdpTimeoutSeconds(rssConf.udpTimeoutSeconds);
             SocksUser user = new SocksUser(sArgs[2]);
             user.setPassword(rssConf.socksPwd);
             user.setMaxIpCount(Integer.parseInt(sArgs[3]));
             return Tuple.of(config, user);
         });
-
-        DnsServer dnsSvr = new DnsServer(rssConf.shadowDnsPort);
-        dnsSvr.setTtl(60 * 60 * 10); //12 hour
-        dnsSvr.setInterceptors(dnsInterceptors);
-        dnsSvr.addHostsFile("hosts.txt");
-        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(rssConf.shadowDnsPort);
-        Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
         SocksConfig inConf = new SocksConfig(port);
 //        inConf.setTransportFlags(null);
@@ -253,14 +269,16 @@ public final class Main implements SocksSupport {
             }
         };
         SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
+        svrRefs.add(inSvr);
         Main app = new Main(inSvr);
         if (enableUdp2raw) {
             SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
-            inUdp2rawConf.setListenPort(port + 10);
+            inUdp2rawConf.setListenPort(udp2rawPort);
             inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
             inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
             inUdp2rawConf.setKcptunClient(rssConf.kcptunClient);
             SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+            svrRefs.add(inUdp2rawSvr);
         }
 
         Action fn = () -> {
@@ -271,7 +289,7 @@ public final class Main implements SocksSupport {
         Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
 
         InetSocketAddress inSvrEp = Sockets.newLoopbackEndpoint(port);
-        InetSocketAddress inUdp2rawSvrEp = Sockets.newLoopbackEndpoint(port + 10);
+        InetSocketAddress inUdp2rawSvrEp = Sockets.newLoopbackEndpoint(udp2rawPort);
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
@@ -281,6 +299,7 @@ public final class Main implements SocksSupport {
             conf.setOptimalSettings(SS_IN_OPS);
             conf.setConnectTimeoutMillis(connectTimeout);
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
+            svrRefs.add(ssSvr);
             SocksConfig toInConf = new SocksConfig(svrEp.getEndpoint().getPort());
 //            toInConf.setTransportFlags(null);
             toInConf.setOptimalSettings(IN_OPS);
@@ -440,7 +459,7 @@ public final class Main implements SocksSupport {
 
     static void clientInit(DefaultSocksAuthenticator authenticator) {
         Tasks.schedulePeriod(() -> {
-            Files.writeLines("usr-info.txt", Collections.singletonList(authenticator.toString()));
+            Files.writeLines("usr-info.txt", Collections.singletonList(toJsonString(authenticator)));
 
             if (rssConf == null) {
                 log.warn("conf is null");

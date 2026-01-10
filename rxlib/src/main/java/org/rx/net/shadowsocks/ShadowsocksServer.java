@@ -2,6 +2,7 @@ package org.rx.net.shadowsocks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;
@@ -14,11 +15,12 @@ import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.TripleAction;
 
-@Slf4j
+//@Slf4j
 public class ShadowsocksServer extends Disposable implements EventPublisher<ShadowsocksServer> {
     public static final TripleAction<ShadowsocksServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public final Delegate<ShadowsocksServer, SocksContext> onRoute = Delegate.create(DIRECT_ROUTER),
             onUdpRoute = Delegate.create(DIRECT_ROUTER);
+    @Getter
     final ShadowsocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel udpChannel;

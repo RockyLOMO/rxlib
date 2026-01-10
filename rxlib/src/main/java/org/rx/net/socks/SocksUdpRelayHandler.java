@@ -24,20 +24,21 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket out) throws Exception {
             Channel outbound = ctx.channel();
             SocksContext sc = SocksContext.ctx(outbound);
+            SocksProxyServer server = Sockets.getAttr(sc.inbound, SocksContext.SOCKS_SVR);
+            SocksConfig config = server.config;
             InetSocketAddress srcEp = sc.source;
 //            UnresolvedEndpoint dstEp = sc.firstDestination;
             InetSocketAddress dstEp = out.sender();
             ByteBuf outBuf = out.content();
-            SocksProxyServer server = Sockets.getAttr(outbound, SocksContext.SOCKS_SVR);
             if (sc.tryGetUdpSocksServer() != null) {
                 outBuf.retain();
             } else {
                 outBuf = UdpManager.socks5Encode(outBuf.retain(), dstEp);
             }
+            if (config.isDebug()) {
+                log.info("socks5[{}] UDP inbound {} => {}", config.getListenPort(), dstEp, srcEp);
+            }
             sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp));
-
-            log.info("socks5[{}] UDP inbound {} => {}", server.config.getListenPort(), dstEp, srcEp);
-//            log.debug("socks5[{}] UDP IN {}[{}] => {}\n{}", server.config.getListenPort(), out.sender(), dstEp, srcEp, Bytes.hexDump(outBuf.retain()));
         }
     }
 
@@ -108,11 +109,15 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
         inBuf.retain();
         if (sc.outboundActive) {
-            log.info("socks5[{}] UDP outbound {} => {}[{}]", config.getListenPort(), srcEp, upDstEp, dstEp);
+            if (config.isDebug()) {
+                log.info("socks5[{}] UDP outbound {} => {}[{}]", config.getListenPort(), srcEp, upDstEp, dstEp);
+            }
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             outboundFuture.addListener((ChannelFutureListener) f -> {
-                log.info("socks5[{}] UDP outbound pending {} => {}[{}]", config.getListenPort(), srcEp, upDstEp, dstEp);
+                if (config.isDebug()) {
+                    log.info("socks5[{}] UDP outbound pending {} => {}[{}]", config.getListenPort(), srcEp, upDstEp, dstEp);
+                }
                 f.channel().writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
             });
         }

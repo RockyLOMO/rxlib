@@ -21,7 +21,7 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
-@Slf4j
+//@Slf4j
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public static final PredicateFunc<UnresolvedEndpoint> DNS_CIPHER_ROUTER = dstEp -> dstEp.getPort() == SocksSupport.DNS_PORT
@@ -88,9 +88,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 onBind.accept(f.channel());
             }
         }).channel();
-        tcpChannel.closeFuture().addListener(f -> {
-            log.warn("S5 close on {}", config.getListenPort());
-        });
 
         //udp server
         int udpPort = config.getListenPort();

@@ -29,6 +29,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         pipeline.remove(Socks5CommandRequestDecoder.class.getSimpleName());
         pipeline.remove(this);
         SocksProxyServer server = Sockets.getAttr(inCh, SocksContext.SOCKS_SVR);
+        SocksConfig config = server.config;
 //        log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
@@ -41,9 +42,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (dstEpHost.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
             UnresolvedEndpoint realEp = SocksSupport.fakeDict().get(new BigInteger(dstEpHost.substring(0, dstEpHost.length() - SocksSupport.FAKE_HOST_SUFFIX.length())));
             if (realEp == null) {
-                log.error("socks5[{}] recover dstEp {} fail", server.getConfig().getListenPort(), dstEp);
+                log.error("socks5[{}] recover dstEp {} fail", config.getListenPort(), dstEp);
             } else {
-                log.info("socks5[{}] recover dstEp {}[{}]", server.getConfig().getListenPort(), dstEp, realEp);
+                if (config.isDebug()) {
+                    log.info("socks5[{}] recover dstEp {}[{}]", config.getListenPort(), dstEp, realEp);
+                }
                 dstEp = realEp;
             }
         }
@@ -54,15 +57,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             server.raiseEvent(server.onRoute, e);
             connect(inCh, msg.dstAddrType(), e, null);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
-            log.info("socks5[{}] UdpAssociate {}", server.getConfig().getListenPort(), msg);
+            log.debug("socks5[{}] UDP associate {}", config.getListenPort(), msg);
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
-
-//            InetAddress srcAddr = srcEp.getAddress();
-//            TimeoutFuture<?> maxLifeFn = Tasks.setTimeout(() -> {
-//                log.info("socks5[{}] UdpAssociate {} by maxLife", server.config.getListenPort(), srcAddr);
-//                Sockets.closeOnFlushed(inCh);
-//            }, server.config.getUdpAssociateMaxLifeSeconds() * 1000L);
-//            inCh.closeFuture().addListener(f -> maxLifeFn.cancel());
 
             Socks5AddressType bindAddrType = msg.dstAddrType();
             //msg.dstAddr(), msg.dstPort() = 0.0.0.0:0 客户端希望绑定
@@ -77,10 +73,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
     private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
+        SocksConfig config = server.config;
 
         Upstream upstream = e.getUpstream();
-        SocketConfig config = upstream.getConfig();
-        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), config, outbound -> {
+        SocketConfig upConf = upstream.getConfig();
+        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upConf, outbound -> {
             upstream.initChannel(outbound);
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
@@ -98,9 +95,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     }
                 }
                 if (f.cause() instanceof ConnectTimeoutException) {
-                    log.warn("socks5[{}] connect {}[{}] fail\n{}", server.getConfig().getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause().getMessage());
+                    log.warn("socks5[{}] TCP connect {}[{}] fail\n{}", config.getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause().getMessage());
                 } else {
-                    log.error("socks5[{}] connect {}[{}] fail", server.getConfig().getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause());
+                    log.error("socks5[{}] TCP connect {}[{}] fail", config.getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause());
                 }
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
@@ -110,12 +107,14 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             Socks5ClientHandler proxyHandler;
             if (server.cipherRoute(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
-                    if (config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
+                    if (upConf.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
                         //todo 解依赖ZIP
-                        outbound.attr(SocketConfig.ATTR_CONF).set(config);
+                        outbound.attr(SocketConfig.ATTR_CONF).set(upConf);
                         Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
                         Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
-                        log.info("socks5[{}] {} => {} BACKEND_CIPHER", server.getConfig().getListenPort(), inbound.localAddress(), outbound.remoteAddress());
+                        if (config.isDebug()) {
+                            log.info("socks5[{}] TCP {} => {} BACKEND_CIPHER", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress());
+                        }
                     }
                     relay(inbound, outbound, dstAddrType, e);
                 });
@@ -159,9 +158,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 inbound.attr(SocketConfig.ATTR_CONF).set(config);
                 Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
                 Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
-                log.info("socks5[{}] {} => {} FRONTEND_CIPHER", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress());
+                if (config.isDebug()) {
+                    log.info("socks5[{}] TCP {} => {} FRONTEND_CIPHER", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress());
+                }
             }
-            log.info("socks5[{}] {} => {} connected, dstEp={}[{}]", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination);
+            log.info("socks5[{}] TCP {} => {} connected, dstEp={}[{}]", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination);
         });
     }
 }
