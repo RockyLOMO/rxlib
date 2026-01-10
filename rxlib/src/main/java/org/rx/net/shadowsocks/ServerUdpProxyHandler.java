@@ -26,6 +26,9 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket out) throws Exception {
             Channel outbound = ctx.channel();
             SocksContext sc = SocksContext.ctx(outbound);
+            ShadowsocksServer server = Sockets.getAttr(sc.inbound, SocksContext.SS_SVR);
+            boolean debug = server.config.isDebug();
+            InetSocketAddress srcEp = sc.getSource();
             UnresolvedEndpoint dstEp = sc.getFirstDestination();
             ByteBuf outBuf = out.content();
             if (sc.tryGetUdpSocksServer() != null) {
@@ -39,8 +42,9 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             }
 
             sc.inbound.writeAndFlush(outBuf.retain());
-//            log.info("UDP IN {}[{}] => {}", out.sender(), dstEp, srcEp);
-//            log.info("UDP IN {}[{}] => {}\n{}", out.sender(), dstEp, srcEp, Bytes.hexDump(outBuf));
+            if (debug) {
+                log.info("SS UDP IN {}[{}] => {}", out.sender(), dstEp, srcEp);
+            }
         }
     }
 
@@ -52,6 +56,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
         InetSocketAddress srcEp = inbound.attr(SSCommon.REMOTE_ADDRESS).get();
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(SSCommon.REMOTE_DEST).get());
         ShadowsocksServer server = Sockets.getAttr(inbound, SocksContext.SS_SVR);
+        boolean debug = server.config.isDebug();
 
         ChannelFuture outboundFuture = UdpManager.open(srcEp, k -> {
             SocksContext e = new SocksContext(srcEp, dstEp);
@@ -84,6 +89,8 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
             ByteBuf finalInBuf = inBuf;
             outboundFuture.addListener((ChannelFutureListener) f -> f.channel().writeAndFlush(new DatagramPacket(finalInBuf, upDstEp.socketAddress())));
         }
-//        log.info("UDP OUT {} => {}[{}]", srcEp, upDstEp, dstEp);
+        if (debug) {
+            log.info("SS UDP OUT {} => {}[{}]", srcEp, upDstEp, dstEp);
+        }
     }
 }

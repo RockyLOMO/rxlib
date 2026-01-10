@@ -15,20 +15,6 @@ public class SocksTcpBackendRelayHandler extends ChannelInboundHandlerAdapter {
     public static final SocksTcpBackendRelayHandler DEFAULT = new SocksTcpBackendRelayHandler();
 
     @Override
-    public void channelActive(ChannelHandlerContext ctx) throws Exception {
-//        Channel outbound = ctx.channel();
-//        SocksContext sc = SocksContext.ctx(outbound);
-//        ConcurrentLinkedQueue<Object> pending = sc.pendingPackages;
-//        if (CollectionUtils.isEmpty(pending)) {
-//            return;
-//        }
-//        log.info("TCP outbound pending FLUSH_PACKS {} => {}[{}]", sc.inbound.remoteAddress(), outbound.localAddress(), outbound.remoteAddress());
-//        Sockets.writeAndFlush(outbound, pending);
-//        sc.pendingPackages = null;
-        super.channelActive(ctx);
-    }
-
-    @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         Channel outbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(outbound);
