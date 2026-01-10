@@ -3,15 +3,11 @@ package org.rx.net.socks.upstream;
 import io.netty.channel.Channel;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.Setter;
-import lombok.SneakyThrows;
-import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
-import org.rx.util.function.Func;
 
 public class SocksUdpUpstream extends Upstream {
     @Getter

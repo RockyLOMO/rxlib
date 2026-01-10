@@ -1,7 +1,6 @@
-package org.rx.net.shadowsocks;
+package io.netty.handler.codec.socks;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.handler.codec.socks.SocksAddressType;
 import io.netty.util.CharsetUtil;
 import io.netty.util.NetUtil;
 
@@ -81,7 +80,7 @@ public final class SSAddressRequest {
         int port;
         switch (addressType) {
             case IPv4: {
-                host = SocksCommonUtils.intToIp(byteBuf.readInt());
+                host = intToIp(byteBuf.readInt());
                 port = byteBuf.readUnsignedShort();
                 request = new SSAddressRequest(addressType, host, port);
                 break;
@@ -105,5 +104,17 @@ public final class SSAddressRequest {
                 break;
         }
         return request;
+    }
+
+    private static final int SECOND_ADDRESS_OCTET_SHIFT = 16;
+    private static final int FIRST_ADDRESS_OCTET_SHIFT = 24;
+    private static final int THIRD_ADDRESS_OCTET_SHIFT = 8;
+    private static final int XOR_DEFAULT_VALUE = 0xff;
+
+    public static String intToIp(int i) {
+        return String.valueOf(i >> FIRST_ADDRESS_OCTET_SHIFT & XOR_DEFAULT_VALUE) + '.' +
+                (i >> SECOND_ADDRESS_OCTET_SHIFT & XOR_DEFAULT_VALUE) + '.' +
+                (i >> THIRD_ADDRESS_OCTET_SHIFT & XOR_DEFAULT_VALUE) + '.' +
+                (i & XOR_DEFAULT_VALUE);
     }
 }

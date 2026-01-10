@@ -3,8 +3,6 @@ package org.rx.net.socks.upstream;
 import io.netty.channel.Channel;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.Setter;
-import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 
