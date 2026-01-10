@@ -10,7 +10,6 @@ import org.rx.core.EventPublisher;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
-import org.rx.net.socks.ProxyChannelIdleHandler;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.TripleAction;
@@ -28,20 +27,20 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
         bootstrap = Sockets.serverBootstrap(this.config = config, channel -> {
             ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(false);
-            channel.attr(SSCommon.CIPHER).set(_crypto);
+            channel.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
             channel.pipeline().addLast(CipherCodec.DEFAULT, new ProtocolCodec(), ServerTcpProxyHandler.DEFAULT);
         });
-        bootstrap.attr(SocksContext.SS_SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
+        bootstrap.attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
         //udp server
         udpChannel = Sockets.udpBootstrap(config, ctx -> {
             ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(true);
-            ctx.attr(SSCommon.CIPHER).set(_crypto);
+            ctx.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
             ctx.pipeline().addLast(CipherCodec.DEFAULT, new ProtocolCodec(), ServerUdpProxyHandler.DEFAULT);
-        }).attr(SocksContext.SS_SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort())).channel();
+        }).attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort())).channel();
     }
 
     @Override

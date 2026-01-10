@@ -2,7 +2,6 @@ package org.rx.net.shadowsocks;
 
 import io.netty.channel.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksTcpBackendRelayHandler;
@@ -21,9 +20,9 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         Channel inbound = ctx.channel();
-        ShadowsocksServer server = Sockets.getAttr(inbound, SocksContext.SS_SVR);
+        ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
-        InetSocketAddress dstEp = inbound.attr(SSCommon.REMOTE_DEST).get();
+        InetSocketAddress dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
 
         SocksContext e = new SocksContext((InetSocketAddress) inbound.remoteAddress(), new UnresolvedEndpoint(dstEp));
         server.raiseEvent(server.onRoute, e);

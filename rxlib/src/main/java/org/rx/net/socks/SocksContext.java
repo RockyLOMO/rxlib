@@ -37,8 +37,6 @@ public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sProxyCtx");
-    //ss
-    public static final AttributeKey<ShadowsocksServer> SS_SVR = AttributeKey.valueOf("ssSvr");
 
     /**
      * call this method before bind & connect
