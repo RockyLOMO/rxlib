@@ -162,7 +162,7 @@ public class HttpClient {
         @Getter
         @JSONField(serialize = false)
         final Response response;
-        boolean cachingStream = true;
+        boolean cachingStream;
         HybridStream stream;
         File file;
         String str;
@@ -393,7 +393,8 @@ public class HttpClient {
 
     static byte CACHING_STREAM_FLAG = 1, ENABLE_COOKIE_FLAG = 1 << 1, ENABLE_LOG_FLAG = 1 << 2;
     //1 cachingStream, 2 enableCookie, 4 enableLog
-    byte featureFlags = CACHING_STREAM_FLAG;
+//    byte featureFlags = CACHING_STREAM_FLAG;
+    byte featureFlags = 0;
     long connectTimeoutMillis, readWriteTimeoutMillis;
     AuthenticProxy proxy;
     //Not thread safe

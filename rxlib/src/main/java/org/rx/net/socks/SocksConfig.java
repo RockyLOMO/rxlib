@@ -1,7 +1,6 @@
 package org.rx.net.socks;
 
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.core.cache.DiskCache;

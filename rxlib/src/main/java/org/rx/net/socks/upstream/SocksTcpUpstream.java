@@ -8,7 +8,6 @@ import org.rx.core.Arrays;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
-import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
@@ -16,7 +15,6 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
-import org.rx.util.function.Func;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
