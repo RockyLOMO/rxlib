@@ -22,7 +22,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
     protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
         ByteBuf buf = Sockets.getMessageBuf(msg);
 
-        ICrypto crypt = ctx.channel().attr(SSCommon.CIPHER).get();
+        ICrypto crypt = ctx.channel().attr(ShadowsocksConfig.CIPHER).get();
         byte[] data = new byte[buf.readableBytes()];
         buf.getBytes(0, data);
         crypt.encrypt(data, buf);
@@ -36,7 +36,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         ByteBuf buf = Sockets.getMessageBuf(msg);
 
         Channel inbound = ctx.channel();
-        ICrypto crypt = inbound.attr(SSCommon.CIPHER).get();
+        ICrypto crypt = inbound.attr(ShadowsocksConfig.CIPHER).get();
         byte[] data = new byte[buf.readableBytes()];
         buf.getBytes(0, data);
         try {

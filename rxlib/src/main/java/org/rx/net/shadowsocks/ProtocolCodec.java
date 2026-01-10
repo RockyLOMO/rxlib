@@ -7,15 +7,11 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
-import io.netty.handler.codec.socks.SSAddressRequest;
-import io.netty.handler.codec.socks.SocksAddressType;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.UdpManager;
+import org.rx.net.support.UnresolvedEndpoint;
 
-import java.net.Inet4Address;
-import java.net.Inet6Address;
 import java.net.InetSocketAddress;
 import java.util.List;
 
@@ -45,22 +41,13 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
         InetSocketAddress addr = null;
         if (isUdp) {
-            addr = inbound.attr(SSCommon.REMOTE_SRC).get();
+            addr = inbound.attr(ShadowsocksConfig.REMOTE_SRC).get();
         }
 
         if (addr == null) {
             buf.retain();
         } else {
-//            SSAddressRequest addrRequest;
-//            if (addr.getAddress() instanceof Inet6Address) {
-//                addrRequest = new SSAddressRequest(SocksAddressType.IPv6, addr.getHostString(), addr.getPort());
-//            } else if (addr.getAddress() instanceof Inet4Address) {
-//                addrRequest = new SSAddressRequest(SocksAddressType.IPv4, addr.getHostString(), addr.getPort());
-//            } else {
-//                addrRequest = new SSAddressRequest(SocksAddressType.DOMAIN, addr.getHostString(), addr.getPort());
-//            }
             ByteBuf addrBuff = ctx.alloc().directBuffer(64);
-//            addrRequest.encode(addrBuff);
             UdpManager.encode(addrBuff, addr);
 
             buf = Unpooled.wrappedBuffer(addrBuff, buf.retain());
@@ -86,7 +73,8 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
         boolean isUdp = inbound instanceof DatagramChannel;
 
         if (isUdp || !tcpAddressed) {
-            SSAddressRequest addrRequest = SSAddressRequest.decode(buf);
+            UnresolvedEndpoint addrRequest = UdpManager.decode(buf);
+            //IDN.toUnicode(this.host);
             if (addrRequest == null) {
                 log.warn("fail to decode address request from {}, pls check client's cipher setting", inbound.remoteAddress());
                 if (!isUdp) {
@@ -95,8 +83,8 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
                 return;
             }
 
-            InetSocketAddress addr = new InetSocketAddress(addrRequest.host(), addrRequest.port());
-            inbound.attr(SSCommon.REMOTE_DEST).set(addr);
+            InetSocketAddress addr = addrRequest.socketAddress();
+            inbound.attr(ShadowsocksConfig.REMOTE_DEST).set(addr);
 
             if (!isUdp) {
                 tcpAddressed = true;

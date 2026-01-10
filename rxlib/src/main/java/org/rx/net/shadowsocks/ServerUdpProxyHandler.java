@@ -26,7 +26,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramP
         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket out) throws Exception {
             Channel outbound = ctx.channel();
             SocksContext sc = SocksContext.ctx(outbound);
-            ShadowsocksServer server = Sockets.getAttr(sc.inbound, SocksContext.SS_SVR);
+            ShadowsocksServer server = Sockets.getAttr(sc.inbound, ShadowsocksConfig.SVR);
             boolean debug = server.config.isDebug();
             InetSocketAddress srcEp = sc.getSource();
             UnresolvedEndpoint dstEp = sc.getFirstDestination();
@@ -36,9 +36,9 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramP
                 if (!dstEp.equals(tmp)) {
                     log.error("UDP error dstEp not matched {} != {}", dstEp, tmp);
                 }
-                sc.inbound.attr(SSCommon.REMOTE_SRC).set(tmp.socketAddress());
+                sc.inbound.attr(ShadowsocksConfig.REMOTE_SRC).set(tmp.socketAddress());
             } else {
-                sc.inbound.attr(SSCommon.REMOTE_SRC).set(out.sender());
+                sc.inbound.attr(ShadowsocksConfig.REMOTE_SRC).set(out.sender());
             }
 
             sc.inbound.writeAndFlush(new DatagramPacket(outBuf.retain(), srcEp));
@@ -59,8 +59,8 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramP
 
         Channel inbound = ctx.channel();
         InetSocketAddress srcEp = in.sender();
-        UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(SSCommon.REMOTE_DEST).get());
-        ShadowsocksServer server = Sockets.getAttr(inbound, SocksContext.SS_SVR);
+        UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(ShadowsocksConfig.REMOTE_DEST).get());
+        ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
 
         ChannelFuture outboundFuture = UdpManager.open(srcEp, k -> {
@@ -71,7 +71,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramP
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
                         UdpBackendRelayHandler.DEFAULT);
-            }).attr(SocksContext.SS_SVR, server).bind(0);
+            }).attr(ShadowsocksConfig.SVR, server).bind(0);
             SocksContext.mark(inbound, chf, e);
             chf.channel().closeFuture().addListener(f -> UdpManager.close(srcEp));
             return chf;
