@@ -27,7 +27,8 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         buf.getBytes(0, data);
         crypt.encrypt(data, buf);
 
-        out.add(buf.retain());
+        buf.retain();
+        out.add(msg);
     }
 
     @Override
@@ -48,6 +49,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
             return;
         }
 
-        out.add(buf.retain());
+        buf.retain();
+        out.add(msg);
     }
 }

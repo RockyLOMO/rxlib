@@ -16,7 +16,7 @@ import java.net.InetSocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> {
+public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     @Slf4j
     @ChannelHandler.Sharable
     public static class UdpBackendRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
@@ -41,7 +41,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
                 sc.inbound.attr(SSCommon.REMOTE_SRC).set(out.sender());
             }
 
-            sc.inbound.writeAndFlush(outBuf.retain());
+            sc.inbound.writeAndFlush(new DatagramPacket(outBuf.retain(), srcEp));
             if (debug) {
                 log.info("SS UDP IN {}[{}] => {}", out.sender(), dstEp, srcEp);
             }
@@ -51,9 +51,14 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<ByteBuf> 
     public static final ServerUdpProxyHandler DEFAULT = new ServerUdpProxyHandler();
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, ByteBuf inBuf) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket in) throws Exception {
+        ByteBuf inBuf = in.content();
+        if (inBuf.readableBytes() < 4) { //no cipher, min size = 1 + 1 + 2 ,[1-byte type][variable-length host][2-byte port]
+            return;
+        }
+
         Channel inbound = ctx.channel();
-        InetSocketAddress srcEp = inbound.attr(SSCommon.REMOTE_ADDRESS).get();
+        InetSocketAddress srcEp = in.sender();
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(SSCommon.REMOTE_DEST).get());
         ShadowsocksServer server = Sockets.getAttr(inbound, SocksContext.SS_SVR);
         boolean debug = server.config.isDebug();
