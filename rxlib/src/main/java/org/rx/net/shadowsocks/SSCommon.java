@@ -7,7 +7,6 @@ import org.rx.net.shadowsocks.encryption.ICrypto;
 import java.net.InetSocketAddress;
 
 public class SSCommon {
-    public static final AttributeKey<Boolean> IS_UDP = AttributeKey.valueOf("IS_UDP");
     public static final AttributeKey<ICrypto> CIPHER = AttributeKey.valueOf("CIPHER");
     public static final AttributeKey<InetSocketAddress> REMOTE_ADDRESS = AttributeKey.valueOf("REMOTE_ADDRESS");
     public static final AttributeKey<InetSocketAddress> REMOTE_DEST = AttributeKey.valueOf("REMOTE_DEST");

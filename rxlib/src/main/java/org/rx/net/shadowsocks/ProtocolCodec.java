@@ -2,9 +2,12 @@ package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
+import io.netty.handler.codec.socks.SSAddressRequest;
 import io.netty.handler.codec.socks.SocksAddressType;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.io.Bytes;
@@ -36,11 +39,12 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
         //组装ss协议
         //udp [target address][payload]
         //tcp only [payload]
-        boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
+        Channel inbound = ctx.channel();
+        boolean isUdp = inbound instanceof DatagramChannel;
 
         InetSocketAddress addr = null;
         if (isUdp) {
-            addr = ctx.channel().attr(SSCommon.REMOTE_SRC).get();
+            addr = inbound.attr(SSCommon.REMOTE_SRC).get();
         }
 
         if (addr == null) {
@@ -76,20 +80,21 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
             return;
         }
 
-        boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
+        Channel inbound = ctx.channel();
+        boolean isUdp = inbound instanceof DatagramChannel;
 
         if (isUdp || !tcpAddressed) {
             SSAddressRequest addrRequest = SSAddressRequest.decode(buf);
             if (addrRequest == null) {
-                log.warn("fail to decode address request from {}, pls check client's cipher setting", ctx.channel().remoteAddress());
-                if (!ctx.channel().attr(SSCommon.IS_UDP).get()) {
+                log.warn("fail to decode address request from {}, pls check client's cipher setting", inbound.remoteAddress());
+                if (!isUdp) {
                     ctx.close();
                 }
                 return;
             }
 
             InetSocketAddress addr = new InetSocketAddress(addrRequest.host(), addrRequest.port());
-            ctx.channel().attr(SSCommon.REMOTE_DEST).set(addr);
+            inbound.attr(SSCommon.REMOTE_DEST).set(addr);
 
             if (!isUdp) {
                 tcpAddressed = true;

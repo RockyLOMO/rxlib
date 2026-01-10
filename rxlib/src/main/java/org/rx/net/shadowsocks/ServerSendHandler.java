@@ -1,10 +1,8 @@
 package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelHandler;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelOutboundHandlerAdapter;
-import io.netty.channel.ChannelPromise;
+import io.netty.channel.*;
+import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 
 import java.net.InetSocketAddress;
@@ -15,10 +13,11 @@ public class ServerSendHandler extends ChannelOutboundHandlerAdapter {
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        boolean isUdp = ctx.channel().attr(SSCommon.IS_UDP).get();
+        Channel inbound = ctx.channel();
+        boolean isUdp = inbound instanceof DatagramChannel;
         if (isUdp) {
             ByteBuf buf = (ByteBuf) msg;
-            InetSocketAddress clientAddr = ctx.channel().attr(SSCommon.REMOTE_ADDRESS).get();
+            InetSocketAddress clientAddr = inbound.attr(SSCommon.REMOTE_ADDRESS).get();
             msg = new DatagramPacket(buf, clientAddr);
         }
         super.write(ctx, msg, promise);

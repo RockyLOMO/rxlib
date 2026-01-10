@@ -1,10 +1,13 @@
 package org.rx.net.shadowsocks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.socket.DatagramChannel;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.net.Sockets;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 
@@ -31,18 +34,18 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
     protected void decode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
         ByteBuf buf = Sockets.getMessageBuf(msg);
 
-        ICrypto crypt = ctx.channel().attr(SSCommon.CIPHER).get();
+        Channel inbound = ctx.channel();
+        ICrypto crypt = inbound.attr(SSCommon.CIPHER).get();
         byte[] data = new byte[buf.readableBytes()];
         buf.getBytes(0, data);
         try {
             crypt.decrypt(data, buf);
         } catch (Exception e) {
-            if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
-                log.warn("decode fail {}", e.getMessage()); //可能是密码错误
+            log.warn("cipher decode fail {}", e.getMessage(), ExceptionUtils.getRootCause(e)); //可能是密码错误或协议嗅探
+            if (!(inbound instanceof DatagramChannel)) {
                 ctx.close();
-                return;
             }
-            throw e;
+            return;
         }
 
         out.add(buf.retain());

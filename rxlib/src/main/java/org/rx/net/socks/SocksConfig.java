@@ -16,7 +16,7 @@ import java.util.Set;
 @ToString
 public class SocksConfig extends SocketConfig {
     public static final int DEF_READ_TIMEOUT_SECONDS = 60 * 4;
-    public static final int DEF_UDP_READ_TIMEOUT_SECONDS = 60 * 30;
+    public static final int DEF_UDP_READ_TIMEOUT_SECONDS = 60 * 20;
 
     private static final long serialVersionUID = 3526543718065617052L;
     private int listenPort;

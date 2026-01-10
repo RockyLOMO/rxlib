@@ -26,8 +26,6 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
     public ShadowsocksServer(@NonNull ShadowsocksConfig config) {
         bootstrap = Sockets.serverBootstrap(this.config = config, channel -> {
-            channel.attr(SSCommon.IS_UDP).set(false);
-
             ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(false);
             channel.attr(SSCommon.CIPHER).set(_crypto);
@@ -41,8 +39,6 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
         //udp server
         udpChannel = Sockets.udpBootstrap(config, ctx -> {
-            ctx.attr(SSCommon.IS_UDP).set(true);
-
             ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(true);
             ctx.attr(SSCommon.CIPHER).set(_crypto);
