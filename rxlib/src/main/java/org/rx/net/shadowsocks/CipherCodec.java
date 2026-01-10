@@ -42,11 +42,14 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         try {
             crypt.decrypt(data, buf);
         } catch (Exception e) {
-            log.warn("cipher decode fail {}", e.getMessage(), ExceptionUtils.getRootCause(e)); //可能是密码错误或协议嗅探
-            if (!(inbound instanceof DatagramChannel)) {
-                ctx.close();
+            if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
+                log.warn("cipher decode fail {}", e.getMessage(), ExceptionUtils.getRootCause(e)); //可能是密码错误或协议嗅探
+                if (!(inbound instanceof DatagramChannel)) {
+                    ctx.close();
+                }
+                return;
             }
-            return;
+            throw e;
         }
 
         buf.retain();
