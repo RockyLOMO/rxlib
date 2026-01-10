@@ -22,7 +22,7 @@ APP_OPTIONS="-Dapp.disk.h2Settings=CACHE_SIZE=4096;COMPRESS=false;PAGE_SIZE=2048
 DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./heapdump-$(date +%Y%m%d_%H%M%S).hprof -XX:ErrorFile=./hs_err_pid%p.log -XX:+CreateCoredumpOnCrash"
 
 echo "${RED}[${LOCAL_TIME}] 发布模式：正在终止端口 ${PORT}/tcp 的旧进程..."
-sudo fuser -k ${PORT}/tcp >/dev/null 2>&1 || true
+sudo /usr/sbin/fuser -k ${PORT}/tcp >/dev/null 2>&1 || true
 sleep 2  # 等待进程完全退出和端口释放
 
 if [ -f "app.jar.latest" ]; then
@@ -34,8 +34,8 @@ echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
 nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >/dev/null 2>&1 &
 sleep 5
 
-if fuser ${PORT}/tcp >/dev/null 2>&1; then
-    PID=$(fuser ${PORT}/tcp 2>/dev/null | awk '{print $1}' | head -1)
+if /usr/sbin/fuser ${PORT}/tcp >/dev/null 2>&1; then
+    PID=$(/usr/sbin/fuser ${PORT}/tcp 2>/dev/null | awk '{print $1}' | head -1)
     echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${PID}"
 else
     echo "${RED}[${LOCAL_TIME}] 启动失败！请手动执行查看错误"
