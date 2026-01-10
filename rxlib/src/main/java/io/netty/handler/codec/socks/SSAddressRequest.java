@@ -57,21 +57,21 @@ public final class SSAddressRequest {
         return this.port;
     }
 
-    public void encode(ByteBuf byteBuf) {
-        byteBuf.writeByte(this.addressType.byteValue());
-        switch (this.addressType) {
-            case IPv4:
-            case IPv6:
-                byteBuf.writeBytes(NetUtil.createByteArrayFromIpAddressString(this.host));
-                byteBuf.writeShort(this.port);
-                break;
-            case DOMAIN:
-                byteBuf.writeByte(this.host.length());
-                byteBuf.writeBytes(this.host.getBytes(CharsetUtil.US_ASCII));
-                byteBuf.writeShort(this.port);
-                break;
-        }
-    }
+//    public void encode(ByteBuf byteBuf) {
+//        byteBuf.writeByte(this.addressType.byteValue());
+//        switch (this.addressType) {
+//            case IPv4:
+//            case IPv6:
+//                byteBuf.writeBytes(NetUtil.createByteArrayFromIpAddressString(this.host));
+//                byteBuf.writeShort(this.port);
+//                break;
+//            case DOMAIN:
+//                byteBuf.writeByte(this.host.length());
+//                byteBuf.writeBytes(this.host.getBytes(CharsetUtil.US_ASCII));
+//                byteBuf.writeShort(this.port);
+//                break;
+//        }
+//    }
 
     public static SSAddressRequest decode(ByteBuf byteBuf) {
         SSAddressRequest request = null;

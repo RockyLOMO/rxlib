@@ -12,6 +12,7 @@ import io.netty.handler.codec.socks.SocksAddressType;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
+import org.rx.net.socks.UdpManager;
 
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -50,16 +51,17 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
         if (addr == null) {
             buf.retain();
         } else {
-            SSAddressRequest addrRequest;
-            if (addr.getAddress() instanceof Inet6Address) {
-                addrRequest = new SSAddressRequest(SocksAddressType.IPv6, addr.getHostString(), addr.getPort());
-            } else if (addr.getAddress() instanceof Inet4Address) {
-                addrRequest = new SSAddressRequest(SocksAddressType.IPv4, addr.getHostString(), addr.getPort());
-            } else {
-                addrRequest = new SSAddressRequest(SocksAddressType.DOMAIN, addr.getHostString(), addr.getPort());
-            }
-            ByteBuf addrBuff = Bytes.directBuffer();
-            addrRequest.encode(addrBuff);
+//            SSAddressRequest addrRequest;
+//            if (addr.getAddress() instanceof Inet6Address) {
+//                addrRequest = new SSAddressRequest(SocksAddressType.IPv6, addr.getHostString(), addr.getPort());
+//            } else if (addr.getAddress() instanceof Inet4Address) {
+//                addrRequest = new SSAddressRequest(SocksAddressType.IPv4, addr.getHostString(), addr.getPort());
+//            } else {
+//                addrRequest = new SSAddressRequest(SocksAddressType.DOMAIN, addr.getHostString(), addr.getPort());
+//            }
+            ByteBuf addrBuff = ctx.alloc().directBuffer(64);
+//            addrRequest.encode(addrBuff);
+            UdpManager.encode(addrBuff, addr);
 
             buf = Unpooled.wrappedBuffer(addrBuff, buf.retain());
         }
