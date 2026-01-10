@@ -39,29 +39,21 @@ public final class UdpManager {
         ch.close();
     }
 
-    public static CompositeByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dstEp) {
-        PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
-        ByteBuf header = allocator.directBuffer(64);
-        CompositeByteBuf compositeBuf = allocator.compositeDirectBuffer(2);
-        try {
-            header.writeZero(3);
-            encode(header, dstEp);
-            compositeBuf.addComponents(true, header, buf);
-            return compositeBuf;
-        } catch (Exception e) {
-            header.release();
-            compositeBuf.release();
-            throw e;
-        }
+    public static CompositeByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dst) {
+        return socks5Encode(buf, dst.getHost(), dst.getPort());
     }
 
-    public static CompositeByteBuf socks5Encode(ByteBuf buf, InetSocketAddress dstEp) {
+    public static CompositeByteBuf socks5Encode(ByteBuf buf, InetSocketAddress dst) {
+        return socks5Encode(buf, dst.getHostString(), dst.getPort());
+    }
+
+    public static CompositeByteBuf socks5Encode(ByteBuf buf, String host, int port) {
         PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
         ByteBuf header = allocator.directBuffer(64);
         CompositeByteBuf compositeBuf = allocator.compositeDirectBuffer(2);
         try {
             header.writeZero(3);
-            encode(header, dstEp);
+            encode(header, host, port);
             compositeBuf.addComponents(true, header, buf);
             return compositeBuf;
         } catch (Exception e) {
@@ -76,24 +68,16 @@ public final class UdpManager {
         return decode(buf);
     }
 
-    @SneakyThrows
-    public static void encode(ByteBuf buf, UnresolvedEndpoint ep) {
-        Socks5AddressType addrType;
-        if (NetUtil.isValidIpV4Address(ep.getHost())) {
-            addrType = Socks5AddressType.IPv4;
-        } else if (NetUtil.isValidIpV6Address(ep.getHost())) {
-            addrType = Socks5AddressType.IPv6;
-        } else {
-            addrType = Socks5AddressType.DOMAIN;
-        }
-        buf.writeByte(addrType.byteValue());
-        Socks5AddressEncoder.DEFAULT.encodeAddress(addrType, ep.getHost(), buf);
-        buf.writeShort(ep.getPort());
+    public static void encode(ByteBuf buf, UnresolvedEndpoint dst) {
+        encode(buf, dst.getHost(), dst.getPort());
+    }
+
+    public static void encode(ByteBuf buf, InetSocketAddress dst) {
+        encode(buf, dst.getHostString(), dst.getPort());
     }
 
     @SneakyThrows
-    public static void encode(ByteBuf buf, InetSocketAddress ep) {
-        String host = ep.getHostString();
+    public static void encode(ByteBuf buf, String host, int port) {
         Socks5AddressType addrType;
         if (NetUtil.isValidIpV4Address(host)) {
             addrType = Socks5AddressType.IPv4;
@@ -104,7 +88,7 @@ public final class UdpManager {
         }
         buf.writeByte(addrType.byteValue());
         Socks5AddressEncoder.DEFAULT.encodeAddress(addrType, host, buf);
-        buf.writeShort(ep.getPort());
+        buf.writeShort(port);
     }
 
     @SneakyThrows
