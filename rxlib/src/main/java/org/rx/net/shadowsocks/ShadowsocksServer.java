@@ -30,10 +30,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             _crypto.setForUdp(false);
             channel.attr(SSCommon.CIPHER).set(_crypto);
 
-            channel.pipeline().addLast(new ProxyChannelIdleHandler(config.getTcpTimeoutSeconds(), 0));
-
-            channel.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
-                    CipherCodec.DEFAULT, new ProtocolCodec(), ServerTcpProxyHandler.DEFAULT);
+            channel.pipeline().addLast(CipherCodec.DEFAULT, new ProtocolCodec(), ServerTcpProxyHandler.DEFAULT);
         });
         bootstrap.attr(SocksContext.SS_SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
@@ -43,8 +40,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             _crypto.setForUdp(true);
             ctx.attr(SSCommon.CIPHER).set(_crypto);
 
-            ctx.pipeline().addLast(ServerReceiveHandler.DEFAULT, ServerSendHandler.DEFAULT,
-                    CipherCodec.DEFAULT, new ProtocolCodec(), ServerUdpProxyHandler.DEFAULT);
+            ctx.pipeline().addLast(CipherCodec.DEFAULT, new ProtocolCodec(), ServerUdpProxyHandler.DEFAULT);
         }).attr(SocksContext.SS_SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort())).channel();
     }
 

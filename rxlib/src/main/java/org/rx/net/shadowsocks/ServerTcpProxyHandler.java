@@ -22,23 +22,26 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         Channel inbound = ctx.channel();
         ShadowsocksServer server = Sockets.getAttr(inbound, SocksContext.SS_SVR);
-        InetSocketAddress realEp = inbound.attr(SSCommon.REMOTE_DEST).get();
+        boolean debug = server.config.isDebug();
+        InetSocketAddress dstEp = inbound.attr(SSCommon.REMOTE_DEST).get();
 
-        SocksContext e = new SocksContext((InetSocketAddress) inbound.remoteAddress(), new UnresolvedEndpoint(realEp));
+        SocksContext e = new SocksContext((InetSocketAddress) inbound.remoteAddress(), new UnresolvedEndpoint(dstEp));
         server.raiseEvent(server.onRoute, e);
         Upstream upstream = e.getUpstream();
-        UnresolvedEndpoint dstEp = upstream.getDestination();
+        UnresolvedEndpoint upDstEp = upstream.getDestination();
 
         ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), outbound -> {
             upstream.initChannel(outbound);
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
-        }).connect(dstEp.socketAddress()).addListener((ChannelFutureListener) f -> {
+        }).connect(upDstEp.socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                TraceHandler.INSTANCE.log("connect to backend {}[{}] fail", dstEp, realEp, f.cause());
+                log.warn("SS TCP connect to backend {}[{}] fail", upDstEp, dstEp, f.cause());
                 Sockets.closeOnFlushed(inbound);
                 return;
             }
-            log.debug("connect to backend {}[{}]", dstEp, realEp);
+            if (debug) {
+                log.info("SS TCP connect to backend {}[{}]", upDstEp, dstEp);
+            }
             Channel outbound = f.channel();
             SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
             outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
