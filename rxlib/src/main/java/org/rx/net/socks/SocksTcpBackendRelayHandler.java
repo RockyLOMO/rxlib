@@ -18,7 +18,7 @@ public class SocksTcpBackendRelayHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         Channel outbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(outbound);
-        log.debug("RELAY {}[{}] => {}", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress());
+        log.debug("TCP RELAY {}[{}] => {}", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress());
         sc.inbound.writeAndFlush(msg);
     }
 
@@ -34,9 +34,9 @@ public class SocksTcpBackendRelayHandler extends ChannelInboundHandlerAdapter {
         Channel outbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(outbound);
         if (cause instanceof ProxyConnectException && Strings.lastIndexOf(cause.getMessage(), "timeout") != -1) {
-            log.warn("RELAY {}[{}] => {} thrown\n{}", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause.getMessage());
+            log.warn("TCP RELAY {}[{}] => {} thrown\n{}", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause.getMessage());
         } else {
-            log.warn("RELAY {}[{}] => {} thrown", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause);
+            log.warn("TCP RELAY {}[{}] => {} thrown", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause);
         }
         Sockets.closeOnFlushed(outbound);
     }
