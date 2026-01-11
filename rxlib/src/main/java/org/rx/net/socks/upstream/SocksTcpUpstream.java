@@ -12,7 +12,7 @@ import org.rx.exception.TraceHandler;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksConfig;
-import org.rx.net.support.SocksSupport;
+import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
@@ -37,17 +37,17 @@ public class SocksTcpUpstream extends Upstream {
     @Override
     public void initChannel(Channel channel) {
         AuthenticEndpoint svrEp = next.getEndpoint();
-        SocksSupport support = next.getSupport();
+        SocksRpcContract facade = next.getFacade();
 
         Sockets.addClientHandler(channel, config, svrEp.getEndpoint());
 
-        if (support != null
-                && (SocksSupport.FAKE_IPS.contains(destination.getHost()) || SocksSupport.FAKE_PORTS.contains(destination.getPort())
+        if (facade != null
+                && (SocksRpcContract.FAKE_IPS.contains(destination.getHost()) || SocksRpcContract.FAKE_PORTS.contains(destination.getPort())
                 || !Sockets.isValidIp(destination.getHost()))) {
             String dstEpStr = destination.toString();
             BigInteger hash = CodecUtil.hashUnsigned64(dstEpStr.getBytes(StandardCharsets.UTF_8));
             //change dest first
-            destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksSupport.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksSupport.FAKE_PORT_OBFS));
+            destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksRpcContract.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksRpcContract.FAKE_PORT_OBFS));
 
             Cache<BigInteger, Boolean> cache = Cache.getInstance();
             if (!cache.containsKey(hash)) {
@@ -55,13 +55,13 @@ public class SocksTcpUpstream extends Upstream {
                     //Write the value after the current thread has timed out and the asynchronous thread is still executing successfully
                     Tasks.runAsync(() -> {
 //                        Sys.logCtx(String.format("socks5[%s]", config.getListenPort()), dstEpStr);
-                        support.fakeEndpoint(hash, dstEpStr);
+                        facade.fakeEndpoint(hash, dstEpStr);
                         return true;
                     }).whenCompleteAsync((r, e) -> {
                         if (BooleanUtils.isTrue(r)) {
-                            cache.put(hash, r, CachePolicy.absolute(SocksSupport.FAKE_EXPIRE_SECONDS));
+                            cache.put(hash, r, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
                         }
-                    }).get(SocksSupport.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
+                    }).get(SocksRpcContract.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
                 } catch (Exception e) {
                     TraceHandler.INSTANCE.log(e);
                 }

@@ -4,7 +4,6 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.nio.NioDatagramChannel;
@@ -521,7 +520,7 @@ public class TestSocks extends AbstractTester {
     public void tstUdp() {
         createSocksSvr(true);
 //        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
-        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("s.f-li.cn:6895");
+        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("s.f-li.cn:6885");
         InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
 
         long[] result = new long[2];
@@ -618,9 +617,9 @@ public class TestSocks extends AbstractTester {
 
         //frontend
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
-        RpcClientConfig<SocksSupport> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(outSrvEp, outSrvEp.getPort() + 1), 2, 2);
+        RpcClientConfig<SocksRpcContract> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(outSrvEp, outSrvEp.getPort() + 1), 2, 2);
         rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
-        socksServers.add(new UpstreamSupport(new AuthenticEndpoint(outSrvEp, socks5Usr, socks5Pwd), Remoting.createFacade(SocksSupport.class, rpcClientConf)));
+        socksServers.add(new UpstreamSupport(new AuthenticEndpoint(outSrvEp, socks5Usr, socks5Pwd), Remoting.createFacade(SocksRpcContract.class, rpcClientConf)));
 
         SocksConfig inConf = new SocksConfig(inSvrPort);
         inConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
@@ -633,7 +632,7 @@ public class TestSocks extends AbstractTester {
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             //must first
-            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+            if (dstEp.getPort() == SocksRpcContract.DNS_PORT) {
                 e.setUpstream(shadowDnsUpstream);
                 return;
             }
@@ -774,7 +773,7 @@ public class TestSocks extends AbstractTester {
         final InetAddress aopIp = InetAddress.getByName("1.2.3.4");
         DnsServer server = new DnsServer(localNsEp.getPort(), Collections.singletonList(nsEp));
 //        DnsServer server = new DnsServer(localNsEp.getPort());
-        server.setInterceptors(new RandomList<>(Collections.singletonList(new SocksSupport() {
+        server.setInterceptors(new RandomList<>(Collections.singletonList(new SocksRpcContract() {
             @Override
             public void fakeEndpoint(BigInteger hash, String realEndpoint) {
 

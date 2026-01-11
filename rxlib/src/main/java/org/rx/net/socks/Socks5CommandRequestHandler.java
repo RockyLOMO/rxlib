@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.net.*;
 import org.rx.net.socks.upstream.Socks5ClientHandler;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.SocksSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.math.BigInteger;
@@ -39,8 +38,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
         String dstEpHost = dstEp.getHost();
-        if (dstEpHost.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
-            UnresolvedEndpoint realEp = SocksSupport.fakeDict().get(new BigInteger(dstEpHost.substring(0, dstEpHost.length() - SocksSupport.FAKE_HOST_SUFFIX.length())));
+        if (dstEpHost.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX)) {
+            UnresolvedEndpoint realEp = SocksRpcContract.fakeDict().get(new BigInteger(dstEpHost.substring(0, dstEpHost.length() - SocksRpcContract.FAKE_HOST_SUFFIX.length())));
             if (realEp == null) {
                 log.error("socks5[{}] recover dstEp {} fail", config.getListenPort(), dstEp);
             } else {
@@ -103,7 +102,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
             Channel outbound = f.channel();
-            SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
+            SocksRpcContract.ENDPOINT_TRACER.link(inbound, outbound);
             Socks5ClientHandler proxyHandler;
             if (server.cipherRoute(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {

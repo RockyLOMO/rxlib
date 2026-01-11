@@ -9,7 +9,6 @@ import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
-import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
@@ -51,7 +50,7 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 @RequiredArgsConstructor
-public final class Main implements SocksSupport {
+public final class Main implements SocksRpcContract {
     @SneakyThrows
     public static void main(String[] args) {
 //        serverInit();
@@ -157,16 +156,18 @@ public final class Main implements SocksSupport {
             if (!svrs.any()) {
                 throw new InvalidException("Invalid shadowServer arg");
             }
+            log.info("rssConf load socksServers: {}", toJsonString(svrs));
             Linq<AuthenticEndpoint> udp2rawSvrs = Linq.from(rssConf.udp2rawSocksServers).where(Objects::nonNull).select(p -> Reflects.convertQuietly(p, AuthenticEndpoint.class));
+            log.info("rssConf load udp2rawSocksServers: {}", toJsonString(udp2rawSvrs));
             geoMgr.setGeoSiteDirectRules(rssConf.routeDstGeoSiteDirectRules);
 
             List<UpstreamSupport> oldSvrs = socksServers.aliveList();
             List<UpstreamSupport> oldUdp2rawSvrs = udp2rawSocksServers.aliveList();
             List<DnsServer.ResolveInterceptor> oldDnss = dnsInterceptors.aliveList();
 
-            SocksSupport firstSupport = null;
+            SocksRpcContract firstFacade = null;
             for (AuthenticEndpoint socksServer : svrs) {
-                RpcClientConfig<SocksSupport> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(socksServer.getEndpoint(), socksServer.getEndpoint().getPort() + 1),
+                RpcClientConfig<SocksRpcContract> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(socksServer.getEndpoint(), socksServer.getEndpoint().getPort() + 1),
                         rssConf.rpcMinSize, rssConf.rpcMaxSize);
                 TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
                 tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
@@ -175,11 +176,11 @@ public final class Main implements SocksSupport {
                 if (weight <= 0) {
                     continue;
                 }
-                SocksSupport facade = Remoting.createFacade(SocksSupport.class, rpcConf);
-                if (firstSupport == null) {
-                    firstSupport = facade;
+                SocksRpcContract facade = Remoting.createFacade(SocksRpcContract.class, rpcConf);
+                if (firstFacade == null) {
+                    firstFacade = facade;
                 }
-                UpstreamSupport us = new UpstreamSupport(socksServer, new SocksSupport() {
+                UpstreamSupport us = new UpstreamSupport(socksServer, new SocksRpcContract() {
                     @Override
                     public void fakeEndpoint(BigInteger hash, String realEndpoint) {
                         facade.fakeEndpoint(hash, realEndpoint);
@@ -200,14 +201,14 @@ public final class Main implements SocksSupport {
                     }
                 });
                 socksServers.add(us, weight);
-                dnsInterceptors.add(us.getSupport());
+                dnsInterceptors.add(us.getFacade());
             }
             for (AuthenticEndpoint socksServer : udp2rawSvrs) {
                 int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
                 if (weight <= 0) {
                     continue;
                 }
-                UpstreamSupport us = new UpstreamSupport(socksServer, firstSupport);
+                UpstreamSupport us = new UpstreamSupport(socksServer, firstFacade);
                 udp2rawSocksServers.add(us, weight);
             }
 
@@ -215,12 +216,12 @@ public final class Main implements SocksSupport {
             udp2rawSocksServers.removeAll(oldUdp2rawSvrs);
             dnsInterceptors.removeAll(oldDnss);
             for (UpstreamSupport support : oldSvrs) {
-                tryClose(support.getSupport());
+                tryClose(support.getFacade());
             }
             for (UpstreamSupport support : oldUdp2rawSvrs) {
-                tryClose(support.getSupport());
+                tryClose(support.getFacade());
             }
-            log.info("reload svrs {}", toJsonString(svrs));
+            log.info("rssConf load ok");
 
             boolean debugFlag = rssConf.hasDebugFlag();
             for (Object svrRef : svrRefs) {
@@ -262,7 +263,7 @@ public final class Main implements SocksSupport {
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             //must first
-            if (dstEp.getPort() == SocksSupport.DNS_PORT) {
+            if (dstEp.getPort() == SocksRpcContract.DNS_PORT) {
                 e.setUpstream(shadowDnsUpstream);
                 e.setHandled(true);
 //                return;
@@ -283,7 +284,7 @@ public final class Main implements SocksSupport {
 
         Action fn = () -> {
             InetAddress addr = InetAddress.getByName(geoMgr.getPublicIp());
-            eachQuietly(socksServers, p -> p.getSupport().addWhiteList(addr));
+            eachQuietly(socksServers, p -> p.getFacade().addWhiteList(addr));
         };
         fn.invoke();
         Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
@@ -343,7 +344,7 @@ public final class Main implements SocksSupport {
             InetAddress srcHost = e.getSource().getAddress();
             UpstreamSupport next = socksServers.next(srcHost, rssConf.routeSrcSteeringTTL, true);
             if (kcptun) {
-                kcpUpstream.setSupport(next.getSupport());
+                kcpUpstream.setFacade(next.getFacade());
                 return kcpUpstream;
             }
             return next;
@@ -624,11 +625,11 @@ public final class Main implements SocksSupport {
         ;
     }
 
-    final SocksProxyServer proxyServer;
+    final SocksProxyServer svrSide;
 
     @Override
     public void fakeEndpoint(BigInteger hash, String endpoint) {
-        SocksSupport.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(endpoint));
+        SocksRpcContract.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 
     @Override
@@ -638,7 +639,7 @@ public final class Main implements SocksSupport {
 
     @Override
     public void addWhiteList(InetAddress endpoint) {
-        proxyServer.getConfig().getWhiteList().add(endpoint);
+        svrSide.getConfig().getWhiteList().add(endpoint);
     }
 
     @SneakyThrows

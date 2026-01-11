@@ -11,7 +11,6 @@ import org.rx.core.Constants;
 import org.rx.core.Sys;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
-import org.rx.net.support.SocksSupport;
 
 import java.net.InetSocketAddress;
 
@@ -32,7 +31,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
 
     public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
         this.user = user;
-        InetSocketAddress realEp = SocksSupport.ENDPOINT_TRACER.head(ctx.channel());
+        InetSocketAddress realEp = SocksRpcContract.ENDPOINT_TRACER.head(ctx.channel());
         info = user.getLoginIps().computeIfAbsent(realEp.getAddress(), ip -> new SocksUser.LoginInfo());
         if (user.getMaxIpCount() != -1 && user.getLoginIps().size() > user.getMaxIpCount()) {
             log.error("SocksUser {} maxIpCount={}\nconnectedIps={} incomingIp={}", user.getUsername(), user.getMaxIpCount(), user.getLoginIps().keySet(), realEp);
