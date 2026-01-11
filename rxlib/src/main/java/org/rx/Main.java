@@ -221,7 +221,6 @@ public final class Main implements SocksRpcContract {
             for (UpstreamSupport support : oldUdp2rawSvrs) {
                 tryClose(support.getFacade());
             }
-            log.info("rssConf load ok");
 
             boolean debugFlag = rssConf.hasDebugFlag();
             log.info("rssConf debug={}", debugFlag);
@@ -232,6 +231,7 @@ public final class Main implements SocksRpcContract {
                     ((SocksProxyServer) svrRef).getConfig().setDebug(debugFlag);
                 }
             }
+            log.info("rssConf load ok");
         });
         watcher.raiseChange();
 
