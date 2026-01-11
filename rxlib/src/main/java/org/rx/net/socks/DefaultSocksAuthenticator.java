@@ -32,10 +32,7 @@ public class DefaultSocksAuthenticator implements Authenticator {
     @Override
     public SocksUser login(String username, String password) {
         SocksUser user = store.get(username);
-        if (user == null) {
-            return null;
-        }
-        if (!eq(user.getPassword(), password)) {
+        if (user == null || !eq(user.getPassword(), password)) {
             return null;
         }
         return user;
