@@ -254,6 +254,7 @@ public final class Main implements SocksRpcContract {
         });
 
         SocksConfig inConf = new SocksConfig(port);
+        inConf.setDebug(rssConf.hasDebugFlag());
 //        inConf.setTransportFlags(null);
         inConf.setOptimalSettings(IN_OPS);
         inConf.setConnectTimeoutMillis(connectTimeout);
@@ -275,6 +276,7 @@ public final class Main implements SocksRpcContract {
         Main app = new Main(inSvr);
         if (enableUdp2raw) {
             SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
+            inUdp2rawConf.setDebug(rssConf.hasDebugFlag());
             inUdp2rawConf.setListenPort(udp2rawPort);
             inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
             inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
