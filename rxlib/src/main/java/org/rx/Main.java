@@ -224,6 +224,7 @@ public final class Main implements SocksRpcContract {
             log.info("rssConf load ok");
 
             boolean debugFlag = rssConf.hasDebugFlag();
+            log.info("rssConf debug={}", debugFlag);
             for (Object svrRef : svrRefs) {
                 if (svrRef instanceof ShadowsocksServer) {
                     ((ShadowsocksServer) svrRef).getConfig().setDebug(debugFlag);
