@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.socks.SocksRpcContract;
 
 @AllArgsConstructor
 @Getter
@@ -12,5 +13,5 @@ import org.rx.net.AuthenticEndpoint;
 @ToString
 public class UpstreamSupport {
     private AuthenticEndpoint endpoint;
-    private SocksSupport support;
+    private SocksRpcContract facade;
 }

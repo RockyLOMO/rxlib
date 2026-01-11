@@ -36,6 +36,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -849,6 +850,9 @@ public final class Sys extends SystemUtils {
         if (v != null) {
             if (v instanceof InetAddress) {
                 return ((InetAddress) v).getHostAddress();
+            }
+            if (v instanceof InetSocketAddress) {
+                return Sockets.toString((InetSocketAddress) v);
             }
             if (Linq.from(RxConfig.INSTANCE.jsonSkipTypes).any(t -> Reflects.isInstance(v, t))) {
                 return v.getClass().getName();

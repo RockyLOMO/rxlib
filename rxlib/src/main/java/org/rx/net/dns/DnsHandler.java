@@ -13,7 +13,7 @@ import org.rx.core.CachePolicy;
 import org.rx.core.Linq;
 import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
-import org.rx.net.support.SocksSupport;
+import org.rx.net.socks.SocksRpcContract;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -48,7 +48,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             return;
         }
 
-        if (domain.endsWith(SocksSupport.FAKE_HOST_SUFFIX)) {
+        if (domain.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX)) {
             ctx.writeAndFlush(newResponse(query, question, Short.MAX_VALUE, Collections.singletonList(Sockets.getLoopbackAddress().getAddress())));
             return;
         }

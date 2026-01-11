@@ -7,7 +7,7 @@ import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksTcpBackendRelayHandler;
 import org.rx.net.socks.SocksTcpFrontendRelayHandler;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.SocksSupport;
+import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
@@ -42,7 +42,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
                 log.info("SS TCP connect to backend {}[{}]", upDstEp, dstEp);
             }
             Channel outbound = f.channel();
-            SocksSupport.ENDPOINT_TRACER.link(inbound, outbound);
+            SocksRpcContract.ENDPOINT_TRACER.link(inbound, outbound);
             outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
         });
         SocksContext.mark(inbound, outboundFuture, e);
