@@ -148,7 +148,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
         final UnresolvedEndpoint clientEp = UdpManager.decode(inBuf);
         final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
-        ChannelFuture outboundFuture = UdpManager.open(clientEp.socketAddress(), k -> {
+        ChannelFuture outboundFuture = UdpManager.open(UdpManager.udp2rawRegion, clientEp.socketAddress(), k -> {
             SocksContext e = new SocksContext(clientEp.socketAddress(), dstEp);
             e.udp2rawServer = srcEp;
             server.raiseEvent(server.onUdpRoute, e);
