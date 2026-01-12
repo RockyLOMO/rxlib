@@ -38,7 +38,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     @Override
     public void channelRead0(ChannelHandlerContext ctx, DefaultDnsQuery query) {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
-        log.info("dns query name={}", question.name());
+//        log.debug("dns query name={}", question.name());
         String domain = question.name().substring(0, question.name().length() - 1);
 
         List<InetAddress> hIps = server.getHosts(domain);
@@ -55,19 +55,19 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         RandomList<DnsServer.ResolveInterceptor> interceptors = server.interceptors;
         if (interceptors != null) {
             String k = DOMAIN_PREFIX + domain;
-            List<InetAddress> sIps = server.interceptorCache.get(k);
-            if (sIps == null) {
+            List<InetAddress> ips = server.interceptorCache.get(k);
+            if (ips == null) {
                 //cache value can't be null
-                server.interceptorCache.put(k, sIps = interceptors.next().resolveHost(domain),
-                        CachePolicy.absolute(CollectionUtils.isEmpty(sIps) ? 5 : server.ttl));
+                server.interceptorCache.put(k, ips = interceptors.next().resolveHost(domain),
+                        CachePolicy.absolute(CollectionUtils.isEmpty(ips) ? 5 : server.ttl));
             }
-            if (CollectionUtils.isEmpty(sIps)) {
+            if (CollectionUtils.isEmpty(ips)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
                 log.info("dns query {} -> EMPTY", domain);
                 return;
             }
-            ctx.writeAndFlush(newResponse(query, question, server.ttl, Linq.from(sIps).select(InetAddress::getAddress)));
-            log.info("dns query {} -> {}[SHADOW]", domain, hIps.get(0));
+            ctx.writeAndFlush(newResponse(query, question, server.ttl, Linq.from(ips).select(InetAddress::getAddress)));
+            log.info("dns query {} -> {}[SHADOW]", domain, ips.get(0));
             return;
         }
 
