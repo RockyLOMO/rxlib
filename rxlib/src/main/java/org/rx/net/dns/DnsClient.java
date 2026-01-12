@@ -5,7 +5,6 @@ import io.netty.handler.codec.dns.DnsQuestion;
 import io.netty.handler.codec.dns.DnsResponse;
 import io.netty.resolver.dns.*;
 import io.netty.util.concurrent.Future;
-import lombok.Getter;
 import lombok.NonNull;
 import org.rx.core.Disposable;
 import org.rx.core.Linq;
@@ -18,7 +17,6 @@ import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 import static org.rx.core.Tasks.await;
 
@@ -52,14 +50,11 @@ public class DnsClient extends Disposable {
         return outlandClient;
     }
 
-    @Getter
-    final Set<InetSocketAddress> serverEndpoints;
     final DnsNameResolver nameResolver;
 
     public DnsClient(@NonNull Collection<InetSocketAddress> nameServerList) {
-        serverEndpoints = new LinkedHashSet<>(nameServerList);
         nameResolver = new DnsNameResolverBuilder(Sockets.reactor(Sockets.ReactorNames.SHARED_UDP, false).next())
-                .nameServerProvider(!serverEndpoints.isEmpty() ? new DnsServerAddressStreamProviderImpl(serverEndpoints)
+                .nameServerProvider(!nameServerList.isEmpty() ? new DnsServerAddressStreamProviderImpl(new LinkedHashSet<>(nameServerList))
                         : DnsServerAddressStreamProviders.platformDefault())
                 .channelType(Sockets.udpChannelClass())
                 .socketChannelType(Sockets.tcpChannelClass()).build();

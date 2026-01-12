@@ -5,6 +5,7 @@ import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
 import io.netty.handler.codec.dns.TcpDnsQueryDecoder;
 import io.netty.handler.codec.dns.TcpDnsResponseEncoder;
+import io.netty.util.AttributeKey;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
@@ -30,6 +31,8 @@ public class DnsServer extends Disposable {
     }
 
     static final String DOMAIN_PREFIX = "_dns:";
+    static final AttributeKey<DnsServer> ATTR_SVR = AttributeKey.valueOf("svr");
+    static final AttributeKey<DnsClient> ATTR_UPSTREAM = AttributeKey.valueOf("upstream");
     final ServerBootstrap serverBootstrap;
     @Setter
     int ttl = 1800;
@@ -78,12 +81,13 @@ public class DnsServer extends Disposable {
             nameServerList = Collections.emptyList();
         }
 
-        DnsHandler tcpHandler = new DnsHandler(DnsServer.this, true, nameServerList);
-        serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(), tcpHandler));
+        DnsClient client = new DnsClient(nameServerList);
+        serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(), DnsHandler.DEFAULT))
+                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, client);
         serverBootstrap.bind(port).addListener(Sockets.logBind(port));
 
-        DnsHandler udpHandler = new DnsHandler(DnsServer.this, false, nameServerList);
-        Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), udpHandler))
+        Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
+                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, client)
                 .bind(port).addListener(Sockets.logBind(port));
     }
 
