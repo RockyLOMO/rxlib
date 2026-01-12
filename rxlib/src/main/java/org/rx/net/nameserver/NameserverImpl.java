@@ -202,6 +202,9 @@ public class NameserverImpl implements Nameserver {
     @Override
     public List<InetAddress> discoverAll(@NonNull String appName, boolean exceptCurrent) {
         List<InetAddress> hosts = dnsServer.getAllHosts(appName);
+        if (hosts.isEmpty()) {
+            return hosts;
+        }
         if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
             hosts.remove(ctx.getClient().getRemoteEndpoint().getAddress());
@@ -218,6 +221,9 @@ public class NameserverImpl implements Nameserver {
     @Override
     public List<InstanceInfo> discoverAll(@NonNull String appName, boolean exceptCurrent, List<String> instanceAttrKeys) {
         List<InetAddress> hosts = dnsServer.getAllHosts(appName);
+        if (hosts.isEmpty()) {
+            return Collections.emptyList();
+        }
         if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
             hosts.remove(ctx.getClient().getRemoteEndpoint().getAddress());

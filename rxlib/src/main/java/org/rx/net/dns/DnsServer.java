@@ -29,8 +29,7 @@ public class DnsServer extends Disposable {
         List<InetAddress> resolveHost(String host);
     }
 
-    //    static final boolean ENABLE_AUTO_RENEW = false;
-    static final String DOMAIN_PREFIX = "resolveHost:";
+    static final String DOMAIN_PREFIX = "_dns:";
     final ServerBootstrap serverBootstrap;
     @Setter
     int ttl = 1800;
@@ -49,7 +48,6 @@ public class DnsServer extends Disposable {
         }
 
         DiskCache<Object, Object> cache = (DiskCache<Object, Object>) DiskCache.DEFAULT;
-//        if (ENABLE_AUTO_RENEW) {
         cache.onExpired.combine((s, entry) -> {
             String key;
             if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
@@ -63,11 +61,10 @@ public class DnsServer extends Disposable {
                 if (CollectionUtils.isEmpty(sIps)) {
                     return null;
                 }
-                log.info("renewAsync {} lastAddresses={} addresses={}", key, lastIps, sIps);
+                log.info("dns renew {} -> {} <- last={}", domain, sIps, lastIps);
                 return sIps;
             }, CachePolicy.absolute(ttl)));
         });
-//        }
         interceptorCache = (Cache) cache;
     }
 
@@ -100,25 +97,28 @@ public class DnsServer extends Disposable {
         if (CollectionUtils.isEmpty(ips)) {
             return Collections.emptyList();
         }
+        if (ips.size() == 1) {
+            return Collections.singletonList(ips.get(0));
+        }
         return enableHostsWeight ? Linq.from(ips.next(), ips.next()).distinct().toList() : new ArrayList<>(ips);
     }
 
     public List<InetAddress> getAllHosts(String host) {
         RandomList<InetAddress> ips = hosts.get(host);
-        if (ips == null) {
+        if (CollectionUtils.isEmpty(ips)) {
             return Collections.emptyList();
         }
         return new ArrayList<>(ips);
     }
 
     public boolean addHosts(String host, @NonNull String... ips) {
-        return addHosts(host, RandomList.DEFAULT_WEIGHT, Linq.from(ips).select(InetAddress::getByName).toSet());
+        return addHosts(host, RandomList.DEFAULT_WEIGHT, Linq.from(ips).select(InetAddress::getByName).toList());
     }
 
     public boolean addHosts(@NonNull String host, int weight, @NonNull Collection<InetAddress> ips) {
         boolean changed = false;
         RandomList<InetAddress> list = hosts.computeIfAbsent(host, k -> new RandomList<>());
-        for (InetAddress ip : ips) {
+        for (InetAddress ip : Linq.from(ips).distinct()) {
             synchronized (list) {
                 if (list.contains(ip)) {
                     list.setWeight(ip, weight);
