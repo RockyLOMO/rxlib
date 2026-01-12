@@ -8,10 +8,10 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.ListUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.CachePolicy;
 import org.rx.core.Linq;
-import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksRpcContract;
 
@@ -24,7 +24,6 @@ import java.util.List;
 import static org.rx.net.dns.DnsServer.DOMAIN_PREFIX;
 
 @Slf4j
-@ChannelHandler.Sharable
 public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     final DnsServer server;
     final boolean isTcp;
@@ -39,12 +38,13 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     @Override
     public void channelRead0(ChannelHandlerContext ctx, DefaultDnsQuery query) {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
+        log.info("dns query name={}", question.name());
         String domain = question.name().substring(0, question.name().length() - 1);
 
         List<InetAddress> hIps = server.getHosts(domain);
         if (!hIps.isEmpty()) {
             ctx.writeAndFlush(newResponse(query, question, server.hostsTtl, Linq.from(hIps).select(InetAddress::getAddress)));
-            log.debug("query domain by hosts {} -> {}", domain, hIps.size());
+            log.info("dns query {} -> {}[HOSTS]", domain, hIps.get(0));
             return;
         }
 
@@ -63,18 +63,18 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             }
             if (CollectionUtils.isEmpty(sIps)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
-                log.info("query domain by shadow {} -> EMPTY", domain);
+                log.info("dns query {} -> EMPTY", domain);
                 return;
             }
             ctx.writeAndFlush(newResponse(query, question, server.ttl, Linq.from(sIps).select(InetAddress::getAddress)));
-            log.info("query domain by shadow {} -> {}", domain, sIps.size());
+            log.info("dns query {} -> {}[SHADOW]", domain, hIps.get(0));
             return;
         }
 
         client.query(question).addListener(f -> {
             AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
             if (!f.isSuccess()) {
-                TraceHandler.INSTANCE.log("query domain fail {} -> {}", domain, envelope, f.cause());
+                log.error("dns query fail {} -> {}", domain, envelope, f.cause());
 //                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
 //                ctx.writeAndFlush(newResponse(query, question, server.ttl));
                 if (envelope == null) {
@@ -82,8 +82,10 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                 }
             }
             try {
-                ctx.writeAndFlush(DnsMessageUtil.newResponse(query, envelope.content(), isTcp));
-//                log.debug("query domain {} -> {}", domain, envelope.content());
+                DnsResponse response = envelope.content();
+                ctx.writeAndFlush(DnsMessageUtil.newResponse(query, response, isTcp));
+                int count = response.count(DnsSection.ANSWER);
+                log.info("dns query {} -> {} answers", domain, count);
             } finally {
                 envelope.release();
             }
@@ -104,6 +106,6 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        TraceHandler.INSTANCE.log(cause);
+        log.error("dns query error", cause);
     }
 }

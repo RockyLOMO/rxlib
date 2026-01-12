@@ -110,9 +110,6 @@ public final class Main implements SocksRpcContract {
         public String ddnsApiKey;
         public String ddnsApiProxy;
 
-        public String pcapSourceIp;
-        public boolean pcapUdpDirect;
-
         public boolean hasRouteFlag() {
             return (logFlags & 1) == 1;
         }
@@ -420,24 +417,6 @@ public final class Main implements SocksRpcContract {
             if (e.getUpstream() != null) {
                 return;
             }
-//            if (rssConf.pcapSourceIp != null
-//                    && InetAddress.getByName(rssConf.pcapSourceIp).equals(e.getSource().getAddress())) {
-//                log.info("pcap pack {}", e.getSource());
-//                if (rssConf.pcapUdpDirect) {
-//                    e.setUpstream(new Upstream(dstEp));
-//                    return;
-//                }
-//            }
-//          if (conf.pcap2socks && e.getSource().getAddress().isLoopbackAddress()) {
-//              Cache<String, Boolean> cache = Cache.getInstance(Cache.MEMORY_CACHE);
-//              if (cache.get(hashKey("pcap", e.getSource().getPort()), k -> Sockets.socketInfos(SocketProtocol.UDP)
-//                      .any(p -> p.getSource().getPort() == e.getSource().getPort()
-//                              && Strings.startsWith(p.getProcessName(), "pcap2socks")))) {
-//                  log.info("pcap2socks forward");
-//                  e.setUpstream(new Upstream(dstEp));
-//                  return;
-//              }
-//          }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "UDP")) {
                 SocksUdpUpstream upstream = inUdpProxyUpstream.get();
