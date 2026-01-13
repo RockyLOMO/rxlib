@@ -69,13 +69,13 @@ public final class Main implements SocksRpcContract {
             return;
         }
 
-        Integer connectTimeout = Reflects.convertQuietly(options.get("connectTimeout"), Integer.class, 30000);
+        int httpPort = Reflects.convertQuietly(options.get("httpPort"), Integer.class, 8082);
         String mode = options.get("shadowMode");
         if (eq(mode, "1")) {
-            launchServer(options, port, connectTimeout);
+            launchServer(options, port, httpPort);
             return;
         }
-        launchClient(options, port);
+        launchClient(options, port, httpPort);
     }
 
     @Getter
@@ -133,7 +133,7 @@ public final class Main implements SocksRpcContract {
     static RSSConf rssConf;
 
     @SneakyThrows
-    static void launchClient(Map<String, String> options, Integer port) {
+    static void launchClient(Map<String, String> options, int port, int httpPort) {
         //Udp2raw 将 UDP 转换为 FakeTCP、ICMP
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
         int udp2rawPort = port + 10;
@@ -334,7 +334,7 @@ public final class Main implements SocksRpcContract {
             });
         }
 
-        clientInit(authenticator);
+        clientInit(httpPort, authenticator);
         log.info("Server started..");
         app.await();
     }
@@ -447,15 +447,13 @@ public final class Main implements SocksRpcContract {
         return inSvr;
     }
 
-    static void clientInit(DefaultSocksAuthenticator authenticator) {
-        httpServer = new HttpServer(6400, true)
-                .requestMapping("/usrInfo", (request, response) -> {
-                    response.jsonBody(authenticator.getStore());
-                })
-                .requestMapping("/traces", (request, response) -> {
-                    List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-3), null, null, null, null, 50);
-                    response.jsonBody(list);
-                });
+    static void clientInit(int httpPort, DefaultSocksAuthenticator authenticator) {
+        httpServer = new HttpServer(httpPort, true).requestMapping("/traces", (request, response) -> {
+            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-3), null, null, null, null, 50);
+            response.jsonBody(list);
+        }).requestMapping("/usrInfo", (request, response) -> {
+            response.jsonBody(authenticator.getStore());
+        });
 
         Tasks.schedulePeriod(() -> {
             if (rssConf == null) {
@@ -565,7 +563,7 @@ public final class Main implements SocksRpcContract {
 
     static HttpServer httpServer;
 
-    static void launchServer(Map<String, String> options, Integer port, Integer connectTimeout) {
+    static void launchServer(Map<String, String> options, int port, int httpPort) {
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
         AuthenticEndpoint shadowUser = Reflects.convertQuietly(options.get("shadowUser"), AuthenticEndpoint.class);
         if (shadowUser == null) {
@@ -579,7 +577,7 @@ public final class Main implements SocksRpcContract {
         SocksConfig outConf = new SocksConfig(port);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setOptimalSettings(OUT_OPS);
-        outConf.setConnectTimeoutMillis(connectTimeout);
+//        outConf.setConnectTimeoutMillis(connectTimeout);
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
@@ -597,24 +595,25 @@ public final class Main implements SocksRpcContract {
 //        rpcConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH.flags(TransportFlags.SERVER_CIPHER_BOTH));
         Main app = new Main(outSvr);
         Remoting.register(app, rpcConf);
-        serverInit();
+        serverInit(httpPort);
         app.await();
     }
 
-    static void serverInit() {
-        httpServer = new HttpServer(8082, true)
-                .requestMapping("/hf", (request, response) -> {
-                    String url = request.getQueryString().getFirst("fu");
-                    Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
-                    HttpClient client = new HttpClient();
-                    if (tm != null) {
-                        client.withTimeoutMillis(tm);
-                    }
-                    response.jsonBody(client.get(url).toJson());
-                })
-                .requestMapping("/getPublicIp", (request, response) -> {
-                    response.jsonBody(request.getRemoteEndpoint().getHostString());
-                })
+    static void serverInit(int httpPort) {
+        httpServer = new HttpServer(httpPort, true).requestMapping("/traces", (request, response) -> {
+            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-3), null, null, null, null, 50);
+            response.jsonBody(list);
+        }).requestMapping("/getPublicIp", (request, response) -> {
+            response.jsonBody(request.getRemoteEndpoint().getHostString());
+        }).requestMapping("/hf", (request, response) -> {
+            String url = request.getQueryString().getFirst("fu");
+            Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
+            HttpClient client = new HttpClient();
+            if (tm != null) {
+                client.withTimeoutMillis(tm);
+            }
+            response.jsonBody(client.get(url).toJson());
+        })
 //                .requestMapping("/geo", (request, response) -> {
 //                    response.jsonBody(IPSearcher.DEFAULT.resolve(request.getQueryString().getFirst("host")));
 //                })
