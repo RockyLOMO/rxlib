@@ -33,7 +33,7 @@ public class SocksUser implements Serializable {
     }
 
     private static final long serialVersionUID = 7845976131633777320L;
-    public static final SocksUser ANONYMOUS = new SocksUser("anonymous");
+    public static final SocksUser ANONYMOUS = new SocksUser();
 
     final String username;
     final Map<InetAddress, LoginInfo> loginIps = new ConcurrentHashMap<>(4);
@@ -62,5 +62,9 @@ public class SocksUser implements Serializable {
 
     public String getHumanTotalWriteBytes() {
         return Bytes.readableByteSize(getTotalWriteBytes());
+    }
+
+    public SocksUser() {
+        username = "anonymous";
     }
 }
