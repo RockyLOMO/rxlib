@@ -5,6 +5,7 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.exception.TraceHandler;
 
 import java.net.SocketAddress;
 
@@ -18,7 +19,6 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
 //    public void bind(ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise) throws Exception {
 //        super.bind(ctx, localAddress, promise);
 //        promise.addListener((ChannelFutureListener) f -> {
-//            System.out.println(111111);
 //            Channel ch = f.channel();
 //            String pn = Sockets.protocolName(ch);
 //            if (!f.isSuccess()) {
@@ -29,21 +29,21 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
 //        });
 //    }
 
-    @Override
-    public void connect(ChannelHandlerContext ctx, SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) throws Exception {
-        super.connect(ctx, remoteAddress, localAddress, promise);
-        promise.addListener(f -> {
-            if (!f.isSuccess()) {
-                log.error("Client[{}] connect {} fail", ctx.channel().id(), remoteAddress, f.cause());
-                return;
-            }
-            log.info("Client[{}] connected {}", ctx.channel().id(), remoteAddress);
-        });
-    }
+//    @Override
+//    public void connect(ChannelHandlerContext ctx, SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) throws Exception {
+//        super.connect(ctx, remoteAddress, localAddress, promise);
+//        promise.addListener(f -> {
+//            if (!f.isSuccess()) {
+//                log.error("Client[{}] connect {} fail", ctx.channel().id(), remoteAddress, f.cause());
+//                return;
+//            }
+//            log.info("Client[{}] connected {}", ctx.channel().id(), remoteAddress);
+//        });
+//    }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        log.error("exceptionCaught", cause);
-//        super.exceptionCaught(ctx, cause);
+        TraceHandler.INSTANCE.log("exceptionCaught", cause);
+        super.exceptionCaught(ctx, cause);
     }
 }

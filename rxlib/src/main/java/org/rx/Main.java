@@ -5,11 +5,13 @@ import com.alibaba.fastjson2.JSONObject;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.DateTime;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.rx.io.Files;
 import org.rx.io.IOStream;
 import org.rx.net.AuthenticEndpoint;
@@ -67,14 +69,13 @@ public final class Main implements SocksRpcContract {
             return;
         }
 
-        Integer connectTimeout = Reflects.convertQuietly(options.get("connectTimeout"), Integer.class, 60000);
+        Integer connectTimeout = Reflects.convertQuietly(options.get("connectTimeout"), Integer.class, 30000);
         String mode = options.get("shadowMode");
-//        Udp2rawHandler.DEFAULT.setGzipMinLength(Integer.MAX_VALUE);
         if (eq(mode, "1")) {
             launchServer(options, port, connectTimeout);
             return;
         }
-        launchClient(options, port, connectTimeout);
+        launchClient(options, port);
     }
 
     @Getter
@@ -87,6 +88,7 @@ public final class Main implements SocksRpcContract {
         public List<String> shadowUsers;
         public List<String> socksServers;
         public String socksPwd;
+        public int connectTimeoutSeconds = 10;
         public int tcpTimeoutSeconds = 60 * 2;
         public int udpTimeoutSeconds = 60 * 10;
         public int rpcMinSize = 2;
@@ -131,7 +133,7 @@ public final class Main implements SocksRpcContract {
     static RSSConf rssConf;
 
     @SneakyThrows
-    static void launchClient(Map<String, String> options, Integer port, Integer connectTimeout) {
+    static void launchClient(Map<String, String> options, Integer port) {
         //Udp2raw 将 UDP 转换为 FakeTCP、ICMP
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
         int udp2rawPort = port + 10;
@@ -220,12 +222,17 @@ public final class Main implements SocksRpcContract {
             }
 
             boolean debugFlag = rssConf.hasDebugFlag();
+            int connectTimeoutMillis = rssConf.connectTimeoutSeconds * 1000;
             log.info("rssConf debug={}", debugFlag);
             for (Object svrRef : svrRefs) {
                 if (svrRef instanceof ShadowsocksServer) {
-                    ((ShadowsocksServer) svrRef).getConfig().setDebug(debugFlag);
+                    ShadowsocksConfig config = ((ShadowsocksServer) svrRef).getConfig();
+                    config.setDebug(debugFlag);
+                    config.setConnectTimeoutMillis(connectTimeoutMillis);
                 } else {
-                    ((SocksProxyServer) svrRef).getConfig().setDebug(debugFlag);
+                    SocksConfig config = ((SocksProxyServer) svrRef).getConfig();
+                    config.setDebug(debugFlag);
+                    config.setConnectTimeoutMillis(connectTimeoutMillis);
                 }
             }
             log.info("rssConf load ok");
@@ -254,7 +261,7 @@ public final class Main implements SocksRpcContract {
         inConf.setDebug(rssConf.hasDebugFlag());
 //        inConf.setTransportFlags(null);
         inConf.setOptimalSettings(IN_OPS);
-        inConf.setConnectTimeoutMillis(connectTimeout);
+        inConf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
         inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
         inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
         DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
@@ -298,7 +305,7 @@ public final class Main implements SocksRpcContract {
             AuthenticEndpoint svrEp = new AuthenticEndpoint(upSvrEp, usr.getUsername(), usr.getPassword());
 
             conf.setOptimalSettings(SS_IN_OPS);
-            conf.setConnectTimeoutMillis(connectTimeout);
+            conf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
             svrRefs.add(ssSvr);
             SocksConfig toInConf = new SocksConfig(svrEp.getEndpoint().getPort());
@@ -441,9 +448,16 @@ public final class Main implements SocksRpcContract {
     }
 
     static void clientInit(DefaultSocksAuthenticator authenticator) {
-        Tasks.schedulePeriod(() -> {
-            Files.writeLines("usr-info.txt", Collections.singletonList(toJsonString(authenticator)));
+        httpServer = new HttpServer(6400, true)
+                .requestMapping("/usrInfo", (request, response) -> {
+                    response.jsonBody(authenticator.getStore());
+                })
+                .requestMapping("/traces", (request, response) -> {
+                    List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-3), null, null, null, null, 50);
+                    response.jsonBody(list);
+                });
 
+        Tasks.schedulePeriod(() -> {
             if (rssConf == null) {
                 log.warn("conf is null");
             }
