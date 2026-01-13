@@ -34,7 +34,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramP
             if (sc.tryGetUdpSocksServer() != null) {
                 UnresolvedEndpoint tmp = UdpManager.socks5Decode(outBuf);
                 if (!dstEp.equals(tmp)) {
-                    log.error("UDP error dstEp not matched {} != {}", dstEp, tmp);
+                    log.warn("UDP error dstEp not matched {} != {}", dstEp, tmp);
                 }
                 sc.inbound.attr(ShadowsocksConfig.REMOTE_SRC).set(tmp.socketAddress());
             } else {

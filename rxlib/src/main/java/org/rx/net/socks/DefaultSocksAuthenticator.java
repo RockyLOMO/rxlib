@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import lombok.Getter;
 import lombok.ToString;
 import org.rx.bean.DateTime;
 import org.rx.core.Tasks;
@@ -13,6 +14,7 @@ import static org.rx.core.Extends.eq;
 
 @ToString
 public class DefaultSocksAuthenticator implements Authenticator {
+    @Getter
     final Map<String, SocksUser> store = new ConcurrentHashMap<>();
 
     public DefaultSocksAuthenticator(List<SocksUser> initUsers) {

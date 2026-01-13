@@ -15,7 +15,7 @@ import java.security.InvalidAlgorithmParameterException;
 @Slf4j
 public class AesGcmCrypto extends CryptoAeadBase {
     public final static String AEAD_AES_128_GCM = "aes-128-gcm";
-    //    public final static String CIPHER_AEAD_192_GCM = "aes-192-gcm";
+    public final static String AEAD_AES_192_GCM = "aes-192-gcm";
     public final static String AEAD_AES_256_GCM = "aes-256-gcm";
 
     public AesGcmCrypto(String name, String password) {
@@ -28,8 +28,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
         switch (_name) {
             case AEAD_AES_128_GCM:
                 return 16;
-//            case CIPHER_AEAD_192_GCM:
-//                return 24;
+            case AEAD_AES_192_GCM:
+                return 24;
             case AEAD_AES_256_GCM:
                 return 32;
         }
@@ -41,8 +41,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
         switch (_name) {
             case AEAD_AES_128_GCM:
                 return 16;
-//            case CIPHER_AEAD_192_GCM:
-//              return 24;
+            case AEAD_AES_192_GCM:
+                return 24;
             case AEAD_AES_256_GCM:
                 return 32;
         }
@@ -54,6 +54,7 @@ public class AesGcmCrypto extends CryptoAeadBase {
     protected AEADCipher getCipher(boolean isEncrypted) {
         switch (_name) {
             case AEAD_AES_128_GCM:
+            case AEAD_AES_192_GCM:
             case AEAD_AES_256_GCM:
                 return new GCMBlockCipher(new AESEngine());
             default:
