@@ -15,21 +15,15 @@ class RpcClientPool extends Disposable implements TcpClientPool {
     final ObjectPool<StatefulTcpClient> pool;
 
     public RpcClientPool(RpcClientConfig<?> template) {
-        int minSize = Math.max(2, template.getMinPoolSize());
+        int minSize = Math.max(1, template.getMinPoolSize());
         int maxSize = Math.max(minSize, template.getMaxPoolSize());
         pool = new ObjectPool<>(minSize, maxSize, () -> {
             TcpClientConfig config = Sys.deepClone(template.getTcpConfig());
             StatefulTcpClient c = new StatefulTcpClient(config);
-//            try {
             c.connect(config.getServerEndpoint());
-//            } catch (TimeoutException e) {
-//                if (!config.isEnableReconnect()) {
-//                    throw e;
-//                }
-//            }
             log.debug("Create RpcClient {}", c);
             return c;
-        }, c -> c.getConfig().isEnableReconnect() || c.isConnected(), c -> {
+        }, StatefulTcpClient::isConnected, null, c -> {
             c.getConfig().setEnableReconnect(false);
             c.onError.purge();
             c.onReceive.purge();

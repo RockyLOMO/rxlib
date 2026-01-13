@@ -2,8 +2,10 @@ package org.rx.core;
 
 import lombok.RequiredArgsConstructor;
 
+import static org.rx.core.Extends.tryClose;
+
 @RequiredArgsConstructor
-public class IdentityWrapper<T> {
+public class IdentityWrapper<T> implements AutoCloseable {
     public final T instance;
 
     public boolean equals(Object other) {
@@ -17,5 +19,10 @@ public class IdentityWrapper<T> {
     @Override
     public String toString() {
         return String.valueOf(instance);
+    }
+
+    @Override
+    public void close() throws Exception {
+        tryClose(instance);
     }
 }
