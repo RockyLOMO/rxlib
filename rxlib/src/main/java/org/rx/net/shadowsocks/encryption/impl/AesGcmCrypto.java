@@ -1,6 +1,7 @@
 package org.rx.net.shadowsocks.encryption.impl;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.handler.codec.DecoderException;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.crypto.engines.AESEngine;
@@ -105,44 +106,55 @@ public class AesGcmCrypto extends CryptoAeadBase {
     protected void _tcpDecrypt(byte[] data, ByteBuf stream) {
         ByteBuffer buffer = ByteBuffer.wrap(data);
         while (buffer.hasRemaining()) {
-            log.debug("id:{} remaining {} payloadLenRead:{} payloadRead:{}", hashCode(), buffer.hasRemaining(), payloadLenRead, payloadRead);
+            // 1. 读取并解密长度信息 (2字节长度 + 16字节Tag)
             if (payloadRead == 0) {
-//                [encrypted payload length][length tag]
                 int wantLen = 2 + getTagLength() - payloadLenRead;
                 int remaining = buffer.remaining();
-                if (wantLen <= remaining) {
-                    buffer.get(decBuffer, payloadLenRead, wantLen);
-                } else {
-                    buffer.get(decBuffer, payloadLenRead, remaining);
-                    payloadLenRead += remaining;
-                    return;
+                int canRead = Math.min(wantLen, remaining);
+
+                buffer.get(decBuffer, payloadLenRead, canRead);
+                payloadLenRead += canRead;
+
+                if (payloadLenRead < 2 + getTagLength()) {
+                    return; // 长度信息还没读够，等下一波数据
                 }
+
+                // 解密长度字段
                 decCipher.init(false, getCipherParameters(false));
                 decCipher.doFinal(
                         decBuffer,
                         decCipher.processBytes(decBuffer, 0, 2 + getTagLength(), decBuffer, 0)
                 );
                 increment(decNonce);
+
+                // 标记：我们现在已经拿到了解密后的长度，准备读取 Payload
+                // 故意让 payloadRead = 0.0001 (或者使用 boolean flag) 来区分状态
+                payloadRead = -1;
             }
 
-//            [encrypted payload length][length tag]
-            int size = ByteBuffer.wrap(decBuffer, 0, 2).getShort();
-            log.debug("payload length:{},remaining:{},payloadRead:{}", size, buffer.remaining(), payloadRead);
-            if (size == 0) {
-                //TODO exists?
-                return;
-            } else {
-                int wantLen = getTagLength() + size - payloadRead;
-                int remaining = buffer.remaining();
-                if (wantLen <= remaining) {
-                    buffer.get(decBuffer, 2 + getTagLength() + payloadRead, wantLen);
-                } else {
-                    buffer.get(decBuffer, 2 + getTagLength() + payloadRead, remaining);
-                    payloadRead += remaining;
-                    return;
-                }
+            // 2. 解析长度
+            int size = ((decBuffer[0] & 0xFF) << 8) | (decBuffer[1] & 0xFF);
+            if (size > PAYLOAD_SIZE_MASK) {
+                throw new DecoderException("Payload too large: " + size);
             }
 
+            // 3. 读取并解密 Payload (size字节数据 + 16字节Tag)
+            int currentPayloadRead = (payloadRead == -1) ? 0 : payloadRead;
+            int wantLen = size + getTagLength() - currentPayloadRead;
+            int remaining = buffer.remaining();
+            int canRead = Math.min(wantLen, remaining);
+
+            // 写入偏移量从 2+Tag 开始，避免覆盖已经解密的长度信息（如果逻辑需要）
+            buffer.get(decBuffer, 2 + getTagLength() + currentPayloadRead, canRead);
+
+            if (payloadRead == -1) payloadRead = 0;
+            payloadRead += canRead;
+
+            if (payloadRead < size + getTagLength()) {
+                return; // Payload 还没读够
+            }
+
+            // 解密 Payload
             decCipher.init(false, getCipherParameters(false));
             decCipher.doFinal(
                     decBuffer,
@@ -150,11 +162,90 @@ public class AesGcmCrypto extends CryptoAeadBase {
             );
             increment(decNonce);
 
+            // 写入结果并重置
+            stream.writeBytes(decBuffer, 2 + getTagLength(), size);
+
             payloadLenRead = 0;
             payloadRead = 0;
-
-            stream.writeBytes(decBuffer, 2 + getTagLength(), size);
         }
+//        ByteBuffer buffer = ByteBuffer.wrap(data);
+//        while (buffer.hasRemaining()) {
+//            log.debug("id:{} remaining {} payloadLenRead:{} payloadRead:{}", hashCode(), buffer.hasRemaining(), payloadLenRead, payloadRead);
+//            if (payloadRead == 0) {
+////                [encrypted payload length][length tag]
+//                int wantLen = 2 + getTagLength() - payloadLenRead;
+//                int remaining = buffer.remaining();
+//                if (wantLen <= remaining) {
+//                    buffer.get(decBuffer, payloadLenRead, wantLen);
+//                } else {
+//                    buffer.get(decBuffer, payloadLenRead, remaining);
+//                    payloadLenRead += remaining;
+//                    return;
+//                }
+//                decCipher.init(false, getCipherParameters(false));
+//                decCipher.doFinal(
+//                        decBuffer,
+//                        decCipher.processBytes(decBuffer, 0, 2 + getTagLength(), decBuffer, 0)
+//                );
+//                increment(decNonce);
+//            }
+//
+////            [encrypted payload length][length tag]
+////            int size = ByteBuffer.wrap(decBuffer, 0, 2).getShort();
+////            log.debug("payload length:{},remaining:{},payloadRead:{}", size, buffer.remaining(), payloadRead);
+////            if (size == 0) {
+////                //TODO exists?
+////                return;
+////            } else {
+////                int wantLen = getTagLength() + size - payloadRead;
+////                int remaining = buffer.remaining();
+////                if (wantLen <= remaining) {
+////                    buffer.get(decBuffer, 2 + getTagLength() + payloadRead, wantLen);
+////                } else {
+////                    buffer.get(decBuffer, 2 + getTagLength() + payloadRead, remaining);
+////                    payloadRead += remaining;
+////                    return;
+////                }
+////            }
+//            // 2. 获取无符号长度 (关键修正点)
+//            // 使用 & 0xFFFF 确保得到正整数，Shadowsocks 协议上限是 0x3FFF
+//            int size = ((decBuffer[0] & 0xFF) << 8) | (decBuffer[1] & 0xFF);
+//            // 安全检查：如果 size 超过协议最大值，说明数据流已损坏
+//            if (size > PAYLOAD_SIZE_MASK
+////                    || size < 0
+//            ) {
+//                log.error("Invalid payload size: {}", size);
+//                throw new DecoderException("Invalid shadowsocks payload size");
+//            }
+//
+//            // 3. 处理 Payload 解密 [encrypted payload][payload tag]
+//            int wantLen = getTagLength() + size - payloadRead;
+//            int remaining = buffer.remaining();
+//            // 检查 decBuffer 空间是否足够 (偏移量: 2 + Tag + payloadRead + wantLen)
+//            if (2 + getTagLength() + payloadRead + wantLen > decBuffer.length) {
+//                throw new IndexOutOfBoundsException("decBuffer too small for size: " + size);
+//            }
+//
+//            if (wantLen <= remaining) {
+//                buffer.get(decBuffer, 2 + getTagLength() + payloadRead, wantLen);
+//            } else {
+//                buffer.get(decBuffer, 2 + getTagLength() + payloadRead, remaining);
+//                payloadRead += remaining;
+//                return;
+//            }
+//
+//            decCipher.init(false, getCipherParameters(false));
+//            decCipher.doFinal(
+//                    decBuffer,
+//                    (2 + getTagLength()) + decCipher.processBytes(decBuffer, 2 + getTagLength(), size + getTagLength(), decBuffer, 2 + getTagLength())
+//            );
+//            increment(decNonce);
+//
+//            payloadLenRead = 0;
+//            payloadRead = 0;
+//
+//            stream.writeBytes(decBuffer, 2 + getTagLength(), size);
+//        }
     }
 
     @SneakyThrows
