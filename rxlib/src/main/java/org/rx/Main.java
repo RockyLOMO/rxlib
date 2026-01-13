@@ -130,6 +130,7 @@ public final class Main implements SocksRpcContract {
             ssTcpUpstream = new FastThreadLocal<>();
     static final FastThreadLocal<SocksUdpUpstream> inUdpProxyUpstream = new FastThreadLocal<>(),
             ssUdpUpstream = new FastThreadLocal<>();
+    static final int traceDays = 1;
     static RSSConf rssConf;
 
     @SneakyThrows
@@ -449,7 +450,7 @@ public final class Main implements SocksRpcContract {
 
     static void clientInit(int httpPort, DefaultSocksAuthenticator authenticator) {
         httpServer = new HttpServer(httpPort, true).requestMapping("/traces", (request, response) -> {
-            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-3), null, null, null, null, 50);
+            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, null, 50);
             response.jsonBody(list);
         }).requestMapping("/usrInfo", (request, response) -> {
             response.jsonBody(authenticator.getStore());
@@ -601,7 +602,7 @@ public final class Main implements SocksRpcContract {
 
     static void serverInit(int httpPort) {
         httpServer = new HttpServer(httpPort, true).requestMapping("/traces", (request, response) -> {
-            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-3), null, null, null, null, 50);
+            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, null, 50);
             response.jsonBody(list);
         }).requestMapping("/getPublicIp", (request, response) -> {
             response.jsonBody(request.getRemoteEndpoint().getHostString());
