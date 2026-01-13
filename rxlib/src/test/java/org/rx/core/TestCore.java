@@ -565,8 +565,7 @@ public class TestCore extends AbstractTester {
         ObjectPool<Long> pool = new ObjectPool<>(1, 5, () -> {
             System.out.println(1);
             return (long) c.incrementAndGet();
-        }, x -> true, x -> {
-        });
+        }, x -> true);
 
         List<Tuple<Long, String>> msg = new Vector<>();
         for (int i = 0; i < 10; i++) {
