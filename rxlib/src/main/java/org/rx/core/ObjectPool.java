@@ -2,6 +2,7 @@ package org.rx.core;
 
 import lombok.Getter;
 import lombok.NonNull;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -9,7 +10,8 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 import org.rx.util.function.PredicateFunc;
 
-import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -17,30 +19,30 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.rx.core.Extends.*;
 
 @Slf4j
+@ToString
 public class ObjectPool<T> extends Disposable {
     static class ObjectConf {
-        //        final long lifetime = System.nanoTime();
         boolean borrowed;
         long stateTime;
         Thread t;
 
-        public synchronized boolean isBorrowed() {
+        public boolean isBorrowed() {
             return borrowed;
         }
 
-        public synchronized void setBorrowed(boolean borrowed) {
+        public void setBorrowed(boolean borrowed) {
             if (this.borrowed = borrowed) {
                 t = Thread.currentThread();
             }
             stateTime = System.nanoTime();
         }
 
-        public synchronized boolean isIdleTimeout(long idleTimeout) {
+        public boolean isIdleTimeout(long idleTimeout) {
             return idleTimeout != 0 && !borrowed
                     && (System.nanoTime() - stateTime) / Constants.NANO_TO_MILLIS > idleTimeout;
         }
 
-        public synchronized boolean isLeaked(long threshold) {
+        public boolean isLeaked(long threshold) {
             return threshold != 0 && borrowed
                     && (System.nanoTime() - stateTime) / Constants.NANO_TO_MILLIS > threshold;
         }
@@ -49,27 +51,28 @@ public class ObjectPool<T> extends Disposable {
     final Func<T> createHandler;
     final PredicateFunc<T> validateHandler;
     final BiAction<T> passivateHandler;
+    final ConcurrentHashMap<IdentityWrapper<T>, ObjectConf> conf = new ConcurrentHashMap<>();
     final ConcurrentLinkedDeque<IdentityWrapper<T>> stack = new ConcurrentLinkedDeque<>();
-    //    final ConcurrentHashMap<IdentityWrapper<T>, ObjectConf> conf = new ConcurrentHashMap<>();
-    final HashMap<IdentityWrapper<T>, ObjectConf> conf = new HashMap<>();
-    final AtomicInteger size = new AtomicInteger();
+    final AtomicInteger totalCount = new AtomicInteger(0);
     @Getter
     final int minSize;
     @Getter
     final int maxSize;
     @Getter
+    long validationPeriod = 5000;
+    @Getter
     long borrowTimeout = 30000;
     @Getter
     long idleTimeout = 600000;
     @Getter
-    long validationTime = 5000;
-    //    long keepaliveTime;
-//    long maxLifetime = 1800000;
-    @Getter
     long leakDetectionThreshold;
 
     public int size() {
-        return size.get();
+        return totalCount.get();
+    }
+
+    public void setValidationPeriod(long validationPeriod) {
+        this.validationPeriod = Math.max(250, validationPeriod);
     }
 
     public void setBorrowTimeout(long borrowTimeout) {
@@ -80,12 +83,8 @@ public class ObjectPool<T> extends Disposable {
         this.idleTimeout = idleTimeout == 0 ? 0 : Math.max(10000, idleTimeout);
     }
 
-    public void setValidationTime(long validationTime) {
-        this.validationTime = Math.max(250, validationTime);
-    }
-
     public void setLeakDetectionThreshold(long leakDetectionThreshold) {
-        this.leakDetectionThreshold = Math.max(2000, leakDetectionThreshold);
+        this.leakDetectionThreshold = leakDetectionThreshold == 0 ? 0 : Math.max(2000, leakDetectionThreshold);
     }
 
     public ObjectPool(int minSize, Func<T> createHandler, PredicateFunc<T> validateHandler) {
@@ -109,95 +108,110 @@ public class ObjectPool<T> extends Disposable {
         this.passivateHandler = passivateHandler;
 
         insureMinSize();
-        Tasks.timer.setTimeout(this::validNow, d -> validationTime, this, Constants.TIMER_PERIOD_FLAG);
+        Tasks.timer.setTimeout(this::validNow, d -> validationPeriod, this, Constants.TIMER_PERIOD_FLAG);
     }
 
     @Override
     protected void dispose() {
-        for (IdentityWrapper<T> wrapper : stack) {
+        for (IdentityWrapper<T> wrapper : conf.keySet()) {
             doRetire(wrapper, 0);
         }
     }
 
     void insureMinSize() {
         for (int i = size(); i < minSize; i++) {
-            quietly(this::doCreate);
+            doCreate();
         }
     }
 
     void validNow() {
-        eachQuietly(Linq.from(conf.entrySet()).orderBy(p -> p.getValue().stateTime), p -> {
+        for (Map.Entry<IdentityWrapper<T>, ObjectConf> p : conf.entrySet()) {
             IdentityWrapper<T> wrapper = p.getKey();
             ObjectConf c = p.getValue();
-            if (!validateHandler.test(wrapper.instance)
-                    || (size() > minSize && c.isIdleTimeout(idleTimeout))) {
-                doRetire(wrapper, 3);
-                return;
+            synchronized (c) {
+                if (!validateHandler.test(wrapper.instance)
+                        || (size() > minSize && c.isIdleTimeout(idleTimeout))) {
+                    doRetire(wrapper, 3);
+                    continue;
+                }
+                if (c.isLeaked(leakDetectionThreshold)) {
+                    TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
+                            String.format("Pool %s owned Object '%s' leaked.\n%s", this, wrapper, Reflects.getStackTrace(c.t)));
+                    doRetire(wrapper, 4);
+                }
             }
-            if (c.isLeaked(leakDetectionThreshold)) {
-                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
-                        String.format("Pool %s owned Object '%s' leaked.\n%s", this, wrapper, Reflects.getStackTrace(c.t)));
-                doRetire(wrapper, 4);
-            }
-        });
+        }
 
 //        log.info("ObjPool state: {}", this);
         insureMinSize();
     }
 
     IdentityWrapper<T> doCreate() {
-        if (size() > maxSize) {
-            log.warn("ObjPool reject: Reach the maximum");
-            return null;
-        }
-
-        IdentityWrapper<T> wrapper = new IdentityWrapper<>(createHandler.get());
-        synchronized (conf) {
-            if (!stack.offer(wrapper)) {
-                log.error("ObjPool create object fail: Offer stack fail");
+        // 使用 CAS 预占位置，解决并发超过 maxSize 的问题
+        while (true) {
+            int current = totalCount.get();
+            if (current >= maxSize) {
+                log.warn("ObjPool reject: Reach the maximum");
                 return null;
             }
-            ObjectConf c = new ObjectConf();
-            c.setBorrowed(true);
-            if (conf.putIfAbsent(wrapper, c) != null) {
-                throw new InvalidException("create object fail, object '{}' has already in this pool", wrapper);
-            }
+            if (totalCount.compareAndSet(current, current + 1)) break;
         }
-        size.incrementAndGet();
 
-        if (passivateHandler != null) {
-            passivateHandler.accept(wrapper.instance);
+        try {
+            IdentityWrapper<T> wrapper = new IdentityWrapper<>(createHandler.get());
+            conf.computeIfAbsent(wrapper, p -> {
+                //不需要，stack是空闲
+//            if (!stack.offer(p)) {
+//                throw new InvalidException("Create object fail, object '{}' fail to offer", p);
+//            }
+                ObjectConf c = new ObjectConf();
+                c.setBorrowed(true);
+                if (passivateHandler != null) {
+                    passivateHandler.accept(p.instance);
+                }
+                return c;
+            });
+            return wrapper;
+        } catch (Throwable e) {
+            totalCount.decrementAndGet();
+            throw e;
         }
-        return wrapper;
     }
 
-    //0 close, 1 recycle validate, 2 recycle offer, 3 idleTimeout, 4 leaked
+    //0 close, 1 recycle validate, 3 idleTimeout, 4 leaked
     boolean doRetire(IdentityWrapper<T> wrapper, int action) {
-        boolean ok;
+        boolean forceClose = action == 0 || action == 1;
+        ObjectConf c = conf.remove(wrapper);
+        if (c != null) {
+            //may polled
+            stack.remove(wrapper);
+            totalCount.decrementAndGet();
 
-        synchronized (conf) {
-            ok = stack.remove(wrapper);
-//        if (ok) {
-            ObjectConf c = conf.remove(wrapper);
-            if (c != null) {
-                size.decrementAndGet();
-
-                if (!c.isBorrowed()) {
-                    tryClose(wrapper);
-                }
+            if (forceClose || !c.isBorrowed()) {
+                tryClose(wrapper);
             }
+            return true;
         }
-//        }
-        log.debug("ObjPool doRetire[{}] {} -> {}", action, wrapper, ok);
-        return ok;
+        if (forceClose) {
+            tryClose(wrapper);
+        }
+        return false;
     }
 
     IdentityWrapper<T> doPoll() {
         IdentityWrapper<T> wrapper;
         ObjectConf c;
-        synchronized (conf) {
-            while ((wrapper = stack.poll()) != null && (c = conf.get(wrapper)) != null && !c.isBorrowed()) {
+        //c == null is doRetire by other thread
+        while ((wrapper = stack.poll()) != null && (c = conf.get(wrapper)) != null) {
+            synchronized (c) {
+                if (c.isBorrowed()) {
+                    throw new InvalidException("Poll object fail, object '{}' fail to poll", wrapper);
+                }
+
                 c.setBorrowed(true);
+                if (passivateHandler != null) {
+                    passivateHandler.accept(wrapper.instance);
+                }
                 return wrapper;
             }
         }
@@ -208,15 +222,24 @@ public class ObjectPool<T> extends Disposable {
         long start = System.nanoTime();
         IdentityWrapper<T> wrapper;
 
-        while ((wrapper = ifNull(doPoll(), this::doCreate)) == null || !validateHandler.test(wrapper.instance)) {
+        while (true) {
+            wrapper = ifNull(doPoll(), this::doCreate);
+            //wrapper == null 达到上限
+            if (wrapper != null) {
+                if (validateHandler.test(wrapper.instance)) {
+                    return wrapper.instance;
+                }
+                // 必须显式退休掉校验失败的对象
+                doRetire(wrapper, 1);
+            }
+
             long bt = (System.nanoTime() - start) / Constants.NANO_TO_MILLIS;
             if (borrowTimeout > Constants.TIMEOUT_INFINITE && bt > borrowTimeout) {
                 log.warn("ObjPool borrow timeout, state: {}", this);
                 throw new TimeoutException("borrow timeout");
             }
-            sleep(bt);
+            sleep(Math.min(Math.max(bt, 10), 50)); // 至少睡 10ms
         }
-        return wrapper.instance;
     }
 
     public void recycle(@NonNull T obj) {
@@ -225,26 +248,19 @@ public class ObjectPool<T> extends Disposable {
             doRetire(wrapper, 1);
             return;
         }
-
-        synchronized (conf) {
-            ObjectConf c = conf.get(wrapper);
-            if (c == null) {
-                throw new InvalidException("Object '{}' not belong to this pool", wrapper);
-            }
+        ObjectConf c = conf.get(wrapper);
+        if (c == null) {
+//                throw new InvalidException("Object '{}' not belong to this pool", wrapper);
+            //doRetire by other thread
+            return;
+        }
+        synchronized (c) {
             if (!c.isBorrowed()) {
                 throw new InvalidException("Object '{}' has already in this pool", wrapper);
             }
-            c.setBorrowed(false);
-            if (
-//                size() > maxSize ||  //Not required
-                    !stack.offer(wrapper)) {
-                doRetire(wrapper, 2);
-                return;
-            }
-        }
 
-        if (passivateHandler != null) {
-            passivateHandler.accept(wrapper.instance);
+            stack.offer(wrapper);
+            c.setBorrowed(false);
         }
     }
 
@@ -253,18 +269,5 @@ public class ObjectPool<T> extends Disposable {
         if (!doRetire(wrapper, 10)) {
             throw new InvalidException("Object '{}' not belong to this pool", wrapper);
         }
-    }
-
-    @Override
-    public String toString() {
-        return "ObjectPool{" +
-                "stack=" + stack.size() + ":" + conf.size() +
-                ", size=" + size +
-                ", poolSize=" + minSize + "-" + maxSize +
-                ", borrowTimeout=" + borrowTimeout +
-                ", idleTimeout=" + idleTimeout +
-                ", validationTime=" + validationTime +
-                ", leakDetectionThreshold=" + leakDetectionThreshold +
-                '}';
     }
 }

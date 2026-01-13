@@ -135,7 +135,6 @@ public final class Main implements SocksRpcContract {
 
     @SneakyThrows
     static void launchClient(Map<String, String> options, int port, int httpPort) {
-        //Udp2raw 将 UDP 转换为 FakeTCP、ICMP
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
         int udp2rawPort = port + 10;
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
