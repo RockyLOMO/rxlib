@@ -65,22 +65,28 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             return;
         }
 
+        query.retain();
         upstream.query(question).addListener(f -> {
-            AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
-            if (!f.isSuccess()) {
-                log.error("dns query fail {} -> {}", domain, envelope != null ? envelope.content() : null, f.cause());
-//                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
-                if (envelope == null) {
-                    return;
-                }
-            }
             try {
-                DnsResponse response = envelope.content();
-                ctx.writeAndFlush(DnsMessageUtil.newResponse(query, response, isTcp));
-                int count = response.count(DnsSection.ANSWER);
-                log.info("dns query {} -> {} answers", domain, count);
+                AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
+                if (!f.isSuccess()) {
+                    log.error("dns query fail {} -> {}", domain, envelope != null ? envelope.content() : null, f.cause());
+                    // 返回 SERVFAIL (服务器内部错误)
+                    ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
+                    if (envelope == null) {
+                        return;
+                    }
+                }
+                try {
+                    DnsResponse response = envelope.content();
+                    ctx.writeAndFlush(DnsMessageUtil.newResponse(query, response, isTcp));
+                    int count = response.count(DnsSection.ANSWER);
+                    log.info("dns query {} -> {} answers", domain, count);
+                } finally {
+                    envelope.release();
+                }
             } finally {
-                envelope.release();
+                query.release();
             }
         });
     }

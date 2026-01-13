@@ -28,7 +28,7 @@ public class SocksUser implements Serializable {
         DateTime latestTime;
         int refCnt;
         final AtomicLong totalActiveSeconds = new AtomicLong();
-        AtomicLong totalReadBytes = new AtomicLong();
+        final AtomicLong totalReadBytes = new AtomicLong();
         final AtomicLong totalWriteBytes = new AtomicLong();
     }
 
