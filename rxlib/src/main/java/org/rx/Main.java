@@ -565,6 +565,8 @@ public final class Main implements SocksRpcContract {
 
     static void launchServer(Map<String, String> options, int port, int httpPort) {
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
+        int udp2rawPort = port + 10;
+        boolean debugFlag = "1".equals(options.get("debug"));
         AuthenticEndpoint shadowUser = Reflects.convertQuietly(options.get("shadowUser"), AuthenticEndpoint.class);
         if (shadowUser == null) {
             log.info("Invalid shadowUser arg");
@@ -575,6 +577,7 @@ public final class Main implements SocksRpcContract {
         ssUser.setMaxIpCount(-1);
 
         SocksConfig outConf = new SocksConfig(port);
+        outConf.setDebug(debugFlag);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setOptimalSettings(OUT_OPS);
 //        outConf.setConnectTimeoutMillis(connectTimeout);
@@ -583,7 +586,8 @@ public final class Main implements SocksRpcContract {
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         if (enableUdp2raw) {
             SocksConfig outUdp2rawConf = Sys.deepClone(outConf);
-            outUdp2rawConf.setListenPort(port + 10);
+            outUdp2rawConf.setDebug(debugFlag);
+            outUdp2rawConf.setListenPort(udp2rawPort);
             outUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
             SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outUdp2rawConf, defAuth);
             outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
