@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.*;
-import org.rx.core.cache.DiskCache;
+import org.rx.core.cache.H2StoreCache;
 import org.rx.io.Files;
 import org.rx.net.Sockets;
 
@@ -50,7 +50,7 @@ public class DnsServer extends Disposable {
             return;
         }
 
-        DiskCache<Object, Object> cache = (DiskCache<Object, Object>) DiskCache.DEFAULT;
+        H2StoreCache<Object, Object> cache = (H2StoreCache<Object, Object>) H2StoreCache.DEFAULT;
         cache.onExpired.combine((s, entry) -> {
             String key;
             if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {

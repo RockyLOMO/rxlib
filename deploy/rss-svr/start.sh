@@ -18,7 +18,7 @@ cd $SCRIPT_DIR
 
 PORT=9900
 MEM_OPTIONS="-Xms64m -Xmx128m -Xss256k -XX:MaxMetaspaceSize=64m -XX:MaxDirectMemorySize=640m -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+UseCompressedClassPointers -XX:+UseStringDeduplication"
-APP_OPTIONS="-Dapp.disk.h2Settings=CACHE_SIZE=4096;COMPRESS=false;PAGE_SIZE=2048;MAX_COMPACT_TIME=100 -Dapp.net.reactorThreadAmount=2 -Dapp.net.connectTimeoutMillis=8000 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dapp.net.dns.outlandServers=1.1.1.1:53 -Djava.net.preferIPv4Stack=true"
+APP_OPTIONS="-Dapp.disk.h2Settings=CACHE_SIZE=4096;COMPRESS=false;MAX_LOG_SIZE=8;MAX_COMPACT_TIME=1000 -Dapp.net.reactorThreadAmount=2 -Dapp.net.connectTimeoutMillis=8000 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dapp.net.dns.outlandServers=1.1.1.1:53 -Djava.net.preferIPv4Stack=true"
 DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./heapdump-$(date +%Y%m%d_%H%M%S).hprof -XX:ErrorFile=./hs_err_pid%p.log -XX:+CreateCoredumpOnCrash"
 
 # 用法提示

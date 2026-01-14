@@ -116,7 +116,11 @@ public class ObjectPool<T> extends Disposable {
         this.activateHandler = activateHandler;
         this.passivateHandler = passivateHandler;
 
-        insureMinSize();
+        if (lockOnCreate) {
+            Tasks.run(this::insureMinSize);
+        } else {
+            insureMinSize();
+        }
         future = Tasks.timer.setTimeout(this::validNow, d -> validationPeriod, this, Constants.TIMER_PERIOD_FLAG);
     }
 

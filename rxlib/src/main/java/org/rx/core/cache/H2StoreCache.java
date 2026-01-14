@@ -13,12 +13,14 @@ import org.rx.io.EntityQueryLambda;
 import org.rx.third.guava.AbstractSequentialIterator;
 
 import java.util.*;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
-public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCache<TK, TV>> {
+public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2StoreCache<TK, TV>> {
     class EntrySetView extends AbstractSet<Entry<TK, TV>> {
         @Override
         public Iterator<Map.Entry<TK, TV>> iterator() {
@@ -64,7 +66,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
 
                 @Override
                 public void remove() {
-                    DiskCache.this.remove(current.getKey());
+                    H2StoreCache.this.remove(current.getKey());
                 }
             };
         }
@@ -79,30 +81,30 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
 
         @Override
         public int size() {
-            return DiskCache.this.size();
+            return H2StoreCache.this.size();
         }
 
         @Override
         public boolean contains(Object key) {
-            return DiskCache.this.containsKey(key);
+            return H2StoreCache.this.containsKey(key);
         }
 
         @Override
         public boolean add(Entry<TK, TV> entry) {
-            return DiskCache.this.put(entry.getKey(), entry.getValue()) == null;
+            return H2StoreCache.this.put(entry.getKey(), entry.getValue()) == null;
         }
 
         @Override
         public boolean remove(Object key) {
-            return DiskCache.this.remove(key) != null;
+            return H2StoreCache.this.remove(key) != null;
         }
     }
 
-    public static final DiskCache<?, ?> DEFAULT;
+    public static final H2StoreCache<?, ?> DEFAULT;
     static final FastThreadLocal<Object[]> ITERATOR_CTX = new FastThreadLocal<>();
 
     static {
-        IOC.register(DiskCache.class, DEFAULT = new DiskCache<>());
+        IOC.register(H2StoreCache.class, DEFAULT = new H2StoreCache<>());
     }
 
     public static void iteratorContext() {
@@ -113,7 +115,7 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
         ITERATOR_CTX.set(new Object[]{offset, size, keyType});
     }
 
-    public final Delegate<DiskCache<TK, TV>, Map.Entry<TK, TV>> onExpired = Delegate.create();
+    public final Delegate<H2StoreCache<TK, TV>, Map.Entry<TK, TV>> onExpired = Delegate.create();
     final EntityDatabase db;
     @Setter
     int defaultExpireSeconds = 60 * 60 * 24 * 90;  //3 months
@@ -123,11 +125,11 @@ public class DiskCache<TK, TV> implements Cache<TK, TV>, EventPublisher<DiskCach
     long expungePeriod = 1000 * 60;
     EntrySetView setView;
 
-    public DiskCache() {
+    public H2StoreCache() {
         this(EntityDatabase.DEFAULT);
     }
 
-    public DiskCache(@NonNull EntityDatabase db) {
+    public H2StoreCache(@NonNull EntityDatabase db) {
         db.createMapping(H2CacheItem.class);
         this.db = db;
         Tasks.schedulePeriod(this::expungeStale, expungePeriod);
