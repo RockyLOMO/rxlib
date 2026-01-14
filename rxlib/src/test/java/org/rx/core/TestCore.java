@@ -15,7 +15,7 @@ import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.codec.RSAUtil;
-import org.rx.core.cache.DiskCache;
+import org.rx.core.cache.H2StoreCache;
 import org.rx.core.cache.H2CacheItem;
 import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
@@ -676,11 +676,11 @@ public class TestCore extends AbstractTester {
 //        Cache<Tuple<Integer, String>, Integer> cache = Cache.getInstance(MemoryCache.class);
 //        testCache(cache);
 
-        DiskCache<Tuple<Integer, String>, Integer> dCache = (DiskCache) Cache.getInstance(DiskCache.class);
+        H2StoreCache<Tuple<Integer, String>, Integer> dCache = (H2StoreCache) Cache.getInstance(H2StoreCache.class);
         dCache.clear();
 //        testCache(dCache);
 
-        DiskCache<Long, String> xCache = (DiskCache<Long, String>) DiskCache.DEFAULT;
+        H2StoreCache<Long, String> xCache = (H2StoreCache<Long, String>) H2StoreCache.DEFAULT;
         xCache.setPrefetchCount(4);
         for (long i = 0; i < 20; i++) {
             assert xCache.put(i, i + 100 + "x") == null;

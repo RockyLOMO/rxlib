@@ -591,7 +591,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         for (Class<?> entityType : entityTypes) {
             createCols.setLength(0);
             String tableName = tableName(entityType);
-            insert.setLength(0).appendFormat("INSERT INTO %s VALUES (", tableName);
+//            insert.setLength(0).appendFormat("INSERT INTO %s VALUES (", tableName);
+            insert.setLength(0).appendFormat("MERGE INTO %s VALUES (", tableName);
 
             String pkName = null;
             Map<String, Tuple<Field, DbColumn>> columns = new LinkedHashMap<>();
@@ -730,7 +731,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         String tableName = template.getTableName();
         StringBuilder createCols = new StringBuilder();
         StringBuilder insert = new StringBuilder();
-        insert.appendFormat("INSERT INTO %s VALUES (", tableName);
+//        insert.appendFormat("INSERT INTO %s VALUES (", tableName);
+        insert.appendFormat("MERGE INTO %s VALUES (", tableName);
 
         int len = template.getColumns().size();
         List<Class<?>> colTypes = new ArrayList<>(len);

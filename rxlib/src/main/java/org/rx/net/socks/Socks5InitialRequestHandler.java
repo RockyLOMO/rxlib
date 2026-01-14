@@ -7,7 +7,7 @@ import io.netty.handler.codec.socksx.v5.DefaultSocks5InitialResponse;
 import io.netty.handler.codec.socksx.v5.Socks5AuthMethod;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.cache.DiskCache;
+import org.rx.core.cache.H2StoreCache;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
@@ -34,7 +34,7 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
         InetSocketAddress remoteEp = (InetSocketAddress) ctx.channel().remoteAddress();
         InetAddress raddr = remoteEp.getAddress();
         if (!Sockets.isPrivateIp(raddr) && !whiteList.contains(raddr)) {
-            DiskCache.iteratorContext(0, Integer.MAX_VALUE, InetAddress.class);
+            H2StoreCache.iteratorContext(0, Integer.MAX_VALUE, InetAddress.class);
             log.warn("socks5[{}] whiteList={}\n{} access blocked", server.getConfig().getListenPort(), toJsonString(whiteList), remoteEp);
             ctx.close();
             return;

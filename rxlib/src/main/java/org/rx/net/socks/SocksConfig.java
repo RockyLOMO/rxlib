@@ -3,7 +3,7 @@ package org.rx.net.socks;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.rx.core.cache.DiskCache;
+import org.rx.core.cache.H2StoreCache;
 import org.rx.net.SocketConfig;
 
 import java.net.InetAddress;
@@ -32,7 +32,7 @@ public class SocksConfig extends SocketConfig {
     private String kcptunClient;
 
     private Set<InetAddress> whiteList() {
-        return DiskCache.DEFAULT.asSet();
+        return H2StoreCache.DEFAULT.asSet();
     }
 
     public SocksConfig(int listenPort) {

@@ -3,7 +3,7 @@ package org.rx.net.socks;
 import org.rx.core.Arrays;
 import org.rx.core.Cache;
 import org.rx.core.Strings;
-import org.rx.core.cache.DiskCache;
+import org.rx.core.cache.H2StoreCache;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -24,7 +24,7 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
     EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
     static Cache<BigInteger, UnresolvedEndpoint> fakeDict() {
-        return (Cache<BigInteger, UnresolvedEndpoint>) DiskCache.DEFAULT;
+        return (Cache<BigInteger, UnresolvedEndpoint>) H2StoreCache.DEFAULT;
     }
 
     void fakeEndpoint(BigInteger hash, String realEndpoint);
