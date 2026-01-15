@@ -72,8 +72,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
      */
     @SneakyThrows
     @Override
-    protected void _tcpEncrypt(byte[] data, ByteBuf stream) {
-        ByteBuffer buffer = ByteBuffer.wrap(data);
+    protected void _tcpEncrypt(byte[] data, int length, ByteBuf stream) {
+        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
         while (buffer.hasRemaining()) {
             int nr = Math.min(buffer.remaining(), PAYLOAD_SIZE_MASK);
             ByteBuffer.wrap(encBuffer).putShort((short) nr);
@@ -100,8 +100,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _tcpDecrypt(byte[] data, ByteBuf stream) {
-        ByteBuffer buffer = ByteBuffer.wrap(data);
+    protected void _tcpDecrypt(byte[] data, int length, ByteBuf stream) {
+        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
         while (buffer.hasRemaining()) {
             // 1. 读取并解密长度信息 (2字节长度 + 16字节Tag)
             if (payloadRead == 0) {
@@ -169,8 +169,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _udpEncrypt(byte[] data, ByteBuf stream) {
-        ByteBuffer buffer = ByteBuffer.wrap(data);
+    protected void _udpEncrypt(byte[] data, int length, ByteBuf stream) {
+        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
         int remaining = buffer.remaining();
         buffer.get(encBuffer, 0, remaining);
         encCipher.init(true, getCipherParameters(true));
@@ -183,8 +183,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _udpDecrypt(byte[] data, ByteBuf stream) {
-        ByteBuffer buffer = ByteBuffer.wrap(data);
+    protected void _udpDecrypt(byte[] data, int length, ByteBuf stream) {
+        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
         int remaining = buffer.remaining();
         buffer.get(decBuffer, 0, remaining);
         decCipher.init(false, getCipherParameters(false));

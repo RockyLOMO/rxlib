@@ -1,7 +1,6 @@
 package org.rx.net.shadowsocks.encryption;
 
 import io.netty.buffer.ByteBuf;
-import lombok.SneakyThrows;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.digests.SHA1Digest;
 import org.bouncycastle.crypto.generators.HKDFBytesGenerator;
@@ -17,7 +16,7 @@ import java.util.Arrays;
 //TODO unfinished
 public abstract class CryptoAeadBase implements ICrypto {
     protected static int PAYLOAD_SIZE_MASK = 0x3FFF;
-    private static final byte[] info = "ss-subkey".getBytes();
+    private static final byte[] INFO = "ss-subkey".getBytes();
     private static final byte[] ZERO_NONCE = new byte[getNonceLength()];
 
     private static int getNonceLength() {
@@ -51,8 +50,8 @@ public abstract class CryptoAeadBase implements ICrypto {
     private byte[] decSubkey;
     protected byte[] encNonce;
     protected byte[] decNonce;
-    protected byte[] encBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
-    protected byte[] decBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
+    protected final byte[] encBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
+    protected final byte[] decBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
     /**
      * last chunk payload len already read size
      */
@@ -79,9 +78,14 @@ public abstract class CryptoAeadBase implements ICrypto {
         }
     }
 
-    @SneakyThrows
     @Override
     public void encrypt(byte[] data, ByteBuf stream) {
+        encrypt(data, data.length, stream);
+    }
+
+    @Override
+    public void encrypt(byte[] data, int length, ByteBuf stream) {
+//        logger.debug("{} encrypt {}", this.hashCode(),new String(data, Charset.forName("GBK")));
         synchronized (encLock) {
             stream.clear();
             if (!_encryptSaltSet || forUdp) {
@@ -92,55 +96,49 @@ public abstract class CryptoAeadBase implements ICrypto {
                 _encryptSaltSet = true;
             }
             if (!forUdp) {
-                _tcpEncrypt(data, stream);
+                _tcpEncrypt(data, length, stream);
             } else {
-                _udpEncrypt(data, stream);
+                _udpEncrypt(data, length, stream);
             }
         }
     }
 
     @Override
-    public void encrypt(byte[] data, int length, ByteBuf stream) {
-//        logger.debug("{} encrypt {}", this.hashCode(),new String(data, Charset.forName("GBK")));//
-        byte[] d = Arrays.copyOfRange(data, 0, length);
-        encrypt(d, stream);
+    public void decrypt(byte[] data, ByteBuf stream) {
+        decrypt(data, data.length, stream);
     }
 
     @Override
-    public void decrypt(byte[] data, ByteBuf stream) {
+    public void decrypt(byte[] data, int length, ByteBuf stream) {
+//        logger.debug("{} decrypt {}", this.hashCode(),Arrays.toString(data));
         byte[] temp;
         synchronized (decLock) {
             stream.clear();
-            ByteBuffer buffer = ByteBuffer.wrap(data);
+            ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
             if (decCipher == null || forUdp) {
                 _decryptSaltSet = true;
                 byte[] salt = new byte[getSaltLength()];
                 buffer.get(salt);
                 decSubkey = genSubkey(salt);
                 decCipher = getCipher(false);
-                temp = new byte[buffer.remaining()];
+
+                int remaining = buffer.remaining();
+                temp = new byte[remaining];
                 buffer.get(temp);
+                _tcpDecrypt(temp, remaining, stream);
             } else {
-                temp = data;
-            }
-            if (!forUdp) {
-                _tcpDecrypt(temp, stream);
-            } else {
-                _udpDecrypt(temp, stream);
+                if (!forUdp) {
+                    _tcpDecrypt(data, length, stream);
+                } else {
+                    _udpDecrypt(data, length, stream);
+                }
             }
         }
     }
 
-    @Override
-    public void decrypt(byte[] data, int length, ByteBuf stream) {
-//        logger.debug("{} decrypt {}", this.hashCode(),Arrays.toString(data));
-        byte[] d = Arrays.copyOfRange(data, 0, length);
-        decrypt(d, stream);
-    }
-
     private byte[] genSubkey(byte[] salt) {
         HKDFBytesGenerator hkdf = new HKDFBytesGenerator(new SHA1Digest());
-        hkdf.init(new HKDFParameters(_ssKey.getEncoded(), salt, info));
+        hkdf.init(new HKDFParameters(_ssKey.getEncoded(), salt, INFO));
         byte[] okm = new byte[getKeyLength()];
         hkdf.generateBytes(okm, 0, getKeyLength());
         return okm;
@@ -163,11 +161,11 @@ public abstract class CryptoAeadBase implements ICrypto {
 
     protected abstract AEADCipher getCipher(boolean isEncrypted);
 
-    protected abstract void _tcpEncrypt(byte[] data, ByteBuf stream);
+    protected abstract void _tcpEncrypt(byte[] data, int length, ByteBuf stream);
 
-    protected abstract void _tcpDecrypt(byte[] data, ByteBuf stream);
+    protected abstract void _tcpDecrypt(byte[] data, int length, ByteBuf stream);
 
-    protected abstract void _udpEncrypt(byte[] data, ByteBuf stream);
+    protected abstract void _udpEncrypt(byte[] data, int length, ByteBuf stream);
 
-    protected abstract void _udpDecrypt(byte[] data, ByteBuf stream);
+    protected abstract void _udpDecrypt(byte[] data, int length, ByteBuf stream);
 }
