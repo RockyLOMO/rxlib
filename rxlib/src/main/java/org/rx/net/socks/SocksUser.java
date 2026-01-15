@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import com.alibaba.fastjson2.annotation.JSONField;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -36,6 +37,7 @@ public class SocksUser implements Serializable {
     public static final SocksUser ANONYMOUS = new SocksUser();
 
     final String username;
+    @JSONField(serialize = false)
     final Map<InetAddress, LoginInfo> loginIps = new ConcurrentHashMap<>(4);
     String password;
     /**
@@ -43,6 +45,11 @@ public class SocksUser implements Serializable {
      */
     int ipLimit;
     DateTime lastResetTime;
+
+    @JSONField(name = "loginIps")
+    public Map<String, LoginInfo> getLoginIpsForJson() {
+        return Linq.from(loginIps.entrySet()).toMap(p -> p.getKey().getHostAddress(), Map.Entry::getValue);
+    }
 
     public boolean isAnonymous() {
         return Strings.hashEquals(ANONYMOUS.getUsername(), username);
