@@ -219,7 +219,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     String curFilePath;
     JdbcConnectionPool connPool;
 
-    JdbcConnectionPool getConnectionPool() {
+    synchronized JdbcConnectionPool getConnectionPool() {
         if (connPool == null) {
             String filePath = getFilePath();
             curFilePath = filePath;
@@ -277,6 +277,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     protected void dispose() {
         if (connPool != null) {
             connPool.dispose();
+            connPool = null;
         }
     }
 
@@ -1002,7 +1003,19 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     private Connection preInvoke(String sql, List<Object> params) throws SQLException {
         Connection conn = TL_CONN.getIfExists();
         if (conn == null) {
-            TL_CONN.set(conn = getConnectionPool().getConnection());
+            try {
+                TL_CONN.set(conn = getConnectionPool().getConnection());
+            } catch (SQLNonTransientConnectionException e) {
+                if (e.getMessage() != null && e.getMessage().contains("Database is already closed")) {
+                    log.warn("Connection pool closed, recreating...");
+                    synchronized (this) {
+                        connPool = null;
+                        TL_CONN.set(conn = getConnectionPool().getConnection());
+                    }
+                } else {
+                    throw e;
+                }
+            }
         }
         return conn;
     }

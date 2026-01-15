@@ -12,6 +12,7 @@ import org.rx.core.Linq;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksRpcContract;
 
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Collections;
@@ -25,7 +26,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     public static final DnsHandler DEFAULT = new DnsHandler();
 
     @Override
-    public void channelRead0(ChannelHandlerContext ctx, DefaultDnsQuery query) {
+    protected void channelRead0(ChannelHandlerContext ctx, DefaultDnsQuery query) {
         Channel ch = ctx.channel();
         DnsServer server = Sockets.getAttr(ch, DnsServer.ATTR_SVR);
         boolean isTcp = !(ch instanceof DatagramChannel);
@@ -37,13 +38,13 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
         List<InetAddress> hIps = server.getHosts(domain);
         if (!hIps.isEmpty()) {
-            ctx.writeAndFlush(newResponse(query, isTcp, question, server.hostsTtl, Linq.from(hIps).select(InetAddress::getAddress)));
+            ctx.writeAndFlush(newResponse(query, isTcp, question, server.hostsTtl, hIps));
             log.info("dns query {} -> {}[HOSTS]", domain, hIps.get(0).getHostAddress());
             return;
         }
 
         if (domain.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX)) {
-            ctx.writeAndFlush(newResponse(query, isTcp, question, Short.MAX_VALUE, Collections.singletonList(Sockets.getLoopbackAddress().getAddress())));
+            ctx.writeAndFlush(newResponse(query, isTcp, question, Short.MAX_VALUE, Collections.singletonList(Sockets.getLoopbackAddress())));
             return;
         }
         RandomList<DnsServer.ResolveInterceptor> interceptors = server.interceptors;
@@ -60,7 +61,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                 log.info("dns query {} -> EMPTY", domain);
                 return;
             }
-            ctx.writeAndFlush(newResponse(query, isTcp, question, server.ttl, Linq.from(ips).select(InetAddress::getAddress)));
+            ctx.writeAndFlush(newResponse(query, isTcp, question, server.ttl, ips));
             log.info("dns query {} -> {}[SHADOW]", domain, ips.get(0).getHostAddress());
             return;
         }
@@ -81,7 +82,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                     DnsResponse response = envelope.content();
                     ctx.writeAndFlush(DnsMessageUtil.newResponse(query, response, isTcp));
                     int count = response.count(DnsSection.ANSWER);
-                    log.info("dns query {} -> {} answers", domain, count);
+                    log.info("dns query {} -> {}[ANSWER]", domain, count);
                 } finally {
                     envelope.release();
                 }
@@ -92,19 +93,26 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     }
 
     //ttl seconds
-    private DefaultDnsResponse newResponse(DefaultDnsQuery query, boolean isTcp, DefaultDnsQuestion question, long ttl, Iterable<byte[]> addresses) {
+    private DefaultDnsResponse newResponse(DefaultDnsQuery query, boolean isTcp, DefaultDnsQuestion question, long ttl, Iterable<InetAddress> ips) {
         DefaultDnsResponse response = DnsMessageUtil.newResponse(query, isTcp);
         response.addRecord(DnsSection.QUESTION, question);
 
-        for (byte[] address : addresses) {
-            DefaultDnsRawRecord queryAnswer = new DefaultDnsRawRecord(question.name(), DnsRecordType.A, ttl, Unpooled.wrappedBuffer(address));
-            response.addRecord(DnsSection.ANSWER, queryAnswer);
+        for (InetAddress ip : ips) {
+            DnsRecordType type = ip instanceof Inet6Address ? DnsRecordType.AAAA : DnsRecordType.A;
+            byte[] address = ip.getAddress();
+            DefaultDnsRawRecord answer = new DefaultDnsRawRecord(question.name(), type, ttl, Unpooled.wrappedBuffer(address));
+            response.addRecord(DnsSection.ANSWER, answer);
         }
         return response;
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+//        if (cause instanceof io.netty.handler.codec.DecoderException
+//                || cause instanceof IndexOutOfBoundsException) {
+//            log.warn("dns decode error: {}", cause.getMessage());
+//        } else {
         log.error("dns query error", cause);
+//        }
     }
 }
