@@ -16,7 +16,6 @@ import java.net.InetSocketAddress;
 import java.util.List;
 
 /**
- * https://www.shadowsocks.org/en/spec/Protocol.html
  * [1-byte type][variable-length host][2-byte port]
  * The following address types are defined:
  * <p>
@@ -47,10 +46,10 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
         if (addr == null) {
             buf.retain();
         } else {
-            ByteBuf addrBuff = ctx.alloc().directBuffer(64);
-            UdpManager.encode(addrBuff, addr);
+            ByteBuf addrBuf = ctx.alloc().directBuffer(64);
+            UdpManager.encode(addrBuf, addr);
 
-            buf = Unpooled.wrappedBuffer(addrBuff, buf.retain());
+            buf = Unpooled.wrappedBuffer(addrBuf, buf.retain());
         }
 
         if (msg instanceof DatagramPacket) {
@@ -78,7 +77,7 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
             } catch (Exception e) {
                 log.warn("protocol error, fail to decode address request from {}, pls check client's cipher setting", inbound.remoteAddress(), e);
                 if (!isUdp) {
-                    ctx.close();
+                    inbound.close();
                 }
                 return;
             }
