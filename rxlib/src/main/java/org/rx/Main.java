@@ -10,6 +10,7 @@ import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
+import org.rx.core.Arrays;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.IOStream;
@@ -347,7 +348,7 @@ public final class Main implements SocksRpcContract {
         app.await();
     }
 
-    static SocksProxyServer createInSvr( SocksConfig inConf, DefaultSocksAuthenticator authenticator,
+    static SocksProxyServer createInSvr(SocksConfig inConf, DefaultSocksAuthenticator authenticator,
                                         TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> socksServers,
                                         GeoManager geoMgr) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
@@ -639,9 +640,11 @@ public final class Main implements SocksRpcContract {
         SocksRpcContract.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 
+    @SneakyThrows
     @Override
     public List<InetAddress> resolveHost(String host) {
-        return DnsClient.outlandClient().resolveAll(host);
+//        return DnsClient.outlandClient().resolveAll(host);
+        return Arrays.toList(InetAddress.getAllByName(host));
     }
 
     @Override
