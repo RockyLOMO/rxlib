@@ -4,12 +4,10 @@ import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import lombok.Getter;
 import lombok.NonNull;
-import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Delegate;
 import org.rx.core.Disposable;
 import org.rx.core.EventPublisher;
 import org.rx.net.Sockets;
-import org.rx.net.shadowsocks.encryption.CryptoFactory;
 import org.rx.net.shadowsocks.encryption.ICrypto;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.upstream.Upstream;
@@ -27,7 +25,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
     public ShadowsocksServer(@NonNull ShadowsocksConfig config) {
         bootstrap = Sockets.serverBootstrap(this.config = config, channel -> {
-            ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
+            ICrypto _crypto = ICrypto.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(false);
             channel.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
@@ -37,7 +35,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
         //udp server
         udpChannel = Sockets.udpBootstrap(config, ctx -> {
-            ICrypto _crypto = CryptoFactory.get(config.getMethod(), config.getPassword());
+            ICrypto _crypto = ICrypto.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(true);
             ctx.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 

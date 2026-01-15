@@ -36,7 +36,6 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         ByteBuf buf = Sockets.getMessageBuf(msg);
 
         Channel inbound = ctx.channel();
-
         ICrypto crypt = inbound.attr(ShadowsocksConfig.CIPHER).get();
         byte[] data = new byte[buf.readableBytes()];
         buf.getBytes(0, data);
@@ -47,7 +46,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
                 boolean isUdp = inbound instanceof DatagramChannel;
                 log.warn("cipher decode fail", ExceptionUtils.getRootCause(e)); //可能是密码错误或协议嗅探
                 if (!isUdp) {
-                    ctx.close();
+                    inbound.close();
                 }
                 return;
             }

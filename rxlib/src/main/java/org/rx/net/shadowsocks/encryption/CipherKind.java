@@ -2,7 +2,8 @@ package org.rx.net.shadowsocks.encryption;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import org.rx.net.shadowsocks.encryption.impl.*;
+import org.rx.net.shadowsocks.encryption.impl.AesGcmCrypto;
+import org.rx.net.shadowsocks.encryption.impl.ChaCha20Poly1305Crypto;
 
 @RequiredArgsConstructor
 @Getter
