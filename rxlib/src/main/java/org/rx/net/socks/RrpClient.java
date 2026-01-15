@@ -54,7 +54,7 @@ public class RrpClient extends Disposable {
                     return null;
                 }
                 SocksUser usr = new SocksUser(u);
-                usr.setMaxIpCount(-1);
+                usr.setIpLimit(-1);
                 return usr;
             }, ch -> {
                 int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();

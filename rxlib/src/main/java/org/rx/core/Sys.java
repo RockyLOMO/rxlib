@@ -150,6 +150,14 @@ public final class Sys extends SystemUtils {
 //                .register(TraceHandler.INSTANCE);
         ObjectChangeTracker.DEFAULT.watch(conf).register(Sys.class);
         onChanged(new ObjectChangedEvent(conf, Collections.emptyMap()));
+
+        JSON.register(InetAddress.class, (writer, object, fieldName, fieldType, features) -> {
+            if (object == null) {
+                writer.writeNull();
+            } else {
+                writer.writeString(((InetAddress) object).getHostAddress());
+            }
+        });
     }
 
     @Subscribe(topicClass = RxConfig.class)
