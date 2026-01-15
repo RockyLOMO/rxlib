@@ -7,23 +7,32 @@ import java.net.InetSocketAddress;
 
 public class DnsMessageUtil {
     public static DefaultDnsResponse newResponse(DefaultDnsQuery query, DnsResponse response, boolean isTcp) {
-        DefaultDnsResponse newResponse = newResponse(query, isTcp);
-        newResponse.setOpCode(response.opCode()).setCode(response.code())
-                .setAuthoritativeAnswer(response.isAuthoritativeAnswer())
-                .setTruncated(response.isTruncated())
-                .setRecursionAvailable(response.isRecursionAvailable())
-                .setRecursionDesired(response.isRecursionDesired())
-                .setZ(response.z());
-        for (DnsSection section : DnsSection.values()) {
-            setRecords(section, response, newResponse);
+        if (!isTcp) {
+            if (response instanceof DatagramDnsResponse) {
+                return (DatagramDnsResponse) response;
+            }
+            DatagramDnsQuery udpQuery = (DatagramDnsQuery) query;
+            DefaultDnsResponse newResponse = new DatagramDnsResponse(udpQuery.recipient(), udpQuery.sender(), query.id());
+            newResponse.setOpCode(response.opCode()).setCode(response.code())
+                    .setAuthoritativeAnswer(response.isAuthoritativeAnswer())
+                    .setTruncated(response.isTruncated())
+                    .setRecursionAvailable(response.isRecursionAvailable())
+                    .setRecursionDesired(response.isRecursionDesired())
+                    .setZ(response.z());
+            for (DnsSection section : DnsSection.values()) {
+                setRecords(section, response, newResponse);
+            }
+            return newResponse;
+        } else {
+            return (DefaultDnsResponse) response;
         }
-        return newResponse;
     }
 
     public static DefaultDnsResponse newResponse(DefaultDnsQuery query, boolean isTcp) {
         DefaultDnsResponse response;
-        if (!isTcp && query instanceof DatagramDnsQuery) {
-            response = new DatagramDnsResponse(((DatagramDnsQuery) query).recipient(), ((DatagramDnsQuery) query).sender(), query.id());
+        if (!isTcp) {
+            DatagramDnsQuery udpQuery = (DatagramDnsQuery) query;
+            response = new DatagramDnsResponse(udpQuery.recipient(), udpQuery.sender(), query.id());
         } else {
             response = new DefaultDnsResponse(query.id());
         }
