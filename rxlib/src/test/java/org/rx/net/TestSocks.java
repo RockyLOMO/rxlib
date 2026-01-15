@@ -606,7 +606,7 @@ public class TestSocks extends AbstractTester {
         outConf.setConnectTimeoutMillis(connectTimeoutMillis);
         SocksUser usr = new SocksUser(socks5Usr);
         usr.setPassword(socks5Pwd);
-        usr.setMaxIpCount(-1);
+        usr.setIpLimit(-1);
         outConf.setEnableUdp2raw(udp2raw);
         SocksProxyServer backSvr = new SocksProxyServer(outConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);

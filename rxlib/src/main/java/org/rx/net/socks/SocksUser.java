@@ -41,7 +41,7 @@ public class SocksUser implements Serializable {
     /**
      * 默认0 = 不启用账号
      */
-    int maxIpCount;
+    int ipLimit;
     DateTime lastResetTime;
 
     public boolean isAnonymous() {

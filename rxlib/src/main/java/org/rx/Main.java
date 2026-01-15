@@ -12,7 +12,6 @@ import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
-import org.rx.io.Files;
 import org.rx.io.IOStream;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.OptimalSettings;
@@ -81,11 +80,21 @@ public final class Main implements SocksRpcContract {
     @Getter
     @Setter
     @ToString
+    public static class ShadowUser {
+        public int ssPort;
+        public String ssPwd;
+        public String socksUser;
+        public int ipLimit;
+    }
+
+    @Getter
+    @Setter
+    @ToString
     public static class RSSConf {
         public int logFlags;
 
         //socks
-        public List<String> shadowUsers;
+        public List<ShadowUser> shadowUsers;
         public List<String> socksServers;
         public String socksPwd;
         public int connectTimeoutSeconds = 10;
@@ -247,13 +256,12 @@ public final class Main implements SocksRpcContract {
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
         Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(rssConf.shadowUsers).select(shadowUser -> {
-            String[] sArgs = Strings.split(shadowUser, ":", 4);
-            ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(Integer.parseInt(sArgs[0])),
-                    CipherKind.AES_256_GCM.getCipherName(), sArgs[1]);
+            ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(shadowUser.getSsPort()),
+                    CipherKind.AES_256_GCM.getCipherName(), shadowUser.getSsPwd());
             config.setUdpTimeoutSeconds(rssConf.udpTimeoutSeconds);
-            SocksUser user = new SocksUser(sArgs[2]);
+            SocksUser user = new SocksUser(shadowUser.getSocksUser());
             user.setPassword(rssConf.socksPwd);
-            user.setMaxIpCount(Integer.parseInt(sArgs[3]));
+            user.setIpLimit(shadowUser.getIpLimit());
             return Tuple.of(config, user);
         });
 
@@ -339,7 +347,7 @@ public final class Main implements SocksRpcContract {
         app.await();
     }
 
-    static SocksProxyServer createInSvr(SocksConfig inConf, DefaultSocksAuthenticator authenticator,
+    static SocksProxyServer createInSvr( SocksConfig inConf, DefaultSocksAuthenticator authenticator,
                                         TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> socksServers,
                                         GeoManager geoMgr) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
@@ -574,7 +582,7 @@ public final class Main implements SocksRpcContract {
         }
         SocksUser ssUser = new SocksUser(shadowUser.getUsername());
         ssUser.setPassword(shadowUser.getPassword());
-        ssUser.setMaxIpCount(-1);
+        ssUser.setIpLimit(-1);
 
         SocksConfig outConf = new SocksConfig(port);
         outConf.setDebug(debugFlag);
