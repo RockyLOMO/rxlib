@@ -30,7 +30,7 @@ public class ChaCha20Poly1305Crypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _tcpEncrypt(byte[] data, int length, ByteBuf stream) {
+    protected void _tcpEncrypt(byte[] data, int length, ByteBuf out) {
         ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
         while (buffer.hasRemaining()) {
             int nr = Math.min(buffer.remaining(), PAYLOAD_SIZE_MASK);
@@ -40,7 +40,7 @@ public class ChaCha20Poly1305Crypto extends CryptoAeadBase {
                     encBuffer,
                     encCipher.processBytes(encBuffer, 0, 2, encBuffer, 0)
             );
-            stream.writeBytes(encBuffer, 0, 2 + getTagLength());
+            out.writeBytes(encBuffer, 0, 2 + getTagLength());
             increment(this.encNonce);
 
             buffer.get(encBuffer, 2 + getTagLength(), nr);
@@ -52,7 +52,7 @@ public class ChaCha20Poly1305Crypto extends CryptoAeadBase {
             );
             increment(this.encNonce);
 
-            stream.writeBytes(encBuffer, 2 + getTagLength(), nr + getTagLength());
+            out.writeBytes(encBuffer, 2 + getTagLength(), nr + getTagLength());
         }
     }
 
@@ -125,8 +125,8 @@ public class ChaCha20Poly1305Crypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _udpDecrypt(byte[] data, int length, ByteBuf stream) {
-        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
+    protected void _udpDecrypt(byte[] data, int offset, int length, ByteBuf stream) {
+        ByteBuffer buffer = ByteBuffer.wrap(data, offset, length);
         int remaining = buffer.remaining();
         buffer.get(decBuffer, 0, remaining);
         decCipher.init(false, getCipherParameters(false));
