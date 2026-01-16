@@ -13,7 +13,6 @@ import org.rx.net.shadowsocks.encryption.CryptoAeadBase;
 import java.nio.ByteBuffer;
 import java.security.InvalidAlgorithmParameterException;
 
-@Slf4j
 public class AesGcmCrypto extends CryptoAeadBase {
     public final static String AEAD_AES_128_GCM = "aes-128-gcm";
     public final static String AEAD_AES_192_GCM = "aes-192-gcm";

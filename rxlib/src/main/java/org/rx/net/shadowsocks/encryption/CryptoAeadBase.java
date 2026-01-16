@@ -37,10 +37,6 @@ public abstract class CryptoAeadBase implements ICrypto {
     protected final ShadowSocksKey _ssKey;
     protected final int _keyLength;
     private boolean forUdp;
-    protected boolean _encryptSaltSet;
-    protected boolean _decryptSaltSet;
-    protected final Object encLock = new Object();
-    protected final Object decLock = new Object();
     protected AEADCipher encCipher;
     protected AEADCipher decCipher;
     private byte[] encSubkey;
@@ -70,29 +66,37 @@ public abstract class CryptoAeadBase implements ICrypto {
     @Override
     public ByteBuf encrypt(ByteBuf in) {
         ByteBuf out = Bytes.directBuffer();
-        synchronized (encLock) {
-            if (!_encryptSaltSet || forUdp) {
+        try {
+            if (forUdp) {
                 byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
                 out.writeBytes(salt);
                 encSubkey = genSubkey(salt);
                 encCipher = getCipher(true);
-                _encryptSaltSet = true;
-            }
-            if (!forUdp) {
-                _tcpEncrypt(in, out);
-            } else {
                 _udpEncrypt(in, out);
+            } else {
+                synchronized (encBuffer) {
+                    boolean newSession = encCipher == null;
+                    if (newSession) {
+                        byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
+                        out.writeBytes(salt);
+                        encSubkey = genSubkey(salt);
+                        encCipher = getCipher(true);
+                    }
+                    _tcpEncrypt(in, out);
+                }
             }
+            return out;
+        } catch (Exception e) {
+            out.release();
+            throw e;
         }
-        return out;
     }
 
     @Override
     public ByteBuf decrypt(ByteBuf in) {
         ByteBuf out = Bytes.directBuffer();
-        synchronized (decLock) {
-            boolean newSession = decCipher == null;
-            if (newSession || forUdp) {
+        try {
+            if (forUdp) {
                 int length = in.readableBytes();
                 int saltLen = getSaltLength();
                 if (length < saltLen + getTagLength()) {
@@ -102,26 +106,31 @@ public abstract class CryptoAeadBase implements ICrypto {
                 in.readBytes(salt);
                 decSubkey = genSubkey(salt);
                 decCipher = getCipher(false);
-                _decryptSaltSet = true;
-
-//                int payloadAndTagLen = length - saltLen;
-                if (!forUdp) {
-                    resetDecryptState();
-                    // TCP 首次：处理 salt 后面的 chunk 数据
-                    _tcpDecrypt(in, out);
-                } else {
-                    // UDP：直接解密 payload + tag
-                    _udpDecrypt(in, out);
-                }
+                _udpDecrypt(in, out);
             } else {
-                if (!forUdp) {
+                synchronized (decBuffer) {
+                    boolean newSession = decCipher == null;
+                    if (newSession) {
+                        int length = in.readableBytes();
+                        int saltLen = getSaltLength();
+                        if (length < saltLen + getTagLength()) {
+                            throw new DecoderException("Packet too short");
+                        }
+                        byte[] salt = new byte[saltLen];
+                        in.readBytes(salt);
+                        decSubkey = genSubkey(salt);
+                        decCipher = getCipher(false);
+                        // TCP 首次：处理 salt 后面的 chunk 数据 int payloadAndTagLen = length - saltLen;
+                        resetDecryptState();
+                    }
                     _tcpDecrypt(in, out);
-                } else {
-                    _udpDecrypt(in, out);
                 }
             }
+            return out;
+        } catch (Exception e) {
+            out.release();
+            throw e;
         }
-        return out;
     }
 
     protected void resetDecryptState() {
@@ -137,14 +146,13 @@ public abstract class CryptoAeadBase implements ICrypto {
     }
 
     protected CipherParameters getCipherParameters(boolean forEncryption) {
-//        logger.debug("getCipherParameters subkey:{}",Arrays.toString(forEncryption ? encSubkey : decSubkey));
         byte[] nonce;
         if (!forUdp) {
-            nonce = forEncryption ? Arrays.copyOf(encNonce, NONCE_LENGTH) : Arrays.copyOf(decNonce, NONCE_LENGTH);
-//            nonce = forEncryption ? encNonce : decNonce;
+            nonce = forEncryption ? encNonce : decNonce;
         } else {
             nonce = ZERO_NONCE;
         }
+        //has Arrays.clone(nonce)
         return new AEADParameters(new KeyParameter(forEncryption ? encSubkey : decSubkey), getTagLength() * 8, nonce);
     }
 
