@@ -30,20 +30,21 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramP
             boolean debug = server.config.isDebug();
             InetSocketAddress srcEp = sc.getSource();
             UnresolvedEndpoint dstEp = sc.getFirstDestination();
+            InetSocketAddress realDstEp;
             ByteBuf outBuf = out.content();
             if (sc.tryGetUdpSocksServer() != null) {
                 UnresolvedEndpoint tmp = UdpManager.socks5Decode(outBuf);
-                if (!dstEp.equals(tmp)) {
-                    log.warn("UDP error dstEp not matched {} != {}", dstEp, tmp);
-                }
-                sc.inbound.attr(ShadowsocksConfig.REMOTE_SRC).set(tmp.socketAddress());
+//                if (!dstEp.equals(tmp)) {
+//                    log.warn("UDP dstEp not matched {} != {}", dstEp, tmp);
+//                }
+                sc.inbound.attr(ShadowsocksConfig.UDP_SENDER).set(realDstEp = tmp.socketAddress());
             } else {
-                sc.inbound.attr(ShadowsocksConfig.REMOTE_SRC).set(out.sender());
+                sc.inbound.attr(ShadowsocksConfig.UDP_SENDER).set(realDstEp = out.sender());
             }
 
             sc.inbound.writeAndFlush(new DatagramPacket(outBuf.retain(), srcEp));
             if (debug) {
-                log.info("SS UDP IN {}[{}] => {}", out.sender(), dstEp, srcEp);
+                log.info("SS UDP IN {}[{}] => {}", realDstEp, dstEp, srcEp);
             }
         }
     }
