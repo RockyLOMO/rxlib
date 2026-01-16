@@ -40,8 +40,7 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
         InetSocketAddress addr = null;
         if (isUdp) {
-            addr = UdpManager.socks5Decode(buf).socketAddress();
-//            buf.skipBytes(3);
+            addr = inbound.attr(ShadowsocksConfig.REMOTE_SRC).get();
         }
 
         if (addr == null) {
