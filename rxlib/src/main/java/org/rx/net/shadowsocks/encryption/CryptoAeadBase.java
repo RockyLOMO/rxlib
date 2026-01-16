@@ -13,18 +13,12 @@ import org.bouncycastle.crypto.params.KeyParameter;
 import org.rx.codec.CodecUtil;
 import org.rx.io.Bytes;
 
-import java.nio.ByteBuffer;
-import java.util.Arrays;
-
 public abstract class CryptoAeadBase implements ICrypto {
     protected static int PAYLOAD_SIZE_MASK = 0x3FFF;
+    protected static final int TAG_LENGTH = 16;
     private static final int NONCE_LENGTH = 12;
     private static final byte[] INFO = "ss-subkey".getBytes();
     private static final byte[] ZERO_NONCE = new byte[NONCE_LENGTH];
-
-    protected static int getTagLength() {
-        return 16;
-    }
 
     protected static void increment(byte[] nonce) {
         for (int i = 0; i < nonce.length; i++) {
@@ -44,8 +38,8 @@ public abstract class CryptoAeadBase implements ICrypto {
     private byte[] decSubkey;
     protected byte[] encNonce;
     protected byte[] decNonce;
-    protected final byte[] encBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
-    protected final byte[] decBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
+    protected final byte[] encBuffer = new byte[2 + TAG_LENGTH + PAYLOAD_SIZE_MASK + TAG_LENGTH];
+    protected final byte[] decBuffer = new byte[2 + TAG_LENGTH + PAYLOAD_SIZE_MASK + TAG_LENGTH];
     private static final FastThreadLocal<HKDFBytesGenerator> HKDF_HOLDER = new FastThreadLocal<>();
 
     public CryptoAeadBase(String name, String password) {
@@ -102,7 +96,7 @@ public abstract class CryptoAeadBase implements ICrypto {
                 synchronized (decBuffer) {
                     int length = in.readableBytes();
                     int saltLen = getSaltLength();
-                    if (length < saltLen + getTagLength()) {
+                    if (length < saltLen + TAG_LENGTH) {
                         throw new DecoderException("Packet too short");
                     }
                     byte[] salt = new byte[saltLen];
@@ -116,7 +110,7 @@ public abstract class CryptoAeadBase implements ICrypto {
                 if (newSession) {
                     int length = in.readableBytes();
                     int saltLen = getSaltLength();
-                    if (length < saltLen + getTagLength()) {
+                    if (length < saltLen + TAG_LENGTH) {
                         throw new DecoderException("Packet too short");
                     }
                     byte[] salt = new byte[saltLen];
@@ -158,7 +152,7 @@ public abstract class CryptoAeadBase implements ICrypto {
             nonce = ZERO_NONCE;
         }
         //has Arrays.clone(nonce)
-        return new AEADParameters(new KeyParameter(forEncryption ? encSubkey : decSubkey), getTagLength() * 8, nonce);
+        return new AEADParameters(new KeyParameter(forEncryption ? encSubkey : decSubkey), TAG_LENGTH * 8, nonce);
     }
 
     protected abstract int getKeyLength();

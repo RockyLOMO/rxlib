@@ -38,28 +38,29 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
         Channel inbound = ctx.channel();
         boolean isUdp = inbound instanceof DatagramChannel;
 
-        InetSocketAddress addr = null;
+//        InetSocketAddress addr = null;
         if (isUdp) {
-            addr = inbound.attr(ShadowsocksConfig.REMOTE_SRC).get();
+//            addr = UdpManager.socks5Decode(buf).socketAddress();
+            buf.skipBytes(3);
         }
 
-        if (addr == null) {
-            buf.retain();
-        } else {
-            ByteBuf addrBuf = ctx.alloc().directBuffer(64);
-            UdpManager.encode(addrBuf, addr);
+//        if (addr == null) {
+        buf.retain();
+//        } else {
+//            ByteBuf addrBuf = ctx.alloc().directBuffer(64);
+//            UdpManager.encode(addrBuf, addr);
+//
+//            buf = Unpooled.wrappedBuffer(addrBuf, buf.retain());
+//        }
 
-            buf = Unpooled.wrappedBuffer(addrBuf, buf.retain());
-        }
-
-        if (msg instanceof DatagramPacket) {
-            DatagramPacket pack = (DatagramPacket) msg;
-            if (!buf.equals(pack.content())) {
-                msg = pack.replace(buf);
-            }
-        } else {
-            msg = buf;
-        }
+//        if (msg instanceof DatagramPacket) {
+//            DatagramPacket pack = (DatagramPacket) msg;
+//            if (!buf.equals(pack.content())) {
+//                msg = pack.replace(buf);
+//            }
+//        } else {
+//            msg = buf;
+//        }
         out.add(msg);
     }
 
