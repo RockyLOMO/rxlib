@@ -58,8 +58,8 @@ public class ChaCha20Poly1305Crypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _tcpDecrypt(byte[] data, int length, ByteBuf stream) {
-        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
+    protected void _tcpDecrypt(byte[] data, int offset, int length, ByteBuf stream) {
+        ByteBuffer buffer = ByteBuffer.wrap(data, offset, length);
         while (buffer.hasRemaining()) {
             if (payloadRead == 0) {
                 int wantLen = 2 + getTagLength() - payloadLenRead;

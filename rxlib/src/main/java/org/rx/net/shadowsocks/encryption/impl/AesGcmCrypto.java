@@ -65,10 +65,6 @@ public class AesGcmCrypto extends CryptoAeadBase {
     /**
      * TCP:[encrypted payload length][length tag][encrypted payload][payload tag]
      * UDP:[salt][encrypted payload][tag]
-     * //TODO need return multi chunks
-     *
-     * @param data
-     * @param stream
      */
     @SneakyThrows
     @Override
@@ -100,8 +96,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _tcpDecrypt(byte[] data, int length, ByteBuf stream) {
-        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
+    protected void _tcpDecrypt(byte[] data, int offset, int length, ByteBuf stream) {
+        ByteBuffer buffer = ByteBuffer.wrap(data, offset, length);
         while (buffer.hasRemaining()) {
             // 1. 读取并解密长度信息 (2字节长度 + 16字节Tag)
             if (payloadRead == 0) {
