@@ -29,8 +29,7 @@ public abstract class CryptoAeadBase implements ICrypto {
 
     protected static void increment(byte[] nonce) {
         for (int i = 0; i < nonce.length; i++) {
-            ++nonce[i];
-            if (nonce[i] != 0) {
+            if (++nonce[i] != 0) {
                 break;
             }
         }
@@ -114,21 +113,19 @@ public abstract class CryptoAeadBase implements ICrypto {
         byte[] temp;
         synchronized (decLock) {
             stream.clear();
-            ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
             if (decCipher == null || forUdp) {
                 _decryptSaltSet = true;
-                byte[] salt = new byte[getSaltLength()];
-                buffer.get(salt);
+                int saltLen = getSaltLength();
+                byte[] salt = new byte[saltLen];
+                System.arraycopy(data, 0, salt, 0, saltLen);
                 decSubkey = genSubkey(salt);
                 decCipher = getCipher(false);
 
-                int remaining = buffer.remaining();
-                temp = new byte[remaining];
-                buffer.get(temp);
-                _tcpDecrypt(temp, remaining, stream);
+                int remaining = length - saltLen;
+                _tcpDecrypt(data, saltLen, remaining, stream);
             } else {
                 if (!forUdp) {
-                    _tcpDecrypt(data, length, stream);
+                    _tcpDecrypt(data, 0, length, stream);
                 } else {
                     _udpDecrypt(data, length, stream);
                 }
@@ -163,7 +160,7 @@ public abstract class CryptoAeadBase implements ICrypto {
 
     protected abstract void _tcpEncrypt(byte[] data, int length, ByteBuf stream);
 
-    protected abstract void _tcpDecrypt(byte[] data, int length, ByteBuf stream);
+    protected abstract void _tcpDecrypt(byte[] data, int offset, int length, ByteBuf stream);
 
     protected abstract void _udpEncrypt(byte[] data, int length, ByteBuf stream);
 
