@@ -64,13 +64,13 @@ public abstract class CryptoAeadBase implements ICrypto {
         ByteBuf out = Bytes.directBuffer();
         try {
             if (forUdp) {
-                synchronized (encBuffer) {
+//                synchronized (encBuffer) {
                     byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
                     out.writeBytes(salt);
                     encSubkey = genSubkey(salt);
                     encCipher = getCipher(true);
                     _udpEncrypt(in, out);
-                }
+//                }
             } else {
                 boolean newSession = encCipher == null;
                 if (newSession) {
@@ -93,7 +93,7 @@ public abstract class CryptoAeadBase implements ICrypto {
         ByteBuf out = Bytes.directBuffer();
         try {
             if (forUdp) {
-                synchronized (decBuffer) {
+//                synchronized (decBuffer) {
                     int length = in.readableBytes();
                     int saltLen = getSaltLength();
                     if (length < saltLen + TAG_LENGTH) {
@@ -104,7 +104,7 @@ public abstract class CryptoAeadBase implements ICrypto {
                     decSubkey = genSubkey(salt);
                     decCipher = getCipher(false);
                     _udpDecrypt(in, out);
-                }
+//                }
             } else {
                 boolean newSession = decCipher == null;
                 if (newSession) {
