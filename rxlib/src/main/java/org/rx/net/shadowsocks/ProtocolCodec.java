@@ -53,7 +53,10 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
         }
 
         if (msg instanceof DatagramPacket) {
-            msg = ((DatagramPacket) msg).replace(buf);
+            DatagramPacket pack = (DatagramPacket) msg;
+            if (!buf.equals(pack.content())) {
+                msg = pack.replace(buf);
+            }
         } else {
             msg = buf;
         }
