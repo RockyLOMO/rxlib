@@ -25,7 +25,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         ICrypto crypt = ctx.channel().attr(ShadowsocksConfig.CIPHER).get();
         byte[] data = new byte[buf.readableBytes()];
         buf.getBytes(0, data);
-        crypt.encrypt(data, buf);
+        crypt.encrypt(data, data.length, buf);
 
         buf.retain();
         out.add(msg);
@@ -40,7 +40,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         byte[] data = new byte[buf.readableBytes()];
         buf.getBytes(0, data);
         try {
-            crypt.decrypt(data, buf);
+            crypt.decrypt(data, data.length, buf);
         } catch (Exception e) {
             if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
                 boolean isUdp = inbound instanceof DatagramChannel;

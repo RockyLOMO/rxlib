@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.modes.AEADCipher;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
+import org.rx.io.Bytes;
 import org.rx.net.shadowsocks.encryption.CryptoAeadBase;
 
 import java.nio.ByteBuffer;
@@ -68,29 +69,32 @@ public class AesGcmCrypto extends CryptoAeadBase {
      */
     @SneakyThrows
     @Override
-    protected void _tcpEncrypt(byte[] data, int length, ByteBuf stream) {
+    protected void _tcpEncrypt(byte[] data, int length, ByteBuf out) {
         ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
+        int lenTagSize = 2 + getTagLength();
+
         while (buffer.hasRemaining()) {
-            int nr = Math.min(buffer.remaining(), PAYLOAD_SIZE_MASK);
-            ByteBuffer.wrap(encBuffer).putShort((short) nr);
+            int chunkSize = Math.min(buffer.remaining(), PAYLOAD_SIZE_MASK);
+            // 加密长度字段
+            encBuffer[0] = (byte) (chunkSize >> 8);
+            encBuffer[1] = (byte) chunkSize;
             encCipher.init(true, getCipherParameters(true));
             encCipher.doFinal(
                     encBuffer,
                     encCipher.processBytes(encBuffer, 0, 2, encBuffer, 0)
             );
-            stream.writeBytes(encBuffer, 0, 2 + getTagLength());
             increment(this.encNonce);
+            out.writeBytes(encBuffer, 0, lenTagSize);
 
-            buffer.get(encBuffer, 2 + getTagLength(), nr);
-
+            // 加密 payload
+            buffer.get(encBuffer, lenTagSize, chunkSize);
             encCipher.init(true, getCipherParameters(true));
             encCipher.doFinal(
                     encBuffer,
-                    2 + getTagLength() + encCipher.processBytes(encBuffer, 2 + getTagLength(), nr, encBuffer, 2 + getTagLength())
+                    lenTagSize + encCipher.processBytes(encBuffer, lenTagSize, chunkSize, encBuffer, lenTagSize)
             );
             increment(this.encNonce);
-
-            stream.writeBytes(encBuffer, 2 + getTagLength(), nr + getTagLength());
+            out.writeBytes(encBuffer, lenTagSize, chunkSize + getTagLength());
         }
     }
 
@@ -179,8 +183,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _udpDecrypt(byte[] data, int length, ByteBuf stream) {
-        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
+    protected void _udpDecrypt(byte[] data, int offset, int length, ByteBuf stream) {
+        ByteBuffer buffer = ByteBuffer.wrap(data, offset, length);
         int remaining = buffer.remaining();
         buffer.get(decBuffer, 0, remaining);
         decCipher.init(false, getCipherParameters(false));
