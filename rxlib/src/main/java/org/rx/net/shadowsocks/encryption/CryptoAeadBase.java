@@ -2,6 +2,7 @@ package org.rx.net.shadowsocks.encryption;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
+import io.netty.util.concurrent.FastThreadLocal;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.digests.SHA1Digest;
 import org.bouncycastle.crypto.generators.HKDFBytesGenerator;
@@ -45,6 +46,7 @@ public abstract class CryptoAeadBase implements ICrypto {
     protected byte[] decNonce;
     protected final byte[] encBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
     protected final byte[] decBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
+    private static final FastThreadLocal<HKDFBytesGenerator> HKDF_HOLDER = new FastThreadLocal<>();
 
     public CryptoAeadBase(String name, String password) {
         _name = name.toLowerCase();
@@ -68,22 +70,22 @@ public abstract class CryptoAeadBase implements ICrypto {
         ByteBuf out = Bytes.directBuffer();
         try {
             if (forUdp) {
-                byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
-                out.writeBytes(salt);
-                encSubkey = genSubkey(salt);
-                encCipher = getCipher(true);
-                _udpEncrypt(in, out);
-            } else {
                 synchronized (encBuffer) {
-                    boolean newSession = encCipher == null;
-                    if (newSession) {
-                        byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
-                        out.writeBytes(salt);
-                        encSubkey = genSubkey(salt);
-                        encCipher = getCipher(true);
-                    }
-                    _tcpEncrypt(in, out);
+                    byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
+                    out.writeBytes(salt);
+                    encSubkey = genSubkey(salt);
+                    encCipher = getCipher(true);
+                    _udpEncrypt(in, out);
                 }
+            } else {
+                boolean newSession = encCipher == null;
+                if (newSession) {
+                    byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
+                    out.writeBytes(salt);
+                    encSubkey = genSubkey(salt);
+                    encCipher = getCipher(true);
+                }
+                _tcpEncrypt(in, out);
             }
             return out;
         } catch (Exception e) {
@@ -97,34 +99,34 @@ public abstract class CryptoAeadBase implements ICrypto {
         ByteBuf out = Bytes.directBuffer();
         try {
             if (forUdp) {
-                int length = in.readableBytes();
-                int saltLen = getSaltLength();
-                if (length < saltLen + getTagLength()) {
-                    throw new DecoderException("Packet too short");
-                }
-                byte[] salt = new byte[saltLen];
-                in.readBytes(salt);
-                decSubkey = genSubkey(salt);
-                decCipher = getCipher(false);
-                _udpDecrypt(in, out);
-            } else {
                 synchronized (decBuffer) {
-                    boolean newSession = decCipher == null;
-                    if (newSession) {
-                        int length = in.readableBytes();
-                        int saltLen = getSaltLength();
-                        if (length < saltLen + getTagLength()) {
-                            throw new DecoderException("Packet too short");
-                        }
-                        byte[] salt = new byte[saltLen];
-                        in.readBytes(salt);
-                        decSubkey = genSubkey(salt);
-                        decCipher = getCipher(false);
-                        // TCP 首次：处理 salt 后面的 chunk 数据 int payloadAndTagLen = length - saltLen;
-                        resetDecryptState();
+                    int length = in.readableBytes();
+                    int saltLen = getSaltLength();
+                    if (length < saltLen + getTagLength()) {
+                        throw new DecoderException("Packet too short");
                     }
-                    _tcpDecrypt(in, out);
+                    byte[] salt = new byte[saltLen];
+                    in.readBytes(salt);
+                    decSubkey = genSubkey(salt);
+                    decCipher = getCipher(false);
+                    _udpDecrypt(in, out);
                 }
+            } else {
+                boolean newSession = decCipher == null;
+                if (newSession) {
+                    int length = in.readableBytes();
+                    int saltLen = getSaltLength();
+                    if (length < saltLen + getTagLength()) {
+                        throw new DecoderException("Packet too short");
+                    }
+                    byte[] salt = new byte[saltLen];
+                    in.readBytes(salt);
+                    decSubkey = genSubkey(salt);
+                    decCipher = getCipher(false);
+                    // TCP 首次：处理 salt 后面的 chunk 数据 int payloadAndTagLen = length - saltLen;
+                    resetDecryptState();
+                }
+                _tcpDecrypt(in, out);
             }
             return out;
         } catch (Exception e) {
@@ -138,7 +140,10 @@ public abstract class CryptoAeadBase implements ICrypto {
     }
 
     private byte[] genSubkey(byte[] salt) {
-        HKDFBytesGenerator hkdf = new HKDFBytesGenerator(new SHA1Digest());
+        HKDFBytesGenerator hkdf = HKDF_HOLDER.get();
+        if (hkdf == null) {
+            HKDF_HOLDER.set(hkdf = new HKDFBytesGenerator(new SHA1Digest()));
+        }
         hkdf.init(new HKDFParameters(_ssKey.getEncoded(), salt, INFO));
         byte[] okm = new byte[getKeyLength()];
         hkdf.generateBytes(okm, 0, getKeyLength());
