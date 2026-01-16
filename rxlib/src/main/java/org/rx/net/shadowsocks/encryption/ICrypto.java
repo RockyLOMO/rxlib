@@ -22,7 +22,7 @@ public interface ICrypto {
 
     void setForUdp(boolean forUdp);
 
-    void encrypt(byte[] data, int length, ByteBuf out);
+    ByteBuf encrypt(ByteBuf in);
 
-    void decrypt(byte[] data, int length, ByteBuf out);
+    ByteBuf decrypt(ByteBuf in);
 }

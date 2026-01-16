@@ -81,12 +81,11 @@ public class AesGcmCrypto extends CryptoAeadBase {
      */
     @SneakyThrows
     @Override
-    protected void _tcpEncrypt(byte[] data, int length, ByteBuf out) {
-        ByteBuffer buffer = ByteBuffer.wrap(data, 0, length);
+    protected void _tcpEncrypt(ByteBuf in, ByteBuf out) {
         int lenTagSize = 2 + getTagLength();
 
-        while (buffer.hasRemaining()) {
-            int chunkSize = Math.min(buffer.remaining(), PAYLOAD_SIZE_MASK);
+        while (in.isReadable()) {
+            int chunkSize = Math.min(in.readableBytes(), PAYLOAD_SIZE_MASK);
             // 加密长度字段
             encBuffer[0] = (byte) (chunkSize >> 8);
             encBuffer[1] = (byte) chunkSize;
@@ -99,7 +98,7 @@ public class AesGcmCrypto extends CryptoAeadBase {
             out.writeBytes(encBuffer, 0, lenTagSize);
 
             // 加密 payload
-            buffer.get(encBuffer, lenTagSize, chunkSize);
+            in.readBytes(encBuffer, lenTagSize, chunkSize);
             encCipher.init(true, getCipherParameters(true));
             encCipher.doFinal(
                     encBuffer,
@@ -112,16 +111,15 @@ public class AesGcmCrypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _tcpDecrypt(byte[] data, int offset, int length, ByteBuf out) {
-        ByteBuffer buffer = ByteBuffer.wrap(data, offset, length);
+    protected void _tcpDecrypt(ByteBuf in, ByteBuf out) {
         int lenTagSize = 2 + getTagLength();
 
-        while (buffer.hasRemaining()) {
+        while (in.isReadable()) {
             if (readingLengthPhase) {
                 // 读取并解密长度字段
                 int toRead = lenTagSize - phaseBytesRead;
-                int readNow = Math.min(toRead, buffer.remaining());
-                buffer.get(decBuffer, phaseBytesRead, readNow);
+                int readNow = Math.min(toRead, in.readableBytes());
+                in.readBytes(decBuffer, phaseBytesRead, readNow);
                 phaseBytesRead += readNow;
 
                 if (phaseBytesRead < lenTagSize) {
@@ -146,8 +144,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
                 // 读取并解密 payload + tag
                 int payloadTagSize = currentPayloadLength + getTagLength();
                 int toRead = payloadTagSize - phaseBytesRead;
-                int readNow = Math.min(toRead, buffer.remaining());
-                buffer.get(decBuffer, lenTagSize + phaseBytesRead, readNow);
+                int readNow = Math.min(toRead, in.readableBytes());
+                in.readBytes(decBuffer, lenTagSize + phaseBytesRead, readNow);
                 phaseBytesRead += readNow;
 
                 if (phaseBytesRead < payloadTagSize) {
@@ -168,92 +166,31 @@ public class AesGcmCrypto extends CryptoAeadBase {
                 currentPayloadLength = 0;
             }
         }
-//        while (buffer.hasRemaining()) {
-//            // 1. 读取并解密长度信息 (2字节长度 + 16字节Tag)
-//            if (payloadRead == 0) {
-//                int wantLen = lenTagSize - payloadLenRead;
-//                int remaining = buffer.remaining();
-//                int canRead = Math.min(wantLen, remaining);
-//
-//                buffer.get(decBuffer, payloadLenRead, canRead);
-//                payloadLenRead += canRead;
-//
-//                if (payloadLenRead < 2 + getTagLength()) {
-//                    return; // 长度信息还没读够，等下一波数据
-//                }
-//
-//                // 解密长度字段
-//                decCipher.init(false, getCipherParameters(false));
-//                decCipher.doFinal(
-//                        decBuffer,
-//                        decCipher.processBytes(decBuffer, 0, 2 + getTagLength(), decBuffer, 0)
-//                );
-//                increment(decNonce);
-//
-//                // 标记：我们现在已经拿到了解密后的长度，准备读取 Payload
-//                // 故意让 payloadRead = 0.0001 (或者使用 boolean flag) 来区分状态
-//                payloadRead = -1;
-//            }
-//
-//            // 2. 解析长度
-//            int size = ((decBuffer[0] & 0xFF) << 8) | (decBuffer[1] & 0xFF);
-//            if (size > PAYLOAD_SIZE_MASK) {
-//                throw new DecoderException("Payload too large: " + size);
-//            }
-//
-//            // 3. 读取并解密 Payload (size字节数据 + 16字节Tag)
-//            int currentPayloadRead = (payloadRead == -1) ? 0 : payloadRead;
-//            int wantLen = size + getTagLength() - currentPayloadRead;
-//            int remaining = buffer.remaining();
-//            int canRead = Math.min(wantLen, remaining);
-//
-//            // 写入偏移量从 2+Tag 开始，避免覆盖已经解密的长度信息（如果逻辑需要）
-//            buffer.get(decBuffer, 2 + getTagLength() + currentPayloadRead, canRead);
-//
-//            if (payloadRead == -1) payloadRead = 0;
-//            payloadRead += canRead;
-//
-//            if (payloadRead < size + getTagLength()) {
-//                return; // Payload 还没读够
-//            }
-//
-//            // 解密 Payload
-//            decCipher.init(false, getCipherParameters(false));
-//            decCipher.doFinal(
-//                    decBuffer,
-//                    (2 + getTagLength()) + decCipher.processBytes(decBuffer, 2 + getTagLength(), size + getTagLength(), decBuffer, 2 + getTagLength())
-//            );
-//            increment(decNonce);
-//
-//            // 写入结果并重置
-//            out.writeBytes(decBuffer, 2 + getTagLength(), size);
-//
-//            payloadLenRead = 0;
-//            payloadRead = 0;
-//        }
     }
 
     @SneakyThrows
     @Override
-    protected void _udpEncrypt(byte[] data, int length, ByteBuf stream) {
-        System.arraycopy(data, 0, encBuffer, 0, length);
+    protected void _udpEncrypt(ByteBuf in, ByteBuf out) {
+        int length = in.readableBytes();
+        in.readBytes(encBuffer, 0, length);
         encCipher.init(true, getCipherParameters(true));
         encCipher.doFinal(
                 encBuffer,
                 encCipher.processBytes(encBuffer, 0, length, encBuffer, 0)
         );
-        stream.writeBytes(encBuffer, 0, length + getTagLength());
+        out.writeBytes(encBuffer, 0, length + getTagLength());
     }
 
     @SneakyThrows
     @Override
-    protected void _udpDecrypt(byte[] data, int offset, int length, ByteBuf stream) {
-        System.arraycopy(data, offset, decBuffer, 0, length);
+    protected void _udpDecrypt(ByteBuf in, ByteBuf out) {
+        int length = in.readableBytes();
+        in.readBytes(decBuffer, 0, length);
         decCipher.init(false, getCipherParameters(false));
         decCipher.doFinal(
                 decBuffer,
                 decCipher.processBytes(decBuffer, 0, length, decBuffer, 0)
         );
-        stream.writeBytes(decBuffer, 0, length - getTagLength());
+        out.writeBytes(decBuffer, 0, length - getTagLength());
     }
 }

@@ -5,6 +5,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramChannel;
+import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -20,30 +21,37 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
 
     @Override
     protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
-        ByteBuf buf = Sockets.getMessageBuf(msg);
+        ByteBuf inBuf = Sockets.getMessageBuf(msg);
 
         ICrypto crypt = ctx.channel().attr(ShadowsocksConfig.CIPHER).get();
-        byte[] data = new byte[buf.readableBytes()];
-        buf.getBytes(0, data);
-        crypt.encrypt(data, data.length, buf);
+        ByteBuf outBuf = crypt.encrypt(inBuf);
 
-        buf.retain();
+        if (msg instanceof DatagramPacket) {
+            msg = ((DatagramPacket) msg).replace(outBuf);
+        } else {
+            msg = outBuf;
+        }
         out.add(msg);
     }
 
     @Override
     protected void decode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
-        ByteBuf buf = Sockets.getMessageBuf(msg);
+        ByteBuf inBuf = Sockets.getMessageBuf(msg);
 
         Channel inbound = ctx.channel();
         ICrypto crypt = inbound.attr(ShadowsocksConfig.CIPHER).get();
-        byte[] data = new byte[buf.readableBytes()];
-        buf.getBytes(0, data);
+        boolean isUdp = inbound instanceof DatagramChannel;
         try {
-            crypt.decrypt(data, data.length, buf);
+            ByteBuf outBuf = crypt.decrypt(inBuf);
+
+            if (isUdp) {
+                msg = ((DatagramPacket) msg).replace(outBuf);
+            } else {
+                msg = outBuf;
+            }
+            out.add(msg);
         } catch (Exception e) {
             if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
-                boolean isUdp = inbound instanceof DatagramChannel;
                 log.warn("cipher decode fail", ExceptionUtils.getRootCause(e)); //可能是密码错误或协议嗅探
                 if (!isUdp) {
                     inbound.close();
@@ -52,8 +60,5 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
             }
             throw e;
         }
-
-        buf.retain();
-        out.add(msg);
     }
 }

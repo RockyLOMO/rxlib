@@ -10,11 +10,11 @@ import org.bouncycastle.crypto.params.AEADParameters;
 import org.bouncycastle.crypto.params.HKDFParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.rx.codec.CodecUtil;
+import org.rx.io.Bytes;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
-//TODO unfinished
 public abstract class CryptoAeadBase implements ICrypto {
     protected static int PAYLOAD_SIZE_MASK = 0x3FFF;
     private static final int NONCE_LENGTH = 12;
@@ -49,14 +49,6 @@ public abstract class CryptoAeadBase implements ICrypto {
     protected byte[] decNonce;
     protected final byte[] encBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
     protected final byte[] decBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
-//    /**
-//     * last chunk payload len already read size
-//     */
-//    protected int payloadLenRead = 0;
-//    /**
-//     * last chunk payload already read size
-//     */
-//    protected int payloadRead = 0;
 
     public CryptoAeadBase(String name, String password) {
         _name = name.toLowerCase();
@@ -76,10 +68,9 @@ public abstract class CryptoAeadBase implements ICrypto {
     }
 
     @Override
-    public void encrypt(byte[] data, int length, ByteBuf out) {
-//        logger.debug("{} encrypt {}", this.hashCode(),new String(data, Charset.forName("GBK")));
+    public ByteBuf encrypt(ByteBuf in) {
+        ByteBuf out = Bytes.directBuffer();
         synchronized (encLock) {
-            out.clear();
             if (!_encryptSaltSet || forUdp) {
                 byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
                 out.writeBytes(salt);
@@ -88,47 +79,49 @@ public abstract class CryptoAeadBase implements ICrypto {
                 _encryptSaltSet = true;
             }
             if (!forUdp) {
-                _tcpEncrypt(data, length, out);
+                _tcpEncrypt(in, out);
             } else {
-                _udpEncrypt(data, length, out);
+                _udpEncrypt(in, out);
             }
         }
+        return out;
     }
 
     @Override
-    public void decrypt(byte[] data, int length, ByteBuf out) {
-//        logger.debug("{} decrypt {}", this.hashCode(),Arrays.toString(data));
+    public ByteBuf decrypt(ByteBuf in) {
+        ByteBuf out = Bytes.directBuffer();
         synchronized (decLock) {
-            out.clear();
             boolean newSession = decCipher == null;
             if (newSession || forUdp) {
+                int length = in.readableBytes();
                 int saltLen = getSaltLength();
                 if (length < saltLen + getTagLength()) {
                     throw new DecoderException("Packet too short");
                 }
                 byte[] salt = new byte[saltLen];
-                System.arraycopy(data, 0, salt, 0, saltLen);
+                in.readBytes(salt);
                 decSubkey = genSubkey(salt);
                 decCipher = getCipher(false);
                 _decryptSaltSet = true;
 
-                int payloadAndTagLen = length - saltLen;
+//                int payloadAndTagLen = length - saltLen;
                 if (!forUdp) {
                     resetDecryptState();
                     // TCP 首次：处理 salt 后面的 chunk 数据
-                    _tcpDecrypt(data, saltLen, payloadAndTagLen, out);
+                    _tcpDecrypt(in, out);
                 } else {
                     // UDP：直接解密 payload + tag
-                    _udpDecrypt(data, saltLen, payloadAndTagLen, out);
+                    _udpDecrypt(in, out);
                 }
             } else {
                 if (!forUdp) {
-                    _tcpDecrypt(data, 0, length, out);
+                    _tcpDecrypt(in, out);
                 } else {
-                    _udpDecrypt(data, 0, length, out);
+                    _udpDecrypt(in, out);
                 }
             }
         }
+        return out;
     }
 
     protected void resetDecryptState() {
@@ -161,11 +154,11 @@ public abstract class CryptoAeadBase implements ICrypto {
 
     protected abstract AEADCipher getCipher(boolean isEncrypted);
 
-    protected abstract void _tcpEncrypt(byte[] data, int length, ByteBuf out);
+    protected abstract void _tcpEncrypt(ByteBuf in, ByteBuf out);
 
-    protected abstract void _tcpDecrypt(byte[] data, int offset, int length, ByteBuf out);
+    protected abstract void _tcpDecrypt(ByteBuf in, ByteBuf out);
 
-    protected abstract void _udpEncrypt(byte[] data, int length, ByteBuf stream);
+    protected abstract void _udpEncrypt(ByteBuf in, ByteBuf out);
 
-    protected abstract void _udpDecrypt(byte[] data, int offset, int length, ByteBuf stream);
+    protected abstract void _udpDecrypt(ByteBuf in, ByteBuf out);
 }
