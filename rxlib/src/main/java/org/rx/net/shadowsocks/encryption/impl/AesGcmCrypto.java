@@ -3,14 +3,11 @@ package org.rx.net.shadowsocks.encryption.impl;
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.modes.AEADCipher;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
-import org.rx.io.Bytes;
 import org.rx.net.shadowsocks.encryption.CryptoAeadBase;
 
-import java.nio.ByteBuffer;
 import java.security.InvalidAlgorithmParameterException;
 
 public class AesGcmCrypto extends CryptoAeadBase {
@@ -81,7 +78,7 @@ public class AesGcmCrypto extends CryptoAeadBase {
     @SneakyThrows
     @Override
     protected void _tcpEncrypt(ByteBuf in, ByteBuf out) {
-        int lenTagSize = 2 + getTagLength();
+        int lenTagSize = 2 + TAG_LENGTH;
 
         while (in.isReadable()) {
             int chunkSize = Math.min(in.readableBytes(), PAYLOAD_SIZE_MASK);
@@ -104,14 +101,14 @@ public class AesGcmCrypto extends CryptoAeadBase {
                     lenTagSize + encCipher.processBytes(encBuffer, lenTagSize, chunkSize, encBuffer, lenTagSize)
             );
             increment(this.encNonce);
-            out.writeBytes(encBuffer, lenTagSize, chunkSize + getTagLength());
+            out.writeBytes(encBuffer, lenTagSize, chunkSize + TAG_LENGTH);
         }
     }
 
     @SneakyThrows
     @Override
     protected void _tcpDecrypt(ByteBuf in, ByteBuf out) {
-        int lenTagSize = 2 + getTagLength();
+        int lenTagSize = 2 + TAG_LENGTH;
 
         while (in.isReadable()) {
             if (readingLengthPhase) {
@@ -141,7 +138,7 @@ public class AesGcmCrypto extends CryptoAeadBase {
                 phaseBytesRead = 0;
             } else {
                 // 读取并解密 payload + tag
-                int payloadTagSize = currentPayloadLength + getTagLength();
+                int payloadTagSize = currentPayloadLength + TAG_LENGTH;
                 int toRead = payloadTagSize - phaseBytesRead;
                 int readNow = Math.min(toRead, in.readableBytes());
                 in.readBytes(decBuffer, lenTagSize + phaseBytesRead, readNow);
@@ -177,7 +174,7 @@ public class AesGcmCrypto extends CryptoAeadBase {
                 encBuffer,
                 encCipher.processBytes(encBuffer, 0, length, encBuffer, 0)
         );
-        out.writeBytes(encBuffer, 0, length + getTagLength());
+        out.writeBytes(encBuffer, 0, length + TAG_LENGTH);
     }
 
     @SneakyThrows
@@ -190,6 +187,6 @@ public class AesGcmCrypto extends CryptoAeadBase {
                 decBuffer,
                 decCipher.processBytes(decBuffer, 0, length, decBuffer, 0)
         );
-        out.writeBytes(decBuffer, 0, length - getTagLength());
+        out.writeBytes(decBuffer, 0, length - TAG_LENGTH);
     }
 }
