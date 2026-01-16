@@ -9,6 +9,15 @@ import org.rx.net.shadowsocks.encryption.CryptoAeadBase;
 import java.nio.ByteBuffer;
 
 public class ChaCha20Poly1305Crypto extends CryptoAeadBase {
+    /**
+     * last chunk payload len already read size
+     */
+    protected int payloadLenRead = 0;
+    /**
+     * last chunk payload already read size
+     */
+    protected int payloadRead = 0;
+
     public ChaCha20Poly1305Crypto(String name, String password) {
         super(name, password);
     }
@@ -58,7 +67,7 @@ public class ChaCha20Poly1305Crypto extends CryptoAeadBase {
 
     @SneakyThrows
     @Override
-    protected void _tcpDecrypt(byte[] data, int offset, int length, ByteBuf stream) {
+    protected void _tcpDecrypt(byte[] data, int offset, int length, ByteBuf out) {
         ByteBuffer buffer = ByteBuffer.wrap(data, offset, length);
         while (buffer.hasRemaining()) {
             if (payloadRead == 0) {
@@ -105,7 +114,7 @@ public class ChaCha20Poly1305Crypto extends CryptoAeadBase {
             payloadLenRead = 0;
             payloadRead = 0;
 
-            stream.writeBytes(decBuffer, 2 + getTagLength(), size);
+            out.writeBytes(decBuffer, 2 + getTagLength(), size);
         }
     }
 

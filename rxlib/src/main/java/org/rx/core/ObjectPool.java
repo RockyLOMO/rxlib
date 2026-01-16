@@ -211,7 +211,9 @@ public class ObjectPool<T> extends Disposable {
                     c.setBorrowed(true);
                     return wrapper;
                 } catch (Throwable e) {
-                    doRetire(wrapper, 0);
+                    if (wrapper != null) {
+                        doRetire(wrapper, 0);
+                    }
                     throw e;
                 }
             }
@@ -244,7 +246,9 @@ public class ObjectPool<T> extends Disposable {
             c.setBorrowed(true);
             return wrapper;
         } catch (Throwable e) {
-            doRetire(wrapper, 0);
+            if (wrapper != null) {
+                doRetire(wrapper, 0);
+            }
             throw e;
         }
     }

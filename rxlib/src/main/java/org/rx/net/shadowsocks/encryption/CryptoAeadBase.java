@@ -49,14 +49,14 @@ public abstract class CryptoAeadBase implements ICrypto {
     protected byte[] decNonce;
     protected final byte[] encBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
     protected final byte[] decBuffer = new byte[2 + getTagLength() + PAYLOAD_SIZE_MASK + getTagLength()];
-    /**
-     * last chunk payload len already read size
-     */
-    protected int payloadLenRead = 0;
-    /**
-     * last chunk payload already read size
-     */
-    protected int payloadRead = 0;
+//    /**
+//     * last chunk payload len already read size
+//     */
+//    protected int payloadLenRead = 0;
+//    /**
+//     * last chunk payload already read size
+//     */
+//    protected int payloadRead = 0;
 
     public CryptoAeadBase(String name, String password) {
         _name = name.toLowerCase();
@@ -100,23 +100,6 @@ public abstract class CryptoAeadBase implements ICrypto {
 //        logger.debug("{} decrypt {}", this.hashCode(),Arrays.toString(data));
         synchronized (decLock) {
             out.clear();
-//            if (decCipher == null || forUdp) {
-//                _decryptSaltSet = true;
-//                int saltLen = getSaltLength();
-//                byte[] salt = new byte[saltLen];
-//                System.arraycopy(data, 0, salt, 0, saltLen);
-//                decSubkey = genSubkey(salt);
-//                decCipher = getCipher(false);
-//
-//                int remaining = length - saltLen;
-//                _tcpDecrypt(data, saltLen, remaining, stream);
-//            } else {
-//                if (!forUdp) {
-//                    _tcpDecrypt(data, 0, length, stream);
-//                } else {
-//                    _udpDecrypt(data, length, stream);
-//                }
-//            }
             boolean newSession = decCipher == null;
             if (newSession || forUdp) {
                 int saltLen = getSaltLength();
@@ -180,7 +163,7 @@ public abstract class CryptoAeadBase implements ICrypto {
 
     protected abstract void _tcpEncrypt(byte[] data, int length, ByteBuf out);
 
-    protected abstract void _tcpDecrypt(byte[] data, int offset, int length, ByteBuf stream);
+    protected abstract void _tcpDecrypt(byte[] data, int offset, int length, ByteBuf out);
 
     protected abstract void _udpEncrypt(byte[] data, int length, ByteBuf stream);
 
