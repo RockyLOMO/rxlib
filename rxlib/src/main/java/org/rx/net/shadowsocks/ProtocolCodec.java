@@ -40,7 +40,7 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
         InetSocketAddress addr = null;
         if (isUdp) {
-            addr = inbound.attr(ShadowsocksConfig.REMOTE_SRC).get();
+            addr = inbound.attr(ShadowsocksConfig.UDP_SENDER).get();
         }
 
         if (addr == null) {
@@ -54,9 +54,9 @@ public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
 
         if (msg instanceof DatagramPacket) {
             DatagramPacket pack = (DatagramPacket) msg;
-//            if (!buf.equals(pack.content())) {
+            if (!buf.equals(pack.content())) {
                 msg = pack.replace(buf);
-//            }
+            }
         } else {
             msg = buf;
         }
