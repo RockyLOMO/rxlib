@@ -94,7 +94,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (!udp2rawClient.equals(srcEp)) {
             InetSocketAddress clientEp = in.sender();
             final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-            SocksContext e = SocksContext.newCtx(clientEp, dstEp);
+            SocksContext e = SocksContext.getCtx(clientEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
             UnresolvedEndpoint upDstEp = upstream.getDestination();
@@ -148,19 +148,19 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
         final UnresolvedEndpoint clientEp = UdpManager.decode(inBuf);
         final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
-        SocksContext e = SocksContext.newCtx(clientEp.socketAddress(), dstEp);
+        SocksContext e = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
         e.udp2rawServer = srcEp;
         server.raiseEvent(server.onUdpRoute, e);
         Upstream upstream = e.getUpstream();
         ChannelFuture outboundFuture = UdpManager.open(UdpManager.udp2rawRegion, clientEp.socketAddress(), upstream.getConfig(), k -> {
-            ChannelFuture chf = Sockets.udpBootstrap(k, ob -> {
+            ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()), UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0));
             log.info("UDP2RAW[{}] server open {}", config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
                 log.info("UDP2RAW[{}] server close {}", config.getListenPort(), k);
-                UdpManager.close(UdpManager.udp2rawRegion, clientEp.socketAddress(), k);
+                UdpManager.close(k);
             });
             return chf;
         });

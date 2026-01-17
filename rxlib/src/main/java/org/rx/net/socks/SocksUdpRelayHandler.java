@@ -77,11 +77,12 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         //不要尝试UPD白名单，会有未知dstEp发送包的情况
         //不要尝试简化outbound，不改包的情况下srcEp没法关联
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-        SocksContext e = SocksContext.newCtx(srcEp, dstEp);
+        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
         server.raiseEvent(server.onUdpRoute, e);
         Upstream upstream = e.getUpstream();
         ChannelFuture outboundFuture = UdpManager.open(UdpManager.socksRegion, srcEp, upstream.getConfig(), k -> {
-            ChannelFuture chf = Sockets.udpBootstrap(k, ob -> {
+            UdpManager.unsetChannelKey();
+            ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
@@ -89,7 +90,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             log.info("socks5[{}] UDP open {}", config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
                 log.info("socks5[{}] UDP close {}", config.getListenPort(), k);
-                UdpManager.close(UdpManager.socksRegion, srcEp, k);
+                UdpManager.close(k);
             });
             return chf;
         });

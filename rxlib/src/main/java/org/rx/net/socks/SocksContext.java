@@ -40,7 +40,7 @@ public final class SocksContext extends EventArgs {
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
-    public static SocksContext newCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+    public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         SocksContext sc = THREAD_CTX.getIfExists();
         if (sc == null) {
             sc = new SocksContext(srcEp, dstEp);
