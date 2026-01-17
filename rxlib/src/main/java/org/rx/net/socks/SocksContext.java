@@ -119,13 +119,12 @@ public final class SocksContext extends EventArgs {
     @Setter
     transient Upstream upstream;
 
-    public transient Channel inbound;
-    public transient ChannelFuture outbound;
-    @Getter
+    transient Channel inbound;
+    transient ChannelFuture outbound;
     transient volatile boolean outboundActive;
     transient InetSocketAddress udp2rawServer;
 
-    public SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+    private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         this.source = srcEp;
         this.firstDestination = dstEp;
     }

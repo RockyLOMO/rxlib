@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.encryption.impl;
+package org.rx.net.socks.encryption.impl;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;
@@ -6,7 +6,7 @@ import lombok.SneakyThrows;
 import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.modes.AEADCipher;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
-import org.rx.net.shadowsocks.encryption.CryptoAeadBase;
+import org.rx.net.socks.encryption.CryptoAeadBase;
 
 import java.security.InvalidAlgorithmParameterException;
 

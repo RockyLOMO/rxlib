@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks;
+package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
@@ -8,8 +8,7 @@ import org.rx.core.Delegate;
 import org.rx.core.Disposable;
 import org.rx.core.EventPublisher;
 import org.rx.net.Sockets;
-import org.rx.net.shadowsocks.encryption.ICrypto;
-import org.rx.net.socks.SocksContext;
+import org.rx.net.socks.encryption.ICrypto;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.TripleAction;
 
@@ -29,7 +28,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             _crypto.setForUdp(false);
             channel.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
-            channel.pipeline().addLast(CipherCodec.DEFAULT, new ProtocolCodec(), ServerTcpProxyHandler.DEFAULT);
+            channel.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
         });
         bootstrap.attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
 
@@ -39,7 +38,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             _crypto.setForUdp(true);
             ctx.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
-            ctx.pipeline().addLast(CipherCodec.DEFAULT, new ProtocolCodec(), ServerUdpProxyHandler.DEFAULT);
+            ctx.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
         }).attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort())).channel();
     }
 

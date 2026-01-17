@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks;
+package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -9,7 +9,6 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
-import org.rx.net.socks.UdpManager;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
@@ -25,7 +24,7 @@ import java.util.List;
  * The port number is a 2-byte big-endian unsigned integer.
  **/
 @Slf4j
-public class ProtocolCodec extends MessageToMessageCodec<Object, Object> {
+public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
     private boolean tcpAddressed;
 
     @Override

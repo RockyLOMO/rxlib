@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks;
+package org.rx.net.socks;
 
 import io.netty.util.AttributeKey;
 import lombok.Getter;
@@ -6,8 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.SocketConfig;
-import org.rx.net.shadowsocks.encryption.ICrypto;
-import org.rx.net.socks.SocksConfig;
+import org.rx.net.socks.encryption.ICrypto;
 
 import java.net.InetSocketAddress;
 

@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks;
+package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
@@ -10,7 +10,7 @@ import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.net.Sockets;
-import org.rx.net.shadowsocks.encryption.ICrypto;
+import org.rx.net.socks.encryption.ICrypto;
 
 import java.util.List;
 
