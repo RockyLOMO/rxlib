@@ -94,9 +94,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     }
                 }
                 if (f.cause() instanceof ConnectTimeoutException) {
-                    log.warn("socks5[{}] TCP connect {}[{}] fail\n{}", config.getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause().getMessage());
+                    log.warn("socks5[{}] TCP connect {}[{}] fail\n{}", config.getListenPort(), e.getUpstream().getDestination(), e.getFirstDestination(), f.cause().getMessage());
                 } else {
-                    log.error("socks5[{}] TCP connect {}[{}] fail", config.getListenPort(), e.getUpstream().getDestination(), e.firstDestination, f.cause());
+                    log.error("socks5[{}] TCP connect {}[{}] fail", config.getListenPort(), e.getUpstream().getDestination(), e.getFirstDestination(), f.cause());
                 }
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
@@ -104,7 +104,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             Channel outbound = f.channel();
             SocksRpcContract.ENDPOINT_TRACER.link(inbound, outbound);
             Socks5ClientHandler proxyHandler;
-            if (server.cipherRoute(e.firstDestination) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
+            if (server.cipherRoute(e.getFirstDestination()) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
                     if (upConf.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
                         //todo 解依赖ZIP
@@ -122,7 +122,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             relay(inbound, outbound, dstAddrType, e);
         });
-        SocksContext.mark(inbound, outboundFuture, e);
+        SocksContext.markCtx(inbound, outboundFuture, e);
     }
 
     private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e) {
@@ -153,7 +153,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.getConfig();
-            if (server.cipherRoute(e.firstDestination) && config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
+            if (server.cipherRoute(e.getFirstDestination()) && config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
                 inbound.attr(SocketConfig.ATTR_CONF).set(config);
                 Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
                 Sockets.addBefore(inbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
@@ -161,7 +161,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     log.info("socks5[{}] TCP {} => {} FRONTEND_CIPHER", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress());
                 }
             }
-            log.info("socks5[{}] TCP {} => {} connected, dstEp={}[{}]", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.firstDestination);
+            log.info("socks5[{}] TCP {} => {} connected, dstEp={}[{}]", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.getFirstDestination());
         });
     }
 }

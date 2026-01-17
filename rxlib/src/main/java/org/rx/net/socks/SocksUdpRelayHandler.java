@@ -26,7 +26,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             SocksContext sc = SocksContext.ctx(outbound);
             SocksProxyServer server = Sockets.getAttr(sc.inbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.config;
-            InetSocketAddress srcEp = sc.source;
+            InetSocketAddress srcEp = sc.getSource();
 //            UnresolvedEndpoint dstEp = sc.firstDestination;
             InetSocketAddress dstEp = out.sender();
             ByteBuf outBuf = out.content();
@@ -86,7 +86,6 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0));
-            SocksContext.mark(inbound, chf, e);
             log.info("socks5[{}] UDP open {}", config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
                 log.info("socks5[{}] UDP close {}", config.getListenPort(), k);
@@ -94,6 +93,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             });
             return chf;
         });
+        SocksContext.markCtx(inbound, outboundFuture, e);
         Channel outbound = outboundFuture.channel();
 
         SocksContext sc = SocksContext.ctx(outbound);

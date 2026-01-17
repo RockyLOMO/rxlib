@@ -27,7 +27,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             SocksConfig config = server.config;
             SocksContext sc = SocksContext.ctx(outbound);
             InetSocketAddress udp2rawServer = sc.udp2rawServer;
-            InetSocketAddress clientEp = sc.source;
+            InetSocketAddress clientEp = sc.getSource();
 //            UnresolvedEndpoint dstEp = sc.firstDestination;
             InetSocketAddress dstEp = out.sender();
             ByteBuf outBuf = out.content();
@@ -157,7 +157,6 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()), UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0));
-            SocksContext.mark(inbound, chf, e);
             log.info("UDP2RAW[{}] server open {}", config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
                 log.info("UDP2RAW[{}] server close {}", config.getListenPort(), k);
@@ -165,6 +164,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             });
             return chf;
         });
+        SocksContext.markCtx(inbound, outboundFuture, e);
         Channel outbound = outboundFuture.channel();
 
         SocksContext sc = SocksContext.ctx(outbound);
