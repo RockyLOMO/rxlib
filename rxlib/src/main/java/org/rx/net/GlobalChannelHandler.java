@@ -3,11 +3,8 @@ package org.rx.net;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelPromise;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.TraceHandler;
-
-import java.net.SocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
