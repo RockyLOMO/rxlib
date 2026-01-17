@@ -94,12 +94,12 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (!udp2rawClient.equals(srcEp)) {
             InetSocketAddress clientEp = in.sender();
             final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-            SocksContext e = new SocksContext(clientEp, dstEp);
+            SocksContext e = SocksContext.newCtx(clientEp, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
             UnresolvedEndpoint upDstEp = upstream.getDestination();
 
-            //忽略upstream.getSocksServer()
+            //todo 忽略upstream.getSocksServer()
             ByteBufAllocator allocator = ctx.alloc();
             ByteBuf header = allocator.directBuffer(128);
             CompositeByteBuf outBuf = allocator.compositeDirectBuffer(2);
@@ -148,7 +148,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
         final UnresolvedEndpoint clientEp = UdpManager.decode(inBuf);
         final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
-        SocksContext e = new SocksContext(clientEp.socketAddress(), dstEp);
+        SocksContext e = SocksContext.newCtx(clientEp.socketAddress(), dstEp);
         e.udp2rawServer = srcEp;
         server.raiseEvent(server.onUdpRoute, e);
         Upstream upstream = e.getUpstream();

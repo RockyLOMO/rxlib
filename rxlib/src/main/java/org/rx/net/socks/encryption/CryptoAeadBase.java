@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.encryption;
+package org.rx.net.socks.encryption;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.DecoderException;

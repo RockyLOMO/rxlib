@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks;
+package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
@@ -6,9 +6,6 @@ import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
-import org.rx.net.socks.ProxyChannelIdleHandler;
-import org.rx.net.socks.SocksContext;
-import org.rx.net.socks.UdpManager;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -16,7 +13,7 @@ import java.net.InetSocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     @Slf4j
     @ChannelHandler.Sharable
     public static class UdpBackendRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
@@ -49,7 +46,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramP
         }
     }
 
-    public static final ServerUdpProxyHandler DEFAULT = new ServerUdpProxyHandler();
+    public static final SSUdpProxyHandler DEFAULT = new SSUdpProxyHandler();
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket in) throws Exception {
@@ -89,7 +86,7 @@ public class ServerUdpProxyHandler extends SimpleChannelInboundHandler<DatagramP
         } else {
             upDstEp = sc.getUpstream().getDestination();
         }
-        if (sc.isOutboundActive()) {
+        if (sc.outboundActive) {
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             ByteBuf finalInBuf = inBuf;

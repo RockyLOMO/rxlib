@@ -1,12 +1,8 @@
-package org.rx.net.shadowsocks;
+package org.rx.net.socks;
 
 import io.netty.channel.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
-import org.rx.net.socks.SocksContext;
-import org.rx.net.socks.SocksRpcContract;
-import org.rx.net.socks.SocksTcpBackendRelayHandler;
-import org.rx.net.socks.SocksTcpFrontendRelayHandler;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -14,8 +10,8 @@ import java.net.InetSocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
-public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
-    public static final ServerTcpProxyHandler DEFAULT = new ServerTcpProxyHandler();
+public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
+    public static final SSTcpProxyHandler DEFAULT = new SSTcpProxyHandler();
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {

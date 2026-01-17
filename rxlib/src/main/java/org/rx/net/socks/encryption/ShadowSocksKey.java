@@ -1,4 +1,4 @@
-package org.rx.net.shadowsocks.encryption;
+package org.rx.net.socks.encryption;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
