@@ -24,7 +24,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
         boolean debug = server.config.isDebug();
         InetSocketAddress dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
 
-        SocksContext e = new SocksContext((InetSocketAddress) inbound.remoteAddress(), new UnresolvedEndpoint(dstEp));
+        SocksContext e = SocksContext.newCtx((InetSocketAddress) inbound.remoteAddress(), new UnresolvedEndpoint(dstEp));
         server.raiseEvent(server.onRoute, e);
         Upstream upstream = e.getUpstream();
         UnresolvedEndpoint upDstEp = upstream.getDestination();
@@ -45,7 +45,7 @@ public class ServerTcpProxyHandler extends ChannelInboundHandlerAdapter {
             SocksRpcContract.ENDPOINT_TRACER.link(inbound, outbound);
             outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
         });
-        SocksContext.mark(inbound, outboundFuture, e);
+        SocksContext.markCtx(inbound, outboundFuture, e);
 
         ctx.fireChannelRead(msg).pipeline().remove(this);
     }
