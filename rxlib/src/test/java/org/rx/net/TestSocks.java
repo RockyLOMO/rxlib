@@ -524,7 +524,7 @@ public class TestSocks extends AbstractTester {
         InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:1080");
         InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
 
-        long[] result = new long[2];
+        CountDownLatch latch = new CountDownLatch(5);
         Channel channel = Sockets.udpBootstrap(null, ob -> {
             ob.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                 @Override
@@ -536,6 +536,7 @@ public class TestSocks extends AbstractTester {
 //                        promise.tryFailure(new IllegalStateException("NTP响应过短"));
                         return;
                     }
+                    long[] result = new long[2];
                     result[0] = System.currentTimeMillis();
                     UnresolvedEndpoint dstEp = UdpManager.socks5Decode(buf);
                     System.out.println("from dstEp: " + dstEp);
@@ -556,30 +557,29 @@ public class TestSocks extends AbstractTester {
                     long serverTimeMillis = milliseconds - epochOffset;
                     result[1] = serverTimeMillis;
 
-                    synchronized (ch) {
-                        ch.notify();
-                    }
+                    DateTime localTime = new DateTime(result[0]);
+                    DateTime serverTime = new DateTime(result[1]);
+                    System.out.println("NTP服务器" + ntpServer + "时间: " + serverTime);
+                    System.out.println("本地系统时间: " + localTime);
+                    latch.countDown();
                 }
             });
         }).bind(0).sync().channel();
 
-        for (int i = 0; i < 2; i++) {
-            // 构造NTP请求（48字节，首字节0x1B）
-            ByteBuf buf = channel.alloc().directBuffer(48);
-            buf.writeByte(0x1B);// LI=00, VN=3, Mode=3 (客户端)
-            buf.writeZero(47);
+
+        for (int i = 0; i < latch.getCount(); i++) {
+            Tasks.run(() -> {
+                // 构造NTP请求（48字节，首字节0x1B）
+                ByteBuf buf = channel.alloc().directBuffer(48);
+                buf.writeByte(0x1B);// LI=00, VN=3, Mode=3 (客户端)
+                buf.writeZero(47);
 
 //        channel.writeAndFlush(new DatagramPacket(buf, ntpServer));
-            channel.writeAndFlush(new DatagramPacket(UdpManager.socks5Encode(buf, ntpServer), socksUdpEp));
-            synchronized (channel) {
-                channel.wait();
-            }
-
-            DateTime localTime = new DateTime(result[0]);
-            DateTime serverTime = new DateTime(result[1]);
-            System.out.println("NTP服务器" + ntpServer + "时间: " + serverTime);
-            System.out.println("本地系统时间: " + localTime);
+                channel.writeAndFlush(new DatagramPacket(UdpManager.socks5Encode(buf, ntpServer), socksUdpEp));
+            });
         }
+
+        latch.await();
     }
 
     @SneakyThrows

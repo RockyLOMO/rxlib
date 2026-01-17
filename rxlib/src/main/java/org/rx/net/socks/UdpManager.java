@@ -9,9 +9,9 @@ import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
 import io.netty.util.NetUtil;
-import io.netty.util.collection.LongObjectHashMap;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.net.SocketConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
 
@@ -20,6 +20,7 @@ import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.tryClose;
 
 @Slf4j
@@ -69,16 +70,27 @@ public final class UdpManager {
         return new InetSocketAddress(InetAddress.getByAddress(ipBytes), port);
     }
 
-    static final Map<Long, ChannelFuture> channels = new ConcurrentHashMap<>();
+    static final Map<Long, ConcurrentHashMap<SocketConfig, ChannelFuture>> channels = new ConcurrentHashMap<>();
 
-    public static ChannelFuture open(byte region, InetSocketAddress srcEp, BiFunc<Long, ChannelFuture> loadFn) {
-        return channels.computeIfAbsent(packKey(region, srcEp), loadFn);
+    public static ChannelFuture open(byte region, InetSocketAddress srcEp, SocketConfig config,
+                                     BiFunc<SocketConfig, ChannelFuture> loadFn) {
+        if (config == null) {
+            config = SocketConfig.EMPTY;
+        }
+        long packKey = packKey(region, srcEp);
+        return channels.computeIfAbsent(packKey, k -> new ConcurrentHashMap<>(2))
+                .computeIfAbsent(config, loadFn);
     }
 
-    public static void close(long packKey) {
-        ChannelFuture chf = channels.remove(packKey);
-        if (chf == null) {
-            log.warn("UDP error close fail {}", unpackToAddress(packKey));
+    public static void close(byte region, InetSocketAddress srcEp, SocketConfig config) {
+        if (config == null) {
+            config = SocketConfig.EMPTY;
+        }
+        long packKey = packKey(region, srcEp);
+        ConcurrentHashMap<SocketConfig, ChannelFuture> sub = channels.get(packKey);
+        ChannelFuture chf;
+        if (sub == null || (chf = sub.remove(config)) == null) {
+            log.warn("UDP error close fail {}", srcEp);
             return;
         }
         Channel ch = chf.channel();
