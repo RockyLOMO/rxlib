@@ -51,9 +51,9 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket in) throws Exception {
         ByteBuf inBuf = in.content();
-        if (inBuf.readableBytes() < 4) { //no cipher, min size = 1 + 1 + 2 ,[1-byte type][variable-length host][2-byte port]
-            return;
-        }
+//        if (inBuf.readableBytes() < 4) { //no cipher, min size = 1 + 1 + 2 ,[1-byte type][variable-length host][2-byte port]
+//            return;
+//        }
 
         Channel inbound = ctx.channel();
         InetSocketAddress srcEp = in.sender();
@@ -61,9 +61,9 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
 
-        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
-        server.raiseEvent(server.onUdpRoute, e);
-        Upstream upstream = e.getUpstream();
+        SocksContext sc = SocksContext.getCtx(srcEp, dstEp);
+        server.raiseEvent(server.onUdpRoute, sc);
+        Upstream upstream = sc.getUpstream();
         ChannelFuture outboundFuture = UdpManager.open(UdpManager.ssRegion, srcEp, upstream.getConfig(), k -> {
             UdpManager.unsetChannelKey();
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
@@ -74,10 +74,10 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             chf.channel().closeFuture().addListener(f -> UdpManager.close(k));
             return chf;
         });
-        SocksContext.markCtx(inbound, outboundFuture, e);
+        SocksContext.markCtx(inbound, outboundFuture, sc);
         Channel outbound = outboundFuture.channel();
 
-        SocksContext sc = SocksContext.ctx(outbound);
+//        SocksContext sc = SocksContext.ctx(outbound);
         UnresolvedEndpoint upDstEp;
         AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
         inBuf.retain();
