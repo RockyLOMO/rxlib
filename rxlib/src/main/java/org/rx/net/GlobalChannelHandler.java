@@ -3,6 +3,7 @@ package org.rx.net;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPromise;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.TraceHandler;
 
@@ -39,8 +40,24 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
 //    }
 
     @Override
+    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+        // 为当前写操作的 promise 添加监听器
+        promise.addListener(f -> {
+            if (!f.isSuccess()) {
+                Throwable cause = f.cause();
+                TraceHandler.INSTANCE.log("Channel error, write operation failed", cause);
+                // 可选：在这里执行连接关闭或重连逻辑
+                // ctx.channel().close();
+            }
+        });
+
+        // 继续向下游传递写操作
+        super.write(ctx, msg, promise);
+    }
+
+    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        TraceHandler.INSTANCE.log("exceptionCaught", cause);
+        TraceHandler.INSTANCE.log("Channel error", cause);
         super.exceptionCaught(ctx, cause);
     }
 }
