@@ -36,7 +36,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                 outBuf = UdpManager.socks5Encode(outBuf.retain(), dstEp);
             }
             if (config.isDebug()) {
-                log.info("socks5[{}] UDP inbound {} => {}", config.getListenPort(), dstEp, srcEp);
+                log.info("socks5[{}] UDP inbound {}bytes {} => {}", config.getListenPort(), outBuf.readableBytes(), dstEp, srcEp);
             }
             sc.inbound.writeAndFlush(new DatagramPacket(outBuf, srcEp));
         }
@@ -59,9 +59,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket in) throws Exception {
         ByteBuf inBuf = in.content();
-        if (inBuf.readableBytes() < 4) {
-            return;
-        }
+//        if (inBuf.readableBytes() < 4) {
+//            return;
+//        }
 
         Channel inbound = ctx.channel();
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
@@ -77,9 +77,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         //不要尝试UPD白名单，会有未知dstEp发送包的情况
         //不要尝试简化outbound，不改包的情况下srcEp没法关联
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
-        server.raiseEvent(server.onUdpRoute, e);
-        Upstream upstream = e.getUpstream();
+        SocksContext sc = SocksContext.getCtx(srcEp, dstEp);
+        server.raiseEvent(server.onUdpRoute, sc);
+        Upstream upstream = sc.getUpstream();
         ChannelFuture outboundFuture = UdpManager.open(UdpManager.socksRegion, srcEp, upstream.getConfig(), k -> {
             UdpManager.unsetChannelKey();
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
@@ -94,10 +94,10 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             });
             return chf;
         });
-        SocksContext.markCtx(inbound, outboundFuture, e);
+        SocksContext.markCtx(inbound, outboundFuture, sc);
         Channel outbound = outboundFuture.channel();
 
-        SocksContext sc = SocksContext.ctx(outbound);
+//        SocksContext sc = SocksContext.ctx(outbound);
         //udp dstEp可能多个，但upstream.getDestination()只有一个，所以直接用dstEp。
         UnresolvedEndpoint upDstEp;
         AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
@@ -110,13 +110,13 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         inBuf.retain();
         if (sc.outboundActive) {
             if (config.isDebug()) {
-                log.info("socks5[{}] UDP outbound {} => {}[{}]", config.getListenPort(), srcEp, upDstEp, dstEp);
+                log.info("socks5[{}] UDP outbound {}bytes {} => {}[{}]", config.getListenPort(), inBuf.readableBytes(), srcEp, upDstEp, dstEp);
             }
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             outboundFuture.addListener((ChannelFutureListener) f -> {
                 if (config.isDebug()) {
-                    log.info("socks5[{}] UDP outbound pending {} => {}[{}]", config.getListenPort(), srcEp, upDstEp, dstEp);
+                    log.info("socks5[{}] UDP outbound pending {}bytes {} => {}[{}]", config.getListenPort(), inBuf.readableBytes(), srcEp, upDstEp, dstEp);
                 }
                 f.channel().writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
             });

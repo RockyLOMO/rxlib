@@ -116,9 +116,9 @@ public final class UdpManager {
     public static ChannelFuture open(byte region, InetSocketAddress srcEp, SocketConfig config,
                                      BiFunc<ChannelKey, ChannelFuture> loadFn) {
         ChannelKey ck = CHANNEL_KEY.getIfExists();
-        if (ck == null) {
+//        if (ck == null) {
             CHANNEL_KEY.set(ck = new ChannelKey());
-        }
+//        }
         ck.reset(region, srcEp, config);
         return channels.computeIfAbsent(ck, loadFn);
     }
