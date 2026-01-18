@@ -524,7 +524,7 @@ public class TestSocks extends AbstractTester {
         InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:1080");
         InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
 
-        CountDownLatch latch = new CountDownLatch(5);
+        CountDownLatch latch = new CountDownLatch(10);
         Channel channel = Sockets.udpBootstrap(null, ob -> {
             ob.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                 @Override
