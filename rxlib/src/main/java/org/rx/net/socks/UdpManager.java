@@ -15,6 +15,7 @@ import lombok.NoArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.SocketConfig;
+import org.rx.net.Sockets;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
 
@@ -49,6 +50,14 @@ public final class UdpManager {
         @Override
         public int hashCode() {
             return Objects.hash(region, srcEp, config);
+        }
+
+        @Override
+        public String toString() {
+            return "ChannelKey{" +
+                    "region=" + region +
+                    ", srcEp=" + Sockets.toString(srcEp) +
+                    '}';
         }
     }
 
