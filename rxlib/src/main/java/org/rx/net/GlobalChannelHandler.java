@@ -46,8 +46,6 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
             if (!f.isSuccess()) {
                 Throwable cause = f.cause();
                 TraceHandler.INSTANCE.log("Channel error, write operation failed", cause);
-                // 可选：在这里执行连接关闭或重连逻辑
-                // ctx.channel().close();
             }
         });
 
