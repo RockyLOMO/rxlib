@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.nio.NioDatagramChannel;
@@ -69,10 +70,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
@@ -522,7 +520,8 @@ public class TestSocks extends AbstractTester {
 //        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
 //        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("s.f-li.cn:6885");
         InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:1080");
-        InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
+//        InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
+        InetSocketAddress ntpServer = Sockets.parseEndpoint("2606:4700:f1::123:123");
 
         CountDownLatch latch = new CountDownLatch(10);
         Channel channel = Sockets.udpBootstrap(null, ob -> {
@@ -532,6 +531,7 @@ public class TestSocks extends AbstractTester {
                     Channel ch = ctx.channel();
 
                     ByteBuf buf = msg.content();
+                    System.out.println("readableBytes: " + buf.readableBytes() + ", hex: " + ByteBufUtil.prettyHexDump(buf));
                     if (buf.readableBytes() < 48) {
 //                        promise.tryFailure(new IllegalStateException("NTP响应过短"));
                         return;
@@ -577,9 +577,10 @@ public class TestSocks extends AbstractTester {
 //        channel.writeAndFlush(new DatagramPacket(buf, ntpServer));
                 channel.writeAndFlush(new DatagramPacket(UdpManager.socks5Encode(buf, ntpServer), socksUdpEp));
             });
+//            sleep(200);
         }
 
-        latch.await();
+        assert latch.await(20000, TimeUnit.MILLISECONDS);
     }
 
     @SneakyThrows
