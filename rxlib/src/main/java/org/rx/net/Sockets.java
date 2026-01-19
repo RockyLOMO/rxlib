@@ -697,7 +697,8 @@ public final class Sockets {
     }
 
     public static InetSocketAddress newAnyEndpoint(int port) {
-        return new InetSocketAddress(getAnyLocalAddress(), port);
+//        return new InetSocketAddress(getAnyLocalAddress(), port);
+        return new InetSocketAddress(port);
     }
 
     public static InetSocketAddress newEndpoint(String endpoint, int port) {
