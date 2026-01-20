@@ -243,6 +243,10 @@ public final class Main implements SocksRpcContract {
                     SocksConfig config = ((SocksProxyServer) svrRef).getConfig();
                     config.setDebug(debugFlag);
                     config.setConnectTimeoutMillis(connectTimeoutMillis);
+                    if (config.isEnableUdp2raw()) {
+                        config.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
+                        config.setKcptunClient(rssConf.kcptunClient);
+                    }
                 }
             }
             log.info("rssConf load ok");
