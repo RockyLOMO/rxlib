@@ -86,6 +86,8 @@ public final class Main implements SocksRpcContract {
         public String ssPwd;
         public String socksUser;
         public int ipLimit;
+//        //0 socks5, 1 tun, 2 hysteria
+//        public byte type;
     }
 
     @Getter
@@ -109,7 +111,9 @@ public final class Main implements SocksRpcContract {
 
         public List<String> udp2rawSocksServers;
         public String udp2rawClient;
+        //传递后tcp走kcptun
         public String kcptunClient;
+        public String hysteriaClient;
 
         //route
         public boolean enableRoute = true;
@@ -314,18 +318,27 @@ public final class Main implements SocksRpcContract {
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
-            InetSocketAddress upSvrEp = usr.getUsername().startsWith("tun") ? inUdp2rawSvrEp : inSvrEp;
-            AuthenticEndpoint svrEp = new AuthenticEndpoint(upSvrEp, usr.getUsername(), usr.getPassword());
+            String usrName = usr.getUsername();
 
             conf.setOptimalSettings(SS_IN_OPS);
             conf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
             svrRefs.add(ssSvr);
+
+            AuthenticEndpoint svrEp;
+            if (usrName.startsWith("hysteria")) {
+                svrEp = AuthenticEndpoint.valueOf(rssConf.hysteriaClient);
+            } else if (usrName.startsWith("tun")) {
+                svrEp = new AuthenticEndpoint(inUdp2rawSvrEp, usrName, usr.getPassword());
+            } else {
+                svrEp = new AuthenticEndpoint(inSvrEp, usrName, usr.getPassword());
+            }
+
             SocksConfig toInConf = new SocksConfig(svrEp.getEndpoint().getPort());
 //            toInConf.setTransportFlags(null);
             toInConf.setOptimalSettings(IN_OPS);
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
-            ssSvr.onRoute.replace((s, e) -> {
+            ssSvr.onTcpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
                 SocksTcpUpstream upstream = ssTcpUpstream.get();
                 if (upstream == null) {

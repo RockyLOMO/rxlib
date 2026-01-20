@@ -15,7 +15,7 @@ import org.rx.util.function.TripleAction;
 //@Slf4j
 public class ShadowsocksServer extends Disposable implements EventPublisher<ShadowsocksServer> {
     public static final TripleAction<ShadowsocksServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
-    public final Delegate<ShadowsocksServer, SocksContext> onRoute = Delegate.create(DIRECT_ROUTER),
+    public final Delegate<ShadowsocksServer, SocksContext> onTcpRoute = Delegate.create(DIRECT_ROUTER),
             onUdpRoute = Delegate.create(DIRECT_ROUTER);
     @Getter
     final ShadowsocksConfig config;
