@@ -520,8 +520,8 @@ public class TestSocks extends AbstractTester {
 //        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
 //        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("s.f-li.cn:6885");
         InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:1080");
-//        InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
-        InetSocketAddress ntpServer = Sockets.parseEndpoint("2606:4700:f1::123:123");
+        InetSocketAddress ntpServer = Sockets.parseEndpoint("162.159.200.123:123");
+//        InetSocketAddress ntpServer = Sockets.parseEndpoint("2606:4700:f1::123:123");
 
         CountDownLatch latch = new CountDownLatch(10);
         Channel channel = Sockets.udpBootstrap(null, ob -> {
@@ -643,7 +643,7 @@ public class TestSocks extends AbstractTester {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
-        inSvr.onRoute.replace(firstRoute, (s, e) -> {
+        inSvr.onTcpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
                 return;
             }
@@ -663,7 +663,7 @@ public class TestSocks extends AbstractTester {
         ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
                 CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
-        frontSvr.onRoute.replace((s, e) -> {
+        frontSvr.onTcpRoute.replace((s, e) -> {
             e.setUpstream(new SocksTcpUpstream(inConf, e.getFirstDestination(), new UpstreamSupport(inSrvEp, null)));
         });
         frontSvr.onUdpRoute.replace((s, e) -> {

@@ -423,7 +423,7 @@ public final class Main implements SocksRpcContract {
             }
             return outProxy;
         };
-        inSvr.onRoute.replace(firstRoute, (s, e) -> {
+        inSvr.onTcpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
                 return;
             }
