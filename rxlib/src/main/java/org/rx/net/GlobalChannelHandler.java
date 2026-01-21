@@ -4,8 +4,11 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import io.netty.channel.unix.Errors;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.TraceHandler;
+
+import java.nio.channels.ClosedChannelException;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -45,6 +48,23 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
         promise.addListener(f -> {
             if (!f.isSuccess()) {
                 Throwable cause = f.cause();
+                if (cause instanceof ClosedChannelException) {
+//                    log.debug("Channel closed normally");
+                    return;
+                }
+                if (cause instanceof Errors.NativeIoException) {
+                    Errors.NativeIoException nativeIoException = (Errors.NativeIoException) cause;
+                    if (nativeIoException.expectedErr() == Errors.ERRNO_EPIPE_NEGATIVE) {
+                        // Broken pipe：正常连接关闭信号，可记录后忽略
+//                        log.debug("Connection broken (EPIPE), closing channel");
+                        return;
+                    }
+                    if (nativeIoException.expectedErr() == Errors.ERRNO_ECONNRESET_NEGATIVE) {
+                        // Connection reset by peer：常见网络事件，可记录后关闭
+//                        log.debug("Connection reset by peer, closing channel");
+                        return;
+                    }
+                }
                 TraceHandler.INSTANCE.log("Channel error, write operation failed", cause);
             }
         });
