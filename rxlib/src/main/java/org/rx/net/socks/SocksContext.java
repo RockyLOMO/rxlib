@@ -88,36 +88,39 @@ public final class SocksContext extends EventArgs {
         return sc;
     }
 
-    public static Upstream getUpstream(SocketConfig conf, UnresolvedEndpoint dstEp) {
+    public static Upstream getUpstream(UnresolvedEndpoint dstEp, SocketConfig conf) {
         Upstream u = UPSTREAM_CTX.get();
         if (u == null) {
-            u = new Upstream(conf, dstEp);
-        } else {
-            UPSTREAM_CTX.remove();
-            u.reuse(conf, dstEp);
+            u = new Upstream(dstEp, conf);
         }
+//        else {
+//            UPSTREAM_CTX.remove();
+//            u.reuse(dstEp, conf);
+//        }
         return u;
     }
 
-    public static SocksTcpUpstream getSocksTcpUpstream(SocksConfig conf, UnresolvedEndpoint dstEp, UpstreamSupport next) {
+    public static SocksTcpUpstream getSocksTcpUpstream(UnresolvedEndpoint dstEp, SocksConfig conf, UpstreamSupport next) {
         SocksTcpUpstream u = SOCKS_TCP_UPSTREAM_CTX.get();
         if (u == null) {
-            u = new SocksTcpUpstream(conf, dstEp, next);
-        } else {
-            SOCKS_TCP_UPSTREAM_CTX.remove();
-            u.reuse(conf, dstEp, next);
+            u = new SocksTcpUpstream(dstEp, conf, next);
         }
+//        else {
+//            SOCKS_TCP_UPSTREAM_CTX.remove();
+//            u.reuse(dstEp, conf, next);
+//        }
         return u;
     }
 
-    public static SocksUdpUpstream getSocksUdpUpstream(SocksConfig conf, UnresolvedEndpoint dstEp, UpstreamSupport next) {
+    public static SocksUdpUpstream getSocksUdpUpstream(UnresolvedEndpoint dstEp, SocksConfig conf, UpstreamSupport next) {
         SocksUdpUpstream u = SOCKS_UDP_UPSTREAM_CTX.get();
         if (u == null) {
-            u = new SocksUdpUpstream(conf, dstEp, next);
-        } else {
-            SOCKS_UDP_UPSTREAM_CTX.remove();
-            u.reuse(conf, dstEp, next);
+            u = new SocksUdpUpstream(dstEp, conf, next);
         }
+//        else {
+//            SOCKS_UDP_UPSTREAM_CTX.remove();
+//            u.reuse(dstEp, conf, next);
+//        }
         return u;
     }
 

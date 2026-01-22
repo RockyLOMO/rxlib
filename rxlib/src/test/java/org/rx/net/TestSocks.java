@@ -648,14 +648,14 @@ public class TestSocks extends AbstractTester {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            e.setUpstream(new SocksTcpUpstream(inConf, dstEp, socksServers.next()));
+            e.setUpstream(new SocksTcpUpstream(dstEp, inConf, socksServers.next()));
         });
         inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            e.setUpstream(new SocksUdpUpstream(inConf, dstEp, socksServers.next()));
+            e.setUpstream(new SocksUdpUpstream(dstEp, inConf, socksServers.next()));
         });
 
 
@@ -664,10 +664,10 @@ public class TestSocks extends AbstractTester {
                 CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
         frontSvr.onTcpRoute.replace((s, e) -> {
-            e.setUpstream(new SocksTcpUpstream(inConf, e.getFirstDestination(), new UpstreamSupport(inSrvEp, null)));
+            e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null)));
         });
         frontSvr.onUdpRoute.replace((s, e) -> {
-            e.setUpstream(new SocksUdpUpstream(inConf, e.getFirstDestination(), new UpstreamSupport(inSrvEp, null)));
+            e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null)));
         });
     }
 

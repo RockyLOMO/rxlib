@@ -335,16 +335,16 @@ public final class Main implements SocksRpcContract {
             ssSvr.onTcpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
                 if (rssConf.hasDebugFlag()) {
-                    log.info("SS TCP route {} => {}@{}[{}]", e.getSource(), usrName, svrSupport.getEndpoint(), dstEp);
+                    log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
                 }
-                e.setUpstream(SocksContext.getSocksTcpUpstream(toInConf, dstEp, svrSupport));
+                e.setUpstream(SocksContext.getSocksTcpUpstream(dstEp, toInConf, svrSupport));
             });
             ssSvr.onUdpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
                 if (rssConf.hasDebugFlag()) {
-                    log.info("SS UDP route {} => {}@{}[{}]", e.getSource(), usrName, svrSupport.getEndpoint(), dstEp);
+                    log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
                 }
-                e.setUpstream(SocksContext.getSocksUdpUpstream(toInConf, dstEp, svrSupport));
+                e.setUpstream(SocksContext.getSocksUdpUpstream(dstEp, toInConf, svrSupport));
             });
         }
 
@@ -417,9 +417,9 @@ public final class Main implements SocksRpcContract {
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "TCP")) {
-                e.setUpstream(SocksContext.getSocksTcpUpstream(outConf, dstEp, routerFn.apply(e)));
+                e.setUpstream(SocksContext.getSocksTcpUpstream(dstEp, outConf, routerFn.apply(e)));
             } else {
-                e.setUpstream(SocksContext.getUpstream(null, dstEp));
+                e.setUpstream(SocksContext.getUpstream(dstEp, null));
             }
         });
         inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
@@ -428,9 +428,9 @@ public final class Main implements SocksRpcContract {
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "UDP")) {
-                e.setUpstream(SocksContext.getSocksUdpUpstream(outConf, dstEp, routerFn.apply(e)));
+                e.setUpstream(SocksContext.getSocksUdpUpstream(dstEp, outConf, routerFn.apply(e)));
             } else {
-                e.setUpstream(SocksContext.getUpstream(null, dstEp));
+                e.setUpstream(SocksContext.getUpstream(dstEp, null));
             }
         });
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);

@@ -74,12 +74,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
 
-        Upstream upstream = e.getUpstream();
-        SocketConfig upConf = upstream.getConfig();
-        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upConf, outbound -> {
-            upstream.initChannel(outbound);
+        //tcp reconnect upstream可能会变，不定临时变量
+        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), e.getUpstream().getConfig(), outbound -> {
+            e.getUpstream().initChannel(outbound);
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
-        }).attr(SocksContext.SOCKS_SVR, server).connect(upstream.getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
+        }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
@@ -94,9 +93,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     }
                 }
                 if (f.cause() instanceof ConnectTimeoutException) {
-                    log.warn("socks5[{}] TCP connect {}[{}] fail\n{}", config.getListenPort(), upstream.getDestination(), e.getFirstDestination(), f.cause().getMessage());
+                    log.warn("socks5[{}] TCP connect {}[{}] fail\n{}", config.getListenPort(), e.getUpstream().getDestination(), e.getFirstDestination(), f.cause().getMessage());
                 } else {
-                    log.error("socks5[{}] TCP connect {}[{}] fail", config.getListenPort(), upstream.getDestination(), e.getFirstDestination(), f.cause());
+                    log.error("socks5[{}] TCP connect {}[{}] fail", config.getListenPort(), e.getUpstream().getDestination(), e.getFirstDestination(), f.cause());
                 }
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;
@@ -106,6 +105,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             Socks5ClientHandler proxyHandler;
             if (server.cipherRoute(e.getFirstDestination()) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
+                    SocketConfig upConf = e.getUpstream().getConfig();
                     if (upConf.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
                         //todo 解依赖ZIP
                         outbound.attr(SocketConfig.ATTR_CONF).set(upConf);

@@ -8,21 +8,21 @@ import org.rx.net.support.UnresolvedEndpoint;
 
 @Getter
 public class Upstream {
+    protected UnresolvedEndpoint destination;
     //Maybe frontend have a different configuration from backend
     protected SocketConfig config;
-    protected volatile UnresolvedEndpoint destination;
 
     public Upstream(UnresolvedEndpoint dstEp) {
-        this(null, dstEp);
+        this(dstEp, null);
     }
 
-    public Upstream(SocketConfig conf, UnresolvedEndpoint dstEp) {
-        reuse(conf, dstEp);
+    public Upstream(UnresolvedEndpoint dstEp, SocketConfig conf) {
+        reuse(dstEp, conf);
     }
 
-    public void reuse(SocketConfig conf, @NonNull UnresolvedEndpoint dstEp) {
-        config = conf;
+    public void reuse(@NonNull UnresolvedEndpoint dstEp, SocketConfig conf) {
         destination = dstEp;
+        config = conf;
     }
 
     public void initChannel(Channel channel) {

@@ -13,14 +13,13 @@ public class SocksUdpUpstream extends Upstream {
     @Getter
     AuthenticEndpoint udpSocksServer;
 
-    public SocksUdpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull UpstreamSupport next) {
-        super(config, dstEp);
+    public SocksUdpUpstream(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
+        super(dstEp, config);
         udpSocksServer = next.getEndpoint();
     }
 
-    public void reuse(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull UpstreamSupport next) {
-        super.config = config;
-        super.destination = dstEp;
+    public void reuse(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
+        super.reuse(dstEp, config);
         udpSocksServer = next.getEndpoint();
     }
 
