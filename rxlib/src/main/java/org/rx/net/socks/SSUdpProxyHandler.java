@@ -61,11 +61,11 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
 
-        SocksContext sc = SocksContext.getCtx(srcEp, dstEp);
-        server.raiseEvent(server.onUdpRoute, sc);
-        Upstream upstream = sc.getUpstream();
-        ChannelFuture outboundFuture = UdpManager.open(UdpManager.ssRegion, srcEp, upstream.getConfig(), k -> {
-            UdpManager.unsetChannelKey();
+        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
+        e.region = UdpManager.ssRegion;
+        server.raiseEvent(server.onUdpRoute, e);
+        Upstream upstream = e.getUpstream();
+        ChannelFuture outboundFuture = UdpManager.open(e, k -> {
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
@@ -74,11 +74,11 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             chf.channel().closeFuture().addListener(f -> UdpManager.close(k));
             return chf;
         });
-        SocksContext.markCtx(inbound, outboundFuture, sc);
+        SocksContext.markCtx(inbound, outboundFuture, e);
         Channel outbound = outboundFuture.channel();
 
         UnresolvedEndpoint upDstEp;
-        AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
+        AuthenticEndpoint upSvrEp = e.tryGetUdpSocksServer();
         inBuf.retain();
         if (upSvrEp != null) {
             inBuf = UdpManager.socks5Encode(inBuf, dstEp);
@@ -86,7 +86,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         } else {
             upDstEp = upstream.getDestination();
         }
-        if (sc.outboundActive) {
+        if (e.outboundActive) {
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             ByteBuf finalInBuf = inBuf;

@@ -4,8 +4,10 @@ import com.alibaba.fastjson2.TypeReference;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.AttributeKey;
-import io.netty.util.concurrent.FastThreadLocal;
-import lombok.*;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.SneakyThrows;
 import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory;
 import org.apache.sshd.scp.server.ScpCommandFactory;
 import org.apache.sshd.server.SshServer;
@@ -20,60 +22,46 @@ import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
-import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
-import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
 import java.util.Collections;
+import java.util.Objects;
 
-import static org.rx.core.Extends.require;
 import static org.rx.core.Sys.fromJson;
 
+//用FastThreadLocal复用SocksContext有问题
 @RequiredArgsConstructor
-public final class SocksContext extends EventArgs {
+public final class SocksContext extends EventArgs implements UdpManager.ChannelKey {
     private static final long serialVersionUID = 323020524764860674L;
-    private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
-    private static final FastThreadLocal<Upstream> UPSTREAM_CTX = new FastThreadLocal<>();
-    private static final FastThreadLocal<SocksTcpUpstream> SOCKS_TCP_UPSTREAM_CTX = new FastThreadLocal<>();
-    private static final FastThreadLocal<SocksUdpUpstream> SOCKS_UDP_UPSTREAM_CTX = new FastThreadLocal<>();
+    //    private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
+    //用FastThreadLocal复用SocksContext有问题
     public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
-        SocksContext sc = THREAD_CTX.getIfExists();
+//        SocksContext sc = THREAD_CTX.getIfExists();
 //        if (sc == null) {
-            sc = new SocksContext(srcEp, dstEp);
+//            sc = new SocksContext(srcEp, dstEp);
 //        } else {
 //            THREAD_CTX.remove();
 //            sc.reset(srcEp, dstEp);
 //        }
-        return sc;
+//        return sc;
+        return new SocksContext(srcEp, dstEp);
     }
 
     public static void markCtx(Channel inbound, ChannelFuture outbound, SocksContext sc) {
         Channel outCh = outbound.channel();
-        SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
-        if (prevSc != null && prevSc != sc) {
-//            Upstream prevUpstream = prevSc.upstream;
-//            if (prevUpstream != null) {
-//                if (prevUpstream instanceof SocksTcpUpstream && !SOCKS_TCP_UPSTREAM_CTX.isSet()) {
-//                    SOCKS_TCP_UPSTREAM_CTX.set((SocksTcpUpstream) prevUpstream);
-//                } else if (prevUpstream instanceof SocksUdpUpstream && !SOCKS_UDP_UPSTREAM_CTX.isSet()) {
-//                    SOCKS_UDP_UPSTREAM_CTX.set((SocksUdpUpstream) prevUpstream);
-//                } else if (!UPSTREAM_CTX.isSet()) {
-//                    UPSTREAM_CTX.set(prevUpstream);
-//                }
-//                prevSc.upstream = null;
+//        SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
+//        if (prevSc != null && prevSc != sc) {
+//            if (!THREAD_CTX.isSet()) {
+//                THREAD_CTX.set(prevSc);
 //            }
-            //需要判断否则会覆盖
-            if (!THREAD_CTX.isSet()) {
-                THREAD_CTX.set(prevSc);
-            }
-        }
+//        }
 
         sc.inbound = inbound;
         sc.outbound = outbound.addListener(f -> sc.outboundActive = f.isSuccess());
@@ -91,42 +79,6 @@ public final class SocksContext extends EventArgs {
             throw new InvalidException("SocksContext not found");
         }
         return sc;
-    }
-
-    public static Upstream getUpstream(UnresolvedEndpoint dstEp, SocketConfig conf) {
-        Upstream u = UPSTREAM_CTX.get();
-        if (u == null) {
-            u = new Upstream(dstEp, conf);
-        }
-//        else {
-//            UPSTREAM_CTX.remove();
-//            u.reuse(dstEp, conf);
-//        }
-        return u;
-    }
-
-    public static SocksTcpUpstream getSocksTcpUpstream(UnresolvedEndpoint dstEp, SocksConfig conf, UpstreamSupport next) {
-        SocksTcpUpstream u = SOCKS_TCP_UPSTREAM_CTX.get();
-        if (u == null) {
-            u = new SocksTcpUpstream(dstEp, conf, next);
-        }
-//        else {
-//            SOCKS_TCP_UPSTREAM_CTX.remove();
-//            u.reuse(dstEp, conf, next);
-//        }
-        return u;
-    }
-
-    public static SocksUdpUpstream getSocksUdpUpstream(UnresolvedEndpoint dstEp, SocksConfig conf, UpstreamSupport next) {
-        SocksUdpUpstream u = SOCKS_UDP_UPSTREAM_CTX.get();
-        if (u == null) {
-            u = new SocksUdpUpstream(dstEp, conf, next);
-        }
-//        else {
-//            SOCKS_UDP_UPSTREAM_CTX.remove();
-//            u.reuse(dstEp, conf, next);
-//        }
-        return u;
     }
 
     public static void omega(String s) {
@@ -189,13 +141,46 @@ public final class SocksContext extends EventArgs {
         return null;
     }
 
-    private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
-        source = srcEp;
-        firstDestination = dstEp;
-        upstream = null;
-        inbound = null;
-        outbound = null;
-        outboundActive = false;
-        udp2rawClient = null;
+//    private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+//        source = srcEp;
+//        firstDestination = dstEp;
+//        upstream = null;
+//        inbound = null;
+//        outbound = null;
+//        outboundActive = false;
+//        udp2rawClient = null;
+//    }
+
+    //ChannelKey region,source,config
+    @Getter
+    byte region;
+
+    public SocketConfig getConfig() {
+        if (upstream == null) {
+            return null;
+        }
+        return upstream.getConfig();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        SocksContext that = (SocksContext) o;
+        return region == that.region && Objects.equals(source, that.source) && Objects.equals(getConfig(), that.getConfig());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(region, source, getConfig());
+    }
+
+    @Override
+    public String toString() {
+        return "SocksContext{" +
+                "region=" + region +
+                ", source=" + source +
+                ", destination=" + (upstream != null ? upstream.getDestination().toString() : null) +
+//                ", udp2rawClient=" + udp2rawClient +
+                '}';
     }
 }

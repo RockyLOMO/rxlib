@@ -148,11 +148,12 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
         final UnresolvedEndpoint clientEp = UdpManager.decode(inBuf);
         final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
-        SocksContext sc = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
-        sc.udp2rawClient = srcEp;
-        server.raiseEvent(server.onUdpRoute, sc);
-        Upstream upstream = sc.getUpstream();
-        ChannelFuture outboundFuture = UdpManager.open(UdpManager.udp2rawRegion, clientEp.socketAddress(), upstream.getConfig(), k -> {
+        SocksContext e = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
+        e.region = UdpManager.udp2rawRegion;
+        e.udp2rawClient = srcEp;
+        server.raiseEvent(server.onUdpRoute, e);
+        Upstream upstream = e.getUpstream();
+        ChannelFuture outboundFuture = UdpManager.open(e, k -> {
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()), UdpBackendRelayHandler.DEFAULT);
@@ -164,11 +165,11 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             });
             return chf;
         });
-        SocksContext.markCtx(inbound, outboundFuture, sc);
+        SocksContext.markCtx(inbound, outboundFuture, e);
         Channel outbound = outboundFuture.channel();
 
         UnresolvedEndpoint upDstEp;
-        AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
+        AuthenticEndpoint upSvrEp = e.tryGetUdpSocksServer();
         if (upSvrEp != null) {
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
             inBuf.readerIndex(0);
@@ -176,7 +177,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             upDstEp = dstEp;
         }
         inBuf.retain();
-        if (sc.outboundActive) {
+        if (e.outboundActive) {
             if (config.isDebug()) {
                 log.info("UDP2RAW[{}] server send {}bytes {}[{}] => {}", config.getListenPort(), inBuf.readableBytes(), srcEp, clientEp, upDstEp);
             }

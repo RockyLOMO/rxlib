@@ -6,7 +6,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.*;
 import org.rx.net.socks.upstream.Socks5ClientHandler;
-import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.math.BigInteger;
