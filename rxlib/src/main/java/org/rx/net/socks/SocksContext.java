@@ -70,9 +70,9 @@ public final class SocksContext extends EventArgs {
 //                prevSc.upstream = null;
 //            }
             //需要判断否则会覆盖
-//            if (!THREAD_CTX.isSet()) {
+            if (!THREAD_CTX.isSet()) {
                 THREAD_CTX.set(prevSc);
-//            }
+            }
         }
 
         sc.inbound = inbound;
