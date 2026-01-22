@@ -58,18 +58,21 @@ public final class SocksContext extends EventArgs {
         Channel outCh = outbound.channel();
         SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
         if (prevSc != null && prevSc != sc) {
-            Upstream prevUpstream = prevSc.upstream;
-            if (prevUpstream instanceof SocksTcpUpstream) {
-                SOCKS_TCP_UPSTREAM_CTX.set((SocksTcpUpstream) prevUpstream);
-            } else if (prevUpstream instanceof SocksUdpUpstream) {
-                SOCKS_UDP_UPSTREAM_CTX.set((SocksUdpUpstream) prevUpstream);
-            } else {
-                UPSTREAM_CTX.set(prevUpstream);
-            }
-            prevSc.upstream = null;
-            if (!THREAD_CTX.isSet()) {
+//            Upstream prevUpstream = prevSc.upstream;
+//            if (prevUpstream != null) {
+//                if (prevUpstream instanceof SocksTcpUpstream && !SOCKS_TCP_UPSTREAM_CTX.isSet()) {
+//                    SOCKS_TCP_UPSTREAM_CTX.set((SocksTcpUpstream) prevUpstream);
+//                } else if (prevUpstream instanceof SocksUdpUpstream && !SOCKS_UDP_UPSTREAM_CTX.isSet()) {
+//                    SOCKS_UDP_UPSTREAM_CTX.set((SocksUdpUpstream) prevUpstream);
+//                } else if (!UPSTREAM_CTX.isSet()) {
+//                    UPSTREAM_CTX.set(prevUpstream);
+//                }
+//                prevSc.upstream = null;
+//            }
+            //需要判断否则会覆盖
+//            if (!THREAD_CTX.isSet()) {
                 THREAD_CTX.set(prevSc);
-            }
+//            }
         }
 
         sc.inbound = inbound;
