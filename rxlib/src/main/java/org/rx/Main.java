@@ -2,7 +2,6 @@ package org.rx;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
@@ -25,17 +24,19 @@ import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
-import org.rx.net.socks.ShadowsocksConfig;
-import org.rx.net.socks.ShadowsocksServer;
-import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.*;
-import org.rx.net.socks.upstream.SocksTcpUpstream;
-import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.*;
+import org.rx.net.support.GeoManager;
+import org.rx.net.support.IpGeolocation;
+import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.TcpClientConfig;
 import org.rx.net.transport.TcpServerConfig;
-import org.rx.util.function.*;
+import org.rx.util.function.Action;
+import org.rx.util.function.BiFunc;
+import org.rx.util.function.TripleAction;
+import org.rx.util.function.TripleFunc;
 
 import java.io.OutputStream;
 import java.math.BigInteger;
@@ -46,7 +47,6 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-import static org.rx.bean.$.$;
 import static org.rx.core.Extends.*;
 import static org.rx.core.Sys.toJsonString;
 
@@ -138,12 +138,6 @@ public final class Main implements SocksRpcContract {
     public static final OptimalSettings OUT_OPS = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
     public static final OptimalSettings IN_OPS = null;
     public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
-    static final FastThreadLocal<Upstream> frontBTcpUpstream = new FastThreadLocal<>(),
-            frontBUdpUpstream = new FastThreadLocal<>();
-    static final FastThreadLocal<SocksTcpUpstream> inTcpProxyUpstream = new FastThreadLocal<>(),
-            ssTcpUpstream = new FastThreadLocal<>();
-    static final FastThreadLocal<SocksUdpUpstream> inUdpProxyUpstream = new FastThreadLocal<>(),
-            ssUdpUpstream = new FastThreadLocal<>();
     static final int traceDays = 1;
     static RSSConf rssConf;
 
@@ -340,23 +334,11 @@ public final class Main implements SocksRpcContract {
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
             ssSvr.onTcpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
-                SocksTcpUpstream upstream = ssTcpUpstream.get();
-                if (upstream == null) {
-                    upstream = new SocksTcpUpstream(toInConf, dstEp, svrSupport);
-                } else {
-                    upstream.reuse(toInConf, dstEp, svrSupport);
-                }
-                e.setUpstream(upstream);
+                e.setUpstream(SocksContext.getSocksTcpUpstream(toInConf, dstEp, svrSupport));
             });
             ssSvr.onUdpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
-                SocksUdpUpstream upstream = ssUdpUpstream.get();
-                if (upstream == null) {
-                    upstream = new SocksUdpUpstream(toInConf, dstEp, svrSupport);
-                } else {
-                    upstream.reuse(toInConf, dstEp, svrSupport);
-                }
-                e.setUpstream(upstream);
+                e.setUpstream(SocksContext.getSocksUdpUpstream(toInConf, dstEp, svrSupport));
             });
         }
 
@@ -429,21 +411,9 @@ public final class Main implements SocksRpcContract {
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "TCP")) {
-                SocksTcpUpstream upstream = inTcpProxyUpstream.get();
-                if (upstream == null) {
-                    upstream = new SocksTcpUpstream(outConf, dstEp, routerFn.apply(e));
-                } else {
-                    upstream.reuse(outConf, dstEp, routerFn.apply(e));
-                }
-                e.setUpstream(upstream);
+                e.setUpstream(SocksContext.getSocksTcpUpstream(outConf, dstEp, routerFn.apply(e)));
             } else {
-                Upstream upstream = frontBTcpUpstream.get();
-                if (upstream == null) {
-                    upstream = new Upstream(dstEp);
-                } else {
-                    upstream.reuse(null, dstEp);
-                }
-                e.setUpstream(upstream);
+                e.setUpstream(SocksContext.getUpstream(null, dstEp));
             }
         });
         inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
@@ -452,21 +422,9 @@ public final class Main implements SocksRpcContract {
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(dstEp, "UDP")) {
-                SocksUdpUpstream upstream = inUdpProxyUpstream.get();
-                if (upstream == null) {
-                    upstream = new SocksUdpUpstream(outConf, dstEp, routerFn.apply(e));
-                } else {
-                    upstream.reuse(outConf, dstEp, routerFn.apply(e));
-                }
-                e.setUpstream(upstream);
+                e.setUpstream(SocksContext.getSocksUdpUpstream(outConf, dstEp, routerFn.apply(e)));
             } else {
-                Upstream upstream = frontBUdpUpstream.get();
-                if (upstream == null) {
-                    upstream = new Upstream(dstEp);
-                } else {
-                    upstream.reuse(null, dstEp);
-                }
-                e.setUpstream(upstream);
+                e.setUpstream(SocksContext.getUpstream(null, dstEp));
             }
         });
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);

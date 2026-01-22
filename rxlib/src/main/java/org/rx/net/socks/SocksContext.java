@@ -5,10 +5,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.AttributeKey;
 import io.netty.util.concurrent.FastThreadLocal;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
-import lombok.SneakyThrows;
+import lombok.*;
 import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory;
 import org.apache.sshd.scp.server.ScpCommandFactory;
 import org.apache.sshd.server.SshServer;
@@ -22,9 +19,12 @@ import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.SocketConfig;
+import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
@@ -36,7 +36,10 @@ import static org.rx.core.Sys.fromJson;
 @RequiredArgsConstructor
 public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
-    public static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
+    private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
+    private static final FastThreadLocal<Upstream> UPSTREAM_CTX = new FastThreadLocal<>();
+    private static final FastThreadLocal<SocksTcpUpstream> SOCKS_TCP_UPSTREAM_CTX = new FastThreadLocal<>();
+    private static final FastThreadLocal<SocksUdpUpstream> SOCKS_UDP_UPSTREAM_CTX = new FastThreadLocal<>();
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
@@ -54,7 +57,16 @@ public final class SocksContext extends EventArgs {
     public static void markCtx(Channel inbound, ChannelFuture outbound, SocksContext sc) {
         Channel outCh = outbound.channel();
         SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
-        if (!THREAD_CTX.isSet()) {
+        if (prevSc != null) {
+            Upstream prevUpstream = prevSc.upstream;
+            if (prevUpstream instanceof SocksTcpUpstream) {
+                SOCKS_TCP_UPSTREAM_CTX.set((SocksTcpUpstream) prevUpstream);
+            } else if (prevUpstream instanceof SocksUdpUpstream) {
+                SOCKS_UDP_UPSTREAM_CTX.set((SocksUdpUpstream) prevUpstream);
+            } else {
+                UPSTREAM_CTX.set(prevUpstream);
+            }
+            prevSc.upstream = null;
             THREAD_CTX.set(prevSc);
         }
 
@@ -74,6 +86,39 @@ public final class SocksContext extends EventArgs {
             throw new InvalidException("SocksContext not found");
         }
         return sc;
+    }
+
+    public static Upstream getUpstream(SocketConfig conf, UnresolvedEndpoint dstEp) {
+        Upstream u = UPSTREAM_CTX.get();
+        if (u == null) {
+            u = new Upstream(conf, dstEp);
+        } else {
+            UPSTREAM_CTX.remove();
+            u.reuse(conf, dstEp);
+        }
+        return u;
+    }
+
+    public static SocksTcpUpstream getSocksTcpUpstream(SocksConfig conf, UnresolvedEndpoint dstEp, UpstreamSupport next) {
+        SocksTcpUpstream u = SOCKS_TCP_UPSTREAM_CTX.get();
+        if (u == null) {
+            u = new SocksTcpUpstream(conf, dstEp, next);
+        } else {
+            SOCKS_TCP_UPSTREAM_CTX.remove();
+            u.reuse(conf, dstEp, next);
+        }
+        return u;
+    }
+
+    public static SocksUdpUpstream getSocksUdpUpstream(SocksConfig conf, UnresolvedEndpoint dstEp, UpstreamSupport next) {
+        SocksUdpUpstream u = SOCKS_UDP_UPSTREAM_CTX.get();
+        if (u == null) {
+            u = new SocksUdpUpstream(conf, dstEp, next);
+        } else {
+            SOCKS_UDP_UPSTREAM_CTX.remove();
+            u.reuse(conf, dstEp, next);
+        }
+        return u;
     }
 
     public static void omega(String s) {
@@ -122,7 +167,7 @@ public final class SocksContext extends EventArgs {
     transient Channel inbound;
     transient ChannelFuture outbound;
     transient volatile boolean outboundActive;
-    transient InetSocketAddress udp2rawServer;
+    transient InetSocketAddress udp2rawClient;
 
     private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         this.source = srcEp;
@@ -143,6 +188,6 @@ public final class SocksContext extends EventArgs {
         inbound = null;
         outbound = null;
         outboundActive = false;
-        udp2rawServer = null;
+        udp2rawClient = null;
     }
 }
