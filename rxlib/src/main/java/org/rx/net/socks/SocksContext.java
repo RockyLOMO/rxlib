@@ -45,19 +45,19 @@ public final class SocksContext extends EventArgs {
 
     public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         SocksContext sc = THREAD_CTX.getIfExists();
-        if (sc == null) {
-            sc = new SocksContext(srcEp, dstEp);
-        } else {
-            THREAD_CTX.remove();
-            sc.reset(srcEp, dstEp);
-        }
+//        if (sc == null) {
+        sc = new SocksContext(srcEp, dstEp);
+//        } else {
+//            THREAD_CTX.remove();
+//            sc.reset(srcEp, dstEp);
+//        }
         return sc;
     }
 
     public static void markCtx(Channel inbound, ChannelFuture outbound, SocksContext sc) {
         Channel outCh = outbound.channel();
         SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
-        if (prevSc != null) {
+        if (prevSc != null && prevSc != sc) {
             Upstream prevUpstream = prevSc.upstream;
             if (prevUpstream instanceof SocksTcpUpstream) {
                 SOCKS_TCP_UPSTREAM_CTX.set((SocksTcpUpstream) prevUpstream);
