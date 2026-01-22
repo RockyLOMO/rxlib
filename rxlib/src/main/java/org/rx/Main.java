@@ -334,10 +334,16 @@ public final class Main implements SocksRpcContract {
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
             ssSvr.onTcpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
+                if (rssConf.hasDebugFlag()) {
+                    log.info("SS TCP route {} => {}@{}[{}]", e.getSource(), usrName, svrSupport.getEndpoint(), dstEp);
+                }
                 e.setUpstream(SocksContext.getSocksTcpUpstream(toInConf, dstEp, svrSupport));
             });
             ssSvr.onUdpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
+                if (rssConf.hasDebugFlag()) {
+                    log.info("SS UDP route {} => {}@{}[{}]", e.getSource(), usrName, svrSupport.getEndpoint(), dstEp);
+                }
                 e.setUpstream(SocksContext.getSocksUdpUpstream(toInConf, dstEp, svrSupport));
             });
         }
