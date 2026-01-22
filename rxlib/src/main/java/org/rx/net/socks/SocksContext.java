@@ -39,6 +39,7 @@ import static org.rx.core.Sys.fromJson;
 @RequiredArgsConstructor
 public final class SocksContext extends EventArgs implements UdpManager.ChannelKey {
     private static final long serialVersionUID = 323020524764860674L;
+    static final boolean USE_FAST_THREAD_LOCAL = false;
     private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
     private static final FastThreadLocal<Upstream> UPSTREAM_CTX = new FastThreadLocal<>();
     private static final FastThreadLocal<SocksTcpUpstream> SOCKS_TCP_UPSTREAM_CTX = new FastThreadLocal<>();
@@ -48,6 +49,9 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
 
     //用FastThreadLocal复用SocksContext有问题
     public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+        if (!USE_FAST_THREAD_LOCAL) {
+            return new SocksContext(srcEp, dstEp);
+        }
         SocksContext sc = THREAD_CTX.getIfExists();
         if (sc == null) {
             sc = new SocksContext(srcEp, dstEp);
@@ -56,7 +60,6 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
             sc.reset(srcEp, dstEp);
         }
         return sc;
-//        return new SocksContext(srcEp, dstEp);
     }
 
     public static void markCtx(Channel inbound, ChannelFuture outbound, SocksContext sc) {
@@ -98,6 +101,9 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
     }
 
     public static Upstream getUpstream(UnresolvedEndpoint dstEp, SocketConfig conf) {
+        if (!USE_FAST_THREAD_LOCAL) {
+            return new Upstream(dstEp, conf);
+        }
         Upstream u = UPSTREAM_CTX.get();
         if (u == null) {
             u = new Upstream(dstEp, conf);
@@ -109,6 +115,9 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
     }
 
     public static SocksTcpUpstream getSocksTcpUpstream(UnresolvedEndpoint dstEp, SocksConfig conf, UpstreamSupport next) {
+        if (!USE_FAST_THREAD_LOCAL) {
+            return new SocksTcpUpstream(dstEp, conf, next);
+        }
         SocksTcpUpstream u = SOCKS_TCP_UPSTREAM_CTX.get();
         if (u == null) {
             u = new SocksTcpUpstream(dstEp, conf, next);
@@ -120,6 +129,9 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
     }
 
     public static SocksUdpUpstream getSocksUdpUpstream(UnresolvedEndpoint dstEp, SocksConfig conf, UpstreamSupport next) {
+        if (!USE_FAST_THREAD_LOCAL) {
+            return new SocksUdpUpstream(dstEp, conf, next);
+        }
         SocksUdpUpstream u = SOCKS_UDP_UPSTREAM_CTX.get();
         if (u == null) {
             u = new SocksUdpUpstream(dstEp, conf, next);
