@@ -23,14 +23,13 @@ import java.util.concurrent.TimeUnit;
 public class SocksTcpUpstream extends Upstream {
     private UpstreamSupport next;
 
-    public SocksTcpUpstream(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull UpstreamSupport next) {
-        super(config, dstEp);
+    public SocksTcpUpstream(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
+        super(dstEp, config);
         this.next = next;
     }
 
-    public void reuse(@NonNull SocksConfig config, UnresolvedEndpoint dstEp, @NonNull UpstreamSupport next) {
-        super.config = config;
-        super.destination = dstEp;
+    public void reuse(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
+        super.reuse(dstEp, config);
         this.next = next;
     }
 
