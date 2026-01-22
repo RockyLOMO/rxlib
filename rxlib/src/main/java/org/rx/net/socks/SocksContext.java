@@ -67,7 +67,9 @@ public final class SocksContext extends EventArgs {
                 UPSTREAM_CTX.set(prevUpstream);
             }
             prevSc.upstream = null;
-            THREAD_CTX.set(prevSc);
+            if (!THREAD_CTX.isSet()) {
+                THREAD_CTX.set(prevSc);
+            }
         }
 
         sc.inbound = inbound;
