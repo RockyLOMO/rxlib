@@ -45,12 +45,12 @@ public final class SocksContext extends EventArgs {
 
     public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         SocksContext sc = THREAD_CTX.getIfExists();
-//        if (sc == null) {
-        sc = new SocksContext(srcEp, dstEp);
-//        } else {
-//            THREAD_CTX.remove();
-//            sc.reset(srcEp, dstEp);
-//        }
+        if (sc == null) {
+            sc = new SocksContext(srcEp, dstEp);
+        } else {
+            THREAD_CTX.remove();
+            sc.reset(srcEp, dstEp);
+        }
         return sc;
     }
 
