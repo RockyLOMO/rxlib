@@ -9,62 +9,22 @@ import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
 import io.netty.util.NetUtil;
-import io.netty.util.concurrent.FastThreadLocal;
-import lombok.AccessLevel;
-import lombok.NoArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.SocketConfig;
-import org.rx.net.Sockets;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
 
 import java.net.InetSocketAddress;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public final class UdpManager {
-    @NoArgsConstructor(access = AccessLevel.PRIVATE)
-    public static class ChannelKey {
-        byte region;
-        InetSocketAddress srcEp;
-        SocketConfig config;
-
-        private void reset(byte region, InetSocketAddress srcEp, SocketConfig config) {
-            this.region = region;
-            this.srcEp = srcEp;
-            this.config = config;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == null || getClass() != o.getClass()) return false;
-            ChannelKey that = (ChannelKey) o;
-            return region == that.region && Objects.equals(srcEp, that.srcEp) && Objects.equals(config, that.config);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(region, srcEp, config);
-        }
-
-        @Override
-        public String toString() {
-            return "ChannelKey{" +
-                    "region=" + region +
-                    ", srcEp=" + Sockets.toString(srcEp) +
-                    '}';
-        }
-    }
-
     public static final byte socksRegion = 0;
     public static final byte udp2rawRegion = 1;
     public static final byte ssRegion = 2;
-    static final FastThreadLocal<ChannelKey> CHANNEL_KEY = new FastThreadLocal<>();
 
 //    static long packKey(byte region, InetSocketAddress addr) {
 //        InetAddress inetAddr = addr.getAddress();
@@ -103,30 +63,28 @@ public final class UdpManager {
 //        };
 //
 //        // 提取 Region (高 8 位：从第 48 位开始)
+
     /// /        byte region = (byte) ((key >>> 48) & 0xFFL);
 //        return new InetSocketAddress(InetAddress.getByAddress(ipBytes), port);
 //    }
+    public interface ChannelKey {
+        byte getRegion();
+
+        InetSocketAddress getSource();
+
+        SocketConfig getConfig();
+    }
 
     static final ConcurrentHashMap<ChannelKey, ChannelFuture> channels = new ConcurrentHashMap<>();
 
-    public static void unsetChannelKey() {
-        CHANNEL_KEY.remove();
-    }
-
-    public static ChannelFuture open(byte region, InetSocketAddress srcEp, SocketConfig config,
-                                     BiFunc<ChannelKey, ChannelFuture> loadFn) {
-        ChannelKey ck = CHANNEL_KEY.getIfExists();
-//        if (ck == null) {
-            CHANNEL_KEY.set(ck = new ChannelKey());
-//        }
-        ck.reset(region, srcEp, config);
-        return channels.computeIfAbsent(ck, loadFn);
+    public static ChannelFuture open(ChannelKey key, BiFunc<ChannelKey, ChannelFuture> bindFn) {
+        return channels.computeIfAbsent(key, bindFn);
     }
 
     public static void close(ChannelKey ck) {
         ChannelFuture chf = channels.remove(ck);
         if (chf == null) {
-            log.warn("UDP error close fail {}", ck.srcEp);
+            log.warn("UDP error close fail {}", ck);
             return;
         }
         Channel ch = chf.channel();

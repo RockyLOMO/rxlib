@@ -77,11 +77,11 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         //不要尝试UPD白名单，会有未知dstEp发送包的情况
         //不要尝试简化outbound，不改包的情况下srcEp没法关联
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-        SocksContext sc = SocksContext.getCtx(srcEp, dstEp);
-        server.raiseEvent(server.onUdpRoute, sc);
-        Upstream upstream = sc.getUpstream();
-        ChannelFuture outboundFuture = UdpManager.open(UdpManager.socksRegion, srcEp, upstream.getConfig(), k -> {
-            UdpManager.unsetChannelKey();
+        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
+        e.region = UdpManager.socksRegion;
+        server.raiseEvent(server.onUdpRoute, e);
+        Upstream upstream = e.getUpstream();
+        ChannelFuture outboundFuture = UdpManager.open(e, k -> {
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()),
@@ -94,12 +94,12 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             });
             return chf;
         });
-        SocksContext.markCtx(inbound, outboundFuture, sc);
+        SocksContext.markCtx(inbound, outboundFuture, e);
         Channel outbound = outboundFuture.channel();
 
         //udp dstEp可能多个，但upstream.getDestination()只有一个，所以直接用dstEp。
         UnresolvedEndpoint upDstEp;
-        AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
+        AuthenticEndpoint upSvrEp = e.tryGetUdpSocksServer();
         if (upSvrEp != null) {
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
             inBuf.readerIndex(0);
@@ -107,7 +107,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             upDstEp = dstEp;
         }
         inBuf.retain();
-        if (sc.outboundActive) {
+        if (e.outboundActive) {
             if (config.isDebug()) {
                 log.info("socks5[{}] UDP outbound {}bytes {} => {}[{}]", config.getListenPort(), inBuf.readableBytes(), srcEp, upDstEp, dstEp);
             }
