@@ -23,9 +23,11 @@ import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
+import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
@@ -38,6 +40,9 @@ import static org.rx.core.Sys.fromJson;
 public final class SocksContext extends EventArgs implements UdpManager.ChannelKey {
     private static final long serialVersionUID = 323020524764860674L;
     private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
+    private static final FastThreadLocal<Upstream> UPSTREAM_CTX = new FastThreadLocal<>();
+    private static final FastThreadLocal<SocksTcpUpstream> SOCKS_TCP_UPSTREAM_CTX = new FastThreadLocal<>();
+    private static final FastThreadLocal<SocksUdpUpstream> SOCKS_UDP_UPSTREAM_CTX = new FastThreadLocal<>();
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
@@ -58,17 +63,17 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
         Channel outCh = outbound.channel();
         SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
         if (prevSc != null && prevSc != sc) {
-//            Upstream prevUpstream = prevSc.upstream;
-//            if (prevUpstream != null) {
-//                if (prevUpstream instanceof SocksTcpUpstream && !SOCKS_TCP_UPSTREAM_CTX.isSet()) {
-//                    SOCKS_TCP_UPSTREAM_CTX.set((SocksTcpUpstream) prevUpstream);
-//                } else if (prevUpstream instanceof SocksUdpUpstream && !SOCKS_UDP_UPSTREAM_CTX.isSet()) {
-//                    SOCKS_UDP_UPSTREAM_CTX.set((SocksUdpUpstream) prevUpstream);
-//                } else if (!UPSTREAM_CTX.isSet()) {
-//                    UPSTREAM_CTX.set(prevUpstream);
-//                }
-//                prevSc.upstream = null;
-//            }
+            Upstream prevUpstream = prevSc.upstream;
+            if (prevUpstream != null && prevUpstream != sc.upstream) {
+                if (prevUpstream instanceof SocksTcpUpstream) {
+                    SOCKS_TCP_UPSTREAM_CTX.set((SocksTcpUpstream) prevUpstream);
+                } else if (prevUpstream instanceof SocksUdpUpstream) {
+                    SOCKS_UDP_UPSTREAM_CTX.set((SocksUdpUpstream) prevUpstream);
+                } else {
+                    UPSTREAM_CTX.set(prevUpstream);
+                }
+                prevSc.upstream = null;
+            }
 //            if (!THREAD_CTX.isSet()) {
             THREAD_CTX.set(prevSc);
 //            }
@@ -90,6 +95,39 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
             throw new InvalidException("SocksContext not found");
         }
         return sc;
+    }
+
+    public static Upstream getUpstream(UnresolvedEndpoint dstEp, SocketConfig conf) {
+        Upstream u = UPSTREAM_CTX.get();
+        if (u == null) {
+            u = new Upstream(dstEp, conf);
+        } else {
+            UPSTREAM_CTX.remove();
+            u.reuse(dstEp, conf);
+        }
+        return u;
+    }
+
+    public static SocksTcpUpstream getSocksTcpUpstream(UnresolvedEndpoint dstEp, SocksConfig conf, UpstreamSupport next) {
+        SocksTcpUpstream u = SOCKS_TCP_UPSTREAM_CTX.get();
+        if (u == null) {
+            u = new SocksTcpUpstream(dstEp, conf, next);
+        } else {
+            SOCKS_TCP_UPSTREAM_CTX.remove();
+            u.reuse(dstEp, conf, next);
+        }
+        return u;
+    }
+
+    public static SocksUdpUpstream getSocksUdpUpstream(UnresolvedEndpoint dstEp, SocksConfig conf, UpstreamSupport next) {
+        SocksUdpUpstream u = SOCKS_UDP_UPSTREAM_CTX.get();
+        if (u == null) {
+            u = new SocksUdpUpstream(dstEp, conf, next);
+        } else {
+            SOCKS_UDP_UPSTREAM_CTX.remove();
+            u.reuse(dstEp, conf, next);
+        }
+        return u;
     }
 
     public static void omega(String s) {
