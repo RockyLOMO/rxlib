@@ -77,7 +77,6 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         SocksContext.markCtx(inbound, outboundFuture, sc);
         Channel outbound = outboundFuture.channel();
 
-//        SocksContext sc = SocksContext.ctx(outbound);
         UnresolvedEndpoint upDstEp;
         AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
         inBuf.retain();
@@ -85,7 +84,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             inBuf = UdpManager.socks5Encode(inBuf, dstEp);
             upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
         } else {
-            upDstEp = sc.getUpstream().getDestination();
+            upDstEp = upstream.getDestination();
         }
         if (sc.outboundActive) {
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));

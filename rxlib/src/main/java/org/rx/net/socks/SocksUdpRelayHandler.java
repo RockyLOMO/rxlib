@@ -97,7 +97,6 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         SocksContext.markCtx(inbound, outboundFuture, sc);
         Channel outbound = outboundFuture.channel();
 
-//        SocksContext sc = SocksContext.ctx(outbound);
         //udp dstEp可能多个，但upstream.getDestination()只有一个，所以直接用dstEp。
         UnresolvedEndpoint upDstEp;
         AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();

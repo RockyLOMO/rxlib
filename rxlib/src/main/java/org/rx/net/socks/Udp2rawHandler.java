@@ -167,7 +167,6 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         SocksContext.markCtx(inbound, outboundFuture, sc);
         Channel outbound = outboundFuture.channel();
 
-//        SocksContext sc = SocksContext.ctx(outbound);
         UnresolvedEndpoint upDstEp;
         AuthenticEndpoint upSvrEp = sc.tryGetUdpSocksServer();
         if (upSvrEp != null) {
