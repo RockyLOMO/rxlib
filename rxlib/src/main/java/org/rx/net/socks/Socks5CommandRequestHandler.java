@@ -79,7 +79,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upConf, outbound -> {
             upstream.initChannel(outbound);
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
-        }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
+        }).attr(SocksContext.SOCKS_SVR, server).connect(upstream.getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
@@ -94,9 +94,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     }
                 }
                 if (f.cause() instanceof ConnectTimeoutException) {
-                    log.warn("socks5[{}] TCP connect {}[{}] fail\n{}", config.getListenPort(), e.getUpstream().getDestination(), e.getFirstDestination(), f.cause().getMessage());
+                    log.warn("socks5[{}] TCP connect {}[{}] fail\n{}", config.getListenPort(), upstream.getDestination(), e.getFirstDestination(), f.cause().getMessage());
                 } else {
-                    log.error("socks5[{}] TCP connect {}[{}] fail", config.getListenPort(), e.getUpstream().getDestination(), e.getFirstDestination(), f.cause());
+                    log.error("socks5[{}] TCP connect {}[{}] fail", config.getListenPort(), upstream.getDestination(), e.getFirstDestination(), f.cause());
                 }
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
                 return;

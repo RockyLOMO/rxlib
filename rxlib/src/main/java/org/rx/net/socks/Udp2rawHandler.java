@@ -26,7 +26,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             SocksProxyServer server = Sockets.getAttr(outbound, SocksContext.SOCKS_SVR);
             SocksConfig config = server.config;
             SocksContext sc = SocksContext.ctx(outbound);
-            InetSocketAddress udp2rawServer = sc.udp2rawServer;
+            InetSocketAddress udp2rawServer = sc.udp2rawClient;
             InetSocketAddress clientEp = sc.getSource();
 //            UnresolvedEndpoint dstEp = sc.firstDestination;
             InetSocketAddress dstEp = out.sender();
@@ -149,7 +149,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         final UnresolvedEndpoint clientEp = UdpManager.decode(inBuf);
         final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
         SocksContext sc = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
-        sc.udp2rawServer = srcEp;
+        sc.udp2rawClient = srcEp;
         server.raiseEvent(server.onUdpRoute, sc);
         Upstream upstream = sc.getUpstream();
         ChannelFuture outboundFuture = UdpManager.open(UdpManager.udp2rawRegion, clientEp.socketAddress(), upstream.getConfig(), k -> {
