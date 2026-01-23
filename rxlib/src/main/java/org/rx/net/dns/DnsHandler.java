@@ -28,7 +28,15 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     protected void channelRead0(ChannelHandlerContext ctx, DefaultDnsQuery query) {
         Channel ch = ctx.channel();
         DnsServer server = Sockets.getAttr(ch, DnsServer.ATTR_SVR);
-        boolean isTcp = !(ch instanceof DatagramChannel);
+        boolean isTcp;
+        InetAddress srcIp;
+        if (query instanceof DatagramDnsQuery) {
+            isTcp = false;
+            srcIp = ((DatagramDnsQuery) query).sender().getAddress();
+        } else {
+            isTcp = true;
+            srcIp = ((InetSocketAddress) ch.remoteAddress()).getAddress();
+        }
         DnsClient upstream = Sockets.getAttr(ch, DnsServer.ATTR_UPSTREAM);
 
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
@@ -38,7 +46,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         List<InetAddress> hIps = server.getHosts(domain);
         if (!hIps.isEmpty()) {
             ctx.writeAndFlush(newResponse(query, isTcp, question, server.hostsTtl, hIps));
-            log.info("dns query {} -> {}[HOSTS]", domain, hIps.get(0).getHostAddress());
+            log.info("dns query {}+{} -> {}[HOSTS]", srcIp, domain, hIps.get(0).getHostAddress());
             return;
         }
 
@@ -52,16 +60,16 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             List<InetAddress> ips = server.interceptorCache.get(k);
             if (ips == null) {
                 //cache value can't be null
-                server.interceptorCache.put(k, ips = interceptors.next().resolveHost(domain),
+                server.interceptorCache.put(k, ips = interceptors.next().resolveHost(srcIp, domain),
                         CachePolicy.absolute(CollectionUtils.isEmpty(ips) ? 5 : server.ttl));
             }
             if (CollectionUtils.isEmpty(ips)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
-                log.info("dns query {} -> EMPTY", domain);
+                log.info("dns query {}+{} -> EMPTY", srcIp, domain);
                 return;
             }
             ctx.writeAndFlush(newResponse(query, isTcp, question, server.ttl, ips));
-            log.info("dns query {} -> {}[SHADOW]", domain, ips.get(0).getHostAddress());
+            log.info("dns query {}+{} -> {}[SHADOW]", srcIp, domain, ips.get(0).getHostAddress());
             return;
         }
 
@@ -70,7 +78,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             try {
                 AddressedEnvelope<DnsResponse, InetSocketAddress> envelope = (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
                 if (!f.isSuccess()) {
-                    log.error("dns query fail {} -> {}", domain, envelope != null ? envelope.content() : null, f.cause());
+                    log.error("dns query fail {}+{} -> {}", srcIp, domain, envelope != null ? envelope.content() : null, f.cause());
                     // 返回 SERVFAIL (服务器内部错误)
                     ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
                     if (envelope == null) {
@@ -81,7 +89,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                     DnsResponse response = envelope.content();
                     ctx.writeAndFlush(DnsMessageUtil.newResponse(query, response, isTcp));
                     int count = response.count(DnsSection.ANSWER);
-                    log.info("dns query {} -> {}[ANSWER]", domain, count);
+                    log.info("dns query {}+{} -> {}[ANSWER]", srcIp, domain, count);
                 } finally {
                     envelope.release();
                 }

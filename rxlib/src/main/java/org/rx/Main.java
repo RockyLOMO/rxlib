@@ -204,12 +204,31 @@ public final class Main implements SocksRpcContract {
                     }
 
                     @Override
-                    public List<InetAddress> resolveHost(String host) {
-                        if (geoMgr.matchSiteDirect(host)) {
-                            return DnsClient.inlandClient().resolveAll(host);
+                    public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                        boolean outProxy;
+                        String ext;
+                        RouteConf routeConf = rssConf.route;
+                        if (routeConf.enable) {
+                            Set<InetAddress> srcIpProxyRules = routeConf.srcIpProxyRules;
+                            if (srcIpProxyRules != null && srcIpProxyRules.contains(srcIp)) {
+                                outProxy = true;
+                                ext = "srcIp:proxy";
+                            } else if (geoMgr.matchSiteDirect(host)) {
+                                outProxy = false;
+                                ext = "geosite:direct";
+                            } else {
+                                outProxy = true;
+                                ext = "geosite:proxy";
+                            }
+                        } else {
+                            outProxy = true;
+                            ext = "routeDisabled";
+                        }
+                        if (rssConf.hasRouteFlag()) {
+                            log.info("route dns {}+{} {} <- {}", srcIp, host, outProxy ? "PROXY" : "DIRECT", ext);
                         }
 
-                        return facade.resolveHost(host);
+                        return outProxy ? facade.resolveHost(srcIp, host) : DnsClient.inlandClient().resolveAll(host);
                     }
 
                     @Override
@@ -644,7 +663,7 @@ public final class Main implements SocksRpcContract {
 
     @SneakyThrows
     @Override
-    public List<InetAddress> resolveHost(String host) {
+    public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
 //        return DnsClient.outlandClient().resolveAll(host);
         return Arrays.toList(InetAddress.getAllByName(host));
     }

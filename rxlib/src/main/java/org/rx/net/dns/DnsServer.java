@@ -27,7 +27,7 @@ import static org.rx.core.Extends.as;
 @Slf4j
 public class DnsServer extends Disposable {
     public interface ResolveInterceptor {
-        List<InetAddress> resolveHost(String host);
+        List<InetAddress> resolveHost(InetAddress srcIp, String host);
     }
 
     static final String DOMAIN_PREFIX = "_dns:";
@@ -51,23 +51,24 @@ public class DnsServer extends Disposable {
         }
 
         H2StoreCache<Object, Object> cache = (H2StoreCache<Object, Object>) H2StoreCache.DEFAULT;
-        cache.onExpired.combine((s, entry) -> {
-            String key;
-            if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
-                return;
-            }
-
-            String domain = key.substring(DOMAIN_PREFIX.length());
-            List<InetAddress> lastIps = (List<InetAddress>) entry.getValue();
-            Tasks.run(() -> cache.get(key, k -> {
-                List<InetAddress> sIps = interceptors.next().resolveHost(domain);
-                if (CollectionUtils.isEmpty(sIps)) {
-                    return null;
-                }
-                log.info("dns renew {} -> {} <- last={}", domain, sIps, lastIps);
-                return sIps;
-            }, CachePolicy.absolute(ttl)));
-        });
+        //todo srcIp
+//        cache.onExpired.combine((s, entry) -> {
+//            String key;
+//            if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
+//                return;
+//            }
+//
+//            String domain = key.substring(DOMAIN_PREFIX.length());
+//            List<InetAddress> lastIps = (List<InetAddress>) entry.getValue();
+//            Tasks.run(() -> cache.get(key, k -> {
+//                List<InetAddress> sIps = interceptors.next().resolveHost(null, domain);
+//                if (CollectionUtils.isEmpty(sIps)) {
+//                    return null;
+//                }
+//                log.info("dns renew {} -> {} <- last={}", domain, sIps, lastIps);
+//                return sIps;
+//            }, CachePolicy.absolute(ttl)));
+//        });
         interceptorCache = (Cache) cache;
     }
 

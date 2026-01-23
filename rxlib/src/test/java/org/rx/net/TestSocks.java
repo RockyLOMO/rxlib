@@ -783,7 +783,7 @@ public class TestSocks extends AbstractTester {
 
             @SneakyThrows
             @Override
-            public List<InetAddress> resolveHost(String host) {
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
                 log.info("resolveHost {}", host);
                 return Collections.singletonList(aopIp);
 //                return DnsClient.inlandClient().resolveAll(host);

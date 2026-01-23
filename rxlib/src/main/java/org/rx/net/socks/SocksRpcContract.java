@@ -29,8 +29,6 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
 
     void fakeEndpoint(BigInteger hash, String realEndpoint);
 
-    List<InetAddress> resolveHost(String host);
-
     void addWhiteList(InetAddress endpoint);
 
     @Override

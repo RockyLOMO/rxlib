@@ -94,7 +94,7 @@ public final class Sockets {
             throw new InvalidException("Empty server list");
         }
         DnsClient client = new DnsClient(nameServerList);
-        injectNameService(client::resolveAll);
+        injectNameService((srcIp, host) -> client.resolveAll(host));
     }
 
     @SneakyThrows
@@ -128,7 +128,7 @@ public final class Sockets {
                 String host = (String) args[0];
                 //If all interceptors can't handle it, the source object will process it.
                 try {
-                    List<InetAddress> addresses = nsInterceptor.resolveHost(host);
+                    List<InetAddress> addresses = nsInterceptor.resolveHost(null, host);
                     if (!CollectionUtils.isEmpty(addresses)) {
                         return addresses.toArray(empty);
                     }
