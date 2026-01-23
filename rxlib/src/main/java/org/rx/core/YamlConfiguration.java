@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONReader;
 import lombok.Getter;
@@ -38,14 +37,6 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
     }
 
     public static final YamlConfiguration RX_CONF = new YamlConfiguration(Constants.DEFAULT_CONFIG_FILES);
-
-//    static {
-//        try {
-//            Class.forName(Sys.class.getName());
-//        } catch (ClassNotFoundException e) {
-//
-//        }
-//    }
 
     public static Map<String, Object> loadYaml(String... fileNames) {
         return loadYaml(Linq.from(fileNames).selectMany(p -> {
@@ -189,7 +180,6 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
     @ErrorCode("keyError")
     @ErrorCode("partialKeyError")
     public synchronized <T> T readAs(String key, Type type, boolean throwOnEmpty) {
-        Class.forName(Sys.class.getName());
         Map<String, Object> tmp = yaml;
         if (key == null) {
             return convert(tmp, type);

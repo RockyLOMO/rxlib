@@ -55,6 +55,7 @@ import static org.rx.core.Sys.toJsonString;
 public final class Main implements SocksRpcContract {
     @SneakyThrows
     public static void main(String[] args) {
+        Class.forName(Sys.class.getName());
 //        serverInit();
 //
 //        String hfSvr = "AS(104,116,116,112,115,58,47,47,102,45,108,105,46,99,110,58,56,48,56,50)/hf";
