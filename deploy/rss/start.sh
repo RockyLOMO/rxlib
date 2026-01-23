@@ -43,6 +43,7 @@ if [ "$ACTION" = "publish" ]; then
     if [ -f "app.jar.publish" ]; then
         mv "app.jar" "app.jar.latest"
         mv "app.jar.publish" "app.jar"
+        sleep 1
     fi
 elif [ "$ACTION" = "start" ]; then
     echo "${RED}[${LOCAL_TIME}] 启动模式：正在检测端口 ${PORT}/tcp 的进程..."

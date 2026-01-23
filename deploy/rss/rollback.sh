@@ -29,6 +29,7 @@ sleep 2  # 等待进程完全退出和端口释放
 if [ -f "app.jar.latest" ]; then
   rm -f "app.jar"
   mv "app.jar.latest" "app.jar"
+  sleep 1
 fi
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
