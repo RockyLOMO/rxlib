@@ -100,9 +100,7 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
     String outputFile;
     FileWatcher watcher;
 
-    @SneakyThrows
     public YamlConfiguration(@NonNull String... fileNames) {
-        Class.forName(Sys.class.getName());
         yaml = loadYaml(this.fileNames = fileNames);
     }
 
@@ -187,9 +185,11 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         return readAs(key, type, false);
     }
 
+    @SneakyThrows
     @ErrorCode("keyError")
     @ErrorCode("partialKeyError")
     public synchronized <T> T readAs(String key, Type type, boolean throwOnEmpty) {
+        Class.forName(Sys.class.getName());
         Map<String, Object> tmp = yaml;
         if (key == null) {
             return convert(tmp, type);
