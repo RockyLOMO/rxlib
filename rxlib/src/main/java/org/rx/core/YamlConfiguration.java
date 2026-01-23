@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONReader;
 import lombok.Getter;
 import lombok.NonNull;
@@ -13,6 +14,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.FileStream;
 import org.rx.io.FileWatcher;
 import org.rx.io.Files;
+import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
@@ -35,6 +37,14 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
     }
 
     public static final YamlConfiguration RX_CONF = new YamlConfiguration(Constants.DEFAULT_CONFIG_FILES);
+
+    static {
+        try {
+            Class.forName(Sys.class.getName());
+        } catch (ClassNotFoundException e) {
+
+        }
+    }
 
     public static Map<String, Object> loadYaml(String... fileNames) {
         return loadYaml(Linq.from(fileNames).selectMany(p -> {
@@ -108,8 +118,7 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         if (!yaml.isEmpty()) {
             try (FileStream fs = new FileStream(outputFile)) {
                 fs.setPosition(0);
-                fs.writeString(new Yaml().dumpAsMap(yaml));
-                fs.flip();
+                fs.writeString(dump());
             }
         }
         watcher = new FileWatcher(Files.getFullPath(this.outputFile = outputFile), p -> p.toString().equals(this.outputFile));
@@ -152,6 +161,14 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         String[] clone = fileNames.clone();
         yaml.putAll(loadYaml(Arrays.add(clone, fileName)));
         return this;
+    }
+
+    public String dump() {
+        DumperOptions dumperOptions = new DumperOptions();
+        dumperOptions.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+        dumperOptions.setIndicatorIndent(2);
+        dumperOptions.setIndentWithIndicator(true);
+        return new Yaml(dumperOptions).dumpAsMap(yaml);
     }
 
     public <T> T read(String key, T defaultVal) {
@@ -218,8 +235,8 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         Class<T> clz = as(type, Class.class);
         if (isProp || clz == null) {
             //new Yaml().loadAs() 不支持嵌套泛型
-//            return new JSONObject(map).to(type, JSONReader.Feature.SupportClassForName);
-            return JSON.parseObject(JSON.toJSONString(p), type, JSONReader.Feature.SupportClassForName);
+            return new JSONObject(map).to(type, JSONReader.Feature.SupportClassForName);
+//            return JSON.parseObject(JSON.toJSONString(p), type, JSONReader.Feature.SupportClassForName);
         }
         return Reflects.changeType(p, clz);
     }

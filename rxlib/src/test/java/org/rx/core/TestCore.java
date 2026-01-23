@@ -1,7 +1,9 @@
 package org.rx.core;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.TypeReference;
+import com.alibaba.fastjson2.*;
+import com.alibaba.fastjson2.reader.ObjectReader;
+import com.alibaba.fastjson2.writer.ObjectWriter;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -10,6 +12,7 @@ import okhttp3.ResponseBody;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
+import org.rx.Main;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Subscribe;
@@ -31,14 +34,30 @@ import org.rx.third.open.CrcModel;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 import org.slf4j.MDC;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.Constructor;
+import org.yaml.snakeyaml.introspector.BeanAccess;
+import org.yaml.snakeyaml.introspector.Property;
+import org.yaml.snakeyaml.introspector.PropertyUtils;
+import org.yaml.snakeyaml.nodes.MappingNode;
+import org.yaml.snakeyaml.nodes.NodeTuple;
+import org.yaml.snakeyaml.nodes.Tag;
+import org.yaml.snakeyaml.representer.Representer;
 
 import javax.servlet.http.HttpServletResponse;
+import java.io.FileWriter;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.reflect.Method;
+import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -1149,8 +1168,106 @@ public class TestCore extends AbstractTester {
         assert eq(new InvalidException("have {} err", 2, new RuntimeException()).getMessage(), "have 2 err; nested exception is java.lang.RuntimeException");
     }
 
+    @SneakyThrows
     @Test
     public void yamlConf() {
+//        Class.forName(Sys.class.getName());
+        YamlConfiguration yamlConfiguration = new YamlConfiguration("output.yaml");
+        Main.RSSConf rssConf = yamlConfiguration.readAs(null, Main.RSSConf.class);
+        System.out.println("反序列化rssConf: " + rssConf);
+        System.out.println("序列化rssConf:" + yamlConfiguration.dump());
+
+//        PropertyUtils propertyUtils = new PropertyUtils();
+//        propertyUtils.setSkipMissingProperties(true);
+//        Constructor constructor = new Constructor(Main.RSSConf.class, new LoaderOptions());
+//        constructor.setPropertyUtils(propertyUtils);
+//
+//        DumperOptions dumperOptions = new DumperOptions();
+//        dumperOptions.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+//
+//        PropertyUtils unsortedPropertyUtils = new PropertyUtils() {{
+//            // 关键：使用字段直接访问，按声明顺序收集属性
+//            setBeanAccess(BeanAccess.FIELD);
+//        }
+//            @Override
+//            protected Set<Property> createPropertySet(Class<?> type, BeanAccess bAccess) {
+//                Collection<Property> props = getPropertiesMap(type, bAccess).values();
+//                return new LinkedHashSet<>(props);
+//            }
+//        };
+//        Representer representer = new Representer(dumperOptions);
+//        representer.setPropertyUtils(unsortedPropertyUtils);
+//        representer.addClassTag(Main.RSSConf.class, Tag.MAP);
+//
+//        Yaml yaml = new Yaml(constructor, representer);
+//
+//        // 1. YAML → Java Object（反序列化）
+//        // 从字符串加载
+//        String yamlStr = "logFlags: 3\n" +
+//                "shadowUsers:\n" +
+//                "- ssPort: 6899\n" +
+//                "  ssPwd: T^yEqd52HM0O$Ovz\n" +
+//                "  socksUser: rocky\n" +
+//                "  ipLimit: -1\n" +
+//                "- ssPort: 6898\n" +
+//                "  ssPwd: T^yEqd52HM0O$Ovz\n" +
+//                "  socksUser: ccy\n" +
+//                "  ipLimit: 6\n" +
+//                "- ssPort: 6897\n" +
+//                "  ssPwd: xft202002\n" +
+//                "  socksUser: tunR\n" +
+//                "  ipLimit: -1\n" +
+//                "- ssPort: 6896\n" +
+//                "  ssPwd: xft202002\n" +
+//                "  socksUser: hysteriaR\n" +
+//                "  ipLimit: -1\n" +
+//                "socksServers:\n" +
+//                "- youfanX:5PXx0^JNMOgvn3P658@202.91.34.9:9900?w=8\n" +
+//                "- youfanX:5PXx0^JNMOgvn3P658@185.201.226.191:9900?\n" +
+//                "udp2rawSocksServers:\n" +
+//                "- youfanX:5PXx0^JNMOgvn3P658@202.91.34.9:9910?w=8\n" +
+//                "hysteriaClient: 127.0.0.1:1090\n" +
+//                "socksPwd: 202002\n" +
+//                "tcpTimeoutSeconds: 120\n" +
+//                "udpTimeoutSeconds: 1200\n" +
+//                "rpcMaxSize: 10\n" +
+//                "rpcAutoWhiteListSeconds: 240\n" +
+//                "udp2rawClient: 127.0.0.1:4095\n" +
+//                "kcptunClient: youfanX:5PXx0^JNMOgvn3P658@127.0.0.1:4093\n" +
+//                "enableRoute: true\n" +
+//                "routeDstGeoSiteDirectRules:\n" +
+//                "- domain:f-li.cn\n" +
+//                "routeSrcSteeringTTL: 1800\n" +
+//                "ddnsJobSeconds: 60\n" +
+//                "ddnsDomains:\n" +
+//                "- cloud.f-li.cn\n" +
+//                "- s.f-li.cn\n" +
+//                "- db.f-li.cn\n" +
+//                "ddnsApiKey: 6k7t7O9XU9N8Q7A8J8y6ZC7j6P8C7S8l9W8K9E7H6P7JT\n" +
+//                "ddnsApiProxy: s.f-li.cn:1080\n" +
+//                "pcapSourceIp: 192.168.31.9\n" +
+//                "pcapUdpDirect: false";
+//
+//        Main.RSSConf javaObj = yaml.load(yamlStr);
+//        System.out.println("反序列化: " + javaObj);
+//
+//        // 2. Java Object → YAML（序列化）
+//        // 转为字符串
+//        String yamlOutput = yaml.dump(javaObj);
+//        System.out.println("序列化:\n" + yamlOutput);
+//
+//        // 写入文件
+//        try (FileWriter writer = new FileWriter("output.yaml")) {
+//            yaml.dump(javaObj, writer);
+//        }
+//        System.out.println("序列化 output.yaml");
+//        // 从文件加载
+//        try (InputStream input = Files.newInputStream(Paths.get("output.yaml"))) {
+//            Main.RSSConf fromFile = yaml.load(input);
+//            System.out.println("反序列化: " + fromFile);
+//        }
+
+
         YamlConfiguration conf = YamlConfiguration.RX_CONF;
 //        conf.enableWatch();
 
@@ -1186,6 +1303,6 @@ public class TestCore extends AbstractTester {
         System.out.println(rxConf.getJsonSkipTypes());
         System.out.println(rxConf.getCache().getMainInstance());
 
-        sleep(10000);
+        sleep(5000);
     }
 }

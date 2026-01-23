@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.core.cache.H2StoreCache;
+import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
 
 import java.net.InetAddress;
@@ -29,7 +30,7 @@ public class SocksConfig extends SocketConfig {
     private final Set<InetAddress> whiteList = whiteList();
     private boolean enableUdp2raw;
     private InetSocketAddress udp2rawClient;
-    private String kcptunClient;
+    private AuthenticEndpoint kcptunClient;
 
     private Set<InetAddress> whiteList() {
         return H2StoreCache.DEFAULT.asSet();

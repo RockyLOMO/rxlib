@@ -26,8 +26,6 @@ import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.socks.*;
 import org.rx.net.socks.encryption.CipherKind;
-import org.rx.net.socks.upstream.SocksTcpUpstream;
-import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.GeoManager;
 import org.rx.net.support.IpGeolocation;
@@ -37,8 +35,8 @@ import org.rx.net.transport.TcpClientConfig;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.Action;
 import org.rx.util.function.BiFunc;
+import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleAction;
-import org.rx.util.function.TripleFunc;
 
 import java.io.OutputStream;
 import java.math.BigInteger;
@@ -95,12 +93,22 @@ public final class Main implements SocksRpcContract {
     @Getter
     @Setter
     @ToString
+    public static class RouteConf {
+        public boolean enable;
+        public Set<String> dstGeoSiteDirectRules;
+        public Set<InetAddress> srcIpProxyRules;
+        public int srcSteeringTTL;
+    }
+
+    @Getter
+    @Setter
+    @ToString
     public static class RSSConf {
         public int logFlags;
 
         //socks
         public List<ShadowUser> shadowUsers;
-        public List<String> socksServers;
+        public List<AuthenticEndpoint> socksServers;
         public String socksPwd;
         public int connectTimeoutSeconds = 10;
         public int tcpTimeoutSeconds = 60 * 2;
@@ -111,16 +119,14 @@ public final class Main implements SocksRpcContract {
         public int shadowDnsPort = 753;
         public int dnsTtlMinutes = 600;
 
-        public List<String> udp2rawSocksServers;
-        public String udp2rawClient;
+        public List<AuthenticEndpoint> udp2rawSocksServers;
+        public InetSocketAddress udp2rawClient;
         //传递后tcp走kcptun
-        public String kcptunClient;
-        public String hysteriaClient;
+        public AuthenticEndpoint kcptunClient;
+        public AuthenticEndpoint hysteriaClient;
 
         //route
-        public boolean enableRoute = true;
-        public Set<String> routeDstGeoSiteDirectRules;
-        public int routeSrcSteeringTTL;
+        public RouteConf route = new RouteConf();
 
         //ddns
         public int ddnsJobSeconds;
@@ -162,14 +168,14 @@ public final class Main implements SocksRpcContract {
             }
 
             rssConf = changed;
-            Linq<AuthenticEndpoint> svrs = Linq.from(rssConf.socksServers).where(Objects::nonNull).select(p -> Reflects.convertQuietly(p, AuthenticEndpoint.class));
-            if (!svrs.any()) {
+            List<AuthenticEndpoint> svrs = rssConf.socksServers;
+            if (svrs.isEmpty()) {
                 throw new InvalidException("Invalid shadowServer arg");
             }
             log.info("rssConf load socksServers: {}", toJsonString(svrs));
-            Linq<AuthenticEndpoint> udp2rawSvrs = Linq.from(rssConf.udp2rawSocksServers).where(Objects::nonNull).select(p -> Reflects.convertQuietly(p, AuthenticEndpoint.class));
+            List<AuthenticEndpoint> udp2rawSvrs = rssConf.udp2rawSocksServers;
             log.info("rssConf load udp2rawSocksServers: {}", toJsonString(udp2rawSvrs));
-            geoMgr.setGeoSiteDirectRules(rssConf.routeDstGeoSiteDirectRules);
+            geoMgr.setGeoSiteDirectRules(rssConf.route.dstGeoSiteDirectRules);
 
             List<UpstreamSupport> oldSvrs = socksServers.aliveList();
             List<UpstreamSupport> oldUdp2rawSvrs = udp2rawSocksServers.aliveList();
@@ -245,7 +251,7 @@ public final class Main implements SocksRpcContract {
                     config.setDebug(debugFlag);
                     config.setConnectTimeoutMillis(connectTimeoutMillis);
                     if (config.isEnableUdp2raw()) {
-                        config.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
+                        config.setUdp2rawClient(rssConf.udp2rawClient);
                         config.setKcptunClient(rssConf.kcptunClient);
                     }
                 }
@@ -297,7 +303,7 @@ public final class Main implements SocksRpcContract {
             inUdp2rawConf.setDebug(rssConf.hasDebugFlag());
             inUdp2rawConf.setListenPort(udp2rawPort);
             inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
-            inUdp2rawConf.setUdp2rawClient(Sockets.parseEndpoint(rssConf.udp2rawClient));
+            inUdp2rawConf.setUdp2rawClient(rssConf.udp2rawClient);
             inUdp2rawConf.setKcptunClient(rssConf.kcptunClient);
             SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
             svrRefs.add(inUdp2rawSvr);
@@ -324,7 +330,7 @@ public final class Main implements SocksRpcContract {
 
             AuthenticEndpoint svrEp;
             if (usrName.startsWith("hysteria")) {
-                svrEp = AuthenticEndpoint.valueOf(rssConf.hysteriaClient);
+                svrEp = rssConf.hysteriaClient;
             } else if (usrName.startsWith("tun")) {
                 svrEp = new AuthenticEndpoint(inUdp2rawSvrEp, usrName, usr.getPassword());
             } else {
@@ -363,12 +369,12 @@ public final class Main implements SocksRpcContract {
                                         GeoManager geoMgr) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
         boolean kcptun = inConf.getKcptunClient() != null;
-        UpstreamSupport kcpUpstream = kcptun ? new UpstreamSupport(AuthenticEndpoint.valueOf(inConf.getKcptunClient()), null)
+        UpstreamSupport kcpUpstream = kcptun ? new UpstreamSupport(inConf.getKcptunClient(), null)
                 : null;
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
 //            String destHost = e.getFirstDestination().getHost();
             InetAddress srcHost = e.getSource().getAddress();
-            UpstreamSupport next = socksServers.next(srcHost, rssConf.routeSrcSteeringTTL, true);
+            UpstreamSupport next = socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
             if (kcptun) {
                 kcpUpstream.setFacade(next.getFacade());
                 return kcpUpstream;
@@ -380,14 +386,19 @@ public final class Main implements SocksRpcContract {
         if (!kcptun) {
             outConf.setOptimalSettings(OUT_OPS);
         }
-        TripleFunc<UnresolvedEndpoint, String, Boolean> routeingFn = (dstEp, transType) -> {
+        QuadraFunc<InetSocketAddress, UnresolvedEndpoint, String, Boolean> routeingFn = (srcEp, dstEp, transType) -> {
             String host = dstEp.getHost();
             boolean outProxy;
             long begin;
             String ext;
-            if (rssConf.enableRoute) {
+            RouteConf routeConf = rssConf.route;
+            if (routeConf.enable) {
                 begin = System.nanoTime();
-                if (!Sockets.isValidIp(host)) {
+                Set<InetAddress> srcIpProxyRules = routeConf.srcIpProxyRules;
+                if (srcIpProxyRules != null && srcIpProxyRules.contains(srcEp.getAddress())) {
+                    outProxy = true;
+                    ext = "srcIp:proxy";
+                } else if (!Sockets.isValidIp(host)) {
                     if (geoMgr.matchSiteDirect(host)) {
                         outProxy = false;
                         ext = "geosite:direct";
@@ -421,7 +432,7 @@ public final class Main implements SocksRpcContract {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            if (routeingFn.apply(dstEp, "TCP")) {
+            if (routeingFn.apply(e.getSource(), dstEp, "TCP")) {
 //                e.setUpstream(new SocksTcpUpstream(dstEp, outConf, routerFn.apply(e)));
                 e.setUpstream(SocksContext.getSocksTcpUpstream(dstEp, outConf, routerFn.apply(e)));
             } else {
@@ -434,7 +445,7 @@ public final class Main implements SocksRpcContract {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            if (routeingFn.apply(dstEp, "UDP")) {
+            if (routeingFn.apply(e.getSource(), dstEp, "UDP")) {
 //                e.setUpstream(new SocksUdpUpstream(dstEp, outConf, routerFn.apply(e)));
                 e.setUpstream(SocksContext.getSocksUdpUpstream(dstEp, outConf, routerFn.apply(e)));
             } else {
