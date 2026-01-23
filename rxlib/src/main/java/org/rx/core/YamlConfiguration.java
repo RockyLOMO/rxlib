@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONReader;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.annotation.ErrorCode;
@@ -38,13 +39,13 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
 
     public static final YamlConfiguration RX_CONF = new YamlConfiguration(Constants.DEFAULT_CONFIG_FILES);
 
-    static {
-        try {
-            Class.forName(Sys.class.getName());
-        } catch (ClassNotFoundException e) {
-
-        }
-    }
+//    static {
+//        try {
+//            Class.forName(Sys.class.getName());
+//        } catch (ClassNotFoundException e) {
+//
+//        }
+//    }
 
     public static Map<String, Object> loadYaml(String... fileNames) {
         return loadYaml(Linq.from(fileNames).selectMany(p -> {
@@ -99,7 +100,9 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
     String outputFile;
     FileWatcher watcher;
 
+    @SneakyThrows
     public YamlConfiguration(@NonNull String... fileNames) {
+        Class.forName(Sys.class.getName());
         yaml = loadYaml(this.fileNames = fileNames);
     }
 
