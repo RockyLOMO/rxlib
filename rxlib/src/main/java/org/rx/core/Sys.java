@@ -3,6 +3,10 @@ package org.rx.core;
 import ch.qos.logback.classic.util.LogbackMDCAdapter;
 import com.alibaba.fastjson2.*;
 import com.alibaba.fastjson2.filter.ValueFilter;
+import com.alibaba.fastjson2.reader.ObjectReader;
+import com.alibaba.fastjson2.reader.ObjectReaderProvider;
+import com.alibaba.fastjson2.writer.ObjectWriter;
+import com.alibaba.fastjson2.writer.ObjectWriterProvider;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.Timeout;
@@ -18,6 +22,7 @@ import org.rx.exception.FallbackException;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Serializer;
+import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.util.Lazy;
 import org.rx.util.function.BiAction;
@@ -140,6 +145,41 @@ public final class Sys extends SystemUtils {
     static byte transformedFlags;
 
     static {
+        ObjectReaderProvider objectReaderProvider = JSONFactory.getDefaultObjectReaderProvider();
+        ObjectWriterProvider objectWriterProvider = JSONFactory.getDefaultObjectWriterProvider();
+        objectReaderProvider.register(InetSocketAddress.class, (ObjectReader<InetSocketAddress>) (jsonReader, fieldType, fieldName, features) -> {
+            // 读取 JSON 中的值（可能是字符串，也可能是原本的对象格式）
+            if (jsonReader.isString()) {
+                String str = jsonReader.readString();
+                return Sockets.parseEndpoint(str);
+            }
+            // 如果是对象格式 {"address":..., "port":...}，执行默认读取逻辑
+            return jsonReader.read(InetSocketAddress.class);
+        });
+        objectWriterProvider.register(InetSocketAddress.class, (ObjectWriter<InetSocketAddress>) (jsonWriter, object, fieldName, fieldType, features) -> {
+            if (object == null) {
+                jsonWriter.writeNull();
+                return;
+            }
+            InetSocketAddress addr = (InetSocketAddress) object;
+            jsonWriter.writeString(addr.getHostString() + ":" + addr.getPort());
+        });
+        objectReaderProvider.register(AuthenticEndpoint.class, (ObjectReader<AuthenticEndpoint>) (jsonReader, fieldType, fieldName, features) -> {
+            if (jsonReader.isString()) {
+                String str = jsonReader.readString();
+                return AuthenticEndpoint.valueOf(str);
+            }
+            throw new InvalidException("Invalid AuthenticEndpoint");
+        });
+        objectWriterProvider.register(AuthenticEndpoint.class, (ObjectWriter<AuthenticEndpoint>) (jsonWriter, object, fieldName, fieldType, features) -> {
+            if (object == null) {
+                jsonWriter.writeNull();
+                return;
+            }
+            AuthenticEndpoint obj = (AuthenticEndpoint) object;
+            jsonWriter.writeString(obj.toString());
+        });
+
         RxConfig conf = RxConfig.INSTANCE;
         log.info("RxMeta {} {}_{}_{} @ {} & {}\n{}", JAVA_VERSION, OS_NAME, OS_VERSION, OS_ARCH,
                 new File(Strings.EMPTY).getAbsolutePath(), Sockets.getLocalAddresses(false), JSON.toJSONString(conf));
