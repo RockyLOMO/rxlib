@@ -26,6 +26,7 @@ import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.socks.*;
 import org.rx.net.socks.encryption.CipherKind;
+import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.GeoManager;
@@ -145,7 +146,7 @@ public final class Main implements SocksRpcContract {
         }
     }
 
-    //FastThreadLocal Upstream 有问题
+    //FastThreadLocal 复用 Upstream 价值不高
     public static final OptimalSettings OUT_OPS = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
     public static final OptimalSettings IN_OPS = null;
     public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
@@ -367,8 +368,7 @@ public final class Main implements SocksRpcContract {
                 if (rssConf.hasDebugFlag()) {
                     log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
                 }
-//                e.setUpstream(new SocksTcpUpstream(dstEp, toInConf, svrSupport));
-                e.setUpstream(SocksContext.getSocksTcpUpstream(dstEp, toInConf, svrSupport));
+                e.setUpstream(new SocksTcpUpstream(dstEp, toInConf, svrSupport));
             });
             ssSvr.onUdpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
@@ -395,7 +395,9 @@ public final class Main implements SocksRpcContract {
 //            String destHost = e.getFirstDestination().getHost();
             InetAddress srcHost = e.getSource().getAddress();
             UpstreamSupport next = socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
-            log.info("route udp src {} -> {}", srcHost, next.getEndpoint());
+            if (rssConf.hasDebugFlag()) {
+                log.info("route upSvr src {} -> {}", srcHost, next.getEndpoint());
+            }
             if (kcptun) {
                 kcpUpstream.setFacade(next.getFacade());
                 return kcpUpstream;
@@ -454,11 +456,9 @@ public final class Main implements SocksRpcContract {
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(e.getSource(), dstEp, "TCP")) {
-//                e.setUpstream(new SocksTcpUpstream(dstEp, outConf, routerFn.apply(e)));
-                e.setUpstream(SocksContext.getSocksTcpUpstream(dstEp, outConf, routerFn.apply(e)));
+                e.setUpstream(new SocksTcpUpstream(dstEp, outConf, routerFn.apply(e)));
             } else {
-//                e.setUpstream(new Upstream(dstEp));
-                e.setUpstream(SocksContext.getUpstream(dstEp, null));
+                e.setUpstream(new Upstream(dstEp));
             }
         });
         inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
@@ -469,8 +469,7 @@ public final class Main implements SocksRpcContract {
             if (routeingFn.apply(e.getSource(), dstEp, "UDP")) {
                 e.setUpstream(new SocksUdpUpstream(dstEp, outConf, routerFn.apply(e)));
             } else {
-//                e.setUpstream(new Upstream(dstEp));
-                e.setUpstream(SocksContext.getUpstream(dstEp, null));
+                e.setUpstream(new Upstream(dstEp));
             }
         });
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
