@@ -11,15 +11,10 @@ import org.rx.net.support.UpstreamSupport;
 
 public class SocksUdpUpstream extends Upstream {
     @Getter
-    AuthenticEndpoint udpSocksServer;
+    final AuthenticEndpoint udpSocksServer;
 
     public SocksUdpUpstream(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
-        udpSocksServer = next.getEndpoint();
-    }
-
-    public void reuse(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
-        super.reuse(dstEp, config);
         udpSocksServer = next.getEndpoint();
     }
 
