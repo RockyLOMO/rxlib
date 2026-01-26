@@ -3,8 +3,6 @@ package org.rx.core;
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.NonNull;
 import org.apache.commons.lang3.StringUtils;
-import org.rx.annotation.ErrorCode;
-import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
 
 import java.awt.*;
@@ -13,8 +11,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
-
-import static org.rx.core.Extends.values;
 
 public class Strings extends StringUtils {
     //region VarExpression

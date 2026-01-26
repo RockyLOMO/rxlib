@@ -13,8 +13,6 @@ import org.rx.io.EntityQueryLambda;
 import org.rx.third.guava.AbstractSequentialIterator;
 
 import java.util.*;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Constants.NON_UNCHECKED;

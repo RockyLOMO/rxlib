@@ -2,11 +2,10 @@ package org.rx.core.cache;
 
 import com.github.benmanes.caffeine.cache.*;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import org.checkerframework.checker.index.qual.NonNegative;
 import org.checkerframework.checker.nullness.qual.NonNull;
-import org.rx.core.Cache;
 import org.rx.core.*;
+import org.rx.core.Cache;
 import org.rx.util.function.BiAction;
 
 import java.util.Collection;
@@ -92,11 +91,14 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
         this(b -> b.maximumSize(RxConfig.INSTANCE.getCache().getMaxItemSize()), null);
     }
 
-    @SneakyThrows
+    public MemoryCache(BiAction<Caffeine<TK, TV>> onBuild) {
+        this(onBuild, null);
+    }
+
     public MemoryCache(BiAction<Caffeine<TK, TV>> onBuild, RemovalListener<TK, TV> extraRemovalListener) {
         Caffeine<TK, TV> builder = rootBuilder();
         if (onBuild != null) {
-            onBuild.invoke(builder);
+            onBuild.accept(builder);
         }
         cache = builder.expireAfter(new CaffeineExpiry(policyMap))
                 .removalListener((key, value, cause) -> {

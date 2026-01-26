@@ -12,7 +12,7 @@ import java.net.SocketAddress;
 @Slf4j
 public final class EndpointTracer {
     static final InetSocketAddress unknownEp = Sockets.newAnyEndpoint(0);
-    final Cache<InetSocketAddress, InetSocketAddress> index = Cache.getInstance(MemoryCache.class);
+    final MemoryCache<InetSocketAddress, InetSocketAddress> index = new MemoryCache<>(b -> b.maximumSize(10000));
 
     InetSocketAddress key(SocketAddress sa) {
         return ((InetSocketAddress) sa);
