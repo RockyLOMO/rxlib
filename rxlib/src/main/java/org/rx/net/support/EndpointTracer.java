@@ -11,16 +11,15 @@ import java.net.SocketAddress;
 
 @Slf4j
 public final class EndpointTracer {
+    public static final EndpointTracer TCP = new EndpointTracer();
+    public static final EndpointTracer UDP = new EndpointTracer();
+
     static final InetSocketAddress unknownEp = Sockets.newAnyEndpoint(0);
-    final MemoryCache<InetSocketAddress, InetSocketAddress> index = new MemoryCache<>(b -> b.maximumSize(10000));
+    final MemoryCache<InetSocketAddress, InetSocketAddress> index = new MemoryCache<>(b -> b.maximumSize(5000));
 
-    InetSocketAddress key(SocketAddress sa) {
-        return ((InetSocketAddress) sa);
-    }
-
-    public void link(Channel inbound, Channel outbound) {
-        InetSocketAddress source = index.get(key(inbound.remoteAddress()), k -> (InetSocketAddress) inbound.remoteAddress());
-        index.put(key(outbound.localAddress()), source);
+    public void link(InetSocketAddress inboundRemoteAddress, Channel outbound) {
+        InetSocketAddress source = index.get(inboundRemoteAddress, k -> inboundRemoteAddress);
+        index.put((InetSocketAddress) outbound.localAddress(), source);
 //        log.info("EpTracer link {} <- ({} -> {})", Sockets.toString(source), inbound, outbound);
     }
 
@@ -29,10 +28,8 @@ public final class EndpointTracer {
     }
 
     public InetSocketAddress head(InetSocketAddress remoteAddr) {
-        InetSocketAddress source = index.get(key(remoteAddr));
-        if (source == null
-//                || Sockets.isPrivateIp(source.getAddress())
-        ) {
+        InetSocketAddress source = index.get(remoteAddr);
+        if (source == null) {
             source = unknownEp;
         }
         log.info("EpTracer head {} <- ({})", Sockets.toString(source), remoteAddr);

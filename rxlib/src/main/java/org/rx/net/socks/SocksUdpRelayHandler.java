@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetAddress;
@@ -95,6 +96,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         });
         SocksContext.markCtx(inbound, outboundFuture, e);
         Channel outbound = outboundFuture.channel();
+        EndpointTracer.UDP.link(srcEp, outbound);
 
         //udp dstEp可能多个，但upstream.getDestination()只有一个，所以直接用dstEp。
         UnresolvedEndpoint upDstEp;

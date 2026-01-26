@@ -6,6 +6,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.*;
 import org.rx.net.socks.upstream.Socks5ClientHandler;
+import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.math.BigInteger;
@@ -100,7 +101,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
             Channel outbound = f.channel();
-            SocksRpcContract.ENDPOINT_TRACER.link(inbound, outbound);
+            EndpointTracer.TCP.link((InetSocketAddress) inbound.remoteAddress(), outbound);
             Socks5ClientHandler proxyHandler;
             if (server.cipherRoute(e.getFirstDestination()) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {

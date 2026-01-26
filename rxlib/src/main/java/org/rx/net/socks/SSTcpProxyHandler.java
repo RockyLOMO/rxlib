@@ -4,6 +4,7 @@ import io.netty.channel.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
@@ -38,7 +39,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
                 log.info("SS TCP connect to backend {}[{}]", upDstEp, dstEp);
             }
             Channel outbound = f.channel();
-            SocksRpcContract.ENDPOINT_TRACER.link(inbound, outbound);
+            EndpointTracer.TCP.link((InetSocketAddress) inbound.remoteAddress(), outbound);
             outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
         });
         SocksContext.markCtx(inbound, outboundFuture, e);

@@ -5,7 +5,6 @@ import org.rx.core.Cache;
 import org.rx.core.Strings;
 import org.rx.core.cache.H2StoreCache;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.math.BigInteger;
@@ -21,7 +20,6 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
     List<Integer> FAKE_PORTS = new CopyOnWriteArrayList<>(Arrays.toList(80));
     int DNS_PORT = 53;
     long ASYNC_TIMEOUT = 4 * 1000;
-    EndpointTracer ENDPOINT_TRACER = new EndpointTracer();
 
     static Cache<BigInteger, UnresolvedEndpoint> fakeDict() {
         return (Cache<BigInteger, UnresolvedEndpoint>) H2StoreCache.DEFAULT;

@@ -393,6 +393,7 @@ public final class Main implements SocksRpcContract {
                 : null;
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
 //            String destHost = e.getFirstDestination().getHost();
+//            InetAddress srcHost = e.getSource().getAddress(); //本地转发会不准都是127.0.0.1
             InetAddress srcHost = e.getSource().getAddress();
             UpstreamSupport next = socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
             if (rssConf.hasDebugFlag()) {
