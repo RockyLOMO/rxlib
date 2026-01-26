@@ -7,8 +7,8 @@ import lombok.Setter;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.Linq;
+import org.rx.core.cache.IntCompositeKey;
 import org.rx.core.cache.MemoryCache;
-import org.rx.util.Lazy;
 import org.rx.util.function.BiFunc;
 
 import java.io.Serializable;
@@ -49,7 +49,6 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
         }
     }
 
-    final static Lazy<MemoryCache<Object, Object>> cacheLazy = new Lazy<>(() -> new MemoryCache<>(b -> b.maximumSize(1000)));
     final ReadWriteLock lock = new ReentrantReadWriteLock();
     final List<WeightElement<T>> elements = new ArrayList<>();
     int maxRandomValue;
@@ -66,8 +65,8 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     }
 
     public <S> T next(S steeringKey, int ttl, boolean isSliding) {
-        MemoryCache<S, T> cache = (MemoryCache<S, T>) cacheLazy.getValue();
-        return cache.get(steeringKey, k -> next(), isSliding ? CachePolicy.sliding(ttl) : CachePolicy.absolute(ttl));
+        Cache<IntCompositeKey<S>, T> cache = Cache.getInstance(MemoryCache.class);
+        return cache.get(new IntCompositeKey<>(System.identityHashCode(this), steeringKey), k -> next(), isSliding ? CachePolicy.sliding(ttl) : CachePolicy.absolute(ttl));
     }
 
     public T next() {
