@@ -395,6 +395,7 @@ public final class Main implements SocksRpcContract {
 //            String destHost = e.getFirstDestination().getHost();
             InetAddress srcHost = e.getSource().getAddress();
             UpstreamSupport next = socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
+            log.info("route udp src {} -> {}", srcHost, next.getEndpoint());
             if (kcptun) {
                 kcpUpstream.setFacade(next.getFacade());
                 return kcpUpstream;
