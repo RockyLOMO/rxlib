@@ -22,9 +22,9 @@ import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public final class UdpManager {
-    public static final byte socksRegion = 0;
-    public static final byte udp2rawRegion = 1;
-    public static final byte ssRegion = 2;
+//    public static final byte socksRegion = 0;
+//    public static final byte udp2rawRegion = 1;
+//    public static final byte ssRegion = 2;
 
 //    static long packKey(byte region, InetSocketAddress addr) {
 //        InetAddress inetAddr = addr.getAddress();

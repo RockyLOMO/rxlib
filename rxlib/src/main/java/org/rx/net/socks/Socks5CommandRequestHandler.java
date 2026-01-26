@@ -51,7 +51,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
         InetSocketAddress srcEp = (InetSocketAddress) inCh.remoteAddress();
         if (msg.type() == Socks5CommandType.CONNECT) {
-            SocksContext e = SocksContext.getCtx(srcEp, dstEp);
+            SocksContext e = SocksContext.getCtx(srcEp, dstEp, SocksContext.socksRegion);
             server.raiseEvent(server.onTcpRoute, e);
             connect(inCh, msg.dstAddrType(), e, null);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
