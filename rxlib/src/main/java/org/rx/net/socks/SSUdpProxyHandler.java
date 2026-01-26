@@ -61,8 +61,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
 
-        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
-        e.region = UdpManager.ssRegion;
+        SocksContext e = SocksContext.getCtx(srcEp, dstEp, SocksContext.ssRegion);
         server.raiseEvent(server.onUdpRoute, e);
         Upstream upstream = e.getUpstream();
         ChannelFuture outboundFuture = UdpManager.open(e, k -> {

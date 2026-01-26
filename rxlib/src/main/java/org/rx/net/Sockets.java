@@ -72,6 +72,7 @@ public final class Sockets {
         protected void initChannel(Channel ch) {
             ch.pipeline().addLast(GlobalChannelHandler.DEFAULT);
             getAttr(ch, SocketConfig.ATTR_INIT_FN).accept(ch);
+            ch.attr(SocketConfig.ATTR_INIT_FN).set(null);
         }
     }
 

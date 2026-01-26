@@ -48,16 +48,16 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
     //用FastThreadLocal复用SocksContext有问题
-    public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+    public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp, byte region) {
         if (!USE_FAST_THREAD_LOCAL) {
-            return new SocksContext(srcEp, dstEp);
+            return new SocksContext(srcEp, dstEp, region);
         }
         SocksContext sc = THREAD_CTX.getIfExists();
         if (sc == null) {
-            sc = new SocksContext(srcEp, dstEp);
+            sc = new SocksContext(srcEp, dstEp, region);
         } else {
             THREAD_CTX.remove();
-            sc.reset(srcEp, dstEp);
+            sc.reset(srcEp, dstEp, region);
         }
         return sc;
     }
@@ -190,9 +190,10 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
     transient volatile boolean outboundActive;
     transient InetSocketAddress udp2rawClient;
 
-    private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+    private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp, byte region) {
         this.source = srcEp;
         this.firstDestination = dstEp;
+        this.region = region;
     }
 
     public AuthenticEndpoint tryGetUdpSocksServer() {
@@ -202,7 +203,7 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
         return null;
     }
 
-    private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+    private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp, byte region) {
         source = srcEp;
         firstDestination = dstEp;
         upstream = null;
@@ -213,8 +214,11 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
     }
 
     //ChannelKey region,source,config
+    public static final byte socksRegion = 0;
+    public static final byte udp2rawRegion = 1;
+    public static final byte ssRegion = 2;
     @Getter
-    byte region;
+    private byte region;
 
     public SocketConfig getConfig() {
         if (upstream == null) {
@@ -240,7 +244,8 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
         return "SocksContext{" +
                 "region=" + region +
                 ", source=" + source +
-                ", destination=" + (upstream != null ? upstream.getDestination().toString() : null) +
+                ", config=" + getConfig() +
+//                ", destination=" + (upstream != null ? upstream.getDestination().toString() : null) +
 //                ", udp2rawClient=" + udp2rawClient +
                 '}';
     }

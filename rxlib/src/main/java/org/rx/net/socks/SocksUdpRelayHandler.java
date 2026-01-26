@@ -77,8 +77,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         //不要尝试UPD白名单，会有未知dstEp发送包的情况
         //不要尝试简化outbound，不改包的情况下srcEp没法关联
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
-        e.region = UdpManager.socksRegion;
+        SocksContext e = SocksContext.getCtx(srcEp, dstEp, SocksContext.socksRegion);
         server.raiseEvent(server.onUdpRoute, e);
         Upstream upstream = e.getUpstream();
         ChannelFuture outboundFuture = UdpManager.open(e, k -> {

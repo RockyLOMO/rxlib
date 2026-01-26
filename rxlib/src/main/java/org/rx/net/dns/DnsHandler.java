@@ -114,12 +114,8 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     }
 
     @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-//        if (cause instanceof io.netty.handler.codec.DecoderException
-//                || cause instanceof IndexOutOfBoundsException) {
-//            log.warn("dns decode error: {}", cause.getMessage());
-//        } else {
-        log.error("dns query error", cause);
-//        }
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        log.error("dns {} query error", ctx.channel() instanceof DatagramChannel ? "UDP" : "TCP", cause);
+        super.exceptionCaught(ctx, cause);
     }
 }
