@@ -43,7 +43,6 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
     private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
     private static final FastThreadLocal<Upstream> UPSTREAM_CTX = new FastThreadLocal<>();
     private static final FastThreadLocal<SocksTcpUpstream> SOCKS_TCP_UPSTREAM_CTX = new FastThreadLocal<>();
-    private static final FastThreadLocal<SocksUdpUpstream> SOCKS_UDP_UPSTREAM_CTX = new FastThreadLocal<>();
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
@@ -70,8 +69,6 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
             if (prevUpstream != null && prevUpstream != sc.upstream) {
                 if (prevUpstream instanceof SocksTcpUpstream) {
                     SOCKS_TCP_UPSTREAM_CTX.set((SocksTcpUpstream) prevUpstream);
-                } else if (prevUpstream instanceof SocksUdpUpstream) {
-                    SOCKS_UDP_UPSTREAM_CTX.set((SocksUdpUpstream) prevUpstream);
                 } else {
                     UPSTREAM_CTX.set(prevUpstream);
                 }
@@ -123,20 +120,6 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
             u = new SocksTcpUpstream(dstEp, conf, next);
         } else {
             SOCKS_TCP_UPSTREAM_CTX.remove();
-            u.reuse(dstEp, conf, next);
-        }
-        return u;
-    }
-
-    public static SocksUdpUpstream getSocksUdpUpstream(UnresolvedEndpoint dstEp, SocksConfig conf, UpstreamSupport next) {
-        if (!USE_FAST_THREAD_LOCAL) {
-            return new SocksUdpUpstream(dstEp, conf, next);
-        }
-        SocksUdpUpstream u = SOCKS_UDP_UPSTREAM_CTX.get();
-        if (u == null) {
-            u = new SocksUdpUpstream(dstEp, conf, next);
-        } else {
-            SOCKS_UDP_UPSTREAM_CTX.remove();
             u.reuse(dstEp, conf, next);
         }
         return u;
@@ -241,10 +224,11 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
 
     @Override
     public String toString() {
+        SocketConfig config = getConfig();
         return "SocksContext{" +
                 "region=" + region +
                 ", source=" + source +
-                ", config=" + getConfig() +
+                ", config=" + (config == null ? 0 : config.hashCode()) +
 //                ", destination=" + (upstream != null ? upstream.getDestination().toString() : null) +
 //                ", udp2rawClient=" + udp2rawClient +
                 '}';

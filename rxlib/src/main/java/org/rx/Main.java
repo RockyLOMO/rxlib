@@ -26,6 +26,7 @@ import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.socks.*;
 import org.rx.net.socks.encryption.CipherKind;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.GeoManager;
 import org.rx.net.support.IpGeolocation;
@@ -374,8 +375,7 @@ public final class Main implements SocksRpcContract {
                 if (rssConf.hasDebugFlag()) {
                     log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
                 }
-//                e.setUpstream(new SocksUdpUpstream(dstEp, toInConf, svrSupport));
-                e.setUpstream(SocksContext.getSocksUdpUpstream(dstEp, toInConf, svrSupport));
+                e.setUpstream(new SocksUdpUpstream(dstEp, toInConf, svrSupport));
             });
         }
 
@@ -466,8 +466,7 @@ public final class Main implements SocksRpcContract {
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             if (routeingFn.apply(e.getSource(), dstEp, "UDP")) {
-//                e.setUpstream(new SocksUdpUpstream(dstEp, outConf, routerFn.apply(e)));
-                e.setUpstream(SocksContext.getSocksUdpUpstream(dstEp, outConf, routerFn.apply(e)));
+                e.setUpstream(new SocksUdpUpstream(dstEp, outConf, routerFn.apply(e)));
             } else {
 //                e.setUpstream(new Upstream(dstEp));
                 e.setUpstream(SocksContext.getUpstream(dstEp, null));
