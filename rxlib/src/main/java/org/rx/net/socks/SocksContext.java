@@ -37,35 +37,35 @@ import static org.rx.core.Sys.fromJson;
 @RequiredArgsConstructor
 public final class SocksContext extends EventArgs implements UdpManager.ChannelKey {
     private static final long serialVersionUID = 323020524764860674L;
-    static final boolean USE_FAST_THREAD_LOCAL = false;
-    private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
+    //    static final boolean USE_FAST_THREAD_LOCAL = false;
+//    private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
-    //用FastThreadLocal复用SocksContext有问题
+    //FastThreadLocal不复用SocksContext，因为SocksContext组成了复合key
     public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp, byte region) {
-        if (!USE_FAST_THREAD_LOCAL) {
-            return new SocksContext(srcEp, dstEp, region);
-        }
-        SocksContext sc = THREAD_CTX.getIfExists();
-        if (sc == null) {
-            sc = new SocksContext(srcEp, dstEp, region);
-        } else {
-            THREAD_CTX.remove();
-            sc.reset(srcEp, dstEp, region);
-        }
-        return sc;
+//        if (!USE_FAST_THREAD_LOCAL) {
+        return new SocksContext(srcEp, dstEp, region);
+//        }
+//        SocksContext sc = THREAD_CTX.getIfExists();
+//        if (sc == null) {
+//            sc = new SocksContext(srcEp, dstEp, region);
+//        } else {
+//            THREAD_CTX.remove();
+//            sc.reset(srcEp, dstEp, region);
+//        }
+//        return sc;
     }
 
     public static void markCtx(Channel inbound, ChannelFuture outbound, SocksContext sc) {
         Channel outCh = outbound.channel();
-        SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
-        if (prevSc != null && prevSc != sc) {
-            prevSc.upstream = null;
+//        SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
+//        if (prevSc != null && prevSc != sc) {
+//            prevSc.upstream = null;
 //            if (!THREAD_CTX.isSet()) {
-            THREAD_CTX.set(prevSc);
+//            THREAD_CTX.set(prevSc);
 //            }
-        }
+//        }
 
         sc.inbound = inbound;
         sc.outbound = outbound.addListener(f -> sc.outboundActive = f.isSuccess());
