@@ -9,6 +9,8 @@ import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
 import io.netty.util.NetUtil;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.SocketConfig;
@@ -16,6 +18,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
 
 import java.net.InetSocketAddress;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.tryClose;
@@ -67,17 +70,36 @@ public final class UdpManager {
     /// /        byte region = (byte) ((key >>> 48) & 0xFFL);
 //        return new InetSocketAddress(InetAddress.getByAddress(ipBytes), port);
 //    }
-    public interface ChannelKey {
-        byte getRegion();
 
-        InetSocketAddress getSource();
+    public static final byte socksRegion = 0;
+    public static final byte udp2rawRegion = 1;
+    public static final byte ssRegion = 2;
 
-        SocketConfig getConfig();
+    @Getter
+    @RequiredArgsConstructor
+    public static class ChannelKey {
+        final byte region;
+        final InetSocketAddress source;
+        final SocketConfig config;
+
+        @Override
+        public boolean equals(Object o) {
+            if (o == null || getClass() != o.getClass()) return false;
+            ChannelKey that = (ChannelKey) o;
+            return region == that.region && Objects.equals(source, that.source) && Objects.equals(config, that.config);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(region, source, config);
+        }
     }
 
     static final ConcurrentHashMap<ChannelKey, ChannelFuture> channels = new ConcurrentHashMap<>();
 
-    public static ChannelFuture open(ChannelKey key, BiFunc<ChannelKey, ChannelFuture> bindFn) {
+    public static ChannelFuture open(byte region, InetSocketAddress srcEp, SocketConfig config,
+                                     BiFunc<ChannelKey, ChannelFuture> bindFn) {
+        ChannelKey key = new ChannelKey(region, srcEp, config);
         return channels.computeIfAbsent(key, bindFn);
     }
 

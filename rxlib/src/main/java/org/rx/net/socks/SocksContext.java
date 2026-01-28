@@ -22,7 +22,6 @@ import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
-import org.rx.net.SocketConfig;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -30,29 +29,28 @@ import org.rx.net.support.UnresolvedEndpoint;
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
 import java.util.Collections;
-import java.util.Objects;
 
 import static org.rx.core.Sys.fromJson;
 
 @RequiredArgsConstructor
-public final class SocksContext extends EventArgs implements UdpManager.ChannelKey {
+public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
     static final boolean USE_FAST_THREAD_LOCAL = false;
     private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
-    //用FastThreadLocal复用SocksContext有问题
-    public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp, byte region) {
+    //FastThreadLocal不复用SocksContext，因为SocksContext组成了复合key
+    public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         if (!USE_FAST_THREAD_LOCAL) {
-            return new SocksContext(srcEp, dstEp, region);
+            return new SocksContext(srcEp, dstEp);
         }
         SocksContext sc = THREAD_CTX.getIfExists();
         if (sc == null) {
-            sc = new SocksContext(srcEp, dstEp, region);
+            sc = new SocksContext(srcEp, dstEp);
         } else {
             THREAD_CTX.remove();
-            sc.reset(srcEp, dstEp, region);
+            sc.reset(srcEp, dstEp);
         }
         return sc;
     }
@@ -133,10 +131,9 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
     transient volatile boolean outboundActive;
     transient InetSocketAddress udp2rawClient;
 
-    private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp, byte region) {
+    private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         this.source = srcEp;
         this.firstDestination = dstEp;
-        this.region = region;
     }
 
     public AuthenticEndpoint tryGetUdpSocksServer() {
@@ -146,7 +143,7 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
         return null;
     }
 
-    private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp, byte region) {
+    private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         source = srcEp;
         firstDestination = dstEp;
         upstream = null;
@@ -154,43 +151,5 @@ public final class SocksContext extends EventArgs implements UdpManager.ChannelK
         outbound = null;
         outboundActive = false;
         udp2rawClient = null;
-    }
-
-    //ChannelKey region,source,config
-    public static final byte socksRegion = 0;
-    public static final byte udp2rawRegion = 1;
-    public static final byte ssRegion = 2;
-    @Getter
-    private byte region;
-
-    public SocketConfig getConfig() {
-        if (upstream == null) {
-            return null;
-        }
-        return upstream.getConfig();
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (o == null || getClass() != o.getClass()) return false;
-        SocksContext that = (SocksContext) o;
-        return region == that.region && Objects.equals(source, that.source) && Objects.equals(getConfig(), that.getConfig());
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(region, source, getConfig());
-    }
-
-    @Override
-    public String toString() {
-        SocketConfig config = getConfig();
-        return "SocksContext{" +
-                "region=" + region +
-                ", source=" + source +
-                ", config=" + (config == null ? 0 : config.hashCode()) +
-//                ", destination=" + (upstream != null ? upstream.getDestination().toString() : null) +
-//                ", udp2rawClient=" + udp2rawClient +
-                '}';
     }
 }

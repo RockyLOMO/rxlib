@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetAddress;
@@ -77,10 +78,10 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         //不要尝试UPD白名单，会有未知dstEp发送包的情况
         //不要尝试简化outbound，不改包的情况下srcEp没法关联
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-        SocksContext e = SocksContext.getCtx(srcEp, dstEp, SocksContext.socksRegion);
+        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
         server.raiseEvent(server.onUdpRoute, e);
         Upstream upstream = e.getUpstream();
-        ChannelFuture outboundFuture = UdpManager.open(e, k -> {
+        ChannelFuture outboundFuture = UdpManager.open(UdpManager.socksRegion, srcEp, upstream.getConfig(), k -> {
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()),
@@ -95,6 +96,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         });
         SocksContext.markCtx(inbound, outboundFuture, e);
         Channel outbound = outboundFuture.channel();
+        EndpointTracer.UDP.link(srcEp, outbound);
 
         //udp dstEp可能多个，但upstream.getDestination()只有一个，所以直接用dstEp。
         UnresolvedEndpoint upDstEp;

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
@@ -61,10 +62,10 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
 
-        SocksContext e = SocksContext.getCtx(srcEp, dstEp, SocksContext.ssRegion);
+        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
         server.raiseEvent(server.onUdpRoute, e);
         Upstream upstream = e.getUpstream();
-        ChannelFuture outboundFuture = UdpManager.open(e, k -> {
+        ChannelFuture outboundFuture = UdpManager.open(UdpManager.ssRegion, srcEp, upstream.getConfig(), k -> {
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
@@ -75,6 +76,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         });
         SocksContext.markCtx(inbound, outboundFuture, e);
         Channel outbound = outboundFuture.channel();
+        EndpointTracer.UDP.link(srcEp, outbound);
 
         UnresolvedEndpoint upDstEp;
         AuthenticEndpoint upSvrEp = e.tryGetUdpSocksServer();
