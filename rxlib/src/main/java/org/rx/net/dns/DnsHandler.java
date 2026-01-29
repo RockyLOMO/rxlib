@@ -60,8 +60,12 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             List<InetAddress> ips = server.interceptorCache.get(k);
             if (ips == null) {
                 //cache value can't be null
-                server.interceptorCache.put(k, ips = interceptors.next().resolveHost(srcIp, domain),
-                        CachePolicy.absolute(CollectionUtils.isEmpty(ips) ? 5 : server.ttl));
+                ips = interceptors.next().resolveHost(srcIp, domain);
+                if (ips == null) {
+                    ips = Collections.emptyList();
+                }
+                server.interceptorCache.put(k, ips,
+                        CachePolicy.absolute(ips.isEmpty() ? 5 : server.ttl));
             }
             if (CollectionUtils.isEmpty(ips)) {
                 ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
@@ -116,6 +120,5 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         log.error("dns {} query error", ctx.channel() instanceof DatagramChannel ? "UDP" : "TCP", cause);
-        super.exceptionCaught(ctx, cause);
     }
 }

@@ -83,11 +83,6 @@ public class UdpClient implements EventPublisher<UdpClient> {
                 }
             });
         }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            log.error("exceptionCaught", cause);
-        }
     }
 
     public final Delegate<UdpClient, NEventArgs<UdpMessage>> onReceive = Delegate.create();
