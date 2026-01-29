@@ -19,7 +19,7 @@
         <commons-lang3.version>3.18.0</commons-lang3.version>
         <commons-collections4.version>4.4</commons-collections4.version>
         <commons-io.version>2.18.0</commons-io.version>
-        <byte-buddy.version>1.15.11</byte-buddy.version>
+        <byte-buddy.version>1.17.8</byte-buddy.version>
         <zip4j.version>2.11.3</zip4j.version>
         <caffeine.version>2.9.3</caffeine.version>
         <h2.version>2.2.224</h2.version>
@@ -233,4 +233,31 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+<!--    <build>-->
+<!--        <plugins>-->
+<!--            <plugin>-->
+<!--                <groupId>org.apache.maven.plugins</groupId>-->
+<!--                <artifactId>maven-jar-plugin</artifactId>-->
+<!--                <version>3.2.0</version>-->
+<!--                <executions>-->
+<!--                    <execution>-->
+<!--                        <id>agent-jar</id>-->
+<!--                        <phase>package</phase>-->
+<!--                        <goals>-->
+<!--                            <goal>jar</goal>-->
+<!--                        </goals>-->
+<!--                        <configuration>-->
+<!--                            <classifier>agent</classifier>-->
+<!--                            <archive>-->
+<!--                                <manifestEntries>-->
+<!--                                    <Premain-Class>org.rx.exception.LoggingAgent</Premain-Class>-->
+<!--                                </manifestEntries>-->
+<!--                            </archive>-->
+<!--                        </configuration>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--            </plugin>-->
+<!--        </plugins>-->
+<!--    </build>-->
 </project>

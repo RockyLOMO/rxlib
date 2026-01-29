@@ -1,5 +1,9 @@
 package org.rx.core;
 
+import net.bytebuddy.agent.ByteBuddyAgent;
+import org.rx.exception.LoggingAgent;
+import java.lang.instrument.Instrumentation;
+
 import com.alibaba.fastjson2.*;
 import com.alibaba.fastjson2.reader.ObjectReader;
 import com.alibaba.fastjson2.writer.ObjectWriter;
@@ -1304,5 +1308,32 @@ public class TestCore extends AbstractTester {
         System.out.println(rxConf.getCache().getMainInstance());
 
         sleep(5000);
+    }
+
+    @SneakyThrows
+    @Test
+    public void testLogErrorInterceptor() {
+        // 0. Clean up db
+//        EntityDatabase.DEFAULT.delete(new EntityQueryLambda<>(TraceHandler.ExceptionEntity.class));
+
+        // 1. Install agent
+        LoggingAgent.transform();
+
+        // 2. Log an error
+        String errorMessage = "This is an intercepted error";
+        String exceptionMessage = "test exception";
+        log.error(errorMessage, new RuntimeException(exceptionMessage));
+
+        // 3. Wait for async processing
+        Thread.sleep(500);
+
+        // 4. Query trace handler
+        List<TraceHandler.ExceptionEntity> exceptions = TraceHandler.INSTANCE.queryExceptionTraces(null, null, null, null, true, 1);
+
+        // 5. Assert
+//        assert exceptions.size() >= 1;
+        TraceHandler.ExceptionEntity entity = exceptions.get(0);
+        assert entity.getStackTrace().contains(exceptionMessage);
+        assert entity.getMessages().stream().anyMatch(m -> ((String) m.get("message")).contains(errorMessage));
     }
 }
