@@ -233,7 +233,7 @@ public interface Extends extends Serializable {
             c.close();
             return true;
         } catch (Throwable e) {
-            TraceHandler.INSTANCE.log(e);
+            TraceHandler.INSTANCE.uncaughtException(Thread.currentThread(), e);
             return false;
         }
     }

@@ -2,6 +2,7 @@ package org.rx.core;
 
 import net.bytebuddy.agent.ByteBuddyAgent;
 import org.rx.exception.LoggingAgent;
+
 import java.lang.instrument.Instrumentation;
 
 import com.alibaba.fastjson2.*;
@@ -1144,7 +1145,7 @@ public class TestCore extends AbstractTester {
     @Test
     public void exceptionHandle() {
         TraceHandler handler = TraceHandler.INSTANCE;
-        handler.log(new InvalidException("test error"));
+        handler.uncaughtException(Thread.currentThread(), new InvalidException("test error"));
         System.out.println(handler.queryMethodTraces(null, null, null));
 
 

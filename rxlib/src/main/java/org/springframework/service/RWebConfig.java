@@ -133,7 +133,7 @@ public class RWebConfig implements WebMvcConfigurer {
             if (exceptionHandle != null) {
                 return exceptionHandle.apply(e, msg);
             }
-            TraceHandler.INSTANCE.log(e);
+            log.error("HttpException", e);
             return new ResponseEntity<>(msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

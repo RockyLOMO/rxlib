@@ -619,7 +619,7 @@ public final class Sys extends SystemUtils {
             try {
                 mxHandler.invoke(mxInfo());
             } catch (Throwable e) {
-                TraceHandler.INSTANCE.log(e);
+                log.error("mxScheduleTask", e);
             } finally {
                 t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getMxSamplingPeriod(), TimeUnit.MILLISECONDS);
             }

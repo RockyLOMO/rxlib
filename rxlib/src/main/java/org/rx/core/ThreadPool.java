@@ -315,7 +315,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     try {
                         tid = traceIdGenerator.invoke();
                     } catch (Throwable e) {
-                        TraceHandler.INSTANCE.log(e);
+                        log.error("startTrace", e);
                     }
                 }
                 if (tid == null) {

@@ -265,7 +265,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 try {
                     clearTimeRollingFiles();
                 } catch (Exception e) {
-                    TraceHandler.INSTANCE.log(e);
+                    log.error("clearTimeRollingFiles", e);
                 }
 
                 connPool = null;

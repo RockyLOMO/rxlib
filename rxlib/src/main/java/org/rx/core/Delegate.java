@@ -146,7 +146,7 @@ public class Delegate<TSender extends EventPublisher<TSender>, TEvent> implement
             if (!target.eventFlags().has(EventPublisher.EventFlags.QUIETLY)) {
                 throw e;
             }
-            TraceHandler.INSTANCE.log(e);
+            TraceHandler.INSTANCE.uncaughtException(Thread.currentThread(), e);
         }
         return true;
     }

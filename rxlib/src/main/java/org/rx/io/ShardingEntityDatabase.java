@@ -72,7 +72,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             try {
                 nsClient.waitInject();
             } catch (TimeoutException ex) {
-                TraceHandler.INSTANCE.log(ex);
+                log.error("{} waitInject", APP_NAME, ex);
             }
         }).join();
 

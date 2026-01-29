@@ -109,7 +109,7 @@ public class CpuWatchman implements TimerTask {
             try {
                 TraceHandler.INSTANCE.saveThreadTrace(dumpAllThreads(true));
             } catch (Throwable e) {
-                TraceHandler.INSTANCE.log(e);
+                log.error("dumpAllThreads", e);
             } finally {
                 t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getTrace().getSamplingCpuPeriod(), TimeUnit.MILLISECONDS);
             }

@@ -164,10 +164,6 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
     }
 
-    public void log(Throwable e) {
-        uncaughtException(Thread.currentThread(), e);
-    }
-
     @Override
     public void uncaughtException(Thread t, Throwable e) {
         try {

@@ -87,7 +87,7 @@ public final class Tasks {
                 try {
                     fn.invoke();
                 } catch (Throwable e) {
-                    TraceHandler.INSTANCE.log(e);
+                    log.error("shutdownHook", e);
                 }
             }
         }));
@@ -211,7 +211,7 @@ public final class Tasks {
             //catch +1 ?
             TraceHandler.INSTANCE.log("awaitNow {} timeout", Reflects.CLASS_TRACER.getClassTrace(2).getName());
         } catch (Exception e) {
-            TraceHandler.INSTANCE.log(e);
+            TraceHandler.INSTANCE.uncaughtException(Thread.currentThread(), e);
         }
         return null;
     }
