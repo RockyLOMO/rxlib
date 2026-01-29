@@ -19,6 +19,7 @@ import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
+import org.rx.exception.TraceHandler;
 import org.rx.test.GirlBean;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
@@ -37,19 +38,19 @@ import static org.rx.core.Sys.*;
 @Slf4j
 public class TestUtil extends AbstractTester {
     final double[] weightP = {1, 0.75, 0.7};
-    final int[] reps = {5, 10, 12};
+    final int[] reps = {5, 8, 10, 12};
     final double[] warmUpP = {0.5, 0.7, 0.9};
 
     @Test
     public void gym() {
-        double curWeightKg = 100;
-        int curReps = 10;
+        double curWeightKg = 90;
+        int curReps = 8;
         Decimal oneRM = Decimal.valueOf(brzycki1RM(curWeightKg, curReps));
         log.info("1RM {}kg", oneRM);
 
         print(oneRM, 0);
         print(oneRM, 1);
-//        print(oneRM,2);
+        print(oneRM, 2);
     }
 
     void print(Decimal oneRM, int type) {
