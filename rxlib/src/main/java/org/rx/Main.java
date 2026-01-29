@@ -150,7 +150,6 @@ public final class Main implements SocksRpcContract {
     public static final OptimalSettings OUT_OPS = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
     public static final OptimalSettings IN_OPS = null;
     public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
-    static final int traceDays = 1;
     static RSSConf rssConf;
 
     @SneakyThrows
@@ -479,7 +478,9 @@ public final class Main implements SocksRpcContract {
 
     static void clientInit(int httpPort, DefaultSocksAuthenticator authenticator) {
         httpServer = new HttpServer(httpPort, true).requestMapping("/traces", (request, response) -> {
-            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, null, 50);
+            Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
+            Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
+            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, newest, 50);
             response.jsonBody(list);
         }).requestMapping("/usrInfo", (request, response) -> {
             response.jsonBody(authenticator.getStore());
@@ -635,7 +636,9 @@ public final class Main implements SocksRpcContract {
 
     static void serverInit(int httpPort) {
         httpServer = new HttpServer(httpPort, true).requestMapping("/traces", (request, response) -> {
-            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, null, 50);
+            Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
+            Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
+            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, newest, 50);
             response.jsonBody(list);
         }).requestMapping("/getPublicIp", (request, response) -> {
             response.jsonBody(request.getRemoteEndpoint().getHostString());

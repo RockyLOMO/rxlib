@@ -17,6 +17,9 @@ public final class EndpointTracer {
 
     public void link(InetSocketAddress inboundRemoteAddress, Channel outbound) {
         InetSocketAddress source = index.get(inboundRemoteAddress, k -> inboundRemoteAddress);
+        if (source == null) {
+            return;
+        }
         index.put((InetSocketAddress) outbound.localAddress(), source);
 //        log.info("EpTracer link {} <- ({} -> {})", Sockets.toString(source), inbound, outbound);
     }
