@@ -193,18 +193,16 @@ public final class Sys extends SystemUtils {
 
     @Subscribe(topicClass = RxConfig.class)
     static void onChanged(ObjectChangedEvent event) {
-        Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
-        log.info("RxMeta Sys changed {}", changedMap);
+//        Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
+//        log.info("RxMeta Sys changed {}", changedMap);
+        RxConfig config = RxConfig.INSTANCE;
 
-        int keepDays = RxConfig.INSTANCE.getTrace().getKeepDays();
+        int keepDays = config.getTrace().getKeepDays();
         if (keepDays > 0) {
             LoggingAgent.transform();
         }
 
-        Integer enableFlags = event.readValue(getWithoutPrefix(RxConfig.ConfigNames.NTP_ENABLE_FLAGS));
-        if (enableFlags == null) {
-            return;
-        }
+        int enableFlags = config.getNet().getNtp().getEnableFlags();
         log.info("RxMeta {} changed {}", RxConfig.ConfigNames.NTP_ENABLE_FLAGS, enableFlags);
         if ((enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
