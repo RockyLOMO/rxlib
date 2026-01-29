@@ -194,12 +194,12 @@ public final class Sys extends SystemUtils {
     @Subscribe(topicClass = RxConfig.class)
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
-//        log.info("RxMeta Sys changed {}", changedMap);
-        Integer keepDays = event.readValue(getWithoutPrefix(RxConfig.ConfigNames.TRACE_KEEP_DAYS));
+        log.info("RxMeta Sys changed {}", changedMap);
+
+        int keepDays = RxConfig.INSTANCE.getTrace().getKeepDays();
         if (keepDays > 0) {
             LoggingAgent.transform();
         }
-        log.info("RxMeta {} changed {}", RxConfig.ConfigNames.TRACE_KEEP_DAYS, keepDays);
 
         Integer enableFlags = event.readValue(getWithoutPrefix(RxConfig.ConfigNames.NTP_ENABLE_FLAGS));
         if (enableFlags == null) {

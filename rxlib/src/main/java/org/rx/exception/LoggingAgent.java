@@ -7,9 +7,12 @@ import net.bytebuddy.agent.ByteBuddyAgent;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.implementation.Implementation;
+import net.bytebuddy.implementation.bind.annotation.SuperCall;
 import net.bytebuddy.matcher.ElementMatchers;
 import org.rx.core.RxConfig;
 import org.rx.core.Sys;
+
+import java.util.concurrent.Callable;
 
 @Slf4j
 public class LoggingAgent {
@@ -19,7 +22,8 @@ public class LoggingAgent {
 
         @Advice.OnMethodEnter
         public static void onEnter(
-                @Advice.This Object self,
+//                @SuperCall Callable<?> superCall,
+//                @Advice.This Object self,
 //                @Advice.Origin String method,
                 @Advice.AllArguments Object[] args
         ) {
@@ -32,6 +36,7 @@ public class LoggingAgent {
             }
             try {
                 idempotent.set(Boolean.TRUE);
+//                superCall.call();
                 String format = (String) args[0];
                 Object lastArg = args[args.length - 1];
                 if (lastArg instanceof Throwable) {
