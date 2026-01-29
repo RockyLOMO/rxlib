@@ -19,6 +19,7 @@ import org.rx.bean.LogStrategy;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.FallbackException;
 import org.rx.exception.InvalidException;
+import org.rx.exception.LoggingAgent;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Serializer;
 import org.rx.net.AuthenticEndpoint;
@@ -55,7 +56,6 @@ import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
 import static org.rx.core.Constants.*;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
-import static org.rx.core.RxConfig.ConfigNames.NTP_ENABLE_FLAGS;
 import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 
 @SuppressWarnings(Constants.NON_UNCHECKED)
@@ -123,6 +123,7 @@ public final class Sys extends SystemUtils {
         }
     }
 
+    public static byte transformedFlags;
     public static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Sys.class);
     public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
     static final String DPT = "_DPT";
@@ -141,7 +142,6 @@ public final class Sys extends SystemUtils {
     };
     static final String[] seconds = {"ns", "µs", "ms", "s"};
     static Timeout samplingTimeout;
-    static byte transformedFlags;
 
     static {
         ObjectReaderProvider objectReaderProvider = JSONFactory.getDefaultObjectReaderProvider();
@@ -203,11 +203,17 @@ public final class Sys extends SystemUtils {
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
 //        log.info("RxMeta Sys changed {}", changedMap);
-        Integer enableFlags = event.readValue(getWithoutPrefix(NTP_ENABLE_FLAGS));
+        Integer keepDays = event.readValue(getWithoutPrefix(RxConfig.ConfigNames.TRACE_KEEP_DAYS));
+        if (keepDays > 0) {
+            LoggingAgent.transform();
+        }
+        log.info("RxMeta {} changed {}", RxConfig.ConfigNames.TRACE_KEEP_DAYS, keepDays);
+
+        Integer enableFlags = event.readValue(getWithoutPrefix(RxConfig.ConfigNames.NTP_ENABLE_FLAGS));
         if (enableFlags == null) {
             return;
         }
-        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, enableFlags);
+        log.info("RxMeta {} changed {}", RxConfig.ConfigNames.NTP_ENABLE_FLAGS, enableFlags);
         if ((enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
         }

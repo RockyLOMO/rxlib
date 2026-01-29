@@ -8,6 +8,8 @@ import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.implementation.Implementation;
 import net.bytebuddy.matcher.ElementMatchers;
+import org.rx.core.RxConfig;
+import org.rx.core.Sys;
 
 @Slf4j
 public class LoggingAgent {
@@ -21,6 +23,10 @@ public class LoggingAgent {
 //                @Advice.Origin String method,
                 @Advice.AllArguments Object[] args
         ) {
+            int keepDays = RxConfig.INSTANCE.getTrace().getKeepDays();
+            if (keepDays <= 0) {
+                return;
+            }
             if (Boolean.TRUE.equals(idempotent.get())) {
                 return;
             }
@@ -40,7 +46,12 @@ public class LoggingAgent {
         }
     }
 
-    public static void transform() {
+    public static synchronized void transform() {
+        final byte flag = 2;
+        if ((Sys.transformedFlags & flag) == flag) {
+            return;
+        }
+        Sys.transformedFlags |= flag;
         new AgentBuilder.Default()
 //                .with(AgentBuilder.Listener.StreamWriting.toSystemOut())
                 .with(new ByteBuddy().with(Implementation.Context.Disabled.Factory.INSTANCE))
