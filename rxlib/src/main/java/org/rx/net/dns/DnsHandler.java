@@ -56,25 +56,31 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         }
         RandomList<DnsServer.ResolveInterceptor> interceptors = server.interceptors;
         if (interceptors != null) {
-            String k = DOMAIN_PREFIX + domain;
-            List<InetAddress> ips = server.interceptorCache.get(k);
-            if (ips == null) {
-                //cache value can't be null
-                ips = interceptors.next().resolveHost(srcIp, domain);
+            DnsRecordType queryType = question.type();
+            if (queryType == DnsRecordType.A || queryType == DnsRecordType.AAAA) {
+                String k = DOMAIN_PREFIX + domain;
+                List<InetAddress> ips = server.interceptorCache.get(k);
                 if (ips == null) {
-                    ips = Collections.emptyList();
+                    try {
+                        ips = interceptors.next().resolveHost(srcIp, domain);
+                    } catch (Exception e) {
+                        log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
+                    }
+                    if (ips == null) {
+                        ips = Collections.emptyList();
+                    }
+                    server.interceptorCache.put(k, ips,
+                            CachePolicy.absolute(ips.isEmpty() ? 5 : server.ttl));
                 }
-                server.interceptorCache.put(k, ips,
-                        CachePolicy.absolute(ips.isEmpty() ? 5 : server.ttl));
-            }
-            if (CollectionUtils.isEmpty(ips)) {
-                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
-                log.info("dns query {}+{} -> EMPTY", srcIp, domain);
+                if (CollectionUtils.isEmpty(ips)) {
+                    ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
+                    log.info("dns query {}+{} -> EMPTY", srcIp, domain);
+                    return;
+                }
+                ctx.writeAndFlush(newResponse(query, isTcp, question, server.ttl, ips));
+                log.info("dns query {}+{} -> {}[SHADOW]", srcIp, domain, ips.get(0).getHostAddress());
                 return;
             }
-            ctx.writeAndFlush(newResponse(query, isTcp, question, server.ttl, ips));
-            log.info("dns query {}+{} -> {}[SHADOW]", srcIp, domain, ips.get(0).getHostAddress());
-            return;
         }
 
         query.retain();
