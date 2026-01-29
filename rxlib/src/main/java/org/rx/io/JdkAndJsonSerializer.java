@@ -5,7 +5,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.rx.core.cache.MemoryCache;
-import org.rx.exception.TraceHandler;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -75,7 +74,7 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
                 throw e;
             }
 
-            TraceHandler.INSTANCE.log("NotSerializable {}", obj, e);
+            log.error("NotSerializable {}", obj, e);
             cache.put(skipNS, this);
 
             stream.setPosition(pos);

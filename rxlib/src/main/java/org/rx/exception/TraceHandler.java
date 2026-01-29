@@ -10,13 +10,11 @@ import org.rx.annotation.Subscribe;
 import org.rx.bean.CircularBlockingQueue;
 import org.rx.bean.DateTime;
 import org.rx.codec.CodecUtil;
+import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
-import org.rx.core.*;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
-import org.slf4j.helpers.FormattingTuple;
-import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Serializable;
 import java.sql.Time;
@@ -113,7 +111,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             });
             queue.setConsumePeriod(conf.getTrace().getFlushQueuePeriod());
         } catch (Throwable e) {
-            log.error("RxMeta init db error", e);
+            log.warn("RxMeta init db error", e);
         }
         ObjectChangeTracker.DEFAULT.register(this);
         onChanged(new ObjectChangedEvent(conf, Collections.emptyMap()));
@@ -149,29 +147,10 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         }
     }
 
-    public void log(String format, Object... args) {
-        try {
-            FormattingTuple tuple = MessageFormatter.arrayFormat(format, args);
-            if (tuple.getThrowable() == null) {
-                log.warn(format + "[NoThrowableCandidate]", args);
-                return;
-            }
-
-            log.error(format, args);
-            saveExceptionTrace(Thread.currentThread(), tuple.getMessage(), tuple.getThrowable());
-        } catch (Throwable ie) {
-            ie.printStackTrace();
-        }
-    }
-
+    //FormattingTuple tuple = MessageFormatter.arrayFormat(format, args);
     @Override
     public void uncaughtException(Thread t, Throwable e) {
-        try {
-            log.error("Thread[{}] uncaught", t.getId(), e);
-            saveExceptionTrace(t, null, e);
-        } catch (Throwable ie) {
-            ie.printStackTrace();
-        }
+        saveExceptionTrace(t, null, e);
     }
 
     public void saveExceptionTrace(Thread t, String msg, Throwable e) {

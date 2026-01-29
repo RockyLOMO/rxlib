@@ -5,7 +5,6 @@ import lombok.NoArgsConstructor;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
 import org.rx.util.function.TripleAction;
 
 import java.lang.reflect.Field;
@@ -15,6 +14,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
 import static org.rx.core.Extends.*;
+import static org.rx.core.Sys.log;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class Delegate<TSender extends EventPublisher<TSender>, TEvent> implements TripleAction<TSender, TEvent> {
@@ -146,7 +146,7 @@ public class Delegate<TSender extends EventPublisher<TSender>, TEvent> implement
             if (!target.eventFlags().has(EventPublisher.EventFlags.QUIETLY)) {
                 throw e;
             }
-            TraceHandler.INSTANCE.uncaughtException(Thread.currentThread(), e);
+            log.error("Delegate invoke",  e);
         }
         return true;
     }

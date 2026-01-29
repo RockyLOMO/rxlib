@@ -108,7 +108,7 @@ public class BrowserAsyncTopic {
                     }
                     ((BiAction<RemoteBrowser>) future.callback).invoke(browser);
                 } catch (Throwable e) {
-                    TraceHandler.INSTANCE.log("Async {} error", future.asyncId, e);
+                    log.error("Async {} error", future.asyncId, e);
                     future.exception = e;
                 } finally {
                     callbacks.remove(future.asyncId);

@@ -9,7 +9,6 @@ import org.rx.core.Arrays;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
-import org.rx.exception.TraceHandler;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksConfig;

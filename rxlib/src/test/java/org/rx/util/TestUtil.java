@@ -7,7 +7,6 @@ import com.alibaba.fastjson2.JSONWriter;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.HttpUrl;
 import org.apache.commons.collections4.map.AbstractReferenceMap;
 import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.apache.commons.io.FilenameUtils;
@@ -19,7 +18,6 @@ import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
 import org.rx.test.GirlBean;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
@@ -27,10 +25,9 @@ import org.rx.test.UserStruct;
 import org.rx.third.guava.CaseFormat;
 
 import java.lang.reflect.Method;
-import java.net.URI;
 import java.time.Month;
-import java.util.Arrays;
 import java.util.*;
+import java.util.Arrays;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Sys.*;

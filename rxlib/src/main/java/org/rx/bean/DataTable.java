@@ -11,9 +11,9 @@ import org.h2.jdbc.JdbcConnection;
 import org.h2.jdbc.JdbcResultSet;
 import org.h2.result.LocalResult;
 import org.h2.value.ValueToObjectConverter;
+import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.core.StringBuilder;
-import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.third.guava.CaseFormat;
 

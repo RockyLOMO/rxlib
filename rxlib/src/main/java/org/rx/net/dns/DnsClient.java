@@ -6,10 +6,10 @@ import io.netty.handler.codec.dns.DnsResponse;
 import io.netty.resolver.dns.*;
 import io.netty.util.concurrent.Future;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.Linq;
 import org.rx.core.RxConfig;
-import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
@@ -20,6 +20,7 @@ import java.util.List;
 
 import static org.rx.core.Tasks.await;
 
+@Slf4j
 public class DnsClient extends Disposable {
     static class DnsServerAddressStreamProviderImpl implements DnsServerAddressStreamProvider {
         final DnsServerAddresses nameServer;
@@ -71,7 +72,7 @@ public class DnsClient extends Disposable {
                 return;
             }
 
-            TraceHandler.INSTANCE.log("Dns query fail question={}", question, f.cause());
+            log.error("Dns query fail question={}", question, f.cause());
         });
     }
 

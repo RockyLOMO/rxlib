@@ -10,7 +10,6 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
-import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
 import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleFunc;

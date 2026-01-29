@@ -7,24 +7,18 @@ import net.bytebuddy.agent.ByteBuddyAgent;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.implementation.Implementation;
-import net.bytebuddy.implementation.MethodDelegation;
 import net.bytebuddy.matcher.ElementMatchers;
-import org.slf4j.Logger;
-import org.slf4j.helpers.FormattingTuple;
-import org.slf4j.helpers.MessageFormatter;
-
-import java.lang.instrument.Instrumentation;
-
-import static net.bytebuddy.matcher.ElementMatchers.*;
 
 @Slf4j
 public class LoggingAgent {
     public static class LoggerErrorAdvice {
+        //Advice需public
         public static final FastThreadLocal<Boolean> idempotent = new FastThreadLocal<>();
 
         @Advice.OnMethodEnter
         public static void onEnter(
-                @Advice.Origin String method,
+                @Advice.This Object self,
+//                @Advice.Origin String method,
                 @Advice.AllArguments Object[] args
         ) {
             if (Boolean.TRUE.equals(idempotent.get())) {
