@@ -14,10 +14,9 @@ import org.h2.jdbc.JdbcSQLSyntaxErrorException;
 import org.h2.jdbcx.JdbcConnectionPool;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.*;
-import org.rx.core.StringBuilder;
 import org.rx.core.*;
+import org.rx.core.StringBuilder;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -28,9 +27,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.sql.*;
+import java.util.*;
 import java.util.AbstractMap;
 import java.util.Date;
-import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -265,7 +264,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 try {
                     clearTimeRollingFiles();
                 } catch (Exception e) {
-                    TraceHandler.INSTANCE.log(e);
+                    log.error("clearTimeRollingFiles", e);
                 }
 
                 connPool = null;

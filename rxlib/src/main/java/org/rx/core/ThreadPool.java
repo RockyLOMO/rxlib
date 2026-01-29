@@ -212,7 +212,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                 try {
                     r = fn.call();
                 } catch (Throwable e) {
-                    TraceHandler.INSTANCE.log(toString(), ex = e);
+                    log.error(toString(), ex = e);
                     throw e;
                 } finally {
                     Thread t = Thread.currentThread();
@@ -230,7 +230,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             try {
                 return fn.call();
             } catch (Throwable e) {
-                TraceHandler.INSTANCE.log(toString(), e);
+                log.error(toString(), e);
                 throw e;
             }
         }
@@ -315,7 +315,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     try {
                         tid = traceIdGenerator.invoke();
                     } catch (Throwable e) {
-                        TraceHandler.INSTANCE.log(e);
+                        log.error("startTrace", e);
                     }
                 }
                 if (tid == null) {

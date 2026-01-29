@@ -2,13 +2,13 @@ package org.rx.net.socks.upstream;
 
 import io.netty.channel.Channel;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Arrays;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
-import org.rx.exception.TraceHandler;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksConfig;
@@ -20,6 +20,7 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 public class SocksTcpUpstream extends Upstream {
     private UpstreamSupport next;
 
@@ -62,7 +63,7 @@ public class SocksTcpUpstream extends Upstream {
                         }
                     }).get(SocksRpcContract.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
                 } catch (Exception e) {
-                    TraceHandler.INSTANCE.log(e);
+                    log.error("do fake", e);
                 }
             }
         }

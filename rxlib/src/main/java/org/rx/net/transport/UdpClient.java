@@ -11,7 +11,6 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
-import org.rx.exception.TraceHandler;
 import org.rx.io.MemoryStream;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
@@ -87,7 +86,7 @@ public class UdpClient implements EventPublisher<UdpClient> {
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            TraceHandler.INSTANCE.log(cause);
+            log.error("exceptionCaught", cause);
         }
     }
 

@@ -2,12 +2,10 @@ package org.rx.net.support;
 
 import io.netty.channel.Channel;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Cache;
 import org.rx.core.cache.MemoryCache;
 import org.rx.net.Sockets;
 
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 
 @Slf4j
 public final class EndpointTracer {

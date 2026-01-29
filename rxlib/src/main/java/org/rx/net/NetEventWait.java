@@ -12,7 +12,6 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.map.AbstractReferenceMap;
 import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.rx.core.*;
-import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
 import org.rx.net.http.HttpClient;
 import org.rx.util.function.PredicateFunc;
@@ -94,7 +93,7 @@ public final class NetEventWait extends Disposable implements WaitHandle {
                 })
                 .bind(multicastEndpoint.getPort()).addListener((ChannelFutureListener) f -> {
                     if (!f.isSuccess()) {
-                        TraceHandler.INSTANCE.log("multicast bind error {}", idString, f.cause());
+                        log.error("multicast bind error {}", idString, f.cause());
                         return;
                     }
                     NioDatagramChannel c = (NioDatagramChannel) f.channel();

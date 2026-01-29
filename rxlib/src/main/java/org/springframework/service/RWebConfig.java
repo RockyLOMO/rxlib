@@ -10,7 +10,6 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
-import org.rx.exception.TraceHandler;
 import org.rx.net.http.HttpClient;
 import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleFunc;
@@ -133,7 +132,7 @@ public class RWebConfig implements WebMvcConfigurer {
             if (exceptionHandle != null) {
                 return exceptionHandle.apply(e, msg);
             }
-            TraceHandler.INSTANCE.log(e);
+            log.error("HttpException", e);
             return new ResponseEntity<>(msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

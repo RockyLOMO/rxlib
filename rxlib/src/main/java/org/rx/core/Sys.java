@@ -11,7 +11,6 @@ import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.OperatingSystemMXBean;
 import io.netty.util.Timeout;
 import lombok.*;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.rx.annotation.Subscribe;
@@ -20,6 +19,7 @@ import org.rx.bean.LogStrategy;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.FallbackException;
 import org.rx.exception.InvalidException;
+import org.rx.exception.LoggingAgent;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Serializer;
 import org.rx.net.AuthenticEndpoint;
@@ -56,10 +56,8 @@ import static com.alibaba.fastjson2.JSONWriter.Feature.NotWriteDefaultValue;
 import static org.rx.core.Constants.*;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
-import static org.rx.core.RxConfig.ConfigNames.NTP_ENABLE_FLAGS;
 import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 
-@Slf4j
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class Sys extends SystemUtils {
     @Getter
@@ -125,6 +123,8 @@ public final class Sys extends SystemUtils {
         }
     }
 
+    public static byte transformedFlags;
+    public static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Sys.class);
     public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
     static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
@@ -142,7 +142,6 @@ public final class Sys extends SystemUtils {
     };
     static final String[] seconds = {"ns", "µs", "ms", "s"};
     static Timeout samplingTimeout;
-    static byte transformedFlags;
 
     static {
         ObjectReaderProvider objectReaderProvider = JSONFactory.getDefaultObjectReaderProvider();
@@ -204,11 +203,17 @@ public final class Sys extends SystemUtils {
     static void onChanged(ObjectChangedEvent event) {
         Map<String, ObjectChangeTracker.ChangedValue> changedMap = event.getChangedMap();
 //        log.info("RxMeta Sys changed {}", changedMap);
-        Integer enableFlags = event.readValue(getWithoutPrefix(NTP_ENABLE_FLAGS));
+        Integer keepDays = event.readValue(getWithoutPrefix(RxConfig.ConfigNames.TRACE_KEEP_DAYS));
+        if (keepDays > 0) {
+            LoggingAgent.transform();
+        }
+        log.info("RxMeta {} changed {}", RxConfig.ConfigNames.TRACE_KEEP_DAYS, keepDays);
+
+        Integer enableFlags = event.readValue(getWithoutPrefix(RxConfig.ConfigNames.NTP_ENABLE_FLAGS));
         if (enableFlags == null) {
             return;
         }
-        log.info("RxMeta {} changed {}", NTP_ENABLE_FLAGS, enableFlags);
+        log.info("RxMeta {} changed {}", RxConfig.ConfigNames.NTP_ENABLE_FLAGS, enableFlags);
         if ((enableFlags & 1) == 1) {
             NtpClock.scheduleTask();
         }
@@ -580,7 +585,7 @@ public final class Sys extends SystemUtils {
                         String msg = builder.buildLog(declaringType, methodName, parameters, paramSnapshot, returnValue, error, elapsedNanos);
                         if (msg != null) {
                             if (error != null) {
-                                TraceHandler.INSTANCE.log(msg, error);
+                                log.error(msg, error);
                             } else {
                                 org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(declaringType);
                                 log.info(msg);
@@ -619,7 +624,7 @@ public final class Sys extends SystemUtils {
             try {
                 mxHandler.invoke(mxInfo());
             } catch (Throwable e) {
-                TraceHandler.INSTANCE.log(e);
+                log.error("mxScheduleTask", e);
             } finally {
                 t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getMxSamplingPeriod(), TimeUnit.MILLISECONDS);
             }
@@ -885,7 +890,7 @@ public final class Sys extends SystemUtils {
             }
             Set<Class<?>> jsonSkipTypes = RxConfig.INSTANCE.jsonSkipTypes;
             jsonSkipTypes.addAll(q.where(x -> x != null && !Reflects.isBasicType(x.getClass())).select(Object::getClass).toSet());
-            TraceHandler.INSTANCE.log("toJsonString {}", Linq.from(jsonSkipTypes).toJoinString(",", Class::getName), e);
+            log.error("toJsonString {}", Linq.from(jsonSkipTypes).toJoinString(",", Class::getName), e);
 
             JSONObject json = new JSONObject();
             json.put("_input", src.toString());

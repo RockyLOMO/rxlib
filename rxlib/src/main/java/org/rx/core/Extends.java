@@ -7,7 +7,6 @@ import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Metadata;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
@@ -19,6 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArrayList;
+
+import static org.rx.core.Sys.log;
 
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public interface Extends extends Serializable {
@@ -55,7 +56,7 @@ public interface Extends extends Serializable {
             fn.invoke();
             return true;
         } catch (Throwable e) {
-            TraceHandler.INSTANCE.log("quietly {}", fn, e);
+            log.error("quietly {}", fn, e);
         }
         return false;
     }
@@ -68,7 +69,7 @@ public interface Extends extends Serializable {
         try {
             return fn.invoke();
         } catch (Throwable e) {
-            TraceHandler.INSTANCE.log("quietly {}", fn, e);
+            log.error("quietly {}", fn, e);
         }
         if (defaultValue != null) {
             return defaultValue.get();
@@ -78,7 +79,7 @@ public interface Extends extends Serializable {
 
     static <T> BiFunc<Throwable, T> quietlyRecover() {
         return e -> {
-            TraceHandler.INSTANCE.log("quietlyRecover", e);
+            log.error("quietlyRecover", e);
             return null;
         };
     }
@@ -191,7 +192,7 @@ public interface Extends extends Serializable {
                 if (throwOnNext) {
                     throw InvalidException.sneaky(e);
                 }
-                TraceHandler.INSTANCE.log("each", e);
+                log.error("each", e);
             }
             if (!ThreadPool.continueFlag(true)) {
                 break;
@@ -233,7 +234,7 @@ public interface Extends extends Serializable {
             c.close();
             return true;
         } catch (Throwable e) {
-            TraceHandler.INSTANCE.log(e);
+            log.error("tryClose", e);
             return false;
         }
     }

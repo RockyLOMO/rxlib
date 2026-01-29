@@ -7,7 +7,6 @@ import com.alibaba.fastjson2.JSONWriter;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.HttpUrl;
 import org.apache.commons.collections4.map.AbstractReferenceMap;
 import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.apache.commons.io.FilenameUtils;
@@ -26,10 +25,9 @@ import org.rx.test.UserStruct;
 import org.rx.third.guava.CaseFormat;
 
 import java.lang.reflect.Method;
-import java.net.URI;
 import java.time.Month;
-import java.util.Arrays;
 import java.util.*;
+import java.util.Arrays;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Sys.*;
@@ -37,19 +35,19 @@ import static org.rx.core.Sys.*;
 @Slf4j
 public class TestUtil extends AbstractTester {
     final double[] weightP = {1, 0.75, 0.7};
-    final int[] reps = {5, 10, 12};
+    final int[] reps = {5, 8, 10, 12};
     final double[] warmUpP = {0.5, 0.7, 0.9};
 
     @Test
     public void gym() {
-        double curWeightKg = 100;
-        int curReps = 10;
+        double curWeightKg = 90;
+        int curReps = 8;
         Decimal oneRM = Decimal.valueOf(brzycki1RM(curWeightKg, curReps));
         log.info("1RM {}kg", oneRM);
 
         print(oneRM, 0);
         print(oneRM, 1);
-//        print(oneRM,2);
+        print(oneRM, 2);
     }
 
     void print(Decimal oneRM, int type) {

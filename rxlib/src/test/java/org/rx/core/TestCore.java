@@ -1,9 +1,7 @@
 package org.rx.core;
 
-import com.alibaba.fastjson2.*;
-import com.alibaba.fastjson2.reader.ObjectReader;
-import com.alibaba.fastjson2.writer.ObjectWriter;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.TypeReference;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;
 import lombok.SneakyThrows;
@@ -18,11 +16,12 @@ import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.*;
 import org.rx.codec.RSAUtil;
-import org.rx.core.cache.H2StoreCache;
 import org.rx.core.cache.H2CacheItem;
+import org.rx.core.cache.H2StoreCache;
 import org.rx.core.cache.MemoryCache;
 import org.rx.exception.ApplicationException;
 import org.rx.exception.InvalidException;
+import org.rx.exception.LoggingAgent;
 import org.rx.exception.TraceHandler;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
@@ -34,30 +33,14 @@ import org.rx.third.open.CrcModel;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 import org.slf4j.MDC;
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.DumperOptions;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.Constructor;
-import org.yaml.snakeyaml.introspector.BeanAccess;
-import org.yaml.snakeyaml.introspector.Property;
-import org.yaml.snakeyaml.introspector.PropertyUtils;
-import org.yaml.snakeyaml.nodes.MappingNode;
-import org.yaml.snakeyaml.nodes.NodeTuple;
-import org.yaml.snakeyaml.nodes.Tag;
-import org.yaml.snakeyaml.representer.Representer;
 
 import javax.servlet.http.HttpServletResponse;
-import java.io.FileWriter;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.reflect.Method;
-import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -1140,7 +1123,7 @@ public class TestCore extends AbstractTester {
     @Test
     public void exceptionHandle() {
         TraceHandler handler = TraceHandler.INSTANCE;
-        handler.log(new InvalidException("test error"));
+        handler.uncaughtException(Thread.currentThread(), new InvalidException("test error"));
         System.out.println(handler.queryMethodTraces(null, null, null));
 
 
@@ -1304,5 +1287,32 @@ public class TestCore extends AbstractTester {
         System.out.println(rxConf.getCache().getMainInstance());
 
         sleep(5000);
+    }
+
+    @SneakyThrows
+    @Test
+    public void testLogErrorInterceptor() {
+        // 0. Clean up db
+//        EntityDatabase.DEFAULT.delete(new EntityQueryLambda<>(TraceHandler.ExceptionEntity.class));
+
+        // 1. Install agent
+        LoggingAgent.transform();
+
+        // 2. Log an error
+        String errorMessage = "This is an intercepted error";
+        String exceptionMessage = "test exception";
+        log.error(errorMessage, new RuntimeException(exceptionMessage));
+
+        // 3. Wait for async processing
+        Thread.sleep(500);
+
+        // 4. Query trace handler
+        List<TraceHandler.ExceptionEntity> exceptions = TraceHandler.INSTANCE.queryExceptionTraces(null, null, null, null, true, 1);
+
+        // 5. Assert
+//        assert exceptions.size() >= 1;
+        TraceHandler.ExceptionEntity entity = exceptions.get(0);
+        assert entity.getStackTrace().contains(exceptionMessage);
+        assert entity.getMessages().stream().anyMatch(m -> ((String) m.get("message")).contains(errorMessage));
     }
 }

@@ -11,7 +11,6 @@ import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.bean.DynamicProxyBean;
 import org.rx.core.*;
-import org.rx.exception.TraceHandler;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.protocol.EventFlag;
 import org.rx.net.rpc.protocol.EventMessage;
@@ -264,7 +263,7 @@ public final class Remoting {
                             target.raiseEvent(x.eventName, x.eventArgs);
                             log.info("clientSide event {} -> {} OK & args={}", x.eventName, x.flag, toJsonString(x.eventArgs));
                         } catch (Exception ex) {
-                            TraceHandler.INSTANCE.log("clientSide event {} -> {}", x.eventName, x.flag, ex);
+                            log.error("clientSide event {} -> {}", x.eventName, x.flag, ex);
                         } finally {
                             if (x.flag == EventFlag.COMPUTE_ARGS) {
                                 s.send(x);  //import
@@ -359,7 +358,7 @@ public final class Remoting {
                                                 log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, computingClient.getRemoteEndpoint(), s.getConfig().getConnectTimeoutMillis());
                                                 eventBean.wait(s.getConfig().getConnectTimeoutMillis());
                                             } catch (Exception ex) {
-                                                TraceHandler.INSTANCE.log("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getRemoteEndpoint(), ex);
+                                                log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getRemoteEndpoint(), ex);
                                             } finally {
                                                 //delay purge
                                                 Tasks.setTimeout(() -> eventBean.contextMap.remove(pack.computeId), s.getConfig().getConnectTimeoutMillis() * 2L);

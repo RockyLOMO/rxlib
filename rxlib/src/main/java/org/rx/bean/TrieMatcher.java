@@ -1,11 +1,9 @@
 package org.rx.bean;
 
 import lombok.RequiredArgsConstructor;
-import org.rx.third.hankcs.AhoCorasickDoubleArrayTrie;
 import org.rx.util.function.BiFunc;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 
 public class TrieMatcher {

@@ -10,7 +10,6 @@ import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
 import org.rx.net.support.GeoManager;
-import org.rx.net.support.GeoSiteMatcher;
 import org.rx.net.support.UltraDomainMatcher;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;

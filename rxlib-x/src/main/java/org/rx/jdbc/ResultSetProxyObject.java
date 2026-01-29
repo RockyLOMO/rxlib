@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
@@ -18,6 +19,7 @@ import java.util.Map;
 
 import static org.rx.core.Extends.tryClose;
 
+@Slf4j
 @RequiredArgsConstructor
 public class ResultSetProxyObject implements ResultSet {
     @Getter
@@ -50,7 +52,7 @@ public class ResultSetProxyObject implements ResultSet {
             try {
                 onClose.invoke();
             } catch (Throwable e) {
-                TraceHandler.INSTANCE.log("onClose", e);
+                log.error("onClose", e);
             }
         }
     }

@@ -6,7 +6,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.unix.Errors;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.exception.TraceHandler;
 
 import java.nio.channels.ClosedChannelException;
 
@@ -65,7 +64,7 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
                         return;
                     }
                 }
-                TraceHandler.INSTANCE.log("Channel error, write operation failed", cause);
+                log.error("Channel error, write operation failed", cause);
             }
         });
 
@@ -75,7 +74,7 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        TraceHandler.INSTANCE.log("Channel error", cause);
+        log.error("Channel error", cause);
         super.exceptionCaught(ctx, cause);
     }
 }

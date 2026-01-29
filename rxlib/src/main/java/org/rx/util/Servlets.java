@@ -77,7 +77,7 @@ public class Servlets extends ServletRequestUtils {
             if (throwOnEmpty) {
                 throw InvalidException.sneaky(e);
             }
-            TraceHandler.INSTANCE.log(e);
+            TraceHandler.INSTANCE.uncaughtException(Thread.currentThread(), e);
             return "0.0.0.0";
         }
     }

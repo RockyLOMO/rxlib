@@ -12,7 +12,9 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
-import org.rx.core.*;
+import org.rx.core.Cache;
+import org.rx.core.Disposable;
+import org.rx.core.Linq;
 import org.rx.core.cache.H2StoreCache;
 import org.rx.io.Files;
 import org.rx.net.Sockets;
@@ -21,8 +23,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-
-import static org.rx.core.Extends.as;
 
 @Slf4j
 public class DnsServer extends Disposable {

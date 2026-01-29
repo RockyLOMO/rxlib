@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
 import org.rx.io.FileStream;
 import org.rx.io.Files;
@@ -260,7 +259,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
                             }
                         }
                     } catch (Throwable e) {
-                        TraceHandler.INSTANCE.log("onPrintOut", e);
+                        log.error("onPrintOut", e);
                     }
                     if (!tmp.isAlive()) {
                         break;

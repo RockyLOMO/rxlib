@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
-import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -87,7 +86,7 @@ public final class Tasks {
                 try {
                     fn.invoke();
                 } catch (Throwable e) {
-                    TraceHandler.INSTANCE.log(e);
+                    log.error("shutdownHook", e);
                 }
             }
         }));
@@ -209,9 +208,9 @@ public final class Tasks {
             return future.get(millis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             //catch +1 ?
-            TraceHandler.INSTANCE.log("awaitNow {} timeout", Reflects.CLASS_TRACER.getClassTrace(2).getName());
+            log.warn("awaitNow {} timeout", Reflects.CLASS_TRACER.getClassTrace(2).getName());
         } catch (Exception e) {
-            TraceHandler.INSTANCE.log(e);
+            log.error("awaitQuietly", e);
         }
         return null;
     }
