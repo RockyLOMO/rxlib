@@ -199,11 +199,21 @@ public final class Sockets {
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
-        //When you call .handler() multiple times on a Netty Bootstrap, only the last handler set is actually used.
+        //When you call .handler()/.childHandler() multiple times on a Netty Bootstrap, only the last handler set is actually used.
+        //parent channel bind log
+        b.handler(GlobalChannelHandler.DEFAULT);
         if (writeBufferWaterMark != null) {
             b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
             if (!config.isCustomBackpressure()) {
-                b.childHandler(new BackpressureHandler(true));
+                if (initChannel != null) {
+                    BiAction<SocketChannel> finalInitChannel = initChannel;
+                    initChannel = ch -> {
+                        ch.pipeline().addLast(new BackpressureHandler(true));
+                        finalInitChannel.accept(ch);
+                    };
+                } else {
+                    initChannel = ch -> ch.pipeline().addLast(new BackpressureHandler(true));
+                }
             }
         }
         if (initChannel != null) {
@@ -261,7 +271,15 @@ public final class Sockets {
         if (writeBufferWaterMark != null) {
             b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
             if (!config.isCustomBackpressure()) {
-                b.handler(new BackpressureHandler(true));
+                if (initChannel != null) {
+                    BiAction<SocketChannel> finalInitChannel = initChannel;
+                    initChannel = ch -> {
+                        ch.pipeline().addLast(new BackpressureHandler(true));
+                        finalInitChannel.accept(ch);
+                    };
+                } else {
+                    initChannel = ch -> ch.pipeline().addLast(new BackpressureHandler(true));
+                }
             }
         }
         if (initChannel != null) {
