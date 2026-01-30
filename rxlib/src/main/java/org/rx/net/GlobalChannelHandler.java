@@ -16,7 +16,7 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
 
     static final AttributeKey<InetSocketAddress> ATTR_BIND_ADDR = AttributeKey.valueOf("ATTR_BIND_ADDR");
 
-    //Sockets.logBind记录的比这个全
+    //tcp channel 要在 parent channel 上设置
     @Override
     public void bind(ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise) throws Exception {
         super.bind(ctx, localAddress, promise);
