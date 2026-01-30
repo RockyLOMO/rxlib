@@ -193,8 +193,8 @@ public final class Sockets {
                 .childOption(ChannelOption.TCP_NODELAY, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
-        b.handler(GlobalChannelHandler.DEFAULT);
+                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
+                .handler(GlobalChannelHandler.DEFAULT);
         if (config.isDebug()) {
             //netty log
             b.handler(DEFAULT_LOG);
@@ -256,8 +256,8 @@ public final class Sockets {
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
-        b.handler(GlobalChannelHandler.DEFAULT);
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
+                .handler(GlobalChannelHandler.DEFAULT);
         if (config.isDebug()) {
             b.handler(DEFAULT_LOG);
         }
@@ -491,26 +491,18 @@ public final class Sockets {
         OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         op.calculate();
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
-        NetworkInterface mif = null;
-        if (multicast) {
-//            MulticastSocket ms = new MulticastSocket();
-//            mif = ms.getNetworkInterface();
-            mif = NetworkInterface.getByInetAddress(Sockets.getLocalAddress(true));
-        }
 
         //writeBufferWaterMark UDP无效
         Bootstrap b = new Bootstrap()
                 .group(reactor(rn, false))
-//                .option(ChannelOption.SO_BROADCAST, true)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+                .channel(Sockets.udpChannelClass())
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
+                .handler(GlobalChannelHandler.DEFAULT);
         if (multicast) {
-            b.channelFactory(() -> Epoll.isAvailable()
-                            ? new EpollDatagramChannel(InternetProtocolFamily.IPv4)
-                            : new NioDatagramChannel(InternetProtocolFamily.IPv4))
+            NetworkInterface mif = NetworkInterface.getByInetAddress(Sockets.getLocalAddress(true));
+            b.option(ChannelOption.SO_BROADCAST, true)
                     .option(ChannelOption.IP_MULTICAST_IF, mif)
                     .option(ChannelOption.SO_REUSEADDR, true);
-        } else {
-            b.channel(Sockets.udpChannelClass());
         }
         if (config.isDebug()) {
             b.handler(DEFAULT_LOG);
