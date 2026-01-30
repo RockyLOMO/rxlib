@@ -30,7 +30,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
             channel.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
         });
-        bootstrap.attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort()));
+        bootstrap.attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint());
 
         //udp server
         udpChannel = Sockets.udpBootstrap(config, ctx -> {
@@ -39,7 +39,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             ctx.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
             ctx.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
-        }).attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).addListener(Sockets.logBind(config.getServerEndpoint().getPort())).channel();
+        }).attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).channel();
     }
 
     @Override

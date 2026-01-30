@@ -1,12 +1,12 @@
 package org.rx.net;
 
-import io.netty.channel.ChannelDuplexHandler;
-import io.netty.channel.ChannelHandler;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelPromise;
+import io.netty.channel.*;
 import io.netty.channel.unix.Errors;
+import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.channels.ClosedChannelException;
 
 @Slf4j
@@ -14,20 +14,25 @@ import java.nio.channels.ClosedChannelException;
 public class GlobalChannelHandler extends ChannelDuplexHandler {
     public static final GlobalChannelHandler DEFAULT = new GlobalChannelHandler();
 
+    static final AttributeKey<InetSocketAddress> ATTR_BIND_ADDR = AttributeKey.valueOf("ATTR_BIND_ADDR");
+
     //Sockets.logBind记录的比这个全
-//    @Override
-//    public void bind(ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise) throws Exception {
-//        super.bind(ctx, localAddress, promise);
-//        promise.addListener((ChannelFutureListener) f -> {
-//            Channel ch = f.channel();
-//            String pn = Sockets.protocolName(ch);
-//            if (!f.isSuccess()) {
-//                log.error("Server[{}] {} listen on {} fail", ch.id(), pn, localAddress, f.cause());
-//                return;
-//            }
-//            log.info("Server[{}] {} listened on {}", ch.id(), pn, localAddress);
-//        });
-//    }
+    @Override
+    public void bind(ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise) throws Exception {
+        super.bind(ctx, localAddress, promise);
+        ctx.channel().attr(ATTR_BIND_ADDR).set((InetSocketAddress) localAddress);
+        promise.addListener((ChannelFutureListener) f -> {
+            Channel ch = f.channel();
+            InetSocketAddress bindAddr = ch.attr(ATTR_BIND_ADDR).get();
+            ch.attr(ATTR_BIND_ADDR).set(null);
+            String pn = Sockets.protocolName(ch);
+            if (!f.isSuccess()) {
+                log.error("Server[{}] {} listen on {} fail", ch.id(), pn, bindAddr, f.cause());
+                return;
+            }
+            log.info("Server[{}] {} listened on {}", ch.id(), pn, bindAddr);
+        });
+    }
 
 //    @Override
 //    public void connect(ChannelHandlerContext ctx, SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) throws Exception {
@@ -43,6 +48,7 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+        super.write(ctx, msg, promise);
         // 为当前写操作的 promise 添加监听器
         promise.addListener(f -> {
             if (!f.isSuccess()) {
@@ -67,9 +73,6 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
                 log.error("Channel error, write operation failed", cause);
             }
         });
-
-        // 继续向下游传递写操作
-        super.write(ctx, msg, promise);
     }
 
     @Override

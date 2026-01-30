@@ -67,7 +67,7 @@ public class RrpClient extends Disposable {
 //                    return null;
 //                }
 //                SocksUser usr = new SocksUser(u);
-//                usr.setMaxIpCount(-1);
+//                usr.setIpLimit(-1);
 //                return usr;
 //            }, serverChannel);
         }
@@ -164,6 +164,7 @@ public class RrpClient extends Disposable {
             RpClientProxy proxyCtx = proxyMap.get(remotePort);
             if (action == RrpConfig.ACTION_FORWARD) {
                 //step4
+                log.debug("RrpClient step4 {}({}) serverChannel -> connect", serverChannel, channelId);
                 Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
                     RrpConfig conf = Sys.deepClone(config);
                     conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());

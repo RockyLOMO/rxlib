@@ -305,13 +305,6 @@ public final class Sockets {
                 pipeline.addLast(getSelfSignedTls().newHandler(channel.alloc()));
             }
 
-            if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
-                pipeline.addLast(new HttpPseudoHeaderDecoder());
-            }
-            if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
-                pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
-            }
-
             //先压缩再加密
             //支持LengthField?
             boolean g = flags.has(TransportFlags.GFW);
@@ -337,6 +330,13 @@ public final class Sockets {
             }
             if (hasCipherW) {
                 pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
+            }
+
+            if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
+                pipeline.addLast(new HttpPseudoHeaderDecoder());
+            }
+            if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
+                pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
             }
 
             if (g) {
@@ -376,13 +376,6 @@ public final class Sockets {
                 pipeline.addLast(tls.newHandler(channel.alloc(), SNISpoofing.getHostString(), SNISpoofing.getPort()));
             }
 
-            if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
-                pipeline.addLast(new HttpPseudoHeaderDecoder());
-            }
-            if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
-                pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
-            }
-
             boolean g = flags.has(TransportFlags.GFW);
             if (!g) {
                 if (flags.has(TransportFlags.COMPRESS_READ)) {
@@ -406,6 +399,13 @@ public final class Sockets {
             }
             if (hasCipherW) {
                 pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
+            }
+
+            if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
+                pipeline.addLast(new HttpPseudoHeaderDecoder());
+            }
+            if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
+                pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
             }
 
             if (g) {
