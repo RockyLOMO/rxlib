@@ -11,7 +11,6 @@ import io.netty.channel.epoll.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.channel.socket.InternetProtocolFamily;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -70,6 +69,12 @@ public final class Sockets {
 
         @Override
         protected void initChannel(Channel ch) {
+            ChannelPipeline p = ch.pipeline();
+            SocketConfig config = ch.attr(SocketConfig.ATTR_CONF).get();
+            if (config != null && config.isDebug()) {
+                p.addLast(DEFAULT_LOG);
+            }
+            p.addLast(GlobalChannelHandler.DEFAULT);
             getAttr(ch, SocketConfig.ATTR_INIT_FN).accept(ch);
             ch.attr(SocketConfig.ATTR_INIT_FN).set(null);
         }
@@ -193,12 +198,8 @@ public final class Sockets {
                 .childOption(ChannelOption.TCP_NODELAY, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .handler(GlobalChannelHandler.DEFAULT);
-        if (config.isDebug()) {
-            //netty log
-            b.handler(DEFAULT_LOG);
-        }
+                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+        //When you call .handler() multiple times on a Netty Bootstrap, only the last handler set is actually used.
         if (writeBufferWaterMark != null) {
             b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
             if (!config.isCustomBackpressure()) {
@@ -256,11 +257,7 @@ public final class Sockets {
                 .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .handler(GlobalChannelHandler.DEFAULT);
-        if (config.isDebug()) {
-            b.handler(DEFAULT_LOG);
-        }
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (writeBufferWaterMark != null) {
             b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
             if (!config.isCustomBackpressure()) {
@@ -496,16 +493,12 @@ public final class Sockets {
         Bootstrap b = new Bootstrap()
                 .group(reactor(rn, false))
                 .channel(Sockets.udpChannelClass())
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
-                .handler(GlobalChannelHandler.DEFAULT);
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (multicast) {
             NetworkInterface mif = NetworkInterface.getByInetAddress(Sockets.getLocalAddress(true));
             b.option(ChannelOption.SO_BROADCAST, true)
                     .option(ChannelOption.IP_MULTICAST_IF, mif)
                     .option(ChannelOption.SO_REUSEADDR, true);
-        }
-        if (config.isDebug()) {
-            b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
@@ -576,25 +569,6 @@ public final class Sockets {
 
     public static String protocolName(Channel channel) {
         return channel instanceof DatagramChannel ? "UDP" : "TCP";
-    }
-
-    public static ChannelFutureListener logBind(int port) {
-        return f -> {
-            int realPort;
-            Channel ch = f.channel();
-            InetSocketAddress locAddr;
-            if ((locAddr = (InetSocketAddress) ch.localAddress()) != null) {
-                realPort = locAddr.getPort();
-            } else {
-                realPort = port;
-            }
-            String pn = Sockets.protocolName(ch);
-            if (!f.isSuccess()) {
-                log.error("Server[{}] {} listen on {} fail", ch.id(), pn, realPort, f.cause());
-                return;
-            }
-            log.info("Server[{}] {} listened on {}", ch.id(), pn, realPort);
-        };
     }
     //endregion
 
