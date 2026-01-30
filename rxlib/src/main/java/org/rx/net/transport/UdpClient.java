@@ -100,7 +100,7 @@ public class UdpClient implements EventPublisher<UdpClient> {
 
     public UdpClient(int bindPort) {
         bootstrap = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(HANDLER));
-        channel = bootstrap.bind(bindPort).addListener(Sockets.logBind(bindPort)).channel();
+        channel = bootstrap.bind(bindPort).channel();
         channel.attr(OWNER).set(this);
     }
 

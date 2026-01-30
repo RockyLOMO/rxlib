@@ -156,7 +156,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()), UdpBackendRelayHandler.DEFAULT);
-            }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0));
+            }).attr(SocksContext.SOCKS_SVR, server).bind(0);
             log.info("UDP2RAW[{}] server open {}", config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
                 log.info("UDP2RAW[{}] server close {}", config.getListenPort(), k);
