@@ -86,7 +86,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                 upstream.initChannel(ob);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
-            }).attr(SocksContext.SOCKS_SVR, server).bind(0).addListener(Sockets.logBind(0));
+            }).attr(SocksContext.SOCKS_SVR, server).bind(0);
             log.info("socks5[{}] UDP open {}", config.getListenPort(), k);
             chf.channel().closeFuture().addListener(f -> {
                 log.info("socks5[{}] UDP close {}", config.getListenPort(), k);

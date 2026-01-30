@@ -214,7 +214,7 @@ public class RrpServer extends Disposable {
                 })
                 .attr(ATTR_SVR, this)
                 .attr(SocketConfig.ATTR_PSEUDO_SVR, true);
-        serverChannel = bootstrap.bind(config.getBindPort()).addListener(Sockets.logBind(config.getBindPort())).channel();
+        serverChannel = bootstrap.bind(config.getBindPort()).channel();
     }
 
     @Override
@@ -250,7 +250,7 @@ public class RrpServer extends Disposable {
             RpClientProxy rpClientProxy = new RpClientProxy(rp, remoteBootstrap);
             rpClientProxy.remoteServerChannel = remoteBootstrap
                     .attr(ATTR_SVR_CLI, rpClient)
-                    .attr(ATTR_SVR_PROXY, rpClientProxy).bind(remotePort).addListener(Sockets.logBind(remotePort)).channel();
+                    .attr(ATTR_SVR_PROXY, rpClientProxy).bind(remotePort).channel();
             rpClient.proxyMap.put(remotePort, rpClientProxy);
             log.debug("RrpServer step2 {} remote Tcp bind {}", clientChannel, remotePort);
         }
