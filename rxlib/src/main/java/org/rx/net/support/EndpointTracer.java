@@ -15,12 +15,17 @@ public final class EndpointTracer {
     static final InetSocketAddress unknownEp = Sockets.newAnyEndpoint(0);
     final MemoryCache<InetSocketAddress, InetSocketAddress> index = new MemoryCache<>(b -> b.maximumSize(5000));
 
-    public void link(InetSocketAddress inboundRemoteAddress, Channel outbound) {
-        InetSocketAddress source = index.get(inboundRemoteAddress, k -> inboundRemoteAddress);
-        if (source == null) {
+    public void link(InetSocketAddress inboundRemoteAddr, Channel outbound) {
+        if (inboundRemoteAddr == null) {
             return;
         }
-        index.put((InetSocketAddress) outbound.localAddress(), source);
+        InetSocketAddress source = index.get(inboundRemoteAddr, k -> inboundRemoteAddr);
+
+        InetSocketAddress outboundLocalAddr = (InetSocketAddress) outbound.localAddress();
+        if (outboundLocalAddr == null) {
+            return;
+        }
+        index.put(outboundLocalAddr, source);
 //        log.info("EpTracer link {} <- ({} -> {})", Sockets.toString(source), inbound, outbound);
     }
 
@@ -29,6 +34,10 @@ public final class EndpointTracer {
     }
 
     public InetSocketAddress head(InetSocketAddress remoteAddr) {
+        if (remoteAddr == null) {
+            return unknownEp;
+        }
+
         InetSocketAddress source = index.get(remoteAddr);
         if (source == null) {
             source = unknownEp;
