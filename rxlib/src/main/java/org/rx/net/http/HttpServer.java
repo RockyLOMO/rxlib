@@ -248,7 +248,7 @@ public class HttpServer extends Disposable {
                     new ChunkedWriteHandler(),
                     new ServerHandler());
         });
-        serverBootstrap.bind(port).addListener(Sockets.logBind(port));
+        serverBootstrap.bind(port);
     }
 
     @Override

@@ -228,7 +228,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientImpl(this));
         }).option(ChannelOption.SO_REUSEADDR, true);
-        serverChannel = bootstrap.bind(config.getListenPort()).addListener(Sockets.logBind(config.getListenPort())).channel();
+        serverChannel = bootstrap.bind(config.getListenPort()).channel();
     }
 
     public String dumpClients() {

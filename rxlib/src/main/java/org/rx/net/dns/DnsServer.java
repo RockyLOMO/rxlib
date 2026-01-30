@@ -85,11 +85,11 @@ public class DnsServer extends Disposable {
         DnsClient client = new DnsClient(nameServerList);
         serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(), DnsHandler.DEFAULT))
                 .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, client);
-        serverBootstrap.bind(port).addListener(Sockets.logBind(port));
+        serverBootstrap.bind(port);
 
         Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
                 .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, client)
-                .bind(port).addListener(Sockets.logBind(port));
+                .bind(port);
     }
 
     @Override

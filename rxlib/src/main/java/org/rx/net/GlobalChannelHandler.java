@@ -27,10 +27,10 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
             ch.attr(ATTR_BIND_ADDR).set(null);
             String pn = Sockets.protocolName(ch);
             if (!f.isSuccess()) {
-                log.error("Server[{}] {} listen on {} fail", ch.id(), pn, bindAddr, f.cause());
+                log.error("Channel[{}] {} listen on {} fail", ch.id(), pn, bindAddr, f.cause());
                 return;
             }
-            log.info("Server[{}] {} listened on {}", ch.id(), pn, bindAddr);
+            log.info("Channel[{}] {} listened on {}", ch.id(), pn, bindAddr);
         });
     }
 
@@ -70,7 +70,7 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
                         return;
                     }
                 }
-                log.error("Channel error, write operation failed", cause);
+                log.error("Channel write operation failed", cause);
             }
         });
     }

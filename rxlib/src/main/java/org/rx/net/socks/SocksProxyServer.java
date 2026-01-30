@@ -81,7 +81,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                     .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
         });
-        tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).addListeners(Sockets.logBind(config.getListenPort()), (ChannelFutureListener) f -> {
+        tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).addListener((ChannelFutureListener) f -> {
             if (f.isSuccess() && onBind != null) {
                 onBind.accept(f.channel());
             }
@@ -97,7 +97,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 Sockets.addServerHandler(channel, config);
                 pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
             }
-        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(udpPort)).channel();
+        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).channel();
     }
 
     public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, @NonNull Channel tcpChannel) {
@@ -133,7 +133,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 Sockets.addServerHandler(channel, config);
                 pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
             }
-        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).addListener(Sockets.logBind(udpPort)).channel();
+        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).channel();
     }
 
     @Override
