@@ -70,7 +70,6 @@ public final class Sockets {
 
         @Override
         protected void initChannel(Channel ch) {
-            ch.pipeline().addLast(GlobalChannelHandler.DEFAULT);
             getAttr(ch, SocketConfig.ATTR_INIT_FN).accept(ch);
             ch.attr(SocketConfig.ATTR_INIT_FN).set(null);
         }
@@ -195,15 +194,16 @@ public final class Sockets {
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+        b.handler(GlobalChannelHandler.DEFAULT);
+        if (config.isDebug()) {
+            //netty log
+            b.handler(DEFAULT_LOG);
+        }
         if (writeBufferWaterMark != null) {
             b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
             if (!config.isCustomBackpressure()) {
                 b.childHandler(new BackpressureHandler(true));
             }
-        }
-        if (config.isDebug()) {
-            //netty log
-            b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
@@ -257,14 +257,15 @@ public final class Sockets {
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+        b.handler(GlobalChannelHandler.DEFAULT);
+        if (config.isDebug()) {
+            b.handler(DEFAULT_LOG);
+        }
         if (writeBufferWaterMark != null) {
             b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
             if (!config.isCustomBackpressure()) {
                 b.handler(new BackpressureHandler(true));
             }
-        }
-        if (config.isDebug()) {
-            b.handler(DEFAULT_LOG);
         }
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);

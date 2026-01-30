@@ -23,13 +23,14 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
         ctx.channel().attr(ATTR_BIND_ADDR).set((InetSocketAddress) localAddress);
         promise.addListener((ChannelFutureListener) f -> {
             Channel ch = f.channel();
+            String pn = Sockets.protocolName(ch);
             InetSocketAddress bindAddr = ch.attr(ATTR_BIND_ADDR).get();
             ch.attr(ATTR_BIND_ADDR).set(null);
-            String pn = Sockets.protocolName(ch);
             if (!f.isSuccess()) {
                 log.error("Channel[{}] {} listen on {} fail", ch.id(), pn, bindAddr, f.cause());
                 return;
             }
+            bindAddr = (InetSocketAddress) ch.localAddress();
             log.info("Channel[{}] {} listened on {}", ch.id(), pn, bindAddr);
         });
     }
