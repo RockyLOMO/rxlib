@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.DateTime;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
@@ -171,7 +172,7 @@ public final class Main implements SocksRpcContract {
 
             rssConf = changed;
             List<AuthenticEndpoint> svrs = rssConf.socksServers;
-            if (svrs.isEmpty()) {
+            if (CollectionUtils.isEmpty(svrs)) {
                 throw new InvalidException("Invalid shadowServer arg");
             }
             log.info("rssConf load socksServers: {}", toJsonString(svrs));

@@ -40,8 +40,8 @@ public class TestUtil extends AbstractTester {
 
     @Test
     public void gym() {
-        double curWeightKg = 90;
-        int curReps = 8;
+        double curWeightKg = 120;
+        int curReps = 6;
         Decimal oneRM = Decimal.valueOf(brzycki1RM(curWeightKg, curReps));
         log.info("1RM {}kg", oneRM);
 
