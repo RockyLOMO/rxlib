@@ -56,7 +56,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             return;
         }
         RandomList<DnsServer.ResolveInterceptor> interceptors = server.interceptors;
-        if (interceptors != null) {
+        if (interceptors != null && !domain.endsWith(".lan")) {
             DnsRecordType queryType = question.type();
             if (queryType == DnsRecordType.A || queryType == DnsRecordType.AAAA) {
                 String k = DOMAIN_PREFIX + domain;
