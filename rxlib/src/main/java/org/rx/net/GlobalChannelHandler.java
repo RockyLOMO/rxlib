@@ -34,17 +34,19 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
         });
     }
 
-//    @Override
-//    public void connect(ChannelHandlerContext ctx, SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) throws Exception {
-//        super.connect(ctx, remoteAddress, localAddress, promise);
-//        promise.addListener(f -> {
-//            if (!f.isSuccess()) {
-//                log.error("Client[{}] connect {} fail", ctx.channel().id(), remoteAddress, f.cause());
-//                return;
-//            }
-//            log.info("Client[{}] connected {}", ctx.channel().id(), remoteAddress);
-//        });
-//    }
+    @Override
+    public void connect(ChannelHandlerContext ctx, SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) throws Exception {
+        super.connect(ctx, remoteAddress, localAddress, promise);
+        promise.addListener((ChannelFutureListener) f -> {
+            Channel ch = f.channel();
+            String pn = Sockets.protocolName(ch);
+            if (!f.isSuccess()) {
+                log.error("Channel[{}] {} connect to {} fail", ch.id(), pn, remoteAddress, f.cause());
+                return;
+            }
+            log.info("Channel[{}] {} connected to {}", ch.id(), pn, remoteAddress);
+        });
+    }
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {

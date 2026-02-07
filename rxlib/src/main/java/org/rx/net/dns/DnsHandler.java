@@ -3,6 +3,7 @@ package org.rx.net.dns;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramChannel;
+import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.dns.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -125,6 +126,11 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        if (cause instanceof DecoderException && cause.getCause() instanceof IndexOutOfBoundsException) {
+            log.warn("丢弃畸形 DNS 数据包 (来源: {}): {}", ctx.channel().remoteAddress(), cause.getMessage());
+            return;
+        }
+
         log.error("dns {} query error", ctx.channel() instanceof DatagramChannel ? "UDP" : "TCP", cause);
     }
 }

@@ -83,7 +83,7 @@ public abstract class CryptoAeadBase implements ICrypto {
             }
             return out;
         } catch (Exception e) {
-            out.release();
+//            out.release();
             throw e;
         }
     }
@@ -124,7 +124,7 @@ public abstract class CryptoAeadBase implements ICrypto {
             }
             return out;
         } catch (Exception e) {
-            out.release();
+//            out.release();
             throw e;
         }
     }
