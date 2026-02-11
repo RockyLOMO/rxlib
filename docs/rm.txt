@@ -1,0 +1,22 @@
+角色 localSvr = k8s pod 内网微服务(RrpClient)， remoteSvr = 公网cloud.xx.cn java服务(RrpServer)， user = 直连端， natSvr = 内网服务（10.1.1.x:3306）
+
+--注册远程端口--
+remoteSvr 开启通信端口4001
+localSvr 主进程内开启RrpClient连接 remoteSvr cloud.xx.cn:4001
+	注释内容： 数据包加密并伪装成http数据包，针对只允许http请求的防火墙
+localSvr 向 remoteSvr 注册远程直连端口如6015  
+	注释内容： 数据包加密并伪装成http数据包
+localSvr 开启本地回路socks5服务
+
+--转发数据包--
+user 端上的mysql client 直连 natSvr，
+	注释内容： 全局抓包user 端请求 natSvr 的数据包，包装成socks5 client的数据包去请求 remoteSvr 的注册地址如 cloud.xx.cn:6015
+remoteSvr 把 user 的数据包 加密并伪装成http数据包通过发送给 localSvr
+	注释内容： RrpClient <-> RrpServer 之间只会有一个tcp连接，所有内外部多连接不同协议数据包请求都包装在内
+localSvr 再把数据包解析发送本地回路socks5服务
+本地回路socks5服务根据协议发送数据包至natSvr
+
+注释内容： 从而实现 user 直连 natSvr 的效果
+
+
+根据上述内容生成 puml

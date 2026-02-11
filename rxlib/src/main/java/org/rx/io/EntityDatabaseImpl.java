@@ -861,7 +861,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     <T> List<T> executeQuery(String sql, List<Object> params, Class<T> entityType) {
         SqlMeta meta = getMeta(entityType);
         List<T> r = new ArrayList<>();
-        invoke(conn -> {
+        invoke((BiAction<Connection>) conn -> {
             PreparedStatement stmt = conn.prepareStatement(sql);
             fillParams(stmt, params);
             try (ResultSet rs = stmt.executeQuery()) {
