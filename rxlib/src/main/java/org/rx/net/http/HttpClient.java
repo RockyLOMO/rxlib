@@ -603,8 +603,8 @@ public class HttpClient {
         RequestContent reqContent;
         String requestContentType = servletRequest.getContentType();
         ServletInputStream inStream = servletRequest.getInputStream();
-        byte[] inBytes;
-        if (inStream != null && (inBytes = Bytes.toBytes(inStream)).length > 0) {
+        byte[] inBytes = inStream != null ? Bytes.toBytes(inStream) : Arrays.EMPTY_BYTE_ARRAY;
+        if (inBytes.length > 0) {
             reqContent = new RequestContent() {
                 @Override
                 public HttpHeaders getHeaders() {

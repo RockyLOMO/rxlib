@@ -294,7 +294,7 @@ public final class Main implements SocksRpcContract {
                     CipherKind.AES_256_GCM.getCipherName(), shadowUser.getSsPwd());
             config.setUdpTimeoutSeconds(rssConf.udpTimeoutSeconds);
             SocksUser user = new SocksUser(shadowUser.getSocksUser());
-            user.setPassword(rssConf.socksPwd);
+            user.setPassword(rssConf.socksPwd.trim());
             user.setIpLimit(shadowUser.getIpLimit());
             return Tuple.of(config, user);
         });
@@ -340,7 +340,9 @@ public final class Main implements SocksRpcContract {
 
         InetSocketAddress inSvrEp = Sockets.newLoopbackEndpoint(port);
         InetSocketAddress inUdp2rawSvrEp = Sockets.newLoopbackEndpoint(udp2rawPort);
+        int i = 0;
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
+            ShadowUser shadowUser = rssConf.shadowUsers.get(i++);
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
             String usrName = usr.getUsername();
