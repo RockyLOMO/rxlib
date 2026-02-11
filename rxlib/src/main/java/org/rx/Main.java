@@ -59,12 +59,12 @@ public final class Main implements SocksRpcContract {
     @SneakyThrows
     public static void main(String[] args) {
         Class.forName(Sys.class.getName());
-//        serverInit();
-//
-//        String hfSvr = "AS(104,116,116,112,115,58,47,47,102,45,108,105,46,99,110,58,56,48,56,50)/hf";
-//        String fu = "https://api.web.ecapi.cn/platform/dmOrder?page=1&pageSize=100&time_from=2024-11-20%2019%3A36%3A48&time_to=2024-11-23%2019%3A36%3A48&apkey=33b26a2d-9111-40ec-eff0-d1f7316cb689";
-//        System.out.println(new HttpClient().get(HttpClient.buildUrl(hfSvr, Collections.singletonMap("fu", fu))).toString());
-//        System.in.read();
+        // serverInit();
+        //
+        // String hfSvr = "AS(104,116,116,112,115,58,47,47,102,45,108,105,46,99,110,58,56,48,56,50)/hf";
+        // String fu = "https://api.web.ecapi.cn/platform/dmOrder?page=1&pageSize=100&time_from=2024-11-20%2019%3A36%3A48&time_to=2024-11-23%2019%3A36%3A48&apkey=33b26a2d-9111-40ec-eff0-d1f7316cb689";
+        // System.out.println(new HttpClient().get(HttpClient.buildUrl(hfSvr, Collections.singletonMap("fu", fu))).toString());
+        // System.in.read();
 
         Map<String, String> options = Sys.mainOptions(args);
         Integer port = Reflects.convertQuietly(options.get("port"), Integer.class);
@@ -90,8 +90,8 @@ public final class Main implements SocksRpcContract {
         public String ssPwd;
         public String socksUser;
         public int ipLimit;
-//        //0 socks5, 1 tun, 2 hysteria
-//        public byte type;
+        // //0 socks5, 1 tun, 2 hysteria
+        // public byte type;
     }
 
     @Getter
@@ -110,7 +110,7 @@ public final class Main implements SocksRpcContract {
     public static class RSSConf {
         public int logFlags;
 
-        //socks
+        // socks
         public List<ShadowUser> shadowUsers;
         public List<AuthenticEndpoint> socksServers;
         public String socksPwd;
@@ -125,14 +125,14 @@ public final class Main implements SocksRpcContract {
 
         public List<AuthenticEndpoint> udp2rawSocksServers;
         public InetSocketAddress udp2rawClient;
-        //传递后tcp走kcptun
+        // 传递后tcp走kcptun
         public AuthenticEndpoint kcptunClient;
         public AuthenticEndpoint hysteriaClient;
 
-        //route
+        // route
         public RouteConf route = new RouteConf();
 
-        //ddns
+        // ddns
         public int ddnsJobSeconds;
         public List<String> ddnsDomains;
         public String ddnsApiKey;
@@ -147,7 +147,7 @@ public final class Main implements SocksRpcContract {
         }
     }
 
-    //FastThreadLocal 复用 Upstream 价值不高
+    // FastThreadLocal 复用 Upstream 价值不高
     public static final OptimalSettings OUT_OPS = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
     public static final OptimalSettings IN_OPS = null;
     public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
@@ -169,12 +169,12 @@ public final class Main implements SocksRpcContract {
             if (changed == null) {
                 return;
             }
+            if (CollectionUtils.isEmpty(changed.socksServers)) {
+                throw new InvalidException("Invalid shadowServer arg");
+            }
 
             rssConf = changed;
             List<AuthenticEndpoint> svrs = rssConf.socksServers;
-            if (CollectionUtils.isEmpty(svrs)) {
-                throw new InvalidException("Invalid shadowServer arg");
-            }
             log.info("rssConf load socksServers: {}", toJsonString(svrs));
             List<AuthenticEndpoint> udp2rawSvrs = rssConf.udp2rawSocksServers;
             log.info("rssConf load udp2rawSocksServers: {}", toJsonString(udp2rawSvrs));
@@ -190,7 +190,7 @@ public final class Main implements SocksRpcContract {
                         rssConf.rpcMinSize, rssConf.rpcMaxSize);
                 TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
                 tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
-//                tcpConfig.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags(TransportFlags.CLIENT_CIPHER_BOTH));
+                // tcpConfig.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags(TransportFlags.CLIENT_CIPHER_BOTH));
                 int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
                 if (weight <= 0) {
                     continue;
@@ -301,7 +301,7 @@ public final class Main implements SocksRpcContract {
 
         SocksConfig inConf = new SocksConfig(port);
         inConf.setDebug(rssConf.hasDebugFlag());
-//        inConf.setTransportFlags(null);
+        // inConf.setTransportFlags(null);
         inConf.setOptimalSettings(IN_OPS);
         inConf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
         inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
@@ -310,11 +310,11 @@ public final class Main implements SocksRpcContract {
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            //must first
+            // must first
             if (dstEp.getPort() == SocksRpcContract.DNS_PORT) {
                 e.setUpstream(shadowDnsUpstream);
                 e.setHandled(true);
-//                return;
+                // return;
             }
         };
         SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
@@ -340,9 +340,7 @@ public final class Main implements SocksRpcContract {
 
         InetSocketAddress inSvrEp = Sockets.newLoopbackEndpoint(port);
         InetSocketAddress inUdp2rawSvrEp = Sockets.newLoopbackEndpoint(udp2rawPort);
-        int i = 0;
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
-            ShadowUser shadowUser = rssConf.shadowUsers.get(i++);
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
             String usrName = usr.getUsername();
@@ -362,7 +360,7 @@ public final class Main implements SocksRpcContract {
             }
 
             SocksConfig toInConf = new SocksConfig(svrEp.getEndpoint().getPort());
-//            toInConf.setTransportFlags(null);
+            // toInConf.setTransportFlags(null);
             toInConf.setOptimalSettings(IN_OPS);
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
             ssSvr.onTcpRoute.replace((s, e) -> {
@@ -387,15 +385,15 @@ public final class Main implements SocksRpcContract {
     }
 
     static SocksProxyServer createInSvr(SocksConfig inConf, DefaultSocksAuthenticator authenticator,
-                                        TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> socksServers,
-                                        GeoManager geoMgr) {
+            TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> socksServers,
+            GeoManager geoMgr) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
         boolean kcptun = inConf.getKcptunClient() != null;
         UpstreamSupport kcpUpstream = kcptun ? new UpstreamSupport(inConf.getKcptunClient(), null)
                 : null;
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
-//            String destHost = e.getFirstDestination().getHost();
-//            InetAddress srcHost = e.getSource().getAddress(); //本地转发会不准都是127.0.0.1
+            // String destHost = e.getFirstDestination().getHost();
+            // InetAddress srcHost = e.getSource().getAddress(); //本地转发会不准都是127.0.0.1
             InetAddress srcHost = e.getSource().getAddress();
             UpstreamSupport next = socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
             if (rssConf.hasDebugFlag()) {
@@ -509,9 +507,9 @@ public final class Main implements SocksRpcContract {
 
     @SneakyThrows
     static String setDDns(String apiKey, String domain, List<String> subDomains, String ip) {
-//        AuthenticProxy p = conf.godaddyProxy != null
-//                ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
-//                : null;
+        // AuthenticProxy p = conf.godaddyProxy != null
+        // ? new AuthenticProxy(Proxy.Type.SOCKS, Sockets.parseEndpoint(conf.godaddyProxy))
+        // : null;
         JSONObject curDns = getDDns(apiKey, domain);
         log.info("ddns curDns {}", curDns);
         JSONArray mDomains = Sys.readJsonValue(curDns, "data.name_server_settings.main_domains");
@@ -554,12 +552,12 @@ public final class Main implements SocksRpcContract {
         }
         requestBody.put("sub_list", sDomains);
         log.info("ddns update all {}", requestBody);
-//        HttpClient client = new HttpClient();
-//        client.requestHeaders().set("Content-Type", "application/json");
-//        client.requestHeaders().set("Accept", "application/json");
-//        client.requestHeaders().set("Authorization", "Bearer " + apiKey);
-//        client.requestHeaders().set("X-Signature", dynadotSign(apiKey, url, requestBody.toString()));
-//        return client.postJson(url, requestBody).toString();
+        // HttpClient client = new HttpClient();
+        // client.requestHeaders().set("Content-Type", "application/json");
+        // client.requestHeaders().set("Accept", "application/json");
+        // client.requestHeaders().set("Authorization", "Bearer " + apiKey);
+        // client.requestHeaders().set("X-Signature", dynadotSign(apiKey, url, requestBody.toString()));
+        // return client.postJson(url, requestBody).toString();
 
         URL u = new URL(url);
         HttpURLConnection conn = (HttpURLConnection) u.openConnection();
@@ -614,7 +612,7 @@ public final class Main implements SocksRpcContract {
         outConf.setDebug(debugFlag);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setOptimalSettings(OUT_OPS);
-//        outConf.setConnectTimeoutMillis(connectTimeout);
+        // outConf.setConnectTimeoutMillis(connectTimeout);
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
@@ -627,10 +625,10 @@ public final class Main implements SocksRpcContract {
             outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         }
 
-        //server port + 1 = rpc
+        // server port + 1 = rpc
         RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(port + 1));
         rpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
-//        rpcConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH.flags(TransportFlags.SERVER_CIPHER_BOTH));
+        // rpcConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH.flags(TransportFlags.SERVER_CIPHER_BOTH));
         Main app = new Main(outSvr);
         Remoting.register(app, rpcConf);
         serverInit(httpPort);
@@ -654,9 +652,9 @@ public final class Main implements SocksRpcContract {
             }
             response.jsonBody(client.get(url).toJson());
         })
-//                .requestMapping("/geo", (request, response) -> {
-//                    response.jsonBody(IPSearcher.DEFAULT.resolve(request.getQueryString().getFirst("host")));
-//                })
+        // .requestMapping("/geo", (request, response) -> {
+        // response.jsonBody(IPSearcher.DEFAULT.resolve(request.getQueryString().getFirst("host")));
+        // })
         ;
     }
 
@@ -670,7 +668,7 @@ public final class Main implements SocksRpcContract {
     @SneakyThrows
     @Override
     public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
-//        return DnsClient.outlandClient().resolveAll(host);
+        // return DnsClient.outlandClient().resolveAll(host);
         return Arrays.toList(InetAddress.getAllByName(host));
     }
 

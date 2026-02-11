@@ -52,7 +52,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
             out.add(msg);
         } catch (Exception e) {
             if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
-                log.warn("cipher decode fail", ExceptionUtils.getRootCause(e)); //可能是密码错误或协议嗅探
+                log.warn("cipher decode fail {}", ExceptionUtils.getRootCause(e).toString()); // 可能是密码错误或协议嗅探
                 if (!isUdp) {
                     inbound.close();
                 }
