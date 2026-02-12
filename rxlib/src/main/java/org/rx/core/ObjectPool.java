@@ -98,8 +98,8 @@ public class ObjectPool<T> extends Disposable {
     }
 
     public ObjectPool(int minSize, int maxSize,
-                      @NonNull Func<T> createHandler, @NonNull PredicateFunc<T> validateHandler,
-                      BiAction<T> activateHandler, BiAction<T> passivateHandler) {
+            @NonNull Func<T> createHandler, @NonNull PredicateFunc<T> validateHandler,
+            BiAction<T> activateHandler, BiAction<T> passivateHandler) {
         if (minSize < 0) {
             throw new InvalidException("MinSize '{}' must greater than or equal to 0", minSize);
         }
@@ -211,6 +211,9 @@ public class ObjectPool<T> extends Disposable {
         } catch (Throwable e) {
             if (wrapper != null) {
                 doRetire(wrapper, 0);
+            } else {
+                // createHandler.get() 抛异常时 wrapper 为 null，CAS 预占的位置需要回退
+                totalCount.decrementAndGet();
             }
             log.warn("doCreate error", e);
             return null;
@@ -249,8 +252,8 @@ public class ObjectPool<T> extends Disposable {
 
     public T borrow() throws TimeoutException {
         Throwable lastError = null;
-        long begin = System.nanoTime();
-        long remainingTime = borrowTimeout;
+        long beginNanos = System.nanoTime();
+        long remainingTime = 1;
         IdentityWrapper<T> wrapper = null;
         while (remainingTime > 0) {
             try {
@@ -262,8 +265,10 @@ public class ObjectPool<T> extends Disposable {
                         wrapper = doCreate();
                     }
                     if (wrapper == null) {
-                        // Wait for idle object
-                        wrapper = doPoll(remainingTime);
+                        // 如果 doCreate 因瞬态错误失败（非 maxSize 限制），短暂等待并重试
+                        // 如果是 maxSize 限制，等待完整剩余时间
+                        long waitTime = (size() < maxSize) ? Math.min(100, remainingTime) : remainingTime;
+                        wrapper = doPoll(waitTime);
                     }
                 }
 
@@ -280,7 +285,8 @@ public class ObjectPool<T> extends Disposable {
                 }
                 lastError = e;
             }
-            remainingTime -= (System.nanoTime() - begin) / Constants.NANO_TO_MILLIS;
+            long elapsedMs = (System.nanoTime() - beginNanos) / Constants.NANO_TO_MILLIS;
+            remainingTime = borrowTimeout - elapsedMs;
         }
         String msg = "borrow timeout";
         if (lastError != null) {
