@@ -661,7 +661,6 @@ public final class Sockets {
             while (addresses.hasMoreElements()) {
                 InetAddress addr = addresses.nextElement();
                 if (addr.isLoopbackAddress() || addr.isAnyLocalAddress()
-//                        || !addr.isSiteLocalAddress() //k8s会获取不到
                         || !(addr instanceof Inet4Address)) {
                     continue;
                 }

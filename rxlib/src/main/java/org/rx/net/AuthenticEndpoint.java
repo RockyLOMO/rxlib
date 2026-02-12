@@ -24,6 +24,7 @@ public class AuthenticEndpoint implements Serializable {
     static final String AT_FLAG = "@", AUTH_FLAG = ":", PARAM_FLAG = "?";
 
     public static AuthenticEndpoint valueOf(String authenticEndpoint) {
+        authenticEndpoint = authenticEndpoint.trim();
         int i = Strings.lastIndexOf(authenticEndpoint, AT_FLAG);
         if (i == -1) {
             Tuple<InetSocketAddress, Map<String, String>> tuple = decodeEndpoint(authenticEndpoint);
