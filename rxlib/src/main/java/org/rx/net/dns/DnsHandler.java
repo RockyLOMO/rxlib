@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.CachePolicy;
+import org.rx.core.Tasks;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksRpcContract;
 
@@ -41,7 +42,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         DnsClient upstream = Sockets.getAttr(ch, DnsServer.ATTR_UPSTREAM);
 
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
-//        log.debug("dns query name={}", question.name());
+        // log.debug("dns query name={}", question.name());
         String domain = question.name().substring(0, question.name().length() - 1);
 
         List<InetAddress> hIps = server.getHosts(domain);
@@ -61,25 +62,45 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             if (queryType == DnsRecordType.A || queryType == DnsRecordType.AAAA) {
                 String k = DOMAIN_PREFIX + domain;
                 List<InetAddress> ips = server.interceptorCache.get(k);
-                if (ips == null) {
-                    try {
-                        ips = interceptors.next().resolveHost(srcIp, domain);
-                    } catch (Exception e) {
-                        log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
-                    }
-                    if (ips == null) {
-                        ips = Collections.emptyList();
-                    }
-                    server.interceptorCache.put(k, ips,
-                            CachePolicy.absolute(ips.isEmpty() ? 5 : server.ttl));
-                }
-                if (CollectionUtils.isEmpty(ips)) {
-                    ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
-                    log.info("dns query {}+{} -> EMPTY", srcIp, domain);
+                if (ips != null) {
+                    writeInterceptorResponse(ctx, query, isTcp, question, server, srcIp, domain, ips);
                     return;
                 }
-                ctx.writeAndFlush(newResponse(query, isTcp, question, server.ttl, ips));
-                log.info("dns query {}+{} -> {}[SHADOW]", srcIp, domain, ips.get(0).getHostAddress());
+                // Offload resolveHost to worker thread to avoid BlockingOperationException on event loop
+                query.retain();
+                Tasks.run(() -> {
+                    try {
+                        List<InetAddress> resolvedIps;
+                        try {
+                            resolvedIps = interceptors.next().resolveHost(srcIp, domain);
+                        } catch (Exception e) {
+                            log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
+                            resolvedIps = null;
+                        }
+                        if (resolvedIps == null) {
+                            resolvedIps = Collections.emptyList();
+                        }
+                        server.interceptorCache.put(k, resolvedIps,
+                                CachePolicy.absolute(resolvedIps.isEmpty() ? 5 : server.ttl));
+                        List<InetAddress> finalIps = resolvedIps;
+                        ctx.channel().eventLoop().execute(() -> {
+                            try {
+                                writeInterceptorResponse(ctx, query, isTcp, question, server, srcIp, domain, finalIps);
+                            } finally {
+                                query.release();
+                            }
+                        });
+                    } catch (Exception e) {
+                        log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
+                        ctx.channel().eventLoop().execute(() -> {
+                            try {
+                                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
+                            } finally {
+                                query.release();
+                            }
+                        });
+                    }
+                });
                 return;
             }
         }
@@ -110,7 +131,19 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         });
     }
 
-    //ttl seconds
+    private void writeInterceptorResponse(ChannelHandlerContext ctx, DefaultDnsQuery query, boolean isTcp,
+            DefaultDnsQuestion question, DnsServer server,
+            InetAddress srcIp, String domain, List<InetAddress> ips) {
+        if (CollectionUtils.isEmpty(ips)) {
+            ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
+            log.info("dns query {}+{} -> EMPTY", srcIp, domain);
+            return;
+        }
+        ctx.writeAndFlush(newResponse(query, isTcp, question, server.ttl, ips));
+        log.info("dns query {}+{} -> {}[SHADOW]", srcIp, domain, ips.get(0).getHostAddress());
+    }
+
+    // ttl seconds
     private DefaultDnsResponse newResponse(DefaultDnsQuery query, boolean isTcp, DefaultDnsQuestion question, long ttl, Iterable<InetAddress> ips) {
         DefaultDnsResponse response = DnsMessageUtil.newResponse(query, isTcp);
         response.addRecord(DnsSection.QUESTION, question);
