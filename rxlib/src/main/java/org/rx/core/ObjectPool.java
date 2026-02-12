@@ -324,7 +324,7 @@ public class ObjectPool<T> extends Disposable {
                 throw new InvalidException("Object '{}' has already in this pool", wrapper);
             }
             if (!stack.offer(wrapper)) {
-                doRetire(wrapper, 0); // Fixed: ensure totalCount decremented
+                doRetire(wrapper, 0);
                 return;
             }
             c.setBorrowed(false);
