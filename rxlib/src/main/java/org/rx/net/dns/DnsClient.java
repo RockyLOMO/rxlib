@@ -5,6 +5,7 @@ import io.netty.handler.codec.dns.DnsQuestion;
 import io.netty.handler.codec.dns.DnsResponse;
 import io.netty.resolver.dns.*;
 import io.netty.util.concurrent.Future;
+
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
@@ -74,6 +75,14 @@ public class DnsClient extends Disposable {
 
             log.error("Dns query fail question={}", question, f.cause());
         });
+    }
+
+    public Future<InetAddress> resolveAsync(String inetHost) {
+        return nameResolver.resolve(inetHost);
+    }
+
+    public Future<List<InetAddress>> resolveAllAsync(String inetHost) {
+        return nameResolver.resolveAll(inetHost);
     }
 
     public InetAddress resolve(String inetHost) {
