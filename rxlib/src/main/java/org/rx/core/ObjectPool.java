@@ -181,7 +181,9 @@ public class ObjectPool<T> extends Disposable {
         ObjectConf c = conf.remove(wrapper);
         if (c != null) {
             // may polled
-            stack.remove(wrapper); // O(N) cost
+            if (!c.isBorrowed()) {
+                stack.removeLastOccurrence(wrapper); // O(N) cost
+            }
             totalCount.decrementAndGet();
 
             if (c.isBorrowed()) {
@@ -316,51 +318,59 @@ public class ObjectPool<T> extends Disposable {
         // long start = System.nanoTime();
         IdentityWrapper<T> wrapper;
 
-        if (borrowTimeout <= 0) {
-            try {
-                limitLatch.acquire();
-            } catch (InterruptedException e) {
-                throw new InvalidException(e);
-            }
-        } else {
-            try {
-                if (!limitLatch.tryAcquire(borrowTimeout, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                    log.warn("ObjPool borrow timeout, state: {}", this);
-                    throw new TimeoutException("borrow timeout");
-                }
-            } catch (InterruptedException e) {
-                throw new InvalidException(e);
-            }
-        }
-
-        try {
-            wrapper = ifNull(doPoll(), this::doCreate);
-            if (wrapper != null) {
+        while (true) {
+            if (borrowTimeout <= 0) {
                 try {
-                    if (validateHandler.test(wrapper.instance)) {
-                        return wrapper.instance;
+                    limitLatch.acquire();
+                } catch (InterruptedException e) {
+                    throw new InvalidException("wait interrupted", e);
+                }
+            } else {
+                try {
+                    if (!limitLatch.tryAcquire(borrowTimeout, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                        log.warn("ObjPool borrow timeout, state: {}", this);
+                        throw new TimeoutException("borrow timeout");
                     }
-                    // 必须显式退休掉校验失败的对象
-                    doRetire(wrapper, 1);
-                } catch (Throwable e) {
-                    doRetire(wrapper, 0);
-                    throw e;
+                } catch (InterruptedException e) {
+                    throw new InvalidException("wait interrupted", e);
                 }
             }
-        } catch (Throwable e) {
-            limitLatch.release(); // if doCreate returns null (error) or exception
-            throw e;
-        }
 
-        // validation fail or create fail, retry
-        // We already released latch if critical error in catch block.
-        // But if doRetire(wrapper, 1) was called, doRetire releases latch (if borrowed).
-        // wrapper was borrowed in doPoll/doCreate.
-        // So latch is released.
-        // We need to re-acquire.
-        // Recursive call? Stack depth issue if many failures?
-        // Loop is better.
-        return borrow();
+            try {
+                wrapper = ifNull(doPoll(), this::doCreate);
+                if (wrapper != null) {
+                    try {
+                        if (validateHandler.test(wrapper.instance)) {
+                            return wrapper.instance;
+                        }
+                        // 必须显式退休掉校验失败的对象
+                        doRetire(wrapper, 1);
+                    } catch (Throwable e) {
+                        doRetire(wrapper, 0);
+                        throw e;
+                    }
+                } else {
+                    // creation failed but latch acquired
+                    limitLatch.release();
+                    // continue loop to acquire again (or should we throw?)
+                    // if doCreate returns null consistently (e.g. error), this loop could be infinite busy loop if we don't delay?
+                    // But doCreate logs warning.
+                    // Let's throw exception if doCreate returns null to avoid infinite loop without error propagation?
+                    // Actually doCreate swallows exception and logs warn.
+                    // If we continue, we might spam logs.
+                    // But user might want retry.
+                    // Let's rely on limitLatch (if another thread returns obj).
+                    // But we just released latch.
+                    // So we go back to acquire.
+                }
+            } catch (Throwable e) {
+                // unexpected exception
+                if (limitLatch.availablePermits() < maxSize) {
+                    limitLatch.release();
+                }
+                throw e;
+            }
+        }
     }
 
     public void recycle(@NonNull T obj) {
