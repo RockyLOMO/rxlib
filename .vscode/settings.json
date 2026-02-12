@@ -17,7 +17,7 @@
     // "java.compile.nullAnalysis.mode": "disabled",
     "java.compile.nullAnalysis.mode": "automatic",
     "maven.view": "flat",
-    "java.autobuild.enabled": true,
+    // "java.autobuild.enabled": true,
     "files.autoSave": "afterDelay",
     "java.format.settings.url": "eclipse-java-google-style.xml",
     "java.format.settings.profile": "GoogleStyle"
