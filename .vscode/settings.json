@@ -20,5 +20,6 @@
     // "java.autobuild.enabled": true,
     "files.autoSave": "afterDelay",
     "java.format.settings.url": "eclipse-java-google-style.xml",
-    "java.format.settings.profile": "GoogleStyle"
+    "java.format.settings.profile": "GoogleStyle",
+    "java.configuration.updateBuildConfiguration": "automatic"
 }

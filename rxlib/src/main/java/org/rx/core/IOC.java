@@ -2,10 +2,9 @@ package org.rx.core;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.apache.commons.collections4.map.AbstractReferenceMap;
-import org.apache.commons.collections4.map.ReferenceIdentityMap;
-import org.apache.commons.collections4.map.ReferenceMap;
 import org.rx.exception.InvalidException;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.util.ConcurrentReferenceHashMap;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,9 +15,9 @@ import static org.rx.core.Extends.tryClose;
 @SuppressWarnings(NON_UNCHECKED)
 public final class IOC {
     static final Map<Class<?>, Object> container = new ConcurrentHashMap<>(8);
-    static final Map WEAK_KEY_MAP = Collections.synchronizedMap(new WeakHashMap<>());
-    //    static final Map WEAK_KEY_MAP = Collections.synchronizedMap(new ReferenceMap<>(AbstractReferenceMap.ReferenceStrength.WEAK, AbstractReferenceMap.ReferenceStrength.HARD));
-    static Map weakValMap, wKeyIdentityMap, wValIdentityMap;
+    static final Map WEAK_KEY_MAP = new ConcurrentReferenceHashMap<>();
+    static Map weakValMap;
+    static com.github.benmanes.caffeine.cache.Cache wKeyIdentityMap, wValIdentityMap;
 
     public static <T> boolean isInit(Class<T> type) {
         return container.containsKey(type);
@@ -78,25 +77,37 @@ public final class IOC {
         return (Map<K, V>) weakKeyMap().computeIfAbsent(ref, k -> new ConcurrentHashMap<>(4));
     }
 
-    public static synchronized <K, V> Map<K, V> weakValueMap() {
+    public static <K, V> Map<K, V> weakValueMap() {
         if (weakValMap == null) {
-            weakValMap = Collections.synchronizedMap(new ReferenceMap<>(AbstractReferenceMap.ReferenceStrength.HARD, AbstractReferenceMap.ReferenceStrength.WEAK));
+            synchronized (IOC.class) {
+                if (weakValMap == null) {
+                    weakValMap = new ConcurrentReferenceHashMap();
+                }
+            }
         }
         return weakValMap;
     }
 
-    //不要放值类型
-    public synchronized static <K, V> Map<K, V> weakKeyIdentityMap() {
+    // 不要放值类型
+    public static <K, V> Map<K, V> weakKeyIdentityMap() {
         if (wKeyIdentityMap == null) {
-            wKeyIdentityMap = Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.WEAK, AbstractReferenceMap.ReferenceStrength.HARD));
+            synchronized (IOC.class) {
+                if (wKeyIdentityMap == null) {
+                    wKeyIdentityMap = Caffeine.newBuilder().weakKeys().build();
+                }
+            }
         }
-        return wKeyIdentityMap;
+        return wKeyIdentityMap.asMap();
     }
 
-    public synchronized static <K, V> Map<K, V> weakValueIdentityMap() {
+    public static <K, V> Map<K, V> weakValueIdentityMap() {
         if (wValIdentityMap == null) {
-            wValIdentityMap = Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.HARD, AbstractReferenceMap.ReferenceStrength.WEAK));
+            synchronized (IOC.class) {
+                if (wValIdentityMap == null) {
+                    wValIdentityMap = Caffeine.newBuilder().weakValues().build();
+                }
+            }
         }
-        return wValIdentityMap;
+        return wValIdentityMap.asMap();
     }
 }
