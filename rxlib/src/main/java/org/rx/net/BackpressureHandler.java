@@ -3,13 +3,15 @@ package org.rx.net;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
-import org.rx.util.function.BiAction;
+import org.rx.util.function.QuadraAction;
 import org.rx.util.function.TripleAction;
 
 import java.util.concurrent.TimeUnit;
@@ -21,14 +23,36 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     static final int MIN_SPAN_MILLIS = 20;
     // 使用一个抖动阈值，防止高低水位频繁震荡
     static final long COOLDOWN_MILLIS = 50;
+
+    public static void install(Channel inbound, Channel outbound) {
+        install(inbound, outbound, (in, out) -> {
+            Sockets.disableAutoRead(in);
+        }, (in, out, e) -> {
+            Sockets.enableAutoRead(in);
+        });
+    }
+
+    public static void install(Channel inbound, Channel outbound, TripleAction<Channel, Channel> onBackpressureStart, QuadraAction<Channel, Channel, Throwable> onBackpressureEnd) {
+        WriteBufferWaterMark waterMark = outbound.config().getOption(ChannelOption.WRITE_BUFFER_WATER_MARK);
+        if (waterMark == null) {
+            log.warn("BackpressureHandler not installed: WriteBufferWaterMark not set");
+            return;
+        }
+
+        ChannelPipeline p = outbound.pipeline();
+        BackpressureHandler handler = p.get(BackpressureHandler.class);
+        if (handler != null) {
+            throw new IllegalStateException("BackpressureHandler already installed");
+        }
+        p.addLast(new BackpressureHandler(inbound, onBackpressureStart, onBackpressureEnd));
+    }
+
     final AtomicReference<ScheduledFuture<?>> timer = new AtomicReference<>();
-    final boolean disableSelfAutoRead;
-    // 通知暂停队列、暂停上游读取、标记对侧 channel
-    @Setter
-    BiAction<Channel> onBackpressureStart;
+    final Channel inbound;
+    // 通知暂停队列、暂停上游读取
+    final TripleAction<Channel, Channel> onBackpressureStart;
     // 通知恢复队列、恢复上游读取
-    @Setter
-    TripleAction<Channel, Throwable> onBackpressureEnd;
+    final QuadraAction<Channel, Channel, Throwable> onBackpressureEnd;
     volatile long lastEventTs;
     // 是否暂停写入（用于业务层，如队列暂停）
     @Getter
@@ -36,7 +60,7 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-        Channel ch = ctx.channel();
+        Channel outbound = ctx.channel();
 
         ScheduledFuture<?> t = timer.get();
         if (t != null
@@ -51,10 +75,10 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
                 && (nextMs = COOLDOWN_MILLIS - spanMs) > MIN_SPAN_MILLIS) {
             ScheduledFuture<?> schedule = ctx.executor().schedule(() -> {
                 try {
-                    if (!ch.isActive()) {
+                    if (!outbound.isActive()) {
                         return;
                     }
-                    onEvent(ch, System.nanoTime());
+                    onEvent(outbound, System.nanoTime());
                 } finally {
                     timer.lazySet(null);
                 }
@@ -67,47 +91,40 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
             return;
         }
 
-        onEvent(ch, now);
+        onEvent(outbound, now);
 
         super.channelWritabilityChanged(ctx);
     }
 
-    void onEvent(Channel ch, long nowNano) {
-        if (!ch.isWritable()) {
+    void onEvent(Channel outbound, long nowNano) {
+        if (!outbound.isWritable()) {
             if (paused) {
                 return;
             }
             // ---- 写入过载 ----
             paused = true;
-            if (disableSelfAutoRead) {
-                // 暂停 inbound read，防止数据继续进来
-                Sockets.disableAutoRead(ch);
-            }
             lastEventTs = nowNano;
-            log.info("Channel {} Backpressure start[notWritable]", ch);
-            BiAction<Channel> fn = onBackpressureStart;
+            log.info("Channel {} Backpressure start[notWritable]", outbound);
+            TripleAction<Channel, Channel> fn = onBackpressureStart;
             if (fn != null) {
-                fn.accept(ch);
+                fn.accept(inbound, outbound);
             }
         } else {
-            handleRecovery(ch, nowNano, null);
+            handleRecovery(outbound, nowNano, null);
         }
     }
 
-    void handleRecovery(Channel ch, long nowNano, Throwable cause) {
+    void handleRecovery(Channel outbound, long nowNano, Throwable cause) {
         if (!paused) {
             return;
         }
         // ---- 恢复 ----
         paused = false;
-        if (disableSelfAutoRead) {
-            Sockets.enableAutoRead(ch);
-        }
         lastEventTs = nowNano;
-        log.info("Channel {} Backpressure end[writable]", ch);
-        TripleAction<Channel, Throwable> fn = onBackpressureEnd;
+        log.info("Channel {} Backpressure end[writable]", outbound);
+        QuadraAction<Channel, Channel, Throwable> fn = onBackpressureEnd;
         if (fn != null) {
-            fn.accept(ch, cause);
+            fn.accept(inbound, outbound, cause);
         }
     }
 

@@ -190,7 +190,7 @@ public final class Sockets {
                 .group(newEventLoop(bossThreadAmount), reactor(rn, true))
                 .channel(Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
                 .option(ChannelOption.SO_BACKLOG, backlog)
-//                .option(ChannelOption.SO_REUSEADDR, true)
+                // .option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
@@ -204,17 +204,6 @@ public final class Sockets {
         b.handler(GlobalChannelHandler.DEFAULT);
         if (writeBufferWaterMark != null) {
             b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
-            if (!config.isCustomBackpressure()) {
-                if (initChannel != null) {
-                    BiAction<SocketChannel> finalInitChannel = initChannel;
-                    initChannel = ch -> {
-                        ch.pipeline().addLast(new BackpressureHandler(true));
-                        finalInitChannel.accept(ch);
-                    };
-                } else {
-                    initChannel = ch -> ch.pipeline().addLast(new BackpressureHandler(true));
-                }
-            }
         }
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
@@ -270,17 +259,6 @@ public final class Sockets {
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (writeBufferWaterMark != null) {
             b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
-            if (!config.isCustomBackpressure()) {
-                if (initChannel != null) {
-                    BiAction<SocketChannel> finalInitChannel = initChannel;
-                    initChannel = ch -> {
-                        ch.pipeline().addLast(new BackpressureHandler(true));
-                        finalInitChannel.accept(ch);
-                    };
-                } else {
-                    initChannel = ch -> ch.pipeline().addLast(new BackpressureHandler(true));
-                }
-            }
         }
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
@@ -453,11 +431,11 @@ public final class Sockets {
                 ChannelHandler handler = entry.getValue();
                 if (handler instanceof ChannelInboundHandler) {
                     in.append(handlerName).append(", ");
-//                    in.appendMessageFormat(" {}[{}]", handlerName, handler);
+                    // in.appendMessageFormat(" {}[{}]", handlerName, handler);
                 }
                 if (handler instanceof ChannelOutboundHandler) {
                     out.append(handlerName).append(", ");
-//                    out.appendMessageFormat(" {}[{}]", handlerName, handler);
+                    // out.appendMessageFormat(" {}[{}]", handlerName, handler);
                 }
             }
             if (!in.isEmpty()) {
@@ -664,10 +642,10 @@ public final class Sockets {
                         || !(addr instanceof Inet4Address)) {
                     continue;
                 }
-//                log.info("DUMP: {} - {} {} - {} {} - {} {} {}", addr.isMulticastAddress(),
-//                        addr.isSiteLocalAddress(), addr.isLinkLocalAddress(),
-//                        addr.isMCSiteLocal(), addr.isMCLinkLocal(),
-//                        addr.isMCGlobal(), addr.isMCOrgLocal(), addr.isMCNodeLocal());
+                // log.info("DUMP: {} - {} {} - {} {} - {} {} {}", addr.isMulticastAddress(),
+                // addr.isSiteLocalAddress(), addr.isLinkLocalAddress(),
+                // addr.isMCSiteLocal(), addr.isMCLinkLocal(),
+                // addr.isMCGlobal(), addr.isMCOrgLocal(), addr.isMCNodeLocal());
                 ips.add((Inet4Address) addr);
             }
         }

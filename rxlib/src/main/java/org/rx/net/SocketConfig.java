@@ -28,7 +28,6 @@ public class SocketConfig implements Serializable {
     private boolean debug;
     private String reactorName;
     private OptimalSettings optimalSettings;
-    private boolean customBackpressure;
     private int connectTimeoutMillis;
     private FlagsEnum<TransportFlags> transportFlags;
     // 1 = AES, 2 = XChaCha20Poly1305

@@ -29,7 +29,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         pipeline.remove(this);
         SocksProxyServer server = Sockets.getAttr(inCh, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
-//        log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
+        // log.debug("socks5[{}] {} {}/{}:{}", server.getConfig().getListenPort(), msg.type(), msg.dstAddrType(), msg.dstAddr(), msg.dstPort());
 
         if (server.isAuthEnabled() && ProxyManageHandler.get(inbound).getUser().isAnonymous()) {
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FORBIDDEN, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
@@ -60,8 +60,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             pipeline.remove(ProxyChannelIdleHandler.class.getSimpleName());
 
             Socks5AddressType bindAddrType = msg.dstAddrType();
-            //msg.dstAddr(), msg.dstPort() = 0.0.0.0:0 客户端希望绑定
-            //ipv4 udp svr 单个udp性能高
+            // msg.dstAddr(), msg.dstPort() = 0.0.0.0:0 客户端希望绑定
+            // ipv4 udp svr 单个udp性能高
             InetSocketAddress bindEp = (InetSocketAddress) inCh.localAddress();
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, bindAddrType, bindEp.getHostString(), bindEp.getPort()));
         } else {
@@ -74,17 +74,18 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
 
-        //tcp reconnect upstream可能会变，不定临时变量
+        // tcp reconnect upstream可能会变，不定临时变量
         ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), e.getUpstream().getConfig(), outbound -> {
             e.getUpstream().initChannel(outbound);
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
+            BackpressureHandler.install(inbound, outbound);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.raiseEvent(server.onReconnecting, e);
                     short[] attempts = reconnectionAttempts;
                     if (attempts == null) {
-                        attempts = new short[]{0};
+                        attempts = new short[] {0};
                     }
                     if (!e.isCancel() && attempts[0] < 16) {
                         attempts[0]++;
@@ -107,7 +108,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 proxyHandler.setHandshakeCallback(() -> {
                     SocketConfig upConf = e.getUpstream().getConfig();
                     if (upConf.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
-                        //todo 解依赖ZIP
+                        // todo 解依赖ZIP
                         outbound.attr(SocketConfig.ATTR_CONF).set(upConf);
                         Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
                         Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
@@ -126,7 +127,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e) {
-        //initChannel may change dstEp
+        // initChannel may change dstEp
         UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
         outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
 
