@@ -23,10 +23,10 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     static final long COOLDOWN_MILLIS = 50;
     final AtomicReference<ScheduledFuture<?>> timer = new AtomicReference<>();
     final boolean disableSelfAutoRead;
-    //可以通知队列暂停、暂停 SS/HTTP 上游读取、标记对侧 channel
+    // 通知暂停队列、暂停上游读取、标记对侧 channel
     @Setter
     BiAction<Channel> onBackpressureStart;
-    //恢复队列、恢复 SS 上游读取…
+    // 通知恢复队列、恢复上游读取
     @Setter
     TripleAction<Channel, Throwable> onBackpressureEnd;
     volatile long lastEventTs;
@@ -40,7 +40,7 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
 
         ScheduledFuture<?> t = timer.get();
         if (t != null
-//                && !t.isDone()
+        // && !t.isDone()
         ) {
             return;
         }
@@ -80,18 +80,17 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
             // ---- 写入过载 ----
             paused = true;
             if (disableSelfAutoRead) {
-                // 优雅暂停 inbound read，防止数据继续进来
+                // 暂停 inbound read，防止数据继续进来
                 Sockets.disableAutoRead(ch);
             }
             lastEventTs = nowNano;
+            log.info("Channel {} Backpressure start[notWritable]", ch);
             BiAction<Channel> fn = onBackpressureStart;
             if (fn != null) {
                 fn.accept(ch);
             }
-            log.warn("Backpressure {} not writable", ch);
         } else {
             handleRecovery(ch, nowNano, null);
-            log.info("Backpressure {} writable", ch);
         }
     }
 
@@ -105,6 +104,7 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
             Sockets.enableAutoRead(ch);
         }
         lastEventTs = nowNano;
+        log.info("Channel {} Backpressure end[writable]", ch);
         TripleAction<Channel, Throwable> fn = onBackpressureEnd;
         if (fn != null) {
             fn.accept(ch, cause);
