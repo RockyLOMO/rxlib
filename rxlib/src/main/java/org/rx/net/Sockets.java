@@ -93,7 +93,7 @@ public final class Sockets {
         return new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4);
     }
 
-    //region netty
+    // region netty
     public static void injectNameService(List<InetSocketAddress> nameServerList) {
         if (CollectionUtils.isEmpty(nameServerList)) {
             throw new InvalidException("Empty server list");
@@ -131,7 +131,7 @@ public final class Sockets {
         return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
             if (Strings.hashEquals(method.getName(), M_0)) {
                 String host = (String) args[0];
-                //If all interceptors can't handle it, the source object will process it.
+                // If all interceptors can't handle it, the source object will process it.
                 try {
                     List<InetAddress> addresses = nsInterceptor.resolveHost(null, host);
                     if (!CollectionUtils.isEmpty(addresses)) {
@@ -152,7 +152,7 @@ public final class Sockets {
         });
     }
 
-    //Don't use executor
+    // Don't use executor
     private static EventLoopGroup newEventLoop(int threadAmount) {
         return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);
     }
@@ -165,7 +165,7 @@ public final class Sockets {
         return Epoll.isAvailable() ? EpollDatagramChannel.class : NioDatagramChannel.class;
     }
 
-    //region tcp
+    // region tcp
     public static ServerBootstrap serverBootstrap(BiAction<SocketChannel> initChannel) {
         return serverBootstrap(null, initChannel);
     }
@@ -185,12 +185,12 @@ public final class Sockets {
         WriteBufferWaterMark writeBufferWaterMark = op.writeBufferWaterMark;
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
-        final int bossThreadAmount = 1; //Equal to the number of bind(), default 1
+        final int bossThreadAmount = 1; // Equal to the number of bind(), default 1
         ServerBootstrap b = new ServerBootstrap()
                 .group(newEventLoop(bossThreadAmount), reactor(rn, true))
                 .channel(Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
                 .option(ChannelOption.SO_BACKLOG, backlog)
-//                .option(ChannelOption.SO_REUSEADDR, true)
+                // .option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
@@ -199,22 +199,11 @@ public final class Sockets {
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
-        //When you call .handler()/.childHandler() multiple times on a Netty Bootstrap, only the last handler set is actually used.
-        //parent channel bind log
+        // When you call .handler()/.childHandler() multiple times on a Netty Bootstrap, only the last handler set is actually used.
+        // parent channel bind log
         b.handler(GlobalChannelHandler.DEFAULT);
         if (writeBufferWaterMark != null) {
             b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
-            if (!config.isCustomBackpressure()) {
-                if (initChannel != null) {
-                    BiAction<SocketChannel> finalInitChannel = initChannel;
-                    initChannel = ch -> {
-                        ch.pipeline().addLast(new BackpressureHandler(true));
-                        finalInitChannel.accept(ch);
-                    };
-                } else {
-                    initChannel = ch -> ch.pipeline().addLast(new BackpressureHandler(true));
-                }
-            }
         }
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
@@ -270,17 +259,6 @@ public final class Sockets {
                 .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
         if (writeBufferWaterMark != null) {
             b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
-            if (!config.isCustomBackpressure()) {
-                if (initChannel != null) {
-                    BiAction<SocketChannel> finalInitChannel = initChannel;
-                    initChannel = ch -> {
-                        ch.pipeline().addLast(new BackpressureHandler(true));
-                        finalInitChannel.accept(ch);
-                    };
-                } else {
-                    initChannel = ch -> ch.pipeline().addLast(new BackpressureHandler(true));
-                }
-            }
         }
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
@@ -312,8 +290,8 @@ public final class Sockets {
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
         boolean isUdp = channel instanceof DatagramChannel;
-        //入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
-        //出站事件（如数据写入、连接关闭等）由 ChannelOutboundHandler 处理，传播方向是从 pipeline 的 tail 到 head。
+        // 入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
+        // 出站事件（如数据写入、连接关闭等）由 ChannelOutboundHandler 处理，传播方向是从 pipeline 的 tail 到 head。
         ChannelPipeline pipeline = channel.pipeline();
         if (isUdp) {
         } else {
@@ -321,8 +299,8 @@ public final class Sockets {
                 pipeline.addLast(getSelfSignedTls().newHandler(channel.alloc()));
             }
 
-            //先压缩再加密
-            //支持LengthField?
+            // 先压缩再加密
+            // 支持LengthField?
             boolean g = flags.has(TransportFlags.GFW);
             if (!g) {
                 if (flags.has(TransportFlags.COMPRESS_READ)) {
@@ -364,7 +342,7 @@ public final class Sockets {
                 }
             }
         }
-//        dumpPipeline("server", channel);
+        dumpPipeline("server", channel);
         return channel;
     }
 
@@ -433,7 +411,7 @@ public final class Sockets {
                 }
             }
         }
-//        dumpPipeline("client", channel);
+        dumpPipeline("client", channel);
         return channel;
     }
 
@@ -453,11 +431,11 @@ public final class Sockets {
                 ChannelHandler handler = entry.getValue();
                 if (handler instanceof ChannelInboundHandler) {
                     in.append(handlerName).append(", ");
-//                    in.appendMessageFormat(" {}[{}]", handlerName, handler);
+                    // in.appendMessageFormat(" {}[{}]", handlerName, handler);
                 }
                 if (handler instanceof ChannelOutboundHandler) {
                     out.append(handlerName).append(", ");
-//                    out.appendMessageFormat(" {}[{}]", handlerName, handler);
+                    // out.appendMessageFormat(" {}[{}]", handlerName, handler);
                 }
             }
             if (!in.isEmpty()) {
@@ -485,14 +463,14 @@ public final class Sockets {
         }
         return v;
     }
-    //endregion
+    // endregion
 
     public static Bootstrap udpBootstrap(SocketConfig config, BiAction<DatagramChannel> initChannel) {
         return udpBootstrap(config, false, initChannel);
     }
 
-    //BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
-    //DefaultDatagramChannelConfig
+    // BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
+    // DefaultDatagramChannelConfig
     @SneakyThrows
     static Bootstrap udpBootstrap(SocketConfig config, boolean multicast, BiAction<DatagramChannel> initChannel) {
         if (config == null) {
@@ -507,7 +485,7 @@ public final class Sockets {
         op.calculate();
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
 
-        //writeBufferWaterMark UDP无效
+        // writeBufferWaterMark UDP无效
         Bootstrap b = new Bootstrap()
                 .group(reactor(rn, false))
                 .channel(Sockets.udpChannelClass())
@@ -562,12 +540,12 @@ public final class Sockets {
         ChannelConfig config = ch.config();
         if (!config.isAutoRead()) {
             config.setAutoRead(true);
-            // 可选：如果之前有积压的 read，可以主动触发一次
-            ch.read();  // 立即拉数据，减少一个 EventLoop 轮次延迟
+            // 如果之前有积压的 read，可以立即拉数据，减少一个 EventLoop 轮次延迟
+            ch.read();
         }
     }
 
-    //ctx.channel()会为null
+    // ctx.channel()会为null
     public static void closeOnFlushed(Channel channel) {
         if (channel == null || !channel.isActive()) {
             return;
@@ -588,9 +566,9 @@ public final class Sockets {
     public static String protocolName(Channel channel) {
         return channel instanceof DatagramChannel ? "UDP" : "TCP";
     }
-    //endregion
+    // endregion
 
-    //region Address
+    // region Address
     public static boolean isBypass(Iterable<String> bypassList, String host) {
         if (bypassList == null) {
             return false;
@@ -645,7 +623,7 @@ public final class Sockets {
         if (first != null) {
             return first;
         }
-        return InetAddress.getLocalHost(); //may return 127.0.0.1
+        return InetAddress.getLocalHost(); // may return 127.0.0.1
     }
 
     @SneakyThrows
@@ -664,10 +642,10 @@ public final class Sockets {
                         || !(addr instanceof Inet4Address)) {
                     continue;
                 }
-//                log.info("DUMP: {} - {} {} - {} {} - {} {} {}", addr.isMulticastAddress(),
-//                        addr.isSiteLocalAddress(), addr.isLinkLocalAddress(),
-//                        addr.isMCSiteLocal(), addr.isMCLinkLocal(),
-//                        addr.isMCGlobal(), addr.isMCOrgLocal(), addr.isMCNodeLocal());
+                // log.info("DUMP: {} - {} {} - {} {} - {} {} {}", addr.isMulticastAddress(),
+                // addr.isSiteLocalAddress(), addr.isLinkLocalAddress(),
+                // addr.isMCSiteLocal(), addr.isMCLinkLocal(),
+                // addr.isMCGlobal(), addr.isMCOrgLocal(), addr.isMCNodeLocal());
                 ips.add((Inet4Address) addr);
             }
         }
@@ -682,7 +660,7 @@ public final class Sockets {
     }
 
     public static InetSocketAddress newAnyEndpoint(int port) {
-//        return new InetSocketAddress(getAnyLocalAddress(), port);
+        // return new InetSocketAddress(getAnyLocalAddress(), port);
         return new InetSocketAddress(port);
     }
 
@@ -711,7 +689,7 @@ public final class Sockets {
         String ip = endpoint.substring(0, i);
         int port = Integer.parseInt(endpoint.substring(i + 1));
         return new InetSocketAddress(ip, port);
-//        return InetSocketAddress.createUnresolved(ip, port);  //DNS issues
+        // return InetSocketAddress.createUnresolved(ip, port); //DNS issues
     }
 
     public static String toString(InetSocketAddress endpoint) {
@@ -790,9 +768,9 @@ public final class Sockets {
             return name.v;
         });
     }
-    //#endregion
+    // #endregion
 
-    //region httpProxy
+    // region httpProxy
     public static <T> T httpProxyInvoke(String proxyAddr, BiFunc<String, T> func) {
         setHttpProxy(proxyAddr);
         try {
@@ -814,7 +792,7 @@ public final class Sockets {
         prop.setProperty("https.proxyHost", ipe.getAddress().getHostAddress());
         prop.setProperty("https.proxyPort", String.valueOf(ipe.getPort()));
         if (!CollectionUtils.isEmpty(nonProxyHosts)) {
-            //"localhost|192.168.1.*"
+            // "localhost|192.168.1.*"
             prop.setProperty("http.nonProxyHosts", String.join("|", nonProxyHosts));
         }
         if (userName != null && password != null) {
@@ -840,5 +818,5 @@ public final class Sockets {
             return new PasswordAuthentication(userName, password.toCharArray());
         }
     }
-    //endregion
+    // endregion
 }
