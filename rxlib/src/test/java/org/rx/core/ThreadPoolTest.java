@@ -337,8 +337,8 @@ public class ThreadPoolTest {
         CountDownLatch startedLatch = new CountDownLatch(1);
         CountDownLatch finishLatch = new CountDownLatch(1);
 
-        // First task occupies the SINGLE lock — use runAsync to preserve flags
-        p.runAsync(() -> {
+        // First task occupies the SINGLE lock
+        p.run(() -> {
             counter.incrementAndGet();
             startedLatch.countDown();
             finishLatch.await();
@@ -350,7 +350,7 @@ public class ThreadPoolTest {
         // Subsequent tasks with same taskId should be rejected (InterruptedException in beforeExecute)
         Thread.sleep(200);
         for (int i = 0; i < 3; i++) {
-            p.runAsync(() -> counter.incrementAndGet(), taskId, RunFlag.SINGLE.flags());
+            p.run(() -> counter.incrementAndGet(), taskId, RunFlag.SINGLE.flags());
         }
 
         Thread.sleep(1000);
@@ -375,9 +375,9 @@ public class ThreadPoolTest {
         int taskCount = 5;
         CountDownLatch latch = new CountDownLatch(taskCount);
 
-        // Use runAsync to preserve SYNCHRONIZED flags (run() path strips flags via newTaskFor)
+        // Use run() to verify flags are preserved through submit() -> newTaskFor()
         for (int i = 0; i < taskCount; i++) {
-            p.runAsync(() -> {
+            p.run(() -> {
                 int c = concurrent.incrementAndGet();
                 // Track max concurrency — should always be 1 due to SYNCHRONIZED lock
                 maxConcurrent.accumulateAndGet(c, Math::max);
@@ -629,7 +629,7 @@ public class ThreadPoolTest {
     @SneakyThrows
     @Test
     public void testThreadQueueConditionFastUnblock() {
-        // Verify that the Condition-based signaling unblocks immediately (no 500ms polling delay)
+        // Verify that the synchronized/wait(500) signaling unblocks quickly via notify()
         ThreadPool p = createPool(1, 1);
         CountDownLatch blockLatch = new CountDownLatch(1);
         CountDownLatch taskStarted = new CountDownLatch(1);
@@ -663,13 +663,12 @@ public class ThreadPoolTest {
         Thread.sleep(200); // Let the thread enter the blocking wait
         assertFalse(offerCompleted.get(), "Offer should be blocked while queue is full");
 
-        // Release the blocking task — should unblock immediately via Condition.signal() (no 500ms wait)
+        // Release the blocking task — should unblock immediately via notify()
         blockLatch.countDown();
         blockedOfferThread.join(3000);
         long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
         assertTrue(offerCompleted.get(), "Offer should have completed after queue space freed");
-        // With the old synchronized/wait(500) approach, this would take at least 500ms more
-        // With Condition.signal(), it should complete much faster
+        // Even with wait(500), notify() should wake it up much faster than 500ms
         log.info("Backpressure unblock elapsed: {}ms", elapsedMs);
     }
 

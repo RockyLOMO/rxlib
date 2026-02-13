@@ -71,7 +71,8 @@ public class ThreadPool extends ThreadPoolExecutor {
                         logged = true;
                     }
                     synchronized (this) {
-                        wait(500);
+                        // wait(500);
+                        wait();
                     }
                 }
                 if (log.isDebugEnabled()) {
@@ -152,12 +153,32 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         static <T> Task<T> adapt(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             Task<T> t = as(fn);
-            return t != null && t.id == id ? t : new Task<>(fn, flags, id);
+            if (t != null) {
+                if (t.id == id) {
+                    return t;
+                }
+                if (flags == null) {
+                    flags = t.flags;
+                } else if (t.flags != null) {
+                    flags.add(t.flags);
+                }
+            }
+            return new Task<>(fn, flags, id);
         }
 
         static <T> Task<T> adapt(Runnable fn, FlagsEnum<RunFlag> flags, Object id) {
             Task<T> t = as(fn);
-            return t != null && t.id == id ? t : new Task<>(() -> {
+            if (t != null) {
+                if (t.id == id) {
+                    return t;
+                }
+                if (flags == null) {
+                    flags = t.flags;
+                } else if (t.flags != null) {
+                    flags.add(t.flags);
+                }
+            }
+            return new Task<>(() -> {
                 fn.run();
                 return null;
             }, flags, id);
@@ -628,13 +649,15 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (existing == null) {
                 isNew[0] = true;
                 Task<T> t = Task.adapt(task, flags, taskId);
-                return CompletableFuture.supplyAsync(t, asyncExecutor).whenCompleteAsync((r, e) -> taskSerialMap.remove(taskId));
+                CompletableFuture<T> head = CompletableFuture.supplyAsync(t, asyncExecutor);
+                head.whenComplete((r, e) -> taskSerialMap.remove(taskId, head));
+                return head;
             }
             return existing;
         });
 
         if (!isNew[0]) {
-            f = f.thenApplyAsync(t -> {
+            CompletableFuture<T> next = f.thenApplyAsync(t -> {
                 COMPLETION_RETURNED_VALUE.set(t);
                 try {
                     return task.get();
@@ -642,9 +665,12 @@ public class ThreadPool extends ThreadPoolExecutor {
                     COMPLETION_RETURNED_VALUE.remove();
                 }
             }, this);
+            next.whenComplete((r, e) -> taskSerialMap.remove(taskId, next));
+
             if (!reuse) {
-                taskSerialMap.put(taskId, f);
+                taskSerialMap.put(taskId, next);
             }
+            f = next;
         }
         return f;
     }
@@ -737,7 +763,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         Object id = task.id;
         if (id != null) {
             RefCounter<ReentrantLock> ctx = taskLockMap.get(id);
-            if (ctx != null) {
+            if (ctx != null && ctx.ref.isHeldByCurrentThread()) {
                 boolean doRemove = false;
                 if (ctx.decrementRefCnt() <= 0) {
                     taskLockMap.remove(id);
