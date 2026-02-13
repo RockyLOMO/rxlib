@@ -157,6 +157,10 @@ public class ThreadPool extends ThreadPoolExecutor {
                 if (t.id == id) {
                     return t;
                 }
+                // Inherit from existing task if not provided
+                if (id == null) {
+                    id = t.id;
+                }
                 if (flags == null) {
                     flags = t.flags;
                 } else if (t.flags != null) {
@@ -171,6 +175,10 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (t != null) {
                 if (t.id == id) {
                     return t;
+                }
+                // Inherit from existing task if not provided
+                if (id == null) {
+                    id = t.id;
                 }
                 if (flags == null) {
                     flags = t.flags;
