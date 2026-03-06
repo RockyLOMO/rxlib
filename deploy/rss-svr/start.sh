@@ -51,6 +51,13 @@ elif [ "$ACTION" = "start" ]; then
         echo "${GREEN}[${LOCAL_TIME}] ${PORT}/tcp 已运行，PID: ${PID}"
         exit 0
     fi
+    # 增加进程检测，防止端口未绑定时的重复启动（解决 Cron 与 SSH 并发/启动间隙问题）
+    # pgrep -f 匹配完整命令行
+    PID_P=$(pgrep -f "app.jar -port=${PORT}" | head -1)
+    if [ -n "$PID_P" ]; then
+        echo "${GREEN}[${LOCAL_TIME}] 进程已存在(正在启动中)，PID: ${PID_P}"
+        exit 0
+    fi
 else
     echo "错误：无效参数 '$ACTION'"
     usage

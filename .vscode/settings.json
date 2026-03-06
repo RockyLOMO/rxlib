@@ -1,4 +1,8 @@
 {
+    "java.format.settings.url": ".vscode/eclipse-java-google-style.xml",
+    "java.format.settings.profile": "GoogleStyle",
+    "files.autoSave": "afterDelay",
+    "java.compile.nullAnalysis.mode": "automatic",
     "java.configuration.runtimes": [
         {
             "name": "JavaSE-1.8",
@@ -14,12 +18,7 @@
     "java.jdt.ls.java.home": "C:\\Program Files\\Java\\jdk-17",
     "java.configuration.maven.userSettings": "C:\\Users\\R-wtg\\.m2\\settings.xml",
     "java.server.launchMode": "Standard",
-    // "java.compile.nullAnalysis.mode": "disabled",
-    "java.compile.nullAnalysis.mode": "automatic",
     "maven.view": "flat",
     // "java.autobuild.enabled": true,
-    "files.autoSave": "afterDelay",
-    "java.format.settings.url": "eclipse-java-google-style.xml",
-    "java.format.settings.profile": "GoogleStyle",
     "java.configuration.updateBuildConfiguration": "automatic"
 }

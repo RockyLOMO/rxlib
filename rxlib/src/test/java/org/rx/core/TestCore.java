@@ -561,40 +561,6 @@ public class TestCore extends AbstractTester {
         NtpClock.transform();
     }
 
-    @Test
-    public void objectPool() {
-        AtomicInteger c = new AtomicInteger();
-        ObjectPool<Long> pool = new ObjectPool<>(1, 5, () -> {
-            System.out.println(1);
-            return (long) c.incrementAndGet();
-        }, x -> true);
-
-        List<Tuple<Long, String>> msg = new Vector<>();
-        for (int i = 0; i < 10; i++) {
-            Tasks.run(() -> {
-                msg.add(Tuple.of(System.nanoTime(), String.format("%s preBorrow %s - ?", Thread.currentThread().getId(), pool.size())));
-                Long t = pool.borrow();
-                msg.add(Tuple.of(System.nanoTime(), String.format("%s postBorrow %s - %s", Thread.currentThread().getId(), pool.size(), t)));
-                log.info("{}: borrow {} - {}", System.nanoTime(), pool.size(), t);
-
-                msg.add(Tuple.of(System.nanoTime(), String.format("%s preRecycle %s - %s", Thread.currentThread().getId(), pool.size(), t)));
-                pool.recycle(t);
-                msg.add(Tuple.of(System.nanoTime(), String.format("%s postRecycle %s - %s", Thread.currentThread().getId(), pool.size(), t)));
-                log.info("{}: recycle {} - {}", System.nanoTime(), pool.size(), t);
-            });
-        }
-        sleep(2000);
-        for (Tuple<Long, String> tuple : Linq.from(msg).orderBy(p -> p.left)) {
-            System.out.println(tuple.right);
-        }
-
-        pool.setIdleTimeout(1);
-        pool.setValidationPeriod(1);
-        pool.setLeakDetectionThreshold(1);
-//        pool.setRetireLeak(true);
-        sleep(15000);
-    }
-
     static final String MY_TOPIC = "myTopic";
     static final String HER_TOPIC = "herTopic";
     AtomicInteger eventBusCounter = new AtomicInteger();
