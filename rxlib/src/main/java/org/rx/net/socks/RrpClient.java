@@ -182,7 +182,7 @@ public class RrpClient extends Disposable {
                 int idLen = buf.readInt();
                 if (idLen < 0 || idLen > MAX_CHANNEL_ID_LEN || buf.readableBytes() < idLen) {
                     log.warn("RrpClient error Invalid idLen {} from {}", idLen, serverChannel.remoteAddress());
-//                    Sockets.closeOnFlushed(serverChannel);
+                    Sockets.closeOnFlushed(serverChannel);
                     return;
                 }
                 String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();

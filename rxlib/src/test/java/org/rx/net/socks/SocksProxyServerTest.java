@@ -1,8 +1,12 @@
 package org.rx.net.socks;
 
+import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
+import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.local.LocalAddress;
+import io.netty.channel.local.LocalChannel;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.*;
@@ -65,24 +69,115 @@ class SocksProxyServerTest {
     @Test
     @Order(2)
     @SneakyThrows
-    void testMemoryMode() {
+    void testInjectedMemoryMode() {
         int frontendPort = 15181;
         
         // Custom frontend TCP server that acts as a container for memory-mode SocksProxyServer
         ServerBootstrap memoryFrontendBootstrap = Sockets.serverBootstrap(ch -> {
-            SocksConfig config = new SocksConfig(0); // random port for UDP to avoid BindException on multiple connections
+            SocksConfig config = new SocksConfig(0);
             
-            // Create in memory mode
-            new SocksProxyServer(config, null, ch);
+            // Create in injected memory mode
+            new SocksProxyServer(config, null, true, ch);
         });
         Channel frontendChannel = memoryFrontendBootstrap.bind(Sockets.newAnyEndpoint(frontendPort)).sync().channel();
 
         try {
-            runSocks5ClientTest(frontendPort, "Memory Mode Protocol Test");
+            runSocks5ClientTest(frontendPort, "Injected Memory Mode Protocol Test");
         } finally {
             frontendChannel.close();
             Sockets.closeBootstrap(memoryFrontendBootstrap);
         }
+    }
+
+    @Test
+    @Order(3)
+    @SneakyThrows
+    void testLocalChannelMemoryMode() {
+        LocalAddress localAddr = new LocalAddress("TEST_SOCKS_MEMORY");
+        SocksConfig config = new SocksConfig(0);
+        config.setMemoryAddress(localAddr);
+        
+        // Create in LocalChannel memory mode (server side)
+        SocksProxyServer proxyServer = new SocksProxyServer(config, null, true, null);
+
+        try {
+            assertTrue(proxyServer.isBind(), "LocalChannel proxy should be bound");
+
+            // Client side using LocalChannel
+            Bootstrap cb = new Bootstrap()
+                    .group(new DefaultEventLoopGroup(1))
+                    .channel(LocalChannel.class)
+                    .handler(new ChannelInitializer<LocalChannel>() {
+                        @Override
+                        protected void initChannel(LocalChannel ch) {
+                            // nothing special on client pipeline for SOCKS5 protocol test
+                        }
+                    });
+
+            Channel localClientChannel = cb.connect(localAddr).sync().channel();
+            try {
+                runSocks5NettyClientTest(localClientChannel, "LocalChannel Memory Mode Protocol Test");
+            } finally {
+                localClientChannel.close();
+            }
+        } finally {
+            proxyServer.close();
+        }
+    }
+
+    private void runSocks5NettyClientTest(Channel ch, String message) throws InterruptedException {
+        CountDownLatch hsLatch = new CountDownLatch(1);
+        CountDownLatch connLatch = new CountDownLatch(1);
+        CountDownLatch msgLatch = new CountDownLatch(1);
+        AtomicReference<String> received = new AtomicReference<>();
+        AtomicReference<Throwable> error = new AtomicReference<>();
+
+        ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+            int step = 0;
+            @Override
+            public void channelRead(ChannelHandlerContext ctx, Object msg) {
+                ByteBuf buf = (ByteBuf) msg;
+                try {
+                    if (step == 0) { // handshake resp
+                        assertEquals(0x05, buf.readByte());
+                        assertEquals(0x00, buf.readByte());
+                        hsLatch.countDown();
+                        step = 1;
+                    } else if (step == 1) { // connect resp
+                        buf.readByte(); // skip ver
+                        assertEquals(0x00, buf.readByte()); // status ok
+                        connLatch.countDown();
+                        step = 2;
+                    } else if (step == 2) { // payload
+                        received.set(buf.toString(StandardCharsets.UTF_8));
+                        msgLatch.countDown();
+                    }
+                } catch (Throwable t) {
+                    error.set(t);
+                } finally {
+                    buf.release();
+                }
+            }
+        });
+
+        // Handshake
+        ch.writeAndFlush(ctxBuffer(ch, new byte[]{0x05, 0x01, 0x00}));
+        assertTrue(hsLatch.await(2, TimeUnit.SECONDS), "Handshake timeout");
+
+        // Connect
+        ch.writeAndFlush(ctxBuffer(ch, buildSocks5ConnectReq("127.0.0.1", ECHO_PORT)));
+        assertTrue(connLatch.await(2, TimeUnit.SECONDS), "Connect timeout");
+
+        // Payload
+        ch.writeAndFlush(ctxBuffer(ch, message.getBytes(StandardCharsets.UTF_8)));
+        assertTrue(msgLatch.await(2, TimeUnit.SECONDS), "Message timeout");
+
+        assertNull(error.get(), "Error in pipeline: " + error.get());
+        assertEquals(message, received.get());
+    }
+
+    private ByteBuf ctxBuffer(Channel ch, byte[] data) {
+        return ch.alloc().buffer().writeBytes(data);
     }
 
     @SneakyThrows

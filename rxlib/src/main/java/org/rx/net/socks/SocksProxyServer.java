@@ -88,7 +88,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 if (memoryAddr == null) {
                     memoryAddr = new LocalAddress(this.getClass());
                 }
-                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(memoryAddr).channel();
+                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(memoryAddr).syncUninterruptibly().channel();
             } else {
                 if (!memoryChannel.isActive()) {
                     throw new InvalidException("memoryChannel not active");
