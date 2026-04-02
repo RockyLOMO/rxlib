@@ -7,7 +7,6 @@
         <artifactId>rx</artifactId>
         <version>2.21.11-SNAPSHOT</version>
     </parent>
-    <!-- -SNAPSHOT -->
     <artifactId>rxlib</artifactId>
     <packaging>jar</packaging>
     <name>rxlib</name>
@@ -21,7 +20,7 @@
         <commons-collections4.version>4.4</commons-collections4.version>
         <commons-io.version>2.18.0</commons-io.version>
         <byte-buddy.version>1.17.8</byte-buddy.version>
-        <zip4j.version>2.11.3</zip4j.version>
+        <!-- <zip4j.version>2.11.3</zip4j.version> -->
         <caffeine.version>3.1.8</caffeine.version>
         <h2.version>2.3.232</h2.version>
         <!--        <netty.version>4.2.2.Final</netty.version>-->
@@ -120,11 +119,11 @@
             <artifactId>commons-io</artifactId>
             <version>${commons-io.version}</version>
         </dependency>
-        <dependency>
+        <!-- <dependency>
             <groupId>net.lingala.zip4j</groupId>
             <artifactId>zip4j</artifactId>
             <version>${zip4j.version}</version>
-        </dependency>
+        </dependency> -->
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-all</artifactId>
@@ -137,6 +136,18 @@
                 <exclusion>
                     <groupId>io.netty</groupId>
                     <artifactId>netty-codec-memcache</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>netty-codec-mqtt</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>netty-codec-redis</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>netty-codec-stomp</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -226,12 +237,6 @@
             <groupId>com.sun.activation</groupId>
             <artifactId>javax.activation</artifactId>
             <version>1.2.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-pool2</artifactId>
-            <version>2.11.1</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 

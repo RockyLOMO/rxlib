@@ -89,6 +89,10 @@ public final class Sockets {
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
 
+//    static {
+//        InetAddress.getLoopbackAddress();
+//    }
+
     public static LengthFieldBasedFrameDecoder intLengthFieldDecoder() {
         return new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4);
     }
@@ -113,11 +117,13 @@ public final class Sockets {
                         Field field = type.getDeclaredField("nameService");
                         Reflects.setAccess(field);
                         field.set(null, nsProxy(field.get(null)));
+                        log.info("nsProxy jdk11 injected");
                     } catch (NoSuchFieldException e) {
                         Field field = type.getDeclaredField("nameServices");
                         Reflects.setAccess(field);
                         List<Object> nsList = (List<Object>) field.get(null);
                         nsList.set(0, nsProxy(nsList.get(0)));
+                        log.info("nsProxy jdk8 injected");
                     }
                 }
             }
@@ -138,7 +144,7 @@ public final class Sockets {
                         return addresses.toArray(empty);
                     }
                 } catch (Exception e) {
-                    log.info("nsProxy {}", e.getMessage());
+                    log.info("nsProxy error {}", e.getMessage());
                 }
             }
             return Reflects.invokeMethod(method, ns, args);

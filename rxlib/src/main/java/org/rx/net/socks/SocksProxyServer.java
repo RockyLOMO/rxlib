@@ -12,6 +12,7 @@ import lombok.*;
 import org.rx.core.Delegate;
 import org.rx.core.Disposable;
 import org.rx.core.EventPublisher;
+import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -19,7 +20,7 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
-//@Slf4j
+// @Slf4j
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public static final PredicateFunc<UnresolvedEndpoint> DNS_CIPHER_ROUTER = dstEp -> dstEp.getPort() == SocksRpcContract.DNS_PORT
@@ -34,7 +35,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final Channel udpChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
-    //只有压缩时一定要用
+    // 只有压缩时一定要用
     @Setter
     private PredicateFunc<UnresolvedEndpoint> cipherRouter;
 
@@ -42,10 +43,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         return tcpChannel.isActive();
     }
 
-//    public Integer getBindPort() {
-//        InetSocketAddress ep = (InetSocketAddress) tcpChannel.localAddress();
-//        return ep != null ? ep.getPort() : null;
-//    }
+    // public Integer getBindPort() {
+    // InetSocketAddress ep = (InetSocketAddress) tcpChannel.localAddress();
+    // return ep != null ? ep.getPort() : null;
+    // }
 
     public boolean isAuthEnabled() {
         return authenticator != null;
@@ -55,39 +56,39 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         this(config, null);
     }
 
-    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator) {
+    public SocksProxyServer(SocksConfig config, Authenticator authenticator) {
         this(config, authenticator, (BiAction<Channel>) null);
     }
 
-    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiAction<Channel> onBind) {
+    public SocksProxyServer(SocksConfig config, Authenticator authenticator, BiAction<Channel> onBind) {
+        this(config, authenticator, onBind, null);
+    }
+
+    public SocksProxyServer(SocksConfig config, Authenticator authenticator, @NonNull Channel memoryChannel) {
+        this(config, authenticator, null, memoryChannel);
+    }
+
+    private SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiAction<Channel> onBind, Channel memoryChannel) {
         this.config = config;
         this.authenticator = authenticator;
-        bootstrap = Sockets.serverBootstrap(config, channel -> {
-            ChannelPipeline pipeline = channel.pipeline();
-            if (isAuthEnabled()) {
-                //Traffic statistics
-                pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(config.getTrafficShapingInterval()));
-            }
-            pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
-//            SocksPortUnificationServerHandler
-            Sockets.addServerHandler(channel, config);
-            pipeline.addLast(Socks5ServerEncoder.DEFAULT)
-                    .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
-                    .addLast(Socks5InitialRequestHandler.class.getSimpleName(), Socks5InitialRequestHandler.DEFAULT);
-            if (isAuthEnabled()) {
-                pipeline.addLast(Socks5PasswordAuthRequestDecoder.class.getSimpleName(), new Socks5PasswordAuthRequestDecoder())
-                        .addLast(Socks5PasswordAuthRequestHandler.class.getSimpleName(), Socks5PasswordAuthRequestHandler.DEFAULT);
-            }
-            pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
-                    .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
-        });
-        tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).addListener((ChannelFutureListener) f -> {
-            if (f.isSuccess() && onBind != null) {
-                onBind.accept(f.channel());
-            }
-        }).channel();
 
-        //udp server
+        if (memoryChannel != null) {
+            if (!memoryChannel.isActive()) {
+                throw new InvalidException("memoryChannel not active");
+            }
+            acceptChannel(memoryChannel);
+            bootstrap = null;
+            tcpChannel = memoryChannel;
+        } else {
+            bootstrap = Sockets.serverBootstrap(config, this::acceptChannel);
+            tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).addListener((ChannelFutureListener) f -> {
+                if (f.isSuccess() && onBind != null) {
+                    onBind.accept(f.channel());
+                }
+            }).channel();
+        }
+
+        // udp server
         int udpPort = config.getListenPort();
         udpChannel = Sockets.udpBootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline();
@@ -100,45 +101,36 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).channel();
     }
 
-    public SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, @NonNull Channel tcpChannel) {
-        this.config = config;
-        this.authenticator = authenticator;
-        bootstrap = null;
-        this.tcpChannel = tcpChannel;
-        ChannelPipeline tcpPipeline = tcpChannel.pipeline();
-        if (isAuthEnabled()) {
-            //Traffic statistics
-            tcpPipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(config.getTrafficShapingInterval()));
+    private void acceptChannel(Channel channel) {
+        if (channel.attr(SocksContext.SOCKS_SVR).get() != null) {
+            return;
         }
-        tcpPipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
-        Sockets.addServerHandler(tcpChannel, config);
-        tcpPipeline.addLast(Socks5ServerEncoder.DEFAULT)
+        ChannelPipeline pipeline = channel.pipeline();
+        if (isAuthEnabled()) {
+            // Traffic statistics
+            pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(config.getTrafficShapingInterval()));
+        }
+        pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
+        // SocksPortUnificationServerHandler
+        Sockets.addServerHandler(channel, config);
+        pipeline.addLast(Socks5ServerEncoder.DEFAULT)
                 .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
                 .addLast(Socks5InitialRequestHandler.class.getSimpleName(), Socks5InitialRequestHandler.DEFAULT);
         if (isAuthEnabled()) {
-            tcpPipeline.addLast(Socks5PasswordAuthRequestDecoder.class.getSimpleName(), new Socks5PasswordAuthRequestDecoder())
+            pipeline.addLast(Socks5PasswordAuthRequestDecoder.class.getSimpleName(), new Socks5PasswordAuthRequestDecoder())
                     .addLast(Socks5PasswordAuthRequestHandler.class.getSimpleName(), Socks5PasswordAuthRequestHandler.DEFAULT);
         }
-        tcpPipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
+        pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                 .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
-        tcpChannel.attr(SocksContext.SOCKS_SVR).set(this);
-
-        //udp server
-        int udpPort = config.getListenPort();
-        udpChannel = Sockets.udpBootstrap(config, channel -> {
-            ChannelPipeline pipeline = channel.pipeline();
-            if (config.isEnableUdp2raw()) {
-                pipeline.addLast(Udp2rawHandler.DEFAULT);
-            } else {
-                Sockets.addServerHandler(channel, config);
-                pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
-            }
-        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).channel();
+        channel.attr(SocksContext.SOCKS_SVR).set(this);
     }
 
     @Override
     protected void dispose() {
-        Sockets.closeOnFlushed(tcpChannel);
+        // 内存模式不释放tcpChannel
+        if (bootstrap != null) {
+            Sockets.closeOnFlushed(tcpChannel);
+        }
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();
     }

@@ -14,12 +14,14 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
         Channel inbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(inbound);
         if (!sc.outboundActive) {
+            Object retained = io.netty.util.ReferenceCountUtil.retain(msg);
             sc.outbound.addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
+                    io.netty.util.ReferenceCountUtil.release(retained);
                     return;
                 }
                 log.debug("TCP outbound pending FLUSH_PACK {} => {}", inbound.remoteAddress(), sc.outbound);
-                f.channel().writeAndFlush(msg);
+                f.channel().writeAndFlush(retained);
             });
             return;
         }

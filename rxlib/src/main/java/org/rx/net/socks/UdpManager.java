@@ -139,6 +139,10 @@ public final class UdpManager {
     }
 
     public static UnresolvedEndpoint socks5Decode(ByteBuf buf) {
+        // RSV(2) + FRAG(1) + ATYP(1) at minimum
+//        if (buf.readableBytes() < 4) {
+//            throw new IllegalArgumentException("socks5 UDP packet too short");
+//        }
         buf.skipBytes(3);
         return decode(buf);
     }

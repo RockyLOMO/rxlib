@@ -2,11 +2,11 @@ package org.rx.io;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import net.lingala.zip4j.ZipFile;
-import net.lingala.zip4j.model.ZipParameters;
-import net.lingala.zip4j.model.enums.CompressionLevel;
-import net.lingala.zip4j.model.enums.EncryptionMethod;
-import org.apache.commons.collections4.CollectionUtils;
+// import net.lingala.zip4j.ZipFile;
+// import net.lingala.zip4j.model.ZipParameters;
+// import net.lingala.zip4j.model.enums.CompressionLevel;
+// import net.lingala.zip4j.model.enums.EncryptionMethod;
+// import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.FileFilterUtils;
@@ -247,57 +247,57 @@ public class Files extends FilenameUtils {
         java.nio.file.Files.write(Paths.get(filePath), lines, StandardCharsets.UTF_8, options);
     }
 
-    public static void zip(String zipFile, String srcPath) {
-        zip(new File(zipFile), null, Collections.singletonList(new File(srcPath)), Collections.emptyList());
-    }
+    // public static void zip(String zipFile, String srcPath) {
+    //     zip(new File(zipFile), null, Collections.singletonList(new File(srcPath)), Collections.emptyList());
+    // }
 
-    public static void zip(String zipFile, IOStream srcStream) {
-        zip(new File(zipFile), null, Collections.emptyList(), Collections.singletonList(srcStream));
-    }
+    // public static void zip(String zipFile, IOStream srcStream) {
+    //     zip(new File(zipFile), null, Collections.emptyList(), Collections.singletonList(srcStream));
+    // }
 
-    @SneakyThrows
-    public static <T extends IOStream> void zip(File zipFile, String password, List<File> srcPaths, List<T> srcStreams) {
-        try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
-            ZipParameters zipParameters = new ZipParameters();
-            zipParameters.setCompressionLevel(CompressionLevel.HIGHER);
-            if (password != null) {
-                zipParameters.setEncryptFiles(true);
-                zipParameters.setEncryptionMethod(EncryptionMethod.AES);
-            }
+    // @SneakyThrows
+    // public static <T extends IOStream> void zip(File zipFile, String password, List<File> srcPaths, List<T> srcStreams) {
+    //     try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
+    //         ZipParameters zipParameters = new ZipParameters();
+    //         zipParameters.setCompressionLevel(CompressionLevel.HIGHER);
+    //         if (password != null) {
+    //             zipParameters.setEncryptFiles(true);
+    //             zipParameters.setEncryptionMethod(EncryptionMethod.AES);
+    //         }
 
-            if (!CollectionUtils.isEmpty(srcPaths)) {
-                for (File srcPath : srcPaths) {
-                    if (srcPath.isDirectory()) {
-                        zip.addFolder(srcPath, zipParameters);
-                    } else {
-                        zip.addFile(srcPath, zipParameters);
-                    }
-                }
-            }
+    //         if (!CollectionUtils.isEmpty(srcPaths)) {
+    //             for (File srcPath : srcPaths) {
+    //                 if (srcPath.isDirectory()) {
+    //                     zip.addFolder(srcPath, zipParameters);
+    //                 } else {
+    //                     zip.addFile(srcPath, zipParameters);
+    //                 }
+    //             }
+    //         }
 
-            if (!CollectionUtils.isEmpty(srcStreams)) {
-                for (IOStream srcStream : srcStreams) {
-                    zipParameters.setFileNameInZip(srcStream.getName());
-                    zip.addStream(srcStream.getReader(), zipParameters);
-                }
-            }
-        }
-    }
+    //         if (!CollectionUtils.isEmpty(srcStreams)) {
+    //             for (IOStream srcStream : srcStreams) {
+    //                 zipParameters.setFileNameInZip(srcStream.getName());
+    //                 zip.addStream(srcStream.getReader(), zipParameters);
+    //             }
+    //         }
+    //     }
+    // }
 
-    public static void unzip(String zipFile) {
-        unzip(zipFile, "./");
-    }
+    // public static void unzip(String zipFile) {
+    //     unzip(zipFile, "./");
+    // }
 
-    public static void unzip(String zipFile, String destPath) {
-        unzip(new File(zipFile), null, destPath);
-    }
+    // public static void unzip(String zipFile, String destPath) {
+    //     unzip(new File(zipFile), null, destPath);
+    // }
 
-    @SneakyThrows
-    public static void unzip(File zipFile, String password, String destPath) {
-        try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
-            zip.extractAll(destPath);
-        }
-    }
+    // @SneakyThrows
+    // public static void unzip(File zipFile, String password, String destPath) {
+    //     try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
+    //         zip.extractAll(destPath);
+    //     }
+    // }
 
     @SneakyThrows
     public static MemoryStream createTextImage(String text, String fontName, int fontSize, float fontOpacity,

@@ -60,13 +60,24 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket in) throws Exception {
         ByteBuf inBuf = in.content();
-//        if (inBuf.readableBytes() < 4) {
-//            return;
-//        }
+        // Minimal header length: RSV(2) + FRAG(1) + ATYP(1)
+        if (inBuf.readableBytes() < 4) {
+            return;
+        }
 
         Channel inbound = ctx.channel();
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
+        // Defensively validate RFC1928 header without consuming buffer.
+        int ri = inBuf.readerIndex();
+        int rsv = inBuf.getUnsignedShort(ri);
+        short frag = inBuf.getUnsignedByte(ri + 2);
+        if (rsv != 0 || frag != 0) {
+            // Fragmentation is not supported.
+            log.warn("socks5[{}] UDP fragment not supported", config.getListenPort());
+            return;
+        }
+
         final InetSocketAddress srcEp = in.sender();
         InetAddress srcIp = srcEp.getAddress();
         //client in
