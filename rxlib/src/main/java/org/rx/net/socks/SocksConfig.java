@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import io.netty.channel.local.LocalAddress;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -21,6 +22,7 @@ public class SocksConfig extends SocketConfig {
 
     private static final long serialVersionUID = 3526543718065617052L;
     private int listenPort;
+    private LocalAddress memoryAddress;
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = DEF_READ_TIMEOUT_SECONDS;
     private int writeTimeoutSeconds;

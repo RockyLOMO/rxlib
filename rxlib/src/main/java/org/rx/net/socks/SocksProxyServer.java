@@ -1,9 +1,9 @@
 package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelPipeline;
+import io.netty.channel.*;
+import io.netty.channel.local.LocalAddress;
+import io.netty.channel.local.LocalServerChannel;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5PasswordAuthRequestDecoder;
@@ -61,24 +61,42 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     }
 
     public SocksProxyServer(SocksConfig config, Authenticator authenticator, BiAction<Channel> onBind) {
-        this(config, authenticator, onBind, null);
+        this(config, authenticator, onBind, false, null);
     }
 
-    public SocksProxyServer(SocksConfig config, Authenticator authenticator, @NonNull Channel memoryChannel) {
-        this(config, authenticator, null, memoryChannel);
+    public SocksProxyServer(SocksConfig config, Authenticator authenticator, boolean enableMemoryChannel, Channel memoryChannel) {
+        this(config, authenticator, null, enableMemoryChannel, memoryChannel);
     }
 
-    private SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiAction<Channel> onBind, Channel memoryChannel) {
+    private SocksProxyServer(@NonNull SocksConfig config, Authenticator authenticator, BiAction<Channel> onBind,
+                             boolean enableMemoryChannel, Channel memoryChannel) {
         this.config = config;
         this.authenticator = authenticator;
 
-        if (memoryChannel != null) {
-            if (!memoryChannel.isActive()) {
-                throw new InvalidException("memoryChannel not active");
+        if (enableMemoryChannel) {
+            if (memoryChannel == null) {
+                bootstrap = new ServerBootstrap()
+                        .group(new DefaultEventLoopGroup(1), Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true))
+                        .channel(LocalServerChannel.class)
+                        .childHandler(new ChannelInitializer<Channel>() {
+                            @Override
+                            protected void initChannel(Channel ch) {
+                                acceptChannel(ch);
+                            }
+                        });
+                LocalAddress memoryAddr = config.getMemoryAddress();
+                if (memoryAddr == null) {
+                    memoryAddr = new LocalAddress(this.getClass());
+                }
+                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(memoryAddr).channel();
+            } else {
+                if (!memoryChannel.isActive()) {
+                    throw new InvalidException("memoryChannel not active");
+                }
+                acceptChannel(memoryChannel);
+                bootstrap = null;
+                tcpChannel = memoryChannel;
             }
-            acceptChannel(memoryChannel);
-            bootstrap = null;
-            tcpChannel = memoryChannel;
         } else {
             bootstrap = Sockets.serverBootstrap(config, this::acceptChannel);
             tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).addListener((ChannelFutureListener) f -> {
@@ -127,7 +145,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @Override
     protected void dispose() {
-        // 内存模式不释放tcpChannel
+        // 内存模式传入的memoryChannel不释放
         if (bootstrap != null) {
             Sockets.closeOnFlushed(tcpChannel);
         }
