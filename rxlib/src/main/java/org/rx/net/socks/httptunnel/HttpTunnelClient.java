@@ -191,7 +191,7 @@ public class HttpTunnelClient extends Disposable {
      */
     private void handleUdpAssociate(ChannelHandlerContext ctx, Channel inbound,
                                     Socks5AddressType dstAddrType, UnresolvedEndpoint dstEp) {
-        InetSocketAddress bindEp = (InetSocketAddress) inbound.localAddress();
+        InetSocketAddress bindEp = Sockets.getLocalAddress(inbound);
         // 简单实现: 返回绑定地址，UDP 数据通过额外协议处理
         ctx.writeAndFlush(new DefaultSocks5CommandResponse(
                 Socks5CommandStatus.SUCCESS, dstAddrType, bindEp.getHostString(), bindEp.getPort()));

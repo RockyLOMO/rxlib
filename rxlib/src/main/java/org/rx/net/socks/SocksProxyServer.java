@@ -101,7 +101,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).channel();
     }
 
-    private void acceptChannel(Channel channel) {
+    public void acceptChannel(Channel channel) {
         if (channel.attr(SocksContext.SOCKS_SVR).get() != null) {
             return;
         }

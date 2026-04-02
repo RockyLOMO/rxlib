@@ -31,7 +31,7 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
 
         SocksProxyServer server = Sockets.getAttr(ctx.channel(), SocksContext.SOCKS_SVR);
         Set<InetAddress> whiteList = server.getConfig().getWhiteList();
-        InetSocketAddress remoteEp = (InetSocketAddress) ctx.channel().remoteAddress();
+        InetSocketAddress remoteEp = Sockets.getRemoteAddress(ctx.channel());
         InetAddress raddr = remoteEp.getAddress();
         if (!Sockets.isPrivateIp(raddr) && !whiteList.contains(raddr)) {
             H2StoreCache.iteratorContext(0, Integer.MAX_VALUE, InetAddress.class);

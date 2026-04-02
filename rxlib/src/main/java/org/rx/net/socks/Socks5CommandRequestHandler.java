@@ -50,7 +50,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
         }
 
-        InetSocketAddress srcEp = (InetSocketAddress) inCh.remoteAddress();
+        InetSocketAddress srcEp = Sockets.getRemoteAddress(inCh);
         if (msg.type() == Socks5CommandType.CONNECT) {
             SocksContext e = SocksContext.getCtx(srcEp, dstEp);
             server.raiseEvent(server.onTcpRoute, e);
@@ -62,7 +62,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             Socks5AddressType bindAddrType = msg.dstAddrType();
             // msg.dstAddr(), msg.dstPort() = 0.0.0.0:0 客户端希望绑定
             // ipv4 udp svr 单个udp性能高
-            InetSocketAddress bindEp = (InetSocketAddress) inCh.localAddress();
+            InetSocketAddress bindEp = Sockets.getLocalAddress(inCh);
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, bindAddrType, bindEp.getHostString(), bindEp.getPort()));
         } else {
             log.warn("Command {} not support", msg.type());
@@ -102,7 +102,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
             Channel outbound = f.channel();
-            EndpointTracer.TCP.link((InetSocketAddress) inbound.remoteAddress(), outbound);
+            EndpointTracer.TCP.link(Sockets.getRemoteAddress(inbound), outbound);
             Socks5ClientHandler proxyHandler;
             if (server.cipherRoute(e.getFirstDestination()) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
