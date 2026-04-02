@@ -49,8 +49,7 @@ class SocksProxyServerTest {
     @SneakyThrows
     void testNormalMode() {
         int proxyPort = 15180;
-        SocksConfig config = new SocksConfig();
-        config.setListenPort(proxyPort);
+        SocksConfig config = new SocksConfig(proxyPort);
         SocksProxyServer proxyServer = new SocksProxyServer(config, null);
 
         try {
@@ -71,8 +70,7 @@ class SocksProxyServerTest {
         
         // Custom frontend TCP server that acts as a container for memory-mode SocksProxyServer
         ServerBootstrap memoryFrontendBootstrap = Sockets.serverBootstrap(ch -> {
-            SocksConfig config = new SocksConfig();
-            config.setListenPort(0); // random port for UDP to avoid BindException on multiple connections
+            SocksConfig config = new SocksConfig(0); // random port for UDP to avoid BindException on multiple connections
             
             // Create in memory mode
             new SocksProxyServer(config, null, ch);

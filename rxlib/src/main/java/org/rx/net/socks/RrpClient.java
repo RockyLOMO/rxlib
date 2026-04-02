@@ -29,6 +29,8 @@ import static org.rx.net.socks.RrpConfig.ATTR_CLI_PROXY;
 
 @Slf4j
 public class RrpClient extends Disposable {
+    static final int MAX_CHANNEL_ID_LEN = RrpServer.MAX_CHANNEL_ID_LEN;
+
     static class RpClientProxy extends Disposable {
         final RrpConfig.Proxy p;
         final Channel serverChannel;
@@ -39,6 +41,9 @@ public class RrpClient extends Disposable {
         @Override
         protected void dispose() throws Throwable {
             Sockets.closeOnFlushed(serverChannel);
+            for (Channel ch : localChannels.values()) {
+                Sockets.closeOnFlushed(ch);
+            }
             localChannels.clear();
             tryClose(localSS);
         }
@@ -157,43 +162,62 @@ public class RrpClient extends Disposable {
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel serverChannel = ctx.channel();
             ByteBuf buf = (ByteBuf) msg;
-            byte action = buf.readByte();
-            int remotePort = buf.readInt();
-            int idLen = buf.readInt();
-            String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
-            RpClientProxy proxyCtx = proxyMap.get(remotePort);
-            if (action == RrpConfig.ACTION_FORWARD) {
-                //step4
-                log.debug("RrpClient step4 {}({}) serverChannel -> connect", serverChannel, channelId);
-                Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
-                    RrpConfig conf = Sys.deepClone(config);
-                    conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
-                    ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf).pipeline()
-                            .addLast(SocksClientHandler.DEFAULT)).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
-                    Channel ch = connF.channel();
-                    ch.attr(ATTR_CLI_CONN).set(connF);
-                    connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CLI_CONN).set(null));
-                    return ch;
-                });
-                ChannelFuture connF = localChannel.attr(ATTR_CLI_CONN).get();
-                if (connF == null) {
-                    localChannel.writeAndFlush(buf);
-                } else {
-                    connF.addListener((ChannelFutureListener) f -> {
-                        if (f.isSuccess()) {
-                            f.channel().writeAndFlush(buf);
-                        }
-                    });
+            try {
+                if (buf.readableBytes() < 1 + 4 + 4) {
+                    return;
                 }
-                log.debug("RrpClient step4 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
-            } else if (action == RrpConfig.ACTION_SYNC_CLOSE) {
-                //step8
-                Channel localChannel = proxyCtx.localChannels.get(channelId);
-                log.debug("RrpClient step8 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
-                Sockets.closeOnFlushed(localChannel);
-            } else {
-                log.warn("RrpClient error Invalid action {}", action);
-                serverChannel.close();
+                byte action = buf.readByte();
+                int remotePort = buf.readInt();
+                int idLen = buf.readInt();
+                if (idLen < 0 || idLen > MAX_CHANNEL_ID_LEN || buf.readableBytes() < idLen) {
+                    log.warn("RrpClient error Invalid idLen {} from {}", idLen, serverChannel.remoteAddress());
+//                    Sockets.closeOnFlushed(serverChannel);
+                    return;
+                }
+                String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
+                RpClientProxy proxyCtx = proxyMap.get(remotePort);
+                if (proxyCtx == null) {
+                    log.warn("RrpClient error Unknown remotePort {} for channelId={}", remotePort, channelId);
+                    return;
+                }
+                if (action == RrpConfig.ACTION_FORWARD) {
+                    //step4
+                    log.debug("RrpClient step4 {}({}) serverChannel -> connect", serverChannel, channelId);
+                    Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
+                        RrpConfig conf = Sys.deepClone(config);
+                        conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
+                        ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf).pipeline()
+                                .addLast(SocksClientHandler.DEFAULT)).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
+                        Channel ch = connF.channel();
+                        ch.attr(ATTR_CLI_CONN).set(connF);
+                        connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CLI_CONN).set(null));
+                        return ch;
+                    });
+                    ChannelFuture connF = localChannel.attr(ATTR_CLI_CONN).get();
+                    if (connF == null) {
+                        localChannel.writeAndFlush(buf.retain());
+                    } else {
+                        ByteBuf retained = buf.retain();
+                        connF.addListener((ChannelFutureListener) f -> {
+                            if (f.isSuccess()) {
+                                f.channel().writeAndFlush(retained);
+                            } else {
+                                io.netty.util.ReferenceCountUtil.release(retained);
+                            }
+                        });
+                    }
+                    log.debug("RrpClient step4 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
+                } else if (action == RrpConfig.ACTION_SYNC_CLOSE) {
+                    //step8
+                    Channel localChannel = proxyCtx.localChannels.get(channelId);
+                    log.debug("RrpClient step8 {}({}) serverChannel -> {}", serverChannel, channelId, localChannel);
+                    Sockets.closeOnFlushed(localChannel);
+                } else {
+                    log.warn("RrpClient error Invalid action {}", action);
+                    Sockets.closeOnFlushed(serverChannel);
+                }
+            } finally {
+                io.netty.util.ReferenceCountUtil.release(msg);
             }
         }
 

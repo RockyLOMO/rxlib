@@ -74,7 +74,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
         if (memoryChannel != null) {
             if (!memoryChannel.isActive()) {
-                throw new InvalidException("memoryChannel is null or not active");
+                throw new InvalidException("memoryChannel not active");
             }
             acceptChannel(memoryChannel);
             bootstrap = null;

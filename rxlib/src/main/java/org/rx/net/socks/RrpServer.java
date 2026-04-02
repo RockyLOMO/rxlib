@@ -31,6 +31,10 @@ import static org.rx.net.socks.RrpConfig.*;
 @Slf4j
 @RequiredArgsConstructor
 public class RrpServer extends Disposable {
+    static final int MAX_TOKEN_LEN = 256;
+    static final int MAX_CHANNEL_ID_LEN = 128;
+    static final int MAX_REGISTER_BYTES = 1024 * 1024; // 1 MiB cap for serialized proxies
+
     @RequiredArgsConstructor
     static class RpClientProxy extends Disposable {
         final RrpConfig.Proxy p;
@@ -42,6 +46,9 @@ public class RrpServer extends Disposable {
         protected void dispose() throws Throwable {
             Sockets.closeOnFlushed(remoteServerChannel);
             Sockets.closeBootstrap(remoteServer);
+            for (Channel ch : remoteClients.values()) {
+                Sockets.closeOnFlushed(ch);
+            }
             remoteClients.clear();
         }
     }
@@ -145,10 +152,22 @@ public class RrpServer extends Disposable {
             RrpServer server = Sockets.getAttr(clientChannel, ATTR_SVR);
             ByteBuf buf = (ByteBuf) msg;
             try {
+                if (buf.readableBytes() < 1) {
+                    return;
+                }
                 byte action = buf.readByte();
                 if (action == RrpConfig.ACTION_REGISTER) {
                     //step2
+                    if (buf.readableBytes() < 4) {
+                        clientChannel.close();
+                        return;
+                    }
                     int tokenLen = buf.readInt();
+                    if (tokenLen < 0 || tokenLen > MAX_TOKEN_LEN || buf.readableBytes() < tokenLen + 4) {
+                        log.warn("RrpServer error Invalid tokenLen {} from {}", tokenLen, clientChannel.remoteAddress());
+                        clientChannel.close();
+                        return;
+                    }
                     String token = tokenLen > 0 ? buf.readCharSequence(tokenLen, StandardCharsets.US_ASCII).toString() : null;
                     if (!eq(token, server.config.getToken())) {
                         log.warn("RrpServer error Invalid token {}", token);
@@ -156,26 +175,68 @@ public class RrpServer extends Disposable {
                         return;
                     }
                     int len = buf.readInt();
+                    if (len < 0 || len > MAX_REGISTER_BYTES || buf.readableBytes() < len) {
+                        log.warn("RrpServer error Invalid register len {} from {}", len, clientChannel.remoteAddress());
+                        clientChannel.close();
+                        return;
+                    }
                     byte[] data = new byte[len];
                     buf.readBytes(data, 0, len);
                     List<RrpConfig.Proxy> pList = Serializer.DEFAULT.deserializeFromBytes(data);
                     server.register(clientChannel, pList);
                 } else if (action == RrpConfig.ACTION_FORWARD) {
                     //step6
+                    if (buf.readableBytes() < 8) {
+                        return;
+                    }
                     int remotePort = buf.readInt();
                     int idLen = buf.readInt();
+                    if (idLen < 0 || idLen > MAX_CHANNEL_ID_LEN || buf.readableBytes() < idLen) {
+                        log.warn("RrpServer error Invalid idLen {} from {}", idLen, clientChannel.remoteAddress());
+                        Sockets.closeOnFlushed(clientChannel);
+                        return;
+                    }
                     String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
-                    Channel remoteChannel = server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(channelId);
+                    RpClient rpClient = server.clients.get(clientChannel);
+                    if (rpClient == null) {
+                        return;
+                    }
+                    RpClientProxy proxyCtx;
+                    try {
+                        proxyCtx = rpClient.getProxyCtx(remotePort);
+                    } catch (Exception e) {
+                        log.warn("RrpServer error Invalid remotePort {} from {}", remotePort, clientChannel.remoteAddress(), e);
+                        return;
+                    }
+                    Channel remoteChannel = proxyCtx.remoteClients.get(channelId);
                     if (remoteChannel != null) {
                         remoteChannel.writeAndFlush(buf.retain());
                     }
                     log.debug("RrpServer step6 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
                 } else if (action == RrpConfig.ACTION_SYNC_CLOSE) {
                     //step10
+                    if (buf.readableBytes() < 8) {
+                        return;
+                    }
                     int remotePort = buf.readInt();
                     int idLen = buf.readInt();
+                    if (idLen < 0 || idLen > MAX_CHANNEL_ID_LEN || buf.readableBytes() < idLen) {
+                        log.warn("RrpServer error Invalid idLen {} from {}", idLen, clientChannel.remoteAddress());
+                        return;
+                    }
                     String channelId = buf.readCharSequence(idLen, StandardCharsets.US_ASCII).toString();
-                    Channel remoteChannel = server.clients.get(clientChannel).getProxyCtx(remotePort).remoteClients.get(channelId);
+                    RpClient rpClient = server.clients.get(clientChannel);
+                    if (rpClient == null) {
+                        return;
+                    }
+                    RpClientProxy proxyCtx;
+                    try {
+                        proxyCtx = rpClient.getProxyCtx(remotePort);
+                    } catch (Exception e) {
+                        log.warn("RrpServer error Invalid remotePort {} from {}", remotePort, clientChannel.remoteAddress(), e);
+                        return;
+                    }
+                    Channel remoteChannel = proxyCtx.remoteClients.get(channelId);
                     log.debug("RrpServer step10 {}({}) clientChannel -> {}", clientChannel, channelId, remoteChannel);
                     Sockets.closeOnFlushed(remoteChannel);
                 }
@@ -258,7 +319,7 @@ public class RrpServer extends Disposable {
             io.netty.channel.ChannelFuture bindFuture = remoteBootstrap
                     .attr(ATTR_SVR_CLI, rpClient)
                     .attr(ATTR_SVR_PROXY, rpClientProxy).bind(remotePort).awaitUninterruptibly();
-            
+
             if (!bindFuture.isSuccess()) {
                 log.error("RrpServer step2 {} remote Tcp bind {} fail", clientChannel, remotePort, bindFuture.cause());
                 continue;
