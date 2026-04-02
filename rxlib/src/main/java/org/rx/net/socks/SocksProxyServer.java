@@ -20,7 +20,7 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
-//@Slf4j
+// @Slf4j
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public static final PredicateFunc<UnresolvedEndpoint> DNS_CIPHER_ROUTER = dstEp -> dstEp.getPort() == SocksRpcContract.DNS_PORT
@@ -35,7 +35,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final Channel udpChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
-    //只有压缩时一定要用
+    // 只有压缩时一定要用
     @Setter
     private PredicateFunc<UnresolvedEndpoint> cipherRouter;
 
@@ -43,10 +43,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         return tcpChannel.isActive();
     }
 
-//    public Integer getBindPort() {
-//        InetSocketAddress ep = (InetSocketAddress) tcpChannel.localAddress();
-//        return ep != null ? ep.getPort() : null;
-//    }
+    // public Integer getBindPort() {
+    // InetSocketAddress ep = (InetSocketAddress) tcpChannel.localAddress();
+    // return ep != null ? ep.getPort() : null;
+    // }
 
     public boolean isAuthEnabled() {
         return authenticator != null;
@@ -88,7 +88,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }).channel();
         }
 
-        //udp server
+        // udp server
         int udpPort = config.getListenPort();
         udpChannel = Sockets.udpBootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline();
@@ -107,11 +107,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         }
         ChannelPipeline pipeline = channel.pipeline();
         if (isAuthEnabled()) {
-            //Traffic statistics
+            // Traffic statistics
             pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(config.getTrafficShapingInterval()));
         }
         pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
-        //SocksPortUnificationServerHandler
+        // SocksPortUnificationServerHandler
         Sockets.addServerHandler(channel, config);
         pipeline.addLast(Socks5ServerEncoder.DEFAULT)
                 .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
@@ -127,7 +127,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @Override
     protected void dispose() {
-        Sockets.closeOnFlushed(tcpChannel);
+        // 内存模式不释放tcpChannel
+        if (bootstrap != null) {
+            Sockets.closeOnFlushed(tcpChannel);
+        }
         Sockets.closeBootstrap(bootstrap);
         udpChannel.close();
     }
