@@ -35,7 +35,8 @@ public class RrpClient extends Disposable {
         final RrpConfig.Proxy p;
         final Channel serverChannel;
         final Map<String, Channel> localChannels = new ConcurrentHashMap<>();
-        InetSocketAddress localEndpoint;
+        io.netty.channel.local.LocalAddress localEndpoint;
+        io.netty.bootstrap.ServerBootstrap localBootstrap;
         SocksProxyServer localSS;
 
         @Override
@@ -45,6 +46,7 @@ public class RrpClient extends Disposable {
                 Sockets.closeOnFlushed(ch);
             }
             localChannels.clear();
+            Sockets.closeBootstrap(localBootstrap);
             tryClose(localSS);
         }
 
@@ -53,6 +55,8 @@ public class RrpClient extends Disposable {
             this.serverChannel = serverChannel;
             SocksConfig conf = new SocksConfig(0);
             conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
+            
+            io.netty.channel.embedded.EmbeddedChannel dummy = new io.netty.channel.embedded.EmbeddedChannel();
             localSS = new SocksProxyServer(conf, (u, w) -> {
                 if (!eq(p.getAuth(), u + ":" + w)) {
                     log.debug("RrpClient check {}!={}:{}", p.getAuth(), u, w);
@@ -61,20 +65,21 @@ public class RrpClient extends Disposable {
                 SocksUser usr = new SocksUser(u);
                 usr.setIpLimit(-1);
                 return usr;
-            }, ch -> {
-                int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();
-                log.debug("RrpClient Local SS bind R{} <-> L{}", p.getRemotePort(), bindPort);
-                localEndpoint = Sockets.newLoopbackEndpoint(bindPort);
-            });
-//            localSS = new SocksProxyServer(conf, (u, w) -> {
-//                if (!eq(p.getAuth(), u + ":" + w)) {
-//                    log.debug("RrpClient check {}!={}:{}", p.getAuth(), u, w);
-//                    return null;
-//                }
-//                SocksUser usr = new SocksUser(u);
-//                usr.setIpLimit(-1);
-//                return usr;
-//            }, serverChannel);
+            }, dummy);
+            Sockets.closeOnFlushed(dummy);
+
+            localEndpoint = new io.netty.channel.local.LocalAddress("RRP_" + java.util.UUID.randomUUID().toString());
+            localBootstrap = new io.netty.bootstrap.ServerBootstrap()
+                    .group(Sockets.reactor("LocalSvr", true), Sockets.reactor("LocalWrk", true))
+                    .channel(io.netty.channel.local.LocalServerChannel.class)
+                    .childHandler(new ChannelInitializer<io.netty.channel.local.LocalChannel>() {
+                        @Override
+                        protected void initChannel(io.netty.channel.local.LocalChannel ch) {
+                            localSS.acceptChannel(ch);
+                        }
+                    });
+            localBootstrap.bind(localEndpoint).syncUninterruptibly();
+            log.debug("RrpClient Local SS bind R{} <-> Memory {}", p.getRemotePort(), localEndpoint.id());
         }
     }
 
@@ -186,9 +191,19 @@ public class RrpClient extends Disposable {
                     Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
                         RrpConfig conf = Sys.deepClone(config);
                         conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
-                        ChannelFuture connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf).pipeline()
-                                .addLast(SocksClientHandler.DEFAULT)).attr(ATTR_CLI_PROXY, Tuple.of(proxyCtx, channelId)).connect(proxyCtx.localEndpoint);
+                        Bootstrap localClient = new Bootstrap()
+                                .group(Sockets.reactor("LocalCli", true))
+                                .channel(io.netty.channel.local.LocalChannel.class)
+                                .handler(new ChannelInitializer<io.netty.channel.local.LocalChannel>() {
+                                    @Override
+                                    protected void initChannel(io.netty.channel.local.LocalChannel ch) {
+                                        Sockets.addClientHandler(ch, conf).pipeline()
+                                                .addLast(SocksClientHandler.DEFAULT);
+                                    }
+                                });
+                        ChannelFuture connF = localClient.connect(proxyCtx.localEndpoint);
                         Channel ch = connF.channel();
+                        ch.attr(ATTR_CLI_PROXY).set(Tuple.of(proxyCtx, channelId));
                         ch.attr(ATTR_CLI_CONN).set(connF);
                         connF.addListener((ChannelFutureListener) f -> ch.attr(ATTR_CLI_CONN).set(null));
                         return ch;
