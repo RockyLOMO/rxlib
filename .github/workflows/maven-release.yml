@@ -1,4 +1,4 @@
-name: Publish Release to Maven Central (with GPG Sign & Auto Version Management)
+name: Publish Release to Maven Central
 
 on:
   workflow_dispatch:    # 手动触发
@@ -125,10 +125,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 拉取最新的远程更改以避免推送冲突
+          # 先暂存更改，然后拉取远程更改以避免推送冲突
+          git add pom.xml rxlib/pom.xml rxlib-x/pom.xml
           git pull origin main --rebase || echo "No remote changes to pull"
 
-          git add pom.xml rxlib/pom.xml rxlib-x/pom.xml
           git commit -m "chore: release v$RELEASE_VERSION [skip ci]"
           git push origin HEAD:main
 
@@ -216,10 +216,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 拉取最新的远程更改以避免推送冲突
+          # 先暂存更改，然后拉取远程更改以避免推送冲突
+          git add pom.xml rxlib/pom.xml rxlib-x/pom.xml
           git pull origin main --rebase || echo "No remote changes to pull"
 
-          git add pom.xml rxlib/pom.xml rxlib-x/pom.xml
           git commit -m "chore: prepare v$NEXT_SNAPSHOT [skip ci]"
           git push origin HEAD:main
 
