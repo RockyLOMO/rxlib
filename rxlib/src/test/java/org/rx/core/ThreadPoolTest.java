@@ -347,7 +347,7 @@ public class ThreadPoolTest {
         // Wait for first task to start
         assertTrue(startedLatch.await(5, TimeUnit.SECONDS));
 
-        // Subsequent tasks with same taskId should be rejected (InterruptedException in beforeExecute)
+        // Subsequent tasks with same taskId should be rejected (RejectedExecutionException in beforeExecute)
         Thread.sleep(200);
         for (int i = 0; i < 3; i++) {
             p.run(() -> counter.incrementAndGet(), taskId, RunFlag.SINGLE.flags());

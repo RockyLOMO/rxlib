@@ -110,13 +110,19 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         @Override
         public Runnable take() throws InterruptedException {
+            boolean ok = true;
             try {
                 return super.take();
+            } catch (InterruptedException e) {
+                ok = false;
+                throw e;
             } finally {
-                if (log.isDebugEnabled()) {
-                    log.debug("Notify take");
+                if (ok) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Notify take");
+                    }
+                    doNotify();
                 }
-                doNotify();
             }
         }
 
@@ -703,7 +709,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
         return f;
     }
-    
+
     public <T> MultiTaskFuture<T, T> runAnyAsync(Iterable<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
             Task<T> t = Task.adapt(task, null, null);
@@ -735,7 +741,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         if (flags.has(RunFlag.SINGLE)) {
             RefCounter<ReentrantLock> ctx = getContextForLock(task.id);
             if (!ctx.ref.tryLock()) {
-                throw new InterruptedException(String.format("SingleScope %s locked by other thread", task.id));
+                throw new RejectedExecutionException(String.format("SingleScope %s already running", task.id));
             }
             ctx.incrementRefCnt();
             if (log.isDebugEnabled()) {
