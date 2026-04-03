@@ -174,7 +174,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         }
         if (config.isUdpRedundantAdaptive()) {
             UdpRedundantStats stats = new UdpRedundantStats(
-                    Math.max(2, multiplier),
+                    multiplier, // 尊重用户配置的初始倍率
                     config.getUdpRedundantMinMultiplier(),
                     config.getUdpRedundantMaxMultiplier(),
                     config.getUdpRedundantIntervalMicros(),

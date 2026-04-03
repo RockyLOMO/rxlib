@@ -63,12 +63,12 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
     /**
      * 静态模式构造
      *
-     * @param multiplier     发送倍率，[2, 5]
+     * @param multiplier     发送倍率，[1, 5]。1 = 不启用冗余（透传）
      * @param intervalMicros 冗余副本间隔微秒，0 = 无延迟
      */
     public UdpRedundantEncoder(int multiplier, int intervalMicros) {
-        if (multiplier < 2 || multiplier > 5) {
-            throw new IllegalArgumentException("multiplier must be in [2, 5], got " + multiplier);
+        if (multiplier < 1 || multiplier > 5) {
+            throw new IllegalArgumentException("multiplier must be in [1, 5], got " + multiplier);
         }
         this.fixedMultiplier = multiplier;
         this.intervalMicros = Math.max(0, intervalMicros);
@@ -139,20 +139,20 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
             // 构建带 header 的第一份包
             ByteBuf firstBuf = prependHeader(ctx, content, seqId);
 
-            // 保存一份原始 payload 的副本用于冗余发送
-            byte[] payloadBytes = null;
+            // 为冗余副本创建 payload 的 slice（避免数组拷贝）
+            ByteBuf payloadSlice = null;
             if (multiplier > 1) {
                 int payloadLen = firstBuf.readableBytes() - HEADER_SIZE;
-                payloadBytes = new byte[payloadLen];
-                firstBuf.getBytes(firstBuf.readerIndex() + HEADER_SIZE, payloadBytes);
+                payloadSlice = firstBuf.slice(firstBuf.readerIndex() + HEADER_SIZE, payloadLen);
+                payloadSlice.retain(); // 为冗余副本增加引用
             }
 
             // 写入第一份（使用原始 promise）
             ctx.write(new DatagramPacket(firstBuf, recipient), promise);
 
             // 写入冗余副本
-            if (payloadBytes != null) {
-                final byte[] payload = payloadBytes;
+            if (payloadSlice != null) {
+                final ByteBuf payload = payloadSlice;
                 for (int i = 1; i < multiplier; i++) {
                     final int copyIndex = i;
                     if (intervalMicros > 0) {
@@ -165,6 +165,8 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
                         writeRedundantCopy(ctx, seqId, payload, recipient);
                     }
                 }
+                // 释放我们增加的引用
+                payloadSlice.release();
             }
         } finally {
             // 已用新 DatagramPacket 接管写出，必须释放入站消息（Netty 引用计数约定）
@@ -193,8 +195,8 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
     /**
      * 写入一份冗余副本（使用 voidPromise）
      */
-    private void writeRedundantCopy(ChannelHandlerContext ctx, int seqId, byte[] payload, InetSocketAddress recipient) {
-        ByteBuf buf = ctx.alloc().directBuffer(HEADER_SIZE + payload.length);
+    private void writeRedundantCopy(ChannelHandlerContext ctx, int seqId, ByteBuf payload, InetSocketAddress recipient) {
+        ByteBuf buf = ctx.alloc().directBuffer(HEADER_SIZE + payload.readableBytes());
         try {
             buf.writeInt(HEADER_MAGIC);
             buf.writeInt(seqId);
