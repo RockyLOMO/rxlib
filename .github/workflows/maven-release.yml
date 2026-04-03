@@ -102,10 +102,18 @@ jobs:
           RELEASE_VERSION=${{ steps.parse_version.outputs.release_version }}
           echo "更新版本号为发布版本: $RELEASE_VERSION"
 
-          # 更新根 pom.xml
-          sed -i "s|<version>.*</version>|<version>$RELEASE_VERSION</version>|" pom.xml
+          # 更新根 pom.xml - 只更新项目版本，不更新父 POM 版本
+          # 方法：先备份父 POM 版本，替换所有版本，再恢复父 POM 版本
+          PARENT_VERSION=$(grep -A 2 '<parent>' pom.xml | grep '<version>' | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
+          echo "父 POM 版本: $PARENT_VERSION"
 
-          # 更新子模块 pom.xml
+          # 替换所有版本标签
+          sed -i "s|<version>.*</version>|<version>$RELEASE_VERSION</version>|g" pom.xml
+
+          # 恢复父 POM 版本
+          sed -i "/<parent>/,/<\/parent>/ s|<version>$RELEASE_VERSION</version>|<version>$PARENT_VERSION</version>|" pom.xml
+
+          # 更新子模块 pom.xml - 这些没有父 POM，直接替换版本
           sed -i "s|<version>.*</version>|<version>$RELEASE_VERSION</version>|" rxlib/pom.xml
           sed -i "s|<version>.*</version>|<version>$RELEASE_VERSION</version>|" rxlib-x/pom.xml
 
@@ -180,10 +188,17 @@ jobs:
           NEXT_SNAPSHOT=${{ steps.parse_version.outputs.next_snapshot }}
           echo "准备下一个开发版本: $NEXT_SNAPSHOT"
 
-          # 更新根 pom.xml
-          sed -i "s|<version>.*</version>|<version>$NEXT_SNAPSHOT</version>|" pom.xml
+          # 更新根 pom.xml - 只更新项目版本，不更新父 POM 版本
+          PARENT_VERSION=$(grep -A 2 '<parent>' pom.xml | grep '<version>' | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
+          echo "父 POM 版本: $PARENT_VERSION"
 
-          # 更新子模块 pom.xml
+          # 替换所有版本标签
+          sed -i "s|<version>.*</version>|<version>$NEXT_SNAPSHOT</version>|g" pom.xml
+
+          # 恢复父 POM 版本
+          sed -i "/<parent>/,/<\/parent>/ s|<version>$NEXT_SNAPSHOT</version>|<version>$PARENT_VERSION</version>|" pom.xml
+
+          # 更新子模块 pom.xml - 这些没有父 POM，直接替换版本
           sed -i "s|<version>.*</version>|<version>$NEXT_SNAPSHOT</version>|" rxlib/pom.xml
           sed -i "s|<version>.*</version>|<version>$NEXT_SNAPSHOT</version>|" rxlib-x/pom.xml
 
