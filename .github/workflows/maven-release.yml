@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
       create_tag:
-        description: 'Create and push git tag automatically (recommended: true)'
+        description: 'Create Git tag + GitHub Release on the release commit (after Central deploy)'
         required: false
         default: 'true'
         type: boolean
@@ -16,14 +16,20 @@ on:
 jobs:
   publish-release:
     runs-on: ubuntu-latest
-    environment: release    # 使用 release 环境配置（可选，用于额外的安全检查）
+    permissions:
+      contents: write   # push commits/tags、创建 GitHub Release
+    environment: release
+
+    env:
+      RELEASE_BRANCH: ${{ github.ref_name }}
+      VERSIONS_PLUGIN: org.codehaus.mojo:versions-maven-plugin:2.17.1
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0    # GPG 签名必须完整 git 历史
-          token: ${{ secrets.GITHUB_TOKEN }}  # 用于推送更改和创建标签
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up JDK 8
         uses: actions/setup-java@v4
@@ -34,8 +40,8 @@ jobs:
           server-id: ossrh
           server-username: OSSRH_USERNAME
           server-password: OSSRH_TOKEN
-          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}      # GPG 私钥
-          gpg-passphrase: ${{ secrets.GPG_PASSPHRASE }}        # GPG 密钥密码
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Parse current version
         id: parse_version
@@ -44,14 +50,11 @@ jobs:
           echo "current_version=$CURRENT_VERSION"
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
-          # 检查是否提供了版本号参数
           INPUT_VERSION="${{ github.event.inputs.version }}"
           if [[ -n "$INPUT_VERSION" ]]; then
-            # 使用提供的版本号
             RELEASE_VERSION="$INPUT_VERSION"
             echo "Using provided version: $RELEASE_VERSION"
           else
-            # 自动从 pom.xml 解析版本号 (移除 -SNAPSHOT)
             if [[ "$CURRENT_VERSION" == *-SNAPSHOT ]]; then
               RELEASE_VERSION="${CURRENT_VERSION%-SNAPSHOT}"
               echo "Auto-detected version: $RELEASE_VERSION"
@@ -65,82 +68,49 @@ jobs:
           echo "release_version=$RELEASE_VERSION"
           echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
 
-          # 计算下一个 SNAPSHOT 版本
           IFS='.' read -ra VERSION_PARTS <<< "$RELEASE_VERSION"
+          if [[ ${#VERSION_PARTS[@]} -lt 3 ]]; then
+            echo "❌ 发布版本应为至少三段式 x.y.z，当前: $RELEASE_VERSION"
+            exit 1
+          fi
           PATCH_VERSION=$((VERSION_PARTS[2] + 1))
           NEXT_SNAPSHOT="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$PATCH_VERSION-SNAPSHOT"
           echo "next_snapshot=$NEXT_SNAPSHOT"
           echo "next_snapshot=$NEXT_SNAPSHOT" >> $GITHUB_OUTPUT
 
-      - name: Create and push git tag
-        if: github.event.inputs.create_tag == 'true'
+      - name: Set Maven version (release)
         run: |
-          RELEASE_VERSION=${{ steps.parse_version.outputs.release_version }}
-          TAG_NAME="v$RELEASE_VERSION"
+          RELEASE_VERSION="${{ steps.parse_version.outputs.release_version }}"
+          echo "versions:set -> $RELEASE_VERSION"
+          mvn -B -q "${{ env.VERSIONS_PLUGIN }}:set" \
+            -DnewVersion="$RELEASE_VERSION" \
+            -DgenerateBackupPoms=false \
+            -DprocessAllModules=true
 
-          echo "创建 Git 标签: $TAG_NAME"
-
-          # 配置 Git
+      - name: Commit and push release POMs
+        id: release_commit
+        run: |
+          RELEASE_VERSION="${{ steps.parse_version.outputs.release_version }}"
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 检查标签是否已存在
-          if git tag -l | grep -q "^$TAG_NAME$"; then
-            echo "⚠️  标签 $TAG_NAME 已存在，将使用现有标签"
-          else
-            # 创建标签
-            git tag -a "$TAG_NAME" -m "Release version $RELEASE_VERSION"
-            echo "✅ 标签 $TAG_NAME 创建成功"
-          fi
-
-          # 推送标签到远程
-          git push origin "$TAG_NAME"
-          echo "✅ 标签 $TAG_NAME 已推送到远程"
-
-      - name: Update version to release (remove SNAPSHOT)
-        run: |
-          RELEASE_VERSION=${{ steps.parse_version.outputs.release_version }}
-          echo "更新版本号为发布版本: $RELEASE_VERSION"
-
-          # 更新根 pom.xml - 只更新项目版本，不更新父 POM 版本
-          # 方法：先备份父 POM 版本，替换所有版本，再恢复父 POM 版本
-          PARENT_VERSION=$(grep -A 2 '<parent>' pom.xml | grep '<version>' | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
-          echo "父 POM 版本: $PARENT_VERSION"
-
-          # 替换所有版本标签
-          sed -i "s|<version>.*</version>|<version>$RELEASE_VERSION</version>|g" pom.xml
-
-          # 恢复父 POM 版本
-          sed -i "/<parent>/,/<\/parent>/ s|<version>$RELEASE_VERSION</version>|<version>$PARENT_VERSION</version>|" pom.xml
-
-          # 更新子模块 pom.xml - 这些没有父 POM，直接替换版本
-          sed -i "s|<version>.*</version>|<version>$RELEASE_VERSION</version>|" rxlib/pom.xml
-          sed -i "s|<version>.*</version>|<version>$RELEASE_VERSION</version>|" rxlib-x/pom.xml
-
-          echo "版本号更新完成"
-
-      - name: Commit version update
-        run: |
-          RELEASE_VERSION=${{ steps.parse_version.outputs.release_version }}
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          # 先暂存更改，然后拉取远程更改以避免推送冲突
           git add pom.xml rxlib/pom.xml rxlib-x/pom.xml
-          git pull origin main --rebase || echo "No remote changes to pull"
+          git pull origin "${RELEASE_BRANCH}" --rebase || true
 
           git commit -m "chore: release v$RELEASE_VERSION [skip ci]"
-          git push origin HEAD:main
+          git push origin "HEAD:${RELEASE_BRANCH}"
 
-          echo "版本更新已提交并推送"
+          echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "发布版本 POM 已推送到分支 ${RELEASE_BRANCH}，commit=$(git rev-parse HEAD)"
 
       - name: Deploy Release to Maven Central (with GPG Sign)
+        id: deploy_central
         env:
           OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
           OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          RELEASE_VERSION=${{ steps.parse_version.outputs.release_version }}
+          RELEASE_VERSION="${{ steps.parse_version.outputs.release_version }}"
           echo "开始发布版本: $RELEASE_VERSION"
 
           mvn clean deploy \
@@ -151,10 +121,37 @@ jobs:
             --no-transfer-progress \
             --batch-mode
 
-      - name: Create Release Notes
-        if: success()
+      # SNAPSHOT 回滚紧接在 Central 成功之后，避免后续 GitHub Release 失败时仓库仍停留在非 SNAPSHOT
+      - name: Set Maven version (next SNAPSHOT)
+        if: steps.deploy_central.outcome == 'success'
         run: |
-          RELEASE_VERSION=${{ steps.parse_version.outputs.release_version }}
+          NEXT_SNAPSHOT="${{ steps.parse_version.outputs.next_snapshot }}"
+          echo "versions:set -> $NEXT_SNAPSHOT"
+          mvn -B -q "${{ env.VERSIONS_PLUGIN }}:set" \
+            -DnewVersion="$NEXT_SNAPSHOT" \
+            -DgenerateBackupPoms=false \
+            -DprocessAllModules=true
+
+      - name: Commit and push next development version
+        if: steps.deploy_central.outcome == 'success'
+        run: |
+          NEXT_SNAPSHOT="${{ steps.parse_version.outputs.next_snapshot }}"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add pom.xml rxlib/pom.xml rxlib-x/pom.xml
+          git pull origin "${RELEASE_BRANCH}" --rebase || true
+
+          git commit -m "chore: prepare v$NEXT_SNAPSHOT [skip ci]"
+          git push origin "HEAD:${RELEASE_BRANCH}"
+
+          echo "下一个开发版本已提交并推送"
+
+      - name: Create Release Notes
+        if: steps.deploy_central.outcome == 'success' && github.event.inputs.create_tag == 'true'
+        run: |
+          RELEASE_VERSION="${{ steps.parse_version.outputs.release_version }}"
           echo "# Release $RELEASE_VERSION" > RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "✅ Successfully published to Maven Central" >> RELEASE_NOTES.md
@@ -174,79 +171,47 @@ jobs:
           cat RELEASE_NOTES.md
 
       - name: Create GitHub Release
-        if: success()
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: github_release
+        if: steps.deploy_central.outcome == 'success' && github.event.inputs.create_tag == 'true'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.parse_version.outputs.release_version }}
-          release_name: Release ${{ steps.parse_version.outputs.release_version }}
+          name: Release ${{ steps.parse_version.outputs.release_version }}
           body_path: RELEASE_NOTES.md
+          target_commitish: ${{ steps.release_commit.outputs.sha }}
           draft: false
           prerelease: false
-
-      - name: Prepare next development version
-        if: success()
-        run: |
-          NEXT_SNAPSHOT=${{ steps.parse_version.outputs.next_snapshot }}
-          echo "准备下一个开发版本: $NEXT_SNAPSHOT"
-
-          # 更新根 pom.xml - 只更新项目版本，不更新父 POM 版本
-          PARENT_VERSION=$(grep -A 2 '<parent>' pom.xml | grep '<version>' | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
-          echo "父 POM 版本: $PARENT_VERSION"
-
-          # 替换所有版本标签
-          sed -i "s|<version>.*</version>|<version>$NEXT_SNAPSHOT</version>|g" pom.xml
-
-          # 恢复父 POM 版本
-          sed -i "/<parent>/,/<\/parent>/ s|<version>$NEXT_SNAPSHOT</version>|<version>$PARENT_VERSION</version>|" pom.xml
-
-          # 更新子模块 pom.xml - 这些没有父 POM，直接替换版本
-          sed -i "s|<version>.*</version>|<version>$NEXT_SNAPSHOT</version>|" rxlib/pom.xml
-          sed -i "s|<version>.*</version>|<version>$NEXT_SNAPSHOT</version>|" rxlib-x/pom.xml
-
-          echo "下一个开发版本更新完成"
-
-      - name: Commit next development version
-        if: success()
-        run: |
-          NEXT_SNAPSHOT=${{ steps.parse_version.outputs.next_snapshot }}
-          RELEASE_VERSION=${{ steps.parse_version.outputs.release_version }}
-
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          # 先暂存更改，然后拉取远程更改以避免推送冲突
-          git add pom.xml rxlib/pom.xml rxlib-x/pom.xml
-          git pull origin main --rebase || echo "No remote changes to pull"
-
-          git commit -m "chore: prepare v$NEXT_SNAPSHOT [skip ci]"
-          git push origin HEAD:main
-
-          echo "下一个开发版本已提交并推送"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Success Notification
-        if: success()
+        if: always() && steps.deploy_central.outcome == 'success'
+        env:
+          GITHUB_RELEASE_OUTCOME: ${{ steps.github_release.outcome }}
         run: |
-          RELEASE_VERSION=${{ steps.parse_version.outputs.release_version }}
-          NEXT_SNAPSHOT=${{ steps.parse_version.outputs.next_snapshot }}
-          CREATE_TAG=${{ github.event.inputs.create_tag }}
+          RELEASE_VERSION="${{ steps.parse_version.outputs.release_version }}"
+          NEXT_SNAPSHOT="${{ steps.parse_version.outputs.next_snapshot }}"
+          CREATE_TAG="${{ github.event.inputs.create_tag }}"
           echo "✅ 正式版本 $RELEASE_VERSION 已成功发布到 Maven Central（已签名）"
           echo "📦 构件:"
           echo "   - rxlib: $RELEASE_VERSION"
           echo "   - rxlib-x: $RELEASE_VERSION"
           echo "🔄 下一个开发版本: $NEXT_SNAPSHOT"
-          echo "🏷️  自动创建标签: $( [ "$CREATE_TAG" = "true" ] && echo "是 (v$RELEASE_VERSION)" || echo "否" )"
+          echo "🌿 目标分支: ${RELEASE_BRANCH}"
+          echo "🏷️  GitHub Release/标签: $( [ "$CREATE_TAG" = "true" ] && echo "是 (v$RELEASE_VERSION)" || echo "否（仅 Central + POM 提交）" )"
           echo "🔐 GPG签名: 已启用"
-          echo "📝 版本管理: 自动完成"
+          if [[ "$GITHUB_RELEASE_OUTCOME" == "failure" ]]; then
+            echo "⚠️  GitHub Release 步骤失败；Central 与 SNAPSHOT 回滚若已执行请核对仓库与远端。"
+          fi
 
       - name: Failure Notification
-        if: failure()
+        # Central 已成功时不打印本失败块（避免与 Success Notification 重复）
+        if: always() && failure() && steps.deploy_central.outcome != 'success'
         run: |
           echo "❌ 发布失败，请检查:"
-          echo "   1. 当前版本号格式是否为 x.y.z-SNAPSHOT"
+          echo "   1. 当前版本号格式是否为 x.y.z-SNAPSHOT（或手动输入合法 x.y.z）"
           echo "   2. Secrets 是否配置正确（OSSRH_USERNAME, OSSRH_TOKEN, GPG_PRIVATE_KEY, GPG_PASSPHRASE）"
           echo "   3. 是否有编译或依赖错误"
-          echo "   4. Git 推送权限是否正确"
-          echo "   5. 标签创建是否成功"
+          echo "   4. 分支 ${RELEASE_BRANCH} 的推送权限、分支保护规则是否允许 github-actions 推送"
+          echo "   5. deploy 之前的步骤（版本写入、commit、push）是否成功"
           exit 1
