@@ -603,6 +603,24 @@ public final class Sockets {
         return NetUtil.isValidIpV4Address(ip) || NetUtil.isValidIpV6Address(ip);
     }
 
+    public static InetSocketAddress getRemoteAddress(Channel channel) {
+        if (channel == null) return null;
+        java.net.SocketAddress addr = channel.remoteAddress();
+        if (addr instanceof InetSocketAddress) {
+            return (InetSocketAddress) addr;
+        }
+        return new InetSocketAddress("127.0.0.1", 0);
+    }
+
+    public static InetSocketAddress getLocalAddress(Channel channel) {
+        if (channel == null) return null;
+        java.net.SocketAddress addr = channel.localAddress();
+        if (addr instanceof InetSocketAddress) {
+            return (InetSocketAddress) addr;
+        }
+        return new InetSocketAddress("127.0.0.1", 0);
+    }
+
     public static String getLoopbackHostAddress() {
         if (loopbackAddr == null) {
             loopbackAddr = getLoopbackAddress().getHostAddress();

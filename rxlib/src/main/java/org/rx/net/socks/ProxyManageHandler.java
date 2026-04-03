@@ -67,7 +67,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             info.totalWriteBytes.addAndGet(readBytes);
         }
 
-        InetSocketAddress remoteAddress = (InetSocketAddress) ctx.channel().remoteAddress();
+        InetSocketAddress remoteAddress = Sockets.getRemoteAddress(ctx.channel());
         log.info("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",
                 user.getUsername(), remoteAddress, Sys.formatNanosElapsed(elapsed),
                 Bytes.readableByteSize(readBytes), Bytes.readableByteSize(writeBytes));

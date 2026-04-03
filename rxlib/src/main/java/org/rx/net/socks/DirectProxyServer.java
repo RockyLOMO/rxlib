@@ -19,7 +19,7 @@
 //        @SneakyThrows
 //        @Override
 //        public void channelActive(ChannelHandlerContext inbound) {
-//            InetSocketAddress proxyEndpoint = router.invoke((InetSocketAddress) inbound.channel().remoteAddress());
+//            InetSocketAddress proxyEndpoint = router.invoke(Sockets.getRemoteAddress(inbound.channel()));
 //            ConcurrentLinkedQueue<Object> pendingPackages = new ConcurrentLinkedQueue<>();
 //            Bootstrap bootstrap = Sockets.bootstrap(inbound.channel().eventLoop(), null, channel -> {
 //                ChannelPipeline pipeline = channel.pipeline();
