@@ -39,6 +39,31 @@ public class UdpRedundantTest {
         assertNull(channel.readOutbound());
     }
 
+    /**
+     * 多倍发送时 Encoder 替换为新的 DatagramPacket，必须 release 原始包，否则 payload ByteBuf 泄漏。
+     */
+    @Test
+    public void testEncoderReleasesOriginalDatagramPacket() {
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(2, 0);
+        EmbeddedChannel channel = new EmbeddedChannel(encoder);
+
+        ByteBuf payload = Unpooled.directBuffer(8);
+        payload.writeBytes("ping".getBytes(StandardCharsets.UTF_8));
+        assertEquals(1, payload.refCnt());
+
+        channel.writeOutbound(new DatagramPacket(payload, REMOTE));
+        // 原 DatagramPacket 已释放；payload 仅被 composite 中 retain 的一份引用
+        assertEquals(1, payload.refCnt());
+
+        for (int i = 0; i < 2; i++) {
+            DatagramPacket out = channel.readOutbound();
+            assertNotNull(out);
+            out.release();
+        }
+        assertNull(channel.readOutbound());
+        assertEquals(0, payload.refCnt());
+    }
+
     // ===================== Decoder 测试 =====================
 
     @Test

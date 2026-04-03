@@ -6,6 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.extern.slf4j.Slf4j;
 
@@ -130,39 +131,44 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
         }
 
         DatagramPacket original = (DatagramPacket) msg;
-        ByteBuf content = original.content();
-        InetSocketAddress recipient = original.recipient();
-        int seqId = seqGenerator.incrementAndGet();
+        try {
+            ByteBuf content = original.content();
+            InetSocketAddress recipient = original.recipient();
+            int seqId = seqGenerator.incrementAndGet();
 
-        // 构建带 header 的第一份包
-        ByteBuf firstBuf = prependHeader(ctx, content, seqId);
+            // 构建带 header 的第一份包
+            ByteBuf firstBuf = prependHeader(ctx, content, seqId);
 
-        // 保存一份原始 payload 的副本用于冗余发送
-        byte[] payloadBytes = null;
-        if (multiplier > 1) {
-            int payloadLen = firstBuf.readableBytes() - HEADER_SIZE;
-            payloadBytes = new byte[payloadLen];
-            firstBuf.getBytes(firstBuf.readerIndex() + HEADER_SIZE, payloadBytes);
-        }
+            // 保存一份原始 payload 的副本用于冗余发送
+            byte[] payloadBytes = null;
+            if (multiplier > 1) {
+                int payloadLen = firstBuf.readableBytes() - HEADER_SIZE;
+                payloadBytes = new byte[payloadLen];
+                firstBuf.getBytes(firstBuf.readerIndex() + HEADER_SIZE, payloadBytes);
+            }
 
-        // 写入第一份（使用原始 promise）
-        ctx.write(new DatagramPacket(firstBuf, recipient), promise);
+            // 写入第一份（使用原始 promise）
+            ctx.write(new DatagramPacket(firstBuf, recipient), promise);
 
-        // 写入冗余副本
-        if (payloadBytes != null) {
-            final byte[] payload = payloadBytes;
-            for (int i = 1; i < multiplier; i++) {
-                final int copyIndex = i;
-                if (intervalMicros > 0) {
-                    long delayMicros = (long) intervalMicros * copyIndex;
-                    ctx.executor().schedule(() -> {
+            // 写入冗余副本
+            if (payloadBytes != null) {
+                final byte[] payload = payloadBytes;
+                for (int i = 1; i < multiplier; i++) {
+                    final int copyIndex = i;
+                    if (intervalMicros > 0) {
+                        long delayMicros = (long) intervalMicros * copyIndex;
+                        ctx.executor().schedule(() -> {
+                            writeRedundantCopy(ctx, seqId, payload, recipient);
+                            ctx.flush();
+                        }, delayMicros, TimeUnit.MICROSECONDS);
+                    } else {
                         writeRedundantCopy(ctx, seqId, payload, recipient);
-                        ctx.flush();
-                    }, delayMicros, TimeUnit.MICROSECONDS);
-                } else {
-                    writeRedundantCopy(ctx, seqId, payload, recipient);
+                    }
                 }
             }
+        } finally {
+            // 已用新 DatagramPacket 接管写出，必须释放入站消息（Netty 引用计数约定）
+            ReferenceCountUtil.release(original);
         }
     }
 
