@@ -2,6 +2,8 @@ package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
+import io.netty.util.concurrent.DefaultEventExecutorGroup;
+import io.netty.util.concurrent.EventExecutorGroup;
 import lombok.Getter;
 import lombok.NonNull;
 import org.rx.core.Delegate;
@@ -11,6 +13,7 @@ import org.rx.net.Sockets;
 import org.rx.net.socks.encryption.ICrypto;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.TripleAction;
+import org.rx.core.RxConfig;
 
 //@Slf4j
 public class ShadowsocksServer extends Disposable implements EventPublisher<ShadowsocksServer> {
@@ -21,14 +24,25 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
     final ShadowsocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel udpChannel;
+    private static EventExecutorGroup SHARED_CRYPTO_GROUP;
+
+    private static synchronized EventExecutorGroup sharedCryptoGroup() {
+        if (SHARED_CRYPTO_GROUP == null) {
+            SHARED_CRYPTO_GROUP = new DefaultEventExecutorGroup(RxConfig.INSTANCE.getNet().getReactorThreadAmount());
+        }
+        return SHARED_CRYPTO_GROUP;
+    }
 
     public ShadowsocksServer(@NonNull ShadowsocksConfig config) {
-        bootstrap = Sockets.serverBootstrap(this.config = config, channel -> {
+        this.config = config;
+        EventExecutorGroup cryptoGroup = sharedCryptoGroup();
+
+        bootstrap = Sockets.serverBootstrap(config, channel -> {
             ICrypto _crypto = ICrypto.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(false);
             channel.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
-            channel.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
+            channel.pipeline().addLast(cryptoGroup, CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
         });
         bootstrap.attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint());
 
@@ -38,7 +52,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             _crypto.setForUdp(true);
             ctx.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
-            ctx.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
+            ctx.pipeline().addLast(cryptoGroup, CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
         }).attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).channel();
     }
 
