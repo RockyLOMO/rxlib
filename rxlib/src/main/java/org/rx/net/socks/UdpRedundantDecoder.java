@@ -62,8 +62,10 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
                 return true;
             }
 
-            long diff = seqId - highestSeq;
-            if (diff > 0) {
+            // 处理序列号回绕：考虑无符号32位序列号的环形特性
+            long diff = calculateSequenceDiff(seqId, highestSeq);
+            
+            if (diff > 0 && diff <= (1L << 31)) {
                 // 新的更高序列号：向前滑动窗口
                 if (diff >= WINDOW_SIZE) {
                     // 跳跃太大，重置窗口
@@ -78,8 +80,8 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
                 // 完全相同的序列号 = 重复
                 return false;
             } else {
-                // diff < 0: 比最高序列号小的旧包
-                long absDiff = -diff;
+                // diff < 0: 比最高序列号小的旧包，或回绕后的包
+                long absDiff = Math.abs(diff);
                 if (absDiff >= WINDOW_SIZE) {
                     // 窗口外（太旧），直接丢弃
                     return false;
@@ -93,6 +95,26 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
                 bitmap |= mask;
                 return true;
             }
+        }
+
+        /**
+         * 计算无符号32位序列号的差值，正确处理回绕
+         * @param newSeq 新序列号
+         * @param oldSeq 旧序列号
+         * @return 差值，正数表示 newSeq > oldSeq，负数表示 newSeq < oldSeq
+         */
+        private long calculateSequenceDiff(long newSeq, long oldSeq) {
+            // 由于是无符号32位，最大差值为 2^31-1
+            // 超过这个值认为是反向回绕
+            long diff = newSeq - oldSeq;
+            if (diff > (1L << 31)) {
+                // 正向差值过大，认为是反向回绕
+                diff -= (1L << 32);
+            } else if (diff < -(1L << 31)) {
+                // 负向差值过大，认为是正向回绕
+                diff += (1L << 32);
+            }
+            return diff;
         }
     }
 

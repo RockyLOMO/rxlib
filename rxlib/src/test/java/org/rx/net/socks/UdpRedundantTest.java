@@ -19,6 +19,51 @@ public class UdpRedundantTest {
     // ===================== Encoder 测试 =====================
 
     @Test
+    public void testEncoderMultiplierOne() {
+        // Test that multiplier=1 works without throwing exception
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(1, 0);
+        EmbeddedChannel channel = new EmbeddedChannel(encoder);
+
+        ByteBuf data = Unpooled.copiedBuffer("test".getBytes());
+        channel.writeOutbound(new DatagramPacket(data, REMOTE));
+
+        // Should only have one packet (no redundancy)
+        DatagramPacket out = channel.readOutbound();
+        assertNotNull(out);
+        // Should be passed through without header when multiplier=1
+        assertEquals("test", out.content().toString(StandardCharsets.UTF_8));
+        out.release();
+        assertNull(channel.readOutbound());
+    }
+
+    @Test
+    public void testEncoderMultiplierOnePassthrough() {
+        // Test that multiplier=1 behaves like passthrough (no header added)
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(1, 0);
+        EmbeddedChannel channel = new EmbeddedChannel(encoder);
+
+        ByteBuf data = Unpooled.copiedBuffer("plain".getBytes());
+        channel.writeOutbound(new DatagramPacket(data, REMOTE));
+
+        DatagramPacket out = channel.readOutbound();
+        assertNotNull(out);
+        // Verify no header was added
+        assertEquals("plain", out.content().toString(StandardCharsets.UTF_8));
+        assertEquals(5, out.content().readableBytes()); // Only "plain", no 8-byte header
+        out.release();
+    }
+
+    @Test
+    public void testEncoderBoundaryValidation() {
+        // Test boundary validation
+        assertThrows(IllegalArgumentException.class, () -> new UdpRedundantEncoder(0, 0));
+        assertThrows(IllegalArgumentException.class, () -> new UdpRedundantEncoder(6, 0));
+        // These should work
+        assertDoesNotThrow(() -> new UdpRedundantEncoder(1, 0));
+        assertDoesNotThrow(() -> new UdpRedundantEncoder(5, 0));
+    }
+
+    @Test
     public void testEncoder() {
         int multiplier = 3;
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(multiplier, 0);
@@ -37,6 +82,42 @@ public class UdpRedundantTest {
             out.release();
         }
         assertNull(channel.readOutbound());
+    }
+
+    @Test
+    public void testAdaptiveModeInitialMultiplier() {
+        // Test that adaptive mode respects user's initial multiplier
+        UdpRedundantStats stats = new UdpRedundantStats(1, 1, 5, 0, 0.20, 0.05, 1);
+        assertEquals(1, stats.getMultiplier(), "Should respect initial multiplier=1");
+        
+        stats = new UdpRedundantStats(2, 1, 5, 0, 0.20, 0.05, 1);
+        assertEquals(2, stats.getMultiplier(), "Should respect initial multiplier=2");
+    }
+
+    @Test
+    public void testEncoderMemoryOptimization() {
+        // Test that memory optimization works correctly with ByteBuf slices
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0);
+        EmbeddedChannel channel = new EmbeddedChannel(encoder);
+
+        // Create a larger payload to verify slice optimization
+        String largeData = "This is a larger payload to test memory optimization with ByteBuf slices";
+        ByteBuf data = Unpooled.copiedBuffer(largeData.getBytes());
+        assertEquals(1, data.refCnt(), "Original data should have refCnt=1");
+
+        channel.writeOutbound(new DatagramPacket(data, REMOTE));
+
+        // Should have 3 copies
+        for (int i = 0; i < 3; i++) {
+            DatagramPacket out = channel.readOutbound();
+            assertNotNull(out, "copy " + i + " should exist");
+            ByteBuf content = out.content();
+            content.skipBytes(8); // skip header
+            assertEquals(largeData, content.toString(StandardCharsets.UTF_8));
+            out.release();
+        }
+        assertNull(channel.readOutbound());
+        assertEquals(0, data.refCnt(), "Original data should be fully released");
     }
 
     /**
@@ -190,6 +271,67 @@ public class UdpRedundantTest {
         assertNotNull(out);
         assertEquals("plain data", out.content().toString(StandardCharsets.UTF_8));
         out.release();
+    }
+
+    @Test
+    public void testDecoderSequenceWrapAround() {
+        // 测试序列号回绕场景
+        UdpRedundantDecoder decoder = new UdpRedundantDecoder();
+        EmbeddedChannel channel = new EmbeddedChannel(decoder);
+
+        // 发送接近最大值的序列号
+        int maxSeq = 0xFFFFFFFE; // 接近 32 位最大值
+        sendPacketWithSeq(channel, maxSeq, "near-max");
+        
+        DatagramPacket out1 = channel.readInbound();
+        assertNotNull(out1);
+        assertEquals("near-max", out1.content().toString(StandardCharsets.UTF_8));
+        out1.release();
+
+        // 发送回绕后的序列号（应该被识别为新包）
+        int wrappedSeq = 0x00000001; // 回绕后的小值
+        sendPacketWithSeq(channel, wrappedSeq, "wrapped");
+        
+        DatagramPacket out2 = channel.readInbound();
+        assertNotNull(out2);
+        assertEquals("wrapped", out2.content().toString(StandardCharsets.UTF_8));
+        out2.release();
+
+        // 重复发送回绕后的序列号（应该被丢弃）
+        sendPacketWithSeq(channel, wrappedSeq, "wrapped-duplicate");
+        assertNull(channel.readInbound()); // 应该被丢弃
+    }
+
+    @Test
+    public void testDecoderLargeSequenceJump() {
+        // 测试大跳跃序列号（超过窗口大小）
+        UdpRedundantDecoder decoder = new UdpRedundantDecoder();
+        EmbeddedChannel channel = new EmbeddedChannel(decoder);
+
+        // 发送序列号 100
+        sendPacketWithSeq(channel, 100, "packet-100");
+        DatagramPacket out1 = channel.readInbound();
+        assertNotNull(out1);
+        out1.release();
+
+        // 发送序列号 200（跳跃 100，超过窗口大小 64）
+        sendPacketWithSeq(channel, 200, "packet-200");
+        DatagramPacket out2 = channel.readInbound();
+        assertNotNull(out2);
+        out2.release();
+
+        // 再次发送序列号 100（应该被丢弃，因为窗口已重置）
+        sendPacketWithSeq(channel, 100, "packet-100-again");
+        assertNull(channel.readInbound()); // 应该被丢弃
+    }
+
+    // 辅助方法：发送带序列号的数据包
+    private void sendPacketWithSeq(EmbeddedChannel channel, int seqId, String data) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(UdpRedundantEncoder.HEADER_MAGIC);
+        buf.writeInt(seqId);
+        buf.writeBytes(data.getBytes());
+        channel.writeInbound(new DatagramPacket(buf, REMOTE, LOCAL));
     }
 
     // ===================== Stats 自适应测试 =====================
