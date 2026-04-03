@@ -75,8 +75,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
         if (enableMemoryChannel) {
             if (memoryChannel == null) {
+                EventLoopGroup reactor = Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true);
                 bootstrap = new ServerBootstrap()
-                        .group(new DefaultEventLoopGroup(1), Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true))
+//                        .group(new DefaultEventLoopGroup(1), Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true))
+                        .group(reactor, reactor)
                         .channel(LocalServerChannel.class)
                         .childHandler(new ChannelInitializer<Channel>() {
                             @Override

@@ -159,38 +159,44 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
             ByteBuf content = original.content();
             int seqId = seqGenerator.incrementAndGet();
 
+            // 优化：直接在原始内容上添加头部，避免额外拷贝
             ByteBuf firstBuf = prependHeader(ctx, content, seqId);
 
-            int payloadLen = firstBuf.readableBytes() - HEADER_SIZE;
             if (intervalMicros > 0) {
-                byte[] payloadBytes = new byte[payloadLen];
-                firstBuf.getBytes(firstBuf.readerIndex() + HEADER_SIZE, payloadBytes);
+                // 优化：使用ByteBuf.slice避免内存拷贝
+                ByteBuf payloadSlice = firstBuf.slice(firstBuf.readerIndex() + HEADER_SIZE, 
+                                                 firstBuf.readableBytes() - HEADER_SIZE);
+                payloadSlice.retain();
+                
                 ctx.write(new DatagramPacket(firstBuf, recipient), promise);
+                
+                // 优化：复用payloadSlice，避免重复分配
                 for (int i = 1; i < multiplier; i++) {
                     final int copyIndex = i;
-                    final byte[] payload = payloadBytes;
+                    final ByteBuf payload = payloadSlice;
                     long delayMicros = (long) intervalMicros * copyIndex;
                     ctx.executor().schedule(() -> {
-                        writeRedundantCopy(ctx, seqId, payload, recipient);
+                        writeRedundantCopyOptimized(ctx, seqId, payload, recipient);
                         ctx.flush();
                     }, delayMicros, TimeUnit.MICROSECONDS);
                 }
+                
+                // 释放slice的引用计数
+                payloadSlice.release();
             } else {
-                ByteBuf payloadSlice = null;
-                if (multiplier > 1) {
-                    payloadSlice = firstBuf.slice(firstBuf.readerIndex() + HEADER_SIZE, payloadLen);
-                    payloadSlice.retain();
-                }
+                // 优化：同时发送模式，使用slice避免拷贝
+                ByteBuf payloadSlice = firstBuf.slice(firstBuf.readerIndex() + HEADER_SIZE, 
+                                                 firstBuf.readableBytes() - HEADER_SIZE);
+                payloadSlice.retain();
+                
                 ctx.write(new DatagramPacket(firstBuf, recipient), promise);
-                if (payloadSlice != null) {
-                    final ByteBuf payload = payloadSlice;
-                    try {
-                        for (int i = 1; i < multiplier; i++) {
-                            writeRedundantCopy(ctx, seqId, payload, recipient);
-                        }
-                    } finally {
-                        payloadSlice.release();
+                
+                try {
+                    for (int i = 1; i < multiplier; i++) {
+                        writeRedundantCopyOptimized(ctx, seqId, payloadSlice, recipient);
                     }
+                } finally {
+                    payloadSlice.release();
                 }
             }
         } finally {
@@ -199,45 +205,44 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
     }
 
     private ByteBuf prependHeader(ChannelHandlerContext ctx, ByteBuf payload, int seqId) {
+        // 优化：预计算头部大小，避免动态调整
         ByteBuf header = ctx.alloc().directBuffer(HEADER_SIZE);
+        header.writeInt(HEADER_MAGIC);
+        header.writeInt(seqId);
+        
+        // 优化：使用CompositeByteBuf实现零拷贝
         CompositeByteBuf composite = ctx.alloc().compositeDirectBuffer(2);
         try {
-            header.writeInt(HEADER_MAGIC);
-            header.writeInt(seqId);
+            // payload.retain()增加引用计数，确保payload不被释放
             composite.addComponents(true, header, payload.retain());
             return composite;
         } catch (Exception e) {
             header.release();
             composite.release();
+            payload.release(); // 释放之前retain的引用
             throw e;
         }
     }
 
-    private void writeRedundantCopy(ChannelHandlerContext ctx, int seqId, ByteBuf payload, InetSocketAddress recipient) {
-        int len = payload.readableBytes();
-        int ri = payload.readerIndex();
-        ByteBuf buf = ctx.alloc().directBuffer(HEADER_SIZE + len);
+    private void writeRedundantCopyOptimized(ChannelHandlerContext ctx, int seqId, ByteBuf payload, InetSocketAddress recipient) {
+        // 优化：使用CompositeByteBuf实现零拷贝
+        ByteBuf header = ctx.alloc().directBuffer(HEADER_SIZE);
         try {
-            buf.writeInt(HEADER_MAGIC);
-            buf.writeInt(seqId);
-            // 使用 ri/len，避免多次 write 推进 payload 的 readerIndex 导致后续副本为空
-            buf.writeBytes(payload, ri, len);
-            ctx.write(new DatagramPacket(buf, recipient), ctx.voidPromise());
+            header.writeInt(HEADER_MAGIC);
+            header.writeInt(seqId);
+            
+            // 优化：使用CompositeByteBuf避免数据拷贝
+            CompositeByteBuf composite = ctx.alloc().compositeDirectBuffer(2);
+            try {
+                // payload已经是slice，需要retain以增加引用计数
+                composite.addComponents(true, header, payload.retain());
+                ctx.write(new DatagramPacket(composite, recipient), ctx.voidPromise());
+            } catch (Exception e) {
+                composite.release();
+                throw e;
+            }
         } catch (Exception e) {
-            buf.release();
-            log.warn("UDP redundant copy write failed, seq={}", seqId, e);
-        }
-    }
-
-    private void writeRedundantCopy(ChannelHandlerContext ctx, int seqId, byte[] payload, InetSocketAddress recipient) {
-        ByteBuf buf = ctx.alloc().directBuffer(HEADER_SIZE + payload.length);
-        try {
-            buf.writeInt(HEADER_MAGIC);
-            buf.writeInt(seqId);
-            buf.writeBytes(payload);
-            ctx.write(new DatagramPacket(buf, recipient), ctx.voidPromise());
-        } catch (Exception e) {
-            buf.release();
+            header.release();
             log.warn("UDP redundant copy write failed, seq={}", seqId, e);
         }
     }

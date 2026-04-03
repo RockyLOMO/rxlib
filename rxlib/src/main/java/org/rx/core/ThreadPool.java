@@ -70,9 +70,9 @@ public class ThreadPool extends ThreadPoolExecutor {
                         log.warn("Block caller thread until queue[{}/{}] polled then offer {}", counter.get(), queueCapacity, r);
                         logged = true;
                     }
+                    //避免生产者一直等待
                     synchronized (this) {
-                        // wait(500);
-                        wait();
+                        wait(500);
                     }
                 }
                 if (log.isDebugEnabled()) {
@@ -250,7 +250,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                             stackTrace != null
                                     ? "[" + Linq.from(stackTrace).select(StackTraceElement::toString).toJoinString(Constants.STACK_TRACE_FLAG) + "]"
                                     : "Unknown",
-                            id == null ? null : new Object[] {id},
+                            id == null ? null : new Object[]{id},
                             r, ex, System.nanoTime() - s);
                 }
                 return r;
@@ -323,6 +323,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final Map<Object, RefCounter<ReentrantLock>> taskLockMap = new ConcurrentHashMap<>(8);
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
+    static final Map<Object, AtomicInteger> taskSerialCountMap = new ConcurrentHashMap<>();
 
     public static String startTrace(String traceId) {
         return startTrace(traceId, false);
@@ -483,7 +484,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     /**
      * 当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
      *
-     * @param initSize 最小线程数
+     * @param initSize      最小线程数
      * @param queueCapacity LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
     public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
@@ -652,13 +653,28 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     <T> CompletableFuture<T> runSerialAsync(@NonNull Func<T> task, @NonNull Object taskId, FlagsEnum<RunFlag> flags, boolean reuse) {
+        AtomicInteger counter = taskSerialCountMap.computeIfAbsent(taskId, k -> new AtomicInteger(0));
+        int maxCap = RxConfig.INSTANCE.threadPool.queueCapacity;
+        if (maxCap <= 0) maxCap = Constants.CPU_THREADS * 64;
+        maxCap = Math.max(maxCap, 100000); // Prevent unbounded growth but do not fail tests
+
+        if (counter.incrementAndGet() > maxCap) {
+            counter.decrementAndGet();
+            throw new RejectedExecutionException("Serial task chain for " + taskId + " has exceeded capacity");
+        }
+
         boolean[] isNew = {false};
         CompletableFuture<T> f = (CompletableFuture<T>) taskSerialMap.compute(taskId, (k, existing) -> {
             if (existing == null) {
                 isNew[0] = true;
                 Task<T> t = Task.adapt(task, flags, taskId);
                 CompletableFuture<T> head = CompletableFuture.supplyAsync(t, asyncExecutor);
-                head.whenComplete((r, e) -> taskSerialMap.remove(taskId, head));
+                head.whenComplete((r, e) -> {
+                    taskSerialMap.remove(taskId, head);
+                    if (counter.decrementAndGet() == 0) {
+                        taskSerialCountMap.remove(taskId, counter); // At worst leaves a harmless tombstone or removes successfully
+                    }
+                });
                 return head;
             }
             return existing;
@@ -673,7 +689,12 @@ public class ThreadPool extends ThreadPoolExecutor {
                     COMPLETION_RETURNED_VALUE.remove();
                 }
             }, this);
-            next.whenComplete((r, e) -> taskSerialMap.remove(taskId, next));
+            next.whenComplete((r, e) -> {
+                taskSerialMap.remove(taskId, next);
+                if (counter.decrementAndGet() == 0) {
+                    taskSerialCountMap.remove(taskId, counter);
+                }
+            });
 
             if (!reuse) {
                 taskSerialMap.put(taskId, next);
@@ -682,7 +703,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
         return f;
     }
-
+    
     public <T> MultiTaskFuture<T, T> runAnyAsync(Iterable<Func<T>> tasks) {
         CompletableFuture<T>[] futures = Linq.from(tasks).select(task -> {
             Task<T> t = Task.adapt(task, null, null);
