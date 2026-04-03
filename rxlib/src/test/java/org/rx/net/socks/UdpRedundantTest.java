@@ -396,7 +396,7 @@ public class UdpRedundantTest {
         assertDoesNotThrow(() -> new UdpRedundantEncoder(1, 0));
         assertDoesNotThrow(() -> new UdpRedundantEncoder(5, 0));
     }
-    
+
     @Test
     public void testAdaptiveModeInitialMultiplier() {
         // Test that adaptive mode respects user's initial multiplier
