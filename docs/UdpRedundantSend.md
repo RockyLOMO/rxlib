@@ -217,6 +217,21 @@ per_copy_loss    = 1 - (redundancy_ratio / currentMultiplier)
 
 每 **2 秒** 在 Encoder 侧调用 `adjustMultiplier()`；高低阈值与 **连续 N 个周期** 防抖由配置控制；每次倍率 **±1** 阶梯调整。详情见 `UdpRedundantStats`。
 
+## 部署与配置策略建议
+
+在不同的部署环境（客户端侧 vs 服务端侧）下，建议采取不同的配置策略以达到最佳的网络优化效果：
+
+### 1. 客户端侧 (Local Proxy / Client-side)
+**建议：启用自适应模式 (`udpRedundantAdaptive = true`)**
+- **原因**：客户端侧（如 `SocksUdpRelayHandler`）为每个上游中继创建独立的 Channel，拥有与之对应的**私有** `UdpRedundantStats`。
+- **优势**：能够精确探测该特定路径的实时丢包情况，并动态调整倍率。在网络恢复后自动降倍率以节省移动端流量或家庭带宽。
+
+### 2. 服务端侧 (Remote Proxy / Aggregating Server)
+**建议：优先使用静态模式或分目的地规则，谨慎使用全局自适应**
+- **原因**：主端口 UDP 服务器（`SocksProxyServer`）是一个单 Channel 聚合网关，来自不同物理位置、使用不同初始冗余度的客户端流量会在此汇聚。
+- **风险（指标污染）**：若在服务端开启全局自适应，来自多个客户端的丢包统计会混合在一起。例如，Client A（5倍冗余）和 Client B（1倍冗余）的包混在一起，会导致 `UdpRedundantStats` 计算出一个“折中”的失真丢包率，进而影响服务端向所有终端回程时的倍率决策。
+- **最佳实践**：服务端倾向于保持静态倍率，或通过 `udpRedundantDestinationRules` 针对特定客户端 IP 段配置专属倍率，以确保回程链路的稳定性。
+
 ---
 
 ## 源码与文件清单
