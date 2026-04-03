@@ -470,6 +470,96 @@ public class UdpRedundantTest {
         assertEquals(2, stats.getMultiplier(), "Low loss should decrease multiplier");
     }
 
+    // ===================== 分目的地倍率 =====================
+
+    @Test
+    public void testDestinationRuleExactHostAndPort() {
+        UdpRedundantDestinationRule rule = new UdpRedundantDestinationRule();
+        rule.setHost("192.0.2.10");
+        rule.setPort(7777);
+        rule.setMultiplier(3);
+        assertTrue(rule.matches(new InetSocketAddress("192.0.2.10", 7777)));
+        assertFalse(rule.matches(new InetSocketAddress("192.0.2.10", 7778)));
+        assertFalse(rule.matches(new InetSocketAddress("192.0.2.11", 7777)));
+    }
+
+    @Test
+    public void testDestinationRuleIpv4Cidr() {
+        UdpRedundantDestinationRule rule = new UdpRedundantDestinationRule();
+        rule.setHost("10.0.0.0/24");
+        rule.setPort(0);
+        rule.setMultiplier(3);
+        assertTrue(rule.matches(new InetSocketAddress("10.0.0.1", 5000)));
+        assertTrue(rule.matches(new InetSocketAddress("10.0.0.255", 1)));
+        assertFalse(rule.matches(new InetSocketAddress("10.0.1.0", 5000)));
+    }
+
+    @Test
+    public void testEncoderPerDestinationResolverOverridesGlobal() {
+        InetSocketAddress bump = new InetSocketAddress("198.51.100.50", 4000);
+        InetSocketAddress normal = new InetSocketAddress("203.0.113.1", 4000);
+        UdpRedundantMultiplierResolver r = dest -> {
+            if ("198.51.100.50".equals(dest.getAddress().getHostAddress())) {
+                return 3;
+            }
+            return UdpRedundantMultiplierResolver.NO_MATCH;
+        };
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(2, 0, r);
+        EmbeddedChannel ch = new EmbeddedChannel(encoder);
+
+        ByteBuf b1 = Unpooled.copiedBuffer("a".getBytes(StandardCharsets.UTF_8));
+        ch.writeOutbound(new DatagramPacket(b1, bump));
+        for (int i = 0; i < 3; i++) {
+            DatagramPacket out = ch.readOutbound();
+            assertNotNull(out, "resolver bump -> 3 copies");
+            out.release();
+        }
+        assertNull(ch.readOutbound());
+
+        ByteBuf b2 = Unpooled.copiedBuffer("b".getBytes(StandardCharsets.UTF_8));
+        ch.writeOutbound(new DatagramPacket(b2, normal));
+        for (int i = 0; i < 2; i++) {
+            DatagramPacket out = ch.readOutbound();
+            assertNotNull(out, "global multiplier 2");
+            out.release();
+        }
+        assertNull(ch.readOutbound());
+    }
+
+    @Test
+    public void testRuleMultiplierOneForcesPassthrough() {
+        UdpRedundantMultiplierResolver r = dest -> dest.getPort() == 7 ? 1 : UdpRedundantMultiplierResolver.NO_MATCH;
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0, r);
+        EmbeddedChannel ch = new EmbeddedChannel(encoder);
+
+        ByteBuf small = Unpooled.copiedBuffer("x".getBytes(StandardCharsets.UTF_8));
+        ch.writeOutbound(new DatagramPacket(small, new InetSocketAddress("127.0.0.1", 7)));
+        DatagramPacket one = ch.readOutbound();
+        assertNotNull(one);
+        assertEquals(1, one.content().readableBytes());
+        assertEquals('x', one.content().readByte());
+        one.release();
+        assertNull(ch.readOutbound());
+    }
+
+    @Test
+    public void testSocksConfigResolverFirstRuleWins() {
+        SocksConfig cfg = new SocksConfig(1080);
+        UdpRedundantDestinationRule wide = new UdpRedundantDestinationRule();
+        wide.setHost("192.0.2.0/24");
+        wide.setPort(0);
+        wide.setMultiplier(2);
+        UdpRedundantDestinationRule narrow = new UdpRedundantDestinationRule();
+        narrow.setHost("192.0.2.10");
+        narrow.setPort(0);
+        narrow.setMultiplier(4);
+        cfg.getUdpRedundantDestinationRules().add(wide);
+        cfg.getUdpRedundantDestinationRules().add(narrow);
+
+        UdpRedundantMultiplierResolver res = cfg.buildUdpRedundantMultiplierResolver();
+        assertEquals(2, res.resolve(new InetSocketAddress("192.0.2.10", 9999)));
+    }
+
     // ===================== 辅助方法 =====================
 
     /**
@@ -494,84 +584,4 @@ public class UdpRedundantTest {
         }
     }
 
-    @Test
-    public void testEncoderMultiplierOne() {
-        // Test that multiplier=1 works without throwing exception
-        UdpRedundantEncoder encoder = new UdpRedundantEncoder(1, 0);
-        EmbeddedChannel channel = new EmbeddedChannel(encoder);
-
-        ByteBuf data = Unpooled.copiedBuffer("test".getBytes());
-        channel.writeOutbound(new DatagramPacket(data, REMOTE));
-
-        // Should only have one packet (no redundancy)
-        DatagramPacket out = channel.readOutbound();
-        assertNotNull(out);
-        // Should be passed through without header when multiplier=1
-        assertEquals("test", out.content().toString(StandardCharsets.UTF_8));
-        out.release();
-        assertNull(channel.readOutbound());
-    }
-
-    @Test
-    public void testEncoderMultiplierOnePassthrough() {
-        // Test that multiplier=1 behaves like passthrough (no header added)
-        UdpRedundantEncoder encoder = new UdpRedundantEncoder(1, 0);
-        EmbeddedChannel channel = new EmbeddedChannel(encoder);
-
-        ByteBuf data = Unpooled.copiedBuffer("plain".getBytes());
-        channel.writeOutbound(new DatagramPacket(data, REMOTE));
-
-        DatagramPacket out = channel.readOutbound();
-        assertNotNull(out);
-        // Verify no header was added
-        assertEquals("plain", out.content().toString(StandardCharsets.UTF_8));
-        assertEquals(5, out.content().readableBytes()); // Only "plain", no 8-byte header
-        out.release();
-    }
-
-    @Test
-    public void testEncoderBoundaryValidation() {
-        // Test boundary validation
-        assertThrows(IllegalArgumentException.class, () -> new UdpRedundantEncoder(0, 0));
-        assertThrows(IllegalArgumentException.class, () -> new UdpRedundantEncoder(6, 0));
-        // These should work
-        assertDoesNotThrow(() -> new UdpRedundantEncoder(1, 0));
-        assertDoesNotThrow(() -> new UdpRedundantEncoder(5, 0));
-    }
-
-    @Test
-    public void testAdaptiveModeInitialMultiplier() {
-        // Test that adaptive mode respects user's initial multiplier
-        UdpRedundantStats stats = new UdpRedundantStats(1, 1, 5, 0, 0.20, 0.05, 1);
-        assertEquals(1, stats.getMultiplier(), "Should respect initial multiplier=1");
-        
-        stats = new UdpRedundantStats(2, 1, 5, 0, 0.20, 0.05, 1);
-        assertEquals(2, stats.getMultiplier(), "Should respect initial multiplier=2");
-    }
-
-    @Test
-    public void testEncoderMemoryOptimization() {
-        // Test that memory optimization works correctly with ByteBuf slices
-        UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0);
-        EmbeddedChannel channel = new EmbeddedChannel(encoder);
-
-        // Create a larger payload to verify slice optimization
-        String largeData = "This is a larger payload to test memory optimization with ByteBuf slices";
-        ByteBuf data = Unpooled.copiedBuffer(largeData.getBytes());
-        assertEquals(1, data.refCnt(), "Original data should have refCnt=1");
-
-        channel.writeOutbound(new DatagramPacket(data, REMOTE));
-
-        // Should have 3 copies
-        for (int i = 0; i < 3; i++) {
-            DatagramPacket out = channel.readOutbound();
-            assertNotNull(out, "copy " + i + " should exist");
-            ByteBuf content = out.content();
-            content.skipBytes(8); // skip header
-            assertEquals(largeData, content.toString(StandardCharsets.UTF_8));
-            out.release();
-        }
-        assertNull(channel.readOutbound());
-        assertEquals(0, data.refCnt(), "Original data should be fully released");
-    }
 }

@@ -169,9 +169,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
      */
     static void addRedundantHandlers(ChannelPipeline pipeline, SocksConfig config) {
         int multiplier = config.getUdpRedundantMultiplier();
-        if (multiplier <= 1 && !config.isUdpRedundantAdaptive()) {
+        boolean hasDestRules = config.hasUdpRedundantDestinationRules();
+        if (multiplier <= 1 && !config.isUdpRedundantAdaptive() && !hasDestRules) {
             return;
         }
+        UdpRedundantMultiplierResolver resolver = config.buildUdpRedundantMultiplierResolver();
         if (config.isUdpRedundantAdaptive()) {
             UdpRedundantStats stats = new UdpRedundantStats(
                     multiplier, // 尊重用户配置的初始倍率
@@ -182,11 +184,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                     config.getUdpRedundantLossThresholdLow(),
                     config.getUdpRedundantStablePeriods());
             pipeline.addLast(UdpRedundantDecoder.class.getSimpleName(), new UdpRedundantDecoder(stats));
-            pipeline.addLast(UdpRedundantEncoder.class.getSimpleName(), new UdpRedundantEncoder(stats));
+            pipeline.addLast(UdpRedundantEncoder.class.getSimpleName(), new UdpRedundantEncoder(stats, resolver));
         } else {
             pipeline.addLast(UdpRedundantDecoder.class.getSimpleName(), new UdpRedundantDecoder());
             pipeline.addLast(UdpRedundantEncoder.class.getSimpleName(),
-                    new UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros()));
+                    new UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros(), resolver));
         }
     }
 }

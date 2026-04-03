@@ -27,7 +27,7 @@
 项目另有 `FecEncoder` / `FecDecoder`（如 `FecUdpClient`）。多倍发包与 FEC **建议互斥使用**，避免冗余叠加、带宽过大。
 
 **自适应模式细节**  
-启用 `udpRedundantAdaptive` 时，入口使用 `SocksProxyServer.addRedundantHandlers()` 创建 `UdpRedundantStats` + 成对的 Decoder/Encoder。若仅将 `udpRedundantMultiplier` 设为 1 且开启自适应，实现里初始有效倍率会按 `max(2, multiplier)` 抬升，与「最小可降至 1」不矛盾，但与「字面初始倍率=1」略有差异，配置时请知悉。
+启用 `udpRedundantAdaptive` 时，入口使用 `SocksProxyServer.addRedundantHandlers()` 创建 `UdpRedundantStats` + 成对的 Decoder/Encoder；`udpRedundantMultiplier` 作为 `UdpRedundantStats` 的初始倍率（可设为 1）。
 
 ---
 
@@ -75,6 +75,19 @@ SocksProxyServer server = new SocksProxyServer(config);
 | `udpRedundantLossThresholdHigh` | double | 0.20 | 高于则倾向升倍率 |
 | `udpRedundantLossThresholdLow` | double | 0.05 | 低于则倾向降倍率 |
 | `udpRedundantStablePeriods` | int | 3 | 防抖：连续多少个 2 秒周期满足条件才调整 |
+| `udpRedundantDestinationRules` | `List<UdpRedundantDestinationRule>` | 空 | 分目的地倍率，**列表顺序即优先级**（先匹配先生效） |
+
+### 分目的地倍率
+
+在 `SocksConfig` 上向 `udpRedundantDestinationRules` 添加若干 `UdpRedundantDestinationRule`：
+
+- **`host`**：IPv4/IPv6 字面量或主机名（解析为单地址做精确匹配），或 **仅 IPv4 CIDR**（如 `10.0.0.0/24`；IPv6 CIDR 不支持）。
+- **`port`**：`0` 表示任意目的端口；否则须与 `DatagramPacket.recipient()` 的端口一致。
+- **`multiplier`**：`[1, 5]`；命中时可设为 `1` 以在该目的地上**强制关闭**冗余（覆盖全局倍率或自适应结果）。
+
+未命中任何规则时，仍使用 `udpRedundantMultiplier` 或自适应 `UdpRedundantStats`。只要配置了至少一条规则，即会安装冗余 Handler（即使全局倍率为 1，也可仅靠规则对部分目的地启用多倍发送）。
+
+高级用法可直接实现 `UdpRedundantMultiplierResolver` 并传入 `UdpRedundantEncoder` 的扩展构造（一般通过 `SocksConfig.buildUdpRedundantMultiplierResolver()` 即可）。
 
 ---
 
@@ -211,6 +224,8 @@ per_copy_loss    = 1 - (redundancy_ratio / currentMultiplier)
 ```
 rxlib/src/main/java/org/rx/net/socks/
 ├── SocksConfig.java
+├── UdpRedundantDestinationRule.java
+├── UdpRedundantMultiplierResolver.java
 ├── UdpRedundantStats.java
 ├── UdpRedundantEncoder.java
 ├── UdpRedundantDecoder.java
@@ -223,10 +238,9 @@ rxlib/src/main/java/org/rx/net/socks/
 
 ## 未覆盖 / 开放问题（后续可演进）
 
-1. **按目的地/规则配置 multiplier**：当前为全局 `SocksConfig`，未按 `dstEp` 细分。
-2. **回程是否始终多倍**：实现为双向往返一致；若仅需 client→server，需在架构上再裁剪。
-3. **与 FEC 同 pipeline**：无硬互斥，由部署策略避免叠用。
-4. **ShadowSocks UDP（如 `SSUdpProxyHandler`）**：当前未接入同一套 Handler。
+1. **回程是否始终多倍**：实现为双向往返一致；若仅需 client→server，需在架构上再裁剪。
+2. **与 FEC 同 pipeline**：无硬互斥，由部署策略避免叠用。
+3. **ShadowSocks UDP（如 `SSUdpProxyHandler`）**：当前未接入同一套 Handler。
 
 ---
 

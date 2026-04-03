@@ -10,6 +10,8 @@ import org.rx.net.SocketConfig;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 //@RequiredArgsConstructor
@@ -71,6 +73,11 @@ public class SocksConfig extends SocketConfig {
      * 防抖周期数。连续多少个调整周期（每周期 2 秒）满足条件才实际调整。默认 3。
      */
     private int udpRedundantStablePeriods = 3;
+    /**
+     * 分目的地倍率规则，列表顺序为优先级（先匹配先生效）。
+     * 命中规则时覆盖 {@link #udpRedundantMultiplier} 或自适应倍率；未命中则使用全局配置。
+     */
+    private List<UdpRedundantDestinationRule> udpRedundantDestinationRules = new ArrayList<>();
 
     private Set<InetAddress> whiteList() {
         return H2StoreCache.DEFAULT.asSet();
@@ -86,6 +93,35 @@ public class SocksConfig extends SocketConfig {
 
     public void setUdpRedundantMaxMultiplier(int udpRedundantMaxMultiplier) {
         this.udpRedundantMaxMultiplier = Math.max(this.udpRedundantMinMultiplier, Math.min(5, udpRedundantMaxMultiplier));
+    }
+
+    /**
+     * 构建当前配置下的目的地倍率解析器；无规则时始终返回 {@link UdpRedundantMultiplierResolver#NO_MATCH}。
+     */
+    public UdpRedundantMultiplierResolver buildUdpRedundantMultiplierResolver() {
+        List<UdpRedundantDestinationRule> rules = udpRedundantDestinationRules;
+        if (rules == null || rules.isEmpty()) {
+            return dst -> UdpRedundantMultiplierResolver.NO_MATCH;
+        }
+        List<UdpRedundantDestinationRule> snapshot = new ArrayList<>(rules);
+        return destination -> {
+            if (destination == null) {
+                return UdpRedundantMultiplierResolver.NO_MATCH;
+            }
+            for (UdpRedundantDestinationRule r : snapshot) {
+                if (r != null && r.matches(destination)) {
+                    return r.getMultiplier();
+                }
+            }
+            return UdpRedundantMultiplierResolver.NO_MATCH;
+        };
+    }
+
+    /**
+     * 是否配置了至少一条分目的地规则（用于决定是否安装冗余 Handler）。
+     */
+    public boolean hasUdpRedundantDestinationRules() {
+        return udpRedundantDestinationRules != null && !udpRedundantDestinationRules.isEmpty();
     }
 }
 

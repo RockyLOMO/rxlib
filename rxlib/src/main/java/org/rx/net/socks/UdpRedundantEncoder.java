@@ -20,10 +20,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 拦截出站 {@link DatagramPacket}，在 payload 前添加 8 字节 header（magic + seqId），
  * 然后将整个包冗余发送 {@code multiplier} 次。
  * <p>
- * 支持两种模式：
+ * 支持：
  * <ul>
  *   <li><b>静态模式</b>：固定倍率，通过构造函数指定</li>
  *   <li><b>自适应模式</b>：绑定 {@link UdpRedundantStats}，定期根据丢包率动态调整倍率</li>
+ *   <li><b>分目的地倍率</b>：可选 {@link UdpRedundantMultiplierResolver}，命中规则时覆盖上述倍率</li>
  * </ul>
  * <p>
  * 不可 {@code @Sharable}，每个 channel 持有独立的序列号发生器。
@@ -58,6 +59,8 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
     private final UdpRedundantStats stats;
     private ScheduledFuture<?> adjustTimer;
 
+    private final UdpRedundantMultiplierResolver perDestination;
+
     private final AtomicInteger seqGenerator = new AtomicInteger();
 
     /**
@@ -67,12 +70,22 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
      * @param intervalMicros 冗余副本间隔微秒，0 = 无延迟
      */
     public UdpRedundantEncoder(int multiplier, int intervalMicros) {
+        this(multiplier, intervalMicros, null);
+    }
+
+    /**
+     * 静态模式 + 分目的地倍率
+     *
+     * @param perDestination 可为 null；未命中规则时使用 {@code multiplier}
+     */
+    public UdpRedundantEncoder(int multiplier, int intervalMicros, UdpRedundantMultiplierResolver perDestination) {
         if (multiplier < 1 || multiplier > 5) {
             throw new IllegalArgumentException("multiplier must be in [1, 5], got " + multiplier);
         }
         this.fixedMultiplier = multiplier;
         this.intervalMicros = Math.max(0, intervalMicros);
         this.stats = null;
+        this.perDestination = perDestination;
     }
 
     /**
@@ -81,18 +94,30 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
      * @param stats 共享统计对象（由 Decoder 喂入数据）
      */
     public UdpRedundantEncoder(UdpRedundantStats stats) {
+        this(stats, null);
+    }
+
+    /**
+     * 自适应模式 + 分目的地倍率（命中规则时以规则倍率为准）
+     */
+    public UdpRedundantEncoder(UdpRedundantStats stats, UdpRedundantMultiplierResolver perDestination) {
         if (stats == null) {
             throw new IllegalArgumentException("stats must not be null for adaptive mode");
         }
         this.stats = stats;
-        this.fixedMultiplier = 0; // 不使用
+        this.fixedMultiplier = 0;
         this.intervalMicros = stats.getIntervalMicros();
+        this.perDestination = perDestination;
     }
 
-    /**
-     * 获取当前实际倍率
-     */
-    private int getMultiplier() {
+    private int effectiveMultiplier(InetSocketAddress recipient) {
+        int ruleMult = UdpRedundantMultiplierResolver.NO_MATCH;
+        if (perDestination != null && recipient != null) {
+            ruleMult = perDestination.resolve(recipient);
+        }
+        if (ruleMult >= 1 && ruleMult <= 5) {
+            return ruleMult;
+        }
         if (stats != null) {
             return stats.getMultiplier();
         }
@@ -102,7 +127,6 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         super.handlerAdded(ctx);
-        // 自适应模式：启动定时调整
         if (stats != null) {
             adjustTimer = ctx.executor().scheduleAtFixedRate(
                     () -> stats.adjustMultiplier(),
@@ -123,60 +147,57 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
             return;
         }
 
-        int multiplier = getMultiplier();
+        DatagramPacket original = (DatagramPacket) msg;
+        InetSocketAddress recipient = original.recipient();
+        int multiplier = effectiveMultiplier(recipient);
         if (multiplier <= 1) {
-            // 自适应模式下可能降至 1，此时直接透传不加 header
             super.write(ctx, msg, promise);
             return;
         }
 
-        DatagramPacket original = (DatagramPacket) msg;
         try {
             ByteBuf content = original.content();
-            InetSocketAddress recipient = original.recipient();
             int seqId = seqGenerator.incrementAndGet();
 
-            // 构建带 header 的第一份包
             ByteBuf firstBuf = prependHeader(ctx, content, seqId);
 
-            // 为冗余副本创建 payload 的 slice（避免数组拷贝）
-            ByteBuf payloadSlice = null;
-            if (multiplier > 1) {
-                int payloadLen = firstBuf.readableBytes() - HEADER_SIZE;
-                payloadSlice = firstBuf.slice(firstBuf.readerIndex() + HEADER_SIZE, payloadLen);
-                payloadSlice.retain(); // 为冗余副本增加引用
-            }
-
-            // 写入第一份（使用原始 promise）
-            ctx.write(new DatagramPacket(firstBuf, recipient), promise);
-
-            // 写入冗余副本
-            if (payloadSlice != null) {
-                final ByteBuf payload = payloadSlice;
+            int payloadLen = firstBuf.readableBytes() - HEADER_SIZE;
+            if (intervalMicros > 0) {
+                byte[] payloadBytes = new byte[payloadLen];
+                firstBuf.getBytes(firstBuf.readerIndex() + HEADER_SIZE, payloadBytes);
+                ctx.write(new DatagramPacket(firstBuf, recipient), promise);
                 for (int i = 1; i < multiplier; i++) {
                     final int copyIndex = i;
-                    if (intervalMicros > 0) {
-                        long delayMicros = (long) intervalMicros * copyIndex;
-                        ctx.executor().schedule(() -> {
-                            writeRedundantCopy(ctx, seqId, payload, recipient);
-                            ctx.flush();
-                        }, delayMicros, TimeUnit.MICROSECONDS);
-                    } else {
+                    final byte[] payload = payloadBytes;
+                    long delayMicros = (long) intervalMicros * copyIndex;
+                    ctx.executor().schedule(() -> {
                         writeRedundantCopy(ctx, seqId, payload, recipient);
+                        ctx.flush();
+                    }, delayMicros, TimeUnit.MICROSECONDS);
+                }
+            } else {
+                ByteBuf payloadSlice = null;
+                if (multiplier > 1) {
+                    payloadSlice = firstBuf.slice(firstBuf.readerIndex() + HEADER_SIZE, payloadLen);
+                    payloadSlice.retain();
+                }
+                ctx.write(new DatagramPacket(firstBuf, recipient), promise);
+                if (payloadSlice != null) {
+                    final ByteBuf payload = payloadSlice;
+                    try {
+                        for (int i = 1; i < multiplier; i++) {
+                            writeRedundantCopy(ctx, seqId, payload, recipient);
+                        }
+                    } finally {
+                        payloadSlice.release();
                     }
                 }
-                // 释放我们增加的引用
-                payloadSlice.release();
             }
         } finally {
-            // 已用新 DatagramPacket 接管写出，必须释放入站消息（Netty 引用计数约定）
             ReferenceCountUtil.release(original);
         }
     }
 
-    /**
-     * 在 payload 前添加 8 字节 header
-     */
     private ByteBuf prependHeader(ChannelHandlerContext ctx, ByteBuf payload, int seqId) {
         ByteBuf header = ctx.alloc().directBuffer(HEADER_SIZE);
         CompositeByteBuf composite = ctx.alloc().compositeDirectBuffer(2);
@@ -192,11 +213,24 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
         }
     }
 
-    /**
-     * 写入一份冗余副本（使用 voidPromise）
-     */
     private void writeRedundantCopy(ChannelHandlerContext ctx, int seqId, ByteBuf payload, InetSocketAddress recipient) {
-        ByteBuf buf = ctx.alloc().directBuffer(HEADER_SIZE + payload.readableBytes());
+        int len = payload.readableBytes();
+        int ri = payload.readerIndex();
+        ByteBuf buf = ctx.alloc().directBuffer(HEADER_SIZE + len);
+        try {
+            buf.writeInt(HEADER_MAGIC);
+            buf.writeInt(seqId);
+            // 使用 ri/len，避免多次 write 推进 payload 的 readerIndex 导致后续副本为空
+            buf.writeBytes(payload, ri, len);
+            ctx.write(new DatagramPacket(buf, recipient), ctx.voidPromise());
+        } catch (Exception e) {
+            buf.release();
+            log.warn("UDP redundant copy write failed, seq={}", seqId, e);
+        }
+    }
+
+    private void writeRedundantCopy(ChannelHandlerContext ctx, int seqId, byte[] payload, InetSocketAddress recipient) {
+        ByteBuf buf = ctx.alloc().directBuffer(HEADER_SIZE + payload.length);
         try {
             buf.writeInt(HEADER_MAGIC);
             buf.writeInt(seqId);
