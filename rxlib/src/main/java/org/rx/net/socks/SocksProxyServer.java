@@ -110,6 +110,12 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         int udpPort = config.getListenPort();
         udpChannel = Sockets.udpBootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline();
+            // 多倍发包去重（入站）和冗余发送（出站）
+            if (config.getUdpRedundantMultiplier() > 1) {
+                pipeline.addLast(UdpRedundantDecoder.class.getSimpleName(), new UdpRedundantDecoder());
+                pipeline.addLast(UdpRedundantEncoder.class.getSimpleName(),
+                        new UdpRedundantEncoder(config.getUdpRedundantMultiplier(), config.getUdpRedundantIntervalMicros()));
+            }
             if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
             } else {
