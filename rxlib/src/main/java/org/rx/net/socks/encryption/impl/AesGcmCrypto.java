@@ -79,6 +79,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
     @Override
     protected void _tcpEncrypt(ByteBuf in, ByteBuf out) {
         int lenTagSize = 2 + TAG_LENGTH;
+        byte[] encBuffer = encBuffer();
+        AEADCipher encCipher = getEncCipher();
 
         while (in.isReadable()) {
             int chunkSize = Math.min(in.readableBytes(), PAYLOAD_SIZE_MASK);
@@ -109,6 +111,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
     @Override
     protected void _tcpDecrypt(ByteBuf in, ByteBuf out) {
         int lenTagSize = 2 + TAG_LENGTH;
+        byte[] decBuffer = decBuffer();
+        AEADCipher decCipher = getDecCipher();
 
         while (in.isReadable()) {
             if (readingLengthPhase) {
@@ -168,6 +172,8 @@ public class AesGcmCrypto extends CryptoAeadBase {
     @Override
     protected void _udpEncrypt(ByteBuf in, ByteBuf out) {
         int length = in.readableBytes();
+        byte[] encBuffer = encBuffer();
+        AEADCipher encCipher = getEncCipher();
         in.readBytes(encBuffer, 0, length);
         encCipher.init(true, getCipherParameters(true));
         encCipher.doFinal(
@@ -183,19 +189,14 @@ public class AesGcmCrypto extends CryptoAeadBase {
         int length = in.readableBytes();  // encrypted payload + tag
         byte[] encrypted = new byte[length];  // 独立输入缓冲区
         in.readBytes(encrypted, 0, length);
+        byte[] decBuffer = decBuffer();
+        AEADCipher decCipher = getDecCipher();
         decCipher.init(false, getCipherParameters(false));
         decCipher.doFinal(
                 decBuffer,
                 decCipher.processBytes(encrypted, 0, length, decBuffer, 0)
         );
 
-//        int length = in.readableBytes();
-//        in.readBytes(decBuffer, 0, length);
-//        decCipher.init(false, getCipherParameters(false));
-//        decCipher.doFinal(
-//                decBuffer,
-//                decCipher.processBytes(decBuffer, 0, length, decBuffer, 0)
-//        );
         out.writeBytes(decBuffer, 0, length - TAG_LENGTH);
     }
 }

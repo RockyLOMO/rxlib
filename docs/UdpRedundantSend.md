@@ -33,7 +33,7 @@
 
 ## 快速使用
 
-**静态模式**（固定倍率）：
+**方式一：SocksConfig 直接配置（推荐）**
 
 ```java
 SocksConfig config = new SocksConfig(1080);
@@ -43,20 +43,108 @@ config.setUdpRedundantIntervalMicros(500); // 可选
 SocksProxyServer server = new SocksProxyServer(config);
 ```
 
+**方式二：独立配置对象**
+
+```java
+// 创建独立UDP冗余配置
+UdpRedundantConfig udpConfig = new UdpRedundantConfig();
+udpConfig.setMultiplier(3);
+udpConfig.setIntervalMicros(500);
+
+// 方式2A：应用到SocksConfig（向后兼容）
+SocksConfig config = new SocksConfig(1080);
+config.setUdpRedundantConfig(udpConfig);
+SocksProxyServer server = new SocksProxyServer(config);
+
+// 方式2B：直接使用（推荐用于模块化设计）
+UdpRedundantStats stats = new UdpRedundantStats(
+    udpConfig.getMultiplier(), 
+    udpConfig.getMinMultiplier(), 
+    udpConfig.getMaxMultiplier(),
+    udpConfig.getIntervalMicros(),
+    udpConfig.getLossThresholdHigh(),
+    udpConfig.getLossThresholdLow(),
+    udpConfig.getStablePeriods()
+);
+UdpRedundantEncoder encoder = new UdpRedundantEncoder(stats, udpConfig.buildMultiplierResolver());
+```
+
+**静态模式**（固定倍率）：
+
+```java
+UdpRedundantConfig config = new UdpRedundantConfig();
+config.setMultiplier(3);
+config.setIntervalMicros(500);
+
+SocksConfig socksConfig = new SocksConfig(1080);
+socksConfig.setUdpRedundantConfig(config);
+SocksProxyServer server = new SocksProxyServer(socksConfig);
+```
+
 **自适应模式**：
 
 ```java
-SocksConfig config = new SocksConfig(1080);
-config.setUdpRedundantMultiplier(2);           // 初始倍率（见上文注意）
-config.setUdpRedundantAdaptive(true);
-config.setUdpRedundantMinMultiplier(1);
-config.setUdpRedundantMaxMultiplier(5);
-config.setUdpRedundantLossThresholdHigh(0.20);
-config.setUdpRedundantLossThresholdLow(0.05);
-config.setUdpRedundantStablePeriods(3);
-config.setUdpRedundantIntervalMicros(500);
+UdpRedundantConfig config = new UdpRedundantConfig();
+config.setMultiplier(2);           // 初始倍率
+config.setAdaptive(true);
+config.setMinMultiplier(1);
+config.setMaxMultiplier(5);
+config.setLossThresholdHigh(0.20);
+config.setLossThresholdLow(0.05);
+config.setStablePeriods(3);
+config.setIntervalMicros(500);
 
-SocksProxyServer server = new SocksProxyServer(config);
+SocksConfig socksConfig = new SocksConfig(1080);
+socksConfig.setUdpRedundantConfig(config);
+SocksProxyServer server = new SocksProxyServer(socksConfig);
+```
+
+**分目的地倍率模式**：
+
+```java
+UdpRedundantConfig config = new UdpRedundantConfig();
+config.setMultiplier(2); // 全局默认倍率（未命中规则时使用）
+
+// 游戏服务器：高冗余
+UdpRedundantDestinationRule gameRule = new UdpRedundantDestinationRule();
+gameRule.setHost("192.168.1.0/24");  // 游戏服务器网段
+gameRule.setPort(0);                  // 任意端口
+gameRule.setMultiplier(4);              // 4倍发送
+config.getDestinationRules().add(gameRule);
+
+// 视频服务器：低冗余
+UdpRedundantDestinationRule videoRule = new UdpRedundantDestinationRule();
+videoRule.setHost("203.0.113.100");   // 特定视频服务器
+videoRule.setPort(8080);               // 视频端口
+videoRule.setMultiplier(1);              // 关闭冗余（透传）
+config.getDestinationRules().add(videoRule);
+
+// 混合模式：自适应 + 分目的地规则
+config.setAdaptive(true);
+config.setMinMultiplier(1);
+config.setMaxMultiplier(5);
+config.setLossThresholdHigh(0.20);
+config.setLossThresholdLow(0.05);
+config.setStablePeriods(3);
+
+SocksConfig socksConfig = new SocksConfig(1080);
+socksConfig.setUdpRedundantConfig(config);
+SocksProxyServer server = new SocksProxyServer(socksConfig);
+```
+
+**配置迁移**：
+
+```java
+// 从现有SocksConfig提取UDP冗余配置
+SocksConfig oldConfig = new SocksConfig(1080);
+oldConfig.setUdpRedundantMultiplier(3);
+// ... 设置其他UDP冗余参数
+
+UdpRedundantConfig udpConfig = UdpRedundantConfig.fromSocksConfig(oldConfig);
+
+// 应用到新的SocksConfig
+SocksConfig newConfig = new SocksConfig(1080);
+newConfig.setUdpRedundantConfig(udpConfig);
 ```
 
 默认 `udpRedundantMultiplier = 1` 且 `udpRedundantAdaptive = false` 时不启用冗余，对未配置场景无侵入。
@@ -65,6 +153,7 @@ SocksProxyServer server = new SocksProxyServer(config);
 
 ## 配置参数
 
+### SocksConfig 方式（向后兼容）
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `udpRedundantMultiplier` | int | 1 | 静态倍率或自适应初始倍率，取值 [1, 5] |
@@ -76,6 +165,26 @@ SocksProxyServer server = new SocksProxyServer(config);
 | `udpRedundantLossThresholdLow` | double | 0.05 | 低于则倾向降倍率 |
 | `udpRedundantStablePeriods` | int | 3 | 防抖：连续多少个 2 秒周期满足条件才调整 |
 | `udpRedundantDestinationRules` | `List<UdpRedundantDestinationRule>` | 空 | 分目的地倍率，**列表顺序即优先级**（先匹配先生效） |
+| `udpRedundantConfig` | `UdpRedundantConfig` | null | **推荐**：独立配置对象，设置后优先使用 |
+
+### UdpRedundantConfig 方式（推荐）
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `multiplier` | int | 1 | 静态倍率或自适应初始倍率，取值 [1, 5] |
+| `intervalMicros` | int | 0 | 冗余副本间隔（μs）；0 = 同时发送 |
+| `adaptive` | boolean | false | 是否启用自适应 |
+| `minMultiplier` | int | 1 | 自适应下限（可完全关冗余） |
+| `maxMultiplier` | int | 5 | 自适应上限 |
+| `lossThresholdHigh` | double | 0.20 | 高于则倾向升倍率 |
+| `lossThresholdLow` | double | 0.05 | 低于则倾向降倍率 |
+| `stablePeriods` | int | 3 | 防抖：连续多少个 2 秒周期满足条件才调整 |
+| `destinationRules` | `List<UdpRedundantDestinationRule>` | 空 | 分目的地倍率，**列表顺序即优先级**（先匹配先生效） |
+
+**推荐使用 `UdpRedundantConfig`**：
+- 更好的模块化设计，配置逻辑独立
+- 支持配置迁移和复用
+- 类型安全的参数验证
+- 便于单元测试和配置管理
 
 ### 分目的地倍率
 
@@ -239,11 +348,12 @@ per_copy_loss    = 1 - (redundancy_ratio / currentMultiplier)
 ```
 rxlib/src/main/java/org/rx/net/socks/
 ├── SocksConfig.java
-├── UdpRedundantDestinationRule.java
-├── UdpRedundantMultiplierResolver.java
+├── UdpRedundantConfig.java          # 新增：独立UDP冗余配置类
 ├── UdpRedundantStats.java
 ├── UdpRedundantEncoder.java
 ├── UdpRedundantDecoder.java
+├── UdpRedundantDestinationRule.java   # 新增：分目的地倍率规则
+├── UdpRedundantMultiplierResolver.java # 新增：目的地倍率解析接口
 ├── SocksProxyServer.java          # addRedundantHandlers(...)
 ├── SocksUdpRelayHandler.java
 └── Udp2rawHandler.java

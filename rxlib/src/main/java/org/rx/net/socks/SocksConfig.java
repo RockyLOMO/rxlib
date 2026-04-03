@@ -36,9 +36,18 @@ public class SocksConfig extends SocketConfig {
     private InetSocketAddress udp2rawClient;
     private AuthenticEndpoint kcptunClient;
     /**
-     * UDP 多倍发包倍率。1 = 不冗余（默认），2 = 双发，3 = 三发。
+     * UDP 多倍发包独立配置（可选）。
+     * 设置后优先使用此配置，否则使用下面的独立字段（向后兼容）。
+     */
+    private UdpRedundantConfig udpRedundantConfig;
+
+    // ===================== 向后兼容字段 =====================
+    // 以下字段保持向后兼容，当 udpRedundantConfig 为 null 时使用
+
+    /**
+     * UDP 多倍发包倍率。
+     * 取值范围 [1, 5]，默认 1。
      * 用于游戏低延迟场景，以带宽换取丢包容忍度。
-     * 取值范围 [1, 5]，超过 5 将被限定为 5。
      */
     private int udpRedundantMultiplier = 1;
     /**
@@ -121,7 +130,114 @@ public class SocksConfig extends SocketConfig {
      * 是否配置了至少一条分目的地规则（用于决定是否安装冗余 Handler）。
      */
     public boolean hasUdpRedundantDestinationRules() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.hasDestinationRules();
+        }
         return udpRedundantDestinationRules != null && !udpRedundantDestinationRules.isEmpty();
+    }
+
+    /**
+     * 获取UDP冗余配置，优先返回独立配置对象。
+     */
+    public UdpRedundantConfig getUdpRedundantConfig() {
+        return udpRedundantConfig;
+    }
+
+    /**
+     * 设置UDP冗余独立配置对象。
+     */
+    public void setUdpRedundantConfig(UdpRedundantConfig udpRedundantConfig) {
+        this.udpRedundantConfig = udpRedundantConfig;
+    }
+
+    /**
+     * 获取UDP冗余倍率，优先从独立配置获取。
+     */
+    public int getUdpRedundantMultiplier() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.getMultiplier();
+        }
+        return udpRedundantMultiplier;
+    }
+
+    /**
+     * 获取UDP冗余间隔，优先从独立配置获取。
+     */
+    public int getUdpRedundantIntervalMicros() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.getIntervalMicros();
+        }
+        return udpRedundantIntervalMicros;
+    }
+
+    /**
+     * 是否启用自适应，优先从独立配置获取。
+     */
+    public boolean isUdpRedundantAdaptive() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.isAdaptive();
+        }
+        return udpRedundantAdaptive;
+    }
+
+    /**
+     * 获取最小倍率，优先从独立配置获取。
+     */
+    public int getUdpRedundantMinMultiplier() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.getMinMultiplier();
+        }
+        return udpRedundantMinMultiplier;
+    }
+
+    /**
+     * 获取最大倍率，优先从独立配置获取。
+     */
+    public int getUdpRedundantMaxMultiplier() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.getMaxMultiplier();
+        }
+        return udpRedundantMaxMultiplier;
+    }
+
+    /**
+     * 获取丢包率上阈值，优先从独立配置获取。
+     */
+    public double getUdpRedundantLossThresholdHigh() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.getLossThresholdHigh();
+        }
+        return udpRedundantLossThresholdHigh;
+    }
+
+    /**
+     * 获取丢包率下阈值，优先从独立配置获取。
+     */
+    public double getUdpRedundantLossThresholdLow() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.getLossThresholdLow();
+        }
+        return udpRedundantLossThresholdLow;
+    }
+
+    /**
+     * 获取防抖周期数，优先从独立配置获取。
+     */
+    public int getUdpRedundantStablePeriods() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.getStablePeriods();
+        }
+        return udpRedundantStablePeriods;
+    }
+
+    /**
+     * 获取分目的地规则列表，优先从独立配置获取。
+     */
+    public List<UdpRedundantDestinationRule> getUdpRedundantDestinationRules() {
+        if (udpRedundantConfig != null) {
+            return udpRedundantConfig.getDestinationRules();
+        }
+        return udpRedundantDestinationRules;
     }
 }
 
