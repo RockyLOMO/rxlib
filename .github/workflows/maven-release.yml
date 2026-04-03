@@ -108,7 +108,8 @@ jobs:
         env:
           OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
           OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          # maven-gpg-plugin 3.x：用环境变量，勿传 -Dgpg.passphrase（会告警且易泄露）
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           RELEASE_VERSION="${{ steps.parse_version.outputs.release_version }}"
           echo "开始发布版本: $RELEASE_VERSION"
@@ -117,7 +118,6 @@ jobs:
             -pl rxlib,rxlib-x -am \
             -DskipTests \
             -Dgpg.skip=false \
-            -Dgpg.passphrase="${GPG_PASSPHRASE}" \
             --no-transfer-progress \
             --batch-mode
 

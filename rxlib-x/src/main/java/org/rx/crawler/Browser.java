@@ -48,10 +48,10 @@ public interface Browser extends AutoCloseable {
     String getRawCookie();
 
     /**
-     * 基本的selector，不能包含:eq(1)等
+     * 基本的 selector，不能包含 :eq(1) 等
      *
-     * @param selector
-     * @return
+     * @param selector CSS 选择器
+     * @return 是否存在匹配元素
      */
     boolean hasElement(String selector);
 
