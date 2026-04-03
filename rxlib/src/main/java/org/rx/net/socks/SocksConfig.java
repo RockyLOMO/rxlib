@@ -45,6 +45,32 @@ public class SocksConfig extends SocketConfig {
      * 建议 200~1000μs，用于应对突发丢包（burst loss）。
      */
     private int udpRedundantIntervalMicros = 0;
+    /**
+     * 是否启用自适应倍率调整。
+     * 启用后根据实际丢包率动态调整 multiplier，范围在 [udpRedundantMinMultiplier, udpRedundantMaxMultiplier] 之间。
+     * udpRedundantMultiplier 作为初始值。
+     */
+    private boolean udpRedundantAdaptive = false;
+    /**
+     * 自适应模式最小倍率。默认 1 = 网络好时可完全关闭冗余。
+     */
+    private int udpRedundantMinMultiplier = 1;
+    /**
+     * 自适应模式最大倍率。默认 5。
+     */
+    private int udpRedundantMaxMultiplier = 5;
+    /**
+     * 自适应丢包率上阈值（0~1）。超过此值增加倍率。默认 0.20（20%）。
+     */
+    private double udpRedundantLossThresholdHigh = 0.20;
+    /**
+     * 自适应丢包率下阈值（0~1）。低于此值降低倍率。默认 0.05（5%）。
+     */
+    private double udpRedundantLossThresholdLow = 0.05;
+    /**
+     * 防抖周期数。连续多少个调整周期（每周期 2 秒）满足条件才实际调整。默认 3。
+     */
+    private int udpRedundantStablePeriods = 3;
 
     private Set<InetAddress> whiteList() {
         return H2StoreCache.DEFAULT.asSet();
@@ -57,4 +83,9 @@ public class SocksConfig extends SocketConfig {
     public void setUdpRedundantMultiplier(int udpRedundantMultiplier) {
         this.udpRedundantMultiplier = Math.max(1, Math.min(5, udpRedundantMultiplier));
     }
+
+    public void setUdpRedundantMaxMultiplier(int udpRedundantMaxMultiplier) {
+        this.udpRedundantMaxMultiplier = Math.max(this.udpRedundantMinMultiplier, Math.min(5, udpRedundantMaxMultiplier));
+    }
 }
+

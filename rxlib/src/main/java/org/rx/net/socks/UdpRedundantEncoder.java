@@ -6,6 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.util.concurrent.ScheduledFuture;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetSocketAddress;
@@ -18,6 +19,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 拦截出站 {@link DatagramPacket}，在 payload 前添加 8 字节 header（magic + seqId），
  * 然后将整个包冗余发送 {@code multiplier} 次。
  * <p>
+ * 支持两种模式：
+ * <ul>
+ *   <li><b>静态模式</b>：固定倍率，通过构造函数指定</li>
+ *   <li><b>自适应模式</b>：绑定 {@link UdpRedundantStats}，定期根据丢包率动态调整倍率</li>
+ * </ul>
+ * <p>
  * 不可 {@code @Sharable}，每个 channel 持有独立的序列号发生器。
  *
  * <h3>Header 格式（8 字节）</h3>
@@ -26,14 +33,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * |  MAGIC (4 bytes)  |  SEQ_ID (4 bytes) |
  * +-------------------+-------------------+
  * </pre>
- *
- * <h3>发送策略</h3>
- * <ul>
- *   <li>第 1 份使用调用者的 {@link ChannelPromise}，保证写入结果正确回调</li>
- *   <li>第 2~N 份使用 {@code voidPromise}，避免多次回调</li>
- *   <li>如果 {@code intervalMicros > 0}，冗余副本通过 {@code ctx.executor().schedule()} 延迟发送，
- *       利用不同时间窗口的网络路径提高至少一份到达的概率</li>
- * </ul>
  */
 @Slf4j
 public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
@@ -45,26 +44,87 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
      * Header 总长度
      */
     static final int HEADER_SIZE = 8;
+    /**
+     * 自适应调整周期（秒）
+     */
+    static final int ADJUST_INTERVAL_SECONDS = 2;
 
-    private final int multiplier;
+    // 静态模式字段
+    private final int fixedMultiplier;
     private final int intervalMicros;
+
+    // 自适应模式字段
+    private final UdpRedundantStats stats;
+    private ScheduledFuture<?> adjustTimer;
+
     private final AtomicInteger seqGenerator = new AtomicInteger();
 
     /**
-     * @param multiplier    发送倍率，[2, 5]
+     * 静态模式构造
+     *
+     * @param multiplier     发送倍率，[2, 5]
      * @param intervalMicros 冗余副本间隔微秒，0 = 无延迟
      */
     public UdpRedundantEncoder(int multiplier, int intervalMicros) {
         if (multiplier < 2 || multiplier > 5) {
             throw new IllegalArgumentException("multiplier must be in [2, 5], got " + multiplier);
         }
-        this.multiplier = multiplier;
+        this.fixedMultiplier = multiplier;
         this.intervalMicros = Math.max(0, intervalMicros);
+        this.stats = null;
+    }
+
+    /**
+     * 自适应模式构造
+     *
+     * @param stats 共享统计对象（由 Decoder 喂入数据）
+     */
+    public UdpRedundantEncoder(UdpRedundantStats stats) {
+        if (stats == null) {
+            throw new IllegalArgumentException("stats must not be null for adaptive mode");
+        }
+        this.stats = stats;
+        this.fixedMultiplier = 0; // 不使用
+        this.intervalMicros = stats.getIntervalMicros();
+    }
+
+    /**
+     * 获取当前实际倍率
+     */
+    private int getMultiplier() {
+        if (stats != null) {
+            return stats.getMultiplier();
+        }
+        return fixedMultiplier;
+    }
+
+    @Override
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        super.handlerAdded(ctx);
+        // 自适应模式：启动定时调整
+        if (stats != null) {
+            adjustTimer = ctx.executor().scheduleAtFixedRate(
+                    () -> stats.adjustMultiplier(),
+                    ADJUST_INTERVAL_SECONDS, ADJUST_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        }
+    }
+
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        cancelAdjustTimer();
+        super.handlerRemoved(ctx);
     }
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         if (!(msg instanceof DatagramPacket)) {
+            super.write(ctx, msg, promise);
+            return;
+        }
+
+        int multiplier = getMultiplier();
+        if (multiplier <= 1) {
+            // 自适应模式下可能降至 1，此时直接透传不加 header
             super.write(ctx, msg, promise);
             return;
         }
@@ -78,10 +138,8 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
         ByteBuf firstBuf = prependHeader(ctx, content, seqId);
 
         // 保存一份原始 payload 的副本用于冗余发送
-        // 注意：原始 content 归属于 firstBuf 的 composite，这里需要 payload 的独立副本
         byte[] payloadBytes = null;
         if (multiplier > 1) {
-            // 记录 header 之后的 payload
             int payloadLen = firstBuf.readableBytes() - HEADER_SIZE;
             payloadBytes = new byte[payloadLen];
             firstBuf.getBytes(firstBuf.readerIndex() + HEADER_SIZE, payloadBytes);
@@ -96,14 +154,12 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
             for (int i = 1; i < multiplier; i++) {
                 final int copyIndex = i;
                 if (intervalMicros > 0) {
-                    // 延迟发送冗余副本
                     long delayMicros = (long) intervalMicros * copyIndex;
                     ctx.executor().schedule(() -> {
                         writeRedundantCopy(ctx, seqId, payload, recipient);
                         ctx.flush();
                     }, delayMicros, TimeUnit.MICROSECONDS);
                 } else {
-                    // 立即发送冗余副本
                     writeRedundantCopy(ctx, seqId, payload, recipient);
                 }
             }
@@ -141,6 +197,13 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
         } catch (Exception e) {
             buf.release();
             log.warn("UDP redundant copy write failed, seq={}", seqId, e);
+        }
+    }
+
+    private void cancelAdjustTimer() {
+        if (adjustTimer != null) {
+            adjustTimer.cancel(false);
+            adjustTimer = null;
         }
     }
 }

@@ -96,10 +96,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                 upstream.initChannel(ob);
                 // 多倍发包：outbound 方向编码冗余发送，inbound 方向回程去重
-                if (config.getUdpRedundantMultiplier() > 1) {
-                    ob.pipeline().addLast(new UdpRedundantDecoder());
-                    ob.pipeline().addLast(new UdpRedundantEncoder(config.getUdpRedundantMultiplier(), config.getUdpRedundantIntervalMicros()));
-                }
+                SocksProxyServer.addRedundantHandlers(ob.pipeline(), config);
                 ob.pipeline().addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()),
                         UdpBackendRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(0);

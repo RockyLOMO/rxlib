@@ -111,11 +111,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         udpChannel = Sockets.udpBootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline();
             // 多倍发包去重（入站）和冗余发送（出站）
-            if (config.getUdpRedundantMultiplier() > 1) {
-                pipeline.addLast(UdpRedundantDecoder.class.getSimpleName(), new UdpRedundantDecoder());
-                pipeline.addLast(UdpRedundantEncoder.class.getSimpleName(),
-                        new UdpRedundantEncoder(config.getUdpRedundantMultiplier(), config.getUdpRedundantIntervalMicros()));
-            }
+            addRedundantHandlers(pipeline, config);
             if (config.isEnableUdp2raw()) {
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
             } else {
@@ -165,5 +161,32 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             return false;
         }
         return cipherRouter.invoke(dstEp);
+    }
+
+    /**
+     * 向 pipeline 添加 UDP 多倍发包的 Decoder（入站去重）和 Encoder（出站冗余发送）。
+     * 支持静态模式和自适应模式。
+     */
+    static void addRedundantHandlers(ChannelPipeline pipeline, SocksConfig config) {
+        int multiplier = config.getUdpRedundantMultiplier();
+        if (multiplier <= 1 && !config.isUdpRedundantAdaptive()) {
+            return;
+        }
+        if (config.isUdpRedundantAdaptive()) {
+            UdpRedundantStats stats = new UdpRedundantStats(
+                    Math.max(2, multiplier),
+                    config.getUdpRedundantMinMultiplier(),
+                    config.getUdpRedundantMaxMultiplier(),
+                    config.getUdpRedundantIntervalMicros(),
+                    config.getUdpRedundantLossThresholdHigh(),
+                    config.getUdpRedundantLossThresholdLow(),
+                    config.getUdpRedundantStablePeriods());
+            pipeline.addLast(UdpRedundantDecoder.class.getSimpleName(), new UdpRedundantDecoder(stats));
+            pipeline.addLast(UdpRedundantEncoder.class.getSimpleName(), new UdpRedundantEncoder(stats));
+        } else {
+            pipeline.addLast(UdpRedundantDecoder.class.getSimpleName(), new UdpRedundantDecoder());
+            pipeline.addLast(UdpRedundantEncoder.class.getSimpleName(),
+                    new UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros()));
+        }
     }
 }

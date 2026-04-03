@@ -18,6 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * 每个 sender 地址独立维护一个去重窗口，避免不同来源的 sequenceId 冲突。
  * <p>
+ * 如果绑定了 {@link UdpRedundantStats}，会同步喂入统计数据用于自适应倍率调整。
+ * <p>
  * 不可 {@code @Sharable}，每个 channel 持有独立的去重状态。
  */
 @Slf4j
@@ -100,6 +102,11 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
     private final ConcurrentHashMap<InetSocketAddress, DeduplicationWindow> windows = new ConcurrentHashMap<>();
 
     /**
+     * 自适应统计（可选），为 null 时不采集
+     */
+    private final UdpRedundantStats stats;
+
+    /**
      * 窗口过期时间（纳秒），超过此时间未活跃的窗口将被清理
      * 默认 10 分钟
      */
@@ -110,6 +117,20 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
      */
     private int cleanupCounter = 0;
     private static final int CLEANUP_INTERVAL = 1024;
+
+    /**
+     * 无自适应统计的构造
+     */
+    public UdpRedundantDecoder() {
+        this(null);
+    }
+
+    /**
+     * @param stats 自适应统计对象，为 null 时不采集
+     */
+    public UdpRedundantDecoder(UdpRedundantStats stats) {
+        this.stats = stats;
+    }
 
     @Override
     protected void decode(ChannelHandlerContext ctx, DatagramPacket msg, List<Object> out) throws Exception {
@@ -140,12 +161,22 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
         // 使用 int → long 的无符号扩展，避免 int 溢出导致序列号回绕问题
         long seqLong = seqId & 0xFFFFFFFFL;
 
+        // 每收到一个包（含冗余副本）都计入 totalReceived
+        if (stats != null) {
+            stats.recordReceived();
+        }
+
         if (!window.checkAndMark(seqLong)) {
             // 重复包，丢弃
             if (log.isDebugEnabled()) {
                 log.debug("UDP redundant discard duplicate seq={} from {}", seqId, sender);
             }
             return;
+        }
+
+        // 新包（去重后）计入 uniqueReceived
+        if (stats != null) {
+            stats.recordUnique();
         }
 
         // 新包：构造剥离 header 后的 DatagramPacket 传递到下游
