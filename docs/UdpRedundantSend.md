@@ -158,3 +158,20 @@ rxlib/src/main/java/org/rx/net/socks/
 ├── SocksUdpRelayHandler.java       # SOCKS5 outbound channel pipeline 集成
 └── Udp2rawHandler.java             # Udp2raw outbound channel pipeline 集成
 ```
+
+### 测试验证
+
+已通过单元测试验证核心逻辑。测试文件：[UdpRedundantTest.java](file:///d:/projs/rxlib/rxlib/src/test/java/org/rx/net/socks/UdpRedundantTest.java)
+
+**验证覆盖：**
+1. **多倍发送验证**：验证 `UdpRedundantEncoder` 在倍率为 N 时产生 N 个带 header 的数据包。
+2. **去重验证**：验证 `UdpRedundantDecoder` 收到多个相同序列号数据包时，仅保留第一个。
+3. **滑动窗口验证**：验证 `UdpRedundantDecoder` 的 64 位滑动窗口位图逻辑，确保旧包被正确丢弃。
+4. **兼容性验证**：验证不带 header 的原始 UDP 数据包可以正常通过（Passthrough）。
+
+**执行结果：**
+```bash
+mvn -pl rxlib test -Dtest=UdpRedundantTest -Dmaven.test.skip=false
+# [INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0
+# [INFO] BUILD SUCCESS
+```
