@@ -45,7 +45,7 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
         if (addr == null) {
             buf.retain();
         } else {
-            ByteBuf addrBuf = ctx.alloc().directBuffer(64);
+            ByteBuf addrBuf = ctx.alloc().buffer(64);
             UdpManager.encode(addrBuf, addr);
 
             buf = Unpooled.wrappedBuffer(addrBuf, buf.retain());
