@@ -31,7 +31,8 @@ jobs:
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
       - name: Build with Maven
         run: |
-          mvn clean package -pl ${{ env.APP_MODULE }} -am -DskipTests -Dmaven.javadoc.skip=true --no-transfer-progress --batch-mode
+          # 本地默认仍跑测试（见 rxlib/pom.xml）；仅在此 CI 部署步骤用命令行跳过。
+          mvn clean package -pl ${{ env.APP_MODULE }} -am -Dmaven.test.skip=true -DskipTests=true -Dmaven.javadoc.skip=true --no-transfer-progress --batch-mode
 
           echo "target 目录完整路径: ${PWD}/${{ env.APP_MODULE }}/target"
           echo "=== 文件列表（详细）==="

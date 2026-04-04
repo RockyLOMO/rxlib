@@ -126,15 +126,12 @@ class SocksProxyServerIntegrationTest {
 
         try {
             Thread.sleep(300);
-            // Send socks5-udp formatted datagram to proxy's UDP port.
-            // payload should reach UDP echo server, and return back wrapped in socks5 header.
             DatagramSocket sock = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
             sock.setSoTimeout(4000);
             try {
                 byte[] payload = "udp-e2e".getBytes(StandardCharsets.UTF_8);
                 ByteBuf header = Unpooled.buffer();
                 header.writeZero(3); // RSV(2)+FRAG(1)
-                // ATYP + DST.ADDR + DST.PORT
                 header.writeByte(0x01); // IPv4
                 header.writeBytes(new byte[]{127, 0, 0, 1});
                 header.writeShort(UDP_ECHO_PORT);
@@ -147,12 +144,11 @@ class SocksProxyServerIntegrationTest {
                 java.net.DatagramPacket p = new java.net.DatagramPacket(resp, resp.length);
                 sock.receive(p);
 
-                // Basic header checks
                 assertTrue(p.getLength() >= 10, "response too short");
                 assertEquals(0, resp[0]);
                 assertEquals(0, resp[1]);
-                assertEquals(0, resp[2]); // FRAG
-                assertEquals(0x01, resp[3]); // IPv4
+                assertEquals(0, resp[2]);
+                assertEquals(0x01, resp[3]);
                 assertEquals(127, resp[4]);
                 assertEquals(0, resp[5]);
                 assertEquals(0, resp[6]);
@@ -171,16 +167,126 @@ class SocksProxyServerIntegrationTest {
         }
     }
 
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
+    void socks5AnonymousLogin_e2e() {
+        int proxyPort = 15282;
+        SocksConfig config = new SocksConfig(proxyPort);
+        SocksProxyServer proxy = new SocksProxyServer(config, null);
+
+        try {
+            Thread.sleep(300);
+            try (Socket s = new Socket("127.0.0.1", proxyPort)) {
+                s.setSoTimeout(4000);
+                OutputStream out = s.getOutputStream();
+                InputStream in = s.getInputStream();
+
+                // 1) Greeting: No auth (0x00)
+                out.write(new byte[]{0x05, 0x01, 0x00});
+                out.flush();
+                byte[] hs = readExact(in, 2, 3000);
+                assertArrayEquals(new byte[]{0x05, 0x00}, hs);
+
+                // 2) Connect to tcp echo server
+                out.write(buildSocks5ConnectReqIpv4("127.0.0.1", TCP_ECHO_PORT));
+                out.flush();
+                byte[] conn = readAtLeast(in, 4, 10, 3000);
+                assertEquals(0x05, conn[0] & 0xFF);
+                assertEquals(0x00, conn[1] & 0xFF);
+
+                // 3) Payload
+                String message = "anonymous-tcp-e2e";
+                out.write(message.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                byte[] back = readExact(in, message.getBytes(StandardCharsets.UTF_8).length, 3000);
+                assertEquals(message, new String(back, StandardCharsets.UTF_8));
+            }
+        } finally {
+            proxy.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
+    void socks5TrafficShaping_e2e() {
+        int proxyPort = 15283;
+        SocksConfig config = new SocksConfig(proxyPort);
+        config.setTrafficShapingInterval(100); 
+        SocksUser usr = new SocksUser("u_shaping");
+        usr.setPassword("p_shaping");
+        usr.setIpLimit(-1);
+
+        DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(Collections.singletonList(usr));
+        SocksProxyServer proxy = new SocksProxyServer(config, authenticator);
+
+        try {
+            Thread.sleep(300);
+            byte[] payload;
+            try (Socket s = new Socket("127.0.0.1", proxyPort)) {
+                s.setSoTimeout(4000);
+                OutputStream out = s.getOutputStream();
+                InputStream in = s.getInputStream();
+
+                // Handshake
+                out.write(new byte[]{0x05, 0x01, 0x02});
+                out.flush();
+                readExact(in, 2, 3000);
+
+                // Auth
+                byte[] u = "u_shaping".getBytes();
+                byte[] p = "p_shaping".getBytes();
+                ByteBuf auth = Unpooled.buffer();
+                auth.writeByte(0x01);
+                auth.writeByte(u.length);
+                auth.writeBytes(u);
+                auth.writeByte(p.length);
+                auth.writeBytes(p);
+                out.write(toBytes(auth));
+                out.flush();
+                readExact(in, 2, 3000);
+
+                // Connect
+                out.write(buildSocks5ConnectReqIpv4("127.0.0.1", TCP_ECHO_PORT));
+                out.flush();
+                readAtLeast(in, 4, 10, 3000);
+
+                // Send 10KB payload
+                payload = new byte[1024 * 10];
+                for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 256);
+                out.write(payload);
+                out.flush();
+
+                // Receive 10KB echo
+                byte[] back = new byte[payload.length];
+                int totalRead = 0;
+                while (totalRead < back.length) {
+                    int n = in.read(back, totalRead, back.length - totalRead);
+                    if (n == -1) break;
+                    totalRead += n;
+                }
+                assertEquals(payload.length, totalRead);
+            }
+
+            Thread.sleep(500);
+
+            SocksUser user = authenticator.getStore().get("u_shaping");
+            assertNotNull(user);
+            assertTrue(user.getTotalReadBytes() >= payload.length);
+            assertTrue(user.getTotalWriteBytes() >= payload.length);
+        } finally {
+            proxy.close();
+        }
+    }
+
     static byte[] buildSocks5ConnectReqIpv4(String host, int port) {
         byte[] req = new byte[10];
         req[0] = 0x05;
-        req[1] = 0x01; // CONNECT
+        req[1] = 0x01;
         req[2] = 0x00;
-        req[3] = 0x01; // IPv4
-        req[4] = 127;
-        req[5] = 0;
-        req[6] = 0;
-        req[7] = 1;
+        req[3] = 0x01;
+        req[4] = 127; req[5] = 0; req[6] = 0; req[7] = 1;
         req[8] = (byte) ((port >> 8) & 0xFF);
         req[9] = (byte) (port & 0xFF);
         return req;
@@ -221,4 +327,3 @@ class SocksProxyServerIntegrationTest {
         return b;
     }
 }
-

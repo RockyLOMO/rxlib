@@ -43,7 +43,8 @@ jobs:
           OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}   # Sonatype 用户名
           OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}      # Sonatype Token（强烈推荐）
         run: |
-          mvn clean deploy -pl rxlib-x -am -DskipTests \
+          # 本地默认仍跑测试（见 rxlib/pom.xml）；仅在此 CI 发布步骤用命令行跳过。
+          mvn clean deploy -pl rxlib-x -am -Dmaven.test.skip=true -DskipTests=true \
             -Dgpg.skip=true \
             -Dmaven.gpg.skip=true \
             --no-transfer-progress --batch-mode
