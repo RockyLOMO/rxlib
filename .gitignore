@@ -15,4 +15,5 @@ rxlib/GeoLite2-City.mmdb
 rxlib/geoip.mmdb
 rxlib/geosite-direct.txt
 rxlib/rxdaemon-1.0.jar
-thread_dump.txt
+*_dump.txt
+*_jstack.txt

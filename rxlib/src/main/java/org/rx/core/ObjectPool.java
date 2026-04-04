@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
@@ -54,7 +55,12 @@ public class ObjectPool<T> extends Disposable {
     final PredicateFunc<T> validateHandler;
     final BiAction<T> activateHandler, passivateHandler;
     final ConcurrentHashMap<IdentityWrapper<T>, ObjectConf<T>> conf = new ConcurrentHashMap<>();
-    final ThreadLocal<IdentityWrapper<T>> lookupKey = ThreadLocal.withInitial(IdentityWrapper::new);
+    final FastThreadLocal<IdentityWrapper<T>> lookupKey = new FastThreadLocal<IdentityWrapper<T>>() {
+        @Override
+        protected IdentityWrapper<T> initialValue() {
+            return new IdentityWrapper<>();
+        }
+    };
     final AtomicInteger totalCount = new AtomicInteger();
     final ConcurrentBlockingDeque<IdentityWrapper<T>> stack;
     final TimeoutFuture<?> future;
