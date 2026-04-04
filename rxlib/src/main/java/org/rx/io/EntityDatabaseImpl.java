@@ -239,7 +239,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     public EntityDatabaseImpl() {
-        this(DEFAULT_FILE_PATH, null);
+        this(RxConfig.INSTANCE.getDisk().getH2DbPath(), null);
     }
 
     public EntityDatabaseImpl(String filePath, String timeRollingPattern) {

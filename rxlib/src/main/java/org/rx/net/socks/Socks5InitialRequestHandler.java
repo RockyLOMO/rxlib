@@ -34,7 +34,6 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
         InetSocketAddress remoteEp = Sockets.getRemoteAddress(ctx.channel());
         InetAddress raddr = remoteEp.getAddress();
         if (!Sockets.isPrivateIp(raddr) && !whiteList.contains(raddr)) {
-            H2StoreCache.iteratorContext(0, Integer.MAX_VALUE, InetAddress.class);
             log.warn("socks5[{}] whiteList={}\n{} access blocked", server.getConfig().getListenPort(), toJsonString(whiteList), remoteEp);
             ctx.close();
             return;

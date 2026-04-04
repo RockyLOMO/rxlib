@@ -79,7 +79,7 @@ public class TestIO extends AbstractTester {
 
         List<PersonBean> result = db1.findBy(new EntityQueryLambda<>(PersonBean.class));
         System.out.println(result);
-        wait();
+//        wait();
     }
 
     @Test
@@ -147,7 +147,7 @@ public class TestIO extends AbstractTester {
         }, 2000, null, TimeoutFlag.PERIOD.flags());
         db.dropMapping(PersonBean.class);
 
-        wait();
+//        wait();
     }
 
     @Test

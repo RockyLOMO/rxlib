@@ -57,6 +57,7 @@ public final class RxConfig {
         String CACHE_MAX_ITEM_SIZE = "app.cache.maxItemSize";
 
         String DISK_H2_SETTINGS = "app.disk.h2Settings";
+        String DISK_H2_DB_PATH = "app.disk.h2DbPath";
         String DISK_USAGE_WARNING = "app.disk.diskUsageWarningThreshold";
         String DISK_ENTITY_DATABASE_ROLL_PERIOD = "app.disk.entityDatabaseRollPeriod";
 
@@ -148,6 +149,7 @@ public final class RxConfig {
     public static class DiskConfig {
         int diskUsageWarningThreshold;
         String h2Settings;
+        String h2DbPath;
         int entityDatabaseRollPeriod;
     }
 
@@ -349,6 +351,7 @@ public final class RxConfig {
         cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, cache.maxItemSize);
 
         disk.h2Settings = SystemPropertyUtil.get(ConfigNames.DISK_H2_SETTINGS, disk.h2Settings);
+        disk.h2DbPath = SystemPropertyUtil.get(ConfigNames.DISK_H2_DB_PATH, disk.h2DbPath);
         disk.diskUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.DISK_USAGE_WARNING, disk.diskUsageWarningThreshold);
         disk.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_ENTITY_DATABASE_ROLL_PERIOD, disk.entityDatabaseRollPeriod);
 

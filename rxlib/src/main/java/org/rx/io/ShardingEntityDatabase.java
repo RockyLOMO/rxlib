@@ -8,6 +8,7 @@ import org.rx.bean.DataTable;
 import org.rx.bean.RandomList;
 import org.rx.bean.Tuple;
 import org.rx.core.Linq;
+import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.net.Sockets;
 import org.rx.net.nameserver.NameserverClient;
@@ -48,7 +49,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
     }
 
     public ShardingEntityDatabase(int rpcPort, String... registerEndpoints) {
-        this(DEFAULT_FILE_PATH, null, 0, rpcPort, registerEndpoints);
+        this(RxConfig.INSTANCE.getDisk().getH2DbPath(), null, 0, rpcPort, registerEndpoints);
     }
 
     public ShardingEntityDatabase(String filePath, String timeRollingPattern, int maxConnections,

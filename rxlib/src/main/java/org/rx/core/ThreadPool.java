@@ -5,7 +5,6 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.InternalThreadLocalMap;
-import io.netty.util.internal.ThreadLocalRandom;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -39,12 +38,17 @@ public class ThreadPool extends ThreadPoolExecutor {
         final CompletableFuture<TS>[] subFutures;
     }
 
-    @RequiredArgsConstructor
     public static class ThreadQueue extends LinkedTransferQueue<Runnable> {
         private static final long serialVersionUID = 4283369202482437480L;
         private ThreadPool pool;
         final int queueCapacity;
         final AtomicInteger counter = new AtomicInteger();
+        final Semaphore availableSlots;
+
+        public ThreadQueue(int queueCapacity) {
+            this.queueCapacity = queueCapacity;
+            this.availableSlots = new Semaphore(queueCapacity, false);
+        }
 
         public boolean isFullLoad() {
             return counter.get() >= queueCapacity;
@@ -63,19 +67,15 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public boolean offer(Runnable r) {
-            if (isFullLoad()) {
+            if (!availableSlots.tryAcquire()) {
                 boolean logged = false;
-                while (isFullLoad()) {
+                while (!availableSlots.tryAcquire(500, TimeUnit.MILLISECONDS)) {
                     if (!logged) {
                         log.warn("Block caller thread until queue[{}/{}] polled then offer {}", counter.get(), queueCapacity, r);
                         logged = true;
                     }
-                    //避免生产者一直等待
-                    synchronized (this) {
-                        wait(500);
-                    }
                 }
-                if (log.isDebugEnabled()) {
+                if (logged && log.isDebugEnabled()) {
                     log.debug("Wait poll ok");
                 }
             }
@@ -139,19 +139,17 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
 
         private void doNotify() {
-            int c = counter.decrementAndGet();
-            synchronized (this) {
-                notify();
-            }
-            if (c < 0) {
-                counter.set(super.size());
-                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.THREAD_QUEUE_SIZE_ERROR.name(),
-                        String.format("FIX SIZE %s -> %s", c, counter));
+            int c = counter.getAndUpdate(v -> Math.max(0, v - 1));
+            if (c > 0) {
+                availableSlots.release();
+            } else {
+                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.THREAD_QUEUE_SIZE_ERROR.name(), "FIX SIZE < 0");
             }
         }
     }
 
     static class Task<T> implements Runnable, Callable<T>, Supplier<T> {
+        private static final AtomicInteger TASK_COUNTER = new AtomicInteger();
         // 减少stackTrace
         // static <T> Task<T> adapt(Callable<T> fn) {
         // return adapt(fn, null, null);
@@ -224,8 +222,13 @@ public class ThreadPool extends ThreadPoolExecutor {
                 } else {
                     stackTrace = null;
                 }
-            } else if (conf.trace.slowMethodElapsedMicros > 0 && ThreadLocalRandom.current().nextInt(0, 100) < conf.threadPool.slowMethodSamplingPercent) {
-                stackTrace = new Throwable().getStackTrace();
+            } else if (conf.trace.slowMethodElapsedMicros > 0) {
+                int threshold = conf.threadPool.slowMethodSamplingPercent;
+                if (threshold > 0 && Math.abs(TASK_COUNTER.incrementAndGet() % 100) < threshold) {
+                    stackTrace = new Throwable().getStackTrace();
+                } else {
+                    stackTrace = null;
+                }
             } else {
                 stackTrace = null;
             }
@@ -327,7 +330,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
     private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
-    static final Map<Object, RefCounter<ReentrantLock>> taskLockMap = new ConcurrentHashMap<>(8);
+    static final com.github.benmanes.caffeine.cache.Cache<Object, RefCounter<ReentrantLock>> taskLockMap = Caffeine.newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).build();
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
     static final Map<Object, AtomicInteger> taskSerialCountMap = new ConcurrentHashMap<>();
 
@@ -468,7 +471,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     // region instance members
     @Getter
     final String poolName;
-    final com.github.benmanes.caffeine.cache.Cache<Runnable, Task<?>> taskMap = Caffeine.newBuilder().weakKeys().build();
+    final Map<Runnable, Task<?>> taskMap = new ConcurrentHashMap<>();
     // runAsync() wrap task to AsynchronousCompletionTask, and this::execute adapt function will not work
     final Executor asyncExecutor = super::execute;
 
@@ -669,32 +672,58 @@ public class ThreadPool extends ThreadPoolExecutor {
             throw new RejectedExecutionException("Serial task chain for " + taskId + " has exceeded capacity");
         }
 
-        boolean[] isNew = {false};
-        CompletableFuture<T> f = (CompletableFuture<T>) taskSerialMap.compute(taskId, (k, existing) -> {
+        CompletableFuture<T> f = (CompletableFuture<T>) taskSerialMap.get(taskId);
+        boolean isNew = false;
+        if (f == null) {
+            CompletableFuture<T> placeholder = new CompletableFuture<>();
+            CompletableFuture<?> existing = taskSerialMap.putIfAbsent(taskId, placeholder);
             if (existing == null) {
-                isNew[0] = true;
+                isNew = true;
+                f = placeholder;
                 Task<T> t = Task.adapt(task, flags, taskId);
-                CompletableFuture<T> head = CompletableFuture.supplyAsync(t, asyncExecutor);
-                head.whenComplete((r, e) -> {
-                    taskSerialMap.remove(taskId, head);
-                    if (counter.decrementAndGet() == 0) {
-                        taskSerialCountMap.remove(taskId, counter); // At worst leaves a harmless tombstone or removes successfully
-                    }
-                });
-                return head;
-            }
-            return existing;
-        });
-
-        if (!isNew[0]) {
-            CompletableFuture<T> next = f.thenApplyAsync(t -> {
-                COMPLETION_RETURNED_VALUE.set(t);
                 try {
-                    return task.get();
-                } finally {
-                    COMPLETION_RETURNED_VALUE.remove();
+                    CompletableFuture.supplyAsync(t, asyncExecutor).whenComplete((r, e) -> {
+                        if (e != null) {
+                            placeholder.completeExceptionally(e);
+                        } else {
+                            placeholder.complete(r);
+                        }
+                        taskSerialMap.remove(taskId, placeholder);
+                        if (counter.decrementAndGet() == 0) {
+                            taskSerialCountMap.remove(taskId, counter);
+                        }
+                    });
+                } catch (Throwable ex) {
+                    placeholder.completeExceptionally(ex);
+                    taskSerialMap.remove(taskId, placeholder);
+                    if (counter.decrementAndGet() == 0) {
+                        taskSerialCountMap.remove(taskId, counter);
+                    }
+                    throw ex;
                 }
-            }, this);
+            } else {
+                f = (CompletableFuture<T>) existing;
+            }
+        }
+
+        if (!isNew) {
+            CompletableFuture<T> next;
+            try {
+                next = f.thenApplyAsync(t -> {
+                    COMPLETION_RETURNED_VALUE.set(t);
+                    try {
+                        return task.get();
+                    } finally {
+                        COMPLETION_RETURNED_VALUE.remove();
+                    }
+                }, this);
+            } catch (Throwable ex) {
+                if (counter.decrementAndGet() == 0) {
+                    taskSerialCountMap.remove(taskId, counter);
+                }
+                throw ex;
+            }
+
             next.whenComplete((r, e) -> {
                 taskSerialMap.remove(taskId, next);
                 if (counter.decrementAndGet() == 0) {
@@ -797,11 +826,11 @@ public class ThreadPool extends ThreadPoolExecutor {
         FlagsEnum<RunFlag> flags = task.flags;
         Object id = task.id;
         if (id != null) {
-            RefCounter<ReentrantLock> ctx = taskLockMap.get(id);
+            RefCounter<ReentrantLock> ctx = taskLockMap.getIfPresent(id);
             if (ctx != null && ctx.ref.isHeldByCurrentThread()) {
                 boolean doRemove = false;
                 if (ctx.decrementRefCnt() <= 0) {
-                    taskLockMap.remove(id);
+                    taskLockMap.invalidate(id);
                     doRemove = true;
                 }
                 if (log.isDebugEnabled()) {
@@ -837,19 +866,20 @@ public class ThreadPool extends ThreadPoolExecutor {
             throw new InvalidException("SINGLE or SYNCHRONIZED flag require a taskId");
         }
 
-        return taskLockMap.computeIfAbsent(id, k -> new RefCounter<>(new ReentrantLock()));
+        return taskLockMap.get(id, k -> new RefCounter<>(new ReentrantLock()));
     }
 
     private Task<?> setTask(Runnable r) {
-        Task<?> task = taskMap.getIfPresent(r);
-        if (task == null) {
-            if (r instanceof FutureTaskAdapter) {
-                task = ((FutureTaskAdapter<?>) r).task;
-            } else if (r instanceof CompletableFuture.AsynchronousCompletionTask) {
-                task = Task.as(Reflects.readField(r, "fn"));
-            } else {
-                task = Task.as(r);
-            }
+        if (r instanceof FutureTaskAdapter) {
+            return ((FutureTaskAdapter<?>) r).task;
+        }
+        Task<?> task = Task.as(r);
+        if (task != null) {
+            return task;
+        }
+        task = taskMap.get(r);
+        if (task == null && r instanceof CompletableFuture.AsynchronousCompletionTask) {
+            task = Task.as(Reflects.readField(r, "fn"));
             if (task != null) {
                 taskMap.put(r, task);
             }
@@ -858,7 +888,14 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     private Task<?> getTask(Runnable r, boolean remove) {
-        return remove ? taskMap.asMap().remove(r) : taskMap.getIfPresent(r);
+        if (r instanceof FutureTaskAdapter) {
+            return ((FutureTaskAdapter<?>) r).task;
+        }
+        Task<?> task = Task.as(r);
+        if (task != null) {
+            return task;
+        }
+        return remove ? taskMap.remove(r) : taskMap.get(r);
     }
 
     @Override
