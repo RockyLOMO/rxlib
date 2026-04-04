@@ -186,17 +186,15 @@ public class AesGcmCrypto extends CryptoAeadBase {
     @SneakyThrows
     @Override
     protected void _udpDecrypt(ByteBuf in, ByteBuf out) {
-        int length = in.readableBytes();  // encrypted payload + tag
-        byte[] encrypted = new byte[length];  // 独立输入缓冲区
-        in.readBytes(encrypted, 0, length);
+        int length = in.readableBytes();
         byte[] decBuffer = decBuffer();
+        in.readBytes(decBuffer, 0, length);
         AEADCipher decCipher = getDecCipher();
         decCipher.init(false, getCipherParameters(false));
         decCipher.doFinal(
                 decBuffer,
-                decCipher.processBytes(encrypted, 0, length, decBuffer, 0)
+                decCipher.processBytes(decBuffer, 0, length, decBuffer, 0)
         );
-
         out.writeBytes(decBuffer, 0, length - TAG_LENGTH);
     }
 }

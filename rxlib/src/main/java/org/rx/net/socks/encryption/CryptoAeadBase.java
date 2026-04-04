@@ -150,7 +150,10 @@ public abstract class CryptoAeadBase implements ICrypto {
 
     @Override
     public ByteBuf encrypt(ByteBuf in) {
-        ByteBuf out = Bytes.directBuffer();
+        int estimatedSize = forUdp
+                ? getSaltLength() + in.readableBytes() + TAG_LENGTH
+                : (encCipher == null ? getSaltLength() : 0) + in.readableBytes() + ((in.readableBytes() / PAYLOAD_SIZE_MASK) + 1) * (2 + TAG_LENGTH * 2);
+        ByteBuf out = Bytes.directBuffer(estimatedSize);
         try {
             if (forUdp) {
                 byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
@@ -177,7 +180,17 @@ public abstract class CryptoAeadBase implements ICrypto {
 
     @Override
     public ByteBuf decrypt(ByteBuf in) {
-        ByteBuf out = Bytes.directBuffer();
+        int estimatedSize;
+        if (forUdp) {
+            estimatedSize = Math.max(0, in.readableBytes() - getSaltLength() - TAG_LENGTH);
+        } else {
+            if (decCipher == null) {
+                estimatedSize = Math.max(0, in.readableBytes() - getSaltLength());
+            } else {
+                estimatedSize = in.readableBytes();
+            }
+        }
+        ByteBuf out = Bytes.directBuffer(estimatedSize);
         try {
             if (forUdp) {
                 int length = in.readableBytes();

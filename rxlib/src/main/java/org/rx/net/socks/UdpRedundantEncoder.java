@@ -173,15 +173,19 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
                 // 优化：复用payloadSlice，避免重复分配
                 for (int i = 1; i < multiplier; i++) {
                     final int copyIndex = i;
-                    final ByteBuf payload = payloadSlice;
+                    final ByteBuf payload = payloadSlice.retainedSlice(); // 独立引用
                     long delayMicros = (long) intervalMicros * copyIndex;
                     ctx.executor().schedule(() -> {
-                        writeRedundantCopyOptimized(ctx, seqId, payload, recipient);
-                        ctx.flush();
+                        try {
+                            writeRedundantCopyOptimized(ctx, seqId, payload, recipient);
+                            ctx.flush();
+                        } finally {
+                            payload.release();
+                        }
                     }, delayMicros, TimeUnit.MICROSECONDS);
                 }
                 
-                // 释放slice的引用计数
+                // 释放slice的初始 retain 引用
                 payloadSlice.release();
             } else {
                 // 优化：同时发送模式，使用slice避免拷贝

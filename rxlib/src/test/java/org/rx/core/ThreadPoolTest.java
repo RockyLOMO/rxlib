@@ -1309,7 +1309,7 @@ public class ThreadPoolTest extends AbstractTester {
             throw new Exception("timer exec");
         }, 1000);
 
-        _wait();
+        sleep(1500); // allow timer to execute but avoid infinite wait
     }
     //endregion
 

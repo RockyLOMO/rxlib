@@ -37,14 +37,19 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
     public ShadowsocksServer(@NonNull ShadowsocksConfig config) {
         this.config = config;
-        EventExecutorGroup cryptoGroup = sharedCryptoGroup();
+        EventExecutorGroup cryptoGroup = config.isUseDedicatedCryptoGroup() ? sharedCryptoGroup() : null;
 
         bootstrap = Sockets.serverBootstrap(config, channel -> {
             ICrypto _crypto = ICrypto.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(false);
             channel.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
-            channel.pipeline().addLast(cryptoGroup, CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
+            channel.pipeline().addLast(new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
+            if (config.isUseDedicatedCryptoGroup()) {
+                channel.pipeline().addLast(cryptoGroup, CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
+            } else {
+                channel.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
+            }
         });
         bootstrap.attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint());
 
@@ -54,7 +59,11 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             _crypto.setForUdp(true);
             ctx.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
-            ctx.pipeline().addLast(cryptoGroup, CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
+            if (config.isUseDedicatedCryptoGroup()) {
+                ctx.pipeline().addLast(cryptoGroup, CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
+            } else {
+                ctx.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
+            }
         }).attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).channel();
     }
 
