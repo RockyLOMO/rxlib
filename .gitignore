@@ -17,3 +17,4 @@ rxlib/geosite-direct.txt
 rxlib/rxdaemon-1.0.jar
 *_dump.txt
 *_jstack.txt
+*_stuck.txt

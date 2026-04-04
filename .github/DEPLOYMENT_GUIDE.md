@@ -1,4 +1,3 @@
-# 🚀 Maven Central 发布指南
 
 ## 📋 核心功能
 

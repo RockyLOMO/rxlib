@@ -13,7 +13,7 @@
 ```
 
 ### 🚀 发布到 Maven Central
-查看 **[部署指南](DEPLOYMENT_GUIDE.md)** 了解如何发布新版本到 Maven Central。
+查看 **[部署指南](.github/DEPLOYMENT_GUIDE.md)** 了解如何发布新版本到 Maven Central。
 
 ### FEATURE
 * [ThreadPool 最佳线程数线程池 & 链路追踪异步trace & 定时器](https://github.com/RockyLOMO/rxlib/wiki/ThreadPool---%E6%9C%80%E4%BD%B3%E7%BA%BF%E7%A8%8B%E6%95%B0%E7%BA%BF%E7%A8%8B%E6%B1%A0-&-%E9%93%BE%E8%B7%AF%E8%BF%BD%E8%B8%AA%E5%BC%82%E6%AD%A5trace-&-%E5%AE%9A%E6%97%B6%E5%99%A8)
