@@ -152,12 +152,11 @@ public abstract class CryptoAeadBase implements ICrypto {
     public ByteBuf encrypt(ByteBuf in) {
         int estimatedSize = forUdp
                 ? getSaltLength() + in.readableBytes() + TAG_LENGTH
-                : in.readableBytes() + ((in.readableBytes() / PAYLOAD_SIZE_MASK) + 1) * (2 + TAG_LENGTH * 2);
+                : (encCipher == null ? getSaltLength() : 0) + in.readableBytes() + ((in.readableBytes() / PAYLOAD_SIZE_MASK) + 1) * (2 + TAG_LENGTH * 2);
         ByteBuf out = Bytes.directBuffer(estimatedSize);
         try {
             if (forUdp) {
-                byte[] salt = new byte[getSaltLength()];
-                java.util.concurrent.ThreadLocalRandom.current().nextBytes(salt);
+                byte[] salt = CodecUtil.secureRandomBytes(getSaltLength());
                 out.writeBytes(salt);
                 setEncSubkey(genSubkey(salt));
                 // getEncCipher() will auto-init if null
@@ -181,7 +180,16 @@ public abstract class CryptoAeadBase implements ICrypto {
 
     @Override
     public ByteBuf decrypt(ByteBuf in) {
-        int estimatedSize = Math.max(0, in.readableBytes() - getSaltLength() - TAG_LENGTH);
+        int estimatedSize;
+        if (forUdp) {
+            estimatedSize = Math.max(0, in.readableBytes() - getSaltLength() - TAG_LENGTH);
+        } else {
+            if (decCipher == null) {
+                estimatedSize = Math.max(0, in.readableBytes() - getSaltLength());
+            } else {
+                estimatedSize = in.readableBytes();
+            }
+        }
         ByteBuf out = Bytes.directBuffer(estimatedSize);
         try {
             if (forUdp) {

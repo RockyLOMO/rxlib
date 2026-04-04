@@ -37,7 +37,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
     public ShadowsocksServer(@NonNull ShadowsocksConfig config) {
         this.config = config;
-        EventExecutorGroup cryptoGroup = sharedCryptoGroup();
+        EventExecutorGroup cryptoGroup = config.isUseDedicatedCryptoGroup() ? sharedCryptoGroup() : null;
 
         bootstrap = Sockets.serverBootstrap(config, channel -> {
             ICrypto _crypto = ICrypto.get(config.getMethod(), config.getPassword());

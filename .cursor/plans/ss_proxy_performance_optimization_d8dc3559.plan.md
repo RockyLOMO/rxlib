@@ -4,25 +4,25 @@ overview: 对 SocksProxyServer 和 ShadowsocksServer 进行性能审查后，识
 todos:
   - id: p0-backpressure
     content: SSTcpProxyHandler 添加 BackpressureHandler.install()
-    status: pending
+    status: completed
   - id: p1-udp-decrypt-alloc
     content: AesGcmCrypto._udpDecrypt 复用 decBuffer 替代 new byte[]
-    status: pending
+    status: completed
   - id: p2-buffer-capacity
     content: CryptoAeadBase encrypt/decrypt 预估 ByteBuf 初始容量
-    status: pending
+    status: completed
   - id: p3-idle-handler
     content: ShadowsocksServer TCP pipeline 添加 ProxyChannelIdleHandler
-    status: pending
+    status: completed
   - id: p4-crypto-group
     content: 评估移除 cryptoGroup，改为 IO EventLoop 直接执行加解密（可配置）
-    status: pending
+    status: completed
   - id: p5-salt-pool
     content: UDP 加密路径使用预生成盐值池减少 SecureRandom 调用
-    status: pending
+    status: cancelled
   - id: p6-addr-buffer
     content: SSProtocolCodec encode 改用 heap buffer 替代 directBuffer(64)
-    status: pending
+    status: completed
 isProject: false
 ---
 
