@@ -9,9 +9,10 @@ logs/
 config.json
 .DS_Store
 data
-rx.mv.db
+*.mv.db
 *.log
 rxlib/GeoLite2-City.mmdb
 rxlib/geoip.mmdb
 rxlib/geosite-direct.txt
 rxlib/rxdaemon-1.0.jar
+thread_dump.txt

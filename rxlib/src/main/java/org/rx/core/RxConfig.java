@@ -149,7 +149,7 @@ public final class RxConfig {
     public static class DiskConfig {
         int diskUsageWarningThreshold;
         String h2Settings;
-        String h2DbPath = "./rx";
+        String h2DbPath;
         int entityDatabaseRollPeriod;
     }
 
