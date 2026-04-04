@@ -4,37 +4,37 @@ overview: 对 ObjectPool 和 ThreadPool 进行深度性能审查，发现 10 个
 todos:
   - id: op-p0-remaining-time
     content: ObjectPool.borrow() remainingTime 初始值从 1 改为 borrowTimeout
-    status: pending
+    status: completed
   - id: tp-p0-wait-strategy
     content: ThreadQueue.offer() 用 Semaphore 替代 synchronized+wait(500)
-    status: pending
+    status: completed
   - id: op-p1-stale-wrapper
     content: doRetire 添加 retired 标志，doPoll 循环跳过 stale wrapper
-    status: pending
+    status: completed
   - id: tp-p1-taskmap
     content: setTask() 优先走 FutureTaskAdapter/Task.as 快速路径，减少 Caffeine cache 访问
-    status: pending
+    status: completed
   - id: op-p2-valid-sampling
     content: validNow() 改为采样验证或分离 idle timeout 与 validate 逻辑
-    status: pending
+    status: completed
   - id: tp-p2-reflect
     content: ACT 反射路径改用 MethodHandle 或提前绑定
-    status: pending
+    status: completed
   - id: op-p3-deque-capacity
     content: ConcurrentBlockingDeque 容量设为 maxSize 而非 MAX_VALUE
-    status: pending
+    status: completed
   - id: tp-p3-counter-fix
     content: doNotify() counter 用 updateAndGet 防止负数
-    status: pending
+    status: completed
   - id: tp-p4-serial-compute
     content: runSerialAsync 拆分 compute 为 get+putIfAbsent 减少持锁时间
-    status: pending
+    status: completed
   - id: tp-p5-sampling
     content: Task 构造中用计数器取模替代 ThreadLocalRandom 采样
-    status: pending
+    status: completed
   - id: tp-p6-lock-leak
     content: taskLockMap 加定期清理或改用自动过期缓存
-    status: pending
+    status: completed
 isProject: false
 ---
 

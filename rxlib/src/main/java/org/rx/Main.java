@@ -347,6 +347,8 @@ public final class Main implements SocksRpcContract {
 
             conf.setOptimalSettings(SS_IN_OPS);
             conf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
+            conf.setReadTimeoutSeconds(0);
+            conf.setWriteTimeoutSeconds(0);
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
             svrRefs.add(ssSvr);
 

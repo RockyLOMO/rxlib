@@ -97,6 +97,21 @@ class ShadowsocksServerIntegrationTest {
                 ByteBuf decrypted = crypto.decrypt(Unpooled.wrappedBuffer(backEncrypted));
                 assertEquals(message, decrypted.toString(StandardCharsets.UTF_8));
                 decrypted.release();
+
+                // 3) Additional rounds
+                for (int i = 0; i < 10; i++) {
+                    String loopMsg = "loop-msg-" + i;
+                    ByteBuf loopBuf = Unpooled.buffer();
+                    loopBuf.writeBytes(loopMsg.getBytes(StandardCharsets.UTF_8));
+                    ByteBuf loopEnc = crypto.encrypt(loopBuf);
+                    out.write(toBytes(loopEnc));
+                    out.flush();
+
+                    byte[] loopBack = readAtLeast(in, 1, 1024, 3000);
+                    ByteBuf loopDec = crypto.decrypt(Unpooled.wrappedBuffer(loopBack));
+                    assertEquals(loopMsg, loopDec.toString(StandardCharsets.UTF_8));
+                    loopDec.release();
+                }
             }
         } finally {
             server.close();
@@ -148,6 +163,30 @@ class ShadowsocksServerIntegrationTest {
                 decrypted.readBytes(echoed);
                 assertArrayEquals(payload, echoed);
                 decrypted.release();
+
+                // 3) Multiple UDP packets
+                for (int i = 0; i < 20; i++) {
+                    ByteBuf mBuf = Unpooled.buffer();
+                    UdpManager.encode(mBuf, "127.0.0.1", UDP_ECHO_PORT);
+                    byte[] mPayload = ("udp-burst-" + i).getBytes(StandardCharsets.UTF_8);
+                    mBuf.writeBytes(mPayload);
+                    
+                    ByteBuf mEnc = crypto.encrypt(mBuf);
+                    byte[] mReq = toBytes(mEnc);
+                    sock.send(new java.net.DatagramPacket(mReq, mReq.length, InetAddress.getByName("127.0.0.1"), proxyPort));
+
+                    byte[] mResp = new byte[1024];
+                    java.net.DatagramPacket mp = new java.net.DatagramPacket(mResp, mResp.length);
+                    sock.receive(mp);
+
+                    ByteBuf mBackEnc = Unpooled.wrappedBuffer(mResp, 0, mp.getLength());
+                    ByteBuf mDec = crypto.decrypt(mBackEnc);
+                    UdpManager.decode(mDec); 
+                    byte[] mEchoed = new byte[mDec.readableBytes()];
+                    mDec.readBytes(mEchoed);
+                    assertArrayEquals(mPayload, mEchoed);
+                    mDec.release();
+                }
             } finally {
                 sock.close();
             }

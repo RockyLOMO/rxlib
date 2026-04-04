@@ -1,12 +1,14 @@
 package org.rx.core;
 
-import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 
 import static org.rx.core.Extends.tryClose;
 
-@RequiredArgsConstructor
+@NoArgsConstructor
+@AllArgsConstructor
 public class IdentityWrapper<T> implements AutoCloseable {
-    public final T instance;
+    public T instance;
 
     public boolean equals(Object other) {
         return other instanceof IdentityWrapper && ((IdentityWrapper<?>) other).instance == this.instance;

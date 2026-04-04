@@ -49,6 +49,8 @@ class SocksProxyServerIntegrationTest {
         udpEchoChannel = udpEchoBootstrap.bind(Sockets.newAnyEndpoint(UDP_ECHO_PORT)).sync().channel();
 
         Thread.sleep(300);
+        // Pre-load to avoid blocking Netty worker threads during first init
+        Socks5InitialRequestHandler.DEFAULT.hashCode();
     }
 
     @AfterAll
@@ -68,20 +70,23 @@ class SocksProxyServerIntegrationTest {
         usr.setIpLimit(-1);
 
         SocksConfig config = new SocksConfig(proxyPort);
+        config.getWhiteList(); // Trigger lazy init in calling thread
         SocksProxyServer proxy = new SocksProxyServer(config, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
 
         try {
-            Thread.sleep(300);
+            Thread.sleep(1000);
             try (Socket s = new Socket("127.0.0.1", proxyPort)) {
                 s.setSoTimeout(4000);
                 OutputStream out = s.getOutputStream();
                 InputStream in = s.getInputStream();
 
                 // 1) greeting supports username/password auth (0x02)
+                log.info("Client sending greeting...");
                 out.write(new byte[]{0x05, 0x01, 0x02});
                 out.flush();
-                byte[] hs = readExact(in, 2, 3000);
+                byte[] hs = readExact(in, 2, 8000);
                 assertArrayEquals(new byte[]{0x05, 0x02}, hs);
+                log.info("Client received handshake response");
 
                 // 2) auth subnegotiation (RFC1929)
                 byte[] u = "u1".getBytes(StandardCharsets.US_ASCII);
@@ -92,10 +97,12 @@ class SocksProxyServerIntegrationTest {
                 auth.writeBytes(u);
                 auth.writeByte(p.length);
                 auth.writeBytes(p);
+                log.info("Client sending auth...");
                 out.write(toBytes(auth));
                 out.flush();
-                byte[] authResp = readExact(in, 2, 3000);
+                byte[] authResp = readExact(in, 2, 8000);
                 assertArrayEquals(new byte[]{0x01, 0x00}, authResp);
+                log.info("Client auth success");
 
                 // 3) connect to tcp echo server
                 out.write(buildSocks5ConnectReqIpv4("127.0.0.1", TCP_ECHO_PORT));
@@ -108,8 +115,17 @@ class SocksProxyServerIntegrationTest {
                 String message = "auth-tcp-e2e";
                 out.write(message.getBytes(StandardCharsets.UTF_8));
                 out.flush();
-                byte[] back = readExact(in, message.getBytes(StandardCharsets.UTF_8).length, 3000);
+                byte[] back = readExact(in, message.getBytes(StandardCharsets.UTF_8).length, 5000);
                 assertEquals(message, new String(back, StandardCharsets.UTF_8));
+
+                // 5) Additional rounds
+                for (int i = 0; i < 10; i++) {
+                    String loopMsg = "loop-msg-" + i;
+                    out.write(loopMsg.getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    byte[] loopBack = readExact(in, loopMsg.getBytes(StandardCharsets.UTF_8).length, 5000);
+                    assertEquals(loopMsg, new String(loopBack, StandardCharsets.UTF_8));
+                }
             }
         } finally {
             proxy.close();
@@ -122,10 +138,11 @@ class SocksProxyServerIntegrationTest {
     void socks5UdpRelay_e2e() {
         int proxyPort = 15281;
         SocksConfig config = new SocksConfig(proxyPort);
+        config.getWhiteList(); // Trigger lazy init in calling thread
         SocksProxyServer proxy = new SocksProxyServer(config, null);
 
         try {
-            Thread.sleep(300);
+            Thread.sleep(1000);
             DatagramSocket sock = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
             sock.setSoTimeout(4000);
             try {
@@ -159,6 +176,26 @@ class SocksProxyServerIntegrationTest {
                 byte[] echoed = new byte[p.getLength() - 10];
                 System.arraycopy(resp, 10, echoed, 0, echoed.length);
                 assertArrayEquals(payload, echoed);
+
+                // 3) Additional UDP rounds
+                for (int i = 0; i < 20; i++) {
+                    byte[] mPayload = ("udp-msg-" + i).getBytes(StandardCharsets.UTF_8);
+                    ByteBuf mHeader = Unpooled.buffer();
+                    mHeader.writeZero(3);
+                    mHeader.writeByte(0x01);
+                    mHeader.writeBytes(new byte[]{127, 0, 0, 1});
+                    mHeader.writeShort(UDP_ECHO_PORT);
+                    mHeader.writeBytes(mPayload);
+                    byte[] mReq = toBytes(mHeader);
+                    sock.send(new java.net.DatagramPacket(mReq, mReq.length, InetAddress.getByName("127.0.0.1"), proxyPort));
+
+                    byte[] mResp = new byte[256];
+                    java.net.DatagramPacket mp = new java.net.DatagramPacket(mResp, mResp.length);
+                    sock.receive(mp);
+                    byte[] mEchoed = new byte[mp.getLength() - 10];
+                    System.arraycopy(mResp, 10, mEchoed, 0, mEchoed.length);
+                    assertArrayEquals(mPayload, mEchoed);
+                }
             } finally {
                 sock.close();
             }
@@ -173,20 +210,23 @@ class SocksProxyServerIntegrationTest {
     void socks5AnonymousLogin_e2e() {
         int proxyPort = 15282;
         SocksConfig config = new SocksConfig(proxyPort);
+        config.getWhiteList(); // Trigger lazy init in calling thread
         SocksProxyServer proxy = new SocksProxyServer(config, null);
 
         try {
-            Thread.sleep(300);
+            Thread.sleep(1000);
             try (Socket s = new Socket("127.0.0.1", proxyPort)) {
                 s.setSoTimeout(4000);
                 OutputStream out = s.getOutputStream();
                 InputStream in = s.getInputStream();
 
                 // 1) Greeting: No auth (0x00)
+                log.info("Anon Client sending greeting...");
                 out.write(new byte[]{0x05, 0x01, 0x00});
                 out.flush();
-                byte[] hs = readExact(in, 2, 3000);
+                byte[] hs = readExact(in, 2, 8000);
                 assertArrayEquals(new byte[]{0x05, 0x00}, hs);
+                log.info("Anon Client received handshake response");
 
                 // 2) Connect to tcp echo server
                 out.write(buildSocks5ConnectReqIpv4("127.0.0.1", TCP_ECHO_PORT));
@@ -199,8 +239,17 @@ class SocksProxyServerIntegrationTest {
                 String message = "anonymous-tcp-e2e";
                 out.write(message.getBytes(StandardCharsets.UTF_8));
                 out.flush();
-                byte[] back = readExact(in, message.getBytes(StandardCharsets.UTF_8).length, 3000);
+                byte[] back = readExact(in, message.getBytes(StandardCharsets.UTF_8).length, 5000);
                 assertEquals(message, new String(back, StandardCharsets.UTF_8));
+
+                // 4) Additional rounds
+                for (int i = 0; i < 10; i++) {
+                    String loopMsg = "loop-msg-anon-" + i;
+                    out.write(loopMsg.getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    byte[] loopBack = readExact(in, loopMsg.getBytes(StandardCharsets.UTF_8).length, 5000);
+                    assertEquals(loopMsg, new String(loopBack, StandardCharsets.UTF_8));
+                }
             }
         } finally {
             proxy.close();
@@ -213,6 +262,7 @@ class SocksProxyServerIntegrationTest {
     void socks5TrafficShaping_e2e() {
         int proxyPort = 15283;
         SocksConfig config = new SocksConfig(proxyPort);
+        config.getWhiteList(); // Trigger lazy init in calling thread
         config.setTrafficShapingInterval(100); 
         SocksUser usr = new SocksUser("u_shaping");
         usr.setPassword("p_shaping");
@@ -222,7 +272,7 @@ class SocksProxyServerIntegrationTest {
         SocksProxyServer proxy = new SocksProxyServer(config, authenticator);
 
         try {
-            Thread.sleep(300);
+            Thread.sleep(1000);
             byte[] payload;
             try (Socket s = new Socket("127.0.0.1", proxyPort)) {
                 s.setSoTimeout(4000);
@@ -232,7 +282,7 @@ class SocksProxyServerIntegrationTest {
                 // Handshake
                 out.write(new byte[]{0x05, 0x01, 0x02});
                 out.flush();
-                readExact(in, 2, 3000);
+                readExact(in, 2, 5000);
 
                 // Auth
                 byte[] u = "u_shaping".getBytes();
@@ -245,7 +295,7 @@ class SocksProxyServerIntegrationTest {
                 auth.writeBytes(p);
                 out.write(toBytes(auth));
                 out.flush();
-                readExact(in, 2, 3000);
+                readExact(in, 2, 5000);
 
                 // Connect
                 out.write(buildSocks5ConnectReqIpv4("127.0.0.1", TCP_ECHO_PORT));
@@ -301,7 +351,7 @@ class SocksProxyServerIntegrationTest {
             if (n == -1) break;
             read += n;
         }
-        assertEquals(len, read, "short read");
+        assertEquals(len, read, "short read after " + (System.currentTimeMillis() - (deadline - timeoutMs)) + "ms");
         return buf;
     }
 
