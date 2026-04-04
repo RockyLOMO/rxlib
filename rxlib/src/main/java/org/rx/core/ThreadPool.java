@@ -224,7 +224,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                 }
             } else if (conf.trace.slowMethodElapsedMicros > 0) {
                 int threshold = conf.threadPool.slowMethodSamplingPercent;
-                if (threshold > 0 && TASK_COUNTER.incrementAndGet() % 100 < threshold) {
+                if (threshold > 0 && Math.abs(TASK_COUNTER.incrementAndGet() % 100) < threshold) {
                     stackTrace = new Throwable().getStackTrace();
                 } else {
                     stackTrace = null;
