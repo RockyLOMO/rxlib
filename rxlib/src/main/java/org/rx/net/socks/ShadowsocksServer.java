@@ -14,6 +14,7 @@ import org.rx.net.socks.encryption.ICrypto;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.TripleAction;
 import org.rx.core.RxConfig;
+import org.rx.core.Constants;
 
 //@Slf4j
 public class ShadowsocksServer extends Disposable implements EventPublisher<ShadowsocksServer> {
@@ -28,7 +29,8 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
     private static synchronized EventExecutorGroup sharedCryptoGroup() {
         if (SHARED_CRYPTO_GROUP == null) {
-            SHARED_CRYPTO_GROUP = new DefaultEventExecutorGroup(RxConfig.INSTANCE.getNet().getReactorThreadAmount());
+            int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
+            SHARED_CRYPTO_GROUP = new DefaultEventExecutorGroup(amount > 0 ? amount : Constants.CPU_THREADS * 2);
         }
         return SHARED_CRYPTO_GROUP;
     }
