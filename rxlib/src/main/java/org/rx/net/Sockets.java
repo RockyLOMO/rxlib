@@ -288,133 +288,125 @@ public final class Sockets {
     }
 
     @SneakyThrows
-    public static Channel addServerHandler(Channel channel, SocketConfig config) {
+    public static Channel addTcpServerHandler(Channel channel, SocketConfig config) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
             return channel;
         }
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
-        boolean isUdp = channel instanceof DatagramChannel;
         // 入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
         // 出站事件（如数据写入、连接关闭等）由 ChannelOutboundHandler 处理，传播方向是从 pipeline 的 tail 到 head。
         ChannelPipeline pipeline = channel.pipeline();
-        if (isUdp) {
-        } else {
-            if (flags.has(TransportFlags.TLS)) {
-                pipeline.addLast(getSelfSignedTls().newHandler(channel.alloc()));
-            }
+        if (flags.has(TransportFlags.TLS)) {
+            pipeline.addLast(getSelfSignedTls().newHandler(channel.alloc()));
+        }
 
-            // 先压缩再加密
-            // 支持LengthField?
-            boolean g = flags.has(TransportFlags.GFW);
-            if (!g) {
-                if (flags.has(TransportFlags.COMPRESS_READ)) {
-                    pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
-                }
-                if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                    pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
-                }
+        // 先压缩再加密
+        // 支持LengthField?
+        boolean g = flags.has(TransportFlags.GFW);
+        if (!g) {
+            if (flags.has(TransportFlags.COMPRESS_READ)) {
+                pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
+            if (flags.has(TransportFlags.COMPRESS_WRITE)) {
+                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
+            }
+        }
 
-            boolean hasCipherR = flags.has(TransportFlags.CIPHER_READ),
-                    hasCipherW = flags.has(TransportFlags.CIPHER_WRITE);
-            if (hasCipherR || hasCipherW) {
-                if (config.getCipherKey() == null) {
-                    throw new InvalidException("Cipher key is empty");
-                }
-                channel.attr(SocketConfig.ATTR_CONF).set(config);
+        boolean hasCipherR = flags.has(TransportFlags.CIPHER_READ),
+                hasCipherW = flags.has(TransportFlags.CIPHER_WRITE);
+        if (hasCipherR || hasCipherW) {
+            if (config.getCipherKey() == null) {
+                throw new InvalidException("Cipher key is empty");
             }
-            if (hasCipherR) {
-                pipeline.addLast(new CipherDecoder().channelHandlers());
-            }
-            if (hasCipherW) {
-                pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
-            }
+            channel.attr(SocketConfig.ATTR_CONF).set(config);
+        }
+        if (hasCipherR) {
+            pipeline.addLast(new CipherDecoder().channelHandlers());
+        }
+        if (hasCipherW) {
+            pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
+        }
 
-            if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
-                pipeline.addLast(new HttpPseudoHeaderDecoder());
-            }
-            if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
-                pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
-            }
+        if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
+            pipeline.addLast(new HttpPseudoHeaderDecoder());
+        }
+        if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
+            pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
+        }
 
-            if (g) {
-                if (flags.has(TransportFlags.COMPRESS_READ)) {
-                    pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
-                }
-                if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                    pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
-                }
+        if (g) {
+            if (flags.has(TransportFlags.COMPRESS_READ)) {
+                pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
+            }
+            if (flags.has(TransportFlags.COMPRESS_WRITE)) {
+                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
             }
         }
         dumpPipeline("server", channel);
         return channel;
     }
 
-    public static Channel addClientHandler(Channel channel, SocketConfig config) {
-        return addClientHandler(channel, config, null);
+    public static Channel addTcpClientHandler(Channel channel, SocketConfig config) {
+        return addTcpClientHandler(channel, config, null);
     }
 
     @SneakyThrows
-    public static Channel addClientHandler(Channel channel, SocketConfig config, InetSocketAddress SNISpoofing) {
+    public static Channel addTcpClientHandler(Channel channel, SocketConfig config, InetSocketAddress SNISpoofing) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
             return channel;
         }
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
-        boolean isUdp = channel instanceof DatagramChannel;
         ChannelPipeline pipeline = channel.pipeline();
-        if (isUdp) {
-        } else {
-            if (flags.has(TransportFlags.TLS)) {
-                SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-                if (SNISpoofing == null) {
-                    SNISpoofing = Sockets.parseEndpoint("qq.com:443");
-                }
-                pipeline.addLast(tls.newHandler(channel.alloc(), SNISpoofing.getHostString(), SNISpoofing.getPort()));
+        if (flags.has(TransportFlags.TLS)) {
+            SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
+            if (SNISpoofing == null) {
+                SNISpoofing = Sockets.parseEndpoint("qq.com:443");
             }
+            pipeline.addLast(tls.newHandler(channel.alloc(), SNISpoofing.getHostString(), SNISpoofing.getPort()));
+        }
 
-            boolean g = flags.has(TransportFlags.GFW);
-            if (!g) {
-                if (flags.has(TransportFlags.COMPRESS_READ)) {
-                    pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
-                }
-                if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                    pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
-                }
+        boolean g = flags.has(TransportFlags.GFW);
+        if (!g) {
+            if (flags.has(TransportFlags.COMPRESS_READ)) {
+                pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
+            if (flags.has(TransportFlags.COMPRESS_WRITE)) {
+                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
+            }
+        }
 
-            boolean hasCipherR = flags.has(TransportFlags.CIPHER_READ),
-                    hasCipherW = flags.has(TransportFlags.CIPHER_WRITE);
-            if (hasCipherR || hasCipherW) {
-                if (config.getCipherKey() == null) {
-                    throw new InvalidException("Cipher key is empty");
-                }
-                channel.attr(SocketConfig.ATTR_CONF).set(config);
+        boolean hasCipherR = flags.has(TransportFlags.CIPHER_READ),
+                hasCipherW = flags.has(TransportFlags.CIPHER_WRITE);
+        if (hasCipherR || hasCipherW) {
+            if (config.getCipherKey() == null) {
+                throw new InvalidException("Cipher key is empty");
             }
-            if (hasCipherR) {
-                pipeline.addLast(new CipherDecoder().channelHandlers());
-            }
-            if (hasCipherW) {
-                pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
-            }
+            channel.attr(SocketConfig.ATTR_CONF).set(config);
+        }
+        if (hasCipherR) {
+            pipeline.addLast(new CipherDecoder().channelHandlers());
+        }
+        if (hasCipherW) {
+            pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
+        }
 
-            if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
-                pipeline.addLast(new HttpPseudoHeaderDecoder());
-            }
-            if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
-                pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
-            }
+        if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
+            pipeline.addLast(new HttpPseudoHeaderDecoder());
+        }
+        if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
+            pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
+        }
 
-            if (g) {
-                if (flags.has(TransportFlags.COMPRESS_READ)) {
-                    pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
-                }
-                if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                    pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
-                }
+        if (g) {
+            if (flags.has(TransportFlags.COMPRESS_READ)) {
+                pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
+            }
+            if (flags.has(TransportFlags.COMPRESS_WRITE)) {
+                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
             }
         }
         dumpPipeline("client", channel);
@@ -478,7 +470,7 @@ public final class Sockets {
     // BlockingOperationException 因为执行sync()-wait和notify的是同一个EventLoop中的线程
     // DefaultDatagramChannelConfig
     @SneakyThrows
-    static Bootstrap udpBootstrap(SocketConfig config, boolean multicast, BiAction<DatagramChannel> initChannel) {
+    public static Bootstrap udpBootstrap(SocketConfig config, boolean multicast, BiAction<DatagramChannel> initChannel) {
         if (config == null) {
             config = SocketConfig.EMPTY;
         }
@@ -507,6 +499,35 @@ public final class Sockets {
             b.handler(SocketChannelInitializer.DEFAULT);
         }
         return b;
+    }
+
+    /**
+     * 向 pipeline 添加 UDP 多倍发包的 Decoder（入站去重）和 Encoder（出站冗余发送）。
+     * 支持静态模式和自适应模式。
+     */
+    public static void addRedundantHandlers(ChannelPipeline pipeline, org.rx.net.socks.SocksConfig config) {
+        int multiplier = config.getUdpRedundantMultiplier();
+        boolean hasDestRules = config.hasUdpRedundantDestinationRules();
+        if (multiplier <= 1 && !config.isUdpRedundantAdaptive() && !hasDestRules) {
+            return;
+        }
+        org.rx.net.socks.UdpRedundantMultiplierResolver resolver = config.buildUdpRedundantMultiplierResolver();
+        if (config.isUdpRedundantAdaptive()) {
+            org.rx.net.socks.UdpRedundantStats stats = new org.rx.net.socks.UdpRedundantStats(
+                    multiplier, // 尊重用户配置的初始倍率
+                    config.getUdpRedundantMinMultiplier(),
+                    config.getUdpRedundantMaxMultiplier(),
+                    config.getUdpRedundantIntervalMicros(),
+                    config.getUdpRedundantLossThresholdHigh(),
+                    config.getUdpRedundantLossThresholdLow(),
+                    config.getUdpRedundantStablePeriods());
+            pipeline.addLast(org.rx.net.socks.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.socks.UdpRedundantDecoder(stats));
+            pipeline.addLast(org.rx.net.socks.UdpRedundantEncoder.class.getSimpleName(), new org.rx.net.socks.UdpRedundantEncoder(stats, resolver));
+        } else {
+            pipeline.addLast(org.rx.net.socks.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.socks.UdpRedundantDecoder());
+            pipeline.addLast(org.rx.net.socks.UdpRedundantEncoder.class.getSimpleName(),
+                    new org.rx.net.socks.UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros(), resolver));
+        }
     }
 
     public static void writeAndFlush(Channel channel, @NonNull Queue<?> packs) {

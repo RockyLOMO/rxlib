@@ -223,7 +223,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
         bootstrap = Sockets.serverBootstrap(config, channel -> {
             //tcp keepalive OS level，IdleStateHandler APP level
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), 0, 0));
-            Sockets.addServerHandler(channel, config);
+            Sockets.addTcpServerHandler(channel, config);
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientImpl(this));

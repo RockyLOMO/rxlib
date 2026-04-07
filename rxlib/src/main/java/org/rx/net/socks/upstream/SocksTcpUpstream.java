@@ -39,7 +39,7 @@ public class SocksTcpUpstream extends Upstream {
         AuthenticEndpoint svrEp = next.getEndpoint();
         SocksRpcContract facade = next.getFacade();
 
-        Sockets.addClientHandler(channel, config, svrEp.getEndpoint());
+        Sockets.addTcpClientHandler(channel, config, svrEp.getEndpoint());
 
         if (facade != null
                 && (SocksRpcContract.FAKE_IPS.contains(destination.getHost()) || SocksRpcContract.FAKE_PORTS.contains(destination.getPort())

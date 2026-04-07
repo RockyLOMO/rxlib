@@ -1,7 +1,6 @@
 package org.rx.net.socks;
 
 import io.netty.channel.*;
-import io.netty.channel.socket.DatagramChannel;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -67,8 +66,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             ChannelFuture udpFuture = Sockets.udpBootstrap(config, ch -> {
                 ChannelPipeline p = ch.pipeline();
-                SocksProxyServer.addRedundantHandlers(p, config);
-                Sockets.addServerHandler(ch, config);
+                Sockets.addRedundantHandlers(p, config);
                 p.addLast(new ProxyChannelIdleHandler(
                         config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
                 p.addLast(SocksUdpRelayHandler.DEFAULT);

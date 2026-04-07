@@ -11,16 +11,13 @@ import io.netty.channel.epoll.Epoll;
 import io.netty.channel.epoll.EpollEventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.channel.socket.SocketChannel;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
-import org.rx.net.dns.DnsServer;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -131,20 +128,20 @@ public class SocketsTest {
     }
 
     @Test
-    public void testAddClientHandler() {
+    public void testAddTcpClientHandler() {
         SocketConfig config = new SocketConfig();
         config.setTransportFlags(TransportFlags.COMPRESS_READ.flags());
-
+ 
         EmbeddedChannel channel = new EmbeddedChannel();
-        Sockets.addClientHandler(channel, config);
-
+        Sockets.addTcpClientHandler(channel, config);
+ 
         assertNotNull(channel.pipeline().get(Sockets.ZIP_DECODER));
         assertNull(channel.pipeline().get(Sockets.ZIP_ENCODER));
-
+ 
         config.setTransportFlags(TransportFlags.COMPRESS_WRITE.flags());
         channel = new EmbeddedChannel();
-        Sockets.addClientHandler(channel, config);
-
+        Sockets.addTcpClientHandler(channel, config);
+ 
         assertNull(channel.pipeline().get(Sockets.ZIP_DECODER));
         assertNotNull(channel.pipeline().get(Sockets.ZIP_ENCODER));
     }
