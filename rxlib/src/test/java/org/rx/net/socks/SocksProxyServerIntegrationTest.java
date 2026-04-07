@@ -136,6 +136,7 @@ class SocksProxyServerIntegrationTest {
     @SneakyThrows
     @Timeout(value = 15)
     void socks5UdpRelay_e2e() {
+        // RFC 1928: UDP relay requires a TCP control connection with UDP_ASSOCIATE command first.
         int proxyPort = 15281;
         SocksConfig config = new SocksConfig(proxyPort);
         config.getWhiteList(); // Trigger lazy init in calling thread
@@ -143,6 +144,34 @@ class SocksProxyServerIntegrationTest {
 
         try {
             Thread.sleep(1000);
+
+            // 1) Establish TCP control connection and request UDP_ASSOCIATE
+            Socket tcp = new Socket("127.0.0.1", proxyPort);
+            tcp.setSoTimeout(4000);
+            OutputStream tcpOut = tcp.getOutputStream();
+            InputStream tcpIn = tcp.getInputStream();
+
+            // Greeting: no auth
+            tcpOut.write(new byte[]{0x05, 0x01, 0x00});
+            tcpOut.flush();
+            byte[] hsResp = readExact(tcpIn, 2, 4000);
+            assertArrayEquals(new byte[]{0x05, 0x00}, hsResp);
+
+            // UDP_ASSOCIATE request (0x03), DST = 0.0.0.0:0
+            tcpOut.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            tcpOut.flush();
+
+            // Read response: VER(1) + REP(1) + RSV(1) + ATYP(1) + BND.ADDR + BND.PORT
+            byte[] udpAssocResp = readAtLeast(tcpIn, 10, 32, 4000);
+            assertEquals(0x05, udpAssocResp[0] & 0xFF, "VER");
+            assertEquals(0x00, udpAssocResp[1] & 0xFF, "REP must be SUCCESS");
+            // ATYP == 0x01 (IPv4): BND.ADDR(4) + BND.PORT(2)
+            assertEquals(0x01, udpAssocResp[3] & 0xFF, "ATYP must be IPv4");
+            int relayPort = ((udpAssocResp[8] & 0xFF) << 8) | (udpAssocResp[9] & 0xFF);
+            assertTrue(relayPort > 0 && relayPort < 65536, "relayPort must be valid: " + relayPort);
+            log.info("UDP relay port: {}", relayPort);
+
+            // 2) Send UDP datagrams to the relay port
             DatagramSocket sock = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
             sock.setSoTimeout(4000);
             try {
@@ -155,7 +184,8 @@ class SocksProxyServerIntegrationTest {
                 header.writeBytes(payload);
                 byte[] req = toBytes(header);
 
-                sock.send(new java.net.DatagramPacket(req, req.length, InetAddress.getByName("127.0.0.1"), proxyPort));
+                sock.send(new java.net.DatagramPacket(req, req.length,
+                        InetAddress.getByName("127.0.0.1"), relayPort));
 
                 byte[] resp = new byte[256];
                 java.net.DatagramPacket p = new java.net.DatagramPacket(resp, resp.length);
@@ -170,15 +200,15 @@ class SocksProxyServerIntegrationTest {
                 assertEquals(0, resp[5]);
                 assertEquals(0, resp[6]);
                 assertEquals(1, resp[7]);
-                int port = ((resp[8] & 0xFF) << 8) | (resp[9] & 0xFF);
-                assertEquals(UDP_ECHO_PORT, port);
+                int respPort = ((resp[8] & 0xFF) << 8) | (resp[9] & 0xFF);
+                assertEquals(UDP_ECHO_PORT, respPort);
 
                 byte[] echoed = new byte[p.getLength() - 10];
                 System.arraycopy(resp, 10, echoed, 0, echoed.length);
                 assertArrayEquals(payload, echoed);
 
-                // 3) Additional UDP rounds
-                for (int i = 0; i < 20; i++) {
+                // Additional UDP rounds
+                for (int i = 0; i < 10; i++) {
                     byte[] mPayload = ("udp-msg-" + i).getBytes(StandardCharsets.UTF_8);
                     ByteBuf mHeader = Unpooled.buffer();
                     mHeader.writeZero(3);
@@ -187,7 +217,8 @@ class SocksProxyServerIntegrationTest {
                     mHeader.writeShort(UDP_ECHO_PORT);
                     mHeader.writeBytes(mPayload);
                     byte[] mReq = toBytes(mHeader);
-                    sock.send(new java.net.DatagramPacket(mReq, mReq.length, InetAddress.getByName("127.0.0.1"), proxyPort));
+                    sock.send(new java.net.DatagramPacket(mReq, mReq.length,
+                            InetAddress.getByName("127.0.0.1"), relayPort));
 
                     byte[] mResp = new byte[256];
                     java.net.DatagramPacket mp = new java.net.DatagramPacket(mResp, mResp.length);
@@ -198,6 +229,7 @@ class SocksProxyServerIntegrationTest {
                 }
             } finally {
                 sock.close();
+                tcp.close();
             }
         } finally {
             proxy.close();

@@ -32,7 +32,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final SocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel tcpChannel;
-    final Channel udpChannel;
+    final Channel udp2rawChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     // 只有压缩时一定要用
@@ -108,19 +108,17 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }).channel();
         }
 
-        // udp server
-        int udpPort = config.getListenPort();
-        udpChannel = Sockets.udpBootstrap(config, channel -> {
-            ChannelPipeline pipeline = channel.pipeline();
-            // 多倍发包去重（入站）和冗余发送（出站）
-            addRedundantHandlers(pipeline, config);
-            if (config.isEnableUdp2raw()) {
+        // Udp2raw server mode needs a dedicated shared UDP listener.
+        // In normal SOCKS5 mode, per-client UDP channels are created on UDP_ASSOCIATE.
+        if (config.isEnableUdp2raw() && config.getUdp2rawClient() == null) {
+            udp2rawChannel = Sockets.udpBootstrap(config, channel -> {
+                ChannelPipeline pipeline = channel.pipeline();
+                addRedundantHandlers(pipeline, config);
                 pipeline.addLast(Udp2rawHandler.DEFAULT);
-            } else {
-                Sockets.addServerHandler(channel, config);
-                pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
-            }
-        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).channel();
+            }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).channel();
+        } else {
+            udp2rawChannel = null;
+        }
     }
 
     private void acceptChannel(Channel channel) {
@@ -154,7 +152,9 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             Sockets.closeOnFlushed(tcpChannel);
         }
         Sockets.closeBootstrap(bootstrap);
-        udpChannel.close();
+        if (udp2rawChannel != null) {
+            udp2rawChannel.close();
+        }
     }
 
     @SneakyThrows
