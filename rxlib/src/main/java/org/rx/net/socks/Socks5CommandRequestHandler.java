@@ -5,7 +5,6 @@ import io.netty.handler.codec.socksx.v5.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.*;
-import org.rx.net.socks.upstream.Socks5ClientHandler;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -75,6 +74,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             // Pre-set client addr so first packet can be identified
             udpFuture.channel().attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientTcpAddr);
 
+            udpFuture.channel().closeFuture().addListener(f -> {
+                if (tcpControl.isOpen()) {
+                    log.debug("socks5[{}] UDP_ASSOCIATE control closing for {}", config.getListenPort(), clientTcpAddr);
+                    tcpControl.close();
+                }
+            });
             // When TCP control connection closes → close the per-client UDP relay
             tcpControl.closeFuture().addListener(f -> {
                 Channel udpRelay = udpFuture.channel();

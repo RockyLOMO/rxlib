@@ -11,6 +11,7 @@ import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.socks.Socks5ClientHandler;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.support.UnresolvedEndpoint;

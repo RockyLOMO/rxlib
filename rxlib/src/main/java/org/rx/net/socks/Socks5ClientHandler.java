@@ -14,13 +14,14 @@
  * under the License.
  */
 
-package org.rx.net.socks.upstream;
+package org.rx.net.socks;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.socksx.v5.*;
 import io.netty.handler.proxy.ProxyConnectException;
 import io.netty.handler.proxy.ProxyHandler;
+import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.core.Strings;
@@ -43,16 +44,23 @@ public final class Socks5ClientHandler extends ProxyHandler {
 
     private final String username;
     private final String password;
+    private final Socks5CommandType commandType;
     private String decoderName;
     private String encoderName;
     @Setter
     private Action handshakeCallback;
+    @Getter
+    private volatile InetSocketAddress bindAddress;
 
     public Socks5ClientHandler(SocketAddress proxyAddress) {
-        this(proxyAddress, null, null);
+        this(proxyAddress, null, null, null);
     }
 
     public Socks5ClientHandler(SocketAddress proxyAddress, String username, String password) {
+        this(proxyAddress, username, password, null);
+    }
+
+    public Socks5ClientHandler(SocketAddress proxyAddress, String username, String password, Socks5CommandType commandType) {
         super(proxyAddress);
         if (username != null && username.isEmpty()) {
             username = null;
@@ -62,6 +70,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
         }
         this.username = username;
         this.password = password;
+        this.commandType = commandType != null ? commandType : Socks5CommandType.CONNECT;
     }
 
     @Override
@@ -127,7 +136,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
             }
 
             if (resAuthMethod == Socks5AuthMethod.NO_AUTH) {
-                sendConnectCommand(ctx);
+                sendCommand(ctx);
             } else if (resAuthMethod == Socks5AuthMethod.PASSWORD) {
                 // In case of password authentication, send an authentication request.
                 ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
@@ -148,7 +157,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
                 throw new ProxyConnectException(exceptionMessage("authStatus: " + res.status()));
             }
 
-            sendConnectCommand(ctx);
+            sendCommand(ctx);
             return false;
         }
 
@@ -158,6 +167,9 @@ public final class Socks5ClientHandler extends ProxyHandler {
             throw new ProxyConnectException(exceptionMessage("status: " + res.status()));
         }
 
+        if (commandType == Socks5CommandType.UDP_ASSOCIATE) {
+            bindAddress = new InetSocketAddress(res.bndAddr(), res.bndPort());
+        }
         if (handshakeCallback != null) {
             handshakeCallback.invoke();
         }
@@ -174,26 +186,16 @@ public final class Socks5ClientHandler extends ProxyHandler {
         return authMethod;
     }
 
-    private void sendConnectCommand(ChannelHandlerContext ctx) throws Exception {
-        InetSocketAddress raddr = destinationAddress();
-        Socks5AddressType addrType;
-        String rhost;
-//        if (raddr.isUnresolved()) {
-        addrType = Socks5AddressType.DOMAIN;
-        rhost = raddr.getHostString();
-//        } else {
-//            rhost = raddr.getAddress().getHostAddress();
-//            if (NetUtil.isValidIpV4Address(rhost)) {
-//                addrType = Socks5AddressType.IPv4;
-//            } else if (NetUtil.isValidIpV6Address(rhost)) {
-//                addrType = Socks5AddressType.IPv6;
-//            } else {
-//                throw new ProxyConnectException(
-//                        exceptionMessage("unknown address type: " + StringUtil.simpleClassName(rhost)));
-//            }
-//        }
-
+    private void sendCommand(ChannelHandlerContext ctx) throws Exception {
         ctx.pipeline().replace(decoderName, decoderName, new Socks5CommandResponseDecoder());
-        sendToProxyServer(new DefaultSocks5CommandRequest(Socks5CommandType.CONNECT, addrType, rhost, raddr.getPort()));
+        if (commandType == Socks5CommandType.UDP_ASSOCIATE) {
+            // Per RFC 1928: use 0.0.0.0:0 when the client UDP address is not yet known
+            sendToProxyServer(new DefaultSocks5CommandRequest(
+                    Socks5CommandType.UDP_ASSOCIATE, Socks5AddressType.IPv4, "0.0.0.0", 0));
+            return;
+        }
+        InetSocketAddress raddr = destinationAddress();
+        sendToProxyServer(new DefaultSocks5CommandRequest(
+                Socks5CommandType.CONNECT, Socks5AddressType.DOMAIN, raddr.getHostString(), raddr.getPort()));
     }
 }

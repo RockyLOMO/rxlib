@@ -20,6 +20,6 @@ public class SocksUdpUpstream extends Upstream {
 
     @Override
     public void initChannel(Channel channel) {
-        Sockets.addTcpClientHandler(channel, config, udpSocksServer.getEndpoint());
+
     }
 }

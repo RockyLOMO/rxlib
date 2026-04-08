@@ -114,6 +114,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         SocksContext e = SocksContext.getCtx(sender, dstEp);
         server.raiseEvent(server.onUdpRoute, e);
         Upstream upstream = e.getUpstream();
+        upstream.initChannel(relay);
 
         // Choose upstream destination
         UnresolvedEndpoint upDstEp;
