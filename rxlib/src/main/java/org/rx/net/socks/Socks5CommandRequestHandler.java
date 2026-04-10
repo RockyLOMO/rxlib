@@ -67,7 +67,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             final boolean udp2raw = config.isEnableUdp2raw();
 
             InetSocketAddress tcpLocalAddr = Sockets.getLocalAddress(tcpControl);
-            String host = tcpLocalAddr.getAddress().isAnyLocalAddress() ? "127.0.0.1" : tcpLocalAddr.getHostString();
+            String host = tcpLocalAddr.getAddress().getHostAddress();
             ChannelFuture udpFuture = Sockets.udpBootstrap(config, ch -> {
                 ChannelPipeline p = ch.pipeline();
                 Sockets.addRedundantHandlers(p, config);
