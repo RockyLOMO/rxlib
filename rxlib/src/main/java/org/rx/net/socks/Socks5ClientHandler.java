@@ -16,6 +16,7 @@
 
 package org.rx.net.socks;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.socksx.v5.*;
@@ -49,6 +50,8 @@ public final class Socks5ClientHandler extends ProxyHandler {
     private String encoderName;
     @Setter
     private Action handshakeCallback;
+    @Getter
+    private volatile Channel channel;
     @Getter
     private volatile InetSocketAddress bindAddress;
 
@@ -93,6 +96,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
 
     @Override
     protected void addCodec(ChannelHandlerContext ctx) throws Exception {
+        channel = ctx.channel();
         ChannelPipeline p = ctx.pipeline();
         String name = ctx.name();
 
@@ -186,12 +190,23 @@ public final class Socks5ClientHandler extends ProxyHandler {
         return authMethod;
     }
 
+    @Setter
+    private InetSocketAddress srcAddress;
+
     private void sendCommand(ChannelHandlerContext ctx) throws Exception {
         ctx.pipeline().replace(decoderName, decoderName, new Socks5CommandResponseDecoder());
         if (commandType == Socks5CommandType.UDP_ASSOCIATE) {
             // Per RFC 1928: use 0.0.0.0:0 when the client UDP address is not yet known
+            String host = "0.0.0.0";
+            int port = 0;
+            Socks5AddressType addressType = Socks5AddressType.DOMAIN;
+            if (srcAddress != null) {
+                host = srcAddress.getHostString();
+                port = srcAddress.getPort();
+            }
+            // RFC 1928: use 0.0.0.0:0 when the client UDP address is not yet known
             sendToProxyServer(new DefaultSocks5CommandRequest(
-                    Socks5CommandType.UDP_ASSOCIATE, Socks5AddressType.IPv4, "0.0.0.0", 0));
+                    Socks5CommandType.UDP_ASSOCIATE, addressType, host, port));
             return;
         }
         InetSocketAddress raddr = destinationAddress();

@@ -600,8 +600,8 @@ public final class Sockets {
         if (bypassList == null) {
             return false;
         }
-        for (String regex : bypassList) {
-            if (Files.wildcardMatch(host, regex)) {
+        for (String bypass : bypassList) {
+            if (Files.wildcardMatch(host, bypass)) {
                 return true;
             }
         }

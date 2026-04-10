@@ -56,8 +56,12 @@ public class Socks5Client extends Disposable {
 
     /**
      * Active UDP relay session returned by {@link #udpAssociateAsync()}.
-     * Wraps a TCP control channel (kept alive for the proxy to maintain the relay)
-     * and a local UDP channel that sends/receives datagrams through the SOCKS5 relay.
+     *
+     * <p>Wraps:
+     * <ul>
+     *   <li>{@code tcpControl} – the TCP channel kept alive so the proxy maintains the relay</li>
+     *   <li>{@code udpRelay}   – the local UDP channel used to send/receive datagrams; never {@code null}</li>
+     * </ul>
      *
      * <p>The two channels share a lifecycle: closing either one closes the other.
      * Call {@link #close()} to tear down both.
@@ -67,6 +71,8 @@ public class Socks5Client extends Disposable {
         static final AttributeKey<Socks5UdpSession> ATTR = AttributeKey.valueOf("socks5UdpSession");
 
         final Channel tcpControl;
+        /** Local UDP channel for send/receive – always non-null. */
+        @Getter
         final Channel udpRelay;
         /** The address of the SOCKS5 proxy's UDP relay endpoint (resolved from the proxy response). */
         @Getter
@@ -82,7 +88,7 @@ public class Socks5Client extends Disposable {
          */
         public final Delegate<Socks5UdpSession, NEventArgs<DatagramPacket>> onReceive = Delegate.create();
 
-        Socks5UdpSession(Channel tcpControl, Channel udpRelay, InetSocketAddress relayAddress) {
+        Socks5UdpSession(Channel tcpControl, @NonNull Channel udpRelay, InetSocketAddress relayAddress) {
             this.tcpControl = tcpControl;
             this.udpRelay = udpRelay;
             this.relayAddress = relayAddress;
@@ -156,7 +162,7 @@ public class Socks5Client extends Disposable {
 
     public Socks5Client(@NonNull AuthenticEndpoint proxyServer, SocketConfig config) {
         this.proxyServer = proxyServer;
-        this.config = config != null ? config : new SocketConfig();
+        this.config = config != null ? config : SocketConfig.EMPTY;
     }
 
     /**
@@ -191,8 +197,9 @@ public class Socks5Client extends Disposable {
     }
 
     /**
-     * Sends a UDP_ASSOCIATE request to the SOCKS5 proxy and returns a session object
-     * that can send/receive UDP datagrams through the relay.
+     * Sends a UDP_ASSOCIATE request to the SOCKS5 proxy and automatically creates a
+     * local UDP channel.  Returns a session object that can send/receive UDP datagrams
+     * through the relay.
      *
      * <p>The returned future completes once the proxy has acknowledged the association
      * and the local UDP channel is bound.  The caller should set up
@@ -202,21 +209,58 @@ public class Socks5Client extends Disposable {
      * @return a future resolving to a live {@link Socks5UdpSession}
      */
     public CompletableFuture<Socks5UdpSession> udpAssociateAsync() {
+        return udpAssociateAsync((Channel) null);
+    }
+
+    /**
+     * Sends a UDP_ASSOCIATE request to the SOCKS5 proxy using a caller-supplied UDP channel.
+     *
+     * <p>Use this overload when the caller already owns a bound UDP channel (e.g. the local
+     * relay channel in {@code SocksUdpUpstream}) and wishes to reuse it.  The supplied
+     * {@code udpChannel} is stored directly in {@link Socks5UdpSession#udpRelay} so the
+     * session is always non-null — no internal channel is created.
+     *
+     * <p>Lifecycle note: the caller is responsible for the {@code udpChannel}; the session
+     * will still close the TCP control channel when disposed, but will NOT close the
+     * externally-supplied UDP channel automatically.
+     *
+     * @param udpChannel an already-bound UDP {@link Channel} to use for sending/receiving,
+     *                   or {@code null} to let the session create one internally
+     * @return a future resolving to a live {@link Socks5UdpSession}
+     */
+    public CompletableFuture<Socks5UdpSession> udpAssociateAsync(Channel udpChannel) {
         checkNotClosed();
         CompletableFuture<Socks5UdpSession> result = new CompletableFuture<>();
         Socks5ClientHandler handler = createHandler(Socks5CommandType.UDP_ASSOCIATE);
 
+        // When a caller-supplied channel is provided, tell the handler the source address
+        // (the channel's local address) so the proxy can register the correct client endpoint.
+        if (udpChannel != null) {
+            handler.setSrcAddress((InetSocketAddress) udpChannel.localAddress());
+        }
+
         // Set callback BEFORE connect() so there is no race with the handshake.
         handler.setHandshakeCallback(() -> {
             try {
-                // connectFuture() is already done by the time this callback fires.
-                Channel tcpControl = (Channel) handler.connectFuture().getNow();
+                // handler.getChannel() is set when the handler is added to the pipeline.
+                Channel tcpControl = handler.getChannel();
                 InetSocketAddress bindAddr = handler.getBindAddress();
                 InetSocketAddress relayAddr = resolveRelayAddress(bindAddr);
 
                 log.debug("socks5 UDP_ASSOCIATE relay address: {}", relayAddr);
 
-                // Bind a local UDP channel for the application to send/receive through.
+                if (udpChannel != null) {
+                    // Transparent relay: caller-supplied channel – attach session and return.
+                    // We do NOT install UdpResponseHandler here because the caller manages the pipeline.
+                    Socks5UdpSession session = new Socks5UdpSession(tcpControl, udpChannel, relayAddr);
+                    udpChannel.attr(Socks5UdpSession.ATTR).set(session);
+                    // Only tie TCP→close; the external UDP channel lifecycle belongs to the caller.
+                    tcpControl.closeFuture().addListener(x -> session.close());
+                    result.complete(session);
+                    return;
+                }
+
+                // No channel supplied: bind a fresh local UDP channel for the application.
                 Sockets.udpBootstrap(config, udpCh ->
                         udpCh.pipeline().addLast(UdpResponseHandler.DEFAULT)
                 ).bind(0).addListener((ChannelFutureListener) f -> {
@@ -226,20 +270,16 @@ public class Socks5Client extends Disposable {
                         tcpControl.close();
                         return;
                     }
-                    Channel udpRelay = f.channel();
-                    Socks5UdpSession session = new Socks5UdpSession(tcpControl, udpRelay, relayAddr);
-                    udpRelay.attr(Socks5UdpSession.ATTR).set(session);
+                    Channel newUdpRelay = f.channel();
+                    Socks5UdpSession session = new Socks5UdpSession(tcpControl, newUdpRelay, relayAddr);
+                    newUdpRelay.attr(Socks5UdpSession.ATTR).set(session);
 
                     // Tie lifecycle: either channel closing closes the other.
                     tcpControl.closeFuture().addListener(x -> {
-                        if (udpRelay.isOpen()) {
-                            udpRelay.close();
-                        }
+                        if (newUdpRelay.isOpen()) newUdpRelay.close();
                     });
-                    udpRelay.closeFuture().addListener(x -> {
-                        if (tcpControl.isOpen()) {
-                            tcpControl.close();
-                        }
+                    newUdpRelay.closeFuture().addListener(x -> {
+                        if (tcpControl.isOpen()) tcpControl.close();
                     });
 
                     result.complete(session);
