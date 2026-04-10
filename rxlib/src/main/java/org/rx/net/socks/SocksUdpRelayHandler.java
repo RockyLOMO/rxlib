@@ -46,6 +46,14 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     public static final AttributeKey<ConcurrentHashMap<InetSocketAddress, SocksContext>> ATTR_CTX_MAP =
             AttributeKey.valueOf("udpCtxMap");
 
+    /**
+     * Per-relay route cache: UnresolvedEndpoint (dst) → SocksContext.
+     * Prevents re-evaluating routing rules (raiseEvent) for every single UDP packet
+     * to the same destination.
+     */
+    public static final AttributeKey<ConcurrentHashMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
+            AttributeKey.valueOf("udpRouteMap");
+
     public static final SocksUdpRelayHandler DEFAULT = new SocksUdpRelayHandler();
 
     /**
@@ -110,35 +118,42 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         if (ctxMap == null) {
             relay.attr(ATTR_CTX_MAP).set(ctxMap = new ConcurrentHashMap<>());
         }
-
-        final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-        SocksContext e = SocksContext.getCtx(sender, dstEp);
-        server.raiseEvent(server.onUdpRoute, e);
-        Upstream upstream = e.getUpstream();
-        upstream.initChannel(relay);
-
-        // Choose upstream destination
-        UnresolvedEndpoint upDstEp;
-        InetSocketAddress udpRelayAddr = upstream instanceof SocksUdpUpstream 
-                ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
-        if (udpRelayAddr != null) {
-            upDstEp = new UnresolvedEndpoint(udpRelayAddr);
-            inBuf.readerIndex(0); // keep SOCKS5 header for next-hop SOCKS server
-        } else {
-            upDstEp = dstEp;
+        
+        ConcurrentHashMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        if (routeMap == null) {
+            relay.attr(ATTR_ROUTE_MAP).set(routeMap = new ConcurrentHashMap<>());
         }
 
-        InetSocketAddress upDstAddr = upDstEp.socketAddress();
+        inBuf.markReaderIndex();
+        final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
+        
+        SocksContext e = routeMap.get(dstEp);
+        if (e == null) {
+            e = SocksContext.getCtx(sender, dstEp);
+            server.raiseEvent(server.onUdpRoute, e);
+            Upstream upstream = e.getUpstream();
+            upstream.initChannel(relay);
+            
+            InetSocketAddress udpRelayAddr = upstream instanceof SocksUdpUpstream 
+                    ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
+            InetSocketAddress upDstAddr = udpRelayAddr != null ? udpRelayAddr : dstEp.socketAddress();
+            ctxMap.put(upDstAddr, e);
+            routeMap.put(dstEp, e);
+        }
 
-        // Register upstream address → context for response demultiplexing
-        ctxMap.put(upDstAddr, e);
+        Upstream upstream = e.getUpstream();
+        boolean keepSocksHeader = upstream instanceof SocksUdpUpstream && ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) != null;
+        if (keepSocksHeader) {
+            inBuf.resetReaderIndex();
+        }
+        InetSocketAddress upDstAddr = keepSocksHeader ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : dstEp.socketAddress();
 
         EndpointTracer.UDP.link(sender, relay);
 
         inBuf.retain();
         if (config.isDebug()) {
             log.info("socks5[{}] UDP OUT {}bytes {} => {}[{}]",
-                    config.getListenPort(), inBuf.readableBytes(), sender, upDstEp, dstEp);
+                    config.getListenPort(), inBuf.readableBytes(), sender, upDstAddr, dstEp);
         }
         relay.writeAndFlush(new DatagramPacket(inBuf, upDstAddr));
     }

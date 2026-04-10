@@ -49,6 +49,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
     public static final AttributeKey<ConcurrentHashMap<InetSocketAddress, SocksContext>> ATTR_CTX_MAP =
             AttributeKey.valueOf("udp2rawCtxMap");
 
+    public static final AttributeKey<ConcurrentHashMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
+            AttributeKey.valueOf("udp2rawRouteMap");
+
     public static final Udp2rawHandler DEFAULT = new Udp2rawHandler();
     static final short STREAM_MAGIC = -21264;
     static final byte STREAM_VERSION = 1;
@@ -58,24 +61,26 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         Channel relay = ctx.channel();
         SocksProxyServer server = Sockets.getAttr(relay, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
+        ByteBuf inBuf = in.content();
         InetSocketAddress sender = in.sender();
 
-        InetSocketAddress udp2rawClient = config.getUdp2rawClient();
-        if (udp2rawClient != null) {
-            // CLIENT MODE: dispatch by udp2rawClient address
-            if (udp2rawClient.equals(sender)) {
+        // Inbound Responses from Upstream
+        ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+        if (ctxMap != null && ctxMap.containsKey(sender)) {
+            // If response from next-hop proxy is already wrapped, unwrap it; otherwise wrap the dest response
+            if (inBuf.readableBytes() >= 3 && inBuf.getShort(inBuf.readerIndex()) == STREAM_MAGIC) {
                 handleClientModeResponse(relay, in, config);
             } else {
-                handleClientModePacket(ctx, relay, in, sender, udp2rawClient, server, config);
-            }
-        } else {
-            // SERVER MODE: dispatch by ctxMap (known upstream = response)
-            ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
-            if (ctxMap != null && ctxMap.containsKey(sender)) {
                 handleServerModeResponse(relay, in, sender, ctxMap, config);
-            } else {
-                handleServerModePacket(ctx, relay, in, sender, server, config);
             }
+            return;
+        }
+
+        // Outbound Requests from Client
+        if (inBuf.readableBytes() >= 3 && inBuf.getShort(inBuf.readerIndex()) == STREAM_MAGIC) {
+            handleServerModePacket(ctx, relay, in, sender, server, config);
+        } else {
+            handleClientModePacket(ctx, relay, in, sender, config.getUdp2rawClient(), server, config);
         }
     }
 
@@ -98,13 +103,39 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
 
         InetSocketAddress clientEp = sender;
-        final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-        SocksContext e = SocksContext.getCtx(clientEp, dstEp);
-        server.raiseEvent(server.onUdpRoute, e);
-        Upstream upstream = e.getUpstream();
-        UnresolvedEndpoint upDstEp = upstream.getDestination();
+        
+        ConcurrentHashMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        if (routeMap == null) {
+            relay.attr(ATTR_ROUTE_MAP).set(routeMap = new ConcurrentHashMap<>());
+        }
 
-        //todo 忽略upstream.getSocksServer()
+        inBuf.markReaderIndex();
+        final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
+        
+        SocksContext e = routeMap.get(dstEp);
+        if (e == null) {
+            e = SocksContext.getCtx(clientEp, dstEp);
+            server.raiseEvent(server.onUdpRoute, e);
+            e.getUpstream().initChannel(relay);
+            routeMap.put(dstEp, e);
+        }
+        
+        Upstream upstream = e.getUpstream();
+        InetSocketAddress targetAddr = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream
+                ? ((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
+        if (targetAddr == null) {
+            targetAddr = udp2rawClient;
+        }
+
+        if (targetAddr != null) {
+            ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+            if (ctxMap == null) {
+                relay.attr(ATTR_CTX_MAP).set(ctxMap = new ConcurrentHashMap<>());
+            }
+            ctxMap.put(targetAddr, e);
+        }
+
+        UnresolvedEndpoint upDstEp = upstream.getDestination();
         ByteBufAllocator allocator = ctx.alloc();
         ByteBuf header = allocator.directBuffer(128);
         CompositeByteBuf outBuf = allocator.compositeDirectBuffer(2);
@@ -115,9 +146,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             UdpManager.encode(header, upDstEp);
             outBuf.addComponents(true, header, inBuf.retain());
             if (config.isDebug()) {
-                log.info("UDP2RAW[{}] client send {}bytes {} => {}[{}]", config.getListenPort(), outBuf.readableBytes(), clientEp, udp2rawClient, upDstEp);
+                log.info("UDP2RAW[{}] client send {}bytes {} => {}[{}]", config.getListenPort(), outBuf.readableBytes(), clientEp, targetAddr, upDstEp);
             }
-            relay.writeAndFlush(new DatagramPacket(outBuf, udp2rawClient));
+            relay.writeAndFlush(new DatagramPacket(outBuf, targetAddr));
         } catch (Exception ex) {
             header.release();
             outBuf.release();
@@ -168,33 +199,52 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             relay.attr(ATTR_CTX_MAP).set(ctxMap = new ConcurrentHashMap<>());
         }
 
+        ConcurrentHashMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        if (routeMap == null) {
+            relay.attr(ATTR_ROUTE_MAP).set(routeMap = new ConcurrentHashMap<>());
+        }
+
+        inBuf.markReaderIndex();
         final UnresolvedEndpoint clientEp = UdpManager.decode(inBuf);
         final UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
-        SocksContext e = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
-        e.udp2rawClient = sender;
-        server.raiseEvent(server.onUdpRoute, e);
+        
+        SocksContext e = routeMap.get(dstEp);
+        if (e == null) {
+            e = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
+            e.udp2rawClient = sender;
+            server.raiseEvent(server.onUdpRoute, e);
+            e.getUpstream().initChannel(relay);
+            
+            // Register upstream address → context for response demultiplexing
+            Upstream upstream = e.getUpstream();
+            InetSocketAddress udpRelayAddr = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream 
+                    ? ((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
+            InetSocketAddress upDstAddr = udpRelayAddr != null ? udpRelayAddr : dstEp.socketAddress();
+            ctxMap.put(upDstAddr, e);
+            routeMap.put(dstEp, e);
+        }
+
         Upstream upstream = e.getUpstream();
 
         // Choose upstream destination
         UnresolvedEndpoint upDstEp;
-        java.net.InetSocketAddress udpRelayAddr = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream 
-                ? ((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
-        if (udpRelayAddr != null) {
-            upDstEp = new UnresolvedEndpoint(udpRelayAddr);
-            inBuf.readerIndex(0);
+        boolean keepSocksHeader = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream && 
+                ((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(relay) != null;
+                
+        if (keepSocksHeader) {
+            upDstEp = new UnresolvedEndpoint(((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(relay));
+            inBuf = UdpManager.socks5Encode(inBuf.retain(), dstEp);
         } else {
             upDstEp = dstEp;
+            inBuf = inBuf.retain();
         }
 
         InetSocketAddress upDstAddr = upDstEp.socketAddress();
 
-        // Register upstream address → context for response demultiplexing
-        ctxMap.put(upDstAddr, e);
-
         if (config.isDebug()) {
             log.info("UDP2RAW[{}] server send {}bytes {}[{}] => {}", config.getListenPort(), inBuf.readableBytes(), sender, clientEp, upDstEp);
         }
-        relay.writeAndFlush(new DatagramPacket(inBuf.retain(), upDstAddr));
+        relay.writeAndFlush(new DatagramPacket(inBuf, upDstAddr));
     }
 
     /** Server mode: response from real destination → wrap in udp2raw → send back to client */

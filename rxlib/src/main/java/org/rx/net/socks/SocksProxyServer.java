@@ -32,7 +32,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final SocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel tcpChannel;
-    final Channel udp2rawChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     // 只有压缩时一定要用
@@ -108,17 +107,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }).channel();
         }
 
-        // Udp2raw server mode needs a dedicated shared UDP listener.
-        // In normal SOCKS5 mode, per-client UDP channels are created on UDP_ASSOCIATE.
-        if (config.isEnableUdp2raw() && config.getUdp2rawClient() == null) {
-            udp2rawChannel = Sockets.udpBootstrap(config, channel -> {
-                ChannelPipeline pipeline = channel.pipeline();
-                Sockets.addRedundantHandlers(pipeline, config);
-                pipeline.addLast(Udp2rawHandler.DEFAULT);
-            }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).channel();
-        } else {
-            udp2rawChannel = null;
-        }
     }
 
     private void acceptChannel(Channel channel) {
@@ -152,9 +140,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             Sockets.closeOnFlushed(tcpChannel);
         }
         Sockets.closeBootstrap(bootstrap);
-        if (udp2rawChannel != null) {
-            udp2rawChannel.close();
-        }
     }
 
     @SneakyThrows

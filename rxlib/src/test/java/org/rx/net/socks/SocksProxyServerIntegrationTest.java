@@ -326,6 +326,91 @@ class SocksProxyServerIntegrationTest {
     @Test
     @SneakyThrows
     @Timeout(value = 15)
+    void socks5UdpRelay_udp2raw_chained_e2e() {
+        int proxyAPort = 15288;
+        int proxyBPort = 15289;
+
+        // 1) Setup Proxy B (udp2raw server)
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.setEnableUdp2raw(true);
+        configB.setDebug(true);
+        SocksProxyServer proxyB = new SocksProxyServer(configB);
+
+        // 2) Setup Proxy A (udp2raw client chained to B)
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.setEnableUdp2raw(true);
+        configA.setDebug(true);
+        SocksProxyServer proxyA = new SocksProxyServer(configA);
+
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+        proxyA.onUdpRoute.replace((s, e) -> {
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            log.info("ProxyA routing UDP(udp2raw) to ProxyB for dst {}", dstEp);
+            e.setUpstream(new SocksUdpUpstream(dstEp, configA, supportB));
+        });
+
+        try {
+            Thread.sleep(1000);
+            
+            // 3) Client: UDP_ASSOCIATE to Proxy A
+            DatagramSocket clientSock = new DatagramSocket();
+            try (Socket tcp = new Socket("127.0.0.1", proxyAPort)) {
+                tcp.setSoTimeout(5000);
+                OutputStream out = tcp.getOutputStream();
+                InputStream in = tcp.getInputStream();
+
+                // Handshake
+                out.write(new byte[]{0x05, 0x01, 0x00});
+                out.flush();
+                readExact(in, 2, 5000);
+
+                // UDP_ASSOCIATE
+                byte[] reqUdp = new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0};
+                out.write(reqUdp);
+                out.flush();
+                byte[] resp = readAtLeast(in, 10, 22, 5000);
+                
+                int relayPortA = ((resp[resp.length - 2] & 0xFF) << 8) | (resp[resp.length - 1] & 0xFF);
+                log.info("ProxyA relay port: {}", relayPortA);
+
+                // 4) Send UDP echo request through Proxy A
+                // packet: [header(10)][payload]
+                ByteBuf header = Unpooled.buffer();
+                header.writeShort(0); // rsv
+                header.writeByte(0); // frag
+                header.writeByte(0x01); // ipv4
+                header.writeBytes(new byte[]{127, 0, 0, 1});
+                header.writeShort(UDP_ECHO_PORT);
+                byte[] payload = "udp2raw-chained-test".getBytes(StandardCharsets.UTF_8);
+                header.writeBytes(payload);
+                byte[] req = toBytes(header);
+
+                clientSock.send(new java.net.DatagramPacket(req, req.length,
+                        InetAddress.getByName("127.0.0.1"), relayPortA));
+
+                // 5) Receive echo response
+                byte[] respBuf = new byte[1024];
+                java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
+                clientSock.setSoTimeout(8000);
+                clientSock.receive(p);
+
+                assertTrue(p.getLength() >= 10);
+                byte[] echoed = new byte[p.getLength() - 10];
+                System.arraycopy(respBuf, 10, echoed, 0, echoed.length);
+                assertEquals("udp2raw-chained-test", new String(echoed, StandardCharsets.UTF_8));
+                log.info("UDP2RAW Chained UDP relay success!");
+            } finally {
+                clientSock.close();
+            }
+        } finally {
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
     void socks5AnonymousLogin_e2e() {
         int proxyPort = 15282;
         SocksConfig config = new SocksConfig(proxyPort);
