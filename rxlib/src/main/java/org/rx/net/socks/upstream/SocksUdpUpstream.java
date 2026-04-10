@@ -38,46 +38,30 @@ public class SocksUdpUpstream extends Upstream {
 
     private final UpstreamSupport next;
 
-    /** Active SOCKS5 client (TCP control connection) for the current relay session. */
-    private Socks5Client activeClient;
-    /** Current UDP_ASSOCIATE session. Non-null once a session has been established. */
-    private Socks5UdpSession activeSession;
-    /**
-     * The actual UDP relay address returned by the remote SOCKS5 server after UDP_ASSOCIATE.
-     * Exposed so the routing layer can forward datagrams to the correct relay port.
-     */
-    @Getter
-    private InetSocketAddress udpRelayAddress;
+    private static final io.netty.util.AttributeKey<SessionHolder> ATTR_UDP_SESSION =
+            io.netty.util.AttributeKey.valueOf("socksUdpUpstreamSession");
 
     public SocksUdpUpstream(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
         this.next = next;
     }
 
-    /**
-     * Returns the effective SOCKS5 relay endpoint to use for sending UDP datagrams.
-     * Falls back to the remote server's TCP address before a relay session is established.
-     */
-    public AuthenticEndpoint getSvrEp() {
-        AuthenticEndpoint ep = next.getEndpoint();
-        if (udpRelayAddress != null) {
-            return new AuthenticEndpoint(udpRelayAddress, ep.getUsername(), ep.getPassword());
-        }
-        return ep;
+    public java.net.InetSocketAddress getUdpRelayAddress(Channel channel) {
+        SessionHolder holder = channel.attr(ATTR_UDP_SESSION).get();
+        return holder != null ? holder.relayAddr : null;
     }
 
     /**
      * Lazily establishes a {@link Socks5UdpSession} with the remote SOCKS5 server on the
-     * first packet, then caches the session on this instance for subsequent packets.
+     * first packet, then caches the session on the relay channel for subsequent packets.
      *
-     * <p>Once the session is established, {@link #udpRelayAddress} is updated to point at
-     * the remote server's UDP relay address (from the UDP_ASSOCIATE response), so the
-     * relay handler sends SOCKS5-encoded datagrams to the correct port.
+     * <p>Once the session is established, it is stored in the channel's attributes.
      */
     @Override
     public void initChannel(Channel channel) {
-        // Fast path: reuse existing session
-        if (activeSession != null && !activeSession.isClosed()) {
+        // Fast path: reuse existing session cached on the relay channel
+        SessionHolder holder = channel.attr(ATTR_UDP_SESSION).get();
+        if (holder != null && !holder.session.isClosed()) {
             return;
         }
 
@@ -93,26 +77,34 @@ public class SocksUdpUpstream extends Upstream {
 
             InetSocketAddress relayAddr = session.getRelayAddress();
 
-            // Update instance state
-            tryClose(activeSession);
-            tryClose(activeClient);
-            activeClient = client;
-            activeSession = session;
-            udpRelayAddress = relayAddr;
+            // Update channel state
+            holder = new SessionHolder(client, session, relayAddr);
+            channel.attr(ATTR_UDP_SESSION).set(holder);
             log.debug("UDP upstream session established: {} -> relay={}", svrEp, relayAddr);
 
+            final SessionHolder finalHolder = holder;
             // Tear down session when relay channel closes (RFC 1928: closing TCP control = end relay)
             channel.closeFuture().addListener(f -> {
                 log.debug("Relay channel closed, closing UDP upstream session to {}", svrEp);
-                tryClose(activeSession);
-                tryClose(activeClient);
-                activeSession = null;
-                activeClient = null;
-                udpRelayAddress = null;
+                tryClose(finalHolder.session);
+                tryClose(finalHolder.client);
+                channel.attr(ATTR_UDP_SESSION).set(null);
             });
         } catch (Exception e) {
             log.error("Failed to establish UDP upstream session with {}", svrEp, e);
             tryClose(client);
+        }
+    }
+
+    static final class SessionHolder {
+        final Socks5Client client;
+        final Socks5UdpSession session;
+        final InetSocketAddress relayAddr;
+
+        SessionHolder(Socks5Client client, Socks5UdpSession session, InetSocketAddress relayAddr) {
+            this.client = client;
+            this.session = session;
+            this.relayAddr = relayAddr;
         }
     }
 }

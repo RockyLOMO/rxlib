@@ -136,12 +136,7 @@ public final class SocksContext extends EventArgs {
         this.firstDestination = dstEp;
     }
 
-    public AuthenticEndpoint tryGetUdpSocksServer() {
-        if (upstream instanceof SocksUdpUpstream) {
-            return ((SocksUdpUpstream) upstream).getUdpSocksServer();
-        }
-        return null;
-    }
+
 
     private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         source = srcEp;

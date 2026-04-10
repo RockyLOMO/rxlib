@@ -9,7 +9,11 @@ import io.netty.channel.socket.DatagramPacket;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.*;
+import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.support.UpstreamSupport;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -233,6 +237,89 @@ class SocksProxyServerIntegrationTest {
             }
         } finally {
             proxy.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 60)
+    void socks5UdpRelay_chained_e2e() {
+        // Scenario: Client -> Proxy A (15284) -> Proxy B (15285) -> UDP Echo Server (UDP_ECHO_PORT)
+        int proxyAPort = 15284;
+        int proxyBPort = 15285;
+
+        // 1) Started Proxy B (Relay Server)
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        SocksProxyServer proxyB = new SocksProxyServer(configB, null);
+
+        // 2) Started Proxy A (Client Server) with custom UDP route
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        SocksProxyServer proxyA = new SocksProxyServer(configA, null);
+        
+        // Setup Upstream for A to forward to B
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+        proxyA.onUdpRoute.replace((s, e) -> {
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            log.info("ProxyA routing UDP to ProxyB for dst: {}", dstEp);
+            e.setUpstream(new SocksUdpUpstream(dstEp, configA, supportB));
+        });
+
+        try {
+            Thread.sleep(1000);
+
+            // 3) Client -> Proxy A: Establish TCP control and request UDP_ASSOCIATE
+            Socket tcp = new Socket("127.0.0.1", proxyAPort);
+            tcp.setSoTimeout(10000);
+            OutputStream tcpOut = tcp.getOutputStream();
+            InputStream tcpIn = tcp.getInputStream();
+
+            // Greeting
+            tcpOut.write(new byte[]{0x05, 0x01, 0x00});
+            tcpOut.flush();
+            readExact(tcpIn, 2, 4000);
+
+            // UDP_ASSOCIATE
+            tcpOut.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            tcpOut.flush();
+            byte[] response = readAtLeast(tcpIn, 10, 32, 4000);
+            int relayPortA = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
+            log.info("Proxy A relay port: {}", relayPortA);
+
+            // 4) Send UDP packet to Proxy A relay port
+            DatagramSocket clientSock = new DatagramSocket();
+            clientSock.setSoTimeout(10000);
+            try {
+                byte[] payload = "chained-udp-test".getBytes(StandardCharsets.UTF_8);
+                ByteBuf header = Unpooled.buffer();
+                header.writeZero(3);
+                header.writeByte(0x01); // IPv4
+                header.writeBytes(new byte[]{127, 0, 0, 1});
+                header.writeShort(UDP_ECHO_PORT);
+                header.writeBytes(payload);
+                byte[] req = toBytes(header);
+
+                clientSock.send(new java.net.DatagramPacket(req, req.length,
+                        InetAddress.getByName("127.0.0.1"), relayPortA));
+
+                // 5) Receive echo response
+                byte[] respBuf = new byte[512];
+                java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
+                clientSock.receive(p);
+
+                assertTrue(p.getLength() >= 10);
+                byte[] echoed = new byte[p.getLength() - 10];
+                System.arraycopy(respBuf, 10, echoed, 0, echoed.length);
+                assertEquals("chained-udp-test", new String(echoed, StandardCharsets.UTF_8));
+                log.info("Chained UDP relay success!");
+            } finally {
+                clientSock.close();
+                tcp.close();
+            }
+        } finally {
+            proxyA.close();
+            proxyB.close();
         }
     }
 

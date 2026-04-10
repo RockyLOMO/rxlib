@@ -30,7 +30,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             UnresolvedEndpoint dstEp = sc.getFirstDestination();
             InetSocketAddress realDstEp;
             ByteBuf outBuf = out.content();
-            if (sc.tryGetUdpSocksServer() != null) {
+            if (sc != null && sc.getUpstream() instanceof org.rx.net.socks.upstream.SocksUdpUpstream && ((org.rx.net.socks.upstream.SocksUdpUpstream) sc.getUpstream()).getUdpRelayAddress(outbound) != null) {
                 UnresolvedEndpoint tmp = UdpManager.socks5Decode(outBuf);
 //                if (!dstEp.equals(tmp)) {
 //                    log.warn("UDP dstEp not matched {} != {}", dstEp, tmp);
@@ -79,11 +79,12 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         EndpointTracer.UDP.link(srcEp, outbound);
 
         UnresolvedEndpoint upDstEp;
-        AuthenticEndpoint upSvrEp = e.tryGetUdpSocksServer();
+        java.net.InetSocketAddress udpRelayAddr = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream 
+                ? ((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(outbound) : null;
         inBuf.retain();
-        if (upSvrEp != null) {
+        if (udpRelayAddr != null) {
             inBuf = UdpManager.socks5Encode(inBuf, dstEp);
-            upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
+            upDstEp = new UnresolvedEndpoint(udpRelayAddr);
         } else {
             upDstEp = upstream.getDestination();
         }

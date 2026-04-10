@@ -7,6 +7,7 @@ import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -116,11 +117,13 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         Upstream upstream = e.getUpstream();
         upstream.initChannel(relay);
 
+
         // Choose upstream destination
         UnresolvedEndpoint upDstEp;
-        AuthenticEndpoint upSvrEp = e.tryGetUdpSocksServer();
-        if (upSvrEp != null) {
-            upDstEp = new UnresolvedEndpoint(upSvrEp.getEndpoint());
+        InetSocketAddress udpRelayAddr = upstream instanceof SocksUdpUpstream 
+                ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
+        if (udpRelayAddr != null) {
+            upDstEp = new UnresolvedEndpoint(udpRelayAddr);
             inBuf.readerIndex(0); // keep SOCKS5 header for next-hop SOCKS server
         } else {
             upDstEp = dstEp;
@@ -155,7 +158,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         SocksConfig config = server.config;
         ByteBuf outBuf = in.content();
 
-        if (sc != null && sc.tryGetUdpSocksServer() != null) {
+        if (sc != null && sc.getUpstream() instanceof SocksUdpUpstream && ((SocksUdpUpstream) sc.getUpstream()).getUdpRelayAddress(relay) != null) {
             // Response from next-hop SOCKS server: already has SOCKS5 header
             outBuf.retain();
         } else {
