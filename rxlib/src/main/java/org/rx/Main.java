@@ -306,6 +306,7 @@ public final class Main implements SocksRpcContract {
         inConf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
         inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
         inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
+        inConf.setUdpRedundantMultiplier(2);
         DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
