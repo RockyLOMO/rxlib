@@ -14,6 +14,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -43,7 +44,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
      * Keyed by the resolved upstream destination (IP+port) so inbound
      * responses can be demultiplexed back to the originating client session.
      */
-    public static final AttributeKey<ConcurrentHashMap<InetSocketAddress, SocksContext>> ATTR_CTX_MAP =
+    public static final AttributeKey<ConcurrentMap<InetSocketAddress, SocksContext>> ATTR_CTX_MAP =
             AttributeKey.valueOf("udpCtxMap");
 
     /**
@@ -51,7 +52,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
      * Prevents re-evaluating routing rules (raiseEvent) for every single UDP packet
      * to the same destination.
      */
-    public static final AttributeKey<ConcurrentHashMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
+    public static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
             AttributeKey.valueOf("udpRouteMap");
 
     public static final SocksUdpRelayHandler DEFAULT = new SocksUdpRelayHandler();
@@ -72,7 +73,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         // If sender is a known upstream address, this is a response from destination.
         // Use exact InetSocketAddress (IP+port) matching so localhost client vs localhost
         // destination are correctly distinguished.
-        ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+        ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
         if (ctxMap != null && ctxMap.containsKey(sender)) {
             handleDestResponse(relay, in, sender, ctxMap);
         } else {
@@ -114,14 +115,14 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
 
         // Ensure per-relay context map exists
-        ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+        ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
         if (ctxMap == null) {
-            relay.attr(ATTR_CTX_MAP).set(ctxMap = new ConcurrentHashMap<>());
+            relay.attr(ATTR_CTX_MAP).set(ctxMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<InetSocketAddress, SocksContext>build().asMap());
         }
         
-        ConcurrentHashMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
         if (routeMap == null) {
-            relay.attr(ATTR_ROUTE_MAP).set(routeMap = new ConcurrentHashMap<>());
+            relay.attr(ATTR_ROUTE_MAP).set(routeMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<UnresolvedEndpoint, SocksContext>build().asMap());
         }
 
         inBuf.markReaderIndex();
@@ -161,7 +162,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     /** Upstream response → Client */
     private void handleDestResponse(Channel relay, DatagramPacket in,
                                     InetSocketAddress sender,
-                                    ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap) {
+                                    ConcurrentMap<InetSocketAddress, SocksContext> ctxMap) {
         InetSocketAddress clientAddr = relay.attr(ATTR_CLIENT_ADDR).get();
         if (clientAddr == null) {
             return; // no established session yet

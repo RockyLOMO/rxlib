@@ -129,7 +129,6 @@ public final class SocksContext extends EventArgs {
     transient Channel inbound;
     transient ChannelFuture outbound;
     transient volatile boolean outboundActive;
-    transient InetSocketAddress udp2rawClient;
 
     private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         this.source = srcEp;
@@ -143,6 +142,5 @@ public final class SocksContext extends EventArgs {
         inbound = null;
         outbound = null;
         outboundActive = false;
-        udp2rawClient = null;
     }
 }

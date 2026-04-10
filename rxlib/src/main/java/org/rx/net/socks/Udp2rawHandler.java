@@ -13,6 +13,7 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -46,10 +47,10 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
      * Keyed by the resolved upstream destination (IP+port) so inbound
      * responses can be demultiplexed back to the originating client session.
      */
-    public static final AttributeKey<ConcurrentHashMap<InetSocketAddress, SocksContext>> ATTR_CTX_MAP =
+    public static final AttributeKey<ConcurrentMap<InetSocketAddress, SocksContext>> ATTR_CTX_MAP =
             AttributeKey.valueOf("udp2rawCtxMap");
 
-    public static final AttributeKey<ConcurrentHashMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
+    public static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
             AttributeKey.valueOf("udp2rawRouteMap");
 
     public static final Udp2rawHandler DEFAULT = new Udp2rawHandler();
@@ -64,8 +65,8 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         ByteBuf inBuf = in.content();
         InetSocketAddress sender = in.sender();
 
-        // Inbound Responses from Upstream
-        ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+        // SERVER MODE: dispatch by ctxMap (known upstream = response)
+        ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
         if (ctxMap != null && ctxMap.containsKey(sender)) {
             // If response from next-hop proxy is already wrapped, unwrap it; otherwise wrap the dest response
             if (inBuf.readableBytes() >= 3 && inBuf.getShort(inBuf.readerIndex()) == STREAM_MAGIC) {
@@ -104,9 +105,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
 
         InetSocketAddress clientEp = sender;
         
-        ConcurrentHashMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
         if (routeMap == null) {
-            relay.attr(ATTR_ROUTE_MAP).set(routeMap = new ConcurrentHashMap<>());
+            relay.attr(ATTR_ROUTE_MAP).set(routeMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<UnresolvedEndpoint, SocksContext>build().asMap());
         }
 
         inBuf.markReaderIndex();
@@ -128,9 +129,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
 
         if (targetAddr != null) {
-            ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+            ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
             if (ctxMap == null) {
-                relay.attr(ATTR_CTX_MAP).set(ctxMap = new ConcurrentHashMap<>());
+                relay.attr(ATTR_CTX_MAP).set(ctxMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<InetSocketAddress, SocksContext>build().asMap());
             }
             ctxMap.put(targetAddr, e);
         }
@@ -194,14 +195,14 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
 
         // Ensure per-relay context map exists
-        ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+        ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
         if (ctxMap == null) {
-            relay.attr(ATTR_CTX_MAP).set(ctxMap = new ConcurrentHashMap<>());
+            relay.attr(ATTR_CTX_MAP).set(ctxMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<InetSocketAddress, SocksContext>build().asMap());
         }
 
-        ConcurrentHashMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
         if (routeMap == null) {
-            relay.attr(ATTR_ROUTE_MAP).set(routeMap = new ConcurrentHashMap<>());
+            relay.attr(ATTR_ROUTE_MAP).set(routeMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<UnresolvedEndpoint, SocksContext>build().asMap());
         }
 
         inBuf.markReaderIndex();
@@ -211,7 +212,6 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         SocksContext e = routeMap.get(dstEp);
         if (e == null) {
             e = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
-            e.udp2rawClient = sender;
             server.raiseEvent(server.onUdpRoute, e);
             e.getUpstream().initChannel(relay);
             
@@ -250,7 +250,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
     /** Server mode: response from real destination → wrap in udp2raw → send back to client */
     private void handleServerModeResponse(Channel relay, DatagramPacket in,
                                           InetSocketAddress sender,
-                                          ConcurrentHashMap<InetSocketAddress, SocksContext> ctxMap,
+                                          ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
                                           SocksConfig config) {
         InetSocketAddress clientAddr = relay.attr(ATTR_CLIENT_ADDR).get();
         if (clientAddr == null) {
