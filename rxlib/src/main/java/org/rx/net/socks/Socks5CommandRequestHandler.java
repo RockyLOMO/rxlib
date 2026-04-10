@@ -64,20 +64,24 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             // RFC 1928: create a dedicated per-client UDP relay channel
             final Channel tcpControl = inCh;
             final InetSocketAddress clientTcpAddr = Sockets.getRemoteAddress(tcpControl);
-            final Socks5AddressType bindAddrType = msg.dstAddrType();
+            final boolean udp2raw = config.isEnableUdp2raw();
 
             InetSocketAddress tcpLocalAddr = Sockets.getLocalAddress(tcpControl);
-            String host = tcpLocalAddr.getAddress().isAnyLocalAddress() ? "127.0.0.1" : tcpLocalAddr.getAddress().getHostAddress();
+            String host = tcpLocalAddr.getAddress().isAnyLocalAddress() ? "127.0.0.1" : tcpLocalAddr.getHostString();
             ChannelFuture udpFuture = Sockets.udpBootstrap(config, ch -> {
                 ChannelPipeline p = ch.pipeline();
                 Sockets.addRedundantHandlers(p, config);
                 p.addLast(new ProxyChannelIdleHandler(
                         config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
-                p.addLast(SocksUdpRelayHandler.DEFAULT);
+                p.addLast(udp2raw ? Udp2rawHandler.DEFAULT : SocksUdpRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(host, 0);
 
             // Pre-set client addr so first packet can be identified
-            udpFuture.channel().attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientTcpAddr);
+            if (udp2raw) {
+                udpFuture.channel().attr(Udp2rawHandler.ATTR_CLIENT_ADDR).set(clientTcpAddr);
+            } else {
+                udpFuture.channel().attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientTcpAddr);
+            }
 
             udpFuture.channel().closeFuture().addListener(f -> {
                 if (tcpControl.isOpen()) {
@@ -99,16 +103,18 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 if (!f.isSuccess()) {
                     log.warn("socks5[{}] UDP_ASSOCIATE relay bind failed for {}", config.getListenPort(), clientTcpAddr, f.cause());
                     inbound.writeAndFlush(new DefaultSocks5CommandResponse(
-                                    Socks5CommandStatus.FAILURE, bindAddrType))
+                                    Socks5CommandStatus.FAILURE, msg.dstAddrType()))
                             .addListener(ChannelFutureListener.CLOSE);
                     return;
                 }
                 InetSocketAddress udpBindAddr = (InetSocketAddress) f.channel().localAddress();
                 // InetSocketAddress tcpLocalAddr = Sockets.getLocalAddress(tcpControl);
                 log.debug("socks5[{}] UDP_ASSOCIATE relay bound {} for {}", config.getListenPort(), udpBindAddr, clientTcpAddr);
+                // Use IPv4/IPv6 type based on the actual bound address; relay addr is always a real IP.
+                boolean isIpv6 = udpBindAddr.getAddress() instanceof java.net.Inet6Address;
+                Socks5AddressType atyp = isIpv6 ? Socks5AddressType.IPv6 : Socks5AddressType.IPv4;
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(
-                        Socks5CommandStatus.SUCCESS, bindAddrType,
-                        host, udpBindAddr.getPort()));
+                        Socks5CommandStatus.SUCCESS, atyp, udpBindAddr.getAddress().getHostAddress(), udpBindAddr.getPort()));
             });
         } else {
             log.warn("Command {} not support", msg.type());
