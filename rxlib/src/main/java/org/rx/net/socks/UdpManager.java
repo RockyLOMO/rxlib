@@ -71,8 +71,6 @@ public final class UdpManager {
 //        return new InetSocketAddress(InetAddress.getByAddress(ipBytes), port);
 //    }
 
-    public static final byte socksRegion = 0;
-    public static final byte udp2rawRegion = 1;
     public static final byte ssRegion = 2;
 
     @Getter

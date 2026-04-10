@@ -13,7 +13,6 @@ import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Set;
 
-//@RequiredArgsConstructor
 @Getter
 @Setter
 @ToString
@@ -34,11 +33,6 @@ public class SocksConfig extends SocketConfig {
     private boolean enableUdp2raw;
     private InetSocketAddress udp2rawClient;
     private AuthenticEndpoint kcptunClient;
-    /**
-     * UDP 多倍发包配置。
-     * 取值范围 [1, 5]，默认 1。
-     * 用于游戏低延迟场景，以带宽换取丢包容忍度。
-     */
     /**
      * UDP 多倍发包配置。
      * 取值范围 [1, 5]，默认 1。
