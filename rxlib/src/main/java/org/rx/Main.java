@@ -581,11 +581,12 @@ public final class Main implements SocksRpcContract {
 
     static JSONObject getDDns(String apiKey, String domain) {
         String url = "https://api.dynadot.com/restful/v1/domains/" + domain + "/records";
-        HttpClient client = new HttpClient();
-        client.requestHeaders().set("Accept", "application/json");
-        client.requestHeaders().set("Authorization", "Bearer " + apiKey);
-        client.requestHeaders().set("X-Signature", dynadotSign(apiKey, url, ""));
-        return client.get(url).toJson();
+        try (HttpClient client = new HttpClient()) {
+            client.requestHeaders().set("Accept", "application/json");
+            client.requestHeaders().set("Authorization", "Bearer " + apiKey);
+            client.requestHeaders().set("X-Signature", dynadotSign(apiKey, url, ""));
+            return client.get(url).toJson();
+        }
     }
 
     static String dynadotSign(String apiKey, String url, String requestBody) {
@@ -648,11 +649,12 @@ public final class Main implements SocksRpcContract {
         }).requestMapping("/hf", (request, response) -> {
             String url = request.getQueryString().getFirst("fu");
             Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
-            HttpClient client = new HttpClient();
-            if (tm != null) {
-                client.withTimeoutMillis(tm);
+            try (HttpClient client = new HttpClient()) {
+                if (tm != null) {
+                    client.withTimeoutMillis(tm);
+                }
+                response.jsonBody(client.get(url).toJson());
             }
-            response.jsonBody(client.get(url).toJson());
         })
         // .requestMapping("/geo", (request, response) -> {
         // response.jsonBody(IPSearcher.DEFAULT.resolve(request.getQueryString().getFirst("host")));

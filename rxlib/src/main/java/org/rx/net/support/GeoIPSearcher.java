@@ -62,16 +62,17 @@ public class GeoIPSearcher implements Closeable {
         String[] services = resolveServer != null
                 ? new String[]{"https://" + resolveServer + ":8082/getPublicIp", "https://checkip.amazonaws.com", "https://api.seeip.org"}
                 : new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
-        HttpClient client = new HttpClient().withTimeoutMillis(5000);
-        for (String service : services) {
-            try {
-                String ip = client.get(service).toString();
-                if (Sockets.isValidIp(ip)) {
-                    lastPublicIpTime = System.nanoTime();
-                    return publicIp = ip;
+        try (HttpClient client = new HttpClient().withTimeoutMillis(5000)) {
+            for (String service : services) {
+                try {
+                    String ip = client.get(service).toString();
+                    if (Sockets.isValidIp(ip)) {
+                        lastPublicIpTime = System.nanoTime();
+                        return publicIp = ip;
+                    }
+                } catch (Exception e) {
+                    log.warn("getPublicIp retry", e);
                 }
-            } catch (Exception e) {
-                log.warn("getPublicIp retry", e);
             }
         }
         throw new InvalidException("getPublicIp fail");

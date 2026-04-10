@@ -93,8 +93,9 @@ public class GeoManager {
         if (force || !f.exists()) {
             File tmp = new File(f.getPath() + ".tmp");
             log.info("geo download file {} -> {} begin", tmp.getAbsolutePath(), f.getAbsolutePath());
-            new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy)
-                    .get(fileUrl).toFile(tmp.getPath());
+            try (HttpClient client = new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy)) {
+                client.get(fileUrl).toFile(tmp.getPath());
+            }
             f = Files.moveFile(tmp, f);
             log.info("geo download file {} -> {} end", tmp.getAbsolutePath(), f.getAbsolutePath());
         }

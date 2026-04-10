@@ -47,7 +47,7 @@ import static org.rx.core.Extends.tryClose;
 import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
-public class HttpClient {
+public class HttpClient implements AutoCloseable {
     public interface RequestContent {
         RequestContent NONE = new EmptyContent(null);
 
@@ -158,7 +158,7 @@ public class HttpClient {
     }
 
     @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
-    public static class ResponseContent {
+    public static class ResponseContent implements AutoCloseable {
         @Getter
         @JSONField(serialize = false)
         final Response response;
@@ -235,6 +235,12 @@ public class HttpClient {
 
         public <T extends Serializable> T toJson() {
             return (T) JSON.parse(toString());
+        }
+
+        @Override
+        public synchronized void close() {
+            tryClose(response);
+            tryClose(stream);
         }
 
         @Override
@@ -402,6 +408,13 @@ public class HttpClient {
     HttpHeaders reqHeaders;
     ResponseContent resContent;
 
+    @Override
+    public void close() {
+        if (resContent != null) {
+            tryClose(resContent);
+        }
+    }
+
     public HttpClient withFeatures(boolean enableCookie, boolean enableLog) {
         return withFeatures(enableCookie, enableLog, true);
     }
@@ -508,7 +521,7 @@ public class HttpClient {
             throw new UnsupportedOperationException();
         }
         if (resContent != null) {
-            tryClose(resContent.response);
+            tryClose(resContent);
         }
         if ((featureFlags & ENABLE_LOG_FLAG) == ENABLE_LOG_FLAG) {
             resContent = Sys.callLog(this.getClass(), String.format("%s %s", method, url), new Object[]{content instanceof JsonContent ? ((JsonContent) content).json : content.toString()}, () -> {
