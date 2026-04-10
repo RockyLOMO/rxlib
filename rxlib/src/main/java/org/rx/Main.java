@@ -321,13 +321,14 @@ public final class Main implements SocksRpcContract {
         svrRefs.add(inSvr);
         Main app = new Main(inSvr);
         if (enableUdp2raw) {
-            SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
-            inUdp2rawConf.setDebug(rssConf.hasDebugFlag());
-            inUdp2rawConf.setListenPort(udp2rawPort);
-            inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
-            inUdp2rawConf.setUdp2rawClient(rssConf.udp2rawClient);
-            inUdp2rawConf.setKcptunClient(rssConf.kcptunClient);
-            SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+            SocksConfig inTunConf = Sys.deepClone(inConf);
+            inTunConf.setDebug(rssConf.hasDebugFlag());
+            inTunConf.setListenPort(udp2rawPort);
+            inTunConf.setKcptunClient(rssConf.kcptunClient);
+            inTunConf.setUdpRedundantMultiplier(2);
+//            inTunConf.setEnableUdp2raw(enableUdp2raw);
+//            inTunConf.setUdp2rawClient(rssConf.udp2rawClient);
+            SocksProxyServer inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
             svrRefs.add(inUdp2rawSvr);
         }
 
@@ -349,6 +350,8 @@ public final class Main implements SocksRpcContract {
             conf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
             conf.setReadTimeoutSeconds(0);
             conf.setWriteTimeoutSeconds(0);
+            conf.setUdpReadTimeoutSeconds(0);
+            conf.setUdpWriteTimeoutSeconds(0);
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
             svrRefs.add(ssSvr);
 
@@ -620,11 +623,12 @@ public final class Main implements SocksRpcContract {
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         if (enableUdp2raw) {
-            SocksConfig outUdp2rawConf = Sys.deepClone(outConf);
-            outUdp2rawConf.setDebug(debugFlag);
-            outUdp2rawConf.setListenPort(udp2rawPort);
-            outUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
-            SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outUdp2rawConf, defAuth);
+            SocksConfig outTunConf = Sys.deepClone(outConf);
+            outTunConf.setDebug(debugFlag);
+            outTunConf.setListenPort(udp2rawPort);
+            outTunConf.setUdpRedundantMultiplier(2);
+//            outTunConf.setEnableUdp2raw(enableUdp2raw);
+            SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
             outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         }
 
