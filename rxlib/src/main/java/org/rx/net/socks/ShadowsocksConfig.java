@@ -23,7 +23,8 @@ public class ShadowsocksConfig extends SocketConfig {
     private final InetSocketAddress serverEndpoint;
     private final String method;
     private final String password;
-    private int udpTimeoutSeconds = SocksConfig.DEF_UDP_READ_TIMEOUT_SECONDS;
+    private int udpReadTimeoutSeconds = SocksConfig.DEF_UDP_READ_TIMEOUT_SECONDS;
+    private int udpWriteTimeoutSeconds;
     private boolean useDedicatedCryptoGroup = false;
     private int readTimeoutSeconds = SocksConfig.DEF_READ_TIMEOUT_SECONDS;
     private int writeTimeoutSeconds;

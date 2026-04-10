@@ -292,7 +292,7 @@ public final class Main implements SocksRpcContract {
         Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(rssConf.shadowUsers).select(shadowUser -> {
             ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(shadowUser.getSsPort()),
                     CipherKind.AES_256_GCM.getCipherName(), shadowUser.getSsPwd());
-            config.setUdpTimeoutSeconds(rssConf.udpTimeoutSeconds);
+            config.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
             SocksUser user = new SocksUser(shadowUser.getSocksUser());
             user.setPassword(rssConf.socksPwd.trim());
             user.setIpLimit(shadowUser.getIpLimit());

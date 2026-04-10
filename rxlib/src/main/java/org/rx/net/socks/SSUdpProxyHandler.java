@@ -80,7 +80,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             ChannelFuture outboundFuture = UdpManager.open(UdpManager.ssRegion, srcEp, upstream.getConfig(), k -> {
                 ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                     upstream.initChannel(ob);
-                    ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
+                    ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()),
                             UdpBackendRelayHandler.DEFAULT);
                 }).attr(ShadowsocksConfig.SVR, server).bind(0);
                 chf.channel().closeFuture().addListener(f -> UdpManager.close(k));
