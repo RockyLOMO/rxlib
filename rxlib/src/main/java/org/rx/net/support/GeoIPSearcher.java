@@ -1,14 +1,16 @@
 package org.rx.net.support;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.maxmind.db.CHMCache;
 import com.maxmind.db.Reader;
 import com.maxmind.geoip2.DatabaseReader;
 import com.maxmind.geoip2.model.CountryResponse;
 import com.maxmind.geoip2.record.Country;
+import io.netty.util.NetUtil;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Constants;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
@@ -18,17 +20,23 @@ import java.io.File;
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class GeoIPSearcher implements Closeable {
-    static final long CACHE_PUBLIC_IP_MINUTES = 2 * 60 * 1000 * Constants.NANO_TO_MILLIS;
+    static final long CACHE_PUBLIC_IP_NANOS = TimeUnit.HOURS.toNanos(2);
     static final IpGeolocation PRIVATE_IP = new IpGeolocation(null, null, "private");
+    static final IpGeolocation UNKNOWN_IP = new IpGeolocation(null, null, "unknown");
 
     final DatabaseReader reader;
+    final Cache<String, IpGeolocation> lookupCache = Caffeine.newBuilder()
+            .maximumSize(4096)
+            .expireAfterWrite(10, TimeUnit.MINUTES)
+            .build();
     @Setter
-    String resolveServer = Constants.rSS();
+    String resolveServer = org.rx.core.Constants.rSS();
     String publicIp;
     long lastPublicIpTime;
 
@@ -47,7 +55,7 @@ public class GeoIPSearcher implements Closeable {
     }
 
     public String getPublicIp() {
-        if (System.nanoTime() - lastPublicIpTime < CACHE_PUBLIC_IP_MINUTES) {
+        if (System.nanoTime() - lastPublicIpTime < CACHE_PUBLIC_IP_NANOS) {
             return publicIp;
         }
 
@@ -69,16 +77,22 @@ public class GeoIPSearcher implements Closeable {
         throw new InvalidException("getPublicIp fail");
     }
 
-    @SneakyThrows
     public IpGeolocation lookup(String host) {
-        InetAddress ip = InetAddress.getByName(host);
+        return lookupCache.get(host, this::doLookup);
+    }
+
+    @SneakyThrows
+    private IpGeolocation doLookup(String host) {
+        // 使用 NetUtil 解析 IP 字节，避免 InetAddress.getByName 触发 DNS
+        byte[] ipBytes = NetUtil.createByteArrayFromIpAddressString(host);
+        InetAddress ip = ipBytes != null ? InetAddress.getByAddress(ipBytes) : InetAddress.getByName(host);
         if (Sockets.isPrivateIp(ip)) {
             return PRIVATE_IP;
         }
 
         Optional<CountryResponse> countryResponse;
         if (ip.isAnyLocalAddress() || !(countryResponse = reader.tryCountry(ip)).isPresent()) {
-            return new IpGeolocation(null, null, "unknown");
+            return UNKNOWN_IP;
         }
         CountryResponse cp = countryResponse.get();
         Country c = cp.getCountry();

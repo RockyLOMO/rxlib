@@ -45,23 +45,23 @@ public class GeoSiteMatcher implements Serializable {
     }
 
     public boolean matches(String domain) {
+        // 1. 最快：后缀匹配（Trie 内部已 case-insensitive，无需 toLowerCase）
+        if (domains.matchSuffix(domain)) {
+            return true;
+        }
+        // 2. 需要小写的匹配路径（仅在 suffix 未命中时才分配）
         String d = domain.toLowerCase();
-        // 1. 最快：精确匹配
+        // 精确匹配
         if (fulls.contains(d)) {
             return true;
         }
-        // 2. 快速：后缀匹配（Trie 效率最高）
-        //d.equals(baseDomain) || d.endsWith("." + baseDomain)
-        if (domains.matchSuffix(d)) {
-            return true;
-        }
-        // 3. keyword 多模式匹配
+        // keyword 多模式匹配
         if (keywords.matches(d)) {
             return true;
         }
-        // 4. regexp（最后才查，性能最差）
+        // 4. regexp（最后才查，性能最差；Pattern 已带 CASE_INSENSITIVE）
         for (Pattern p : regexps) {
-            if (p.matcher(d).find()) {
+            if (p.matcher(domain).find()) {
                 return true;
             }
         }
