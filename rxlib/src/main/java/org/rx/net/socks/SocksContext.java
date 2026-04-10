@@ -136,8 +136,6 @@ public final class SocksContext extends EventArgs {
         this.firstDestination = dstEp;
     }
 
-
-
     private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         source = srcEp;
         firstDestination = dstEp;

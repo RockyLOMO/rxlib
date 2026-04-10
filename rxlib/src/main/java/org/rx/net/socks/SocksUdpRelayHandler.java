@@ -68,12 +68,12 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         if (ctxMap != null && ctxMap.containsKey(sender)) {
             handleDestResponse(relay, in, sender, ctxMap);
         } else {
-            handleClientPacket(ctx, relay, in, sender);
+            handleClientPacket(relay, in, sender);
         }
     }
 
     /** Client → Upstream (destination or next-hop SOCKS server) */
-    private void handleClientPacket(ChannelHandlerContext ctx, Channel relay,
+    private void handleClientPacket(Channel relay,
                                     DatagramPacket in, InetSocketAddress sender) {
         ByteBuf inBuf = in.content();
         if (inBuf.readableBytes() < 4) {
@@ -116,7 +116,6 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         server.raiseEvent(server.onUdpRoute, e);
         Upstream upstream = e.getUpstream();
         upstream.initChannel(relay);
-
 
         // Choose upstream destination
         UnresolvedEndpoint upDstEp;
