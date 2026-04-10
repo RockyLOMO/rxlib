@@ -40,6 +40,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.socks.SocksConfig;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -487,25 +488,34 @@ public final class Sockets {
         Bootstrap b = new Bootstrap()
                 .group(reactor(rn, false))
                 .channel(Sockets.udpChannelClass())
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+                .option(ChannelOption.SO_REUSEADDR, true)
+                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
+                .attr(SocketConfig.ATTR_CONF, config);
         if (multicast) {
             NetworkInterface mif = NetworkInterface.getByInetAddress(Sockets.getLocalAddress(true));
             b.option(ChannelOption.SO_BROADCAST, true)
-                    .option(ChannelOption.IP_MULTICAST_IF, mif)
-                    .option(ChannelOption.SO_REUSEADDR, true);
+                    .option(ChannelOption.IP_MULTICAST_IF, mif);
         }
-        if (initChannel != null) {
-            b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
-            b.handler(SocketChannelInitializer.DEFAULT);
-        }
+        final SocketConfig finalConfig = config;
+        b.attr(SocketConfig.ATTR_INIT_FN, (BiAction<Channel>) ch -> {
+            if (finalConfig instanceof SocksConfig) {
+                addRedundantHandlers(ch.pipeline(), (SocksConfig) finalConfig);
+            }
+            if (initChannel != null) {
+                initChannel.accept((DatagramChannel) ch);
+            }
+        });
+        b.handler(SocketChannelInitializer.DEFAULT);
         return b;
     }
 
     /**
      * 向 pipeline 添加 UDP 多倍发包的 Decoder（入站去重）和 Encoder（出站冗余发送）。
      * 支持静态模式和自适应模式。
+     * <p>通过 {@link #udpBootstrap(SocketConfig, BiAction)} 创建 DatagramChannel 时会自动调用；
+     * 仅在自行组装 pipeline 时才需要直接调用本方法。
      */
-    public static void addRedundantHandlers(ChannelPipeline pipeline, org.rx.net.socks.SocksConfig config) {
+    public static void addRedundantHandlers(ChannelPipeline pipeline, SocksConfig config) {
         int multiplier = config.getUdpRedundantMultiplier();
         boolean hasDestRules = config.hasUdpRedundantDestinationRules();
         if (multiplier <= 1 && !config.isUdpRedundantAdaptive() && !hasDestRules) {
