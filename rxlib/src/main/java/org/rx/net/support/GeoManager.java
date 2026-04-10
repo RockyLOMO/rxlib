@@ -52,32 +52,17 @@ public class GeoManager {
         load(false);
     }
 
-    private GeoIPSearcher getIpSearcher() {
-        GeoIPSearcher r = ipSearcher;
-        if (r == null) {
-            if (dTask == null) {
-                synchronized (this) {
-                    if (dTask == null) {
-                        dTask = Tasks.run(() -> load(false));
-                    }
+    private void ensureLoaded() {
+        if (ipSearcher != null && siteMatcher != null) {
+            return;
+        }
+        if (dTask == null) {
+            synchronized (this) {
+                if (dTask == null) {
+                    dTask = Tasks.run(() -> load(false));
                 }
             }
         }
-        return r;
-    }
-
-    private GeoSiteMatcher getSiteMatcher() {
-        GeoSiteMatcher r = siteMatcher;
-        if (r == null) {
-            if (dTask == null) {
-                synchronized (this) {
-                    if (dTask == null) {
-                        dTask = Tasks.run(() -> load(false));
-                    }
-                }
-            }
-        }
-        return r;
     }
 
     private GeoManager() {
@@ -108,8 +93,9 @@ public class GeoManager {
         if (force || !f.exists()) {
             File tmp = new File(f.getPath() + ".tmp");
             log.info("geo download file {} -> {} begin", tmp.getAbsolutePath(), f.getAbsolutePath());
-            new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy)
-                    .get(fileUrl).toFile(tmp.getPath());
+            try (HttpClient client = new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy)) {
+                client.get(fileUrl).toFile(tmp.getPath());
+            }
             f = Files.moveFile(tmp, f);
             log.info("geo download file {} -> {} end", tmp.getAbsolutePath(), f.getAbsolutePath());
         }
@@ -124,23 +110,28 @@ public class GeoManager {
     }
 
     public String getPublicIp() {
-        GeoIPSearcher r = getIpSearcher();
+        ensureLoaded();
+        GeoIPSearcher r = ipSearcher;
         if (r == null) {
             return Sockets.getAnyLocalAddress().getHostAddress();
         }
         return r.getPublicIp();
     }
 
+    private static final IpGeolocation NOT_READY = new IpGeolocation(null, null, "notReady");
+
     public IpGeolocation resolveIp(String ip) {
-        GeoIPSearcher r = getIpSearcher();
+        ensureLoaded();
+        GeoIPSearcher r = ipSearcher;
         if (r == null) {
-            return new IpGeolocation(null, null, "notReady");
+            return NOT_READY;
         }
         return r.lookup(ip);
     }
 
     public boolean matchSiteDirect(String domain) {
-        GeoSiteMatcher r = getSiteMatcher();
+        ensureLoaded();
+        GeoSiteMatcher r = siteMatcher;
         if (r == null) {
             return false;
         }

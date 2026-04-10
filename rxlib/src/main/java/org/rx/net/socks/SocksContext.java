@@ -129,18 +129,10 @@ public final class SocksContext extends EventArgs {
     transient Channel inbound;
     transient ChannelFuture outbound;
     transient volatile boolean outboundActive;
-    transient InetSocketAddress udp2rawClient;
 
     private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         this.source = srcEp;
         this.firstDestination = dstEp;
-    }
-
-    public AuthenticEndpoint tryGetUdpSocksServer() {
-        if (upstream instanceof SocksUdpUpstream) {
-            return ((SocksUdpUpstream) upstream).getUdpSocksServer();
-        }
-        return null;
     }
 
     private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
@@ -150,6 +142,5 @@ public final class SocksContext extends EventArgs {
         inbound = null;
         outbound = null;
         outboundActive = false;
-        udp2rawClient = null;
     }
 }

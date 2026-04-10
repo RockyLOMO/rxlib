@@ -205,12 +205,12 @@ public class RrpClient extends Disposable {
                                     .handler(new ChannelInitializer<LocalChannel>() {
                                         @Override
                                         protected void initChannel(LocalChannel ch) {
-                                            Sockets.addClientHandler(ch, conf).pipeline()
+                                            Sockets.addTcpClientHandler(ch, conf).pipeline()
                                                     .addLast(SocksClientHandler.DEFAULT);
                                         }
                                     }).connect(proxyCtx.localEndpoint);
                         } else {
-                            connF = Sockets.bootstrap(conf, ch -> Sockets.addClientHandler(ch, conf).pipeline()
+                            connF = Sockets.bootstrap(conf, ch -> Sockets.addTcpClientHandler(ch, conf).pipeline()
                                             .addLast(SocksClientHandler.DEFAULT))
                                     .connect(proxyCtx.localEndpoint);
                         }
@@ -297,7 +297,7 @@ public class RrpClient extends Disposable {
         config.setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
 //        config.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags());
         bootstrap = Sockets.bootstrap(config, channel -> {
-            Sockets.addClientHandler(channel, config).pipeline()
+            Sockets.addTcpClientHandler(channel, config).pipeline()
 //                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
 //                    .addLast(new HttpPseudoHeaderDecoder(), HttpPseudoHeaderEncoder.DEFAULT)
                     .addLast(new ClientHandler());

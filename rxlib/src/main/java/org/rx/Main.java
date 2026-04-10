@@ -292,7 +292,7 @@ public final class Main implements SocksRpcContract {
         Linq<Tuple<ShadowsocksConfig, SocksUser>> shadowUsers = Linq.from(rssConf.shadowUsers).select(shadowUser -> {
             ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(shadowUser.getSsPort()),
                     CipherKind.AES_256_GCM.getCipherName(), shadowUser.getSsPwd());
-            config.setUdpTimeoutSeconds(rssConf.udpTimeoutSeconds);
+            config.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
             SocksUser user = new SocksUser(shadowUser.getSocksUser());
             user.setPassword(rssConf.socksPwd.trim());
             user.setIpLimit(shadowUser.getIpLimit());
@@ -306,6 +306,7 @@ public final class Main implements SocksRpcContract {
         inConf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
         inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
         inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
+        inConf.setUdpRedundantMultiplier(2);
         DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
@@ -321,13 +322,14 @@ public final class Main implements SocksRpcContract {
         svrRefs.add(inSvr);
         Main app = new Main(inSvr);
         if (enableUdp2raw) {
-            SocksConfig inUdp2rawConf = Sys.deepClone(inConf);
-            inUdp2rawConf.setDebug(rssConf.hasDebugFlag());
-            inUdp2rawConf.setListenPort(udp2rawPort);
-            inUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
-            inUdp2rawConf.setUdp2rawClient(rssConf.udp2rawClient);
-            inUdp2rawConf.setKcptunClient(rssConf.kcptunClient);
-            SocksProxyServer inUdp2rawSvr = createInSvr(inUdp2rawConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+            SocksConfig inTunConf = Sys.deepClone(inConf);
+            inTunConf.setDebug(rssConf.hasDebugFlag());
+            inTunConf.setListenPort(udp2rawPort);
+            inTunConf.setKcptunClient(rssConf.kcptunClient);
+            inTunConf.setUdpRedundantMultiplier(2);
+//            inTunConf.setEnableUdp2raw(enableUdp2raw);
+//            inTunConf.setUdp2rawClient(rssConf.udp2rawClient);
+            SocksProxyServer inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
             svrRefs.add(inUdp2rawSvr);
         }
 
@@ -349,6 +351,8 @@ public final class Main implements SocksRpcContract {
             conf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
             conf.setReadTimeoutSeconds(0);
             conf.setWriteTimeoutSeconds(0);
+            conf.setUdpReadTimeoutSeconds(0);
+            conf.setUdpWriteTimeoutSeconds(0);
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
             svrRefs.add(ssSvr);
 
@@ -581,11 +585,12 @@ public final class Main implements SocksRpcContract {
 
     static JSONObject getDDns(String apiKey, String domain) {
         String url = "https://api.dynadot.com/restful/v1/domains/" + domain + "/records";
-        HttpClient client = new HttpClient();
-        client.requestHeaders().set("Accept", "application/json");
-        client.requestHeaders().set("Authorization", "Bearer " + apiKey);
-        client.requestHeaders().set("X-Signature", dynadotSign(apiKey, url, ""));
-        return client.get(url).toJson();
+        try (HttpClient client = new HttpClient()) {
+            client.requestHeaders().set("Accept", "application/json");
+            client.requestHeaders().set("Authorization", "Bearer " + apiKey);
+            client.requestHeaders().set("X-Signature", dynadotSign(apiKey, url, ""));
+            return client.get(url).toJson();
+        }
     }
 
     static String dynadotSign(String apiKey, String url, String requestBody) {
@@ -619,11 +624,12 @@ public final class Main implements SocksRpcContract {
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         if (enableUdp2raw) {
-            SocksConfig outUdp2rawConf = Sys.deepClone(outConf);
-            outUdp2rawConf.setDebug(debugFlag);
-            outUdp2rawConf.setListenPort(udp2rawPort);
-            outUdp2rawConf.setEnableUdp2raw(enableUdp2raw);
-            SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outUdp2rawConf, defAuth);
+            SocksConfig outTunConf = Sys.deepClone(outConf);
+            outTunConf.setDebug(debugFlag);
+            outTunConf.setListenPort(udp2rawPort);
+            outTunConf.setUdpRedundantMultiplier(2);
+//            outTunConf.setEnableUdp2raw(enableUdp2raw);
+            SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
             outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         }
 
@@ -648,11 +654,12 @@ public final class Main implements SocksRpcContract {
         }).requestMapping("/hf", (request, response) -> {
             String url = request.getQueryString().getFirst("fu");
             Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
-            HttpClient client = new HttpClient();
-            if (tm != null) {
-                client.withTimeoutMillis(tm);
+            try (HttpClient client = new HttpClient()) {
+                if (tm != null) {
+                    client.withTimeoutMillis(tm);
+                }
+                response.jsonBody(client.get(url).toJson());
             }
-            response.jsonBody(client.get(url).toJson());
         })
         // .requestMapping("/geo", (request, response) -> {
         // response.jsonBody(IPSearcher.DEFAULT.resolve(request.getQueryString().getFirst("host")));

@@ -32,7 +32,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final SocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel tcpChannel;
-    final Channel udpChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     // 只有压缩时一定要用
@@ -108,19 +107,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }).channel();
         }
 
-        // udp server
-        int udpPort = config.getListenPort();
-        udpChannel = Sockets.udpBootstrap(config, channel -> {
-            ChannelPipeline pipeline = channel.pipeline();
-            // 多倍发包去重（入站）和冗余发送（出站）
-            addRedundantHandlers(pipeline, config);
-            if (config.isEnableUdp2raw()) {
-                pipeline.addLast(Udp2rawHandler.DEFAULT);
-            } else {
-                Sockets.addServerHandler(channel, config);
-                pipeline.addLast(SocksUdpRelayHandler.DEFAULT);
-            }
-        }).attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(udpPort)).channel();
     }
 
     private void acceptChannel(Channel channel) {
@@ -134,7 +120,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         }
         pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
         // SocksPortUnificationServerHandler
-        Sockets.addServerHandler(channel, config);
+        Sockets.addTcpServerHandler(channel, config);
         pipeline.addLast(Socks5ServerEncoder.DEFAULT)
                 .addLast(Socks5InitialRequestDecoder.class.getSimpleName(), new Socks5InitialRequestDecoder())
                 .addLast(Socks5InitialRequestHandler.class.getSimpleName(), Socks5InitialRequestHandler.DEFAULT);
@@ -154,7 +140,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             Sockets.closeOnFlushed(tcpChannel);
         }
         Sockets.closeBootstrap(bootstrap);
-        udpChannel.close();
     }
 
     @SneakyThrows
@@ -165,32 +150,4 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         return cipherRouter.invoke(dstEp);
     }
 
-    /**
-     * 向 pipeline 添加 UDP 多倍发包的 Decoder（入站去重）和 Encoder（出站冗余发送）。
-     * 支持静态模式和自适应模式。
-     */
-    static void addRedundantHandlers(ChannelPipeline pipeline, SocksConfig config) {
-        int multiplier = config.getUdpRedundantMultiplier();
-        boolean hasDestRules = config.hasUdpRedundantDestinationRules();
-        if (multiplier <= 1 && !config.isUdpRedundantAdaptive() && !hasDestRules) {
-            return;
-        }
-        UdpRedundantMultiplierResolver resolver = config.buildUdpRedundantMultiplierResolver();
-        if (config.isUdpRedundantAdaptive()) {
-            UdpRedundantStats stats = new UdpRedundantStats(
-                    multiplier, // 尊重用户配置的初始倍率
-                    config.getUdpRedundantMinMultiplier(),
-                    config.getUdpRedundantMaxMultiplier(),
-                    config.getUdpRedundantIntervalMicros(),
-                    config.getUdpRedundantLossThresholdHigh(),
-                    config.getUdpRedundantLossThresholdLow(),
-                    config.getUdpRedundantStablePeriods());
-            pipeline.addLast(UdpRedundantDecoder.class.getSimpleName(), new UdpRedundantDecoder(stats));
-            pipeline.addLast(UdpRedundantEncoder.class.getSimpleName(), new UdpRedundantEncoder(stats, resolver));
-        } else {
-            pipeline.addLast(UdpRedundantDecoder.class.getSimpleName(), new UdpRedundantDecoder());
-            pipeline.addLast(UdpRedundantEncoder.class.getSimpleName(),
-                    new UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros(), resolver));
-        }
-    }
 }

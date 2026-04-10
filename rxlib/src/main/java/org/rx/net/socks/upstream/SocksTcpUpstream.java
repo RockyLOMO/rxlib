@@ -11,6 +11,7 @@ import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.socks.Socks5ClientHandler;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -39,7 +40,7 @@ public class SocksTcpUpstream extends Upstream {
         AuthenticEndpoint svrEp = next.getEndpoint();
         SocksRpcContract facade = next.getFacade();
 
-        Sockets.addClientHandler(channel, config, svrEp.getEndpoint());
+        Sockets.addTcpClientHandler(channel, config, svrEp.getEndpoint());
 
         if (facade != null
                 && (SocksRpcContract.FAKE_IPS.contains(destination.getHost()) || SocksRpcContract.FAKE_PORTS.contains(destination.getPort())
