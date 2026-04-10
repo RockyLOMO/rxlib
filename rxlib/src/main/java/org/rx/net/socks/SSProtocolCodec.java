@@ -32,24 +32,7 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
         ByteBuf buf = Sockets.getMessageBuf(msg);
 
         //组装ss协议
-        //udp [target address][payload]
-        //tcp only [payload]
-        Channel inbound = ctx.channel();
-        boolean isUdp = inbound instanceof DatagramChannel;
-
-        InetSocketAddress addr = null;
-        if (isUdp) {
-            addr = inbound.attr(ShadowsocksConfig.UDP_SENDER).get();
-        }
-
-        if (addr == null) {
-            buf.retain();
-        } else {
-            ByteBuf addrBuf = ctx.alloc().buffer(64);
-            UdpManager.encode(addrBuf, addr);
-
-            buf = Unpooled.wrappedBuffer(addrBuf, buf.retain());
-        }
+        buf.retain();
 
         if (msg instanceof DatagramPacket) {
             DatagramPacket pack = (DatagramPacket) msg;

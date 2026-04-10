@@ -18,7 +18,6 @@ public class ShadowsocksConfig extends SocketConfig {
     public static final AttributeKey<ShadowsocksServer> SVR = AttributeKey.valueOf("ssSvr");
     public static final AttributeKey<ICrypto> CIPHER = AttributeKey.valueOf("CIPHER");
     public static final AttributeKey<InetSocketAddress> REMOTE_DEST = AttributeKey.valueOf("REMOTE_DEST");
-    public static final AttributeKey<InetSocketAddress> UDP_SENDER = AttributeKey.valueOf("UDP_SENDER");
 
     private static final long serialVersionUID = 9144214925505451056L;
     private final InetSocketAddress serverEndpoint;

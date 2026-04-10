@@ -11,10 +11,15 @@ import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ConcurrentHashMap;
+import io.netty.util.AttributeKey;
 
 @Slf4j
 @ChannelHandler.Sharable
 public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+    public static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
+            AttributeKey.valueOf("ssUdpRouteMap");
     @Slf4j
     @ChannelHandler.Sharable
     public static class UdpBackendRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
@@ -32,15 +37,16 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             ByteBuf outBuf = out.content();
             if (sc != null && sc.getUpstream() instanceof org.rx.net.socks.upstream.SocksUdpUpstream && ((org.rx.net.socks.upstream.SocksUdpUpstream) sc.getUpstream()).getUdpRelayAddress(outbound) != null) {
                 UnresolvedEndpoint tmp = UdpManager.socks5Decode(outBuf);
-//                if (!dstEp.equals(tmp)) {
-//                    log.warn("UDP dstEp not matched {} != {}", dstEp, tmp);
-//                }
-                sc.inbound.attr(ShadowsocksConfig.UDP_SENDER).set(realDstEp = tmp.socketAddress());
+                realDstEp = tmp.socketAddress();
             } else {
-                sc.inbound.attr(ShadowsocksConfig.UDP_SENDER).set(realDstEp = out.sender());
+                realDstEp = out.sender();
             }
 
-            sc.inbound.writeAndFlush(new DatagramPacket(outBuf.retain(), srcEp));
+            ByteBuf addrBuf = ctx.alloc().buffer(64);
+            UdpManager.encode(addrBuf, realDstEp);
+            ByteBuf finalBuf = io.netty.buffer.Unpooled.wrappedBuffer(addrBuf, outBuf.retain());
+
+            sc.inbound.writeAndFlush(new DatagramPacket(finalBuf, srcEp));
             if (debug) {
                 log.info("SS UDP IN {}[{}] => {}", realDstEp, dstEp, srcEp);
             }
@@ -62,20 +68,32 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
 
-        SocksContext e = SocksContext.getCtx(srcEp, dstEp);
-        server.raiseEvent(server.onUdpRoute, e);
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = inbound.attr(ATTR_ROUTE_MAP).get();
+        if (routeMap == null) {
+            inbound.attr(ATTR_ROUTE_MAP).set(routeMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<UnresolvedEndpoint, SocksContext>build().asMap());
+        }
+
+        SocksContext e = routeMap.get(dstEp);
+        if (e == null) {
+            e = SocksContext.getCtx(srcEp, dstEp);
+            server.raiseEvent(server.onUdpRoute, e);
+            Upstream upstream = e.getUpstream();
+            SocksContext finalE = e;
+            ChannelFuture outboundFuture = UdpManager.open(UdpManager.ssRegion, srcEp, upstream.getConfig(), k -> {
+                ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
+                    upstream.initChannel(ob);
+                    ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
+                            UdpBackendRelayHandler.DEFAULT);
+                }).attr(ShadowsocksConfig.SVR, server).bind(0);
+                chf.channel().closeFuture().addListener(f -> UdpManager.close(k));
+                return chf;
+            });
+            SocksContext.markCtx(inbound, outboundFuture, e);
+            routeMap.put(dstEp, e);
+        }
+
         Upstream upstream = e.getUpstream();
-        ChannelFuture outboundFuture = UdpManager.open(UdpManager.ssRegion, srcEp, upstream.getConfig(), k -> {
-            ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
-                upstream.initChannel(ob);
-                ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpTimeoutSeconds(), 0),
-                        UdpBackendRelayHandler.DEFAULT);
-            }).attr(ShadowsocksConfig.SVR, server).bind(0);
-            chf.channel().closeFuture().addListener(f -> UdpManager.close(k));
-            return chf;
-        });
-        SocksContext.markCtx(inbound, outboundFuture, e);
-        Channel outbound = outboundFuture.channel();
+        Channel outbound = e.outbound.channel();
         EndpointTracer.UDP.link(srcEp, outbound);
 
         UnresolvedEndpoint upDstEp;
@@ -92,7 +110,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
         } else {
             ByteBuf finalInBuf = inBuf;
-            outboundFuture.addListener((ChannelFutureListener) f -> f.channel().writeAndFlush(new DatagramPacket(finalInBuf, upDstEp.socketAddress())));
+            e.outbound.addListener((ChannelFutureListener) f -> f.channel().writeAndFlush(new DatagramPacket(finalInBuf, upDstEp.socketAddress())));
         }
         if (debug) {
             log.info("SS UDP OUT {} => {}[{}]", srcEp, upDstEp, dstEp);

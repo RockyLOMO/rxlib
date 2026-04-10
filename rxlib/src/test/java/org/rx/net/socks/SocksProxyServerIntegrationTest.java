@@ -411,6 +411,103 @@ class SocksProxyServerIntegrationTest {
     @Test
     @SneakyThrows
     @Timeout(value = 15)
+    void shadowsocksUdpRelay_socks5_chained_e2e() {
+        int proxyBPort = 15291;
+        int proxyAPort = 15292;
+        int ssPort = 15293;
+
+        // 1) SocksProxy B (Target gateway)
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        SocksProxyServer proxyB = new SocksProxyServer(configB);
+
+        // 2) SocksProxy A (Intermediate proxy)
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        SocksProxyServer proxyA = new SocksProxyServer(configA);
+
+        // 3) Shadowsocks Server
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort), org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "testpwd");
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+
+        // Setup upstreams: SS -> ProxyA -> ProxyB
+        UpstreamSupport supportA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyAPort), null, null), null);
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+
+        ssServer.onUdpRoute.replace((s, e) -> {
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            SocksConfig aConf = new SocksConfig(proxyAPort);
+            e.setUpstream(new SocksUdpUpstream(dstEp, aConf, supportA));
+        });
+
+        proxyA.onUdpRoute.replace((s, e) -> {
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            SocksConfig bConf = new SocksConfig(proxyBPort);
+            e.setUpstream(new SocksUdpUpstream(dstEp, bConf, supportB));
+        });
+
+        try {
+            Thread.sleep(1000);
+
+            // 4) Shadowsocks Client (Raw UDP send)
+            DatagramSocket clientSock = new DatagramSocket();
+            clientSock.setSoTimeout(5000);
+
+            try {
+                org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword(), true);
+                
+                boolean ok = false;
+                for(int i = 0; i < 15; i++) {
+                    // Pack UDP Echo Request
+                    ByteBuf addrBuf = Unpooled.buffer(64);
+                    UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
+                    byte[] payload = "ss-to-socks-chained".getBytes(StandardCharsets.UTF_8);
+                    addrBuf.writeBytes(payload);
+                    
+                    ByteBuf encryptedBuf = crypto.encrypt(addrBuf);
+                    byte[] encrypted = toBytes(encryptedBuf);
+
+                    clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
+
+                    // 5) Receive and Decrypt response
+                    byte[] respBuf = new byte[1024];
+                    java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
+                    try {
+                        clientSock.receive(p);
+                    } catch (java.net.SocketTimeoutException e) {
+                        continue;
+                    }
+
+                    byte[] receivedEncrypted = new byte[p.getLength()];
+                    System.arraycopy(respBuf, 0, receivedEncrypted, 0, p.getLength());
+                    
+                    ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(receivedEncrypted));
+                    UnresolvedEndpoint srcEp = UdpManager.decode(decBuf); // The real sender!
+                    
+                    byte[] echoed = new byte[decBuf.readableBytes()];
+                    decBuf.readBytes(echoed);
+                    assertEquals("ss-to-socks-chained", new String(echoed, StandardCharsets.UTF_8));
+                    assertEquals(UDP_ECHO_PORT, srcEp.getPort());
+                    
+                    log.info("Shadowsocks chained UDP relay success: src={}", srcEp);
+                    ok = true;
+                    break;
+                }
+                assertTrue(ok, "Did not receive UDP chain relay echo within max attempts.");
+            } finally {
+                clientSock.close();
+            }
+
+        } finally {
+            ssServer.close();
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
     void socks5AnonymousLogin_e2e() {
         int proxyPort = 15282;
         SocksConfig config = new SocksConfig(proxyPort);
