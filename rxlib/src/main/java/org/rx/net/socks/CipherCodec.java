@@ -7,8 +7,10 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
+import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.encryption.ICrypto;
 
@@ -24,7 +26,16 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         ByteBuf inBuf = Sockets.getMessageBuf(msg);
 
         ICrypto crypt = ctx.channel().attr(ShadowsocksConfig.CIPHER).get();
+        if (crypt == null) {
+            out.add(ReferenceCountUtil.retain(msg));
+            return;
+        }
+
         ByteBuf outBuf = crypt.encrypt(inBuf);
+        if (!outBuf.isReadable()) {
+            Bytes.release(outBuf);
+            return;
+        }
 
         if (msg instanceof DatagramPacket) {
             msg = ((DatagramPacket) msg).replace(outBuf);
@@ -40,9 +51,18 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
 
         Channel inbound = ctx.channel();
         ICrypto crypt = inbound.attr(ShadowsocksConfig.CIPHER).get();
+        if (crypt == null) {
+            out.add(ReferenceCountUtil.retain(msg));
+            return;
+        }
+
         boolean isUdp = inbound instanceof DatagramChannel;
         try {
             ByteBuf outBuf = crypt.decrypt(inBuf);
+            if (!outBuf.isReadable()) {
+                Bytes.release(outBuf);
+                return;
+            }
 
             if (isUdp) {
                 msg = ((DatagramPacket) msg).replace(outBuf);

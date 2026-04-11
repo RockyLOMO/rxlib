@@ -13,6 +13,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.io.Bytes;
 import org.rx.net.SocketConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiFunc;
@@ -129,9 +130,9 @@ public final class UdpManager {
             encode(header, host, port);
             compositeBuf.addComponents(true, header, buf);
             return compositeBuf;
-        } catch (Exception e) {
-            header.release();
-            compositeBuf.release();
+        } catch (Throwable e) {
+            Bytes.release(header);
+            Bytes.release(compositeBuf);
             throw e;
         }
     }
