@@ -89,7 +89,7 @@ public class RemotingTest extends AbstractTester {
         facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
 
         rpcApiEvent(svcImpl, facadeGroup);
-        // 同一组 facade 依赖自动重连；Remoting onReconnected 同步重发在途包 + TcpServer 关服后仍 flush 应答
+        // 同一组 facade 依赖自动重连；Remoting onReconnected 在 EventLoop 上排队重发在途包 + TcpServer 关服后仍 flush 应答
         restartServer(svcImpl, endpoint_3307, startDelay);
         rpcApiEvent(svcImpl, facadeGroup);
     }

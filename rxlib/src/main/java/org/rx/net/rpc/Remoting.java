@@ -1,5 +1,6 @@
 package org.rx.net.rpc;
 
+import io.netty.channel.Channel;
 import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.AllArgsConstructor;
@@ -169,19 +170,25 @@ public final class Remoting {
                         sync.v.onReconnected.combine((s, e) -> {
                             StatefulTcpClient sc = (StatefulTcpClient) s;
                             initFn.invoke((T) p.getProxyObject(), sc);
-                            // 同步重发在途请求：若仍丢到 asyncScheduler，可能与主线程新 RPC 交错，导致同一 facade 重连后偶发读超时
-                            Map<Integer, ClientBean> pending = getClientBeans(sc);
-                            for (ClientBean val : pending.values()) {
-                                if (val.syncRoot.getHoldCount() == 0) {
-                                    continue;
-                                }
-                                log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
-                                try {
-                                    sc.send(val.pack);
-                                } catch (ClientDisconnectedException ex) {
-                                    log.warn("clientSide resent pack[{}] fail", val.pack.id);
-                                }
+                            // 在途重发仅在连接所在 EventLoop 上排队，与出站 write 顺序一致，且不走无关线程池
+                            Channel ch = sc.getChannel();
+                            if (ch == null) {
+                                log.warn("onReconnected: channel null, skip pending resend");
+                                return;
                             }
+                            ch.eventLoop().execute(() -> {
+                                for (ClientBean val : getClientBeans(sc).values()) {
+                                    if (val.syncRoot.getHoldCount() == 0) {
+                                        continue;
+                                    }
+                                    log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
+                                    try {
+                                        sc.send(val.pack);
+                                    } catch (ClientDisconnectedException ex) {
+                                        log.warn("clientSide resent pack[{}] fail", val.pack.id);
+                                    }
+                                }
+                            });
                         });
                         initFn.invoke((T) p.getProxyObject(), sync.v);
                         //Recheck if onHandshake() return client to pool
