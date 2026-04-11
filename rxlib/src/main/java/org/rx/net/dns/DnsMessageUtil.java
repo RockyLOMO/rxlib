@@ -8,9 +8,12 @@ import java.net.InetSocketAddress;
 public class DnsMessageUtil {
     public static DefaultDnsResponse newResponse(DefaultDnsQuery query, DnsResponse response, boolean isTcp) {
         if (!isTcp) {
-            if (response instanceof DatagramDnsResponse) {
-                return (DatagramDnsResponse) response;
-            }
+            // Always build a fresh DatagramDnsResponse addressed to the original UDP client.
+            // Do NOT return the upstream DatagramDnsResponse directly: its recipient() points to
+            // the resolver's ephemeral port (not the DNS client), which would send the reply to
+            // the wrong address.  Reusing the same object also couples the envelope's refCnt to
+            // the writeAndFlush lifecycle, which can cause IllegalReferenceCountException in
+            // edge cases where the encoder releases the message before our finally block runs.
             DatagramDnsQuery udpQuery = (DatagramDnsQuery) query;
             DefaultDnsResponse newResponse = new DatagramDnsResponse(udpQuery.recipient(), udpQuery.sender(), query.id());
             newResponse.setOpCode(response.opCode()).setCode(response.code())
@@ -24,6 +27,9 @@ public class DnsMessageUtil {
             }
             return newResponse;
         } else {
+            if (response instanceof ReferenceCounted) {
+                ((ReferenceCounted) response).retain();
+            }
             return (DefaultDnsResponse) response;
         }
     }
