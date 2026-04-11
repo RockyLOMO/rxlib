@@ -209,6 +209,57 @@ public class TestIO extends AbstractTester {
                 .lt(TraceHandler.ExceptionEntity::getModifyTime, DateTime.now()).toString(paramsX);
         System.out.println(sql + "(" + paramsX + ")");
     }
+
+    @Test
+    public void testEntityDatabaseOptimizations() {
+        String testDb = "~/h2/perf_test";
+        EntityDatabaseImpl db = new EntityDatabaseImpl(testDb, null);
+        db.createMapping(PersonBean.class);
+        try {
+            // Test 1: Verify Correctness of findById and existsById (using pre-generated SQL)
+            PersonBean p1 = new PersonBean();
+            p1.setName("OptimizedUser");
+            p1.setGender(PersonGender.BOY);
+            db.save(p1);
+            ULID id = p1.getId();
+
+            assert db.existsById(PersonBean.class, id);
+            PersonBean found = db.findById(PersonBean.class, id);
+            assert found != null;
+            assert found.getName().equals("OptimizedUser");
+
+            // Test 2: Verify Multiple Row Result Set Mapping (optimized executeQuery)
+            for (int i = 0; i < 50; i++) {
+                PersonBean p = new PersonBean();
+                p.setName("Batch" + i);
+                p.setGender(PersonGender.GIRL);
+                db.save(p);
+            }
+            List<PersonBean> girls = db.findBy(new EntityQueryLambda<>(PersonBean.class).eq(PersonBean::getGender, PersonGender.GIRL));
+            assert girls.size() >= 50;
+            for (PersonBean g : girls) {
+                assert g.getGender() == PersonGender.GIRL;
+                assert g.getName().startsWith("Batch") || g.getName().equals("乐之") || g.getName().equals("湵范");
+            }
+
+            // Test 3: Micro-benchmark of existsById (Stress testing the cached SQL)
+            long start = System.currentTimeMillis();
+            int iterations = 1000;
+            for (int i = 0; i < iterations; i++) {
+                db.existsById(PersonBean.class, id);
+            }
+            long end = System.currentTimeMillis();
+            log.info("{} iterations of existsById took {}ms", iterations, end - start);
+
+            // Test 4: Verify partial update (secondaryView fix)
+            p1.setAge(99);
+            db.save(p1);
+            PersonBean updated = db.findById(PersonBean.class, id);
+            assert updated.getAge() == 99;
+        } finally {
+            db.dropMapping(PersonBean.class);
+        }
+    }
     //endregion
 
     //region kvstore
