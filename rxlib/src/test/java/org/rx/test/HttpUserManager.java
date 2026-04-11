@@ -7,17 +7,7 @@ import java.util.Map;
 
 @RequestMapping("js")
 public interface HttpUserManager {
-    HttpUserManager INSTANCE = new HttpUserManager() {
-        @Override
-        public int computeLevel(int x, int y) {
-            return x + y;
-        }
-
-        @Override
-        public Map<String, Object> queryIp() {
-            return null;
-        }
-    };
+    HttpUserManager INSTANCE = HttpUserManagerStub.INSTANCE;
 
     int computeLevel(int x, int y);
 

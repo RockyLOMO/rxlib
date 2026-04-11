@@ -207,10 +207,11 @@ public final class Remoting {
                             String.format("Client %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
                                     Sockets.toString(client.getLocalEndpoint()),
                                     Sockets.toString(client.getConfig().getServerEndpoint())), methodMessage.parameters, () -> {
-                                client.send(methodMessage);
+                                // 必须先登记 wait map，再 send；否则极快返回的应答可能在 onReceive 中找不到 ClientBean（读超时）
                                 Map<Integer, ClientBean> wb = getClientBeans(client);
                                 waitBeans.set(wb);
                                 wb.put(clientBean.pack.id, clientBean);
+                                client.send(methodMessage);
                                 if (!clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis())) {
                                     if (!client.isConnected()) {
                                         throw new ClientDisconnectedException(client);

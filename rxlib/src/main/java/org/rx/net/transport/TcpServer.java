@@ -48,7 +48,16 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
         @Override
         public void send(Serializable pack) {
-            owner.checkNotClosed();
+            if (!isConnected()) {
+                log.warn("Send cancelled or client {} disconnected", remoteEndpoint);
+                return;
+            }
+            // dispose 之后，Remoting 等 onReceive 异步任务仍可能回写应答；此时 owner 已 closed 但子 channel 仍可 flush
+            if (owner.isClosed()) {
+                channel.writeAndFlush(pack);
+                log.debug("serverWrite (server closing) {} {}", channel.remoteAddress(), pack);
+                return;
+            }
 
             TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, pack);
             owner.raiseEvent(owner.onSend, args);
@@ -228,7 +237,11 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientImpl(this));
         }).option(ChannelOption.SO_REUSEADDR, true);
-        serverChannel = bootstrap.bind(config.getListenPort()).channel();
+        ChannelFuture bindFuture = bootstrap.bind(config.getListenPort()).syncUninterruptibly();
+        if (!bindFuture.isSuccess()) {
+            throw new InvalidException("Server bind {} failed: {}", config.getListenPort(), bindFuture.cause());
+        }
+        serverChannel = bindFuture.channel();
     }
 
     public String dumpClients() {
