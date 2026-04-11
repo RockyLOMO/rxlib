@@ -43,27 +43,57 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
 //    }
     private byte[] key;
     private byte[] val;
+    private transient volatile boolean keyDecoded;
+    private transient volatile boolean valDecoded;
+    private transient K _key;
+    private transient V _val;
 
     @Override
     public K getKey() {
-        return key == null ? null : Serializer.DEFAULT.deserializeFromBytes(key);
+        if (keyDecoded) {
+            return _key;
+        }
+        synchronized (this) {
+            if (!keyDecoded) {
+                _key = key == null ? null : Serializer.DEFAULT.deserializeFromBytes(key);
+                keyDecoded = true;
+            }
+        }
+        return _key;
     }
 
     public void setKey(K key) {
-        id = CodecUtil.hash64(this.key = Serializer.DEFAULT.serializeToBytes(key));
+        synchronized (this) {
+            this._key = key;
+            this.keyDecoded = true;
+            this.id = CodecUtil.hash64(this.key = Serializer.DEFAULT.serializeToBytes(key));
+        }
     }
 
     @Override
     public V getValue() {
-        return val == null ? null : Serializer.DEFAULT.deserializeFromBytes(val);
+        if (valDecoded) {
+            return _val;
+        }
+        synchronized (this) {
+            if (!valDecoded) {
+                _val = val == null ? null : Serializer.DEFAULT.deserializeFromBytes(val);
+                valDecoded = true;
+            }
+        }
+        return _val;
     }
 
     @Override
     public V setValue(V value) {
-        V oldValue = getValue();
-        val = Serializer.DEFAULT.serializeToBytes(value);
-        valIdx = CodecUtil.hash64(val);
-        return oldValue;
+        synchronized (this) {
+            V oldValue = getValue();
+            this._val = value;
+            this.valDecoded = true;
+            this.val = Serializer.DEFAULT.serializeToBytes(value);
+            this.valIdx = CodecUtil.hash64(this.val);
+            return oldValue;
+        }
     }
 
     public H2CacheItem() {

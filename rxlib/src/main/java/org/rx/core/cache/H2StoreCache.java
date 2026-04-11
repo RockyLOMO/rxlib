@@ -122,6 +122,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @Setter
     long expungePeriod = 1000 * 60;
     EntrySetView setView;
+    final MemoryCache<TK, H2CacheItem<TK, TV>> l1Cache = new MemoryCache<>(b -> b.maximumSize(2048));
 
     public H2StoreCache() {
         this(EntityDatabase.DEFAULT);
@@ -134,12 +135,21 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     void expungeStale() {
-        List<H2CacheItem> stales = db.findBy(new EntityQueryLambda<>(H2CacheItem.class)
-                .le(H2CacheItem::getExpiration, System.currentTimeMillis())
-                .limit(prefetchCount));
-        for (H2CacheItem stale : stales) {
-            db.deleteById(H2CacheItem.class, stale.id);
-            raiseEvent(onExpired, stale);
+        while (true) {
+            List<H2CacheItem> stales = db.findBy(new EntityQueryLambda<>(H2CacheItem.class)
+                    .le(H2CacheItem::getExpiration, System.currentTimeMillis())
+                    .limit(prefetchCount));
+            if (stales.isEmpty()) {
+                break;
+            }
+            for (H2CacheItem stale : stales) {
+                l1Cache.remove(stale.getKey());
+                db.deleteById(H2CacheItem.class, stale.id);
+                raiseEvent(onExpired, stale);
+            }
+            if (stales.size() < prefetchCount) {
+                break;
+            }
         }
     }
 
@@ -150,6 +160,10 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public boolean containsKey(Object key) {
+        H2CacheItem<TK, TV> item = l1Cache.get(key);
+        if (item != null) {
+            return !item.isExpired();
+        }
         return db.exists(new EntityQueryLambda<>(H2CacheItem.class)
                 .eq(H2CacheItem::getId, CodecUtil.hash64(key)));
     }
@@ -163,18 +177,35 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV get(Object key) {
-        H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
-        if (item == null) {
+        H2CacheItem<TK, TV> item = l1Cache.get(key);
+        if (item != null) {
+            if (item.isExpired()) {
+                l1Cache.remove(key);
+                db.deleteById(H2CacheItem.class, item.id);
+                raiseEvent(onExpired, item);
+                return null;
+            }
+            if (item.slidingRenew()) {
+                final H2CacheItem<TK, TV> fItem = item;
+                Tasks.run(() -> db.save(fItem));
+            }
+            return item.getValue();
+        }
+
+        item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
+        if (item == null || !Objects.equals(key, item.getKey())) {
             return null;
         }
         if (item.isExpired()) {
             db.deleteById(H2CacheItem.class, item.id);
             raiseEvent(onExpired, item);
-            return item.getValue();
+            return null;
         }
         if (item.slidingRenew()) {
-            db.save(item);
+            final H2CacheItem<TK, TV> fItem = item;
+            Tasks.run(() -> db.save(fItem));
         }
+        l1Cache.put((TK) key, item, item);
         return item.getValue();
     }
 
@@ -184,33 +215,37 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         if (policy == null) {
             policy = CachePolicy.absolute(defaultExpireSeconds);
         }
-        TV oldValue;
-        H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
-        if (item == null) {
-            oldValue = null;
-            item = new H2CacheItem<>(key, value, policy);
-            item.setRegion(key.getClass().getSimpleName());
-        } else {
-            oldValue = item.getValue();
-            item.setValue(value);
-        }
-        db.save(item);
+
+        H2CacheItem<TK, TV> oldItem = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
+        TV oldValue = (oldItem != null && Objects.equals(key, oldItem.getKey())) ? oldItem.getValue() : null;
+
+        H2CacheItem<TK, TV> newItem = new H2CacheItem<>(key, value, policy);
+        newItem.setRegion(key.getClass().getSimpleName());
+
+        l1Cache.put(key, newItem, newItem);
+        db.save(newItem);
         return oldValue;
     }
 
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV remove(Object key) {
+        H2CacheItem<TK, TV> removed = l1Cache.remove(key);
+        TV val = removed != null ? removed.getValue() : null;
         H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
-        if (item == null) {
-            return null;
+        if (item == null || !Objects.equals(key, item.getKey())) {
+            return val;
         }
         db.deleteById(H2CacheItem.class, item.id);
-        return item.getValue();
+        if (val == null) {
+            val = item.getValue();
+        }
+        return val;
     }
 
     @Override
     public void clear() {
+        l1Cache.clear();
         db.truncateMapping(H2CacheItem.class);
     }
 
