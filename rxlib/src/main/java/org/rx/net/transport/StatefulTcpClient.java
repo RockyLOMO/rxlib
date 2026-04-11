@@ -301,16 +301,22 @@ public class StatefulTcpClient extends Disposable implements TcpClient {
     }
 
     @Override
-    public synchronized void send(@NonNull Serializable pack) {
+    public void send(@NonNull Serializable pack) {
+        // Fast path: channel is active, no locking needed — Netty's writeAndFlush is thread-safe
         if (!isConnected()) {
-            if (isShouldReconnect()) {
-                if (!FluentWait.polling(config.getWaitConnectMillis()).awaitTrue(w -> isConnected())) {
-                    reconnectAsync();
-                    throw new ClientDisconnectedException(this);
+            // Slow path: reconnect in progress; synchronize only for the reconnect check/wait
+            synchronized (this) {
+                if (!isConnected()) {
+                    if (isShouldReconnect()) {
+                        if (!FluentWait.polling(config.getWaitConnectMillis()).awaitTrue(w -> isConnected())) {
+                            reconnectAsync();
+                            throw new ClientDisconnectedException(this);
+                        }
+                    }
+                    if (!isConnected()) {
+                        throw new ClientDisconnectedException(this);
+                    }
                 }
-            }
-            if (!isConnected()) {
-                throw new ClientDisconnectedException(this);
             }
         }
 
