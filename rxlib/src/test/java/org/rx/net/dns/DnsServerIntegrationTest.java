@@ -37,6 +37,30 @@ public class DnsServerIntegrationTest extends AbstractTester {
         }
     }
 
+    @Slf4j
+    static class MyContract implements SocksRpcContract {
+        final InetAddress aopIp;
+
+        public MyContract(InetAddress aopIp) {
+            this.aopIp = aopIp;
+        }
+
+        @Override
+        public void fakeEndpoint(BigInteger hash, String realEndpoint) {
+        }
+
+        @SneakyThrows
+        @Override
+        public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+            log.info("resolveHost {}", host);
+            return Collections.singletonList(aopIp);
+        }
+
+        @Override
+        public void addWhiteList(InetAddress endpoint) {
+        }
+    }
+
     @Test
     void removeHosts_unknownHost_doesNotCreateMapEntry() throws Exception {
         DnsServer server = new DnsServer(freePort(), Collections.emptyList());
@@ -128,11 +152,10 @@ public class DnsServerIntegrationTest extends AbstractTester {
             server.close();
         }
     }
-
     @SneakyThrows
     @Test
     public void dns() {
-        String host_devops = "";
+        String host_devops = "baidu.com";
         InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
         InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:853");
 
@@ -140,61 +163,49 @@ public class DnsServerIntegrationTest extends AbstractTester {
         final InetAddress ip4 = InetAddress.getByName("4.4.4.4");
         final InetAddress aopIp = InetAddress.getByName("1.2.3.4");
         DnsServer server = new DnsServer(localNsEp.getPort(), Collections.singletonList(nsEp));
-//        DnsServer server = new DnsServer(localNsEp.getPort());
-        server.setInterceptors(new RandomList<>(Collections.singletonList(new SocksRpcContract() {
-            @Override
-            public void fakeEndpoint(BigInteger hash, String realEndpoint) {
+        try {
+            server.setInterceptors(new RandomList<>(Collections.singletonList(new MyContract(aopIp))));
+            server.setHostsTtl(5);
+            server.setEnableHostsWeight(false);
+            server.addHosts(host_devops, 2, Arrays.toList(ip2, ip4));
 
-            }
+            //hostTtl
+            DnsClient client = new DnsClient(Collections.singletonList(localNsEp));
+            List<InetAddress> result = client.resolveAll(host_devops);
+            System.out.println("eq: " + result);
+            assert result.contains(ip2) && result.contains(ip4);
+            Tasks.setTimeout(() -> {
+                try {
+                    server.removeHosts(host_devops, Collections.singletonList(ip2));
 
-            @SneakyThrows
-            @Override
-            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
-                log.info("resolveHost {}", host);
-                return Collections.singletonList(aopIp);
-//                return DnsClient.inlandClient().resolveAll(host);
-            }
+                    List<InetAddress> x = client.resolveAll(host_devops);
+                    System.out.println(toJsonString(x));
+                    assert x.contains(ip4);
+                } finally {
+                    _notify();
+                }
+            }, 6000);
 
-            @Override
-            public void addWhiteList(InetAddress endpoint) {
+            DnsClient inlandClient = DnsClient.inlandClient();
+            InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
+            List<InetAddress> currentIps = inlandClient.resolveAll(host_devops);
+            System.out.println("ddns: " + wanIp + " = " + currentIps);
+            //注入InetAddress.getAllByName()变更要查询的dnsServer的地址，支持非53端口
+            Sockets.injectNameService(Collections.singletonList(localNsEp));
 
-            }
-        })));
-        server.setHostsTtl(5);
-        server.setEnableHostsWeight(false);
-        server.addHosts(host_devops, 2, Arrays.toList(ip2, ip4));
+            List<InetAddress> wanResult = inlandClient.resolveAll(host_devops);
+            InetAddress[] localResult = InetAddress.getAllByName(host_devops);
+            System.out.println("wanResolve: " + wanResult + " != " + toJsonString(localResult));
+            assert !wanResult.get(0).equals(localResult[0]);
 
-        //hostTtl
-        DnsClient client = new DnsClient(Collections.singletonList(localNsEp));
-        List<InetAddress> result = client.resolveAll(host_devops);
-        System.out.println("eq: " + result);
-        assert result.contains(ip2) && result.contains(ip4);
-        Tasks.setTimeout(() -> {
-            server.removeHosts(host_devops, Collections.singletonList(ip2));
+            server.addHostsFile(path("hosts.txt"));
+            assert client.resolve(host_cloud).equals(InetAddress.getByName("192.168.31.7"));
 
-            List<InetAddress> x = client.resolveAll(host_devops);
-            System.out.println(toJsonString(x));
-            assert x.contains(ip4);
-            _notify();
-        }, 6000);
+            assert client.resolve("www.baidu.com").equals(aopIp);
 
-        DnsClient inlandClient = DnsClient.inlandClient();
-        InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
-        List<InetAddress> currentIps = inlandClient.resolveAll(host_devops);
-        System.out.println("ddns: " + wanIp + " = " + currentIps);
-        //注入InetAddress.getAllByName()变更要查询的dnsServer的地址，支持非53端口
-        Sockets.injectNameService(Collections.singletonList(localNsEp));
-
-        List<InetAddress> wanResult = inlandClient.resolveAll(host_devops);
-        InetAddress[] localResult = InetAddress.getAllByName(host_devops);
-        System.out.println("wanResolve: " + wanResult + " != " + toJsonString(localResult));
-        assert !wanResult.get(0).equals(localResult[0]);
-
-        server.addHostsFile(path("hosts.txt"));
-        assert client.resolve(host_cloud).equals(InetAddress.getByName("192.168.31.7"));
-
-        assert client.resolve("www.baidu.com").equals(aopIp);
-
-        _wait();
+            _wait();
+        } finally {
+            server.close();
+        }
     }
 }
