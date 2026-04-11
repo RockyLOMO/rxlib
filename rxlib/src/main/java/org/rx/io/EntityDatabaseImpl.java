@@ -605,7 +605,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             String pkName = null;
             Map<String, Tuple<Field, DbColumn>> columns = new LinkedHashMap<>();
             for (Field field : Reflects.getFieldMap(entityType).values()) {
-                if (Modifier.isStatic(field.getModifiers())) {
+                if (Modifier.isStatic(field.getModifiers()) || Modifier.isTransient(field.getModifiers())) {
                     continue;
                 }
                 DbColumn dbColumn = field.getAnnotation(DbColumn.class);
