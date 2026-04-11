@@ -167,20 +167,21 @@ public final class Remoting {
                             }
                         };
                         sync.v.onReconnected.combine((s, e) -> {
-                            initFn.invoke((T) p.getProxyObject(), (StatefulTcpClient) s);
-                            s.asyncScheduler().runAsync(() -> {
-                                for (ClientBean val : getClientBeans((StatefulTcpClient) s).values()) {
-                                    if (val.syncRoot.getHoldCount() == 0) {
-                                        continue;
-                                    }
-                                    log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
-                                    try {
-                                        s.send(val.pack);
-                                    } catch (ClientDisconnectedException ex) {
-                                        log.warn("clientSide resent pack[{}] fail", val.pack.id);
-                                    }
+                            StatefulTcpClient sc = (StatefulTcpClient) s;
+                            initFn.invoke((T) p.getProxyObject(), sc);
+                            // 同步重发在途请求：若仍丢到 asyncScheduler，可能与主线程新 RPC 交错，导致同一 facade 重连后偶发读超时
+                            Map<Integer, ClientBean> pending = getClientBeans(sc);
+                            for (ClientBean val : pending.values()) {
+                                if (val.syncRoot.getHoldCount() == 0) {
+                                    continue;
                                 }
-                            });
+                                log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
+                                try {
+                                    sc.send(val.pack);
+                                } catch (ClientDisconnectedException ex) {
+                                    log.warn("clientSide resent pack[{}] fail", val.pack.id);
+                                }
+                            }
                         });
                         initFn.invoke((T) p.getProxyObject(), sync.v);
                         //Recheck if onHandshake() return client to pool

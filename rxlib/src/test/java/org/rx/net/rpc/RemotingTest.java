@@ -25,7 +25,7 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class RemotingRegisterIdempotentTest extends AbstractTester {
+public class RemotingTest extends AbstractTester {
 
     static int freePort() throws Exception {
         try (ServerSocket ss = new ServerSocket(0)) {
@@ -49,7 +49,6 @@ class RemotingRegisterIdempotentTest extends AbstractTester {
         sleep(delay);
         rs.close();
         log.info("Close server on port {}", rs.getConfig().getListenPort());
-        // 原 TestSocks 用 setTimeout 异步启动，调用方极易在端口未监听时发 RPC；改为同步等待后再 bind
         sleep(delay);
         startServer(svcImpl, ep);
     }
@@ -65,8 +64,6 @@ class RemotingRegisterIdempotentTest extends AbstractTester {
         serverHost.clear();
     }
 
-    // ===== 原有幂等测试 =====
-
     @Test
     @Order(0)
     @Timeout(20)
@@ -80,8 +77,6 @@ class RemotingRegisterIdempotentTest extends AbstractTester {
         s1.close();
     }
 
-    // ===== 从 TestSocks 迁入的 RPC 测试 =====
-
     @Test
     @Order(1)
     @Timeout(120)
@@ -94,12 +89,26 @@ class RemotingRegisterIdempotentTest extends AbstractTester {
         facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
 
         rpcApiEvent(svcImpl, facadeGroup);
-        // 重启 server：原 facade 在部分环境下长时间无法自动恢复，第二轮用新 facade 验证新服务端
+        // 同一组 facade 依赖自动重连；Remoting onReconnected 同步重发在途包 + TcpServer 关服后仍 flush 应答
         restartServer(svcImpl, endpoint_3307, startDelay);
-        facadeGroup.clear();
-        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
-        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
         rpcApiEvent(svcImpl, facadeGroup);
+    }
+
+    /**
+     * 单 facade、同一端口连续重启两次，验证 clientBeans 仍绑定同一 StatefulTcpClient 且 RPC 可恢复。
+     */
+    @Test
+    @Order(5)
+    @Timeout(120)
+    void rpcStateful_singleFacade_survivesTwoRestartsOnSamePort() {
+        UserManagerImpl impl = new UserManagerImpl();
+        startServer(impl, endpoint_3307);
+        UserManager facade = Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0));
+        assertEquals(2, facade.computeLevel(1, 1));
+        restartServer(impl, endpoint_3307, startDelay);
+        assertEquals(2, facade.computeLevel(1, 1));
+        restartServer(impl, endpoint_3307, startDelay);
+        assertEquals(2, facade.computeLevel(1, 1));
     }
 
     private void rpcApiEvent(UserManagerImpl svcImpl, List<UserManager> facadeGroup) {
@@ -113,7 +122,6 @@ class RemotingRegisterIdempotentTest extends AbstractTester {
             assertEquals(2, facade.computeLevel(1, 1));
         }
 
-        // 自定义事件（广播），每 facade 只订阅 1 次
         for (int i = 0; i < facadeGroup.size(); i++) {
             int x = i;
             facadeGroup.get(i).<UserEventArgs>attachEvent(eventName, (s, e) -> {
@@ -136,7 +144,6 @@ class RemotingRegisterIdempotentTest extends AbstractTester {
         svcImpl.raiseEvent(eventName, args);
         sleep(100);
         log.info("svr flag:{}", args.getFlag());
-        // 服务端触发：先执行最后注册客户端的 EventArgs，再广播其余组内客户端
         assertEquals(2, args.getFlag());
     }
 
@@ -211,7 +218,6 @@ class RemotingRegisterIdempotentTest extends AbstractTester {
         assertEquals(2, userManager.computeLevel(1, 1));
         userManager.raiseEvent(eventName, EventArgs.EMPTY);
 
-        // 10 秒后开启 3308 实例，重连成功
         restartServer(svcImpl, endpoint_3308, startDelay);
         sleep(3000);
 
@@ -248,7 +254,6 @@ class RemotingRegisterIdempotentTest extends AbstractTester {
             int finalI = i;
             org.rx.core.Tasks.run(() -> {
                 try {
-                    // pool 模式只验证调用不抛异常，不断言具体返回值（连接复用下顺序无保证）
                     facade.computeLevel(1, finalI);
                     sleep(500);
                 } catch (Throwable t) {
