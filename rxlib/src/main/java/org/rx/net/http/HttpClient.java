@@ -65,9 +65,9 @@ public class HttpClient implements AutoCloseable {
 
         @Override
         public RequestBody toBody() {
-//            String ct = headers.getAsString(HttpHeaderNames.CONTENT_TYPE);
-//            System.out.println("ct:+" + ct);
-//            return RequestBody.create(ct == null ? JSON_TYPE : MediaType.parse(ct), toString());
+            // String ct = headers.getAsString(HttpHeaderNames.CONTENT_TYPE);
+            // System.out.println("ct:+" + ct);
+            // return RequestBody.create(ct == null ? JSON_TYPE : MediaType.parse(ct), toString());
             return RequestBody.create(JSON_TYPE, toString());
         }
 
@@ -256,7 +256,7 @@ public class HttpClient implements AutoCloseable {
     static final ConnectionPool POOL = new ConnectionPool(RxConfig.INSTANCE.getNet().getPoolMaxSize(), RxConfig.INSTANCE.getNet().getPoolKeepAliveSeconds(), TimeUnit.SECONDS);
     static final MediaType FORM_TYPE = MediaType.parse("application/x-www-form-urlencoded;charset=UTF-8"), JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
 
-    //region StaticMembers
+    // region StaticMembers
     public static String encodeCookie(List<Cookie> cookies) {
         if (cookies == null) {
             return Strings.EMPTY;
@@ -344,8 +344,8 @@ public class HttpClient implements AutoCloseable {
             if (idx == -1) {
                 continue;
             }
-//            String key = URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name());
-//            String value = pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name()).trim() : Strings.EMPTY;
+            // String key = URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8.name());
+            // String value = pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8.name()).trim() : Strings.EMPTY;
             String key = pair.substring(0, idx);
             String value = pair.length() > idx + 1 ? pair.substring(idx + 1).trim() : Strings.EMPTY;
             map.put(key, value);
@@ -384,7 +384,7 @@ public class HttpClient implements AutoCloseable {
         Authenticator authenticator = proxy instanceof AuthenticProxy ? ((AuthenticProxy) proxy).getAuthenticator() : Authenticator.NONE;
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .sslSocketFactory(tls.getSocketFactory(), (X509TrustManager) trustManagers[0]).hostnameVerifier((hostname, session) -> true)
-                .connectionPool(POOL).retryOnConnectionFailure(true) //unexpected end of stream
+                .connectionPool(POOL).retryOnConnectionFailure(true) // unexpected end of stream
                 .connectTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS)
                 .readTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS)
                 .writeTimeout(readWriteTimeoutMillis, TimeUnit.MILLISECONDS)
@@ -395,24 +395,22 @@ public class HttpClient implements AutoCloseable {
         }
         return builder.build();
     }
-    //endregion
+    // endregion
 
     static byte CACHING_STREAM_FLAG = 1, ENABLE_COOKIE_FLAG = 1 << 1, ENABLE_LOG_FLAG = 1 << 2;
-    //1 cachingStream, 2 enableCookie, 4 enableLog
-//    byte featureFlags = CACHING_STREAM_FLAG;
+    // 1 cachingStream, 2 enableCookie, 4 enableLog
+    // byte featureFlags = CACHING_STREAM_FLAG;
     byte featureFlags = 0;
     long connectTimeoutMillis, readWriteTimeoutMillis;
     AuthenticProxy proxy;
-    //Not thread safe
+    // Not thread safe
     OkHttpClient client;
     HttpHeaders reqHeaders;
     ResponseContent resContent;
 
     @Override
     public void close() {
-        if (resContent != null) {
-            tryClose(resContent);
-        }
+        tryClose(resContent);
     }
 
     public HttpClient withFeatures(boolean enableCookie, boolean enableLog) {
@@ -520,11 +518,9 @@ public class HttpClient implements AutoCloseable {
         } else {
             throw new UnsupportedOperationException();
         }
-        if (resContent != null) {
-            tryClose(resContent);
-        }
+        tryClose(resContent);
         if ((featureFlags & ENABLE_LOG_FLAG) == ENABLE_LOG_FLAG) {
-            resContent = Sys.callLog(this.getClass(), String.format("%s %s", method, url), new Object[]{content instanceof JsonContent ? ((JsonContent) content).json : content.toString()}, () -> {
+            resContent = Sys.callLog(this.getClass(), String.format("%s %s", method, url), new Object[] {content instanceof JsonContent ? ((JsonContent) content).json : content.toString()}, () -> {
                 ResponseContent rc = new ResponseContent(getClient().newCall(request.build()).execute());
                 rc.cachingStream = (featureFlags & CACHING_STREAM_FLAG) == CACHING_STREAM_FLAG;
                 return rc;
@@ -639,7 +635,7 @@ public class HttpClient implements AutoCloseable {
                     Map<String, Object> forms = Linq.from(Collections.list(servletRequest.getParameterNames())).toMap(p -> p, servletRequest::getParameter);
                     reqContent = new FormContent(forms, files, reqHeaders);
                 } else {
-//                    throw new InvalidException("Not support {}", contentType);
+                    // throw new InvalidException("Not support {}", contentType);
                     log.warn("Not support {} {}", servletRequest, requestContentType);
                     reqContent = new EmptyContent(MediaType.parse(requestContentType));
                 }
@@ -651,10 +647,10 @@ public class HttpClient implements AutoCloseable {
             reqContent = requestInterceptor.invoke(reqContent);
         }
 
-        //todo get request body
+        // todo get request body
         boolean isGet = Strings.equalsIgnoreCase(servletRequest.getMethod(), HttpMethod.GET.name());
-        ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), isGet ? null : reqContent.toBody()).build()).execute());
-//        ResponseContent resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), reqContent.toBody()).build()).execute());
+        tryClose(resContent);
+        resContent = new ResponseContent(getClient().newCall(createRequest(forwardUrl).method(servletRequest.getMethod(), isGet ? null : reqContent.toBody()).build()).execute());
         resContent.cachingStream = (featureFlags & CACHING_STREAM_FLAG) == CACHING_STREAM_FLAG;
         servletResponse.setStatus(resContent.response.code());
         for (Pair<? extends String, ? extends String> header : resContent.responseHeaders()) {
