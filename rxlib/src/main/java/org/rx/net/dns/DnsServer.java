@@ -22,6 +22,7 @@ import org.rx.net.Sockets;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.*;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -42,8 +43,13 @@ public class DnsServer extends Disposable {
     boolean enableHostsWeight;
     @Getter
     final Map<String, RandomList<InetAddress>> hosts = new ConcurrentHashMap<>();
+    @Getter
+    @Setter
+    int negativeTtl = 30;
     RandomList<ResolveInterceptor> interceptors;
     Cache<String, List<InetAddress>> interceptorCache;
+    // Tracks keys currently being resolved to prevent thundering-herd cache stampede
+    final Set<String> resolvingKeys = ConcurrentHashMap.newKeySet();
 
     public void setInterceptors(RandomList<ResolveInterceptor> interceptors) {
         if (CollectionUtils.isEmpty(this.interceptors = interceptors)) {
@@ -124,12 +130,8 @@ public class DnsServer extends Disposable {
         boolean changed = false;
         RandomList<InetAddress> list = hosts.computeIfAbsent(host, k -> new RandomList<>());
         for (InetAddress ip : Linq.from(ips).distinct()) {
-            synchronized (list) {
-                if (list.contains(ip)) {
-                    list.setWeight(ip, weight);
-                    continue;
-                }
-                list.add(ip, weight);
+            // addOrUpdate holds RandomList's own write lock — no external synchronized needed
+            if (list.addOrUpdate(ip, weight)) {
                 changed = true;
             }
         }
@@ -137,7 +139,11 @@ public class DnsServer extends Disposable {
     }
 
     public boolean removeHosts(@NonNull String host, Collection<InetAddress> ips) {
-        return hosts.computeIfAbsent(host, k -> new RandomList<>()).removeAll(ips);
+        RandomList<InetAddress> list = hosts.get(host);
+        if (list == null) {
+            return false;
+        }
+        return list.removeAll(ips);
     }
 
     public void addHostsFile(String filePath) {
