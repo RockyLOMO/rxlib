@@ -36,18 +36,26 @@ public class DnsClient extends Disposable {
         }
     }
 
-    static DnsClient inlandClient, outlandClient;
+    static volatile DnsClient inlandClient, outlandClient;
 
     public static DnsClient inlandClient() {
         if (inlandClient == null) {
-            inlandClient = new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getInlandServers()).select(Sockets::parseEndpoint).toList());
+            synchronized (DnsClient.class) {
+                if (inlandClient == null) {
+                    inlandClient = new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getInlandServers()).select(Sockets::parseEndpoint).toList());
+                }
+            }
         }
         return inlandClient;
     }
 
     public static DnsClient outlandClient() {
         if (outlandClient == null) {
-            outlandClient = new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getOutlandServers()).select(Sockets::parseEndpoint).toList());
+            synchronized (DnsClient.class) {
+                if (outlandClient == null) {
+                    outlandClient = new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getOutlandServers()).select(Sockets::parseEndpoint).toList());
+                }
+            }
         }
         return outlandClient;
     }

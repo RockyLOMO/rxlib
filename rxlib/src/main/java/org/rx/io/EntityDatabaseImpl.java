@@ -46,12 +46,14 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         @Getter
         final Map<String, Tuple<Field, DbColumn>> columns;
         final Map<String, Tuple<String, Tuple<Field, DbColumn>>> jdbcColumns = new HashMap<>();
-        final Linq<Map.Entry<String, Tuple<Field, DbColumn>>> insertView;
-        final Linq<Map.Entry<String, Tuple<Field, DbColumn>>> secondaryView;
+        final List<Map.Entry<String, Tuple<Field, DbColumn>>> insertView;
+        final List<Map.Entry<String, Tuple<Field, DbColumn>>> secondaryView;
         final String insertSql;
         final String updateSql;
         final String deleteSql;
         final String selectSql;
+        final String existsByIdSql;
+        final String findByIdSql;
 
         public SqlMeta(String primaryKey, Map<String, Tuple<Field, DbColumn>> columns
                 , String insertSql, String updateSql, String deleteSql, String selectSql) {
@@ -60,13 +62,23 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             for (Map.Entry<String, Tuple<Field, DbColumn>> entry : columns.entrySet()) {
                 jdbcColumns.put(entry.getKey().toUpperCase(), Tuple.of(entry.getKey(), entry.getValue()));
             }
-            insertView = Linq.from(columns.entrySet()).where(p -> p.getValue().right == null || !p.getValue().right.autoIncrement());
-            secondaryView = Linq.from(columns.entrySet()).where(p -> !eq(p.getKey(), getPrimaryKey().getKey()));
+            insertView = Linq.from(columns.entrySet()).where(p -> p.getValue().right == null || !p.getValue().right.autoIncrement()).toList();
+            secondaryView = Linq.from(columns.entrySet()).where(p -> !eq(p.getKey(), this.primaryKey.getKey())).toList();
 
             this.insertSql = insertSql;
             this.updateSql = updateSql;
             this.deleteSql = deleteSql;
             this.selectSql = selectSql;
+
+            StringBuilder existsSql = new StringBuilder(selectSql);
+            existsSql.replace(7, 8, "1");
+            EntityQueryLambda.pkClaus(existsSql, primaryKey);
+            existsSql.append(EntityQueryLambda.LIMIT).append("1");
+            this.existsByIdSql = existsSql.toString();
+
+            StringBuilder findSql = new StringBuilder(selectSql);
+            EntityQueryLambda.pkClaus(findSql, primaryKey);
+            this.findByIdSql = findSql.toString();
         }
 
         public Tuple<String, Tuple<Field, DbColumn>> getJdbcColumn(String col) {
@@ -346,10 +358,12 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 cols.appendFormat("`%s`=?,", col.getKey());
                 params.add(val);
             }
-            cols.setLength(cols.length() - 1);
-            Object id = meta.primaryKey.getValue().left.get(entity);
-            params.add(id);
-            executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
+            if (cols.length() > 0) {
+                cols.setLength(cols.length() - 1);
+                Object id = meta.primaryKey.getValue().left.get(entity);
+                params.add(id);
+                executeUpdate(new StringBuilder(meta.updateSql).replace($UPDATE_COLUMNS, cols.toString()).toString(), params);
+            }
         } catch (Exception e) {
             if (e instanceof JdbcSQLSyntaxErrorException && (Strings.startsWith(e.getMessage(), "Column count does not match")
                     || Strings.containsAll(e.getMessage(), "Column", "not found"))) {
@@ -471,24 +485,18 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     public <T> boolean existsById(Class<T> entityType, Serializable id) {
         SqlMeta meta = getMeta(entityType);
 
-        StringBuilder sql = new StringBuilder(meta.selectSql);
-        replaceSelectColumns(sql, "1");
-        EntityQueryLambda.pkClaus(sql, meta.primaryKey.getKey());
-        sql.append(EntityQueryLambda.LIMIT).append("1");
         List<Object> params = new ArrayList<>(1);
         params.add(id);
-        return executeScalar(sql.toString(), params) != null;
+        return executeScalar(meta.existsByIdSql, params) != null;
     }
 
     @Override
     public <T> T findById(Class<T> entityType, Serializable id) {
         SqlMeta meta = getMeta(entityType);
 
-        StringBuilder sql = new StringBuilder(meta.selectSql);
-        EntityQueryLambda.pkClaus(sql, meta.primaryKey.getKey());
         List<Object> params = new ArrayList<>(1);
         params.add(id);
-        List<T> list = executeQuery(sql.toString(), params, entityType);
+        List<T> list = executeQuery(meta.findByIdSql, params, entityType);
         return list.isEmpty() ? null : list.get(0);
     }
 
@@ -597,7 +605,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             String pkName = null;
             Map<String, Tuple<Field, DbColumn>> columns = new LinkedHashMap<>();
             for (Field field : Reflects.getFieldMap(entityType).values()) {
-                if (Modifier.isStatic(field.getModifiers())) {
+                if (Modifier.isStatic(field.getModifiers()) || Modifier.isTransient(field.getModifiers())) {
                     continue;
                 }
                 DbColumn dbColumn = field.getAnnotation(DbColumn.class);
@@ -866,16 +874,20 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             fillParams(stmt, params);
             try (ResultSet rs = stmt.executeQuery()) {
                 ResultSetMetaData metaData = rs.getMetaData();
+                int colCount = metaData.getColumnCount();
+                List<Tuple<Field, DbColumn>> rsCols = new ArrayList<>(colCount);
+                for (int i = 1; i <= colCount; i++) {
+                    String jdbcCol = metaData.getColumnName(i);
+                    Tuple<String, Tuple<Field, DbColumn>> pbi = meta.getJdbcColumn(jdbcCol);
+                    if (pbi == null || pbi.right == null) {
+                        throw new InvalidException("Mapping {} not found", jdbcCol);
+                    }
+                    rsCols.add(pbi.right);
+                }
                 while (rs.next()) {
                     T t = entityType.newInstance();
-                    for (int i = 1; i <= metaData.getColumnCount(); i++) {
-                        //metaData.getColumnName is capitalized
-                        String jdbcCol = metaData.getColumnName(i);
-                        Tuple<String, Tuple<Field, DbColumn>> pbi = meta.getJdbcColumn(jdbcCol);
-                        Tuple<Field, DbColumn> bi;
-                        if (pbi == null || (bi = pbi.right) == null) {
-                            throw new InvalidException("Mapping {} not found", jdbcCol);
-                        }
+                    for (int i = 1; i <= colCount; i++) {
+                        Tuple<Field, DbColumn> bi = rsCols.get(i - 1);
                         Class<?> type = bi.left.getType();
                         bi.left.set(t, convertCell(type, rs.getObject(i)));
                     }

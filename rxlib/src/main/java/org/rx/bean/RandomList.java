@@ -70,6 +70,19 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     }
 
     public T next() {
+        // Fast path: thresholds are up to date — use read lock only
+        if (maxRandomValue != 0) {
+            lock.readLock().lock();
+            try {
+                if (!elements.isEmpty() && maxRandomValue != 0) {
+                    return binarySearch(ThreadLocalRandom.current().nextInt(maxRandomValue));
+                }
+            } finally {
+                lock.readLock().unlock();
+            }
+        }
+
+        // Slow path: thresholds are stale (maxRandomValue == 0) — rebuild under write lock
         lock.writeLock().lock();
         try {
             if (elements.isEmpty()) {
@@ -92,26 +105,28 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
                 maxRandomValue = holder.threshold.end;
             }
 
-            int v = ThreadLocalRandom.current().nextInt(maxRandomValue);
-            //binary search
-            int low = 0;
-            int high = elements.size() - 1;
-            while (low <= high) {
-                int mid = (low + high) >>> 1;
-                WeightElement<T> element = elements.get(mid);
-                DataRange<Integer> threshold = element.threshold;
-                if (threshold.end <= v) {
-                    low = mid + 1;
-                } else if (threshold.start > v) {
-                    high = mid - 1;
-                } else {
-                    return element.element;
-                }
-            }
-            throw new NoSuchElementException();
+            return binarySearch(ThreadLocalRandom.current().nextInt(maxRandomValue));
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    private T binarySearch(int v) {
+        int low = 0;
+        int high = elements.size() - 1;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            WeightElement<T> element = elements.get(mid);
+            DataRange<Integer> threshold = element.threshold;
+            if (threshold.end <= v) {
+                low = mid + 1;
+            } else if (threshold.start > v) {
+                high = mid - 1;
+            } else {
+                return element.element;
+            }
+        }
+        throw new NoSuchElementException();
     }
 
     public List<T> aliveList() {
@@ -209,6 +224,31 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
                 }
             }
             return change(changed);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Atomically adds the element if absent, or updates its weight if present.
+     * Prefer this over separate contains()+add()/setWeight() calls to avoid TOCTOU races.
+     *
+     * @return true if a new element was added, false if an existing element's weight was updated (or unchanged)
+     */
+    public boolean addOrUpdate(T element, int weight) {
+        require(weight, weight >= 0);
+
+        lock.writeLock().lock();
+        try {
+            WeightElement<T> node = findElement(element, false);
+            if (node == null) {
+                return change(elements.add(new WeightElement<>(element, weight)));
+            }
+            if (node.weight != weight) {
+                node.weight = weight;
+                change(true);
+            }
+            return false;
         } finally {
             lock.writeLock().unlock();
         }

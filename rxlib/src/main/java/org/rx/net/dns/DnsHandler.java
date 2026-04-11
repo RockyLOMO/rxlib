@@ -66,42 +66,49 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                     writeInterceptorResponse(ctx, query, isTcp, question, server, srcIp, domain, ips);
                     return;
                 }
-                // Offload resolveHost to worker thread to avoid BlockingOperationException on event loop
-                query.retain();
-                Tasks.run(() -> {
-                    try {
-                        List<InetAddress> resolvedIps;
+                // Prevent thundering-herd: only one resolve task per domain at a time.
+                // add() is atomic — returns true only for the first caller; others fall through to upstream.
+                if (server.resolvingKeys.add(k)) {
+                    query.retain();
+                    Tasks.run(() -> {
                         try {
-                            resolvedIps = interceptors.next().resolveHost(srcIp, domain);
+                            List<InetAddress> resolvedIps;
+                            try {
+                                resolvedIps = interceptors.next().resolveHost(srcIp, domain);
+                            } catch (Exception e) {
+                                log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
+                                resolvedIps = null;
+                            }
+                            if (resolvedIps == null) {
+                                resolvedIps = Collections.emptyList();
+                            }
+                            server.interceptorCache.put(k, resolvedIps,
+                                    CachePolicy.absolute(resolvedIps.isEmpty() ? server.negativeTtl : server.ttl));
+                            List<InetAddress> finalIps = resolvedIps;
+                            ctx.channel().eventLoop().execute(() -> {
+                                try {
+                                    writeInterceptorResponse(ctx, query, isTcp, question, server, srcIp, domain, finalIps);
+                                } finally {
+                                    query.release();
+                                }
+                            });
                         } catch (Exception e) {
                             log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
-                            resolvedIps = null;
+                            ctx.channel().eventLoop().execute(() -> {
+                                try {
+                                    ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
+                                } finally {
+                                    query.release();
+                                }
+                            });
+                        } finally {
+                            server.resolvingKeys.remove(k);
                         }
-                        if (resolvedIps == null) {
-                            resolvedIps = Collections.emptyList();
-                        }
-                        server.interceptorCache.put(k, resolvedIps,
-                                CachePolicy.absolute(resolvedIps.isEmpty() ? 5 : server.ttl));
-                        List<InetAddress> finalIps = resolvedIps;
-                        ctx.channel().eventLoop().execute(() -> {
-                            try {
-                                writeInterceptorResponse(ctx, query, isTcp, question, server, srcIp, domain, finalIps);
-                            } finally {
-                                query.release();
-                            }
-                        });
-                    } catch (Exception e) {
-                        log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
-                        ctx.channel().eventLoop().execute(() -> {
-                            try {
-                                ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
-                            } finally {
-                                query.release();
-                            }
-                        });
-                    }
-                });
-                return;
+                    });
+                    return;
+                }
+                // Already resolving this domain; fall through to upstream for this concurrent request
+                log.debug("dns query {}+{} already resolving, forwarding to upstream", srcIp, domain);
             }
         }
 
