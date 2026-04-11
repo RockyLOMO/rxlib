@@ -71,8 +71,12 @@ public class Bytes {
     }
 
     public static void release(ByteBuf buf) {
-        if (buf != null && buf.refCnt() > 0) {
-            buf.release();
+        release((io.netty.util.ReferenceCounted) buf);
+    }
+
+    public static void release(io.netty.util.ReferenceCounted obj) {
+        if (obj != null && obj.refCnt() > 0) {
+            obj.release();
         }
     }
 

@@ -172,8 +172,8 @@ public abstract class CryptoAeadBase implements ICrypto {
                 _tcpEncrypt(in, out);
             }
             return out;
-        } catch (Exception e) {
-//            out.release();
+        } catch (Throwable e) {
+            Bytes.release(out);
             throw e;
         }
     }
@@ -221,8 +221,8 @@ public abstract class CryptoAeadBase implements ICrypto {
                 _tcpDecrypt(in, out);
             }
             return out;
-        } catch (Exception e) {
-//            out.release();
+        } catch (Throwable e) {
+            Bytes.release(out);
             throw e;
         }
     }

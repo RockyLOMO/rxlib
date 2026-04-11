@@ -166,11 +166,12 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        if (cause instanceof DecoderException && cause.getCause() instanceof IndexOutOfBoundsException) {
+        Throwable rootCause = cause instanceof DecoderException ? cause.getCause() : cause;
+        if (rootCause instanceof IndexOutOfBoundsException || rootCause instanceof io.netty.handler.codec.CorruptedFrameException) {
             log.warn("丢弃畸形 DNS 数据包 (来源: {}): {}", ctx.channel().remoteAddress(), cause.getMessage());
             return;
         }
 
-        log.error("dns {} query error", ctx.channel() instanceof DatagramChannel ? "UDP" : "TCP", cause);
+        log.error("dns {} query error", ctx.channel() instanceof io.netty.channel.socket.DatagramChannel ? "UDP" : "TCP", cause);
     }
 }

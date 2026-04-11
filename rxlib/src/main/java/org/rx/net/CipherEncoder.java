@@ -8,6 +8,9 @@ import io.netty.handler.codec.MessageToByteEncoder;
 import org.rx.codec.AESUtil;
 import org.rx.codec.XChaCha20Poly1305Util;
 import org.rx.exception.InvalidException;
+import org.rx.io.Bytes;
+import org.rx.net.SocketConfig;
+import org.rx.net.Sockets;
 
 @ChannelHandler.Sharable
 public class CipherEncoder extends MessageToByteEncoder<ByteBuf> {
@@ -33,6 +36,11 @@ public class CipherEncoder extends MessageToByteEncoder<ByteBuf> {
             msg.readBytes(msgBytes);
             encrypt = Unpooled.wrappedBuffer(XChaCha20Poly1305Util.encrypt(k, msgBytes));
         }
-        out.writeBytes(encrypt);
+
+        try {
+            out.writeBytes(encrypt);
+        } finally {
+            Bytes.release(encrypt);
+        }
     }
 }

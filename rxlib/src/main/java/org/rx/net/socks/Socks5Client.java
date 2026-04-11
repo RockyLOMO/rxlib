@@ -14,6 +14,7 @@ import org.rx.core.Delegate;
 import org.rx.core.Disposable;
 import org.rx.core.EventPublisher;
 import org.rx.core.NEventArgs;
+import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
@@ -137,9 +138,9 @@ public class Socks5Client extends Disposable {
                         msg.recipient(),
                         new InetSocketAddress(src.getHost(), src.getPort()));
                 session.raiseEventAsync(session.onReceive, new NEventArgs<>(decoded))
-                        .whenComplete((r, e) -> decoded.release());
+                        .whenComplete((r, e) -> Bytes.release(decoded));
             } finally {
-                content.release();
+                Bytes.release(content);
             }
         }
 

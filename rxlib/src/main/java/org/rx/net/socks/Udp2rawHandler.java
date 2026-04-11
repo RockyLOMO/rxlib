@@ -7,6 +7,7 @@ import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
@@ -150,9 +151,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                 log.info("UDP2RAW[{}] client send {}bytes {} => {}[{}]", config.getListenPort(), outBuf.readableBytes(), clientEp, targetAddr, upDstEp);
             }
             relay.writeAndFlush(new DatagramPacket(outBuf, targetAddr));
-        } catch (Exception ex) {
-            header.release();
-            outBuf.release();
+        } catch (Throwable ex) {
+            Bytes.release(header);
+            Bytes.release(outBuf);
             throw ex;
         }
     }
@@ -279,9 +280,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                 log.info("UDP2RAW[{}] server recv {}bytes {} => {}", config.getListenPort(), outBufCom.readableBytes(), dstEp, clientAddr);
             }
             relay.writeAndFlush(new DatagramPacket(outBufCom, clientAddr));
-        } catch (Exception e) {
-            header.release();
-            outBufCom.release();
+        } catch (Throwable e) {
+            Bytes.release(header);
+            Bytes.release(outBufCom);
             throw e;
         }
     }
