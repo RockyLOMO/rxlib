@@ -1,145 +1,294 @@
 ---
 name: Socks5 Session Pool
-overview: 基于 Full Cone NAT 约束，使用 ObjectPool 独占借还模式池化 Socks5UdpSession，消除握手延迟。
+overview: 为 SOCKS5 TCP (CONNECT) 和 UDP (UDP_ASSOCIATE) 上游分别实现连接池，消除 SOCKS5 握手延迟。TCP 使用预认证连接缓冲，UDP 使用 ObjectPool 独占借还。
 todos:
-  - id: session-pool
-    content: 在 Socks5Client 中实现 UdpSessionPool（per AuthenticEndpoint），基于 ObjectPool 独占借还，预建 TCP control + relay address
+  - id: handler-preauth
+    content: "Socks5ClientHandler 增加 PRE_AUTH 模式：认证后暂停（不发 CONNECT），暴露 sendConnect(destination) 方法"
     status: pending
-  - id: upstream-integrate
-    content: 改造 SocksUdpUpstream.initChannel() 从 pool borrow session，relay 关闭时 recycle
+  - id: pool-manager
+    content: "新建 Socks5UpstreamPool：管理 per-AuthenticEndpoint 的 TCP 预认证缓冲 + UDP session ObjectPool"
+    status: pending
+  - id: tcp-integrate
+    content: "改造 SocksTcpUpstream + Socks5CommandRequestHandler：支持从 pool 借用预认证通道"
+    status: pending
+  - id: udp-integrate
+    content: "改造 SocksUdpUpstream：从 pool borrow/recycle UDP session"
     status: pending
   - id: verify
-    content: 编译验证 + 确认集成测试仍通过
+    content: "编译验证 + 集成测试"
     status: pending
 isProject: false
 ---
 
-# Socks5 UDP Session 池化方案（v2 -- Full Cone NAT 修正）
+# Socks5 连接池方案（TCP + UDP）
 
-## 分析：池化 Socks5Client 本身没有意义
+## 背景与瓶颈
 
-`Socks5Client` 是**无状态**的配置持有者（仅 `proxyServer` + `config`），构造几乎零成本，`dispose()` 也不释放任何资源。池化它没有性能收益。
+`Socks5Client` 是无状态配置对象，池化它本身没有意义。**真正昂贵的是每次 SOCKS5 握手**：TCP connect + 认证 + 命令（CONNECT/UDP_ASSOCIATE）= 3-4 RTT。
 
-**真正昂贵的是 `Socks5UdpSession` 的建立过程**：每次 `udpAssociateAsync()` 都要执行 TCP connect + SOCKS5 握手（auth + UDP_ASSOCIATE command）= 3-4 RTT。
+在 socksServer.md 的场景2/4中，ProxyA 到 ProxyB 的每个客户端都触发独立的握手，高并发时成为性能瓶颈。
 
-## 当前瓶颈
+## Full Cone NAT 约束
 
-在 [SocksUdpUpstream.java](rxlib/src/main/java/org/rx/net/socks/upstream/SocksUdpUpstream.java) 的 `initChannel()` 中，每个客户端 relay channel 都会：
-1. `new Socks5Client(svrEp, config)` -- 便宜
-2. `client.udpAssociateAsync(channel).get(timeout)` -- **昂贵**（TCP连接 + SOCKS5握手）
-3. 缓存在 channel 属性上 -- relay channel 关闭时 session 也关闭
+`SocksUdpRelayHandler.handleDestResponse()` 只跟踪单一 `clientAddr`，所有响应发给同一地址。多客户端共享同一 UDP session 时，只有最后一个 clientAddr 能收到响应。**因此 UDP 必须使用独占借还模式，不能共享 session。**
 
-按 socksServer.md 场景2/场景4，如果 ProxyA 有 100 个并发客户端都需要到 ProxyB 做 UDP relay，就产生 100 个独立的 TCP 控制连接 + SOCKS5 握手。
-
-## Full Cone NAT 约束：共享 Session 不可行
-
-之前方案B（共享 session，多个 relay channel 复用同一个上游 relay 地址）存在根本性问题：
-
-**问题 1：ProxyB 的 `SocksUdpRelayHandler` 只跟踪单一 clientAddr**
-
-```
-164:189:rxlib/src/main/java/org/rx/net/socks/SocksUdpRelayHandler.java
-```
-
-`handleDestResponse()` 把所有响应发给 `relay.attr(ATTR_CLIENT_ADDR).get()` -- 只有一个地址。如果多个 ProxyA relay channel 共享同一个上游 session，只有最后一个设置的 clientAddr 能收到响应，其他客户端全部丢包。
-
-**问题 2：NAT 映射使共享更加不可靠**
-
-```mermaid
-flowchart LR
-  subgraph proxyA ["ProxyA (behind NAT)"]
-    R1["Relay:X1"]
-    R2["Relay:X2"]
-  end
-  NAT["Full Cone NAT"]
-  subgraph proxyB [ProxyB]
-    RP["UDP Relay"]
-  end
-  R1 -->|"src X1 → NAT Y1"| NAT --> RP
-  R2 -->|"src X2 → NAT Y2"| NAT --> RP
-  RP -->|"resp to clientAddr"| RespTarget["只发给 Y1 或 Y2\n另一个丢包"]
-```
-
-在 Full Cone NAT 下，ProxyA 的每个 relay channel 经过 NAT 后有不同的外部端口 (Y1, Y2)。ProxyB 的 relay handler 只记录一个 `clientAddr`，响应只能发给其中一个。即使不考虑 NAT，同一 LAN 内不同 relay 端口也有同样问题。
-
-**问题 3：响应解复用无法可靠工作**
-
-当两个客户端通过同一个 relay 向同一个目标（如 8.8.8.8:53）发送 UDP 时，ProxyB 的 relay 使用同一个出站端口。目标的响应回到 relay 后，ProxyB 无法区分该转发给哪个客户端。
-
-**结论：必须使用独占模式 -- 每个客户端独占一个上游 session。**
-
-## 推荐方案：ObjectPool 独占借还
-
-使用现有 `ObjectPool<PooledSession>` 以 borrow/return 语义管理预建的上游 session，消除热路径上的握手延迟。
+## 总体架构
 
 ```mermaid
 flowchart TB
-  subgraph pool ["ObjectPool (per AuthenticEndpoint)"]
-    S1["Session 1\ntcpCtrl + relayAddr"]
-    S2["Session 2\ntcpCtrl + relayAddr"]
-    S3["Session N\ntcpCtrl + relayAddr"]
+  subgraph poolMgr ["Socks5UpstreamPool (per AuthenticEndpoint)"]
+    direction TB
+    TcpPool["TCP Pre-Auth Buffer\nBlockingDeque of Channel"]
+    UdpPool["UDP ObjectPool\nObjectPool of UdpSessionHolder"]
   end
-  Client1["Client relay"] -->|"1. borrow"| pool
-  pool -->|"2. pre-warmed session"| Client1
-  Client1 -->|"3. use relay addr"| ProxyB["ProxyB relay"]
-  Client1 -->|"4. relay close → recycle"| pool
+  subgraph tcpFlow [TCP CONNECT flow]
+    TR["SocksTcpUpstream"]
+    TR -->|"1. borrow pre-authed ch"| TcpPool
+    TR -->|"2. sendConnect(dest)"| ProxyB_TCP["ProxyB"]
+    TR -->|"3. tunnel closed → retire"| TcpPool
+  end
+  subgraph udpFlow [UDP ASSOCIATE flow]
+    UR["SocksUdpUpstream"]
+    UR -->|"1. borrow session"| UdpPool
+    UR -->|"2. use relayAddr"| ProxyB_UDP["ProxyB"]
+    UR -->|"3. relay close → recycle"| UdpPool
+  end
+  RefillTask["Background refill task"] -.->|"maintain minSize"| TcpPool
+  RefillTask -.->|"insureMinSize"| UdpPool
 ```
 
-### 核心设计
+---
 
-**池化对象：`PooledSession`**（轻量包装）
+## Part 1: TCP 预认证连接池
+
+### 1.1 核心思路
+
+SOCKS5 握手分两阶段：
+
+| 阶段 | 内容 | RTT | 是否目标相关 |
+|------|------|-----|-------------|
+| **Auth** | TCP connect + init + password auth | 2-3 | 否（可预建） |
+| **Command** | CONNECT dest_host:dest_port | 1 | 是（必须按需） |
+
+**池化 Auth 阶段**：预建到 ProxyB 的 TCP 连接并完成 SOCKS5 认证，但暂不发送 CONNECT 命令。借用时再发 CONNECT，节省 2-3 RTT。
+
+### 1.2 Socks5ClientHandler 改造
+
+在 [Socks5ClientHandler.java](rxlib/src/main/java/org/rx/net/socks/Socks5ClientHandler.java) 中增加 `PRE_AUTH` 模式：
+
+当前 `handleResponse()` 流程：`InitResponse → (PasswordAuthResponse →) sendCommand()`。
+
+改造后：
+- 新增字段 `private final boolean preAuthOnly;`
+- Auth 完成后（即将调 `sendCommand` 的位置），若 `preAuthOnly = true`：
+  - **不**调用 `sendCommand()`
+  - 直接调用 `handshakeCallback.invoke()` 通知认证完成
+  - 保留 pipeline 中的 encoder/decoder，**不** remove handler（等 CONNECT 后再 remove）
+- 新增公开方法 `sendConnect(UnresolvedEndpoint destination)`：
+  - 设置 `destinationAddress`（通过 Netty `ProxyHandler` 的内部机制）
+  - 调用 `sendCommand(ctx)` 发送 CONNECT
+  - CONNECT 响应后正常完成握手（`return true` → ProxyHandler 自动清理 pipeline）
 
 ```java
-static class PooledSession implements Closeable {
-    final Socks5Client client;
-    final Channel tcpControl;
-    final InetSocketAddress relayAddress;
-    // 内部 UDP channel（仅用于 validate/keepalive，实际数据走 local relay channel）
+// 新增构造参数 preAuthOnly
+public Socks5ClientHandler(SocketAddress proxyAddress, String username, String password,
+                           Socks5CommandType commandType, boolean preAuthOnly) {
+    ...
+    this.preAuthOnly = preAuthOnly;
+}
+
+// Auth 完成时（原来调 sendCommand 的地方）
+if (preAuthOnly) {
+    if (handshakeCallback != null) handshakeCallback.invoke();
+    return false; // 不结束握手，等待 sendConnect
+}
+sendCommand(ctx);
+
+// 新增公开方法
+public void sendConnect(@NonNull UnresolvedEndpoint dest) {
+    // 在 channel 的 eventLoop 中执行
+    channel.eventLoop().execute(() -> sendCommand(ctx, dest));
 }
 ```
 
-**ObjectPool 配置**：
+### 1.3 TCP Pool 设计
 
-- `createHandler`: `new Socks5Client(ep, config).udpAssociateAsync().get()` -- 预建 TCP control + SOCKS5 握手
-- `validateHandler`: `session.tcpControl.isActive()` -- TCP 控制通道存活检测
-- `minSize`: 2-4（预热，避免冷启动）
-- `maxSize`: 按并发客户端峰值配置
-- `idleTimeout`: 300s（空闲回收，减少 ProxyB 资源占用）
+由于 TCP 隧道使用后即销毁（不可回收），用 `ConcurrentBlockingDeque<PreAuthedChannel>` + 后台补充任务，而非 `ObjectPool`：
 
-**池管理器**：`ConcurrentHashMap<AuthenticEndpoint, ObjectPool<PooledSession>>`，按上游代理分组。
+```java
+static class PreAuthedChannel {
+    final Channel channel;
+    final Socks5ClientHandler handler;
+    final long createTime;
+}
+```
 
-### 变更文件
+池行为：
+- **补充**：后台定时任务保持 deque 中有 `minSize` 个预认证连接
+- **借出**：`pollFirst()` 取一个，如果 `!channel.isActive()` 则丢弃再取
+- **消费后**：不归还（隧道关闭 = channel 关闭），后台任务补充新的
+- **超时淘汰**：创建超过 `maxIdleMs` 的预认证连接自动丢弃（避免 proxy 端超时断开）
 
-- [Socks5Client.java](rxlib/src/main/java/org/rx/net/socks/Socks5Client.java)
-  - 添加 `PooledSession` 内部类
-  - 添加静态方法 `getOrCreatePool(AuthenticEndpoint, SocksConfig)` 返回/创建对应的 `ObjectPool<PooledSession>`
-  - 添加静态方法 `closePool(AuthenticEndpoint)` 用于销毁
+### 1.4 SocksTcpUpstream + Socks5CommandRequestHandler 改造
 
-- [SocksUdpUpstream.java](rxlib/src/main/java/org/rx/net/socks/upstream/SocksUdpUpstream.java)
-  - `initChannel()` 改为：
-    ```java
-    // Before (current) -- 每次握手 3-4 RTT
-    Socks5Client client = new Socks5Client(svrEp, config);
-    Socks5UdpSession session = client.udpAssociateAsync(channel).get(timeout);
-    
-    // After (pooled) -- borrow 接近 0ms
-    ObjectPool<PooledSession> pool = Socks5Client.getOrCreatePool(svrEp, config);
-    PooledSession ps = pool.borrow();
-    InetSocketAddress relayAddr = ps.relayAddress;
-    channel.closeFuture().addListener(f -> pool.recycle(ps));
-    ```
-  - 响应路由不变：ProxyB 的 `clientAddr` 在每次 borrow 后由第一个 UDP 包自动更新
+[SocksTcpUpstream.java](rxlib/src/main/java/org/rx/net/socks/upstream/SocksTcpUpstream.java) 新增方法：
 
-### 性能收益
+```java
+// 尝试借用预认证连接；返回 null 则降级走原流程
+public PreAuthedChannel borrowPreAuthed() {
+    Socks5UpstreamPool pool = Socks5UpstreamPool.get(next.getEndpoint());
+    return pool != null ? pool.borrowTcp() : null;
+}
+```
 
-- **首包延迟**：从 3-4 RTT（TCP+握手）降至接近 0（预热 borrow）
-- **并发效率**：预热的 minSize 个 session 可立即服务突发流量
-- **资源管理**：idle session 自动回收，泄漏检测内置
-- **故障恢复**：TCP 控制断开 → validate 失败 → retire + 自动创建新 session
+[Socks5CommandRequestHandler.java](rxlib/src/main/java/org/rx/net/socks/Socks5CommandRequestHandler.java) 的 `connect()` 方法改造：
 
-### 注意事项
+```java
+private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, ...) {
+    Upstream upstream = e.getUpstream();
 
-- borrow 的 session 与 local relay channel 是 1:1 独占关系，不存在响应路由歧义
-- ProxyB 的 `ATTR_CLIENT_ADDR` 会在 borrow 后第一个 UDP 包到达时自动更新为新客户端地址
-- `PooledSession.tcpControl` 必须保持存活（RFC 1928：TCP 关闭 = relay 终止）
-- 回收时需确保 ProxyB 侧旧 ctxMap/routeMap 状态不影响下个借用者（ProxyB relay handler 的 ctxMap 用 Caffeine 有 maxSize 限制，自然淘汰）
+    // 快速路径：尝试使用预认证通道
+    if (upstream instanceof SocksTcpUpstream) {
+        PreAuthedChannel preAuthed = ((SocksTcpUpstream) upstream).borrowPreAuthed();
+        if (preAuthed != null && preAuthed.channel.isActive()) {
+            Channel outbound = preAuthed.channel;
+            // 添加 relay handler 等
+            inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
+            BackpressureHandler.install(inbound, outbound);
+
+            // 发送 CONNECT 命令（仅 1 RTT）
+            preAuthed.handler.sendConnect(upstream.getDestination());
+            preAuthed.handler.connectFuture().addListener(f -> {
+                if (f.isSuccess()) {
+                    relay(inbound, outbound, dstAddrType, e);
+                } else {
+                    // 降级重试原流程
+                    connectFresh(inbound, dstAddrType, e, null);
+                }
+            });
+            return;
+        }
+    }
+
+    // 慢路径：原流程（新建连接 + 完整握手）
+    connectFresh(inbound, dstAddrType, e, reconnectionAttempts);
+}
+```
+
+### 1.5 性能收益
+
+- **首连延迟**：从 3-4 RTT → 1 RTT（仅 CONNECT 命令）
+- **降级安全**：池空或预认证通道失效时自动走原流程，零风险
+- **资源可控**：`minSize` / `maxIdleMs` 可按 ProxyB 负载调优
+
+---
+
+## Part 2: UDP Session ObjectPool
+
+### 2.1 核心思路
+
+与 TCP 不同，UDP session 可被回收复用（TCP 控制通道保持存活即可），使用 `ObjectPool<UdpSessionHolder>` 实现独占借还。
+
+### 2.2 Pool 设计
+
+```java
+static class UdpSessionHolder implements Closeable {
+    final Socks5Client client;
+    final Socks5UdpSession session;
+    final InetSocketAddress relayAddress;
+
+    boolean isValid() {
+        return !session.isClosed() && session.tcpControl.isActive();
+    }
+}
+```
+
+`ObjectPool` 配置：
+- `createHandler`：`new Socks5Client(ep, config).udpAssociateAsync().get(timeout)` → 完整握手
+- `validateHandler`：`holder.isValid()`
+- `minSize`：2-4（预热）
+- `maxSize`：按并发峰值
+- `idleTimeout`：300s
+- `borrowTimeout`：同 `config.connectTimeoutMillis`
+
+### 2.3 SocksUdpUpstream 改造
+
+[SocksUdpUpstream.java](rxlib/src/main/java/org/rx/net/socks/upstream/SocksUdpUpstream.java) 的 `initChannel()` 改为：
+
+```java
+@Override
+public void initChannel(Channel channel) {
+    // 快速路径：复用已有 session
+    SessionHolder holder = channel.attr(ATTR_UDP_SESSION).get();
+    if (holder != null && !holder.session.isClosed()) {
+        return;
+    }
+
+    // 从 pool 借出
+    Socks5UpstreamPool pool = Socks5UpstreamPool.getOrCreate(next.getEndpoint(), config);
+    UdpSessionHolder udpHolder = pool.borrowUdp();
+    InetSocketAddress relayAddr = udpHolder.relayAddress;
+
+    holder = new SessionHolder(udpHolder, relayAddr);
+    channel.attr(ATTR_UDP_SESSION).set(holder);
+
+    // relay 关闭时归还
+    channel.closeFuture().addListener(f -> {
+        pool.recycleUdp(udpHolder);
+        channel.attr(ATTR_UDP_SESSION).set(null);
+    });
+}
+```
+
+### 2.4 回收安全
+
+- borrow 后 ProxyB 的 `ATTR_CLIENT_ADDR` 由第一个 UDP 包自动更新为新客户端地址
+- ProxyB 的 `ctxMap` / `routeMap` 使用 Caffeine（maxSize=256），旧条目自然淘汰
+- 如果 TCP 控制通道在借用期间断开，`validateHandler` 在下次 `recycle` 时检测到并 retire
+
+---
+
+## Part 3: 统一池管理器
+
+新建 [Socks5UpstreamPool.java](rxlib/src/main/java/org/rx/net/socks/Socks5UpstreamPool.java)：
+
+```java
+public class Socks5UpstreamPool implements Closeable {
+    // 全局注册表
+    static final ConcurrentHashMap<AuthenticEndpoint, Socks5UpstreamPool> POOLS = new ConcurrentHashMap<>();
+
+    final AuthenticEndpoint endpoint;
+    final SocksConfig config;
+    final ConcurrentBlockingDeque<PreAuthedChannel> tcpBuffer;   // TCP 预认证缓冲
+    final ObjectPool<UdpSessionHolder> udpPool;                   // UDP session 池
+    final TimeoutFuture<?> tcpRefillTask;                         // TCP 后台补充
+
+    public static Socks5UpstreamPool getOrCreate(AuthenticEndpoint ep, SocksConfig config) { ... }
+    public static void close(AuthenticEndpoint ep) { ... }
+
+    public PreAuthedChannel borrowTcp() { ... }
+    public UdpSessionHolder borrowUdp() throws TimeoutException { ... }
+    public void recycleUdp(UdpSessionHolder holder) { ... }
+}
+```
+
+### 配置参数（可通过 SocksConfig 或独立配置）
+
+- `tcpPoolMinSize`：TCP 预认证连接保持数（默认 2）
+- `tcpPoolMaxIdleMs`：TCP 预认证连接最大闲置时间（默认 60s）
+- `udpPoolMinSize`：UDP session 最小数（默认 2）
+- `udpPoolMaxSize`：UDP session 最大数（默认 50）
+- `udpPoolIdleTimeout`：UDP session 闲置超时（默认 300s）
+
+---
+
+## 变更文件汇总
+
+| 文件 | 变更内容 |
+|------|---------|
+| `Socks5ClientHandler.java` | 增加 `preAuthOnly` 模式、`sendConnect()` 方法 |
+| `Socks5UpstreamPool.java` (新) | 统一 TCP/UDP 池管理器 |
+| `SocksTcpUpstream.java` | 新增 `borrowPreAuthed()` 方法 |
+| `Socks5CommandRequestHandler.java` | `connect()` 增加预认证快速路径 |
+| `SocksUdpUpstream.java` | `initChannel()` 改为 pool borrow/recycle |
+| `SocksConfig.java` | 增加池化相关配置参数 |

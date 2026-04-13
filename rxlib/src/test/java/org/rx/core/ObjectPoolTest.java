@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.exception.InvalidException;
 
 import java.io.Closeable;
+import java.util.Arrays;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -326,6 +327,112 @@ public class ObjectPoolTest {
         assertEquals(0, errors.get(), "并发测试不应有错误");
         assertTrue(pool.size() <= maxSize, "pool size 不应超过 maxSize，actual: " + pool.size());
         log.info("Concurrency test: created={}, poolSize={}", created.get(), pool.size());
+    }
+
+    // ========== Adaptive Refill ==========
+
+    /**
+     * 基线：demandFactor=0 时无论 borrow 频率多高，targetSize 始终等于 minSize。
+     */
+    @Test
+    public void testAdaptiveRefillBaseline() {
+        ObjectPool<Object> pool = new ObjectPool<>(2, 10, Object::new, x -> true);
+        pool.setDemandFactor(0);
+
+        // 直接填入极高采样值
+        Arrays.fill(pool.borrowSamples, 100L);
+        pool.validNow();
+
+        assertEquals(2, pool.size(), "demandFactor=0 时 pool size 应等于 minSize");
+    }
+
+    /**
+     * 高负载：采样平均值高时，pool 应预热到 targetSize。
+     * SAMPLE_COUNT=12，每格 10 次 → avgPerPeriod=10 → target=ceil(10*2.0)=20，上限 maxSize=20。
+     */
+    @Test
+    public void testAdaptiveRefillHighLoad() {
+        ObjectPool<Object> pool = new ObjectPool<>(2, 20, Object::new, x -> true);
+        pool.setDemandFactor(2.0);
+
+        Arrays.fill(pool.borrowSamples, 10L);
+        pool.validNow();
+
+        assertTrue(pool.size() >= 10,
+                "高负载时 pool 应被预热到 targetSize，actual: " + pool.size());
+    }
+
+    /**
+     * 上限保护：target 超过 maxSize 时，pool size 不得超过 maxSize。
+     */
+    @Test
+    public void testAdaptiveRefillMaxSizeBound() {
+        int maxSize = 5;
+        ObjectPool<Object> pool = new ObjectPool<>(2, maxSize, Object::new, x -> true);
+        pool.setDemandFactor(10.0);
+
+        // 极高采样 → target 计算结果远超 maxSize
+        Arrays.fill(pool.borrowSamples, 100L);
+        pool.validNow();
+
+        assertEquals(maxSize, pool.size(), "pool size 不应超过 maxSize");
+    }
+
+    /**
+     * 负载回落：样本清零后 targetSize 回落到 minSize，idleTimeout 淘汰多余对象。
+     * 直接写入 package-private 字段 idleTimeout 绕过 setter 的最小值限制。
+     */
+    @SneakyThrows
+    @Test
+    public void testAdaptiveRefillLoadDrop() {
+        int minSize = 2;
+        int maxSize = 20;
+        ObjectPool<Object> pool = new ObjectPool<>(minSize, maxSize, Object::new, x -> true);
+        pool.setDemandFactor(2.0);
+        pool.idleTimeout = 100; // 直接设置，绕过 setter 的 max(10000,...) 限制
+
+        // Phase 1：注入高负载采样 → 预热到高水位
+        // avgPerPeriod=20 → target=ceil(40)=40 → clamp to maxSize=20
+        Arrays.fill(pool.borrowSamples, 20L);
+        pool.validNow();
+        int highSize = pool.size();
+        assertTrue(highSize > minSize, "预热后 size 应大于 minSize，actual: " + highSize);
+
+        // Phase 2：等待 idleTimeout 到期，再清空采样
+        Thread.sleep(200);
+        Arrays.fill(pool.borrowSamples, 0L);
+
+        // 多次 validNow()：每次淘汰 min(size,8) 个闲置超时对象，并以 targetSize=minSize 不再补充
+        for (int i = 0; i < 6; i++) {
+            pool.validNow();
+        }
+
+        assertTrue(pool.size() <= minSize + 1,
+                "负载回落后 pool size 应趋近 minSize，actual: " + pool.size());
+    }
+
+    /**
+     * 实际 borrow 路径统计验证：高频 borrow/recycle 后，borrowAccumulator 被正确计入采样。
+     */
+    @SneakyThrows
+    @Test
+    public void testAdaptiveRefillBorrowCounting() {
+        ObjectPool<Object> pool = new ObjectPool<>(1, 10, Object::new, x -> true);
+        pool.setDemandFactor(1.0);
+
+        // 高频 borrow/recycle 50 次
+        int borrowCount = 50;
+        for (int i = 0; i < borrowCount; i++) {
+            Object obj = pool.borrow();
+            pool.recycle(obj);
+        }
+
+        // validNow() 消费 borrowAccumulator 写入 borrowSamples[sampleIndex]
+        pool.validNow();
+
+        long sampledInThisPeriod = pool.borrowSamples[(pool.sampleIndex - 1 + ObjectPool.SAMPLE_COUNT) % ObjectPool.SAMPLE_COUNT];
+        assertEquals(borrowCount, sampledInThisPeriod,
+                "本周期采样值应等于 borrow 次数，actual: " + sampledInThisPeriod);
     }
 
     @SneakyThrows

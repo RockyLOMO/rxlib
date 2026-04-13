@@ -70,8 +70,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             String host = tcpLocalAddr.getAddress().getHostAddress();
             ChannelFuture udpFuture = Sockets.udpBootstrap(config, ch -> {
                 ChannelPipeline p = ch.pipeline();
-                p.addLast(new ProxyChannelIdleHandler(
-                        config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
+                if (config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0) {
+                    p.addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
+                }
                 p.addLast(udp2raw ? Udp2rawHandler.DEFAULT : SocksUdpRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(host, 0);
 

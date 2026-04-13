@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 
 import static org.rx.core.Extends.tryClose;
 
@@ -80,6 +81,18 @@ public class ObjectPool<T> extends Disposable {
     @Setter
     boolean closeObjectOnLeak = true;
 
+    // --- Adaptive refill fields ---
+    static final int SAMPLE_COUNT = 12;
+    final LongAdder borrowAccumulator = new LongAdder();
+    final long[] borrowSamples = new long[SAMPLE_COUNT];
+    int sampleIndex = 0;
+    @Getter
+    double demandFactor = 2.0;
+
+    public void setDemandFactor(double demandFactor) {
+        this.demandFactor = Math.max(0, demandFactor);
+    }
+
     public int size() {
         return totalCount.get();
     }
@@ -135,12 +148,15 @@ public class ObjectPool<T> extends Disposable {
     }
 
     void insureMinSize() {
-        while (size() < minSize) {
+        insureTargetSize(minSize);
+    }
+
+    void insureTargetSize(int target) {
+        while (size() < target) {
             IdentityWrapper<T> w = doCreate();
             if (w != null) {
                 recycle(w);
             } else {
-                // 无可用配额，跳出或等待下一轮
                 break;
             }
         }
@@ -174,8 +190,23 @@ public class ObjectPool<T> extends Disposable {
             }
         }
 
-        // log.info("ObjPool state: {}", this);
-        insureMinSize();
+        // 采样：将本周期累积的 borrow 次数写入环形缓冲区
+        borrowSamples[sampleIndex] = borrowAccumulator.sumThenReset();
+        sampleIndex = (sampleIndex + 1) % SAMPLE_COUNT;
+
+        // 计算最近窗口内总 borrow 数
+        long totalBorrows = 0;
+        for (long s : borrowSamples) {
+            totalBorrows += s;
+        }
+
+        // 动态目标 = max(minSize, min(maxSize, ceil(avgPerPeriod * demandFactor)))
+        double avgPerPeriod = (double) totalBorrows / SAMPLE_COUNT;
+        int targetSize = Math.max(minSize, Math.min(maxSize,
+                (int) Math.ceil(avgPerPeriod * demandFactor)));
+
+        log.debug("ObjPool adaptive refill: totalBorrows={}, avgPerPeriod={}, targetSize={}", totalBorrows, avgPerPeriod, targetSize);
+        insureTargetSize(targetSize);
     }
 
     // 0 close, 1 recycle validate, 3 idleTimeout, 4 leaked
@@ -291,6 +322,7 @@ public class ObjectPool<T> extends Disposable {
 
                 if (wrapper != null) {
                     if (validateHandler.test(wrapper.instance)) {
+                        borrowAccumulator.increment();
                         return wrapper.instance;
                     }
                     // 必须显式退休掉校验失败的对象
