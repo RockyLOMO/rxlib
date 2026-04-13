@@ -378,7 +378,7 @@ public class ThreadPoolTest extends AbstractTester {
 
     @SneakyThrows
     @Test
-    public void testRunFlagSynchronized() {
+    public void testRunFlagSerial() {
         ThreadPool p = createPool(4, 64);
         Object taskId = "sync-task";
         AtomicInteger counter = new AtomicInteger();
@@ -392,19 +392,56 @@ public class ThreadPoolTest extends AbstractTester {
         for (int i = 0; i < taskCount; i++) {
             p.run(() -> {
                 int c = concurrent.incrementAndGet();
-                // Track max concurrency — should always be 1 due to SYNCHRONIZED lock
+                // Track max concurrency — should always be 1 due to SERIAL mutual exclusion
                 maxConcurrent.accumulateAndGet(c, Math::max);
                 Thread.sleep(100);
                 concurrent.decrementAndGet();
                 counter.incrementAndGet();
                 latch.countDown();
-            }, taskId, RunFlag.SYNCHRONIZED.flags());
+            }, taskId, RunFlag.SERIAL.flags());
         }
 
         assertTrue(latch.await(15, TimeUnit.SECONDS));
         assertEquals(taskCount, counter.get());
-        // SYNCHRONIZED guarantees mutual exclusion — max concurrent should be 1
+        // SERIAL guarantees sequential execution — max concurrent should be 1
         assertEquals(1, maxConcurrent.get());
+    }
+
+    @SneakyThrows
+    @Test
+    public void testSerialDoesNotBlockPool() {
+        // Core pool size 2
+        ThreadPool p = createPool(2, 64);
+        Object taskId = "serial-blocking";
+        CountDownLatch serialStarted = new CountDownLatch(1);
+        CountDownLatch serialHold = new CountDownLatch(1);
+        AtomicInteger otherCompleted = new AtomicInteger();
+
+        // 1. Start a long running SERIAL task
+        p.run(() -> {
+            serialStarted.countDown();
+            serialHold.await();
+        }, taskId, RunFlag.SERIAL.flags());
+
+        assertTrue(serialStarted.await(5, TimeUnit.SECONDS));
+
+        // 2. Submit other SERIAL tasks for SAME taskId
+        // They should be queued in the serial chain, but NOT pick up threads until the first one is done
+        p.run(() -> {}, taskId, RunFlag.SERIAL.flags());
+
+        // 3. Submit a NORMAL task
+        // Because the serial tasks are just queued in CompletableFuture chains and NOT blocking worker threads,
+        // a worker thread should be available to pick up this normal task.
+        CountDownLatch normalDone = new CountDownLatch(1);
+        p.execute(() -> {
+            otherCompleted.incrementAndGet();
+            normalDone.countDown();
+        });
+
+        assertTrue(normalDone.await(5, TimeUnit.SECONDS), "Normal task should NOT be blocked by serial tasks");
+        assertEquals(1, otherCompleted.get());
+
+        serialHold.countDown();
     }
 
     // ===== RunFlag.TRANSFER =====
@@ -855,11 +892,11 @@ public class ThreadPoolTest extends AbstractTester {
         for (int i = 0; i < 5; i++) {
             int x = i;
             Future<Void> f1 = pool.run(() -> {
-                log.info("exec SYNCHRONIZED begin {}", x);
+                log.info("exec SERIAL begin {}", x);
                 c.incrementAndGet();
                 sleep(oneSecond);
-                log.info("exec SYNCHRONIZED end {}", x);
-            }, c, RunFlag.SYNCHRONIZED.flags());
+                log.info("exec SERIAL end {}", x);
+            }, c, RunFlag.SERIAL.flags());
         }
         sleep(6000);
         assert c.get() == 6;
@@ -896,12 +933,12 @@ public class ThreadPoolTest extends AbstractTester {
         for (int i = 0; i < 5; i++) {
             int x = i;
             CompletableFuture<Void> f1 = pool.runAsync(() -> {
-                log.info("exec SYNCHRONIZED begin {}", x);
+                log.info("exec SERIAL begin {}", x);
                 c.incrementAndGet();
                 sleep(oneSecond);
-                log.info("exec SYNCHRONIZED end {}", x);
-            }, c, RunFlag.SYNCHRONIZED.flags());
-            f1.whenCompleteAsync((r, e) -> log.info("exec SYNCHRONIZED uni"));
+                log.info("exec SERIAL end {}", x);
+            }, c, RunFlag.SERIAL.flags());
+            f1.whenCompleteAsync((r, e) -> log.info("exec SERIAL uni"));
         }
         sleep(8000);
         assert c.get() == 6;

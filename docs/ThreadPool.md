@@ -1,321 +1,168 @@
-## 常见线程池
+# ThreadPool 线程池组件
 
-* Executors.newCachedThreadPool(); 
-  没有queue缓冲，一直new thread执行，当CPU负载高时加上更多线程上下文切换损耗，性能会急速下降。
-* Executors.newFixedThreadPool(16); 
-  执行的thread数量固定，但当thread等待时间（IO Wait / Blocked Time）过长时会造成吞吐量下降。当堆积的任务过多时，无界的LinkedBlockingQueue可能会引发OOM。
-* new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(10000));
-  有界的LinkedBlockingQueue可以避免OOM，但吞吐量下降的情况避免不了，加上LinkedBlockingQueue使用的重量级锁ReentrantLock对并发下性能可能有影响。
+## 1. 核心设计理念
 
-## 最佳线程数线程池
+在传统的 JDK 线程池中，开发者往往面临核心线程数（CoreSize）难以确定的困境：
+- **核心线程过少**：无法充分利用多核性能，IO 等待时吞吐量急剧下降。
+- **核心线程过多**：上下文切换开销巨大，甚至可能导致系统响应变慢。
 
-最佳线程数=CPU 线程数 * (1 + CPU 等待时间 / CPU 执行时间)，由于执行任务的不同，CPU 等待时间和执行时间无法确定，因此换一种思路，当列队满的情况下，如果CPU使用率小于40%，则会动态增大线程池maxThreads 最大线程数的值来提高吞吐量。如果CPU使用率大于60%，则会动态减小maxThreads 值来降低生产者的任务生产速度。当最小线程数的线程量处理不过来的时候，会创建到最大线程数的线程量来执行。当最大线程量的线程执行不过来的时候，会把任务丢进列队，当列队满的时候会阻塞当前线程，降低生产者的生产速度。
+RXlib 的 `ThreadPool` 采用**基于负载的自适应动态调整策略**：
+> **核心公式**：`最佳线程数 = CPU 线程数 * (1 + CPU 等待时间 / CPU 执行时间)`
 
-### 调用方式
+### 动态扩缩容逻辑
+1. **负载监控**：实时监控 CPU 使用率与任务队列深度。
+2. **动态调优**：
+   - 当队列已满且 **CPU 使用率 < 40%** 时，自动分批增加 `maxThreads` 以提升并发处理能力。
+   - 当任务积压减少或 **CPU 使用率 > 60%** 时，自动收缩线程数以减少系统负荷，防止过度竞争。
+3. **阻塞反馈**：当达到最大线程数且队列依然撑爆时，会产生背压（Back-pressure），适度阻塞提交任务的线程，平衡生产与消费速度。
 
+---
+
+## 2. 核心功能特性
+
+### 2.1 多维运行标志 (RunFlag)
+`rxlib` 的线程池通过扩展 `RunFlag` 枚举，提供了比原生 JDK 更精细的任务控制流。
+
+| 运行标志 | 功能描述 | 适用场景 |
+| :--- | :--- | :--- |
+| **`SINGLE`** | **唯一执行**：基于 `taskId` 检查。若已有相同 ID 的任务在运行，则当前任务直接跳过。 | 重复触发的刷新操作、互斥逻辑。 |
+| **`SERIAL`** | **串行分发**：基于 `taskId` 进行串行队列化。采用无锁 `CompletableFuture` 生成任务链，不会阻塞物理线程。 | 需要严格顺序处理的会话消息、日志记录。 |
+| **`TRANSFER`** | **移交执行**：阻塞提交线程，直到任务被工作线程接手或成功存入队列。 | 关键任务流控，防止生产速度失控。 |
+| **`PRIORITY`** | **优先执行**：若当前无空闲线程且队列已满，强制新建一个临时线程处理。 | 紧急状态上报、高优监控。 |
+| **`INHERIT_THREAD_LOCALS`** | **环境继承**：子线程自动继承父线程的 `FastThreadLocal` 环境。 | 链路参数透传、用户权限上下文传递。 |
+| **`THREAD_TRACE`** | **链路追踪**：开启异步 Trace，关联后续的所有异步调用流。 | 复杂异步系统全链路排障。 |
+
+---
+
+## 3. 使用示例
+
+### 3.1 基础提交与分流控制
 ```java
-@SneakyThrows
-@Test
-public void threadPool() {
-    ThreadPool pool = Tasks.pool();
-    //RunFlag.SINGLE        根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
-    //RunFlag.SYNCHRONIZED  根据taskId同步执行，只要有一个线程在执行，其它线程等待执行。
-    //RunFlag.TRANSFER      直到任务被执行或放入队列否则一直阻塞调用线程。
-    //RunFlag.PRIORITY      如果线程和队列都无可用的则直接新建线程执行。
-    //RunFlag.INHERIT_THREAD_LOCALS 子线程会继承父线程的FastThreadLocal
-    //RunFlag.THREAD_TRACE  开启trace,支持timer和CompletableFuture
-    AtomicInteger c = new AtomicInteger();
-    for (int i = 0; i < 5; i++) {
-        int x = i;
-        Future<Void> f1 = pool.run(() -> {
-            log.info("exec SINGLE begin {}", x);
-            c.incrementAndGet();
-            sleep(oneSecond);
-            wait.set();
-            log.info("exec SINGLE end {}", x);
-        }, c, RunFlag.SINGLE.flags());
-    }
-    wait.waitOne();
-    wait.reset();
-    assert c.get() == 1;
+ThreadPool pool = Tasks.pool();
+AtomicInteger counter = new AtomicInteger();
 
-    for (int i = 0; i < 5; i++) {
-        int x = i;
-        Future<Void> f1 = pool.run(() -> {
-            log.info("exec SYNCHRONIZED begin {}", x);
-            c.incrementAndGet();
-            sleep(oneSecond);
-            log.info("exec SYNCHRONIZED end {}", x);
-        }, c, RunFlag.SYNCHRONIZED.flags());
-    }
-    sleep(8000);
-    assert c.get() == 6;
+// 1. SINGLE 模式：确保同一时间只有一个执行，避免冗余
+pool.run(() -> {
+    log.info("Do unique task...");
+    sleep(1000);
+}, "task-unique-id", RunFlag.SINGLE.flags());
 
-
-    c.set(0);
-    for (int i = 0; i < 5; i++) {
-        int x = i;
-        CompletableFuture<Void> f1 = pool.runAsync(() -> {
-            log.info("exec SINGLE begin {}", x);
-            c.incrementAndGet();
-            sleep(oneSecond);
-            wait.set();
-            log.info("exec SINGLE end {}", x);
-        }, c, RunFlag.SINGLE.flags());
-        f1.whenCompleteAsync((r, e) -> log.info("exec SINGLE uni"));
-    }
-    wait.waitOne();
-    wait.reset();
-    assert c.get() == 1;
-
-    for (int i = 0; i < 5; i++) {
-        int x = i;
-        CompletableFuture<Void> f1 = pool.runAsync(() -> {
-            log.info("exec SYNCHRONIZED begin {}", x);
-            c.incrementAndGet();
-            sleep(oneSecond);
-            log.info("exec SYNCHRONIZED end {}", x);
-        }, c, RunFlag.SYNCHRONIZED.flags());
-        f1.whenCompleteAsync((r, e) -> log.info("exec SYNCHRONIZED uni"));
-    }
-    sleep(8000);
-    assert c.get() == 6;
-
-    pool.runAsync(() -> System.out.println("runAsync"))
-            .whenCompleteAsync((r, e) -> System.out.println("whenCompleteAsync"))
-            .join();
-    List<Func<Integer>> tasks = new ArrayList<>();
-    for (int i = 0; i < 5; i++) {
-        int x = i;
-        tasks.add(() -> {
-            log.info("TASK begin {}", x);
-            sleep(oneSecond);
-            log.info("TASK end {}", x);
-            return x + 100;
-        });
-    }
-    List<Future<Integer>> futures = pool.runAll(tasks, 0);
-    for (Future<Integer> future : futures) {
-        System.out.println(future.get());
-    }
-
-    ThreadPool.MultiTaskFuture<Integer, Integer> anyMf = pool.runAnyAsync(tasks);
-    anyMf.getFuture().whenCompleteAsync((r, e) -> log.info("ANY TASK MAIN uni"));
-    for (CompletableFuture<Integer> sf : anyMf.getSubFutures()) {
-        sf.whenCompleteAsync((r, e) -> log.info("ANY TASK uni {}", r));
-    }
-    for (CompletableFuture<Integer> sf : anyMf.getSubFutures()) {
-        sf.join();
-    }
-    log.info("wait ANY TASK");
-    anyMf.getFuture().get();
-
-    ThreadPool.MultiTaskFuture<Void, Integer> mf = pool.runAllAsync(tasks);
-    mf.getFuture().whenCompleteAsync((r, e) -> log.info("ALL TASK MAIN uni"));
-    for (CompletableFuture<Integer> sf : mf.getSubFutures()) {
-        sf.whenCompleteAsync((r, e) -> log.info("ALL TASK uni {}", r));
-    }
-    for (CompletableFuture<Integer> sf : mf.getSubFutures()) {
-        sf.join();
-    }
-    log.info("wait ALL TASK");
-    mf.getFuture().get();
-}
-
-@Test
-public void threadPoolAutosize() {
-    //LinkedTransferQueue基于CAS实现，性能比LinkedBlockingQueue要好。
-    //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
-    //支持netty FastThreadLocal
-    long delayMillis = 5000;
-    ExecutorService pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
-    for (int i = 0; i < 100; i++) {
-        int x = i;
-        pool.execute(() -> {
-            log.info("exec {} begin..", x);
-            sleep(delayMillis);
-            log.info("exec {} end..", x);
-        });
-    }
-}
-```
-
-## 异步trace
-
-zipkin不支持异步trace，rxlib提供支持支持异步trace包括Executor(ThreadPool), ScheduledExecutorService(WheelTimer), CompletableFuture.xxAsync()系列方法。
-
-```java
-@SneakyThrows
-@Test
-public void inheritThreadLocal() {
-    //线程trace，支持异步trace包括Executor(ThreadPool), ScheduledExecutorService(WheelTimer), CompletableFuture.xxAsync()系列方法。
-    RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
-    ThreadPool.traceIdGenerator = () -> UUID.randomUUID().toString().replace("-", "");
-    ThreadPool.traceIdChangedHandler = t -> MDC.put("rx-traceId", t);
-    ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
-
-    //当线程池无空闲线程时，任务放置队列后，当队列任务执行时会带上正确的traceId
-    ThreadPool.startTrace(null);
-    for (int i = 0; i < 2; i++) {
-        int finalI = i;
-        pool.run(() -> {
-            log.info("TRACE DELAY-1 {}", finalI);
-            pool.run(() -> {
-                log.info("TRACE DELAY-1_1 {}", finalI);
-                sleep(oneSecond);
-            });
-            sleep(oneSecond);
-        });
-        log.info("TRACE DELAY MAIN {}", finalI);
-        pool.run(() -> {
-            log.info("TRACE DELAY-2 {}", finalI);
-            sleep(oneSecond);
-        });
-    }
-    ThreadPool.endTrace();
-    sleep(8000);
-
-    //WheelTimer(ScheduledExecutorService) 异步trace
-    WheelTimer timer = Tasks.timer();
-    ThreadPool.startTrace(null);
-    for (int i = 0; i < 2; i++) {
-        int finalI = i;
-        timer.setTimeout(() -> {
-            log.info("TRACE TIMER {}", finalI);
-            sleep(oneSecond);
-        }, oneSecond);
-        log.info("TRACE TIMER MAIN {}", finalI);
-    }
-    ThreadPool.endTrace();
-    sleep(4000);
-
-    //CompletableFuture.xxAsync异步方法正确获取trace
-    ThreadPool.startTrace(null);
-    for (int i = 0; i < 2; i++) {
-        int finalI = i;
-        pool.runAsync(() -> {
-            log.info("TRACE ASYNC-1 {}", finalI);
-            pool.runAsync(() -> {
-                log.info("TRACE ASYNC-1_1 {}", finalI);
-                sleep(oneSecond);
-            }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1_1 uni {}", r));
-            sleep(oneSecond);
-        }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-1 uni {}", r));
-        log.info("TRACE ASYNC MAIN {}", finalI);
-        pool.runAsync(() -> {
-            log.info("TRACE ASYNC-2 {}", finalI);
-            sleep(oneSecond);
-        }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
-    }
-    ThreadPool.endTrace();
-    sleep(10000);
-
-    //netty FastThreadLocal 支持继承
-    FastThreadLocal<Integer> ftl = new FastThreadLocal<>();
-    ftl.set(64);
-    pool.run(() -> {
-        assert ftl.get() == 64;
-        log.info("Inherit ok 1");
-    }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
-
+// 2. SERIAL 模式：非阻塞串行队列，任务按序执行
+for (int i = 0; i < 5; i++) {
+    int seq = i;
     pool.runAsync(() -> {
-        assert ftl.get() == 64;
-        log.info("Inherit ok 2");
-    }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
-    sleep(2000);
+        log.info("Batch seq: {}", seq);
+        sleep(500);
+    }, "serial-id", RunFlag.SERIAL.flags());
 }
 ```
 
-## 定时任务
+### 3.2 批量任务处理 (WaitAll / WaitAny)
+```java
+List<Func<Integer>> tasks = Arrays.asList(
+    () -> { sleep(500); return 1; },
+    () -> { sleep(200); return 2; }
+);
 
-### ScheduledExecutorService
+// 异步等待所有结束
+ThreadPool.MultiTaskFuture<Void, Integer> mf = pool.runAllAsync(tasks);
+mf.getFuture().join(); // 阻塞至全链路结束
+```
 
-jdk实现的ScheduledExecutorService只会创建coreSize的线程，coreSize设置小了吞吐量低，coreSize设置大了性能反而降低。另外当执行的任务blocking wait多时，耗光了coreSize的线程后续任务堆积不能按时处理。rxlib实现的ScheduledThreadPool同上述线程池一样依据cpuLoad动态调整coreSize解决痛点问题。
+---
 
-### Netty WheelTimer
+## 4. 全链路异步追踪 (Async Trace)
 
-WheelTimer虽然精度不准，但是只消耗1个线程以及消耗更少的内存。单线程的HashedWheelTimer也使blocking wait痛点放大，好在动态调整maxSize的ThreadPool存在，WheelTimer只做调度，执行全交给ThreadPool异步执行，完美解决痛点。
+RXlib 线程池不仅支持上下文传递，还深度集成了异步 Trace 功能，支持跨越 `Executor`、`WheelTimer` 以及 `CompletableFuture.xxAsync()` 的链路追踪。
 
 ```java
-@SneakyThrows
-@Test
-public void timer() {
-    WheelTimer timer = Tasks.timer();
-    //TimeoutFlag.SINGLE       根据taskId单线程执行，只要有一个线程在执行，其它线程直接跳过执行。
-    //TimeoutFlag.REPLACE      根据taskId执行，如果已有其它线程执行或等待执行则都取消，只执行当前。
-    //TimeoutFlag.PERIOD       定期重复执行，遇到异常不会终止直到asyncContinue(false) 或 next delay = -1。
-    //TimeoutFlag.THREAD_TRACE 开启trace
-    AtomicInteger c = new AtomicInteger();
-    for (int i = 0; i < 5; i++) {
-        int finalI = i;
-        timer.setTimeout(() -> {
-            log.info("exec SINGLE plus by {}", finalI);
-            assert finalI == 0;
-            c.incrementAndGet();
-            sleep(oneSecond);
-            wait.set();
-        }, oneSecond, c, TimeoutFlag.SINGLE.flags());
-    }
-    wait.waitOne();
-    wait.reset();
-    assert c.get() == 1;
-    log.info("exec SINGLE flag ok..");
+// 初始化 Trace 配置
+RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
+ThreadPool.traceIdGenerator = () -> UUID.randomUUID().toString().replace("-", "");
 
-    for (int i = 0; i < 5; i++) {
-        int finalI = i;
-        timer.setTimeout(() -> {
-            log.info("exec REPLACE plus by {}", finalI);
-            assert finalI == 4;
-            c.incrementAndGet();
-            sleep(oneSecond);
-            wait.set();
-        }, oneSecond, c, TimeoutFlag.REPLACE.flags());
-    }
-    wait.waitOne();
-    wait.reset();
-    assert c.get() == 2;
-    log.info("exec REPLACE flag ok..");
+// 开启追踪
+ThreadPool.startTrace(null);
+pool.runAsync(() -> {
+    log.info("Step 1 (Main Process)");
+    pool.runAsync(() -> {
+        log.info("Step 2 (Self-contained callback)");
+    });
+});
+ThreadPool.endTrace();
+```
 
-    TimeoutFuture<Integer> f = timer.setTimeout(() -> {
-        log.info("exec PERIOD");
-        int i = c.incrementAndGet();
-        if (i > 10) {
-            asyncContinue(false);
-            return null;
-        }
-        if (i == 4) {
-            throw new InvalidException("Will exec next");
-        }
-        asyncContinue(true);
-        return i;
-    }, oneSecond, c, TimeoutFlag.PERIOD.flags());
-    sleep(8000);
-    f.cancel();
-    log.info("exec PERIOD flag ok and last value={}", f.get());
-    assert f.get() == 9;
+---
 
-    c.set(0);
-    timer.setTimeout(() -> {
-        log.info("exec nextDelayFn");
-        c.incrementAndGet();
-        asyncContinue(true);
-    }, d -> d > 1000 ? -1 : Math.max(d, 100) * 2);
-    sleep(5000);
-    log.info("exec nextDelayFn ok");
-    assert c.get() == 4;
+## 5. 定时任务调度
 
-    //包装为ScheduledExecutorService
-    ScheduledExecutorService ses = timer;
-    ScheduledFuture<Integer> f1 = ses.schedule(() -> 1024, oneSecond, TimeUnit.MILLISECONDS);
-    long start = System.currentTimeMillis();
-    assert f1.get() == 1024;
-    log.info("schedule wait {}ms", (System.currentTimeMillis() - start));
+### 5.1 增强型 ScheduledExecutorService
+相比 JDK 默认固定大小的线程模型，RXlib 的定时线程池支持**自适应 CoreSize 调整**。当定时任务中存在大量阻塞 IO 时，它能伸缩其线程规模，保证其他定时任务不会因前面的阻塞而延期执行。
 
-    log.info("scheduleAtFixedRate step 1");
-    ScheduledFuture<?> f2 = ses.scheduleAtFixedRate(() -> log.info("scheduleAtFixedRate step 2"), 500, oneSecond, TimeUnit.MILLISECONDS);
-    log.info("scheduleAtFixedRate delay {}ms", f2.getDelay(TimeUnit.MILLISECONDS));
-    sleep(5000);
-    f2.cancel(true);
-    log.info("scheduleAtFixedRate delay {}ms", f2.getDelay(TimeUnit.MILLISECONDS));
+### 5.2 时间轮算法 (Netty WheelTimer)
+RXlib 对 Netty 的 `HashedWheelTimer` 进行了封装，核心点在于：**只做调度，不做执行**。
+- **调度效率**：时间轮算法在具有大量定时器时通过单线程调度极其高效。
+- **并发执行**：所有触发的任务都会立即异步移交给 `ThreadPool` 执行，避免了传统时间轮“一处任务阻塞，整体调度停滞”的顽疾。
+
+```java
+WheelTimer timer = Tasks.timer();
+
+// 设置一个重复执行的任务
+timer.setTimeout(() -> {
+    log.info("Heartbeat...");
+    asyncContinue(true); // 返回 true 表示继续下次循环
+}, 1000, "heartbeat-task", TimeoutFlag.PERIOD.flags());
+```
+
+---
+
+## 7. Object Pool 对象池
+
+`rxlib` 提供了一个高性能、自适应的通用对象池实现 (`ObjectPool<T>`)，旨在解决高并发场景下频繁创建/销毁对象带来的 GC 压力与锁竞争。
+
+### 7.1 核心设计
+
+*   **L1 级线程本地缓存**：
+    利用 `FastThreadLocal` 实现 L1 级缓存。当同一线程频繁 `borrow` / `recycle` 时，优先从本线程私有的缓存位获取，**完全无锁**且避免了对全局队列的竞争。
+*   **自适应预填充 (Adaptive Refill)**：
+    池化组件会定期采样借用频率。当负载升高时，它会根据 `demandFactor` 自动计算并预创建对象（暖机）；当负载下降时，自动回收空闲对象。
+*   **无锁状态管理**：
+    对象的 `IDLE`、`BORROWED`、`RETIRED` 状态切换全部通过 **CAS (Compare-And-Swap)** 实现，最大程度减少上下文切换。
+*   **健康检测机制**：
+    *   **校验（Validation）**：借出前、归还后均可进行活性检查。
+    *   **泄漏检测（Leak Detection）**：定时扫描借出超时的对象并记录堆栈，帮助定位未归还对象的代码块。
+
+### 7.2 技术指标
+
+| 特性 | 实现方式 | 优势 |
+| :--- | :--- | :--- |
+| **高并发性能** | FastThreadLocal L1 + 无锁 CAS | 借还操作延迟极低，热点数据访问基本无竞争。 |
+| **负载适应度** | 滑动窗口采样 + 动态预填充 | 流量洪峰来临时减少现场创建对象的开销。 |
+| **内存安全性** | 自动状态回收 + 泄漏堆栈追踪 | 配合 `TraceHandler` 能够快速发现资源泄漏。 |
+
+### 7.3 使用示例
+
+```java
+// 初始化对象池：最小 2，最大 20
+ObjectPool<MyClient> pool = new ObjectPool<>(2, 20,
+    () -> new MyClient(),      // createHandler
+    client -> client.isAlive() // validateHandler
+);
+
+// 借用对象
+MyClient client = pool.borrow();
+try {
+    client.execute();
+} finally {
+    // 归还对象
+    pool.recycle(client);
 }
 ```
+
+---
+
+## 8. 技术特性总结
+
+- **基于 Netty `FastThreadLocal`**：显著优于 JDK 原生 `ThreadLocal` 的访问性能。
+- **自研 `IntWaterMark` 负载算法**：精准控制核心线程规模。
+- **无锁化串行逻辑**：ThreadPool 采用 `CompletableFuture` 无锁链，ObjectPool 采用 CAS 状态机，共同构建了高性能的并发基石。
+- **背压一致性设计**：通过任务队列和借用超时反馈，天然支持流量整形。

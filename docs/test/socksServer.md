@@ -1,6 +1,7 @@
 # 网络代理
 ## 前置
 所有场景考虑dns污染，尽量远程解析dns
+udp associate需要考虑 Full Clone NAT
 
 ## 场景1
 socks5 client -> SocksServerProxy A, udp -> dest

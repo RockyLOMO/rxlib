@@ -44,7 +44,9 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             _crypto.setForUdp(false);
             channel.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
-            channel.pipeline().addLast(new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
+            if (config.getReadTimeoutSeconds() > 0 || config.getWriteTimeoutSeconds() > 0) {
+                channel.pipeline().addLast(new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
+            }
             if (config.isUseDedicatedCryptoGroup()) {
                 channel.pipeline().addLast(cryptoGroup, CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
             } else {
