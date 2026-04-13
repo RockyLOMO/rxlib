@@ -537,10 +537,6 @@ public class ThreadPool extends ThreadPoolExecutor {
     // endregion
 
     // region v1
-    @Override
-    public void execute(Runnable command) {
-        super.execute(Task.adapt(command, null, null));
-    }
 
     @Override
     public Future<?> submit(Runnable task) {
@@ -598,7 +594,21 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public Future<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return submit((Callable<Void>) Task.<Void>adapt(task, flags, taskId));
+        Task<Void> t = Task.adapt(task, flags, taskId);
+        if (t.flags.has(RunFlag.SERIAL) && t.id != null) {
+            return runSerialAsync(t, t.id, t.flags, false);
+        }
+        return submit((Callable<Void>) t);
+    }
+
+    @Override
+    public void execute(Runnable command) {
+        Task<?> task = setTask(command);
+        if (task != null && task.flags.has(RunFlag.SERIAL) && task.id != null) {
+            runSerialAsync((Task<Object>)task, task.id, task.flags, false);
+            return;
+        }
+        super.execute(Task.adapt(command, null, null));
     }
 
     public <T> Future<T> run(Func<T> task) {
@@ -606,7 +616,11 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     public <T> Future<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return submit((Callable<T>) Task.adapt(task, flags, taskId));
+        Task<T> t = Task.adapt(task, flags, taskId);
+        if (t.flags.has(RunFlag.SERIAL) && t.id != null) {
+            return runSerialAsync(t, t.id, t.flags, false);
+        }
+        return submit((Callable<T>) t);
     }
 
     @SneakyThrows
@@ -633,6 +647,9 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public CompletableFuture<Void> runAsync(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
         Task<Void> t = Task.adapt(task, flags, taskId);
+        if (t.flags.has(RunFlag.SERIAL) && t.id != null) {
+            return runSerialAsync(t, t.id, t.flags, false);
+        }
         return CompletableFuture.runAsync(t, asyncExecutor);
     }
 
@@ -642,6 +659,9 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     public <T> CompletableFuture<T> runAsync(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         Task<T> t = Task.adapt(task, flags, taskId);
+        if (t.flags.has(RunFlag.SERIAL) && t.id != null) {
+            return runSerialAsync(t, t.id, t.flags, false);
+        }
         return CompletableFuture.supplyAsync(t, asyncExecutor);
     }
 
@@ -662,6 +682,10 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     <T> CompletableFuture<T> runSerialAsync(@NonNull Func<T> task, @NonNull Object taskId, FlagsEnum<RunFlag> flags, boolean reuse) {
+        return runSerialAsync(Task.adapt(task, flags, taskId), taskId, flags, reuse);
+    }
+
+    <T> CompletableFuture<T> runSerialAsync(@NonNull Task<T> t, @NonNull Object taskId, FlagsEnum<RunFlag> flags, boolean reuse) {
         AtomicInteger counter = taskSerialCountMap.computeIfAbsent(taskId, k -> new AtomicInteger(0));
         int maxCap = RxConfig.INSTANCE.threadPool.queueCapacity;
         if (maxCap <= 0) maxCap = Constants.CPU_THREADS * 64;
@@ -680,7 +704,6 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (existing == null) {
                 isNew = true;
                 f = placeholder;
-                Task<T> t = Task.adapt(task, flags, taskId);
                 try {
                     CompletableFuture.supplyAsync(t, asyncExecutor).whenComplete((r, e) -> {
                         if (e != null) {
@@ -709,10 +732,10 @@ public class ThreadPool extends ThreadPoolExecutor {
         if (!isNew) {
             CompletableFuture<T> next;
             try {
-                next = f.thenApplyAsync(t -> {
-                    COMPLETION_RETURNED_VALUE.set(t);
+                next = f.thenApplyAsync(it -> {
+                    COMPLETION_RETURNED_VALUE.set(it);
                     try {
-                        return task.get();
+                        return t.get();
                     } finally {
                         COMPLETION_RETURNED_VALUE.remove();
                     }
@@ -776,13 +799,6 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (log.isDebugEnabled()) {
                 log.debug("CTX tryLock {} -> {}", task.id, flags.name());
             }
-        } else if (flags.has(RunFlag.SYNCHRONIZED)) {
-            RefCounter<ReentrantLock> ctx = getContextForLock(task.id);
-            ctx.incrementRefCnt();
-            ctx.ref.lock();
-            if (log.isDebugEnabled()) {
-                log.debug("CTX lock {} -> {}", task.id, flags.name());
-            }
         }
         if (flags.has(RunFlag.PRIORITY) && !getQueue().isEmpty()) {
             CpuWatchman.incrSize(this);
@@ -827,16 +843,18 @@ public class ThreadPool extends ThreadPoolExecutor {
         Object id = task.id;
         if (id != null) {
             RefCounter<ReentrantLock> ctx = taskLockMap.getIfPresent(id);
-            if (ctx != null && ctx.ref.isHeldByCurrentThread()) {
+            if (ctx != null) {
+                if (ctx.ref.isHeldByCurrentThread()) {
+                    ctx.ref.unlock();
+                }
                 boolean doRemove = false;
                 if (ctx.decrementRefCnt() <= 0) {
                     taskLockMap.invalidate(id);
                     doRemove = true;
                 }
                 if (log.isDebugEnabled()) {
-                    log.debug("CTX unlock{} {} -> {}", doRemove ? " & clear" : "", id, task.flags.name());
+                    log.debug("CTX release{} {} -> {}", doRemove ? " & clear" : "", id, task.flags.name());
                 }
-                ctx.ref.unlock();
             }
         }
         if (task.parent != null) {
@@ -863,7 +881,7 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     private RefCounter<ReentrantLock> getContextForLock(Object id) {
         if (id == null) {
-            throw new InvalidException("SINGLE or SYNCHRONIZED flag require a taskId");
+            throw new InvalidException("SINGLE flag require a taskId");
         }
 
         return taskLockMap.get(id, k -> new RefCounter<>(new ReentrantLock()));
