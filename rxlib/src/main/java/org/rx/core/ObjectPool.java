@@ -29,7 +29,7 @@ public class ObjectPool<T> extends Disposable {
         static final int IDLE = 0, BORROWED = 1, RETIRED = 2;
         IdentityWrapper<T> wrapper;
         final AtomicInteger state = new AtomicInteger(IDLE);
-        long stateTime;
+        volatile long stateTime;
         volatile Thread t;
 
         public boolean isBorrowed() {
@@ -41,19 +41,19 @@ public class ObjectPool<T> extends Disposable {
         }
 
         public void setBorrowed(boolean borrowed) {
-            state.set(borrowed ? BORROWED : IDLE);
             if (borrowed) {
                 t = Thread.currentThread();
             }
             stateTime = System.nanoTime();
+            state.set(borrowed ? BORROWED : IDLE);
         }
 
         public boolean casState(int expect, int update) {
+            if (update == BORROWED) {
+                t = Thread.currentThread();
+            }
+            stateTime = System.nanoTime();
             if (state.compareAndSet(expect, update)) {
-                if (update == BORROWED) {
-                    t = Thread.currentThread();
-                }
-                stateTime = System.nanoTime();
                 return true;
             }
             return false;
@@ -274,9 +274,9 @@ public class ObjectPool<T> extends Disposable {
             if (activateHandler != null) {
                 activateHandler.accept(wrapper.instance);
             }
-            c.state.set(ObjectConf.BORROWED);
             c.t = Thread.currentThread();
             c.stateTime = System.nanoTime();
+            c.state.set(ObjectConf.BORROWED);
             return wrapper;
         } catch (Throwable e) {
             if (wrapper != null) {
@@ -343,6 +343,7 @@ public class ObjectPool<T> extends Disposable {
             ObjectConf<T> c = conf.get(wrapper);
             if (c != null && c.casState(ObjectConf.IDLE, ObjectConf.BORROWED)) {
                 threadLocalCache.set(null); // Clear from L1
+                boolean ok = true;
                 if (validateHandler.test(wrapper.instance)) {
                     if (activateHandler != null) {
                         try {
@@ -350,13 +351,16 @@ public class ObjectPool<T> extends Disposable {
                         } catch (Throwable e) {
                             doRetire(wrapper, 0);
                             log.warn("borrow L1 error", e);
-                            throw e;
+                            ok = false;
                         }
                     }
-                    borrowAccumulator.increment();
-                    return wrapper.instance;
+                    if (ok) {
+                        borrowAccumulator.increment();
+                        return wrapper.instance;
+                    }
+                } else {
+                    doRetire(wrapper, 1);
                 }
-                doRetire(wrapper, 1);
             } else {
                 threadLocalCache.set(null); // Retired or borrowed by others
             }
