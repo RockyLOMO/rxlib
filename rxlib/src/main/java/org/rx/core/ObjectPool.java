@@ -26,27 +26,46 @@ import static org.rx.core.Extends.tryClose;
 @ToString
 public class ObjectPool<T> extends Disposable {
     static class ObjectConf<T> {
+        static final int IDLE = 0, BORROWED = 1, RETIRED = 2;
         IdentityWrapper<T> wrapper;
-        volatile boolean retired;
-        @Getter
-        boolean borrowed;
+        final AtomicInteger state = new AtomicInteger(IDLE);
         long stateTime;
-        Thread t;
+        volatile Thread t;
+
+        public boolean isBorrowed() {
+            return state.get() == BORROWED;
+        }
+
+        public boolean isRetired() {
+            return state.get() == RETIRED;
+        }
 
         public void setBorrowed(boolean borrowed) {
-            if (this.borrowed = borrowed) {
+            state.set(borrowed ? BORROWED : IDLE);
+            if (borrowed) {
                 t = Thread.currentThread();
             }
             stateTime = System.nanoTime();
         }
 
+        public boolean casState(int expect, int update) {
+            if (state.compareAndSet(expect, update)) {
+                if (update == BORROWED) {
+                    t = Thread.currentThread();
+                }
+                stateTime = System.nanoTime();
+                return true;
+            }
+            return false;
+        }
+
         public boolean isIdleTimeout(long idleTimeout) {
-            return idleTimeout != 0 && !borrowed
+            return idleTimeout != 0 && state.get() == IDLE
                     && (System.nanoTime() - stateTime) / Constants.NANO_TO_MILLIS > idleTimeout;
         }
 
         public boolean isLeaked(long threshold) {
-            return threshold != 0 && borrowed
+            return threshold != 0 && state.get() == BORROWED
                     && (System.nanoTime() - stateTime) / Constants.NANO_TO_MILLIS > threshold;
         }
     }
@@ -62,6 +81,7 @@ public class ObjectPool<T> extends Disposable {
             return new IdentityWrapper<>();
         }
     };
+    final FastThreadLocal<IdentityWrapper<T>> threadLocalCache = new FastThreadLocal<>();
     final AtomicInteger totalCount = new AtomicInteger();
     final ConcurrentBlockingDeque<IdentityWrapper<T>> stack;
     final TimeoutFuture<?> future;
@@ -70,16 +90,16 @@ public class ObjectPool<T> extends Disposable {
     @Getter
     final int maxSize;
     @Getter
-    long validationPeriod = 5000;
+    volatile long validationPeriod = 5000;
     @Getter
-    long borrowTimeout = 10000;
+    volatile long borrowTimeout = 10000;
     @Getter
-    long idleTimeout = 600000;
+    volatile long idleTimeout = 600000;
     @Getter
-    long leakDetectionThreshold;
+    volatile long leakDetectionThreshold;
     @Getter
     @Setter
-    boolean closeObjectOnLeak = true;
+    volatile boolean closeObjectOnLeak = true;
 
     // --- Adaptive refill fields ---
     static final int SAMPLE_COUNT = 12;
@@ -163,27 +183,30 @@ public class ObjectPool<T> extends Disposable {
     }
 
     void validNow() {
+        long localIdleTimeout = idleTimeout;
+        long localLeakThreshold = leakDetectionThreshold;
+
         int size = size();
         int checked = 0;
         int maxCheck = Math.max(1, Math.min(size, 8));
         for (Map.Entry<IdentityWrapper<T>, ObjectConf<T>> p : conf.entrySet()) {
             IdentityWrapper<T> wrapper = p.getKey();
             ObjectConf<T> c = p.getValue();
-            synchronized (c) {
-                if (c.retired) continue;
-                if (c.isBorrowed()) {
-                    if (c.isLeaked(leakDetectionThreshold)) {
-                        TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
-                                String.format("Pool %s owned Object '%s' leaked.\n%s", this, wrapper, Reflects.getStackTrace(c.t)));
-                        doRetire(wrapper, 4);
-                    }
-                    continue;
+            if (c.isRetired()) continue;
+            if (c.isBorrowed()) {
+                if (c.isLeaked(localLeakThreshold)) {
+                    TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
+                            String.format("Pool %s owned Object '%s' leaked.\n%s", this, wrapper, Reflects.getStackTrace(c.t)));
+                    doRetire(wrapper, 4);
                 }
-                
-                if (checked >= maxCheck) continue;
-                checked++;
-                if (!validateHandler.test(wrapper.instance)
-                        || (size > minSize && c.isIdleTimeout(idleTimeout))) {
+                continue;
+            }
+
+            if (checked >= maxCheck) continue;
+            checked++;
+            if (!validateHandler.test(wrapper.instance)
+                    || (size > minSize && c.isIdleTimeout(localIdleTimeout))) {
+                if (c.casState(ObjectConf.IDLE, ObjectConf.RETIRED)) {
                     doRetire(wrapper, 3);
                     size--;
                 }
@@ -213,7 +236,7 @@ public class ObjectPool<T> extends Disposable {
     boolean doRetire(IdentityWrapper<T> wrapper, int action) {
         ObjectConf<T> c = conf.remove(wrapper);
         if (c != null) {
-            c.retired = true;
+            c.state.set(ObjectConf.RETIRED);
             // O(1) ignore removal from stack, doPoll will skip retired
             totalCount.decrementAndGet();
 
@@ -251,7 +274,9 @@ public class ObjectPool<T> extends Disposable {
             if (activateHandler != null) {
                 activateHandler.accept(wrapper.instance);
             }
-            c.setBorrowed(true);
+            c.state.set(ObjectConf.BORROWED);
+            c.t = Thread.currentThread();
+            c.stateTime = System.nanoTime();
             return wrapper;
         } catch (Throwable e) {
             if (wrapper != null) {
@@ -266,43 +291,81 @@ public class ObjectPool<T> extends Disposable {
     }
 
     IdentityWrapper<T> doPoll(long timeout) throws InterruptedException {
-        IdentityWrapper<T> wrapper;
-        while ((wrapper = stack.pollLast(timeout, TimeUnit.MILLISECONDS)) != null) {
-            ObjectConf<T> c = conf.get(wrapper);
-            if (c == null || c.retired) {
-                // 被其他线程 retire 掉了，跳过
-                timeout = 0;
-                continue;
+        if (timeout <= 0) {
+            IdentityWrapper<T> wrapper = stack.pollLast();
+            if (wrapper == null) {
+                return null;
             }
-            synchronized (c) {
-                if (c.isBorrowed() || c.retired) {
-                    // 并发不一致，跳过它
-                    timeout = 0;
-                    continue;
-                }
+            ObjectConf<T> c = conf.get(wrapper);
+            if (c != null && !c.isRetired() && c.casState(ObjectConf.IDLE, ObjectConf.BORROWED)) {
                 if (activateHandler != null) {
                     try {
                         activateHandler.accept(wrapper.instance);
                     } catch (Throwable e) {
-                        // 激活失败 —— 退役该对象并继续
                         doRetire(wrapper, 0);
                         log.warn("doPoll error", e);
-                        timeout = 0;
-                        continue;
+                        return null;
                     }
                 }
-                c.setBorrowed(true);
                 return wrapper;
             }
+            return null;
+        }
+
+        long nanos = TimeUnit.MILLISECONDS.toNanos(timeout);
+        long start = System.nanoTime();
+        IdentityWrapper<T> wrapper;
+        while (nanos > 0 && (wrapper = stack.pollLast(nanos, TimeUnit.NANOSECONDS)) != null) {
+            ObjectConf<T> c = conf.get(wrapper);
+            if (c != null && !c.isRetired() && c.casState(ObjectConf.IDLE, ObjectConf.BORROWED)) {
+                if (activateHandler != null) {
+                    try {
+                        activateHandler.accept(wrapper.instance);
+                    } catch (Throwable e) {
+                        doRetire(wrapper, 0);
+                        log.warn("doPoll error", e);
+                        return null;
+                    }
+                }
+                return wrapper;
+            }
+            long elapsed = System.nanoTime() - start;
+            nanos -= elapsed;
+            start = System.nanoTime();
         }
         return null;
     }
 
     public T borrow() throws TimeoutException {
+        // L1: ThreadLocal Cache
+        IdentityWrapper<T> wrapper = threadLocalCache.get();
+        if (wrapper != null) {
+            ObjectConf<T> c = conf.get(wrapper);
+            if (c != null && c.casState(ObjectConf.IDLE, ObjectConf.BORROWED)) {
+                threadLocalCache.set(null); // Clear from L1
+                if (validateHandler.test(wrapper.instance)) {
+                    if (activateHandler != null) {
+                        try {
+                            activateHandler.accept(wrapper.instance);
+                        } catch (Throwable e) {
+                            doRetire(wrapper, 0);
+                            log.warn("borrow L1 error", e);
+                            throw e;
+                        }
+                    }
+                    borrowAccumulator.increment();
+                    return wrapper.instance;
+                }
+                doRetire(wrapper, 1);
+            } else {
+                threadLocalCache.set(null); // Retired or borrowed by others
+            }
+        }
+
         Throwable lastError = null;
         long beginNanos = System.nanoTime();
-        long remainingTime = borrowTimeout;
-        IdentityWrapper<T> wrapper = null;
+        long localBorrowTimeout = borrowTimeout;
+        long remainingTime = localBorrowTimeout;
         while (remainingTime > 0) {
             try {
                 // Try to poll first (fast path) with timeout 0
@@ -339,7 +402,7 @@ public class ObjectPool<T> extends Disposable {
                 lastError = e;
             }
             long elapsedMs = (System.nanoTime() - beginNanos) / Constants.NANO_TO_MILLIS;
-            remainingTime = borrowTimeout - elapsedMs;
+            remainingTime = localBorrowTimeout - elapsedMs;
         }
         String msg = "borrow timeout";
         if (lastError != null) {
@@ -378,15 +441,18 @@ public class ObjectPool<T> extends Disposable {
             // doRetire by other thread
             return;
         }
-        synchronized (c) {
-            if (!c.isBorrowed()) {
-                throw new InvalidException("Object '{}' has already in this pool", wrapper);
-            }
-            if (!stack.offer(wrapper)) {
-                doRetire(wrapper, 0);
+        if (c.casState(ObjectConf.BORROWED, ObjectConf.IDLE)) {
+            // L1: Try ThreadLocal Cache if no one waiting on stack
+            if (!stack.hasWaiters() && threadLocalCache.get() == null) {
+                threadLocalCache.set(wrapper);
                 return;
             }
-            c.setBorrowed(false);
+
+            if (!stack.offer(wrapper)) {
+                doRetire(wrapper, 0);
+            }
+        } else {
+            throw new InvalidException("Object '{}' has already in this pool", wrapper);
         }
     }
 }

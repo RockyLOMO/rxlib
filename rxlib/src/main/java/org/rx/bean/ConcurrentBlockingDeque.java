@@ -390,4 +390,8 @@ public class ConcurrentBlockingDeque<E> extends AbstractQueue<E>
         }
         return n;
     }
+
+    public boolean hasWaiters() {
+        return items.hasQueuedThreads();
+    }
 }
