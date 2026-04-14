@@ -1,66 +1,118 @@
 ---
-name: Socks5 TCP Warm Pool (Revised)
-overview: 仅对 SOCKS5 TCP CONNECT 上游做认证预热；移除 UDP session 全局池化方案。新的实现不复用 ProxyHandler 生命周期，而是引入独立 auth-only handler，并保持现有 upstream 初始化、SocksContext 绑定、cipher/fake-endpoint 逻辑一致。
+name: Socks5 Session Pool (TCP Warm + UDP Lease via RPC)
+overview: TCP 继续使用 auth-only warm pool；UDP 改为 lease pool，不复用绑定到本地 relay channel 的 session，而是复用独立的远端 UDP_ASSOCIATE lease，并通过 SocksRpcContract 在借出时远端清理/重绑定 relay 状态。适用 docs/test/socksServer.md 的场景2、udp2raw 场景、场景4；无 RPC facade 时 UDP 自动回退现有逐次握手。
 todos:
   - id: tcp-warm-handler
-    content: "新增 auth-only SOCKS5 warm handler/state machine，完成到上游 SOCKS5 的 TCP connect + init + password auth，并提供单次 CONNECT future"
+    content: "新增 TCP auth-only warm handler/state machine，替代直接复用 ProxyHandler 生命周期"
     status: pending
   - id: tcp-warm-pool
-    content: "新增 per pool-key 的 TCP warm pool，后台补齐已认证空闲连接并淘汰失效/过期连接"
+    content: "实现 per pool-key 的 TCP warm pool，并接入 SocksTcpUpstream / Socks5CommandRequestHandler"
     status: pending
-  - id: upstream-refactor
-    content: "拆分 SocksTcpUpstream 的 destination 预处理与 transport 初始化，确保 fake-endpoint/transport handlers 在快慢路径一致执行"
+  - id: udp-lease-api
+    content: "新增 Socks5Client UDP lease API：只建立 TCP control + UDP_ASSOCIATE，不绑定本地 UDP channel"
     status: pending
-  - id: tcp-integrate
-    content: "改造 Socks5CommandRequestHandler：优先借 warm channel，但继续走统一的 SocksContext.markCtx / Backpressure / relay 时序"
+  - id: udp-lease-pool
+    content: "实现 per pool-key 的 UDP lease ObjectPool，并在 SocksUdpUpstream 中优先 borrow/create"
     status: pending
-  - id: udp-scope
-    content: "删除 UDP 全局池化方案，保留当前每个 relay channel 持有一个上游 UDP session 的模型，并补文档/测试锁定该约束"
+  - id: udp-rpc-control
+    content: "扩展 SocksRpcContract 与服务端 relay registry，支持按 relayPort 远端 prepare/reset UDP relay"
+    status: pending
+  - id: udp-relay-hardening
+    content: "为 SocksUdpRelayHandler / Udp2rawHandler 增加 pooled-relay 的 expected-client lock 与 stale-packet drop"
     status: pending
   - id: verify
-    content: "编译验证 + TCP/UDP 集成测试"
+    content: "补充场景2 / udp2raw / 场景4 的复用回归与编译验证"
     status: pending
 isProject: false
 ---
 
-# Socks5 TCP Warm Pool（修订版）
+# Socks5 Session Pool（修订版 v2）
 
 ## Summary
-- 只优化 `SocksTcpUpstream` 的上游 SOCKS5 `CONNECT`。目标是把“到上游代理的 TCP connect + init + password auth”从请求路径移到后台预热。
-- 不实现 UDP session 全局池；保留当前“一条下游 UDP relay channel 对应一条上游 UDP_ASSOCIATE session”的模型，避免远端 relay 状态泄漏。
-- 现有 `Socks5ClientHandler` 继续用于普通慢路径和 `Socks5Client`；新增独立 auth-only handler 处理 warm channel，避免复用 `ProxyHandler` 的单次 connect 生命周期。
+- TCP 方案沿用上一版修订思路：只预热到上游 SOCKS5 的物理 connect + auth，不复用 `ProxyHandler` 的单次 connect 生命周期。
+- UDP 改为“lease 池”而不是“session 池”：池里对象只持有远端 `UDP_ASSOCIATE` 的 TCP control 与 relay 地址，不绑定当前本地 relay channel。
+- 远端状态清理由 `SocksRpcContract` 控制面完成；RPC 是可选能力。
+  有 facade 时启用安全复用；没有 facade 时 `SocksUdpUpstream` 自动回退当前逐次 `udpAssociateAsync(channel)` 慢路径。
+- 目标覆盖 `docs/test/socksServer.md` 的场景2、udp2raw 场景、场景4。
 
-## Key Changes
-### TCP Warm Handler And Pool
-- 新增包内类 `Socks5WarmupHandler`，位于 `org.rx.net.socks`，且不继承 `ProxyHandler`。它只负责两段握手：先完成到上游 proxy 的 TCP connect + SOCKS5 init/auth，再在 `READY` 状态下接受一次 `connect(UnresolvedEndpoint dst)` 发送 `CONNECT` 命令。
-- `Socks5WarmupHandler` 维护显式状态机：`INIT -> AUTHING -> READY -> CONNECTING -> CONSUMED/FAILED`。`READY` 只允许进入一次 `CONNECTING`；一旦命中 `CONNECT`，该 channel 永不回池。
-- 超时语义拆成两段并固定实现：warm 阶段使用 `SocketConfig.connectTimeoutMillis` 约束物理 connect + auth；auth 成功后必须取消该 timer；后续 `connect(dst)` 再启动一次同值 command timer，避免 ready channel 被旧 timer 误杀。
-- 新增 `Socks5TcpWarmPool` 与 `Socks5WarmPoolKey`。pool key 固定为 `AuthenticEndpoint + reactorName + connectTimeoutMillis + transportFlags + cipher + cipherKeyHash`，避免同 endpoint 但不同传输配置误复用。
-- `Socks5TcpWarmPool.borrow()` 必须是非阻塞 `poll`。借不到、借到失活 channel、借到过期 channel 时都立即返回 `null`，调用方直接降级慢路径，不在请求线程里创建新 warm channel。
-- pool 内只缓存 `READY` 且未消费的 channel。后台 refill 只补到 `tcpWarmPoolMinSize`；`maxIdle`、channel inactive、auth 失败、command 失败都会 retire。
-- `SocksConfig` 只新增 TCP 相关字段：`tcpWarmPoolEnabled=false`、`tcpWarmPoolMinSize=2`、`tcpWarmPoolMaxIdleMillis=60000`、`tcpWarmPoolRefillIntervalMillis=1000`。本计划不新增任何 UDP pool 配置项。
+## Public API / Type Changes
+- `SocksRpcContract` 新增：
+  - `boolean prepareUdpRelay(int relayPort, InetSocketAddress clientAddr)`
+  语义固定为：找到指定 relay，清空远端路由状态，并把当前合法发送端锁定为 `clientAddr`；找不到或 relay 已关闭时返回 `false`。
+- `Socks5Client` 新增：
+  - `CompletableFuture<Socks5UdpLease> udpAssociateLeaseAsync()`
+  - `Socks5UdpLease` 仅包含 `Channel tcpControl`、`InetSocketAddress relayAddress`、`int relayPort`，`close()` 只关闭 control channel。
+  - 该 lease API 不创建也不持有本地 UDP channel，请求里的 UDP source 固定走 `0.0.0.0:0`。
+- `SocksConfig` 新增默认关闭的池化配置：
+  - TCP：`tcpWarmPoolEnabled=false`、`tcpWarmPoolMinSize=2`、`tcpWarmPoolMaxIdleMillis=60000`、`tcpWarmPoolRefillIntervalMillis=1000`
+  - UDP：`udpLeasePoolEnabled=false`、`udpLeasePoolMinSize=2`、`udpLeasePoolMaxSize=32`、`udpLeasePoolIdleTimeoutMillis=300000`
+- `SocksTcpUpstream` 新增显式拆分：
+  - `prepareDestination()`
+  - `initTransport(Channel)`
+- `SocksProxyServer` 新增服务端 UDP relay registry，按 relay 本地端口索引 active UDP relay channel。
 
-### Upstream And Connect Flow
-- `SocksTcpUpstream` 拆分职责。新增 `prepareDestination()`，把当前 fake-endpoint / RPC 映射逻辑移到这里，并保证同一个 upstream 实例只执行一次；快慢路径都先调用它，再决定实际 `CONNECT` 目标。
-- `SocksTcpUpstream` 新增 `initTransport(Channel)`，只负责 `Sockets.addTcpClientHandler(...)` 这类 transport handlers。现有 `initChannel(Channel)` 保留给慢路径，但只做 `initTransport(...) + 标准 Socks5ClientHandler`，不再承担 destination 改写。
-- `Socks5CommandRequestHandler` 的 TCP 路径改成统一流程：先 `prepareDestination()`，再尝试 warm borrow，失败后再走慢路径。快慢路径都必须产出一个“SOCKS CONNECT 完成”的 `ChannelPromise`，并用它调用 `SocksContext.markCtx(...)`，不再直接用原始物理 socket connect future。
-- 快路径借到 warm channel 后，直接对该 channel 调用 `warmHandler.connect(preparedDestination)`，把返回的 command promise 作为当前 outbound readiness。若该 promise 失败，只关闭该 borrowed channel，并回退一次慢路径；同一次请求不重复尝试 warm borrow。
-- 慢路径仍然创建新 outbound channel，但由 `Socks5ClientHandler.connectFuture()` 驱动 readiness promise；这样 `SocksTcpFrontendRelayHandler` 的缓冲语义与快路径保持一致，只有 SOCKS CONNECT 成功后才标记 outbound ready。
-- `Socks5CommandRequestHandler` 抽出统一的 `onProxyConnectReady(...)` 逻辑。快慢路径都走这一段完成 `BackpressureHandler` 安装、cipherRoute 后置处理和 `relay(...)`；不允许快路径绕开现有 frontend/backpressure/context 绑定。
-- `onReconnecting` 的语义保持收敛：物理建连失败沿用现有重试；warm 快路径里的 command 失败只降级到一次慢路径，不进入无限递归重试。
+## Implementation Changes
+### TCP Warm Pool
+- 保留上一版的 `Socks5WarmupHandler` 独立状态机：`INIT -> AUTHING -> READY -> CONNECTING -> CONSUMED/FAILED`。
+- `READY` channel 只能消费一次；借出后不归还。
+- `Socks5CommandRequestHandler` 快慢路径统一先执行 `prepareDestination()`，再分别走 warm borrow 或普通建连；两条路径都必须走同一套 `SocksContext.markCtx(...)`、`BackpressureHandler.install(...)`、cipher/fake-endpoint 后置时序。
+- pool key 固定为 `AuthenticEndpoint + reactorName + connectTimeoutMillis + transportFlags + cipher + cipherKeyHash`。
 
-### UDP Scope
-- 删除原方案中的 `Socks5UpstreamPool`、UDP `ObjectPool`、`UdpSessionHolder`、`borrowUdp()/recycleUdp()` 和对应的 `SocksConfig` 参数。
-- `SocksUdpUpstream` 保持当前模型：每个 relay channel 懒加载并缓存一个上游 `Socks5UdpSession`，该 session 生命周期继续绑定 relay channel close。
-- 文档里明确新增一条约束：UDP upstream session 不跨 relay channel 复用，也不跨客户端复用。任何后续 UDP 优化都只能在单个 relay channel 生命周期内做缓存，不能做全局 session 池。
+### UDP Lease Pool
+- 不再池化 `Socks5UdpSession`，也不把 caller-supplied UDP channel 传进 pooled 对象。
+- 新增 `Socks5UdpLeasePool`，底层直接使用 `ObjectPool<Socks5UdpLease>`。
+  - `createHandler`：`new Socks5Client(ep, config).udpAssociateLeaseAsync().get(connectTimeout)`
+  - `validateHandler`：`lease.tcpControl.isActive()`
+  - `borrowTimeout`：沿用 `config.connectTimeoutMillis`
+  - `idleTimeout`：沿用 `udpLeasePoolIdleTimeoutMillis`
+- `SocksUdpUpstream.initChannel(channel)` 改成：
+  - 若 channel 已绑定 holder 且仍有效，直接返回
+  - 若 `udpLeasePoolEnabled && next.getFacade() != null`，先从 pool `borrow()`；borrow 成功后立即调用 `next.getFacade().prepareUdpRelay(lease.relayPort, (InetSocketAddress) channel.localAddress())`
+  - `prepareUdpRelay(...)` 成功才把该 lease 绑定到当前 relay channel；失败则 retire 该 lease，并回退到现有 `udpAssociateAsync(channel)` 慢路径
+  - relay channel close 时：pooled lease 只做 `pool.recycle(lease)`；非 pooled 慢路径仍按现有方式关闭 session/control
+- `SocksUdpUpstream.getUdpRelayAddress(channel)` 继续作为唯一出口；relay handler 不感知 pooled 或非 pooled，只按是否存在 relay address 决定是否保留 SOCKS5 header。
+
+### Remote Relay Reset Via RPC
+- `SocksProxyServer` 在 `UDP_ASSOCIATE` 成功 bind 后，把新建 relay channel 注册到 `udpRelayRegistry[relayPort]`；close 时移除。
+- `Main.prepareUdpRelay(...)` 直接委托给 `svrSide`。
+- `SocksProxyServer.prepareUdpRelay(relayPort, clientAddr)` 的行为固定为：
+  - 从 registry 取出 relay channel；不存在或不活跃返回 `false`
+  - 清空该 relay 上的 `ctxMap` / `routeMap`
+  - 把 `ATTR_CLIENT_ADDR` 重置为 `clientAddr`
+  - 设置 `ATTR_CLIENT_LOCKED=true`
+  - 不关闭 relay，不新建 channel，不做路由
+- 该 prepare 逻辑必须同时支持 `SocksUdpRelayHandler` 和 `Udp2rawHandler`，通过共享 helper 或统一 attribute key 处理，不拆两套 RPC 接口。
+
+### Relay Hardening For Safe Reuse
+- 在 `SocksUdpRelayHandler` 和 `Udp2rawHandler` 增加 pooled-relay 约束：
+  - 当 `ATTR_CLIENT_LOCKED=true` 时，只有 `sender == ATTR_CLIENT_ADDR` 的数据包才允许走“client -> upstream”路径
+  - 不匹配的 sender 且又不在 `ctxMap` 中时，直接丢弃，不再按新客户端自动接管
+- 非 pooled 慢路径保持旧行为：
+  - `ATTR_CLIENT_LOCKED=false`
+  - 第一包仍可把 `ATTR_CLIENT_ADDR` 从 TCP peer 修正为真实 UDP sender
+- 这条约束是 UDP 复用正确性的核心，目的是在 lease 复用前后丢掉旧 borrower 的迟到包，避免 `ctxMap/routeMap` 被绕过 reset 后重新污染。
 
 ## Test Plan
-- 为 `Socks5WarmupHandler` 增加单测，覆盖 no-auth、password-auth、auth timeout、command timeout、auth 成功后 idle 不会被旧 timer 关闭、以及 `READY` channel 只能消费一次。
-- 为 `Socks5CommandRequestHandler` / `SocksTcpUpstream` 增加集成测试，覆盖 warm pool 命中、pool 为空自动降级、borrow 到坏 channel 自动丢弃、warm command 失败后回退慢路径。
-- 增加一条带 fake-endpoint / `SocksRpcContract` 的 TCP 集成测试，确认 `prepareDestination()` 在快慢路径上行为一致；再加一条带 `TransportFlags.COMPRESS_BOTH` 的链路测试，确认 cipher/backpressure/relay 时序未被破坏。
-- UDP 只做回归与约束测试：现有 chained UDP 用例必须保持通过；新增“两条不同客户端 control session 经 ProxyA -> ProxyB 发同一 UDP 目标”的用例，断言它们不会共享同一个上游 UDP session 状态。
+- TCP：
+  - warm pool 命中、pool 空时创建/降级、坏 channel 自动淘汰
+  - fake-endpoint / `SocksRpcContract.fakeEndpoint` 在快慢路径一致
+  - `TransportFlags.COMPRESS_BOTH` 路径下 `SocksContext.markCtx`、front/backpressure、relay 正常
+- UDP 正常链路：
+  - 场景2：ProxyA -> ProxyB chained UDP，连续两个不同客户端顺序复用同一个 remote relay lease，且访问相同 destination，必须重新触发 B 侧 routing，不得沿用旧 `routeMap`
+  - 场景2：第一个 borrower 关闭后向旧 relay 注入迟到包，第二个 borrower 已 claim 的情况下不得串流
+- UDP udp2raw：
+  - 现有 `socks5UdpRelay_udp2raw_chained_e2e` 保持通过
+  - 新增 sequential reuse 用例，确认 `prepareUdpRelay` 对 `Udp2rawHandler` 同样生效
+- 场景4：
+  - `Shadowsocks -> Socks A -> Socks B -> UDP dest` 回归通过
+  - 有 facade 时可复用 lease；把 facade 置空时自动回退慢路径，功能不变
+- Server-side registry：
+  - relay close 后 `prepareUdpRelay(relayPort, ...)` 返回 `false`
+  - lock 打开后错误 sender 会被丢弃，不会更新 `ATTR_CLIENT_ADDR`
 
-## Assumptions
-- 本修订版故意缩 scope：不做 UDP 全局池化，只做可证明正确的 TCP warm-auth。
-- warm pool 只接入 `SocksTcpUpstream`；`Upstream` 直连、`SocksUdpUpstream`、`Shadowsocks`、`udp2raw` 路径不接入该优化。
-- 默认关闭 `tcpWarmPoolEnabled`；只有显式打开时才启用该特性。
+## Assumptions / Defaults
+- UDP 池化按你刚确认的选择执行为“RPC 可选”：
+  有 `UpstreamSupport.facade` 时启用安全复用；无 facade 不报错，只回退现有逐次握手。
+- UDP recycle 不走额外 RPC；远端状态只在下一次 borrow 时通过 `prepareUdpRelay(...)` 清理并重绑定。
+- 本版不做“跨 endpoint 共享 UDP lease”，pool key 仍按 endpoint + transport config 分池。
+- 所有新池化配置默认关闭；只有显式开启时才改变行为。
