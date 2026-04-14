@@ -1,110 +1,207 @@
 package org.rx.net.socks.upstream;
 
 import io.netty.channel.Channel;
-import lombok.Getter;
+import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.Socks5Client;
+import org.rx.net.socks.Socks5Client.Socks5UdpLease;
 import org.rx.net.socks.Socks5Client.Socks5UdpSession;
+import org.rx.net.socks.Socks5UpstreamPoolManager;
 import org.rx.net.socks.SocksConfig;
+import org.rx.net.socks.SocksRpcContract;
+import org.rx.net.socks.UdpLeasePoolKey;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetSocketAddress;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Extends.tryClose;
 
-/**
- * UDP upstream that chains through a remote SOCKS5 server via {@link Socks5Client} UDP_ASSOCIATE.
- *
- * <p>When the local relay handler receives a UDP packet destined for a remote target,
- * this upstream establishes (or reuses) a {@link Socks5UdpSession} with the remote SOCKS5
- * server.  The relay handler then sends the SOCKS5-encoded UDP datagram to the
- * session's relay address, and the remote server forwards it to the actual destination.
- *
- * <p>Session lifecycle is tied to the per-client relay channel: establishing on the first
- * packet and tearing down when the relay channel closes.
- *
- * <h3>Flow</h3>
- * <pre>
- *   App ──UDP──▶ [local relay] ──SOCKS5 UDP──▶ [remote SOCKS5 relay] ──UDP──▶ destination
- *   App ◀──UDP── [local relay] ◀──SOCKS5 UDP── [remote SOCKS5 relay] ◀──UDP── destination
- * </pre>
- */
 @Slf4j
 public class SocksUdpUpstream extends Upstream {
+    private static final AttributeKey<SessionHolder> ATTR_UDP_SESSION =
+            AttributeKey.valueOf("socksUdpUpstreamSession");
 
     private final UpstreamSupport next;
-
-    private static final io.netty.util.AttributeKey<SessionHolder> ATTR_UDP_SESSION =
-            io.netty.util.AttributeKey.valueOf("socksUdpUpstreamSession");
 
     public SocksUdpUpstream(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
         this.next = next;
     }
 
-    public java.net.InetSocketAddress getUdpRelayAddress(Channel channel) {
+    public AuthenticEndpoint getServerEndpoint() {
+        return next.getEndpoint();
+    }
+
+    public UdpLeasePoolKey poolKey() {
+        return UdpLeasePoolKey.from(next.getEndpoint(), config, config.getReactorName());
+    }
+
+    public long resolveRelayIdleHintMillis() {
+        Map<String, String> parameters = next.getEndpoint().getParameters();
+        if (parameters == null) {
+            return 0L;
+        }
+        String value = parameters.get("udpRelayIdleSeconds");
+        if (value == null) {
+            return 0L;
+        }
+        try {
+            long seconds = Long.parseLong(value);
+            return seconds <= 0 ? 0L : Math.max(0L, seconds * 1000L - 5000L);
+        } catch (NumberFormatException e) {
+            log.warn("invalid udpRelayIdleSeconds {} for {}", value, next.getEndpoint());
+            return 0L;
+        }
+    }
+
+    public InetSocketAddress getUdpRelayAddress(Channel channel) {
         SessionHolder holder = channel.attr(ATTR_UDP_SESSION).get();
         return holder != null ? holder.relayAddr : null;
     }
 
-    /**
-     * Lazily establishes a {@link Socks5UdpSession} with the remote SOCKS5 server on the
-     * first packet, then caches the session on the relay channel for subsequent packets.
-     *
-     * <p>Once the session is established, it is stored in the channel's attributes.
-     */
     @Override
     public void initChannel(Channel channel) {
-        // Fast path: reuse existing session cached on the relay channel
         SessionHolder holder = channel.attr(ATTR_UDP_SESSION).get();
-        if (holder != null && !holder.session.isClosed()) {
+        if (holder != null && holder.isValid()) {
             return;
         }
 
-        // Slow path: establish new UDP_ASSOCIATE session with remote SOCKS5 server
+        if (holder != null) {
+            channel.attr(ATTR_UDP_SESSION).set(null);
+        }
+
+        SocksConfig socksConfig = (SocksConfig) config;
+        SocksRpcContract facade = next.getFacade();
+        Socks5UpstreamPoolManager poolManager = Socks5UpstreamPoolManager.INSTANCE;
+        if (socksConfig.isUdpLeasePoolEnabled() && facade != null && !poolManager.isUdpBreakerOpen(poolKey())) {
+            Socks5UpstreamPoolManager.UdpLeasePool pool = poolManager.udpPool(this);
+            if (pool != null) {
+                Socks5UdpLease lease = pool.borrow();
+                if (lease != null) {
+                    if (claimRelay(channel, lease, facade, poolManager, socksConfig)) {
+                        bindHolder(channel, SessionHolder.pooled(pool, lease));
+                        return;
+                    }
+                    tryClose(lease);
+                }
+            }
+        }
+
+        initSlowPath(channel);
+    }
+
+    private boolean claimRelay(Channel channel, Socks5UdpLease lease, SocksRpcContract facade,
+                               Socks5UpstreamPoolManager poolManager, SocksConfig socksConfig) {
+        int timeout = Math.min(500, Math.max(100, socksConfig.getConnectTimeoutMillis() / 4));
+        try {
+            InetSocketAddress clientAddr = (InetSocketAddress) channel.localAddress();
+            boolean ok = Tasks.runAsync(() -> facade.claimUdpRelay(lease.getRelayPort(), clientAddr))
+                    .get(timeout, TimeUnit.MILLISECONDS);
+            if (ok) {
+                poolManager.onUdpRpcSuccess(poolKey());
+                return true;
+            }
+            poolManager.onUdpRpcFailure(poolKey(), socksConfig, "claim", null);
+        } catch (Exception e) {
+            poolManager.onUdpRpcFailure(poolKey(), socksConfig, "claim", e);
+        }
+        return false;
+    }
+
+    private void initSlowPath(Channel channel) {
         AuthenticEndpoint svrEp = next.getEndpoint();
         Socks5Client client = new Socks5Client(svrEp, config);
         try {
             long timeout = config != null && config.getConnectTimeoutMillis() > 0
                     ? config.getConnectTimeoutMillis() : 10000L;
-            // Pass the relay channel directly so Session.udpRelay is never null.
-            Socks5UdpSession session = client.udpAssociateAsync(channel)
-                    .get(timeout, TimeUnit.MILLISECONDS);
-
-            InetSocketAddress relayAddr = session.getRelayAddress();
-
-            // Update channel state
-            holder = new SessionHolder(client, session, relayAddr);
-            channel.attr(ATTR_UDP_SESSION).set(holder);
-            log.debug("UDP upstream session established: {} -> relay={}", svrEp, relayAddr);
-
-            final SessionHolder finalHolder = holder;
-            // Tear down session when relay channel closes (RFC 1928: closing TCP control = end relay)
-            channel.closeFuture().addListener(f -> {
-                log.debug("Relay channel closed, closing UDP upstream session to {}", svrEp);
-                tryClose(finalHolder.session);
-                tryClose(finalHolder.client);
-                channel.attr(ATTR_UDP_SESSION).set(null);
-            });
+            Socks5UdpSession session = client.udpAssociateAsync(channel).get(timeout, TimeUnit.MILLISECONDS);
+            bindHolder(channel, SessionHolder.session(client, session));
         } catch (Exception e) {
             log.error("Failed to establish UDP upstream session with {}", svrEp, e);
             tryClose(client);
         }
     }
 
+    private void bindHolder(Channel channel, SessionHolder holder) {
+        channel.attr(ATTR_UDP_SESSION).set(holder);
+        final SessionHolder finalHolder = holder;
+        channel.closeFuture().addListener(f -> {
+            SessionHolder active = channel.attr(ATTR_UDP_SESSION).getAndSet(null);
+            if (active != finalHolder) {
+                return;
+            }
+            if (!active.pooled) {
+                tryClose(active.session);
+                tryClose(active.client);
+                return;
+            }
+
+            SocksRpcContract facade = next.getFacade();
+            if (facade == null) {
+                tryClose(active.lease);
+                return;
+            }
+
+            Tasks.runAsync(() -> {
+                boolean ok = false;
+                try {
+                    ok = facade.resetUdpRelay(active.lease.getRelayPort());
+                    if (ok) {
+                        Socks5UpstreamPoolManager.INSTANCE.onUdpRpcSuccess(poolKey());
+                    } else {
+                        Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", null);
+                    }
+                } catch (Throwable e) {
+                    Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", e);
+                }
+
+                Socks5UpstreamPoolManager.UdpLeasePool pool = active.pool;
+                if (ok && pool != null && !pool.isClosed()) {
+                    pool.recycle(active.lease);
+                    return;
+                }
+                tryClose(active.lease);
+            });
+        });
+    }
+
     static final class SessionHolder {
         final Socks5Client client;
         final Socks5UdpSession session;
+        final Socks5UdpLease lease;
+        final Socks5UpstreamPoolManager.UdpLeasePool pool;
         final InetSocketAddress relayAddr;
+        final boolean pooled;
 
-        SessionHolder(Socks5Client client, Socks5UdpSession session, InetSocketAddress relayAddr) {
+        static SessionHolder session(Socks5Client client, Socks5UdpSession session) {
+            return new SessionHolder(client, session, null, null, session.getRelayAddress(), false);
+        }
+
+        static SessionHolder pooled(Socks5UpstreamPoolManager.UdpLeasePool pool, Socks5UdpLease lease) {
+            return new SessionHolder(null, null, lease, pool, lease.getRelayAddress(), true);
+        }
+
+        SessionHolder(Socks5Client client, Socks5UdpSession session, Socks5UdpLease lease,
+                      Socks5UpstreamPoolManager.UdpLeasePool pool, InetSocketAddress relayAddr, boolean pooled) {
             this.client = client;
             this.session = session;
+            this.lease = lease;
+            this.pool = pool;
             this.relayAddr = relayAddr;
+            this.pooled = pooled;
+        }
+
+        boolean isValid() {
+            if (!pooled) {
+                return session != null && !session.isClosed();
+            }
+            return lease != null && !lease.isClosed() && lease.getTcpControl().isActive();
         }
     }
 }

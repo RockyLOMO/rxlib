@@ -71,6 +71,11 @@ public final class SocksContext extends EventArgs {
         outCh.attr(SOCKS_CTX).set(sc);
     }
 
+    public static void markCtx(Channel inbound, Channel outbound, SocksContext sc) {
+        markCtx(inbound, outbound.newSucceededFuture(), sc);
+        sc.outboundActive = true;
+    }
+
     public static SocksContext ctx(Channel channel) {
         return ctx(channel, true);
     }

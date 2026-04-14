@@ -110,7 +110,12 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
         // Confirm / update the client address on first real packet
         InetSocketAddress clientAddr = relay.attr(ATTR_CLIENT_ADDR).get();
-        if (clientAddr == null || !clientAddr.equals(sender)) {
+        boolean locked = Boolean.TRUE.equals(relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).get());
+        if (locked) {
+            if (clientAddr == null || !clientAddr.equals(sender)) {
+                return;
+            }
+        } else if (clientAddr == null || !clientAddr.equals(sender)) {
             relay.attr(ATTR_CLIENT_ADDR).set(sender);
         }
 

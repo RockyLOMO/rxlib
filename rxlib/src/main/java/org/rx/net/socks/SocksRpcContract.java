@@ -9,6 +9,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 
 import java.math.BigInteger;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -28,6 +29,14 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
     void fakeEndpoint(BigInteger hash, String realEndpoint);
 
     void addWhiteList(InetAddress endpoint);
+
+    default boolean resetUdpRelay(int relayPort) {
+        return false;
+    }
+
+    default boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
+        return false;
+    }
 
     @Override
     default void close() {

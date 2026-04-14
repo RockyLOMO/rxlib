@@ -237,6 +237,16 @@ public final class Main implements SocksRpcContract {
                     public void addWhiteList(InetAddress endpoint) {
                         facade.addWhiteList(endpoint);
                     }
+
+                    @Override
+                    public boolean resetUdpRelay(int relayPort) {
+                        return facade.resetUdpRelay(relayPort);
+                    }
+
+                    @Override
+                    public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
+                        return facade.claimUdpRelay(relayPort, clientAddr);
+                    }
                 });
                 socksServers.add(us, weight);
                 dnsInterceptors.add(us.getFacade());
@@ -254,9 +264,11 @@ public final class Main implements SocksRpcContract {
             udp2rawSocksServers.removeAll(oldUdp2rawSvrs);
             dnsInterceptors.removeAll(oldDnss);
             for (UpstreamSupport support : oldSvrs) {
+                Socks5UpstreamPoolManager.INSTANCE.closeEndpoint(support.getEndpoint());
                 tryClose(support.getFacade());
             }
             for (UpstreamSupport support : oldUdp2rawSvrs) {
+                Socks5UpstreamPoolManager.INSTANCE.closeEndpoint(support.getEndpoint());
                 tryClose(support.getFacade());
             }
 
@@ -685,6 +697,16 @@ public final class Main implements SocksRpcContract {
     @Override
     public void addWhiteList(InetAddress endpoint) {
         svrSide.getConfig().getWhiteList().add(endpoint);
+    }
+
+    @Override
+    public boolean resetUdpRelay(int relayPort) {
+        return svrSide.resetUdpRelay(relayPort);
+    }
+
+    @Override
+    public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
+        return svrSide.claimUdpRelay(relayPort, clientAddr);
     }
 
     @SneakyThrows
