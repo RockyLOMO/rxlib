@@ -1,128 +1,76 @@
-# RXlib Agent Guide
+﻿# RXlib 项目 AGENTS 规范（项目级）
 
-## Project Overview
-**RXlib** (℞lib) is a comprehensive Java utility library (v2.21.11-SNAPSHOT) providing core functionality for distributed systems, networking, and concurrency. It's a multi-module Maven project with two active modules: `rxlib` (core library) and `rxlib-x` (extended features).
+## 1. 项目定位与模式
+- 当前项目：`rxlib`
+- 模式结论：**高性能模式（Netty 底层网络编程）**
+- 适用范围：涉及网络协议、长连接、传输层、编解码、连接管理、多线程并发模型的所有代码。
 
-Key capabilities:
-- **Dynamic thread pool** with optimal thread sizing (CPU-aware)
-- **Network protocols**: SOCKS5 proxy, HTTP server/client, DNS server/client, RPC (Remoting), UDP
-- **Distributed**: ID generation, entity database with sharding, name server
-- **Data structures**: KV store (WAL+MMAP), hybrid streams, caching (Caffeine)
-- **Cryptography**: Cipher support, SSL/TLS via Netty
-- **Application server**: `Main.java` is a SOCKS5 proxy + shadow socks application
+## 2. 强制技术基线
+- Java 版本：**严格 Java 8**。
+- 网络框架：优先原生 Netty 能力，避免引入 Spring 风格封装到性能敏感路径。
+- 性能目标：零分配优先、低延迟优先、吞吐优先。
 
-## Build & Test
-```bash
-# Maven builds both modules; skip tests by default (-Dmaven.test.skip=true in root pom.xml)
-mvn clean install                    # Builds rxlib + rxlib-x
-mvn -pl rxlib test                   # Run tests for core module only
-mvn -pl rxlib -Dtest=ThreadPoolTest  # Run specific test
-```
+## 3. 代码与性能约束（高性能模式）
 
-Tests use **JUnit 5** with `@Test` annotations. Base class `AbstractTester` provides utilities: `invoke()` for sync perf testing, `invokeAsync()` for concurrent testing. Output saved to `./target/`.
+### 3.1 内存与对象分配
+- 热点路径禁止频繁 `new` 对象。
+- 优先 `PooledByteBufAllocator`、Direct Buffer、零拷贝。
+- `ByteBuf` 必须遵守引用计数语义，确保成对释放（必要时使用 `ReferenceCountUtil.release()`）。
+- 禁止在高频路径构造临时字符串、正则对象、反射调用。
 
-## Critical Architecture Patterns
+### 3.2 并发与线程模型
+- 优先使用 `EventLoop` 线程亲和性，避免无意义线程切换。
+- I/O 线程不得执行阻塞逻辑（阻塞 I/O、长计算、阻塞锁等待）。
+- 业务线程池与 I/O 线程池职责分离，避免相互抢占。
+- 降低锁竞争，优先无锁或低锁开销结构。
 
-### 1. **Thread Pool & Task Execution** (`Tasks`, `ThreadPool`, `RunFlag`)
-- **Entry point**: `Tasks.pool()` returns singleton `ThreadPool` instance
-- **Execution modes** (flags):
-  - `SINGLE`: Skip execution if taskId already running (one active per taskId)
-  - `SYNCHRONIZED`: Queue & wait if taskId already running
-  - `TRANSFER`: Block caller until executed or queued
-  - `PRIORITY`: Create new thread if pool/queue full
-  - `THREAD_TRACE`: Enable async tracing (supports Timer, CompletableFuture)
-  - `INHERIT_THREAD_LOCALS`: Child inherits parent's FastThreadLocal
-  
-```java
-Tasks.pool().run(() -> { /*work*/ }, taskId, RunFlag.SINGLE.flags());
-Tasks.schedulePeriod(action, delayMillis);  // Periodic execution
-```
+### 3.3 协议与编解码
+- 自定义协议解析必须保持浅调用栈、低分支开销、低对象分配。
+- 性能敏感循环避免过度抽象和高频 Lambda。
+- 优先基本类型集合（例如 fastutil）而非装箱集合。
 
-### 2. **Configuration & Watchers** (`YamlConfiguration`, `RSSConf`)
-- Config files are watched for changes; listeners notified via `onChanged` event
-- Example: `new YamlConfiguration("conf.yml").enableWatch()` in `Main.launchClient()`
-- Configs can be read as POJOs: `.readAs(RSSConf.class)`
-- RSSConf = "RSS Configuration" (app-specific SOCKS server config)
+### 3.4 DNS 与网络策略
+- 避免系统阻塞式 DNS 解析（如 `InetAddress.getByName()`）进入关键链路。
+- 优先使用 Netty DNS 组件（如 `DnsNameResolver`）或远程解析策略，降低本地污染风险。
 
-### 3. **Networking: RPC & Proxying**
-- **Remoting**: Lightweight object RPC over TCP/RUDP
-  - `Remoting.createFacade(Interface.class, RpcClientConfig)` = client proxy
-  - `Remoting.register(impl, RpcServerConfig)` = server registration
-  - Config modes: `poolMode()` (conn pool) vs `statefulMode()` (persistent conn)
-  - Transport flags: `TransportFlags.GFW` (obfuscation), `CIPHER_BOTH`, `COMPRESS_BOTH`, `CLIENT_HTTP_PSEUDO_*`
+## 4. 必须覆盖的工程风险
+任何网络改动都必须显式评估并验证以下项：
+- 内存泄漏风险（ByteBuf/Channel/任务对象）
+- 背压处理（读写水位、队列堆积、限流策略）
+- 连接生命周期（建连、保活、半关闭、异常断开、重连）
+- 线程模型合理性（EventLoop 数量、业务池隔离）
+- 协议兼容性与编解码性能
+- 核心监控指标（至少包含堆外内存占用、连接数、吞吐/延迟）
 
-- **SOCKS Proxy**: `SocksProxyServer`, `SocksConfig`, `SocksContext`
-  - Route handlers: `onTcpRoute`, `onUdpRoute` accept `TripleAction<SocksProxyServer, SocksContext>`
-  - Upstream selection via `BiFunc<SocksContext, UpstreamSupport>` (load balancing)
-  - DNS interception via `DnsServer` with custom resolvers
+## 5. 本仓网络代码地图（快速定位）
+核心目录：`rxlib/src/main/java/org/rx/net`
+- `transport`：TCP/UDP 基础传输
+- `socks`：SOCKS5/Shadowsocks/UDP 中继/HTTP Tunnel
+- `rpc`：Remoting RPC
+- `http`：HTTP Server/Client
+- `dns`：DNS Client/Server
+- `support`：路由、域名匹配、上游选择
 
-### 4. **Event-Driven Routing** (`EventPublisher`, `Upstream`)
-- Components use event handlers: `inSvr.onTcpRoute.replace(handler)` (replace previous), `.combine()` (chain)
-- `SocksContext` contains source, destination, upstream route
-- `UnresolvedEndpoint` = host/port pair; resolved at connection time
-- `UpstreamSupport` = weighted server in round-robin list with optional RPC facade
+优先关注类：
+- `TransportFlags`、`Sockets`、`BackpressureHandler`
+- `SocksProxyServer`、`SocksContext`
+- `Remoting`、`RpcClientConfig`、`RpcServerConfig`
+- `TcpServer`、`TcpClient`、`UdpClient`
 
-### 5. **Type Conversion & Reflection** (`Reflects`, `Sys`)
-- `Reflects.convertQuietly(obj, Class, defaultValue)` = safe type conversion
-- `Sys.deepClone(obj)` = deep copy
-- `Sys.mainOptions(args)` = parse `--key=value` arguments
-- `Sys.toJsonString(obj)` = Fastjson2 serialization
-- YAML + JSON parsing built-in
+## 6. 测试与验收要求
+- 小改动：必须补充对应单元测试并验证通过。
+- 大改动：必须补充单元测试 + 集成测试并验证通过。
+- 网络相关优先回归：
+  - `SocksProxyServerIntegrationTest`
+  - `ShadowsocksServerIntegrationTest`
+  - `Socks5ClientIntegrationTest`
+  - `RrpIntegrationTest`
+  - `RemotingTest`
+  - `DnsServerIntegrationTest`
 
-### 6. **Utilities: Collections & Streams**
-- **Linq** = LINQ-to-Objects queries: `Linq.from(list).select(...).where(...).toList()`
-- **RandomList** = weighted random selection (used for server load balancing)
-- **Arrays** = utility methods (e.g., `toList()`, nullsafe operations)
-- **IOStream** = read/write helpers: `readString(stream, charset)`
-
-### 7. **Exception Handling & Tracing**
-- `TraceHandler.INSTANCE` = exception trace store (queryable by date/type)
-- Logged via SLF4J (Logback backend)
-- HTTP endpoint `/traces` exposes exceptions in JSON
-
-## Key Files & Module Organization
-
-```
-rxlib/src/main/java/org/rx/
-├── core/          # ThreadPool, Tasks, Reflects, Sys, Linq, EventBus, Cache, IOC
-├── bean/          # DTOs: DateTime, Tuple, RandomList, etc.
-├── net/
-│   ├── rpc/       # Remoting, RpcClientConfig, RpcServerConfig
-│   ├── http/      # HttpServer, HttpClient, RestClient
-│   ├── dns/       # DnsServer, DnsClient
-│   ├── socks/     # SocksProxyServer, SocksConfig, SocksContext, ShadowsocksServer
-│   └── transport/ # TcpClientConfig, TcpServerConfig, UdpClient
-├── io/            # IOStream, Files, HybridStream
-├── codec/         # CodecUtil (hash, cipher, codec)
-└── util/          # Strings, Numbers, functional interfaces (Action, Func, etc.)
-
-Main.java = Executable SOCKS proxy app (see launchClient, launchServer)
-```
-
-## Development Practices
-
-1. **Lombok**: Use `@Slf4j`, `@Getter/@Setter`, `@RequiredArgsConstructor`, `@SneakyThrows`
-2. **Functional patterns**: Interfaces like `Action`, `BiFunc<T, R>`, `TripleAction<T, U, V>`
-3. **Disposable pattern**: Classes extend `Disposable` for resource cleanup
-4. **Config-driven**: Many features accept config objects (e.g., `TcpClientConfig`, `HttpServer(port, true)`)
-5. **Async-first**: Most I/O uses Netty; callbacks/futures common; avoid blocking
-
-## Build Quirks & Deployment
-- Version: `2.21.11-SNAPSHOT` (published to Maven Central via SOSSRh)
-- Java 1.8+ (bytecode compiled to 1.8)
-- Excludes Netty codecs: haproxy, memcache, mqtt, redis, stomp (reduce JAR size)
-- GPG signing enabled for releases (configure `~/.m2/settings.xml` with `ossrh` credentials)
-- Modules `agent` and `daemon` are disabled in parent `<modules>` but still present
-
-## Testing Patterns
-- Perf benchmarks use JMH (`RxBenchmark.java`)
-- Integration tests often start servers on dynamic ports; see `SocksProxyServerIntegrationTest`
-- Test utilities in `AbstractTester`: `path()` for file output, `invoke()`/`invokeAsync()` for metrics
-- Use `ResetEventWait` for synchronization in async tests
-
-## Common Gotchas
-- **FastThreadLocal**: Used extensively; child threads don't inherit unless `INHERIT_THREAD_LOCALS` flag set
-- **Config watching**: Changes detected asynchronously; listeners run in event thread
-- **Port allocation**: App uses `port` for SOCKS, `port+1` for RPC server (hardcoded in `Main`)
-- **Cipher mode detection**: Automatic via `TransportFlags`; requires correct flag combo (client ↔ server must match)
-
+## 7. 提交前检查清单
+- 是否引入热点路径对象分配。
+- 是否存在 ByteBuf/Channel 生命周期泄漏点。
+- 是否出现 I/O 线程阻塞。
+- 客户端/服务端 `TransportFlags` 是否对齐。
+- 是否补充并执行了相应测试。
