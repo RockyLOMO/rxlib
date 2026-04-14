@@ -152,7 +152,7 @@ public class RemotingTest extends AbstractTester {
     @Timeout(60)
     void rpcStatefulImpl() {
         RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(3307));
-        serverConfig.setEventComputeVersion(2);
+        serverConfig.setEventComputeVersion((short) 2);
         UserManagerImpl server = new UserManagerImpl();
         serverHost.put(server, Remoting.register(server, serverConfig));
 
@@ -170,7 +170,7 @@ public class RemotingTest extends AbstractTester {
         }
         assertEquals(18, facade1.computeLevel(17, 1));
 
-        config.setEventVersion(2);
+        config.setEventVersion((short) 2);
         UserManagerImpl facade2 = Remoting.createFacade(UserManagerImpl.class, config);
 
         rpcImplEvent(facade1, "0x00");
