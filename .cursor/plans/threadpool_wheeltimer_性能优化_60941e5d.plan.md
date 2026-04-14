@@ -12,13 +12,13 @@ todos:
     content: 修复 runSerialAsync 正常路径完成竞态：用 compute/CAS 原子协议统一安装与回收
     status: pending
   - id: p0-holder-leak
-    content: 修复 WheelTimer.holder 泄漏：条件删除 remove(id,this)、submit 失败清理、shutdown 清理、PERIOD 重注册守卫
+    content: 修复 WheelTimer.holder 泄漏：cancel 清理、submit 失败清理、shutdown 清理、考虑改实例级别
     status: pending
   - id: p0-holder-atomic
     content: 用 compute 实现 setTimeout 的 SINGLE/REPLACE 原子仲裁，杜绝并发双注册/双活
     status: pending
   - id: p0-shutdown-contract
-    content: shutdown 有序关闭（拒绝新任务+PERIOD停注册+自然收敛）；shutdownNow 激进清理（timer.stop+clear holder）
+    content: shutdown/shutdownNow 清理 holder+timer 并拒绝后续新任务（RejectedExecutionException）
     status: pending
   - id: p0-timer-sync
     content: 缩小 WheelTimer.Task.run() 的 synchronized 范围，避免阻塞时间轮 worker
@@ -32,8 +32,11 @@ todos:
   - id: p1-fixedrate-semantics
     content: 修正 scheduleAtFixedRate 语义（漂移/负delay/重入），然后替代动态代理并优化 Task 复用
     status: pending
+  - id: p1-periodic-exception-contract
+    content: 周期任务异常即终止（suppress subsequent）、periodic get() 阻塞直到取消或异常、返回 Future 统一接入终态
+    status: pending
   - id: p1-cancel-get-contract
-    content: 用 AtomicInteger 状态机（SCHEDULED/RUNNING/COMPLETED/CANCELLED/FAILED）重构 Task 终态，CAS 互斥 run/cancel
+    content: 重构 WheelTimer.Task 终态契约：cancel 唤醒等待者抛 CancellationException、get(timeout) 剩余时间预算
     status: pending
   - id: p2-misc
     content: LinkedList -> ArrayDeque、stackTrace 延迟拼接、padding 清理
@@ -92,7 +95,6 @@ private static final ThreadLocal<InternalThreadLocalMap> SLOW_THREAD_LOCAL_MAP =
 **建议**：
 - 在 `ThreadQueue.remove()` 中同步清理 `taskMap`。
 - 在拒绝策略 handler 中，若 `r` 曾被 `setTask` 写入 `taskMap`，需在入队失败/线程池 shutdown 分支中主动 `taskMap.remove(r)`。
-- **`shutdownNow()` 队列排空后清理**：`ThreadPoolExecutor.shutdownNow()` 会直接从队列 `drainTo` 排空未执行的任务并返回。这些 `AsynchronousCompletionTask` 既不会走 `afterExecute`，也不一定经过 `ThreadQueue.remove()`（`drainTo` 调用的是 `AbstractQueue.drainTo`，不触发自定义的 `remove`）。需要 override `shutdownNow()` 或在其返回后遍历排空的任务列表，逐一 `taskMap.remove(r)` 清理残留映射。
 - 保持 `ConcurrentHashMap` + 明确清理路径，不使用 `WeakHashMap`（非线程安全、不适合热点并发路径）或 GC 驱动方案。
 
 #### 1.4 `runSerialAsync` 正常路径完成竞态（核心缺陷）
@@ -239,35 +241,11 @@ Math.abs(TASK_COUNTER.incrementAndGet() % 100) < threshold
 注意：一次性任务的正常执行异常（`fn.get()` 抛出）**不会**泄漏，因为 `fn.get()` 在 `executor.submit` 的 lambda 内部，异常仍走 `finally { holder.remove(id) }` 路径。
 
 **建议**：
-
-**关键约束：所有 holder 删除操作必须使用条件删除 `holder.remove(id, this)`，禁止按裸 id 删除。** 原因：2.1b 中 REPLACE 路径在 compute 内安装新任务后，会对旧任务调用 `cancel()`。如果旧任务的 `cancel()` 用无条件的 `holder.remove(id)` 删除，会把 compute 刚安装的新任务映射一起删掉，导致 `getFutureById` 失效、周期任务替换失真、后续 cancel 丢失目标。
-
-- `cancel()` 方法中使用 `holder.remove(id, this)` —— 只有当 holder 中当前映射的值仍是自己时才删除。
-- 周期任务 `finally` 中的 `holder.remove(id)` 同样改为 `holder.remove(id, this)`。
-- **PERIOD 重注册守卫（关键不变式）**：已取消或已被 REPLACE 淘汰的 PERIOD 任务，**绝不能**在执行 lambda 的 `finally` 中再次 `newTimeout(this, ...)`。当前实现中重注册由 `continueFlag` 决定，与 `cancelled` 状态和 holder 归属无关。如果旧的 PERIOD 任务正在 executor 中运行时被 cancel 或 REPLACE，它完成后仍会调 `newTimeout` 重注册，形成 holder 中看不见的幽灵周期任务（无法通过 `getFutureById` 定位，无法 cancel）。修复方式：`finally` 中重注册前必须同时满足 `!cancelled` 且 `holder.get(id) == this`（即自己仍是当前代的任务），否则直接退出不重注册。示意：
-
-```java
-future = executor.submit(() -> {
-    boolean doContinue = flags.has(TimeoutFlag.PERIOD);
-    try {
-        return fn.get();
-    } finally {
-        // 状态机对齐：state < COMPLETED 表示仍在活跃态（RUNNING）
-        if (ThreadPool.continueFlag(doContinue)
-                && state.get() < COMPLETED
-                && (id == null || holder.get(id) == this)) {
-            newTimeout(this, delay, timeout.timer());
-        } else if (id != null) {
-            holder.remove(id, this);
-        }
-    }
-});
-```
-- `Task.run()` 中对 `executor.submit()` 加 try-catch，提交失败时 `holder.remove(id, this)` 清理。
-- **`shutdown()` 与 `shutdownNow()` 语义必须区分**（对齐 `ScheduledExecutorService` 契约）：
-  - **`shutdown()`**：拒绝新任务（`setTimeout`/`schedule*`/`execute` 抛 `RejectedExecutionException`）；已提交到 executor 中正在运行的任务正常完成；PERIOD 任务不再重注册（`shutdown` 标志作为 PERIOD 重注册守卫的额外终止条件）；已注册但尚未触发的 timeout **不主动取消**，触发后按 shutdown 状态拒绝提交即可。holder 中的 entry 随任务自然完成而清理，最终收敛为空。
-  - **`shutdownNow()`**：在 `shutdown()` 基础上，**立即** `timer.stop()` + 取消所有 pending timeout + 清空 holder（当前实现缺失 `timer.stop()`）。这是激进清理语义。
-  - 当前实现中 `execute()` 直接委托给底层共享 `executor`，shutdown 后仍可提交，必须修复。
+- `cancel()` 方法中主动 `holder.remove(id)`。
+- 周期任务停止时（`continueFlag` 为 false）确保 `holder.remove(id)` 在所有分支都执行。
+- `Task.run()` 中对 `executor.submit()` 加 try-catch，提交失败时清理 holder。
+- `shutdown()` 中遍历 `holder` 取消所有 pending 任务并 clear；`shutdownNow()` 同样需要 `timer.stop()` + clear（当前实现缺失 `timer.stop()`）。
+- `shutdown()` / `shutdownNow()` 后，`setTimeout`、`schedule*`、`execute` 必须拒绝新任务（抛 `RejectedExecutionException`），与 `ScheduledExecutorService` 契约一致。当前实现中 `execute()` 直接委托给底层共享 `executor`，shutdown 后仍可提交。
 - 考虑将 `holder` 改为实例级别而非 static，避免跨实例 id 碰撞。
 
 #### 2.1b `setTimeout` 的 SINGLE/REPLACE 缺少原子仲裁（并发语义失效）
@@ -318,14 +296,13 @@ private <T> TimeoutFuture<T> setTimeout(Task<T> task) {
     });
 
     if (replaced.v != null) {
-        // cancel 内部使用 holder.remove(id, this)，不会误删刚安装的 task
         replaced.v.cancel();
     }
     return result;
 }
 ```
 
-注意：此方案依赖 2.1 中"所有 holder 删除必须使用 `holder.remove(id, this)`"的约束。若 `replaced.v.cancel()` 中用无条件 `holder.remove(id)`，会把 compute 刚安装的新任务删掉。两个优化项必须配套实施。
+这样 SINGLE 的检查与跳过、REPLACE 的替换与旧值获取都在 compute 的原子函数内完成，杜绝并发窗口。
 
 ---
 
@@ -396,6 +373,58 @@ long delay = Math.max(0, nextFireTime - System.currentTimeMillis());
 
 3. **再优化分配**：语义正确后，复用 `Task` 对象，只更新 `delay` 和 `expiredTime`，直接调 `newTimeout` 重新注册，避免每周期 `new Task` + lambda 捕获。
 
+#### 2.4b 周期任务异常终止与返回 Future 契约（JDK 强制语义）
+
+`ScheduledExecutorService` 的 JDK 文档对 `scheduleAtFixedRate` 和 `scheduleWithFixedDelay` 有两条明确约束，当前实现均未遵守：
+
+**a) 异常即终止，后续执行必须被抑制**：
+
+> "If any execution of the task encounters an exception, subsequent executions are suppressed."
+
+当前实现中，`scheduleWithFixedDelay` 委托给 `setTimeout(fn, nextDelayFn, null, TIMER_PERIOD_FLAG)`，底层 PERIOD 重注册在 `finally` 块中执行，**即使 `fn.get()` 抛出异常也会重注册**。`scheduleAtFixedRate` 的 `nextFixedRate` 递归同样不检查前一次执行是否异常，会无条件预注册下一次。
+
+**b) 周期 `ScheduledFuture.get()` 永远不正常返回**：
+
+> 对于周期任务，`get()` 阻塞直到任务被取消或某次执行抛出异常。正常执行不会使 `get()` 返回。
+
+当前 `scheduleAtFixedRate` 返回的代理 future 和 `scheduleWithFixedDelay` 返回的 `TimeoutFuture` 都不满足此契约——某次执行完成后 `get()` 可能返回该次结果。
+
+**建议**：
+
+1. **PERIOD 重注册守卫增加异常检查**：重注册前检查本次执行是否异常。若 `fn.get()` 抛出异常，不再重注册，并将异常记录到 Task 的终态（`terminalError`），使后续 `get()` 抛出 `ExecutionException`。修改 2.1 中的重注册 `finally` 块：
+
+```java
+future = executor.submit(() -> {
+    boolean doContinue = flags.has(TimeoutFlag.PERIOD);
+    Throwable thrown = null;
+    try {
+        fn.get();
+        return null;  // 周期任务不暴露单次返回值
+    } catch (Throwable e) {
+        thrown = e;
+        throw e;
+    } finally {
+        if (thrown != null) {
+            // 异常终止：记录终态，不再重注册
+            terminalError = thrown;
+            state.set(FAILED);
+            terminalLatch.countDown();
+            if (id != null) holder.remove(id, this);
+        } else if (ThreadPool.continueFlag(doContinue)
+                && state.get() < COMPLETED
+                && (id == null || holder.get(id) == this)) {
+            newTimeout(this, delay, timeout.timer());
+        } else {
+            if (id != null) holder.remove(id, this);
+        }
+    }
+});
+```
+
+2. **周期 future 的 `get()` 语义**：周期任务的 `get()` 应阻塞在 `terminalLatch` 上，只在取消（CANCELLED）或异常终止（FAILED）时返回/抛出，正常执行周期内**不 countDown**。这已被 2.6 状态机自然支持——只要正常执行时不调 `terminalLatch.countDown()` 且不转为 COMPLETED，`get()` 就会持续阻塞。周期任务的 COMPLETED 态应仅在任务被显式停止（cancel、shutdown）时设置。
+
+3. **`scheduleAtFixedRate` / `scheduleWithFixedDelay` 返回的 `ScheduledFuture` 必须统一接入此终态机制**，不能让 2.3 中替代动态代理的匿名类绕过异常终止逻辑。
+
 #### 2.5 `Task` 内 `p0, p1` 伪共享填充不足
 
 `long p0, p1` 只填充 16 字节。Java 对象头 12-16 字节 + 前面字段已占用大量空间，实际 padding 效果需要根据完整对象布局计算。如果目标是避免 `timeout` 和 `future` 两个 volatile 字段的伪共享，需要更精确的填充。
@@ -416,138 +445,65 @@ long delay = Math.max(0, nextFireTime - System.currentTimeMillis());
 
 **c) 虚假唤醒**：`wait()` 返回后未 loop 检查 `future != null`，虚假唤醒会导致 `future.get()` 抛 NPE。
 
-**建议**：用显式状态机替代单一 `boolean cancelled`，保证 `cancel()`/`get()`/`isCancelled()`/`isDone()` 结果一致，符合 `Future` 契约。
-
-单一 `cancelled` 布尔的问题：`cancel()` 无条件置位后，即使任务已完成或 `future.cancel()` 返回 false（未能取消），`get()` 仍会抛 `CancellationException`，`isCancelled()` 返回 true，与实际执行结果矛盾。
-
-**状态机定义**：
-
-```
-SCHEDULED ──run()──→ RUNNING ──fn完成──→ COMPLETED
-    │                   │
-    │cancel()           │cancel(mayInterrupt)
-    ↓                   ↓
- CANCELLED     future.cancel() 成功? → CANCELLED
-               future.cancel() 失败? → 保持 RUNNING → COMPLETED
-    
-SCHEDULED/RUNNING ──submit失败/异常──→ FAILED
-```
-
-合法终态：`COMPLETED`、`CANCELLED`、`FAILED`。
+**建议**：引入显式 `cancelled` 状态标志 + `CountDownLatch` 协调 future 安装，不使用 `CompletableFuture<Future<T>>`（其 `get()` 对 `completeExceptionally(CancellationException)` 会包装为 `ExecutionException`，无法直接抛出 `CancellationException`）。
 
 ```java
-private static final int SCHEDULED = 0, RUNNING = 1, COMPLETED = 2, CANCELLED = 3, FAILED = 4;
-private final AtomicInteger state = new AtomicInteger(SCHEDULED);
-private volatile Throwable terminalError;
-private final CountDownLatch terminalLatch = new CountDownLatch(1);
+private volatile boolean cancelled;
+private final CountDownLatch futureLatch = new CountDownLatch(1);
 
 @Override
 public void run(Timeout timeout) throws Exception {
-    if (!state.compareAndSet(SCHEDULED, RUNNING)) {
-        // 已被 cancel 或其他终态，不提交
-        return;
-    }
-    ThreadPool.startTrace(traceId);
-    ThreadPool.CTX_STACK_TRACE.set(stackTrace != null ? stackTrace : Boolean.TRUE);
-    try {
-        Future<T> f = executor.submit(() -> { ... });
-        future = f;
-    } catch (Throwable e) {
-        terminalError = e;
-        state.set(FAILED);
-        if (id != null) {
-            holder.remove(id, this);
-        }
-        throw e;
-    } finally {
-        terminalLatch.countDown();
-        ThreadPool.CTX_STACK_TRACE.remove();
-        ThreadPool.endTrace();
-    }
+    // ... trace setup ...
+    Future<T> f = executor.submit(() -> { ... });
+    future = f;
+    futureLatch.countDown();
+    // ... trace cleanup ...
 }
 
 @Override
 public boolean cancel(boolean mayInterruptIfRunning) {
-    // 尝试从 SCHEDULED 直接到 CANCELLED（cancel 先于 run）
-    if (state.compareAndSet(SCHEDULED, CANCELLED)) {
-        terminalLatch.countDown();
-        if (id != null) {
-            holder.remove(id, this);
-        }
-        // timeout 可能已触发但 run 尚未 CAS，此处取消防止后续触发
-        return timeout != null ? timeout.cancel() : true;
+    cancelled = true;
+    futureLatch.countDown();  // 唤醒 get() 等待者
+    if (future != null) {
+        future.cancel(mayInterruptIfRunning);
     }
-
-    // 已经在 RUNNING 态，尝试取消底层 future
-    if (state.get() == RUNNING && future != null) {
-        boolean ok = future.cancel(mayInterruptIfRunning);
-        if (ok) {
-            state.set(CANCELLED);
-            if (id != null) {
-                holder.remove(id, this);
-            }
-        }
-        return ok;
+    if (id != null) {
+        holder.remove(id);
     }
-
-    // 已处于终态（COMPLETED/CANCELLED/FAILED），无法取消
-    return false;
-}
-
-@Override
-public boolean isCancelled() {
-    return state.get() == CANCELLED;
-}
-
-@Override
-public boolean isDone() {
-    int s = state.get();
-    return s == COMPLETED || s == CANCELLED || s == FAILED;
+    return timeout != null ? timeout.cancel() : true;
 }
 
 @Override
 public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
     long deadlineNanos = System.nanoTime() + unit.toNanos(timeout);
-    if (!terminalLatch.await(timeout, unit)) {
+    if (!futureLatch.await(timeout, unit)) {
         throw new TimeoutException();
     }
-    return handleTerminalState(deadlineNanos);
+    if (cancelled) {
+        throw new CancellationException();
+    }
+    long remainingNanos = deadlineNanos - System.nanoTime();
+    if (remainingNanos <= 0) {
+        throw new TimeoutException();
+    }
+    return future.get(remainingNanos, TimeUnit.NANOSECONDS);
 }
 
 @Override
 public T get() throws InterruptedException, ExecutionException {
-    terminalLatch.await();
-    return handleTerminalState(0);
-}
-
-private T handleTerminalState(long deadlineNanos) throws ExecutionException, TimeoutException, CancellationException {
-    int s = state.get();
-    if (s == CANCELLED) {
+    futureLatch.await();
+    if (cancelled) {
         throw new CancellationException();
-    }
-    if (s == FAILED) {
-        throw new ExecutionException(terminalError);
-    }
-    // RUNNING 或 COMPLETED：future 已安装，委托给 future.get()
-    if (deadlineNanos > 0) {
-        long remainingNanos = deadlineNanos - System.nanoTime();
-        if (remainingNanos <= 0) {
-            throw new TimeoutException();
-        }
-        return future.get(remainingNanos, TimeUnit.NANOSECONDS);
     }
     return future.get();
 }
 ```
 
 关键点：
-- **状态机 CAS 保证互斥**：`run()` 用 `compareAndSet(SCHEDULED, RUNNING)` 进入运行态；`cancel()` 用 `compareAndSet(SCHEDULED, CANCELLED)` 抢占取消态。两者互斥，只有一个成功。
-- **cancel 已完成任务返回 false**：不再无条件进入取消态，符合 `Future.cancel()` 契约。
-- **cancel 运行中任务**：仅当 `future.cancel(mayInterruptIfRunning)` 成功时才转为 CANCELLED；否则保持 RUNNING，任务正常完成后进入 COMPLETED，`get()` 返回结果。
-- **`terminalLatch.countDown()` 在 `finally` 中**：run 的所有退出路径（submit 成功/失败/异常）都发布终态。cancel 从 SCHEDULED 直接转 CANCELLED 时也独立 countDown。
-- `holder.remove(id, this)` 保证不误删 REPLACE 后新安装的任务映射。
+- `cancelled` 标志 + `futureLatch.countDown()` 保证 cancel 立即唤醒等待者。
+- `get()` 先检查 `cancelled` 再访问 `future`，直接抛出 `CancellationException`（非包装在 ExecutionException 中）。
 - `get(timeout)` 用 deadline 减去 latch 等待消耗，将**剩余时间**传递给 `future.get()`，保证总等待不超过调用方预算。
-- PERIOD 重注册守卫中的 `!cancelled` 检查应相应改为 `state.get() < COMPLETED`（即仍在活跃态），与状态机对齐。
+- `CountDownLatch` 无虚假唤醒问题，且不与 `run()` 共享 monitor。
 
 #### 2.7 `holder` static vs `timer` instance 不一致
 
@@ -565,7 +521,6 @@ private T handleTerminalState(long deadlineNanos) throws ExecutionException, Tim
 | P0 | 1.3 | ThreadPool | taskMap 内存泄漏 |
 | P0 | 1.4 | ThreadPool | runSerialAsync 正常路径完成竞态 |
 | P0 | 2.1 | WheelTimer | holder 无驱逐 + shutdown 不清理 |
-| P0 | 2.1a | WheelTimer | PERIOD 取消/REPLACE 后幽灵重注册 |
 | P0 | 2.1b | WheelTimer | setTimeout SINGLE/REPLACE 缺原子仲裁 |
 | P0 | 2.1c | WheelTimer | shutdown 后缺少拒绝新任务契约 |
 | P0 | 2.2 | WheelTimer | synchronized 阻塞时间轮 worker |
@@ -575,11 +530,12 @@ private T handleTerminalState(long deadlineNanos) throws ExecutionException, Tim
 | P1 | 1.10 | ThreadPool | counter/semaphore 不一致 |
 | P1 | 2.3 | WheelTimer | 动态代理开销 |
 | P1 | 2.4 | WheelTimer | scheduleAtFixedRate 语义错误（漂移/负delay/重入） |
+| P1 | 2.4b | WheelTimer | 周期任务异常不终止 + periodic get() 错误返回 |
 | P2 | 1.6 | ThreadPool | String.format |
 | P2 | 1.7 | ThreadPool | stackTrace join 分配 |
 | P2 | 1.11 | ThreadPool | LinkedList 改 ArrayDeque |
 | P2 | 2.5 | WheelTimer | padding 不足或冗余 |
-| P1 | 2.6 | WheelTimer | cancel/get 状态机缺失（需 SCHEDULED/RUNNING/COMPLETED/CANCELLED/FAILED） |
+| P1 | 2.6 | WheelTimer | cancel/get 终态契约缺失（永久阻塞/双重计时/CancellationException） |
 | P2 | 2.7 | WheelTimer | holder static/instance 不一致 |
 
 ---
@@ -594,7 +550,6 @@ private T handleTerminalState(long deadlineNanos) throws ExecutionException, Tim
 - 任务被 `ThreadQueue.remove()` 移除后，`taskMap` 中无残留 entry。
 - `execute()` 触发拒绝策略后，`taskMap` 中无残留 entry。
 - 正常执行完成后 `taskMap` 为空。
-- `shutdownNow()` 排空队列后，`taskMap` 中无残留 entry（覆盖 `AsynchronousCompletionTask` 场景）。
 
 **ThreadPool - taskSerialMap/taskSerialCountMap 清理**
 - 串行任务正常完成后，`taskSerialMap` 和 `taskSerialCountMap` 中对应 taskId 被清除。
@@ -605,23 +560,15 @@ private T handleTerminalState(long deadlineNanos) throws ExecutionException, Tim
 **WheelTimer - holder 清理与原子语义**
 - 一次性任务正常完成后 `holder.get(id)` 返回 null。
 - 周期任务 `cancel()` 后 `holder.get(id)` 返回 null。
-- `shutdown()` 后已运行任务正常完成，PERIOD 任务不再重注册，holder 随任务完成收敛为空。
+- `shutdown()` 后 `holder` 为空，所有 pending timeout 已取消。
 - 带 `SINGLE` flag 的任务完成后再注册同 id 新任务，旧 entry 不残留。
 - **SINGLE 并发回归**：多线程（10+ 线程）同时提交同一 taskId 的 SINGLE 任务，验证 holder 中始终只有一个 entry，且只有一个任务实际执行。
 - **REPLACE 并发回归**：多线程同时提交同一 taskId 的 REPLACE 任务，验证最终只有最后一个存活，无双活。
-- **REPLACE 后 holder 映射正确**：REPLACE 旧任务 cancel 后，`holder.get(id)` 返回的是新任务而非 null（验证条件删除 `remove(id, this)` 不误删新映射）。
-- **PERIOD 取消后无幽灵重注册**：PERIOD 任务正在 executor 中运行时被 `cancel()`，完成后不再有后续 timeout 触发（观察 `3 * period` 无新调用）。
-- **PERIOD REPLACE 后旧实例不再触发**：REPLACE 正在运行的 PERIOD 任务，旧实例完成后不再重注册（观察 `3 * period` 内只有新实例触发）。
 
-**WheelTimer - cancel/get 终态状态机**
-- `cancel()` 在 `run()` 之前调用（SCHEDULED → CANCELLED）：`cancel()` 返回 true，`get()` 立即抛出 `CancellationException`，`run()` 不再提交任务。
-- `cancel()` 与 `run()` 并发、`future.cancel()` 成功（RUNNING → CANCELLED）：`cancel()` 返回 true，`get()` 抛出 `CancellationException`。
-- `cancel()` 与 `run()` 并发、`future.cancel()` 失败（保持 RUNNING → COMPLETED）：`cancel()` 返回 false，`isCancelled()` 为 false，`get()` 返回正常结果。
-- **任务已完成时 cancel**（COMPLETED 态）：`cancel()` 返回 false，`isCancelled()` 为 false，`get()` 返回结果。
-- `executor.submit()` 失败（→ FAILED）：`get()` 抛出 `ExecutionException`（cause 为原始异常），不永久阻塞；holder 中无残留。
-- `run()` 内任何未预期异常（→ FAILED）：`get()` 不永久阻塞，抛出 `ExecutionException`。
+**WheelTimer - cancel/get 终态**
+- `cancel()` 在 `future` 赋值前调用：`get()` 立即抛出 `CancellationException`，不阻塞。
 - `get(timeout)` 总等待时间不超过调用方指定的 timeout 预算。
-- `isDone()` 在 COMPLETED/CANCELLED/FAILED 三种终态下均返回 true。
+- `isCancelled()` 在 cancel 后返回 true，`isDone()` 在 cancel 后返回 true。
 
 ### 4.2 定时器回归测试（必须）
 
@@ -635,15 +582,20 @@ private T handleTerminalState(long deadlineNanos) throws ExecutionException, Tim
 
 **scheduleWithFixedDelay 回归**
 - 确认现有 `scheduleWithFixedDelay` 行为不受 `scheduleAtFixedRate` 修改影响。
+- 正常执行 5 个周期后 cancel：验证间隔 >= period。
 
-**shutdown 语义（有序关闭）**
+**周期任务异常终止契约（scheduleAtFixedRate + scheduleWithFixedDelay 共用）**
+- command 第 3 次执行抛出 `RuntimeException`：验证后续不再有新触发（观察 `3 * period` 无新调用），总执行次数恰好为 3。
+- command 抛出异常后，返回的 `ScheduledFuture.get()` 抛出 `ExecutionException`，其 cause 为 command 抛出的原始异常。
+- command 抛出异常后，`isDone()` 返回 true，`isCancelled()` 返回 false。
+- **周期 future 正常执行期间 get() 阻塞**：正常执行 5 个周期后调用 `get(200, MILLISECONDS)`，验证抛出 `TimeoutException`（而非返回某次执行结果）。
+- **周期 future cancel 后 get() 立即抛 CancellationException**：正常执行 3 个周期后 cancel，`get()` 立即抛出 `CancellationException`。
+
+**shutdown 后拒绝新任务**
 - `shutdown()` 后调用 `setTimeout` / `schedule` / `execute`：均抛 `RejectedExecutionException`。
-- `shutdown()` 后已运行任务正常完成，`get()` 返回结果。
-- `shutdown()` 后 PERIOD 任务不再重注册，holder 随任务自然完成收敛为空。
-
-**shutdownNow 语义（激进清理）**
 - `shutdownNow()` 后调用 `setTimeout` / `schedule` / `execute`：均抛 `RejectedExecutionException`。
-- `shutdownNow()` 后 `timer` 已 stop，holder 已 clear，`timer.pendingTimeouts()` 为 0。
+- `shutdown()` 后 `holder` 为空，`timer.pendingTimeouts()` 为 0。
+- `shutdownNow()` 后 `timer` 已 stop。
 
 ### 4.3 背压与高并发测试（建议）
 
