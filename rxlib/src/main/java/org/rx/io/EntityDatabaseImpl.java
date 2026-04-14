@@ -228,22 +228,35 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     @Setter
     int slowSqlElapsed = 200;
     String curFilePath;
-    JdbcConnectionPool connPool;
+    volatile JdbcConnectionPool connPool;
 
-    synchronized JdbcConnectionPool getConnectionPool() {
-        if (connPool == null) {
-            String filePath = getFilePath();
-            curFilePath = filePath;
-            //http://www.h2database.com/html/commands.html#set_cache_size
-            String h2Settings = ifNull(RxConfig.INSTANCE.getDisk().getH2Settings(), "");
-            log.info("h2Settings: {}", h2Settings);
-            connPool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;", filePath) + h2Settings, null, null);
-            connPool.setMaxConnections(maxConnections);
-            if (!mappedEntityTypes.isEmpty()) {
-                createMapping(Linq.from(mappedEntityTypes).toArray());
-            }
+    JdbcConnectionPool getConnectionPool() {
+        JdbcConnectionPool pool = connPool;
+        if (pool != null) {
+            return pool;
         }
-        return connPool;
+        synchronized (this) {
+            pool = connPool;
+            if (pool == null) {
+                connPool = pool = createConnectionPool();
+            }
+            return pool;
+        }
+    }
+
+    JdbcConnectionPool createConnectionPool() {
+        String filePath = getFilePath();
+        curFilePath = filePath;
+        //http://www.h2database.com/html/commands.html#set_cache_size
+        String h2Settings = ifNull(RxConfig.INSTANCE.getDisk().getH2Settings(), "");
+        log.info("h2Settings: {}", h2Settings);
+        JdbcConnectionPool pool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;", filePath) + h2Settings, null, null);
+        pool.setMaxConnections(maxConnections);
+        connPool = pool;
+        if (!mappedEntityTypes.isEmpty()) {
+            createMapping(Linq.from(mappedEntityTypes).toArray());
+        }
+        return pool;
     }
 
     String getFilePath() {
@@ -286,9 +299,10 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     @Override
     protected void dispose() {
-        if (connPool != null) {
-            connPool.dispose();
+        JdbcConnectionPool pool = connPool;
+        if (pool != null) {
             connPool = null;
+            pool.dispose();
         }
     }
 
@@ -311,7 +325,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         Class<?> entityType = entity.getClass();
         SqlMeta meta = getMeta(entityType);
         Serializable id = (Serializable) meta.primaryKey.getValue().left.get(entity);
-        if (id == null) {
+        if (id == null || !hasNullSecondaryValue(meta, entity)) {
             save(entity, true);
             return;
         }
@@ -377,13 +391,20 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
     }
 
+    @SneakyThrows
+    boolean hasNullSecondaryValue(SqlMeta meta, Object entity) {
+        for (Map.Entry<String, Tuple<Field, DbColumn>> col : meta.secondaryView) {
+            if (col.getValue().left.get(entity) == null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public <T> boolean deleteById(Class<T> entityType, Serializable id) {
         SqlMeta meta = getMeta(entityType);
-
-        List<Object> params = new ArrayList<>(1);
-        params.add(id);
-        return executeUpdate(meta.deleteSql, params) > 0;
+        return executeUpdate(meta.deleteSql, singletonParams(id)) > 0;
     }
 
     @Override
@@ -421,82 +442,42 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     @Override
     public <T> long count(EntityQueryLambda<T> query) {
-        List<Tuple<BiFunc<T, ?>, EntityQueryLambda.Order>> tmpOrders = null;
-        if (!query.orders.isEmpty()) {
-            tmpOrders = new ArrayList<>(query.orders);
-            query.orders.clear();
-        }
-        //with limit, the result always 0
-        Integer tmpLimit = null;
-        if (query.limit != null) {
-            tmpLimit = query.limit;
-            query.limit = null;
-        }
         SqlMeta meta = getMeta(query.entityType);
         query.setColumnMapping(columnMapping);
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         replaceSelectColumns(sql, "COUNT(*)");
         List<Object> params = new ArrayList<>();
-        appendClause(sql, query, params);
-        try {
-            Number num = executeScalar(sql.toString(), params);
-            if (num == null) {
-                return 0;
-            }
-            return num.longValue();
-        } finally {
-            if (tmpOrders != null) {
-                query.orders.addAll(tmpOrders);
-            }
-            if (tmpLimit != null) {
-                query.limit = tmpLimit;
-            }
+        appendClause(sql, query, params, false, null, null);
+        Number num = executeScalar(sql.toString(), params);
+        if (num == null) {
+            return 0;
         }
+        return num.longValue();
     }
 
     @Override
     public <T> boolean exists(EntityQueryLambda<T> query) {
-        Integer tmpLimit = null, tmpOffset = null;
-        if (query.limit != null) {
-            tmpLimit = query.limit;
-            tmpOffset = query.offset;
-            query.limit = 1;
-            query.offset = null;
-        }
         SqlMeta meta = getMeta(query.entityType);
         query.setColumnMapping(columnMapping);
 
         StringBuilder sql = new StringBuilder(meta.selectSql);
         replaceSelectColumns(sql, "1");
         List<Object> params = new ArrayList<>();
-        appendClause(sql, query, params);
-        try {
-            return executeScalar(sql.toString(), params) != null;
-        } finally {
-            if (tmpLimit != null) {
-                query.limit = tmpLimit;
-                query.offset = tmpOffset;
-            }
-        }
+        appendClause(sql, query, params, false, 1, null);
+        return executeScalar(sql.toString(), params) != null;
     }
 
     @Override
     public <T> boolean existsById(Class<T> entityType, Serializable id) {
         SqlMeta meta = getMeta(entityType);
-
-        List<Object> params = new ArrayList<>(1);
-        params.add(id);
-        return executeScalar(meta.existsByIdSql, params) != null;
+        return executeScalar(meta.existsByIdSql, singletonParams(id)) != null;
     }
 
     @Override
     public <T> T findById(Class<T> entityType, Serializable id) {
         SqlMeta meta = getMeta(entityType);
-
-        List<Object> params = new ArrayList<>(1);
-        params.add(id);
-        List<T> list = executeQuery(meta.findByIdSql, params, entityType);
+        List<T> list = executeQuery(meta.findByIdSql, singletonParams(id), entityType);
         return list.isEmpty() ? null : list.get(0);
     }
 
@@ -525,11 +506,20 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     <T> void appendClause(StringBuilder sql, EntityQueryLambda<T> query, List<Object> params) {
-        String clause = query.toString(params);
-        if (!params.isEmpty()) {
+        appendClause(sql, query, params, true, query.limit, query.offset);
+    }
+
+    <T> void appendClause(StringBuilder sql, EntityQueryLambda<T> query, List<Object> params, boolean includeOrder, Integer limit, Integer offset) {
+        String clause = EntityQueryLambda.resolve(query.conditions, params,
+                includeOrder ? query.orders : null, includeOrder && query.orderByRand, limit, offset, query.columnMapping);
+        if (!query.conditions.isEmpty()) {
             sql.append(EntityQueryLambda.WHERE);
         }
         sql.append(clause);
+    }
+
+    List<Object> singletonParams(Object value) {
+        return Collections.singletonList(value);
     }
 
     SqlMeta getMeta(Class<?> entityType) {
