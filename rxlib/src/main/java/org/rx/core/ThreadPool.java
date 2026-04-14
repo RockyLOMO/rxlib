@@ -17,12 +17,14 @@ import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
+import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
@@ -131,6 +133,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         public boolean remove(Object o) {
             boolean ok = super.remove(o);
             if (ok) {
+                if (pool != null && o instanceof Runnable) {
+                    pool.getTask((Runnable) o, true);
+                }
                 if (log.isDebugEnabled()) {
                     log.debug("Notify remove");
                 }
@@ -159,6 +164,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         static <T> Task<T> adapt(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             Task<T> t = as(fn);
             if (t != null) {
+                if (id == null && flags == null) {
+                    return t;
+                }
                 if (t.id == id) {
                     return t;
                 }
@@ -178,6 +186,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         static <T> Task<T> adapt(Runnable fn, FlagsEnum<RunFlag> flags, Object id) {
             Task<T> t = as(fn);
             if (t != null) {
+                if (id == null && flags == null) {
+                    return t;
+                }
                 if (t.id == id) {
                     return t;
                 }
@@ -225,7 +236,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                 }
             } else if (conf.trace.slowMethodElapsedMicros > 0) {
                 int threshold = conf.threadPool.slowMethodSamplingPercent;
-                if (threshold > 0 && Math.abs(TASK_COUNTER.incrementAndGet() % 100) < threshold) {
+                if (threshold > 0 && ((TASK_COUNTER.incrementAndGet() & Integer.MAX_VALUE) % 100) < threshold) {
                     stackTrace = new Throwable().getStackTrace();
                 } else {
                     stackTrace = null;
@@ -287,7 +298,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         @Override
         public String toString() {
             String hc = id != null ? id.toString() : Integer.toHexString(hashCode());
-            return String.format("Task-%s[%s]", hc, flags.getValue());
+            return "Task-" + hc + "[" + flags.getValue() + "]";
         }
     }
 
@@ -330,6 +341,10 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final FastThreadLocal<Object> CTX_STACK_TRACE = new FastThreadLocal<>();
     static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
     private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
+    @SuppressWarnings("unchecked")
+    private static final ThreadLocal<InternalThreadLocalMap> SLOW_THREAD_LOCAL_MAP =
+            Reflects.readStaticField(InternalThreadLocalMap.class, "slowThreadLocalMap");
+    static final Map<Class<?>, Field> ASYNC_COMPLETION_FN_FIELDS = new ConcurrentHashMap<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final com.github.benmanes.caffeine.cache.Cache<Object, RefCounter<ReentrantLock>> taskLockMap = MemoryCache.<Object, RefCounter<ReentrantLock>>rootBuilder().expireAfterAccess(60, TimeUnit.MINUTES).build();
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
@@ -501,11 +516,21 @@ public class ThreadPool extends ThreadPoolExecutor {
         super(checkSize(initSize), RxConfig.INSTANCE.threadPool.maxDynamicSize,
                 RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS,
                 new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName, Thread.NORM_PRIORITY), (r, executor) -> {
+                    ThreadPool pool = executor instanceof ThreadPool ? (ThreadPool) executor : null;
                     if (executor.isShutdown()) {
+                        if (pool != null) {
+                            pool.getTask(r, true);
+                        }
                         log.warn("ThreadPool {} is shutdown", poolName);
                         return;
                     }
-                    executor.getQueue().offer(r);
+                    boolean offered = executor.getQueue().offer(r);
+                    if (!offered) {
+                        if (pool != null) {
+                            pool.getTask(r, true);
+                        }
+                        throw new RejectedExecutionException("ThreadPool " + poolName + " queue offer rejected");
+                    }
                 });
         super.allowCoreThreadTimeOut(true);
         ((ThreadQueue) super.getQueue()).pool = this;
@@ -696,71 +721,38 @@ public class ThreadPool extends ThreadPoolExecutor {
             counter.decrementAndGet();
             throw new RejectedExecutionException("Serial task chain for " + taskId + " has exceeded capacity");
         }
-
-        CompletableFuture<T> f = (CompletableFuture<T>) taskSerialMap.get(taskId);
-        boolean isNew = false;
-        if (f == null) {
-            CompletableFuture<T> placeholder = new CompletableFuture<>();
-            CompletableFuture<?> existing = taskSerialMap.putIfAbsent(taskId, placeholder);
-            if (existing == null) {
-                isNew = true;
-                f = placeholder;
-                try {
-                    CompletableFuture.supplyAsync(t, asyncExecutor).whenComplete((r, e) -> {
-                        if (e != null) {
-                            placeholder.completeExceptionally(e);
-                        } else {
-                            placeholder.complete(r);
+        AtomicReference<CompletableFuture<T>> nextRef = new AtomicReference<>();
+        try {
+            taskSerialMap.compute(taskId, (k, prev) -> {
+                CompletableFuture<T> next;
+                if (prev == null) {
+                    next = CompletableFuture.supplyAsync(t, asyncExecutor);
+                } else {
+                    next = ((CompletableFuture<T>) prev).thenApplyAsync(it -> {
+                        COMPLETION_RETURNED_VALUE.set(it);
+                        try {
+                            return t.get();
+                        } finally {
+                            COMPLETION_RETURNED_VALUE.remove();
                         }
-                        taskSerialMap.remove(taskId, placeholder);
-                        if (counter.decrementAndGet() == 0) {
-                            taskSerialCountMap.remove(taskId, counter);
-                        }
-                    });
-                } catch (Throwable ex) {
-                    placeholder.completeExceptionally(ex);
-                    taskSerialMap.remove(taskId, placeholder);
+                    }, this);
+                }
+                nextRef.set(next);
+                next.whenComplete((r, e) -> {
+                    taskSerialMap.compute(taskId, (k2, cur) -> cur == next ? null : cur);
                     if (counter.decrementAndGet() == 0) {
                         taskSerialCountMap.remove(taskId, counter);
                     }
-                    throw ex;
-                }
-            } else {
-                f = (CompletableFuture<T>) existing;
-            }
-        }
-
-        if (!isNew) {
-            CompletableFuture<T> next;
-            try {
-                next = f.thenApplyAsync(it -> {
-                    COMPLETION_RETURNED_VALUE.set(it);
-                    try {
-                        return t.get();
-                    } finally {
-                        COMPLETION_RETURNED_VALUE.remove();
-                    }
-                }, this);
-            } catch (Throwable ex) {
-                if (counter.decrementAndGet() == 0) {
-                    taskSerialCountMap.remove(taskId, counter);
-                }
-                throw ex;
-            }
-
-            next.whenComplete((r, e) -> {
-                taskSerialMap.remove(taskId, next);
-                if (counter.decrementAndGet() == 0) {
-                    taskSerialCountMap.remove(taskId, counter);
-                }
+                });
+                return next;
             });
-
-            if (!reuse) {
-                taskSerialMap.put(taskId, next);
+        } catch (Throwable ex) {
+            if (counter.decrementAndGet() == 0) {
+                taskSerialCountMap.remove(taskId, counter);
             }
-            f = next;
+            throw ex;
         }
-        return f;
+        return nextRef.get();
     }
 
     public <T> MultiTaskFuture<T, T> runAnyAsync(Iterable<Func<T>> tasks) {
@@ -871,13 +863,11 @@ public class ThreadPool extends ThreadPoolExecutor {
             ((FastThreadLocalThread) t).setThreadLocalMap(threadLocalMap);
             return;
         }
-
-        ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = Reflects.readStaticField(InternalThreadLocalMap.class, "slowThreadLocalMap");
         if (threadLocalMap == null) {
-            slowThreadLocalMap.remove();
+            SLOW_THREAD_LOCAL_MAP.remove();
             return;
         }
-        slowThreadLocalMap.set(threadLocalMap);
+        SLOW_THREAD_LOCAL_MAP.set(threadLocalMap);
     }
 
     private RefCounter<ReentrantLock> getContextForLock(Object id) {
@@ -898,12 +888,21 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
         task = taskMap.get(r);
         if (task == null && r instanceof CompletableFuture.AsynchronousCompletionTask) {
-            task = Task.as(Reflects.readField(r, "fn"));
+            task = readCompletionTask(r);
             if (task != null) {
                 taskMap.put(r, task);
             }
         }
         return task;
+    }
+
+    @SneakyThrows
+    private Task<?> readCompletionTask(Runnable r) {
+        Field field = ASYNC_COMPLETION_FN_FIELDS.computeIfAbsent(r.getClass(), k -> Reflects.getFieldMap(k).get("fn"));
+        if (field == null) {
+            return null;
+        }
+        return Task.as(field.get(r));
     }
 
     private Task<?> getTask(Runnable r, boolean remove) {
@@ -920,5 +919,14 @@ public class ThreadPool extends ThreadPoolExecutor {
     @Override
     public String toString() {
         return String.format("%s%s@%s", POOL_NAME_PREFIX, poolName, Integer.toHexString(hashCode()));
+    }
+
+    @Override
+    public List<Runnable> shutdownNow() {
+        List<Runnable> queued = super.shutdownNow();
+        for (Runnable runnable : queued) {
+            getTask(runnable, true);
+        }
+        return queued;
     }
 }
