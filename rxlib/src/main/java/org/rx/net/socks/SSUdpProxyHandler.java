@@ -6,6 +6,7 @@ import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.cache.MemoryCache;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -19,6 +20,23 @@ import io.netty.util.AttributeKey;
 public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     public static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
             AttributeKey.valueOf("ssUdpRouteMap");
+
+    private static InetSocketAddress relayAddress(Upstream upstream, Channel channel) {
+        return upstream instanceof SocksUdpUpstream ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(channel) : null;
+    }
+
+    private static DatagramPacket buildOutboundPacket(SocksContext sc, Channel outbound, UnresolvedEndpoint dstEp, ByteBuf payload) {
+        Upstream upstream = sc.getUpstream();
+        InetSocketAddress udpRelayAddr = relayAddress(upstream, outbound);
+        if (upstream instanceof SocksUdpUpstream) {
+            if (udpRelayAddr == null) {
+                return null;
+            }
+            return new DatagramPacket(UdpManager.socks5Encode(payload, dstEp), udpRelayAddr);
+        }
+        return new DatagramPacket(payload, upstream.getDestination().socketAddress());
+    }
+
     @Slf4j
     @ChannelHandler.Sharable
     public static class UdpBackendRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
@@ -34,7 +52,16 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             UnresolvedEndpoint dstEp = sc.getFirstDestination();
             InetSocketAddress realDstEp;
             ByteBuf outBuf = out.content();
-            if (sc != null && sc.getUpstream() instanceof org.rx.net.socks.upstream.SocksUdpUpstream && ((org.rx.net.socks.upstream.SocksUdpUpstream) sc.getUpstream()).getUdpRelayAddress(outbound) != null) {
+            InetSocketAddress udpRelayAddr = relayAddress(sc.getUpstream(), outbound);
+            if (udpRelayAddr != null) {
+                if (!udpRelayAddr.equals(out.sender())) {
+                    log.warn("SS UDP discard packet from unexpected relay sender {}, expected {}", out.sender(), udpRelayAddr);
+                    return;
+                }
+                if (!UdpManager.isValidSocks5UdpPacket(outBuf)) {
+                    log.warn("SS UDP discard invalid socks5 relay packet from {}, size={}", out.sender(), outBuf.readableBytes());
+                    return;
+                }
                 UnresolvedEndpoint tmp = UdpManager.socks5Decode(outBuf);
                 realDstEp = tmp.socketAddress();
             } else {
@@ -49,6 +76,11 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             if (debug) {
                 log.info("SS UDP IN {}[{}] => {}", realDstEp, dstEp, srcEp);
             }
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            log.warn("SS UDP backend relay error", cause);
         }
     }
 
@@ -95,26 +127,41 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
         Upstream upstream = e.getUpstream();
         Channel outbound = e.outbound.channel();
+        final SocksContext finalE = e;
         EndpointTracer.UDP.link(srcEp, outbound);
-
-        UnresolvedEndpoint upDstEp;
-        java.net.InetSocketAddress udpRelayAddr = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream 
-                ? ((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(outbound) : null;
         inBuf.retain();
-        if (udpRelayAddr != null) {
-            inBuf = UdpManager.socks5Encode(inBuf, dstEp);
-            upDstEp = new UnresolvedEndpoint(udpRelayAddr);
-        } else {
-            upDstEp = upstream.getDestination();
-        }
         if (e.outboundActive) {
-            outbound.writeAndFlush(new DatagramPacket(inBuf, upDstEp.socketAddress()));
+            DatagramPacket packet = buildOutboundPacket(e, outbound, dstEp, inBuf);
+            if (packet == null) {
+                inBuf.release();
+                log.warn("SS UDP relay not ready for {}, drop packet from {}", dstEp, srcEp);
+                return;
+            }
+            outbound.writeAndFlush(packet);
         } else {
             ByteBuf finalInBuf = inBuf;
-            e.outbound.addListener((ChannelFutureListener) f -> f.channel().writeAndFlush(new DatagramPacket(finalInBuf, upDstEp.socketAddress())));
+            e.outbound.addListener((ChannelFutureListener) f -> {
+                if (!f.isSuccess()) {
+                    finalInBuf.release();
+                    return;
+                }
+                DatagramPacket packet = buildOutboundPacket(finalE, f.channel(), dstEp, finalInBuf);
+                if (packet == null) {
+                    finalInBuf.release();
+                    log.warn("SS UDP relay not ready after bind for {}, drop packet from {}", dstEp, srcEp);
+                    return;
+                }
+                f.channel().writeAndFlush(packet);
+            });
         }
         if (debug) {
-            log.info("SS UDP OUT {} => {}[{}]", srcEp, upDstEp, dstEp);
+            InetSocketAddress udpRelayAddr = relayAddress(upstream, outbound);
+            log.info("SS UDP OUT {} => {}[{}]", srcEp, udpRelayAddr != null ? udpRelayAddr : upstream.getDestination(), dstEp);
         }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        log.warn("SS UDP frontend relay error", cause);
     }
 }
