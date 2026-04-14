@@ -14,6 +14,12 @@ todos:
   - id: p0-holder-leak
     content: 修复 WheelTimer.holder 泄漏：cancel 清理、submit 失败清理、shutdown 清理、考虑改实例级别
     status: pending
+  - id: p0-holder-atomic
+    content: 用 compute 实现 setTimeout 的 SINGLE/REPLACE 原子仲裁，杜绝并发双注册/双活
+    status: pending
+  - id: p0-shutdown-contract
+    content: shutdown/shutdownNow 清理 holder+timer 并拒绝后续新任务（RejectedExecutionException）
+    status: pending
   - id: p0-timer-sync
     content: 缩小 WheelTimer.Task.run() 的 synchronized 范围，避免阻塞时间轮 worker
     status: pending
@@ -26,8 +32,11 @@ todos:
   - id: p1-fixedrate-semantics
     content: 修正 scheduleAtFixedRate 语义（漂移/负delay/重入），然后替代动态代理并优化 Task 复用
     status: pending
+  - id: p1-cancel-get-contract
+    content: 重构 WheelTimer.Task 终态契约：cancel 唤醒等待者抛 CancellationException、get(timeout) 剩余时间预算
+    status: pending
   - id: p2-misc
-    content: LinkedList -> ArrayDeque、stackTrace 延迟拼接、padding 清理、wait/notify 改 CountDownLatch
+    content: LinkedList -> ArrayDeque、stackTrace 延迟拼接、padding 清理
     status: pending
   - id: test-and-monitoring
     content: 补充单测（taskMap/taskSerialMap/holder 清理）、定时器回归、监控指标暴露
@@ -82,7 +91,8 @@ private static final ThreadLocal<InternalThreadLocalMap> SLOW_THREAD_LOCAL_MAP =
 
 **建议**：
 - 在 `ThreadQueue.remove()` 中同步清理 `taskMap`。
-- 考虑使用 `WeakHashMap` 或 Caffeine 弱引用 cache 替代，避免强引用泄漏。
+- 在拒绝策略 handler 中，若 `r` 曾被 `setTask` 写入 `taskMap`，需在入队失败/线程池 shutdown 分支中主动 `taskMap.remove(r)`。
+- 保持 `ConcurrentHashMap` + 明确清理路径，不使用 `WeakHashMap`（非线程安全、不适合热点并发路径）或 GC 驱动方案。
 
 #### 1.4 `runSerialAsync` 正常路径完成竞态（核心缺陷）
 
@@ -231,8 +241,65 @@ Math.abs(TASK_COUNTER.incrementAndGet() % 100) < threshold
 - `cancel()` 方法中主动 `holder.remove(id)`。
 - 周期任务停止时（`continueFlag` 为 false）确保 `holder.remove(id)` 在所有分支都执行。
 - `Task.run()` 中对 `executor.submit()` 加 try-catch，提交失败时清理 holder。
-- `shutdown()` 中遍历 `holder` 取消所有 pending 任务并 clear。
+- `shutdown()` 中遍历 `holder` 取消所有 pending 任务并 clear；`shutdownNow()` 同样需要 `timer.stop()` + clear（当前实现缺失 `timer.stop()`）。
+- `shutdown()` / `shutdownNow()` 后，`setTimeout`、`schedule*`、`execute` 必须拒绝新任务（抛 `RejectedExecutionException`），与 `ScheduledExecutorService` 契约一致。当前实现中 `execute()` 直接委托给底层共享 `executor`，shutdown 后仍可提交。
 - 考虑将 `holder` 改为实例级别而非 static，避免跨实例 id 碰撞。
+
+#### 2.1b `setTimeout` 的 SINGLE/REPLACE 缺少原子仲裁（并发语义失效）
+
+当前 `setTimeout(Task)` 中 `holder.get(task.id)` 与 `holder.put(task.id, task)` 是**两步非原子操作**（第 281-293 行）：
+
+```java
+if (flags.has(TimeoutFlag.SINGLE)) {
+    TimeoutFuture<T> ot = holder.get(task.id);   // step 1: 检查
+    if (ot != null) {
+        return ot;
+    }
+}
+TimeoutFuture<T> ot = holder.put(task.id, task);  // step 2: 写入
+newTimeout(task, 0, timer);
+if (flags.has(TimeoutFlag.REPLACE) && ot != null) {
+    ot.cancel();
+}
+```
+
+并发提交相同 taskId 时：
+
+- **SINGLE 双注册**：两个线程同时 `get` 返回 null，都通过检查，都 `put` 并注册 timeout。SINGLE "至多一个生效"的语义被破坏，实际会有两个任务同时运行。
+- **REPLACE 取消错误实例**：线程 A `put` 后拿到旧值准备 cancel，线程 B 已经 `put` 了更新的值覆盖了 A 的 task。A cancel 的是更早一轮的旧值，而 B 的 task 和 A 的 task 同时存活（双活）。
+- **REPLACE put 后 cancel 前的窗口**：`newTimeout` 在 `cancel` 之前执行，新旧任务短暂并存。
+
+**建议**：用 `ConcurrentHashMap.compute` 实现原子仲裁：
+
+```java
+private <T> TimeoutFuture<T> setTimeout(Task<T> task) {
+    if (task.id == null) {
+        newTimeout(task, 0, timer);
+        return task;
+    }
+
+    FlagsEnum<TimeoutFlag> flags = task.flags;
+    $<TimeoutFuture<T>> replaced = $();
+
+    TimeoutFuture<T> result = (TimeoutFuture<T>) holder.compute(task.id, (k, existing) -> {
+        if (flags.has(TimeoutFlag.SINGLE) && existing != null) {
+            return existing;  // 原子保留已有任务
+        }
+        if (flags.has(TimeoutFlag.REPLACE) && existing != null) {
+            replaced.v = (TimeoutFuture<T>) existing;
+        }
+        newTimeout(task, 0, timer);
+        return task;
+    });
+
+    if (replaced.v != null) {
+        replaced.v.cancel();
+    }
+    return result;
+}
+```
+
+这样 SINGLE 的检查与跳过、REPLACE 的替换与旧值获取都在 compute 的原子函数内完成，杜绝并发窗口。
 
 ---
 
@@ -285,8 +352,23 @@ public void run(Timeout timeout) throws Exception {
 **c) 慢任务重入并发**：`command.run()` 在 executor 线程上执行，而下一次触发已在时间轮上注册。如果 `command` 执行时间超过 `period`，下一次到期时当前执行尚未完成，同一个 `command` 会被并发提交到 executor，违反 fixed-rate "不重入"的隐含契约。
 
 **建议**（按顺序执行）：
-1. **先修正语义**：改为在 `command.run()` 完成后再注册下一次，计算方式为 `delay = max(0, period - elapsed)` 防止负值，且只在前一次执行完毕后才提交下一次（防止重入）。
-2. **再优化分配**：语义正确后，复用 `Task` 对象，只更新 `delay` 和 `expiredTime`，直接调 `newTimeout` 重新注册，避免每周期 `new Task` + lambda 捕获。
+
+1. **先修正为真正的 fixed-rate 语义**：维护单调递增的计划触发时间 `nextFireTime`，每轮调度用 `max(0, nextFireTime - System.currentTimeMillis())` 计算 delay，而非 `period - elapsed`。后者本质是 fixed-delay，在 worker 启动延迟、GC 停顿或连续超期场景下会持续累计漂移。核心不变式：
+
+```java
+long nextFireTime = initialFireTime;  // = System.currentTimeMillis() + initialDelay
+
+// 每轮完成后
+nextFireTime += period;
+long delay = Math.max(0, nextFireTime - System.currentTimeMillis());
+// 用 delay 注册下一次 timeout
+```
+
+如果连续多次超期（`nextFireTime` 已经落后于 now），`delay = 0` 立即追赶，追赶完毕后自然恢复到正常节奏，不会像 `period - elapsed` 那样把误差带入下一轮。
+
+2. **禁止重入**：只在当前 `command.run()` 完成后才注册下一次 timeout。用一个 `AtomicBoolean running` 或直接在执行 lambda 的 finally 中注册，保证同一周期任务在 executor 中至多一个实例。
+
+3. **再优化分配**：语义正确后，复用 `Task` 对象，只更新 `delay` 和 `expiredTime`，直接调 `newTimeout` 重新注册，避免每周期 `new Task` + lambda 捕获。
 
 #### 2.5 `Task` 内 `p0, p1` 伪共享填充不足
 
@@ -298,11 +380,75 @@ public void run(Timeout timeout) throws Exception {
 
 ### P2 - 其他优化
 
-#### 2.6 `Task.get()` 的 wait/notify 模式
+#### 2.6 `Task` 缺少 cancel/get 终态契约
 
-第 149-172 行使用经典 synchronized + wait/notify 等待 future 赋值。存在虚假唤醒风险（`wait()` 后应 loop 检查条件），且与 `run()` 共用同一个 monitor，增加锁竞争。
+当前问题不仅是 wait/notify 的虚假唤醒，更严重的是 cancel 与 get 之间缺少终态协调：
 
-**建议**：改用 `CountDownLatch` 或 `CompletableFuture<Future<T>>` 替代，语义更清晰、无虚假唤醒问题。
+**a) cancel 后 get 永久阻塞**：若 `cancel()` 在 `run()` 赋值 `future` 之前被调用，`timeout` 被取消但 `future` 仍为 null。此时 `get()` 进入 `synchronized (this) { wait(); }` 后无人唤醒，**永久阻塞**。按 `ScheduledFuture` 契约，cancel 后 `get()` 应立即抛出 `CancellationException`。
+
+**b) get(timeout) 双重计时**：`get(long timeout, TimeUnit unit)` 先 `wait(millis)` 等待 `future` 赋值，再 `future.get(timeout, unit)` 重新计全量超时。调用方预算的最大等待时间为 `timeout`，但实际最长等待可达 `2 * timeout`。应用 wait 消耗后的**剩余时间**传递给 `future.get`。
+
+**c) 虚假唤醒**：`wait()` 返回后未 loop 检查 `future != null`，虚假唤醒会导致 `future.get()` 抛 NPE。
+
+**建议**：引入显式 `cancelled` 状态标志 + `CountDownLatch` 协调 future 安装，不使用 `CompletableFuture<Future<T>>`（其 `get()` 对 `completeExceptionally(CancellationException)` 会包装为 `ExecutionException`，无法直接抛出 `CancellationException`）。
+
+```java
+private volatile boolean cancelled;
+private final CountDownLatch futureLatch = new CountDownLatch(1);
+
+@Override
+public void run(Timeout timeout) throws Exception {
+    // ... trace setup ...
+    Future<T> f = executor.submit(() -> { ... });
+    future = f;
+    futureLatch.countDown();
+    // ... trace cleanup ...
+}
+
+@Override
+public boolean cancel(boolean mayInterruptIfRunning) {
+    cancelled = true;
+    futureLatch.countDown();  // 唤醒 get() 等待者
+    if (future != null) {
+        future.cancel(mayInterruptIfRunning);
+    }
+    if (id != null) {
+        holder.remove(id);
+    }
+    return timeout != null ? timeout.cancel() : true;
+}
+
+@Override
+public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+    long deadlineNanos = System.nanoTime() + unit.toNanos(timeout);
+    if (!futureLatch.await(timeout, unit)) {
+        throw new TimeoutException();
+    }
+    if (cancelled) {
+        throw new CancellationException();
+    }
+    long remainingNanos = deadlineNanos - System.nanoTime();
+    if (remainingNanos <= 0) {
+        throw new TimeoutException();
+    }
+    return future.get(remainingNanos, TimeUnit.NANOSECONDS);
+}
+
+@Override
+public T get() throws InterruptedException, ExecutionException {
+    futureLatch.await();
+    if (cancelled) {
+        throw new CancellationException();
+    }
+    return future.get();
+}
+```
+
+关键点：
+- `cancelled` 标志 + `futureLatch.countDown()` 保证 cancel 立即唤醒等待者。
+- `get()` 先检查 `cancelled` 再访问 `future`，直接抛出 `CancellationException`（非包装在 ExecutionException 中）。
+- `get(timeout)` 用 deadline 减去 latch 等待消耗，将**剩余时间**传递给 `future.get()`，保证总等待不超过调用方预算。
+- `CountDownLatch` 无虚假唤醒问题，且不与 `run()` 共享 monitor。
 
 #### 2.7 `holder` static vs `timer` instance 不一致
 
@@ -320,6 +466,8 @@ public void run(Timeout timeout) throws Exception {
 | P0 | 1.3 | ThreadPool | taskMap 内存泄漏 |
 | P0 | 1.4 | ThreadPool | runSerialAsync 正常路径完成竞态 |
 | P0 | 2.1 | WheelTimer | holder 无驱逐 + shutdown 不清理 |
+| P0 | 2.1b | WheelTimer | setTimeout SINGLE/REPLACE 缺原子仲裁 |
+| P0 | 2.1c | WheelTimer | shutdown 后缺少拒绝新任务契约 |
 | P0 | 2.2 | WheelTimer | synchronized 阻塞时间轮 worker |
 | P1 | 1.5 | ThreadPool | Task.adapt 冗余对象分配 |
 | P1 | 1.8 | ThreadPool | FlagsEnum 高频创建 |
@@ -331,7 +479,7 @@ public void run(Timeout timeout) throws Exception {
 | P2 | 1.7 | ThreadPool | stackTrace join 分配 |
 | P2 | 1.11 | ThreadPool | LinkedList 改 ArrayDeque |
 | P2 | 2.5 | WheelTimer | padding 不足或冗余 |
-| P2 | 2.6 | WheelTimer | wait/notify 虚假唤醒 |
+| P1 | 2.6 | WheelTimer | cancel/get 终态契约缺失（永久阻塞/双重计时/CancellationException） |
 | P2 | 2.7 | WheelTimer | holder static/instance 不一致 |
 
 ---
@@ -353,22 +501,37 @@ public void run(Timeout timeout) throws Exception {
 - `cancel()` 串行链中间节点后，后续 entry 能正确回收。
 - 高并发（100+ 线程）对同一 taskId 交替提交串行任务，完成后 map 为空。
 
-**WheelTimer - holder 清理**
+**WheelTimer - holder 清理与原子语义**
 - 一次性任务正常完成后 `holder.get(id)` 返回 null。
 - 周期任务 `cancel()` 后 `holder.get(id)` 返回 null。
 - `shutdown()` 后 `holder` 为空，所有 pending timeout 已取消。
 - 带 `SINGLE` flag 的任务完成后再注册同 id 新任务，旧 entry 不残留。
+- **SINGLE 并发回归**：多线程（10+ 线程）同时提交同一 taskId 的 SINGLE 任务，验证 holder 中始终只有一个 entry，且只有一个任务实际执行。
+- **REPLACE 并发回归**：多线程同时提交同一 taskId 的 REPLACE 任务，验证最终只有最后一个存活，无双活。
+
+**WheelTimer - cancel/get 终态**
+- `cancel()` 在 `future` 赋值前调用：`get()` 立即抛出 `CancellationException`，不阻塞。
+- `get(timeout)` 总等待时间不超过调用方指定的 timeout 预算。
+- `isCancelled()` 在 cancel 后返回 true，`isDone()` 在 cancel 后返回 true。
 
 ### 4.2 定时器回归测试（必须）
 
 **scheduleAtFixedRate 语义正确性**
 - period = 200ms、command 耗时 50ms：验证 10 个周期内触发间隔偏差 < TICK_DURATION（100ms）。
+- period = 200ms、command 耗时 50ms、运行 50 个周期：验证第 N 次触发时间与 `startTime + N * period` 的绝对偏差不持续增长（无累计漂移）。
 - period = 50ms（< TICK_DURATION）：不抛异常，不出现负 delay，实际间隔 >= 0。
 - command 耗时 > period（慢任务）：验证同一 command 不并发重入（通过 AtomicInteger 检测并发度始终 <= 1）。
+- command 连续 3 次超期后恢复正常耗时：验证调度追赶后恢复到正常节奏。
 - `cancel()` 后不再有新触发（观察 500ms 无新调用）。
 
 **scheduleWithFixedDelay 回归**
 - 确认现有 `scheduleWithFixedDelay` 行为不受 `scheduleAtFixedRate` 修改影响。
+
+**shutdown 后拒绝新任务**
+- `shutdown()` 后调用 `setTimeout` / `schedule` / `execute`：均抛 `RejectedExecutionException`。
+- `shutdownNow()` 后调用 `setTimeout` / `schedule` / `execute`：均抛 `RejectedExecutionException`。
+- `shutdown()` 后 `holder` 为空，`timer.pendingTimeouts()` 为 0。
+- `shutdownNow()` 后 `timer` 已 stop。
 
 ### 4.3 背压与高并发测试（建议）
 

@@ -25,15 +25,15 @@ public class FecDecoder extends ChannelInboundHandlerAdapter {
      */
     static class FecGroup {
         final int groupId;
-        final int groupSize;
+        final short groupSize;
         final byte[][] dataPackets;
         final boolean[] received;
         byte[] parityPayload;
-        int receivedCount;
+        byte receivedCount;
         int maxPayloadLen;
         long createTime;
 
-        FecGroup(int groupId, int groupSize) {
+        FecGroup(int groupId, short groupSize) {
             this.groupId = groupId;
             this.groupSize = groupSize;
             this.dataPackets = new byte[groupSize][];
@@ -84,8 +84,8 @@ public class FecDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private final int groupSize;
-    private final long staleGroupTimeoutMs;
+    private final short groupSize;
+    private final short staleGroupTimeoutMs;
     private final Map<Integer, FecGroup> groups = new ConcurrentHashMap<>();
     private ScheduledFuture<?> evictionTimer;
 

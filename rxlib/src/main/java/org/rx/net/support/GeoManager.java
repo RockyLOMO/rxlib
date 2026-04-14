@@ -29,7 +29,7 @@ import static org.rx.core.Extends.tryClose;
 public class GeoManager {
     public static final GeoManager INSTANCE = new GeoManager();
     @Setter
-    long timeoutMillis = 5 * 60 * 1000;
+    int timeoutMillis = 5 * 60 * 1000;
     @Setter
     AuthenticProxy proxy;
     @Setter

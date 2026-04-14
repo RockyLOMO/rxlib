@@ -18,14 +18,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 public class FecEncoder extends ChannelOutboundHandlerAdapter {
-    private final int groupSize;
-    private final int flushTimeoutMs;
+    private final short groupSize;
+    private final short flushTimeoutMs;
     private final AtomicInteger seqCounter = new AtomicInteger();
     private final AtomicInteger groupCounter = new AtomicInteger();
 
     // 当前组状态
     private byte[][] groupBuffers;
-    private int groupIdx;
+    private byte groupIdx;
     private int currentGroupId;
     private int maxPayloadLen;
     private InetSocketAddress lastRemote;

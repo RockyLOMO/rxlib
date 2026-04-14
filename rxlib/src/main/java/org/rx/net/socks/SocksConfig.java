@@ -35,12 +35,12 @@ public class SocksConfig extends SocketConfig {
     private AuthenticEndpoint kcptunClient;
     private boolean tcpWarmPoolEnabled;
     private int tcpWarmPoolMinSize = 2;
-    private long tcpWarmPoolMaxIdleMillis = 60_000L;
-    private long tcpWarmPoolRefillIntervalMillis = 1_000L;
+    private int tcpWarmPoolMaxIdleMillis = 60_000;
+    private int tcpWarmPoolRefillIntervalMillis = 1_000;
     private boolean udpLeasePoolEnabled;
     private int udpLeasePoolMinSize = 2;
     private int udpLeasePoolMaxSize = 32;
-    private long udpLeasePoolMaxIdleMillis = 300_000L;
+    private int udpLeasePoolMaxIdleMillis = 300_000;
     private int udpLeaseRpcBreakerThreshold = 3;
     private int udpLeaseRpcBreakerOpenSeconds = 30;
     /**
