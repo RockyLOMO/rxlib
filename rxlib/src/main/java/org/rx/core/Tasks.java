@@ -31,8 +31,6 @@ public final class Tasks {
     static int poolCount;
 
     static {
-        createPool(new ObjectChangedEvent(RxConfig.INSTANCE, Collections.emptyMap()));
-
         executor = new AbstractExecutorService() {
             @Getter
             boolean shutdown;
@@ -79,6 +77,9 @@ public final class Tasks {
             }
         };
         timer = new WheelTimer(executor);
+
+        createPool(new ObjectChangedEvent(RxConfig.INSTANCE, Collections.emptyMap()));
+
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             Action fn;

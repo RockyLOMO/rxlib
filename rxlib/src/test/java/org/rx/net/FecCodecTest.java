@@ -95,8 +95,8 @@ public class FecCodecTest {
     @Test
     public void testEncoderEmitsParityOnFullGroup() {
         FecConfig config = new FecConfig();
-        config.setGroupSize(3);
-        config.setFlushTimeoutMs(0); // disable timer for test
+        config.setGroupSize((short) 3);
+        config.setFlushTimeoutMs((short) 0); // disable timer for test
 
         EmbeddedChannel channel = new EmbeddedChannel(new FecEncoder(config));
 
@@ -132,8 +132,8 @@ public class FecCodecTest {
     @Test
     public void testDecoderRecoversMissingPacket() {
         FecConfig config = new FecConfig();
-        config.setGroupSize(3);
-        config.setStaleGroupTimeoutMs(5000);
+        config.setGroupSize((short) 3);
+        config.setStaleGroupTimeoutMs((short) 5000);
 
         EmbeddedChannel channel = new EmbeddedChannel(new FecDecoder(config));
 
@@ -184,8 +184,8 @@ public class FecCodecTest {
     @Test
     public void testDecoderAllDataNoLoss() {
         FecConfig config = new FecConfig();
-        config.setGroupSize(2);
-        config.setStaleGroupTimeoutMs(5000);
+        config.setGroupSize((short) 2);
+        config.setStaleGroupTimeoutMs((short) 5000);
 
         EmbeddedChannel channel = new EmbeddedChannel(new FecDecoder(config));
 
@@ -219,8 +219,8 @@ public class FecCodecTest {
     public void testDecoderParityLostNoImpact() {
         // If parity is lost but all data arrives, everything works fine
         FecConfig config = new FecConfig();
-        config.setGroupSize(2);
-        config.setStaleGroupTimeoutMs(5000);
+        config.setGroupSize((short) 2);
+        config.setStaleGroupTimeoutMs((short) 5000);
 
         EmbeddedChannel channel = new EmbeddedChannel(new FecDecoder(config));
 
@@ -252,8 +252,8 @@ public class FecCodecTest {
     @Test
     public void testMultipleGroups() {
         FecConfig config = new FecConfig();
-        config.setGroupSize(2);
-        config.setFlushTimeoutMs(0);
+        config.setGroupSize((short) 2);
+        config.setFlushTimeoutMs((short) 0);
 
         EmbeddedChannel encoder = new EmbeddedChannel(new FecEncoder(config));
 

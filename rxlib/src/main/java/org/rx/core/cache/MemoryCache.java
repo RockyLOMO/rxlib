@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Extends.as;
@@ -80,7 +81,16 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     }
 
     public static <TK, TV> Caffeine<TK, TV> rootBuilder() {
-        return (Caffeine<TK, TV>) Caffeine.newBuilder().executor(Tasks.executor()).scheduler(Scheduler.forScheduledExecutorService(Tasks.timer()));
+        Caffeine<Object, Object> builder = Caffeine.newBuilder();
+        ExecutorService executor = Tasks.executor();
+        if (executor != null) {
+            builder.executor(executor);
+        }
+        WheelTimer timer = Tasks.timer();
+        if (timer != null) {
+            builder.scheduler(Scheduler.forScheduledExecutorService(timer));
+        }
+        return (Caffeine<TK, TV>) builder;
     }
 
     final com.github.benmanes.caffeine.cache.Cache<TK, TV> cache;

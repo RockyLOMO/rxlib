@@ -341,7 +341,7 @@ public class TestSocks extends AbstractTester {
     public void rpcStatefulImpl() {
         //服务端监听
         RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(3307));
-        serverConfig.setEventComputeVersion(2);  //版本号一样的才会去client计算eventArgs再广播
+        serverConfig.setEventComputeVersion((short) 2);  //版本号一样的才会去client计算eventArgs再广播
 //        serverConfig.getEventBroadcastVersions().add(2);  //版本号一致才广播
         UserManagerImpl server = new UserManagerImpl();
         Remoting.register(server, serverConfig);
@@ -359,7 +359,7 @@ public class TestSocks extends AbstractTester {
         }
         assert facade1.computeLevel(17, 1) == 18;
 
-        config.setEventVersion(2);
+        config.setEventVersion((short) 2);
         UserManagerImpl facade2 = Remoting.createFacade(UserManagerImpl.class, config);
         //注册事件（广播）
         rpcImplEvent(facade1, "0x00");
