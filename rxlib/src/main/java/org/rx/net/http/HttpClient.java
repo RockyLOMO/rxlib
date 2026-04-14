@@ -377,7 +377,7 @@ public class HttpClient implements AutoCloseable {
     }
 
     @SneakyThrows
-    static OkHttpClient createClient(long connectTimeoutMillis, long readWriteTimeoutMillis, boolean enableCookie, Proxy proxy) {
+    static OkHttpClient createClient(int connectTimeoutMillis, int readWriteTimeoutMillis, boolean enableCookie, Proxy proxy) {
         SSLContext tls = SSLContext.getInstance("TLS");
         TrustManager[] trustManagers = InsecureTrustManagerFactory.INSTANCE.getTrustManagers();
         tls.init(null, trustManagers, CodecUtil.threadLocalSecureRandom());
@@ -401,7 +401,7 @@ public class HttpClient implements AutoCloseable {
     // 1 cachingStream, 2 enableCookie, 4 enableLog
     // byte featureFlags = CACHING_STREAM_FLAG;
     byte featureFlags = 0;
-    long connectTimeoutMillis, readWriteTimeoutMillis;
+    int connectTimeoutMillis, readWriteTimeoutMillis;
     AuthenticProxy proxy;
     // Not thread safe
     OkHttpClient client;
@@ -437,11 +437,11 @@ public class HttpClient implements AutoCloseable {
         return this;
     }
 
-    public HttpClient withTimeoutMillis(long timeoutMillis) {
+    public HttpClient withTimeoutMillis(int timeoutMillis) {
         return withTimeoutMillis(timeoutMillis, timeoutMillis);
     }
 
-    public synchronized HttpClient withTimeoutMillis(long connectTimeoutMillis, long readWriteTimeoutMillis) {
+    public synchronized HttpClient withTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
         this.connectTimeoutMillis = connectTimeoutMillis;
         this.readWriteTimeoutMillis = readWriteTimeoutMillis;
         client = null;

@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.cache.MemoryCache;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
@@ -68,7 +69,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
         ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = inbound.attr(ATTR_ROUTE_MAP).get();
         if (routeMap == null) {
-            inbound.attr(ATTR_ROUTE_MAP).set(routeMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<UnresolvedEndpoint, SocksContext>build().asMap());
+            inbound.attr(ATTR_ROUTE_MAP).set(routeMap = MemoryCache.<UnresolvedEndpoint, SocksContext>rootBuilder().maximumSize(256).build().asMap());
         }
 
         SocksContext e = routeMap.get(dstEp);

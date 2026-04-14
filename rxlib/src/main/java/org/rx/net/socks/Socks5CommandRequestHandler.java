@@ -4,7 +4,9 @@ import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.exception.TraceHandler;
 import org.rx.net.*;
+import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -82,6 +84,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             } else {
                 udpFuture.channel().attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientTcpAddr);
             }
+            udpFuture.channel().attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(Boolean.FALSE);
 
             udpFuture.channel().closeFuture().addListener(f -> {
                 if (tcpControl.isOpen()) {
@@ -108,6 +111,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     return;
                 }
                 InetSocketAddress udpBindAddr = (InetSocketAddress) f.channel().localAddress();
+                server.registerUdpRelay(f.channel());
                 // InetSocketAddress tcpLocalAddr = Sockets.getLocalAddress(tcpControl);
                 log.debug("socks5[{}] UDP_ASSOCIATE relay bound {} for {}", config.getListenPort(), udpBindAddr, clientTcpAddr);
                 // Use IPv4/IPv6 type based on the actual bound address; relay addr is always a real IP.
@@ -125,12 +129,53 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
+        if (e.getUpstream() instanceof SocksTcpUpstream) {
+            ((SocksTcpUpstream) e.getUpstream()).prepareDestination();
+            if (reconnectionAttempts == null && tryWarmConnect(inbound, dstAddrType, e)) {
+                return;
+            }
+        }
+        connectSlow(inbound, dstAddrType, e, reconnectionAttempts);
+    }
 
-        // tcp reconnect upstream可能会变，不定临时变量
+    private boolean tryWarmConnect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e) {
+        SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
+        SocksConfig config = server.config;
+        SocksTcpUpstream upstream = (SocksTcpUpstream) e.getUpstream();
+        Channel outbound = Socks5UpstreamPoolManager.INSTANCE.borrowWarmChannel(upstream);
+        if (outbound == null) {
+            return false;
+        }
+
+        ensureFrontendHandlers(inbound, outbound);
+        EndpointTracer.TCP.link(Sockets.getRemoteAddress(inbound), outbound);
+
+        Socks5WarmupHandler warmupHandler = outbound.pipeline().get(Socks5WarmupHandler.class);
+        if (warmupHandler == null) {
+            Sockets.closeOnFlushed(outbound);
+            return false;
+        }
+        warmupHandler.setConnectedCallback(() -> onBackendConnected(inbound, outbound, e));
+        ChannelFuture connectFuture = warmupHandler.connect(upstream.getDestination());
+        SocksContext.markCtx(inbound, connectFuture, e);
+        connectFuture.addListener((ChannelFutureListener) f -> {
+            if (!f.isSuccess()) {
+                TraceHandler.INSTANCE.saveMetric("TCP_WARM_FALLBACK", upstream.warmPoolKey().toString());
+                Sockets.closeOnFlushed(outbound);
+                connectSlow(inbound, dstAddrType, e, null);
+                return;
+            }
+            relay(inbound, outbound, dstAddrType, e);
+        });
+        return true;
+    }
+
+    private void connectSlow(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {
+        SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
+        SocksConfig config = server.config;
         ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), e.getUpstream().getConfig(), outbound -> {
             e.getUpstream().initChannel(outbound);
-            inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
-            BackpressureHandler.install(inbound, outbound);
+            ensureFrontendHandlers(inbound, outbound);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
@@ -158,16 +203,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             Socks5ClientHandler proxyHandler;
             if (server.cipherRoute(e.getFirstDestination()) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {
-                    SocketConfig upConf = e.getUpstream().getConfig();
-                    if (upConf.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
-                        // todo 解依赖ZIP
-                        outbound.attr(SocketConfig.ATTR_CONF).set(upConf);
-                        Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
-                        Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
-                        if (config.isDebug()) {
-                            log.info("socks5[{}] TCP {} => {} BACKEND_CIPHER", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress());
-                        }
-                    }
+                    onBackendConnected(inbound, outbound, e);
                     relay(inbound, outbound, dstAddrType, e);
                 });
                 return;
@@ -176,6 +212,29 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             relay(inbound, outbound, dstAddrType, e);
         });
         SocksContext.markCtx(inbound, outboundFuture, e);
+    }
+
+    private void ensureFrontendHandlers(Channel inbound, Channel outbound) {
+        if (inbound.pipeline().get(SocksTcpFrontendRelayHandler.class) == null) {
+            inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
+        }
+        if (outbound.pipeline().get(BackpressureHandler.class) == null) {
+            BackpressureHandler.install(inbound, outbound);
+        }
+    }
+
+    private void onBackendConnected(Channel inbound, Channel outbound, SocksContext e) {
+        SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
+        SocksConfig config = server.config;
+        SocketConfig upConf = e.getUpstream().getConfig();
+        if (server.cipherRoute(e.getFirstDestination()) && upConf.getTransportFlags().has(TransportFlags.COMPRESS_BOTH)) {
+            outbound.attr(SocketConfig.ATTR_CONF).set(upConf);
+            Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_DECODER, new CipherDecoder().channelHandlers());
+            Sockets.addBefore(outbound.pipeline(), Sockets.ZIP_ENCODER, CipherEncoder.DEFAULT.channelHandlers());
+            if (config.isDebug()) {
+                log.info("socks5[{}] TCP {} => {} BACKEND_CIPHER", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress());
+            }
+        }
     }
 
     private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e) {

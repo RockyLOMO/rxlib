@@ -33,6 +33,16 @@ public class SocksConfig extends SocketConfig {
     private boolean enableUdp2raw;
     private InetSocketAddress udp2rawClient;
     private AuthenticEndpoint kcptunClient;
+    private boolean tcpWarmPoolEnabled;
+    private int tcpWarmPoolMinSize = 2;
+    private int tcpWarmPoolMaxIdleMillis = 60_000;
+    private int tcpWarmPoolRefillIntervalMillis = 1_000;
+    private boolean udpLeasePoolEnabled;
+    private int udpLeasePoolMinSize = 2;
+    private int udpLeasePoolMaxSize = 32;
+    private int udpLeasePoolMaxIdleMillis = 300_000;
+    private int udpLeaseRpcBreakerThreshold = 3;
+    private int udpLeaseRpcBreakerOpenSeconds = 30;
     /**
      * UDP 多倍发包配置。
      * 取值范围 [1, 5]，默认 1。

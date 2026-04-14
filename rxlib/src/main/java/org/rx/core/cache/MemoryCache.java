@@ -79,7 +79,7 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
         return b.maximumWeight(maxBytes).weigher((k, v) -> entryBytes);
     }
 
-    static <TK, TV> Caffeine<TK, TV> rootBuilder() {
+    public static <TK, TV> Caffeine<TK, TV> rootBuilder() {
         return (Caffeine<TK, TV>) Caffeine.newBuilder().executor(Tasks.executor()).scheduler(Scheduler.forScheduledExecutorService(Tasks.timer()));
     }
 

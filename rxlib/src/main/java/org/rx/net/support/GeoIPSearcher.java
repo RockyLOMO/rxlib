@@ -1,7 +1,6 @@
 package org.rx.net.support;
 
 import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.maxmind.db.CHMCache;
 import com.maxmind.db.Reader;
 import com.maxmind.geoip2.DatabaseReader;
@@ -11,6 +10,7 @@ import io.netty.util.NetUtil;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.cache.MemoryCache;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
@@ -31,7 +31,7 @@ public class GeoIPSearcher implements Closeable {
     static final IpGeolocation UNKNOWN_IP = new IpGeolocation(null, null, "unknown");
 
     final DatabaseReader reader;
-    final Cache<String, IpGeolocation> lookupCache = Caffeine.newBuilder()
+    final Cache<String, IpGeolocation> lookupCache = MemoryCache.<String, IpGeolocation>rootBuilder()
             .maximumSize(4096)
             .expireAfterWrite(10, TimeUnit.MINUTES)
             .build();

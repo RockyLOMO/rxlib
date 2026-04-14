@@ -10,6 +10,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.*;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.core.RxConfig;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -20,11 +21,50 @@ import java.io.OutputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
 class SocksProxyServerIntegrationTest {
+    static final class LocalRpcFacade implements SocksRpcContract {
+        private final SocksProxyServer server;
+
+        LocalRpcFacade(SocksProxyServer server) {
+            this.server = server;
+        }
+
+        @Override
+        public void fakeEndpoint(java.math.BigInteger hash, String realEndpoint) {
+            SocksRpcContract.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(realEndpoint));
+        }
+
+        @Override
+        public void addWhiteList(InetAddress endpoint) {
+            server.getConfig().getWhiteList().add(endpoint);
+        }
+
+        @Override
+        public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+            try {
+                return Collections.singletonList(InetAddress.getByName(host));
+            } catch (UnknownHostException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+
+        @Override
+        public boolean resetUdpRelay(int relayPort) {
+            return server.resetUdpRelay(relayPort);
+        }
+
+        @Override
+        public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
+            return server.claimUdpRelay(relayPort, clientAddr);
+        }
+    }
+
     static final int TCP_ECHO_PORT = 15299;
     static final int UDP_ECHO_PORT = 15300;
     static ServerBootstrap tcpEchoBootstrap;
@@ -34,6 +74,7 @@ class SocksProxyServerIntegrationTest {
 
     @BeforeAll
     static void setup() throws Exception {
+        RxConfig.INSTANCE.getDisk().setH2DbPath("./target/test-h2-socks-" + System.nanoTime());
         tcpEchoBootstrap = Sockets.serverBootstrap(ch -> ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
             @Override
             public void channelRead(ChannelHandlerContext ctx, Object msg) {
@@ -325,6 +366,48 @@ class SocksProxyServerIntegrationTest {
 
     @Test
     @SneakyThrows
+    @Timeout(value = 40)
+    void socks5UdpRelay_chained_withLeasePool_reusesProxyBRelay() {
+        int proxyAPort = 15286;
+        int proxyBPort = 15287;
+
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        SocksProxyServer proxyB = new SocksProxyServer(configB, null);
+
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        configA.setUdpLeasePoolEnabled(true);
+        configA.setUdpLeasePoolMinSize(1);
+        configA.setUdpLeasePoolMaxSize(1);
+        configA.setUdpLeasePoolMaxIdleMillis(30_000);
+        SocksProxyServer proxyA = new SocksProxyServer(configA, null);
+
+        HashMap<String, String> parameters = new HashMap<>();
+        parameters.put("udpRelayIdleSeconds", "120");
+        AuthenticEndpoint endpointB = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null, parameters);
+        UpstreamSupport supportB = new UpstreamSupport(endpointB, new LocalRpcFacade(proxyB));
+        proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), configA, supportB)));
+
+        try {
+            Thread.sleep(1000);
+            assertTrue(sendUdpViaProxy(proxyAPort, "lease-pool-first", 5), "first pooled UDP send should eventually succeed");
+            waitForCondition(() -> proxyB.udpRelayRegistry.size() == 1, 5000, "proxyB relay should stay open after first client closes");
+            waitForLeaseAvailable(configA, supportB);
+            Integer relayPort = proxyB.udpRelayRegistry.keySet().iterator().next();
+
+            assertTrue(sendUdpViaProxy(proxyAPort, "lease-pool-second", 5), "second pooled UDP send should eventually succeed");
+            waitForCondition(() -> proxyB.udpRelayRegistry.size() == 1, 5000, "proxyB relay should be reused");
+            assertEquals(relayPort, proxyB.udpRelayRegistry.keySet().iterator().next(), "lease pool should reuse the same relay port");
+        } finally {
+            proxyA.close();
+            proxyB.close();
+            Socks5UpstreamPoolManager.INSTANCE.closeAll();
+        }
+    }
+
+    @Test
+    @SneakyThrows
     @Timeout(value = 15)
     void socks5UdpRelay_udp2raw_chained_e2e() {
         int proxyAPort = 15288;
@@ -507,6 +590,88 @@ class SocksProxyServerIntegrationTest {
 
     @Test
     @SneakyThrows
+    @Timeout(value = 40)
+    void shadowsocksUdpRelay_socks5_chained_withLeasePool_e2e() {
+        int proxyBPort = 15294;
+        int proxyAPort = 15295;
+        int ssPort = 15296;
+
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        SocksProxyServer proxyB = new SocksProxyServer(configB);
+
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        configA.setUdpLeasePoolEnabled(true);
+        configA.setUdpLeasePoolMinSize(1);
+        configA.setUdpLeasePoolMaxSize(1);
+        configA.setUdpLeasePoolMaxIdleMillis(30_000);
+        SocksProxyServer proxyA = new SocksProxyServer(configA);
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort), org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "testpwd");
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+
+        UpstreamSupport supportA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyAPort), null, null), null);
+        HashMap<String, String> parameters = new HashMap<>();
+        parameters.put("udpRelayIdleSeconds", "120");
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null, parameters),
+                new LocalRpcFacade(proxyB));
+
+        ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyAPort), supportA)));
+        proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), configA, supportB)));
+
+        try {
+            Thread.sleep(1000);
+            DatagramSocket clientSock = new DatagramSocket();
+            clientSock.setSoTimeout(5000);
+            try {
+                org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword(), true);
+                boolean ok = false;
+                for (int i = 0; i < 8; i++) {
+                    ByteBuf addrBuf = Unpooled.buffer(64);
+                    UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
+                    byte[] payload = "ss-to-socks-pooled".getBytes(StandardCharsets.UTF_8);
+                    addrBuf.writeBytes(payload);
+                    byte[] encrypted = toBytes(crypto.encrypt(addrBuf));
+
+                    clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
+
+                    byte[] respBuf = new byte[1024];
+                    java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
+                    try {
+                        clientSock.receive(p);
+                    } catch (SocketTimeoutException e) {
+                        continue;
+                    }
+
+                    ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
+                    try {
+                        UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+                        byte[] echoed = new byte[decBuf.readableBytes()];
+                        decBuf.readBytes(echoed);
+                        assertEquals("ss-to-socks-pooled", new String(echoed, StandardCharsets.UTF_8));
+                        assertEquals(UDP_ECHO_PORT, srcEp.getPort());
+                        ok = true;
+                        break;
+                    } finally {
+                        decBuf.release();
+                    }
+                }
+                assertTrue(ok, "pooled Shadowsocks chain should eventually receive UDP echo");
+                waitForCondition(() -> proxyB.udpRelayRegistry.size() == 1, 5000, "proxyB relay should stay open for pooled shadowsocks chain");
+            } finally {
+                clientSock.close();
+            }
+        } finally {
+            ssServer.close();
+            proxyA.close();
+            proxyB.close();
+            Socks5UpstreamPoolManager.INSTANCE.closeAll();
+        }
+    }
+
+    @Test
+    @SneakyThrows
     @Timeout(value = 15)
     void socks5AnonymousLogin_e2e() {
         int proxyPort = 15282;
@@ -676,5 +841,85 @@ class SocksProxyServerIntegrationTest {
         buf.readBytes(b);
         buf.release();
         return b;
+    }
+
+    @SneakyThrows
+    static boolean sendUdpViaProxy(int proxyPort, String message, int attempts) {
+        try (Socket tcp = new Socket("127.0.0.1", proxyPort);
+             DatagramSocket clientSock = new DatagramSocket()) {
+            tcp.setSoTimeout(5000);
+            clientSock.setSoTimeout(5000);
+
+            OutputStream out = tcp.getOutputStream();
+            InputStream in = tcp.getInputStream();
+
+            out.write(new byte[]{0x05, 0x01, 0x00});
+            out.flush();
+            readExact(in, 2, 4000);
+
+            out.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            out.flush();
+            byte[] response = readAtLeast(in, 10, 32, 4000);
+            int relayPort = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
+
+            ByteBuf header = Unpooled.buffer();
+            header.writeZero(3);
+            header.writeByte(0x01);
+            header.writeBytes(new byte[]{127, 0, 0, 1});
+            header.writeShort(UDP_ECHO_PORT);
+            header.writeBytes(message.getBytes(StandardCharsets.UTF_8));
+            byte[] req = toBytes(header);
+
+            for (int i = 0; i < attempts; i++) {
+                try {
+                    clientSock.send(new java.net.DatagramPacket(req, req.length, InetAddress.getByName("127.0.0.1"), relayPort));
+
+                    byte[] respBuf = new byte[512];
+                    java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
+                    clientSock.receive(p);
+                    byte[] echoed = new byte[p.getLength() - 10];
+                    System.arraycopy(respBuf, 10, echoed, 0, echoed.length);
+                    assertEquals(message, new String(echoed, StandardCharsets.UTF_8));
+                    return true;
+                } catch (SocketTimeoutException e) {
+                    // retry on the same UDP_ASSOCIATE session to tolerate upstream bootstrap jitter
+                }
+            }
+            return false;
+        }
+    }
+
+    @SneakyThrows
+    static void waitForLeaseAvailable(SocksConfig config, UpstreamSupport support) {
+        SocksUdpUpstream probe = new SocksUdpUpstream(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT), config, support);
+        waitForCondition(() -> {
+            Socks5UpstreamPoolManager.UdpLeasePool pool = Socks5UpstreamPoolManager.INSTANCE.udpPool(probe);
+            if (pool == null) {
+                return false;
+            }
+            Socks5Client.Socks5UdpLease lease = pool.borrow();
+            if (lease == null) {
+                return false;
+            }
+            pool.recycle(lease);
+            return true;
+        }, 5000, "udp lease should be recycled back into pool");
+    }
+
+    @SneakyThrows
+    static void waitForCondition(CheckFn condition, long timeoutMs, String message) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.get()) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        fail(message);
+    }
+
+    @FunctionalInterface
+    interface CheckFn {
+        boolean get() throws Exception;
     }
 }

@@ -78,6 +78,7 @@ public class Socks5Client extends Disposable {
         /** The address of the SOCKS5 proxy's UDP relay endpoint (resolved from the proxy response). */
         @Getter
         final InetSocketAddress relayAddress;
+        final boolean closeUdpRelayOnDispose;
 
         /**
          * Fired (asynchronously) whenever a UDP datagram is received from the relay.
@@ -89,10 +90,11 @@ public class Socks5Client extends Disposable {
          */
         public final Delegate<Socks5UdpSession, NEventArgs<DatagramPacket>> onReceive = Delegate.create();
 
-        Socks5UdpSession(Channel tcpControl, @NonNull Channel udpRelay, InetSocketAddress relayAddress) {
+        Socks5UdpSession(Channel tcpControl, @NonNull Channel udpRelay, InetSocketAddress relayAddress, boolean closeUdpRelayOnDispose) {
             this.tcpControl = tcpControl;
             this.udpRelay = udpRelay;
             this.relayAddress = relayAddress;
+            this.closeUdpRelayOnDispose = closeUdpRelayOnDispose;
         }
 
         /**
@@ -108,7 +110,29 @@ public class Socks5Client extends Disposable {
         @Override
         protected void dispose() {
             Sockets.closeOnFlushed(tcpControl);
-            Sockets.closeOnFlushed(udpRelay);
+            if (closeUdpRelayOnDispose) {
+                Sockets.closeOnFlushed(udpRelay);
+            }
+        }
+    }
+
+    public static class Socks5UdpLease extends Disposable {
+        @Getter
+        final Channel tcpControl;
+        @Getter
+        final InetSocketAddress relayAddress;
+        @Getter
+        final int relayPort;
+
+        Socks5UdpLease(Channel tcpControl, InetSocketAddress relayAddress) {
+            this.tcpControl = tcpControl;
+            this.relayAddress = relayAddress;
+            this.relayPort = relayAddress.getPort();
+        }
+
+        @Override
+        protected void dispose() {
+            Sockets.closeOnFlushed(tcpControl);
         }
     }
 
@@ -189,12 +213,17 @@ public class Socks5Client extends Disposable {
         checkNotClosed();
         Socks5ClientHandler handler = createHandler(Socks5CommandType.CONNECT);
         Sockets.bootstrap(config, ch -> {
+            Sockets.addTcpClientHandler(ch, config, proxyServer.getEndpoint());
             ch.pipeline().addLast(handler);
             if (initChannel != null) {
                 initChannel.accept(ch);
             }
         }).connect(destination.socketAddress());
         return handler.connectFuture();
+    }
+
+    public CompletableFuture<Socks5UdpLease> udpAssociateLeaseAsync() {
+        return udpAssociateLeaseAsync(null);
     }
 
     /**
@@ -231,60 +260,71 @@ public class Socks5Client extends Disposable {
      */
     public CompletableFuture<Socks5UdpSession> udpAssociateAsync(Channel udpChannel) {
         checkNotClosed();
+        InetSocketAddress srcAddress = udpChannel != null ? (InetSocketAddress) udpChannel.localAddress() : null;
         CompletableFuture<Socks5UdpSession> result = new CompletableFuture<>();
+        udpAssociateLeaseAsync(srcAddress).whenComplete((lease, error) -> {
+            if (error != null) {
+                result.completeExceptionally(error);
+                return;
+            }
+            try {
+                if (udpChannel != null) {
+                    Socks5UdpSession session = new Socks5UdpSession(lease.getTcpControl(), udpChannel, lease.getRelayAddress(), false);
+                    udpChannel.attr(Socks5UdpSession.ATTR).set(session);
+                    lease.getTcpControl().closeFuture().addListener(x -> session.close());
+                    result.complete(session);
+                    return;
+                }
+
+                Sockets.udpBootstrap(config, udpCh -> udpCh.pipeline().addLast(UdpResponseHandler.DEFAULT))
+                        .bind(0).addListener((ChannelFutureListener) f -> {
+                            if (!f.isSuccess()) {
+                                result.completeExceptionally(f.cause());
+                                lease.close();
+                                return;
+                            }
+                            Channel newUdpRelay = f.channel();
+                            Socks5UdpSession session = new Socks5UdpSession(lease.getTcpControl(), newUdpRelay, lease.getRelayAddress(), true);
+                            newUdpRelay.attr(Socks5UdpSession.ATTR).set(session);
+                            lease.getTcpControl().closeFuture().addListener(x -> {
+                                if (newUdpRelay.isOpen()) {
+                                    newUdpRelay.close();
+                                }
+                            });
+                            newUdpRelay.closeFuture().addListener(x -> {
+                                if (lease.getTcpControl().isOpen()) {
+                                    lease.getTcpControl().close();
+                                }
+                            });
+                            result.complete(session);
+                        });
+            } catch (Throwable t) {
+                lease.close();
+                result.completeExceptionally(t);
+            }
+        });
+        return result;
+    }
+
+    private CompletableFuture<Socks5UdpLease> udpAssociateLeaseAsync(InetSocketAddress srcAddress) {
+        checkNotClosed();
+        CompletableFuture<Socks5UdpLease> result = new CompletableFuture<>();
         Socks5ClientHandler handler = createHandler(Socks5CommandType.UDP_ASSOCIATE);
 
         // When a caller-supplied channel is provided, tell the handler the source address
         // (the channel's local address) so the proxy can register the correct client endpoint.
-        if (udpChannel != null) {
-            handler.setSrcAddress((InetSocketAddress) udpChannel.localAddress());
+        if (srcAddress != null) {
+            handler.setSrcAddress(srcAddress);
         }
 
         // Set callback BEFORE connect() so there is no race with the handshake.
         handler.setHandshakeCallback(() -> {
             try {
-                // handler.getChannel() is set when the handler is added to the pipeline.
                 Channel tcpControl = handler.getChannel();
                 InetSocketAddress bindAddr = handler.getBindAddress();
                 InetSocketAddress relayAddr = resolveRelayAddress(bindAddr);
-
                 log.debug("socks5 UDP_ASSOCIATE relay address: {}", relayAddr);
-
-                if (udpChannel != null) {
-                    // Transparent relay: caller-supplied channel – attach session and return.
-                    // We do NOT install UdpResponseHandler here because the caller manages the pipeline.
-                    Socks5UdpSession session = new Socks5UdpSession(tcpControl, udpChannel, relayAddr);
-                    udpChannel.attr(Socks5UdpSession.ATTR).set(session);
-                    // Only tie TCP→close; the external UDP channel lifecycle belongs to the caller.
-                    tcpControl.closeFuture().addListener(x -> session.close());
-                    result.complete(session);
-                    return;
-                }
-
-                // No channel supplied: bind a fresh local UDP channel for the application.
-                Sockets.udpBootstrap(config, udpCh ->
-                        udpCh.pipeline().addLast(UdpResponseHandler.DEFAULT)
-                ).bind(0).addListener((ChannelFutureListener) f -> {
-                    if (!f.isSuccess()) {
-                        log.warn("socks5 UDP relay bind failed", f.cause());
-                        result.completeExceptionally(f.cause());
-                        tcpControl.close();
-                        return;
-                    }
-                    Channel newUdpRelay = f.channel();
-                    Socks5UdpSession session = new Socks5UdpSession(tcpControl, newUdpRelay, relayAddr);
-                    newUdpRelay.attr(Socks5UdpSession.ATTR).set(session);
-
-                    // Tie lifecycle: either channel closing closes the other.
-                    tcpControl.closeFuture().addListener(x -> {
-                        if (newUdpRelay.isOpen()) newUdpRelay.close();
-                    });
-                    newUdpRelay.closeFuture().addListener(x -> {
-                        if (tcpControl.isOpen()) tcpControl.close();
-                    });
-
-                    result.complete(session);
-                });
+                result.complete(new Socks5UdpLease(tcpControl, relayAddr));
             } catch (Throwable t) {
                 result.completeExceptionally(t);
             }
@@ -294,13 +334,21 @@ public class Socks5Client extends Disposable {
         // sendCommand()).  We pass the proxy address as the bootstrap "destination" so
         // ProxyHandler connects to the right server; the destination value is ignored by
         // sendCommand() when commandType == UDP_ASSOCIATE.
-        Sockets.bootstrap(config, ch -> ch.pipeline().addLast(handler))
+        Sockets.bootstrap(config, ch -> {
+            Sockets.addTcpClientHandler(ch, config, proxyServer.getEndpoint());
+            ch.pipeline().addLast(handler);
+        })
                 .connect(proxyServer.getEndpoint())
                 .addListener((ChannelFutureListener) f -> {
                     if (!f.isSuccess()) {
                         result.completeExceptionally(f.cause());
                     }
                 });
+        handler.connectFuture().addListener(f -> {
+            if (!f.isSuccess()) {
+                result.completeExceptionally(f.cause());
+            }
+        });
 
         return result;
     }

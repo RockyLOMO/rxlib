@@ -25,7 +25,7 @@ public class UdpRedundantConfig implements Serializable {
      * 取值范围 [1, 5]，默认 1。
      * 用于游戏低延迟场景，以带宽换取丢包容忍度。
      */
-    private int multiplier = 1;
+    private byte multiplier = 1;
 
     /**
      * 冗余副本之间的发送间隔（微秒）。
@@ -44,12 +44,12 @@ public class UdpRedundantConfig implements Serializable {
     /**
      * 自适应模式最小倍率。默认 1 = 网络好时可完全关闭冗余。
      */
-    private int minMultiplier = 1;
+    private byte minMultiplier = 1;
 
     /**
      * 自适应模式最大倍率。默认 5。
      */
-    private int maxMultiplier = 5;
+    private byte maxMultiplier = 5;
 
     /**
      * 自适应丢包率上阈值（0~1）。超过此值增加倍率。默认 0.20（20%）。
@@ -64,7 +64,7 @@ public class UdpRedundantConfig implements Serializable {
     /**
      * 防抖周期数。连续多少个调整周期（每周期 2 秒）满足条件才实际调整。默认 3。
      */
-    private int stablePeriods = 3;
+    private short stablePeriods = 3;
 
     /**
      * 分目的地倍率规则，列表顺序为优先级（先匹配先生效）。
@@ -105,21 +105,21 @@ public class UdpRedundantConfig implements Serializable {
      * 设置倍率，自动限制在 [1, 5] 范围内。
      */
     public void setMultiplier(int multiplier) {
-        this.multiplier = Math.max(1, Math.min(5, multiplier));
+        this.multiplier = (byte) Math.max(1, Math.min(5, multiplier));
     }
 
     /**
      * 设置最小倍率，确保不超过最大倍率。
      */
     public void setMinMultiplier(int minMultiplier) {
-        this.minMultiplier = Math.max(1, minMultiplier);
+        this.minMultiplier = (byte) Math.max(1, minMultiplier);
     }
 
     /**
      * 设置最大倍率，确保不小于最小倍率且不超过 5。
      */
     public void setMaxMultiplier(int maxMultiplier) {
-        this.maxMultiplier = Math.max(this.minMultiplier, Math.min(5, maxMultiplier));
+        this.maxMultiplier = (byte) Math.max(this.minMultiplier, Math.min(5, maxMultiplier));
     }
 
     /**
@@ -140,7 +140,7 @@ public class UdpRedundantConfig implements Serializable {
      * 设置防抖周期数，确保至少为 1。
      */
     public void setStablePeriods(int stablePeriods) {
-        this.stablePeriods = Math.max(1, stablePeriods);
+        this.stablePeriods = (short) Math.max(1, stablePeriods);
     }
 
     /**

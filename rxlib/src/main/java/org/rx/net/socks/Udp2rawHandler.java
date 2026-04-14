@@ -7,6 +7,7 @@ import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.cache.MemoryCache;
 import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
@@ -100,7 +101,12 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
 
         // Confirm / update the client address on first real packet
         InetSocketAddress clientAddr = relay.attr(ATTR_CLIENT_ADDR).get();
-        if (clientAddr == null || !clientAddr.equals(sender)) {
+        boolean locked = Boolean.TRUE.equals(relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).get());
+        if (locked) {
+            if (clientAddr == null || !clientAddr.equals(sender)) {
+                return;
+            }
+        } else if (clientAddr == null || !clientAddr.equals(sender)) {
             relay.attr(ATTR_CLIENT_ADDR).set(sender);
         }
 
@@ -108,7 +114,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         
         ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
         if (routeMap == null) {
-            relay.attr(ATTR_ROUTE_MAP).set(routeMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<UnresolvedEndpoint, SocksContext>build().asMap());
+            relay.attr(ATTR_ROUTE_MAP).set(routeMap = MemoryCache.<UnresolvedEndpoint, SocksContext>rootBuilder().maximumSize(256).build().asMap());
         }
 
         inBuf.markReaderIndex();
@@ -132,7 +138,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (targetAddr != null) {
             ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
             if (ctxMap == null) {
-                relay.attr(ATTR_CTX_MAP).set(ctxMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<InetSocketAddress, SocksContext>build().asMap());
+                relay.attr(ATTR_CTX_MAP).set(ctxMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap());
             }
             ctxMap.put(targetAddr, e);
         }
@@ -191,19 +197,24 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
 
         // Confirm / update the client address on first real packet
         InetSocketAddress clientAddr = relay.attr(ATTR_CLIENT_ADDR).get();
-        if (clientAddr == null || !clientAddr.equals(sender)) {
+        boolean locked = Boolean.TRUE.equals(relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).get());
+        if (locked) {
+            if (clientAddr == null || !clientAddr.equals(sender)) {
+                return;
+            }
+        } else if (clientAddr == null || !clientAddr.equals(sender)) {
             relay.attr(ATTR_CLIENT_ADDR).set(sender);
         }
 
         // Ensure per-relay context map exists
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
         if (ctxMap == null) {
-            relay.attr(ATTR_CTX_MAP).set(ctxMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<InetSocketAddress, SocksContext>build().asMap());
+            relay.attr(ATTR_CTX_MAP).set(ctxMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap());
         }
 
         ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
         if (routeMap == null) {
-            relay.attr(ATTR_ROUTE_MAP).set(routeMap = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(256).<UnresolvedEndpoint, SocksContext>build().asMap());
+            relay.attr(ATTR_ROUTE_MAP).set(routeMap = MemoryCache.<UnresolvedEndpoint, SocksContext>rootBuilder().maximumSize(256).build().asMap());
         }
 
         inBuf.markReaderIndex();

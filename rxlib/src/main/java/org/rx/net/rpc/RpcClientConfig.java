@@ -17,8 +17,8 @@ import java.net.InetSocketAddress;
 @ToString
 public class RpcClientConfig<T> {
     private static final long serialVersionUID = -4952694662640163676L;
-    public static final int NON_POOL_SIZE = -1;
-    public static final int DEFAULT_VERSION = 0;
+    public static final short NON_POOL_SIZE = -1;
+    public static final short DEFAULT_VERSION = 0;
 
     public static <T> RpcClientConfig<T> statefulMode(String serverEndpoint, int eventVersion) {
         return statefulMode(Sockets.parseEndpoint(serverEndpoint), eventVersion);
@@ -29,7 +29,7 @@ public class RpcClientConfig<T> {
         tcpClientConfig.setServerEndpoint(serverEndpoint);
         tcpClientConfig.setEnableReconnect(true);
         RpcClientConfig<T> config = new RpcClientConfig<>(tcpClientConfig);
-        config.setEventVersion(eventVersion);
+        config.setEventVersion((short) eventVersion);
         return config;
     }
 
@@ -42,15 +42,15 @@ public class RpcClientConfig<T> {
         tcpClientConfig.setServerEndpoint(serverEndpoint);
         tcpClientConfig.setEnableReconnect(false);
         RpcClientConfig<T> config = new RpcClientConfig<>(tcpClientConfig);
-        config.setMinPoolSize(minPoolSize);
-        config.setMaxPoolSize(maxPoolSize);
+        config.setMinPoolSize((short) minPoolSize);
+        config.setMaxPoolSize((short) maxPoolSize);
         return config;
     }
 
     private final TcpClientConfig tcpConfig;
-    private int eventVersion = DEFAULT_VERSION;
-    private int minPoolSize;
-    private int maxPoolSize = NON_POOL_SIZE;
+    private short eventVersion = DEFAULT_VERSION;
+    private short minPoolSize;
+    private short maxPoolSize = NON_POOL_SIZE;
     private TripleAction<T, StatefulTcpClient> initHandler;
 
     public boolean isUsePool() {

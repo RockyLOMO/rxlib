@@ -20,6 +20,11 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
+import java.net.InetSocketAddress;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
+
 // @Slf4j
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
@@ -34,6 +39,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final Channel tcpChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
+    final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
     // 只有压缩时一定要用
     @Setter
     private PredicateFunc<UnresolvedEndpoint> cipherRouter;
@@ -137,6 +143,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @Override
     protected void dispose() {
+        for (Channel relay : udpRelayRegistry.values()) {
+            Sockets.closeOnFlushed(relay);
+        }
+        udpRelayRegistry.clear();
         // 内存模式传入的memoryChannel不释放
         if (bootstrap != null) {
             Sockets.closeOnFlushed(tcpChannel);
@@ -150,6 +160,72 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             return false;
         }
         return cipherRouter.invoke(dstEp);
+    }
+
+    void registerUdpRelay(Channel relay) {
+        InetSocketAddress local = (InetSocketAddress) relay.localAddress();
+        if (local == null) {
+            return;
+        }
+        udpRelayRegistry.put(local.getPort(), relay);
+        relay.closeFuture().addListener(f -> udpRelayRegistry.remove(local.getPort(), relay));
+    }
+
+    public boolean resetUdpRelay(int relayPort) {
+        return withUdpRelay(relayPort, relay -> {
+            clearUdpRelayState(relay, null);
+            return true;
+        });
+    }
+
+    public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
+        return withUdpRelay(relayPort, relay -> {
+            clearUdpRelayState(relay, clientAddr);
+            return true;
+        });
+    }
+
+    @SneakyThrows
+    boolean withUdpRelay(int relayPort, java.util.concurrent.Callable<Boolean> task, Channel relay) {
+        if (relay.eventLoop().inEventLoop()) {
+            return task.call();
+        }
+        return relay.eventLoop().submit(task).get();
+    }
+
+    @SneakyThrows
+    private boolean withUdpRelay(int relayPort, java.util.function.Function<Channel, Boolean> fn) {
+        Channel relay = udpRelayRegistry.get(relayPort);
+        if (relay == null || !relay.isActive()) {
+            return false;
+        }
+        return withUdpRelay(relayPort, () -> fn.apply(relay), relay);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void clearUdpRelayState(Channel relay, InetSocketAddress clientAddr) {
+        if (relay.pipeline().get(Udp2rawHandler.class) != null) {
+            ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(Udp2rawHandler.ATTR_CTX_MAP).get();
+            if (ctxMap != null) {
+                ctxMap.clear();
+            }
+            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(Udp2rawHandler.ATTR_ROUTE_MAP).get();
+            if (routeMap != null) {
+                routeMap.clear();
+            }
+            relay.attr(Udp2rawHandler.ATTR_CLIENT_ADDR).set(clientAddr);
+        } else {
+            ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(SocksUdpRelayHandler.ATTR_CTX_MAP).get();
+            if (ctxMap != null) {
+                ctxMap.clear();
+            }
+            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(SocksUdpRelayHandler.ATTR_ROUTE_MAP).get();
+            if (routeMap != null) {
+                routeMap.clear();
+            }
+            relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientAddr);
+        }
+        relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(Boolean.TRUE);
     }
 
 }
