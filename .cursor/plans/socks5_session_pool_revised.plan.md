@@ -1,4 +1,4 @@
-# Socks5 Session Pool（修订版 v5）
+# Socks5 Session Pool（修订版 v6）
 
 ## Summary
 - TCP 做暖池；UDP 做 lease 池。TCP 目标是消掉到 ProxyB 的 `connect + auth` RTT，UDP 目标是复用远端 `UDP_ASSOCIATE` relay，覆盖 `docs/test/socksServer.md` 的场景2、udp2raw 场景、场景4。
@@ -29,8 +29,13 @@
 - 新增 `Socks5WarmupHandler`，不继承 `ProxyHandler`；状态固定为 `INIT -> AUTHING -> READY -> CONNECTING -> CONSUMED/FAILED`。
 - warm channel 创建顺序固定为：bootstrap initializer 内先执行 `Sockets.addTcpClientHandler(channel, config, svrEp.getEndpoint())`，再 `pipeline.addLast(Socks5WarmupHandler)`。这样 TLS/cipher/compress 对 SOCKS5 auth 报文同样生效。
 - `READY` 时记录 `readyAtMillis`；borrow 时同时检查 `channel.isActive()` 和 `now - readyAtMillis < tcpWarmPoolMaxIdleMillis`，任一失败都 retire。
-- `Socks5WarmupHandler` 提供单次 `connect(UnresolvedEndpoint dst)` 和单次 `setConnectedCallback(Action)`；callback 在 `CONNECT SUCCESS` 后、promise 成功前触发，用于与慢路径等价地安装 `cipherRoute + COMPRESS_BOTH` 的 `CipherDecoder/CipherEncoder`，随后再进入 `relay(...)`。
-- `Socks5CommandRequestHandler` 快慢路径都先执行 `prepareDestination()`；快路径 borrow 命中后调用 `markCtx(inbound, outbound, sc)` 新重载，再调用 `warmupHandler.connect(preparedDestination)`；慢路径保持现有 connect future 路径。
+- `Socks5WarmupHandler` 提供单次 `connect(UnresolvedEndpoint dst)` 和单次 `setConnectedCallback(Action)`；调用方必须先 `setConnectedCallback(...)` 再 `connect(...)`。
+- `setConnectedCallback(...)` 的执行时序固定为：
+  - 收到 `Socks5CommandResponse(SUCCESS)` 后，先在 handler 内部同步执行 `connectedCallback.invoke()`，用于安装 `cipherRoute + COMPRESS_BOTH` 的 `CipherDecoder/CipherEncoder`
+  - 然后移除 warmup handler 自己加的 SOCKS codec
+  - 最后才将 `connect promise` 标记为 success
+  - 语义上对齐现有 `Socks5ClientHandler.handleResponse()` 中 `handshakeCallback.invoke()` 先于 `ProxyHandler` 完成 promise 的顺序，确保 `relay()` 开始前 cipher handler 已经在 pipeline 中
+- `Socks5CommandRequestHandler` 快慢路径都先执行 `prepareDestination()`；快路径 borrow 命中后调用 `markCtx(inbound, outbound, sc)` 新重载，再设置 `connectedCallback`，再调用 `warmupHandler.connect(preparedDestination)`；慢路径保持现有 connect future 路径。
 - 快路径 CONNECT 失败策略固定为：不在该 warm channel 上重试；立即关闭该 channel；只降级一次到慢路径；后续重连完全交给现有 `onReconnecting + 最多 16 次` 逻辑；本次请求不再消耗第二个暖连接。
 - `Socks5TcpWarmPool` 增加 create-failure backoff；auth/connect 创建失败记一次连续失败，refill delay 按 `min(baseInterval * 2^n, 30000ms)` 退避，首次成功后清零。
 - TCP pool manager 负责 `close(key)` / `closeAll()`；关闭时 cancel refill task，关闭全部 READY channel。
@@ -60,11 +65,10 @@
 
 ## Test Plan
 - 新增 key 正确性测试：两个字段相同但实例不同的 `AuthenticEndpoint` 构造出来的 `TcpWarmPoolKey` / `UdpLeasePoolKey` 必须相等且 hash 相同。
-- TCP 测试覆盖：warm channel 在 `maxIdle` 内命中，超过 `maxIdle` 被 age filter 淘汰；warm path 下 auth 报文确实走 `Sockets.addTcpClientHandler(...)`；`cipherRoute=true + COMPRESS_BOTH` 时快路径会安装额外 cipher handlers；`cipherRoute=false` 时快路径直接 `relay(...)`，不安装额外 cipher handlers；快路径 CONNECT 失败只降级一次到慢路径；auth 连续失败时 refill backoff 生效。
-- UDP 测试覆盖：场景2 两个不同客户端顺序复用同一 lease，访问同一 destination，不得命中旧 `routeMap`；recycle 后注入旧 borrower 的迟到包，reset/claim 之间必须被 drop；`claim` 连续失败达到阈值后 breaker 打开并直接慢路径；存在 `udpRelayIdleSeconds` hint 时会 clamp `effectiveIdle`；无 hint 时使用本地 idle。
+- TCP 测试覆盖：warm channel 在 `maxIdle` 内命中，超过 `maxIdle` 被 age filter 淘汰；warm path 下 auth 报文确实走 `Sockets.addTcpClientHandler(...)`；`cipherRoute=true + COMPRESS_BOTH` 时快路径会安装额外 cipher handlers；`cipherRoute=false` 时快路径直接 `relay(...)`，不安装额外 cipher handlers；快路径 CONNECT 失败只降级一次到慢路径；auth 连续失败时 refill backoff 生效；`connectedCallback` 执行顺序必须早于 codec cleanup 和 promise success，可通过在 callback 中插入标记 handler 并验证 `relay()` 开始前 pipeline 已包含 cipher handler。
+- UDP 测试覆盖：场景2 两个不同客户端顺序复用同一 lease，访问同一 destination，不得命中旧 `routeMap`；recycle 后注入旧 borrower 的迟到包，reset/claim 之间必须被 drop；`claim` 连续失败达到阈值后 breaker 打开并直接慢路径；存在 `udpRelayIdleSeconds` hint 时会 clamp `effectiveIdle`；无 hint 时使用本地 idle；`closeAll()` 与异步 reset 交错时 lease 的 TCP control channel 不泄漏。
 - udp2raw 测试覆盖：`Udp2rawHandler` 复用同一套 reset/claim/lock 语义；现有 udp2raw chained e2e 保持通过；新增 sequential reuse + stale packet drop 回归。
 - 场景4 测试覆盖：`Shadowsocks -> Socks A -> Socks B -> UDP dest` 有 facade 时命中 lease pool；无 facade 时自动慢路径。
-- 生命周期测试覆盖：配置热更新移除 endpoint 后对应 TCP/UDP pools 被关闭；`closeAll()` 与异步 reset 交错时不会泄漏 lease 的 TCP control channel。
 
 ## Assumptions
 - `udpRelayIdleSeconds` 作为每个上游 endpoint 的运维 hint，放在 `AuthenticEndpoint.parameters`，不走额外 RPC。
