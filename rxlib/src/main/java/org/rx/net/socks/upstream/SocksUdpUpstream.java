@@ -98,11 +98,9 @@ public class SocksUdpUpstream extends Upstream {
 
     private boolean claimRelay(Channel channel, Socks5UdpLease lease, SocksRpcContract facade,
                                Socks5UpstreamPoolManager poolManager, SocksConfig socksConfig) {
-        int timeout = Math.min(500, Math.max(100, socksConfig.getConnectTimeoutMillis() / 4));
         try {
             InetSocketAddress clientAddr = (InetSocketAddress) channel.localAddress();
-            boolean ok = Tasks.runAsync(() -> facade.claimUdpRelay(lease.getRelayPort(), clientAddr))
-                    .get(timeout, TimeUnit.MILLISECONDS);
+            boolean ok = facade.claimUdpRelay(lease.getRelayPort(), clientAddr);
             if (ok) {
                 poolManager.onUdpRpcSuccess(poolKey());
                 return true;

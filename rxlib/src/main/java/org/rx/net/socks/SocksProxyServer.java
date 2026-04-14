@@ -190,7 +190,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         if (relay.eventLoop().inEventLoop()) {
             return task.call();
         }
-        return relay.eventLoop().submit(task).get(SocksRpcContract.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
+        return relay.eventLoop().submit(task).get();
     }
 
     @SneakyThrows
