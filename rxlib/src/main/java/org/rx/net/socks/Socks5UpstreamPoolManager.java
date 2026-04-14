@@ -9,6 +9,7 @@ import org.rx.core.CachePolicy;
 import org.rx.core.Disposable;
 import org.rx.core.ObjectPool;
 import org.rx.core.Tasks;
+import org.rx.core.cache.MemoryCache;
 import org.rx.exception.TraceHandler;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
@@ -25,8 +26,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 public final class Socks5UpstreamPoolManager extends Disposable {
     public static final Socks5UpstreamPoolManager INSTANCE = new Socks5UpstreamPoolManager();
-    private static final String UDP_BREAKER_KEY = "udpLeaseBreaker:";
-
     @RequiredArgsConstructor
     public static final class TcpWarmPool extends Disposable {
         final TcpWarmPoolKey key;
@@ -158,7 +157,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
     private final ConcurrentMap<TcpWarmPoolKey, TcpWarmPool> tcpPools = new ConcurrentHashMap<>();
     private final ConcurrentMap<UdpLeasePoolKey, UdpLeasePool> udpPools = new ConcurrentHashMap<>();
     private final ConcurrentMap<UdpLeasePoolKey, AtomicInteger> udpRpcFailures = new ConcurrentHashMap<>();
-    private final Cache<String, Boolean> breakerCache = Cache.getInstance();
+    private final Cache<UdpLeasePoolKey, Boolean> breakerCache = new MemoryCache<>();
 
     private Socks5UpstreamPoolManager() {
     }
@@ -204,12 +203,12 @@ public final class Socks5UpstreamPoolManager extends Disposable {
     }
 
     public boolean isUdpBreakerOpen(UdpLeasePoolKey key) {
-        return breakerCache.containsKey(UDP_BREAKER_KEY + key.toString());
+        return breakerCache.containsKey(key);
     }
 
     public void onUdpRpcSuccess(UdpLeasePoolKey key) {
         udpRpcFailures.remove(key);
-        breakerCache.remove(UDP_BREAKER_KEY + key.toString());
+        breakerCache.remove(key);
     }
 
     public void onUdpRpcFailure(UdpLeasePoolKey key, SocksConfig config, String phase, Throwable cause) {
@@ -217,7 +216,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         int count = failures.incrementAndGet();
         TraceHandler.INSTANCE.saveMetric("UDP_LEASE_RPC_FAIL", key + " phase=" + phase + " count=" + count);
         if (count >= config.getUdpLeaseRpcBreakerThreshold()) {
-            breakerCache.put(UDP_BREAKER_KEY + key.toString(), Boolean.TRUE,
+            breakerCache.put(key, Boolean.TRUE,
                     CachePolicy.absolute(config.getUdpLeaseRpcBreakerOpenSeconds()));
             failures.set(0);
             TraceHandler.INSTANCE.saveMetric("UDP_LEASE_BREAKER_OPEN", key.toString());

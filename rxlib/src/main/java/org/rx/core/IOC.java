@@ -2,8 +2,8 @@ package org.rx.core;
 
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.rx.core.cache.MemoryCache;
 import org.rx.exception.InvalidException;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import org.springframework.util.ConcurrentReferenceHashMap;
 
 import java.util.*;
@@ -93,7 +93,7 @@ public final class IOC {
         if (wKeyIdentityMap == null) {
             synchronized (IOC.class) {
                 if (wKeyIdentityMap == null) {
-                    wKeyIdentityMap = Caffeine.newBuilder().weakKeys().build();
+                    wKeyIdentityMap = MemoryCache.rootBuilder().weakKeys().build();
                 }
             }
         }
@@ -104,7 +104,7 @@ public final class IOC {
         if (wValIdentityMap == null) {
             synchronized (IOC.class) {
                 if (wValIdentityMap == null) {
-                    wValIdentityMap = Caffeine.newBuilder().weakValues().build();
+                    wValIdentityMap = MemoryCache.rootBuilder().weakValues().build();
                 }
             }
         }

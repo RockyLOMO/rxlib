@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.*;
+import org.rx.core.cache.MemoryCache;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
@@ -330,7 +331,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
     private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
-    static final com.github.benmanes.caffeine.cache.Cache<Object, RefCounter<ReentrantLock>> taskLockMap = Caffeine.newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).build();
+    static final com.github.benmanes.caffeine.cache.Cache<Object, RefCounter<ReentrantLock>> taskLockMap = MemoryCache.<Object, RefCounter<ReentrantLock>>rootBuilder().expireAfterAccess(60, TimeUnit.MINUTES).build();
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
     static final Map<Object, AtomicInteger> taskSerialCountMap = new ConcurrentHashMap<>();
 
