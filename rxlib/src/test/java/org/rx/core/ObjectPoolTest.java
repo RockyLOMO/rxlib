@@ -34,7 +34,7 @@ public class ObjectPoolTest {
         pool.recycle(i2);
 
         assertTrue(pool.size() >= 2 && pool.size() <= 4,
-                "Pool size should be between minSize and maxSize, actual: " + pool.size());
+                "Pool size should be between minIdleSize and maxSize, actual: " + pool.size());
     }
 
     @Test
@@ -49,6 +49,46 @@ public class ObjectPoolTest {
         // 归还后再借，应该能拿到同一个对象（从 stack 中复用）
         Object obj2 = pool.borrow();
         assertSame(obj1, obj2, "归还后再借应复用同一对象");
+    }
+
+    @SneakyThrows
+    @Test
+    public void testMinIdleSizeMaintainsSharedIdleObjects() {
+        AtomicInteger created = new AtomicInteger();
+        ObjectPool<Object> pool = new ObjectPool<>(0, 4,
+                () -> {
+                    created.incrementAndGet();
+                    return new Object();
+                },
+                x -> true);
+        pool.setMinIdleSize(2);
+
+        waitForCondition(() -> pool.idleSize() == 2 && pool.size() == 2, 3000,
+                "应预热出 2 个 idle 对象");
+
+        Object b1 = pool.borrow();
+        Object b2 = pool.borrow();
+        assertNotNull(b1);
+        assertNotNull(b2);
+
+        waitForCondition(() -> pool.idleSize() == 2 && pool.size() == 4, 3000,
+                "借出中对象时应补足 minIdleSize 个待命对象");
+        assertEquals(4, created.get(), "borrow 后应后台补齐 idle buffer");
+    }
+
+    @SneakyThrows
+    @Test
+    public void testMinIdleSizeDisablesThreadLocalIdleCache() {
+        ObjectPool<Object> pool = new ObjectPool<>(0, 3, Object::new, x -> true);
+        pool.setMinIdleSize(1);
+
+        waitForCondition(() -> pool.idleSize() == 1, 3000, "应至少保留 1 个共享 idle 对象");
+
+        Object obj = pool.borrow();
+        pool.recycle(obj);
+
+        waitForCondition(() -> pool.idleSize() >= 1, 3000,
+                "recycle 后 idle 对象应回到共享 stack，而不是只留在 thread-local");
     }
 
     // ========== MaxSize Enforcement ==========
@@ -332,7 +372,7 @@ public class ObjectPoolTest {
     // ========== Adaptive Refill ==========
 
     /**
-     * 基线：demandFactor=0 时无论 borrow 频率多高，targetSize 始终等于 minSize。
+     * 基线：demandFactor=0 时无论 borrow 频率多高，targetSize 始终等于 minIdleSize。
      */
     @Test
     public void testAdaptiveRefillBaseline() {
@@ -343,7 +383,7 @@ public class ObjectPoolTest {
         Arrays.fill(pool.borrowSamples, 100L);
         pool.validNow();
 
-        assertEquals(2, pool.size(), "demandFactor=0 时 pool size 应等于 minSize");
+        assertEquals(2, pool.size(), "demandFactor=0 时 pool size 应等于 minIdleSize");
     }
 
     /**
@@ -379,15 +419,15 @@ public class ObjectPoolTest {
     }
 
     /**
-     * 负载回落：样本清零后 targetSize 回落到 minSize，idleTimeout 淘汰多余对象。
+     * 负载回落：样本清零后 targetSize 回落到 minIdleSize，idleTimeout 淘汰多余对象。
      * 直接写入 package-private 字段 idleTimeout 绕过 setter 的最小值限制。
      */
     @SneakyThrows
     @Test
     public void testAdaptiveRefillLoadDrop() {
-        int minSize = 2;
+        int minIdleSize = 2;
         int maxSize = 20;
-        ObjectPool<Object> pool = new ObjectPool<>(minSize, maxSize, Object::new, x -> true);
+        ObjectPool<Object> pool = new ObjectPool<>(minIdleSize, maxSize, Object::new, x -> true);
         pool.setDemandFactor(2.0);
         pool.idleTimeout = 100; // 直接设置，绕过 setter 的 max(10000,...) 限制
 
@@ -396,19 +436,19 @@ public class ObjectPoolTest {
         Arrays.fill(pool.borrowSamples, 20L);
         pool.validNow();
         int highSize = pool.size();
-        assertTrue(highSize > minSize, "预热后 size 应大于 minSize，actual: " + highSize);
+        assertTrue(highSize > minIdleSize, "预热后 size 应大于 minIdleSize，actual: " + highSize);
 
         // Phase 2：等待 idleTimeout 到期，再清空采样
         Thread.sleep(200);
         Arrays.fill(pool.borrowSamples, 0L);
 
-        // 多次 validNow()：每次淘汰 min(size,8) 个闲置超时对象，并以 targetSize=minSize 不再补充
+        // 多次 validNow()：每次淘汰 min(size,8) 个闲置超时对象，并以 targetSize=minIdleSize 不再补充
         for (int i = 0; i < 6; i++) {
             pool.validNow();
         }
 
-        assertTrue(pool.size() <= minSize + 1,
-                "负载回落后 pool size 应趋近 minSize，actual: " + pool.size());
+        assertTrue(pool.size() <= minIdleSize + 1,
+                "负载回落后 pool size 应趋近 minIdleSize，actual: " + pool.size());
     }
 
     /**
@@ -478,5 +518,17 @@ public class ObjectPoolTest {
         // 所有对象归还后，pool size 不应超过 maxSize
         assertTrue(pool.size() <= maxSize,
                 "totalCount 不应超过 maxSize，actual: " + pool.size() + ", created: " + created.get());
+    }
+
+    @SneakyThrows
+    static void waitForCondition(Callable<Boolean> condition, long timeoutMs, String message) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.call()) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        fail(message);
     }
 }
