@@ -93,9 +93,9 @@ public class ObjectPool<T> extends Disposable {
     @Getter
     volatile int minIdleSize;
     @Getter
-    volatile long validationPeriod = 5000;
+    volatile long validationPeriod = 30000;
     @Getter
-    volatile long borrowTimeout = 10000;
+    volatile long borrowTimeout = 15000;
     @Getter
     volatile long idleTimeout = 600000;
     @Getter
@@ -110,6 +110,7 @@ public class ObjectPool<T> extends Disposable {
     final long[] borrowSamples = new long[SAMPLE_COUNT];
     int sampleIndex = 0;
     final AtomicBoolean minIdleMaintaining = new AtomicBoolean();
+    final AtomicBoolean validating = new AtomicBoolean();
     @Getter
     double demandFactor = 2.0;
 
@@ -214,6 +215,10 @@ public class ObjectPool<T> extends Disposable {
     }
 
     void validNow() {
+        if (!validating.compareAndSet(false, true)) {
+            return;
+        }
+        try {
         long localIdleTimeout = idleTimeout;
         long localLeakThreshold = leakDetectionThreshold;
 
@@ -269,6 +274,9 @@ public class ObjectPool<T> extends Disposable {
         log.debug("ObjPool adaptive refill: totalBorrows={}, avgPerPeriod={}, targetSize={}", totalBorrows, avgPerPeriod, targetSize);
         insureTargetSize(targetSize);
         insureMinIdle();
+        } finally {
+            validating.set(false);
+        }
     }
 
     void triggerMinIdleMaintain() {
@@ -315,7 +323,7 @@ public class ObjectPool<T> extends Disposable {
         ObjectConf<T> c = conf.remove(wrapper);
         if (c != null) {
             c.state.set(ObjectConf.RETIRED);
-            // O(1) ignore removal from stack, doPoll will skip retired
+            stack.remove(wrapper);
             totalCount.decrementAndGet();
 
             if (action != 4 || closeObjectOnLeak) {
