@@ -32,6 +32,8 @@ public class ObjectPool<T> extends Disposable {
         IdentityWrapper<T> wrapper;
         final AtomicInteger state = new AtomicInteger(IDLE);
         volatile long stateTime;
+        volatile long createTime;
+        volatile boolean sharedIdleQueued;
         volatile Thread t;
 
         public boolean isBorrowed() {
@@ -47,6 +49,9 @@ public class ObjectPool<T> extends Disposable {
                 t = Thread.currentThread();
             }
             stateTime = System.nanoTime();
+            if (createTime == 0) {
+                createTime = stateTime;
+            }
             state.set(borrowed ? BORROWED : IDLE);
         }
 
@@ -55,6 +60,9 @@ public class ObjectPool<T> extends Disposable {
                 t = Thread.currentThread();
             }
             stateTime = System.nanoTime();
+            if (createTime == 0) {
+                createTime = stateTime;
+            }
             if (state.compareAndSet(expect, update)) {
                 return true;
             }
@@ -69,6 +77,11 @@ public class ObjectPool<T> extends Disposable {
         public boolean isLeaked(long threshold) {
             return threshold != 0 && state.get() == BORROWED
                     && (System.nanoTime() - stateTime) / Constants.NANO_TO_MILLIS > threshold;
+        }
+
+        public boolean isExpired(long maxLifetime) {
+            return maxLifetime != 0 && createTime != 0
+                    && (System.nanoTime() - createTime) / Constants.NANO_TO_MILLIS > maxLifetime;
         }
     }
 
@@ -85,19 +98,25 @@ public class ObjectPool<T> extends Disposable {
     };
     final FastThreadLocal<IdentityWrapper<T>> threadLocalCache = new FastThreadLocal<>();
     final AtomicInteger totalCount = new AtomicInteger();
+    final AtomicInteger sharedIdleCount = new AtomicInteger();
     final ConcurrentBlockingDeque<IdentityWrapper<T>> stack;
     final ConcurrentLinkedDeque<IdentityWrapper<T>> scanQueue = new ConcurrentLinkedDeque<>();
     final TimeoutFuture<?> future;
     @Getter
-    final int maxSize;
+    @Setter
+    volatile int maxPoolSize = 10;
     @Getter
     volatile int minIdleSize;
     @Getter
     volatile long validationPeriod = 30000;
     @Getter
-    volatile long borrowTimeout = 15000;
+    volatile long borrowTimeout = 10000;
     @Getter
     volatile long idleTimeout = 600000;
+    @Getter
+    volatile long maxLifetime = 0;
+    @Getter
+    volatile long validationTimeout = 5000;
     @Getter
     volatile long leakDetectionThreshold;
     @Getter
@@ -123,7 +142,7 @@ public class ObjectPool<T> extends Disposable {
     }
 
     public int idleSize() {
-        return stack.size();
+        return sharedIdleCount.get();
     }
 
     public void setValidationPeriod(long validationPeriod) {
@@ -132,10 +151,24 @@ public class ObjectPool<T> extends Disposable {
 
     public void setBorrowTimeout(long borrowTimeout) {
         this.borrowTimeout = Math.max(250, borrowTimeout);
+        if (validationTimeout >= this.borrowTimeout) {
+            validationTimeout = Math.max(250, this.borrowTimeout - 250);
+        }
     }
 
     public void setIdleTimeout(long idleTimeout) {
         this.idleTimeout = idleTimeout == 0 ? 0 : Math.max(10000, idleTimeout);
+    }
+
+    public void setMaxLifetime(long maxLifetime) {
+        this.maxLifetime = maxLifetime == 0 ? 0 : Math.max(30000, maxLifetime);
+    }
+
+    public void setValidationTimeout(long validationTimeout) {
+        if (validationTimeout >= borrowTimeout) {
+            throw new InvalidException("ValidationTimeout '{}' must be less than borrowTimeout '{}'", validationTimeout, borrowTimeout);
+        }
+        this.validationTimeout = Math.max(250, validationTimeout);
     }
 
     public void setLeakDetectionThreshold(long leakDetectionThreshold) {
@@ -146,31 +179,31 @@ public class ObjectPool<T> extends Disposable {
         if (minIdleSize < 0) {
             throw new InvalidException("MinIdleSize '{}' must greater than or equal to 0", minIdleSize);
         }
-        this.minIdleSize = Math.min(minIdleSize, maxSize);
+        this.minIdleSize = Math.min(minIdleSize, maxPoolSize);
         triggerMinIdleMaintain();
     }
 
     boolean needsMinIdleMaintain(int idleCount, int total) {
-        return !isClosed() && minIdleSize > 0 && idleCount < minIdleSize && total < maxSize;
+        return !isClosed() && minIdleSize > 0 && idleCount < minIdleSize && total < maxPoolSize;
     }
 
-    public ObjectPool(int minIdleSize, int maxSize, Func<T> createHandler, PredicateFunc<T> validateHandler) {
-        this(minIdleSize, maxSize, createHandler, validateHandler, null, null);
+    public ObjectPool(int minIdleSize, int maxPoolSize, Func<T> createHandler, PredicateFunc<T> validateHandler) {
+        this(minIdleSize, maxPoolSize, createHandler, validateHandler, null, null);
     }
 
-    public ObjectPool(int minIdleSize, int maxSize,
+    public ObjectPool(int minIdleSize, int maxPoolSize,
             @NonNull Func<T> createHandler, @NonNull PredicateFunc<T> validateHandler,
             BiAction<T> activateHandler, BiAction<T> passivateHandler) {
         if (minIdleSize < 0) {
             throw new InvalidException("MinIdleSize '{}' must greater than or equal to 0", minIdleSize);
         }
-        if (maxSize < 1) {
-            throw new InvalidException("MaxSize '{}' must greater than or equal to 1", maxSize);
+        if (maxPoolSize < 1) {
+            throw new InvalidException("MaxPoolSize '{}' must greater than or equal to 1", maxPoolSize);
         }
 
-        this.maxSize = Math.max(minIdleSize, maxSize);
-        this.minIdleSize = Math.min(minIdleSize, this.maxSize);
-        stack = new ConcurrentBlockingDeque<>(this.maxSize);
+        this.maxPoolSize = Math.max(minIdleSize, maxPoolSize);
+        this.minIdleSize = Math.min(minIdleSize, this.maxPoolSize);
+        stack = new ConcurrentBlockingDeque<>();
         this.createHandler = createHandler;
         this.validateHandler = validateHandler;
         this.activateHandler = activateHandler;
@@ -214,6 +247,18 @@ public class ObjectPool<T> extends Disposable {
         }
     }
 
+    void onSharedIdleEnqueue(ObjectConf<T> c) {
+        c.sharedIdleQueued = true;
+        sharedIdleCount.incrementAndGet();
+    }
+
+    void onSharedIdleDequeue(ObjectConf<T> c) {
+        if (c != null && c.sharedIdleQueued) {
+            c.sharedIdleQueued = false;
+            sharedIdleCount.decrementAndGet();
+        }
+    }
+
     void validNow() {
         if (!validating.compareAndSet(false, true)) {
             return;
@@ -221,6 +266,7 @@ public class ObjectPool<T> extends Disposable {
         try {
         long localIdleTimeout = idleTimeout;
         long localLeakThreshold = leakDetectionThreshold;
+        long localMaxLifetime = maxLifetime;
 
         int size = size();
         int idleChecked = 0;
@@ -248,7 +294,8 @@ public class ObjectPool<T> extends Disposable {
             if (idleChecked >= maxIdleCheck) continue;
             idleChecked++;
             if (!validateHandler.test(wrapper.instance)
-                    || (idleSize() > minIdleSize && c.isIdleTimeout(localIdleTimeout))) {
+                    || (idleSize() > minIdleSize && c.isIdleTimeout(localIdleTimeout))
+                    || c.isExpired(localMaxLifetime)) {
                 if (c.casState(ObjectConf.IDLE, ObjectConf.RETIRED)) {
                     doRetire(wrapper, 3);
                     size--;
@@ -266,9 +313,9 @@ public class ObjectPool<T> extends Disposable {
             totalBorrows += s;
         }
 
-        // 动态目标 = max(minIdleSize, min(maxSize, ceil(avgPerPeriod * demandFactor)))
+        // 动态目标 = max(minIdleSize, min(maxPoolSize, ceil(avgPerPeriod * demandFactor)))
         double avgPerPeriod = (double) totalBorrows / SAMPLE_COUNT;
-        int targetSize = Math.max(minIdleSize, Math.min(maxSize,
+        int targetSize = Math.max(minIdleSize, Math.min(maxPoolSize,
                 (int) Math.ceil(avgPerPeriod * demandFactor)));
 
         log.debug("ObjPool adaptive refill: totalBorrows={}, avgPerPeriod={}, targetSize={}", totalBorrows, avgPerPeriod, targetSize);
@@ -296,7 +343,7 @@ public class ObjectPool<T> extends Disposable {
                     }
 
                     int created = 0;
-                    int deficit = Math.min(minIdleSize - idle, maxSize - total);
+                    int deficit = Math.min(minIdleSize - idle, maxPoolSize - total);
                     while (deficit-- > 0) {
                         IdentityWrapper<T> w = doCreate();
                         if (w == null) {
@@ -323,7 +370,7 @@ public class ObjectPool<T> extends Disposable {
         ObjectConf<T> c = conf.remove(wrapper);
         if (c != null) {
             c.state.set(ObjectConf.RETIRED);
-            stack.remove(wrapper);
+            onSharedIdleDequeue(c);
             totalCount.decrementAndGet();
 
             if (action != 4 || closeObjectOnLeak) {
@@ -336,10 +383,10 @@ public class ObjectPool<T> extends Disposable {
     }
 
     IdentityWrapper<T> doCreate() {
-        // 使用 CAS 预占位置，解决并发超过 maxSize 的问题
+        // 使用 CAS 预占位置，解决并发超过 maxPoolSize 的问题
         while (true) {
             int current = totalCount.get();
-            if (current >= maxSize) {
+            if (current >= maxPoolSize) {
                 log.warn("ObjPool reject: Reach the maximum");
                 return null;
             }
@@ -383,6 +430,7 @@ public class ObjectPool<T> extends Disposable {
             IdentityWrapper<T> wrapper;
             while ((wrapper = stack.pollLast()) != null) {
                 ObjectConf<T> c = conf.get(wrapper);
+                onSharedIdleDequeue(c);
                 if (c == null || c.isRetired() || !c.casState(ObjectConf.IDLE, ObjectConf.BORROWED)) {
                     continue;
                 }
@@ -412,6 +460,7 @@ public class ObjectPool<T> extends Disposable {
                 return null;
             }
             ObjectConf<T> c = conf.get(wrapper);
+            onSharedIdleDequeue(c);
             if (c == null || c.isRetired() || !c.casState(ObjectConf.IDLE, ObjectConf.BORROWED)) {
                 continue;
             }
@@ -469,13 +518,13 @@ public class ObjectPool<T> extends Disposable {
                 wrapper = doPoll(0);
                 if (wrapper == null) {
                     // Stack empty, check if we can create
-                    if (size() < maxSize) {
+                    if (size() < maxPoolSize) {
                         wrapper = doCreate();
                     }
                     if (wrapper == null) {
-                        // 如果 doCreate 因瞬态错误失败（非 maxSize 限制），短暂等待并重试
-                        // 如果是 maxSize 限制，等待完整剩余时间
-                        long waitTime = (size() < maxSize) ? Math.min(100, remainingTime) : remainingTime;
+                        // 如果 doCreate 因瞬态错误失败（非 maxPoolSize 限制），短暂等待并重试
+                        // 如果是 maxPoolSize 限制，等待完整剩余时间
+                        long waitTime = (size() < maxPoolSize) ? Math.min(100, remainingTime) : remainingTime;
                         wrapper = doPoll(waitTime);
                     }
                 }
@@ -542,11 +591,14 @@ public class ObjectPool<T> extends Disposable {
         if (c.casState(ObjectConf.BORROWED, ObjectConf.IDLE)) {
             // L1: Try ThreadLocal Cache if no one waiting on stack
             if (minIdleSize <= 0 && !stack.hasWaiters() && threadLocalCache.get() == null) {
+                c.sharedIdleQueued = false;
                 threadLocalCache.set(wrapper);
                 return;
             }
 
+            onSharedIdleEnqueue(c);
             if (!stack.offer(wrapper)) {
+                onSharedIdleDequeue(c);
                 doRetire(wrapper, 0);
             }
         } else {
