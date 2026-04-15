@@ -1,6 +1,5 @@
 package org.rx.core;
 
-import com.github.benmanes.caffeine.cache.Caffeine;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.FastThreadLocalThread;
@@ -11,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.*;
-import org.rx.core.cache.MemoryCache;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
@@ -22,10 +20,10 @@ import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
@@ -218,6 +216,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         final InternalThreadLocalMap parent;
         final String traceId;
         final StackTraceElement[] stackTrace;
+        volatile boolean skipExecution;
+        volatile boolean singleLockAcquired;
 
         private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
@@ -255,6 +255,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         @SneakyThrows
         @Override
         public T call() {
+            if (skipExecution) {
+                return null;
+            }
             if (RxConfig.INSTANCE.trace.slowMethodElapsedMicros > 0) {
                 T r = null;
                 Throwable ex = null;
@@ -346,7 +349,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             Reflects.readStaticField(InternalThreadLocalMap.class, "slowThreadLocalMap");
     static final Map<Class<?>, Field> ASYNC_COMPLETION_FN_FIELDS = new ConcurrentHashMap<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
-    static final com.github.benmanes.caffeine.cache.Cache<Object, RefCounter<ReentrantLock>> taskLockMap = MemoryCache.<Object, RefCounter<ReentrantLock>>rootBuilder().expireAfterAccess(60, TimeUnit.MINUTES).build();
+    static final Set<Object> runningSingleTasks = ConcurrentHashMap.newKeySet();
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
     static final Map<Object, AtomicInteger> taskSerialCountMap = new ConcurrentHashMap<>();
 
@@ -784,13 +787,18 @@ public class ThreadPool extends ThreadPoolExecutor {
 
         FlagsEnum<RunFlag> flags = task.flags;
         if (flags.has(RunFlag.SINGLE)) {
-            RefCounter<ReentrantLock> ctx = getContextForLock(task.id);
-            if (!ctx.ref.tryLock()) {
-                throw new RejectedExecutionException(String.format("SingleScope %s already running", task.id));
+            Object id = task.id;
+            if (id == null) {
+                throw new InvalidException("SINGLE flag require a taskId");
             }
-            ctx.incrementRefCnt();
+            if (!runningSingleTasks.add(id)) {
+                task.skipExecution = true;
+                log.warn("SingleScope {} -> {} already running", id, flags.name());
+                return;
+            }
+            task.singleLockAcquired = true;
             if (log.isDebugEnabled()) {
-                log.debug("CTX tryLock {} -> {}", task.id, flags.name());
+                log.debug("CTX acquire {} -> {}", id, flags.name());
             }
         }
         if (flags.has(RunFlag.PRIORITY) && !getQueue().isEmpty()) {
@@ -832,22 +840,15 @@ public class ThreadPool extends ThreadPoolExecutor {
             return;
         }
 
+        if (task.skipExecution) {
+            return;
+        }
         FlagsEnum<RunFlag> flags = task.flags;
         Object id = task.id;
-        if (id != null) {
-            RefCounter<ReentrantLock> ctx = taskLockMap.getIfPresent(id);
-            if (ctx != null) {
-                if (ctx.ref.isHeldByCurrentThread()) {
-                    ctx.ref.unlock();
-                }
-                boolean doRemove = false;
-                if (ctx.decrementRefCnt() <= 0) {
-                    taskLockMap.invalidate(id);
-                    doRemove = true;
-                }
-                if (log.isDebugEnabled()) {
-                    log.debug("CTX release{} {} -> {}", doRemove ? " & clear" : "", id, task.flags.name());
-                }
+        if (task.singleLockAcquired && id != null) {
+            runningSingleTasks.remove(id);
+            if (log.isDebugEnabled()) {
+                log.debug("CTX release {} -> {}", id, task.flags.name());
             }
         }
         if (task.parent != null) {
@@ -868,14 +869,6 @@ public class ThreadPool extends ThreadPoolExecutor {
             return;
         }
         SLOW_THREAD_LOCAL_MAP.set(threadLocalMap);
-    }
-
-    private RefCounter<ReentrantLock> getContextForLock(Object id) {
-        if (id == null) {
-            throw new InvalidException("SINGLE flag require a taskId");
-        }
-
-        return taskLockMap.get(id, k -> new RefCounter<>(new ReentrantLock()));
     }
 
     private Task<?> setTask(Runnable r) {

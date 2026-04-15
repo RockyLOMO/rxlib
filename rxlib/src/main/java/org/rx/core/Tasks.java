@@ -37,22 +37,22 @@ public final class Tasks {
 
             @Override
             public Future<?> submit(Runnable task) {
-                return nextPool().submit(task);
+                return nextPool(task, null, null).submit(task);
             }
 
             @Override
             public <T> Future<T> submit(Runnable task, T result) {
-                return nextPool().submit(task, result);
+                return nextPool(task, null, null).submit(task, result);
             }
 
             @Override
             public <T> Future<T> submit(Callable<T> task) {
-                return nextPool().submit(task);
+                return nextPool(task, null, null).submit(task);
             }
 
             @Override
             public void execute(Runnable command) {
-                nextPool().execute(command);
+                nextPool(command, null, null).execute(command);
             }
 
             @Override
@@ -138,6 +138,22 @@ public final class Tasks {
         return nodes.get(ThreadLocalRandom.current().nextInt(0, poolCount));
     }
 
+    static ThreadPool nextPool(Object task, Object taskId, FlagsEnum<RunFlag> flags) {
+        ThreadPool.Task<?> adapted = ThreadPool.Task.as(task);
+        if (adapted != null) {
+            if (taskId == null) {
+                taskId = adapted.id;
+            }
+            if (flags == null) {
+                flags = adapted.flags;
+            }
+        }
+        if (taskId != null && flags != null && flags.has(RunFlag.SINGLE)) {
+            return nodes.get(Math.floorMod(taskId.hashCode(), poolCount));
+        }
+        return nextPool();
+    }
+
     public static ExecutorService executor() {
         return executor;
     }
@@ -217,35 +233,35 @@ public final class Tasks {
     }
 
     public static Future<Void> run(Action task) {
-        return nextPool().run(task);
+        return nextPool(task, null, null).run(task);
     }
 
     public static Future<Void> run(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return nextPool().run(task, taskId, flags);
+        return nextPool(task, taskId, flags).run(task, taskId, flags);
     }
 
     public static <T> Future<T> run(Func<T> task) {
-        return nextPool().run(task);
+        return nextPool(task, null, null).run(task);
     }
 
     public static <T> Future<T> run(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return nextPool().run(task, taskId, flags);
+        return nextPool(task, taskId, flags).run(task, taskId, flags);
     }
 
     public static CompletableFuture<Void> runAsync(Action task) {
-        return nextPool().runAsync(task);
+        return nextPool(task, null, null).runAsync(task);
     }
 
     public static CompletableFuture<Void> runAsync(Action task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return nextPool().runAsync(task, taskId, flags);
+        return nextPool(task, taskId, flags).runAsync(task, taskId, flags);
     }
 
     public static <T> CompletableFuture<T> runAsync(Func<T> task) {
-        return nextPool().runAsync(task);
+        return nextPool(task, null, null).runAsync(task);
     }
 
     public static <T> CompletableFuture<T> runAsync(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
-        return nextPool().runAsync(task, taskId, flags);
+        return nextPool(task, taskId, flags).runAsync(task, taskId, flags);
     }
 
     public static TimeoutFuture<?> setTimeout(Action task, long delay) {
