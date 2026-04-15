@@ -47,6 +47,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -520,15 +521,54 @@ public final class Sys extends SystemUtils {
     public static final CallLogBuilder DEFAULT_LOG_BUILDER = new DefaultCallLogBuilder();
     public static final CallLogBuilder HTTP_LOG_BUILDER = new DefaultCallLogBuilder(DefaultCallLogBuilder.HTTP_KEYWORD_FLAG);
 
+    /**
+     * 当最终是否写日志可在本次调用前确定时返回 true，用于在 proceed 前构建参数快照（避免被调用方改写参数）且避免无谓序列化。
+     */
+    private static boolean shouldBuildParamSnapshotBeforeInvoke(Class<?> declaringType, LogStrategy strategyParam, RxConfig conf, Object[] parameters) {
+        LogStrategy resolved = strategyParam != null ? strategyParam : conf.logStrategy;
+        if (resolved != null) {
+            switch (resolved) {
+                case NONE:
+                    return false;
+                case ALWAYS:
+                    return true;
+                case WHITELIST:
+                case BLACKLIST:
+                    return conf.getLogNameMatcher().matches(declaringType.getName());
+                case WRITE_ON_NULL:
+                    return !Arrays.isEmpty(parameters) && Arrays.contains(parameters, null);
+                case WRITE_ON_ERROR:
+                    return false;
+                default:
+                    return false;
+            }
+        }
+        return !Arrays.isEmpty(parameters) && Arrays.contains(parameters, null);
+    }
+
     public static <T> T callLog(Class<?> declaringType, String methodName, Object[] parameters, ProceedFunc<T> proceed) {
         return callLog(declaringType, methodName, parameters, proceed, DEFAULT_LOG_BUILDER, null);
     }
 
-    @SneakyThrows
+    public static <T> T callLog(Class<?> declaringType, String methodName, Supplier<String> displayNameSupplier, Object[] parameters, ProceedFunc<T> proceed) {
+        return callLog(declaringType, methodName, displayNameSupplier, parameters, proceed, DEFAULT_LOG_BUILDER, null);
+    }
+
     public static <T> T callLog(@NonNull Class<?> declaringType, @NonNull String methodName, Object[] parameters, @NonNull ProceedFunc<T> proceed, @NonNull CallLogBuilder builder, LogStrategy strategy) {
+        return callLog(declaringType, methodName, null, parameters, proceed, builder, strategy);
+    }
+
+    @SneakyThrows
+    public static <T> T callLog(@NonNull Class<?> declaringType, @NonNull String methodName, Supplier<String> displayNameSupplier,
+                                Object[] parameters, @NonNull ProceedFunc<T> proceed, @NonNull CallLogBuilder builder, LogStrategy strategy) {
         Object returnValue = null;
         Throwable error = null;
-        String paramSnapshot = builder.buildParamSnapshot(declaringType, methodName, parameters);
+
+        RxConfig conf = RxConfig.INSTANCE;
+        String paramSnapshot = null;
+        if (shouldBuildParamSnapshotBeforeInvoke(declaringType, strategy, conf, parameters)) {
+            paramSnapshot = builder.buildParamSnapshot(declaringType, methodName, parameters);
+        }
 
         long start = System.nanoTime();
         try {
@@ -542,7 +582,6 @@ public final class Sys extends SystemUtils {
             try {
                 TraceHandler.INSTANCE.saveMethodTrace(Thread.currentThread(), declaringType.getName(), methodName, parameters, returnValue, error, elapsedNanos);
 
-                RxConfig conf = RxConfig.INSTANCE;
                 if (strategy == null) {
                     strategy = conf.logStrategy;
                 }
@@ -572,7 +611,11 @@ public final class Sys extends SystemUtils {
                 }
                 if (doWrite) {
                     try {
-                        String msg = builder.buildLog(declaringType, methodName, parameters, paramSnapshot, returnValue, error, elapsedNanos);
+                        String displayName = displayNameSupplier == null ? methodName : displayNameSupplier.get();
+                        if (paramSnapshot == null) {
+                            paramSnapshot = builder.buildParamSnapshot(declaringType, methodName, parameters);
+                        }
+                        String msg = builder.buildLog(declaringType, displayName, parameters, paramSnapshot, returnValue, error, elapsedNanos);
                         if (msg != null) {
                             if (error != null) {
                                 log.error(msg, error);

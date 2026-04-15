@@ -1,13 +1,17 @@
 package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
+import io.netty.channel.embedded.EmbeddedChannel;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.rx.io.Serializer;
 import org.rx.net.Sockets;
 
 import java.io.InputStream;
@@ -15,8 +19,10 @@ import java.io.OutputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.rx.net.socks.RrpConfig.ATTR_SVR;
 
 @Slf4j
 class RrpIntegrationTest {
@@ -171,6 +177,211 @@ class RrpIntegrationTest {
         byte[] out = new byte[read];
         System.arraycopy(buf, 0, out, 0, read);
         return out;
+    }
+
+    // Validation tests from RrpValidationTest
+    @Test
+    void serverRejectsOversizedTokenLenAndReleases() {
+        RrpConfig conf = new RrpConfig();
+        conf.setToken("t");
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        try {
+            EmbeddedChannel ch = new EmbeddedChannel();
+            ch.attr(ATTR_SVR).set(server);
+            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
+            ch.pipeline().fireChannelActive();
+
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_REGISTER);
+            buf.writeInt(RrpServer.MAX_TOKEN_LEN + 1);
+            // token bytes omitted on purpose
+
+            ch.writeInbound(buf);
+            assertEquals(0, buf.refCnt(), "msg should be released by handler");
+
+            ch.runPendingTasks();
+            assertFalse(ch.isOpen(), "channel should be closed on invalid tokenLen");
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void serverRejectsOversizedRegisterPayloadLenAndReleases() {
+        RrpConfig conf = new RrpConfig();
+        conf.setToken("t");
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        try {
+            EmbeddedChannel ch = new EmbeddedChannel();
+            ch.attr(ATTR_SVR).set(server);
+            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
+            ch.pipeline().fireChannelActive();
+
+            byte[] token = "t".getBytes(StandardCharsets.US_ASCII);
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_REGISTER);
+            buf.writeInt(token.length);
+            buf.writeBytes(token);
+            buf.writeInt(RrpServer.MAX_REGISTER_BYTES + 1);
+            // payload omitted on purpose
+
+            ch.writeInbound(buf);
+            assertEquals(0, buf.refCnt(), "msg should be released by handler");
+
+            ch.runPendingTasks();
+            assertFalse(ch.isOpen(), "channel should be closed on invalid register len");
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void clientRejectsInvalidIdLenAndReleases() {
+        RrpConfig conf = new RrpConfig();
+        conf.setProxies(Collections.emptyList());
+        RrpClient client = new RrpClient(conf);
+        RrpClient.ClientHandler h = client.new ClientHandler();
+
+        EmbeddedChannel ch = new EmbeddedChannel(h);
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeByte(RrpConfig.ACTION_FORWARD);
+        buf.writeInt(2090);
+        buf.writeInt(RrpServer.MAX_CHANNEL_ID_LEN + 1);
+        // id bytes omitted
+
+        ch.writeInbound(buf);
+        assertEquals(0, buf.refCnt(), "msg should be released by handler");
+
+        ch.runPendingTasks();
+        assertFalse(ch.isOpen(), "server channel should be closed on invalid idLen");
+    }
+
+    @Test
+    void clientIgnoresUnknownRemotePortButStillReleases() {
+        RrpConfig conf = new RrpConfig();
+        conf.setProxies(Collections.emptyList());
+        RrpClient client = new RrpClient(conf);
+        RrpClient.ClientHandler h = client.new ClientHandler();
+
+        EmbeddedChannel ch = new EmbeddedChannel(h);
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeByte(RrpConfig.ACTION_FORWARD);
+        buf.writeInt(2090);
+        byte[] id = "abc".getBytes(StandardCharsets.US_ASCII);
+        buf.writeInt(id.length);
+        buf.writeBytes(id);
+        buf.writeBytes(new byte[]{1, 2, 3}); // payload
+
+        ch.writeInbound(buf);
+        assertEquals(0, buf.refCnt(), "msg should be released by handler");
+        assertTrue(ch.isOpen(), "channel should remain open for unknown remotePort");
+    }
+
+    @Test
+    void serverRetryRegisterAfterBindFailureShouldSucceed() throws Exception {
+        RrpConfig conf = new RrpConfig();
+        conf.setToken("t");
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        try (ServerSocket blocker = new ServerSocket(0)) {
+            int remotePort = blocker.getLocalPort();
+            EmbeddedChannel ch = new EmbeddedChannel();
+            ch.attr(ATTR_SVR).set(server);
+            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
+            ch.pipeline().fireChannelActive();
+
+            writeRegister(ch, "t", newProxy("retry", remotePort, "u1:p1"));
+            RrpServer.RpClient rpClient = server.clients.get(ch);
+            waitFor(() -> rpClient != null && !rpClient.proxyMap.containsKey(remotePort), 5000, "failed bind should be cleaned up");
+
+            blocker.close();
+
+            writeRegister(ch, "t", newProxy("retry", remotePort, "u1:p1"));
+            waitFor(() -> {
+                RrpServer.RpClientProxy proxy = rpClient.proxyMap.get(remotePort);
+                return proxy != null && proxy.remoteServerChannel != null && proxy.remoteServerChannel.isActive();
+            }, 5000, "retry register should bind after cleanup");
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void remoteRelayBufferQueuesUntilChannelWritable() {
+        EmbeddedChannel remoteChannel = new EmbeddedChannel();
+        RrpServer.RemoteRelayBuffer relayBuffer = new RrpServer.RemoteRelayBuffer();
+        remoteChannel.attr(RrpServer.ATTR_REMOTE_RELAY_BUF).set(relayBuffer);
+        remoteChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.wrappedBuffer("relay-data".getBytes(StandardCharsets.US_ASCII));
+        assertTrue(relayBuffer.offer(remoteChannel, payload));
+        remoteChannel.runPendingTasks();
+
+        assertNull(remoteChannel.readOutbound(), "payload should stay queued while channel is not writable");
+        assertEquals("relay-data".getBytes(StandardCharsets.US_ASCII).length, relayBuffer.pendingBytes.get());
+
+        remoteChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+        relayBuffer.scheduleDrain(remoteChannel);
+        remoteChannel.runPendingTasks();
+
+        ByteBuf flushed = remoteChannel.readOutbound();
+        assertNotNull(flushed);
+        assertEquals("relay-data", flushed.toString(StandardCharsets.US_ASCII));
+        flushed.release();
+        assertEquals(0, relayBuffer.pendingBytes.get());
+    }
+
+    @Test
+    void remoteRelayBufferClosesSlowChannelWhenQueuedBytesOverflow() {
+        EmbeddedChannel remoteChannel = new EmbeddedChannel();
+        RrpServer.RemoteRelayBuffer relayBuffer = new RrpServer.RemoteRelayBuffer();
+        remoteChannel.attr(RrpServer.ATTR_REMOTE_RELAY_BUF).set(relayBuffer);
+        remoteChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.buffer(RrpServer.MAX_PENDING_FORWARD_BYTES + 1);
+        payload.writeZero(RrpServer.MAX_PENDING_FORWARD_BYTES + 1);
+
+        assertFalse(relayBuffer.offer(remoteChannel, payload));
+        remoteChannel.runPendingTasks();
+
+        assertFalse(remoteChannel.isOpen(), "slow remote channel should be closed once queue cap is exceeded");
+        assertEquals(0, relayBuffer.pendingBytes.get());
+        assertNull(remoteChannel.readOutbound());
+    }
+
+    // Helper methods
+    static void writeRegister(EmbeddedChannel ch, String token, RrpConfig.Proxy proxy) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeByte(RrpConfig.ACTION_REGISTER);
+        byte[] tokenBytes = token.getBytes(StandardCharsets.US_ASCII);
+        buf.writeInt(tokenBytes.length);
+        buf.writeBytes(tokenBytes);
+        byte[] data = Serializer.DEFAULT.serializeToBytes(Collections.singletonList(proxy));
+        buf.writeInt(data.length);
+        buf.writeBytes(data);
+        ch.writeInbound(buf);
+        assertEquals(0, buf.refCnt(), "msg should be released by handler");
+    }
+
+    static RrpConfig.Proxy newProxy(String name, int remotePort, String auth) {
+        RrpConfig.Proxy proxy = new RrpConfig.Proxy();
+        proxy.setName(name);
+        proxy.setRemotePort(remotePort);
+        proxy.setAuth(auth);
+        return proxy;
+    }
+
+    static void waitFor(BooleanSupplier condition, long timeoutMillis, String message) throws Exception {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        fail(message);
     }
 }
 
