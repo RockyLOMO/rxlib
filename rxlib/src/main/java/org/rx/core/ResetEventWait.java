@@ -29,22 +29,28 @@ public class ResetEventWait implements WaitHandle {
      * @return true if the current instance receives a signal; otherwise, false.
      */
     public synchronized boolean waitOne(long timeoutMillis) {
-        timeoutMillis = timeoutMillis == TIMEOUT_INFINITE ? 0 : timeoutMillis;
+        boolean infinite = timeoutMillis == TIMEOUT_INFINITE;
+        long deadline = infinite ? 0L : System.currentTimeMillis() + timeoutMillis;
         while (!open) {
             try {
                 holdCount++;
-                wait(timeoutMillis);
+                if (infinite) {
+                    wait(0L);
+                } else {
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0L) {
+                        return false;
+                    }
+                    wait(remaining);
+                }
             } catch (InterruptedException e) {
                 //ignore
                 throw InvalidException.sneaky(e);
             } finally {
                 holdCount--;
             }
-            if (timeoutMillis > 0) {
-                if (!open) {
-                    return false;
-                }
-                break;
+            if (!infinite && !open && System.currentTimeMillis() >= deadline) {
+                return false;
             }
         }
         return true;
