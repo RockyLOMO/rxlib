@@ -214,7 +214,7 @@ public class Socks5Client extends Disposable {
         checkNotClosed();
         Socks5ClientHandler handler = createHandler(Socks5CommandType.CONNECT);
         Sockets.bootstrap(config, proxyServer.getConnectEndpoint(), ch -> {
-            Sockets.addTcpClientHandler(ch, config, proxyServer.getEndpoint());
+            Sockets.addTcpClientHandler(ch, config, proxyServer.getInetEndpoint());
             ch.pipeline().addLast(handler);
             if (initChannel != null) {
                 initChannel.accept(ch);
@@ -337,7 +337,7 @@ public class Socks5Client extends Disposable {
         // ProxyHandler connects to the right server; the destination value is ignored by
         // sendCommand() when commandType == UDP_ASSOCIATE.
         Sockets.bootstrap(config, proxyServer.getConnectEndpoint(), ch -> {
-            Sockets.addTcpClientHandler(ch, config, proxyServer.getEndpoint());
+            Sockets.addTcpClientHandler(ch, config, proxyServer.getInetEndpoint());
             if (originRemoteAddress != null) {
                 ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
                     @Override
@@ -389,8 +389,9 @@ public class Socks5Client extends Disposable {
      * proxy server's own IP together with the returned port; otherwise use the address as-is.
      */
     private InetSocketAddress resolveRelayAddress(InetSocketAddress bindAddr) {
-        if (bindAddr.getAddress() != null && bindAddr.getAddress().isAnyLocalAddress()) {
-            return new InetSocketAddress(proxyServer.getEndpoint().getAddress(), bindAddr.getPort());
+        InetSocketAddress proxyAddress = proxyServer.getInetEndpoint();
+        if (proxyAddress != null && bindAddr.getAddress() != null && bindAddr.getAddress().isAnyLocalAddress()) {
+            return new InetSocketAddress(proxyAddress.getAddress(), bindAddr.getPort());
         }
         return bindAddr;
     }

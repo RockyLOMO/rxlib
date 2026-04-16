@@ -128,18 +128,13 @@ class SocksProxyServerTest {
     @Test
     @Order(4)
     @SneakyThrows
-    void testDualBindMode() {
-        int proxyPort = 15182;
-        LocalAddress localAddr = new LocalAddress("TEST_SOCKS_DUAL_BIND");
-        SocksConfig config = new SocksConfig(proxyPort);
-        config.setMemoryAddress(localAddr);
+    void testLocalListenAddressMode() {
+        LocalAddress localAddr = new LocalAddress("TEST_SOCKS_LISTEN_ADDRESS");
+        SocksConfig config = new SocksConfig(localAddr);
         SocksProxyServer proxyServer = new SocksProxyServer(config, null);
 
         try {
-            Thread.sleep(500);
-            assertTrue(proxyServer.isBind(), "Dual bind proxy should be active");
-
-            runSocks5ClientTest(proxyPort, "Dual Bind TCP Test");
+            assertTrue(proxyServer.isBind(), "Local listenAddress proxy should be active");
 
             Bootstrap cb = new Bootstrap()
                     .group(new DefaultEventLoopGroup(1))
@@ -151,7 +146,7 @@ class SocksProxyServerTest {
                     });
             Channel localClientChannel = cb.connect(localAddr).sync().channel();
             try {
-                runSocks5NettyClientTest(localClientChannel, "Dual Bind Local Test");
+                runSocks5NettyClientTest(localClientChannel, "Local ListenAddress Test");
             } finally {
                 localClientChannel.close();
                 cb.config().group().shutdownGracefully();

@@ -682,9 +682,8 @@ class SocksProxyServerIntegrationTest {
         int proxyPort = 15310;
         int ssPort = 15311;
 
-        SocksConfig proxyConfig = new SocksConfig(proxyPort);
+        SocksConfig proxyConfig = new SocksConfig(new LocalAddress("SS_TCP_LOCAL_PROXY"));
         proxyConfig.getWhiteList();
-        proxyConfig.setMemoryAddress(new LocalAddress("SS_TCP_LOCAL_PROXY"));
         SocksProxyServer proxy = new SocksProxyServer(proxyConfig, null);
         AtomicReference<InetSocketAddress> routedSource = new AtomicReference<>();
         proxy.onTcpRoute.replace((s, e) -> routedSource.set(e.getSource()), SocksProxyServer.DIRECT_ROUTER);
@@ -692,8 +691,7 @@ class SocksProxyServerIntegrationTest {
         ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
                 org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "tcp-local-pwd");
         ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
-        AuthenticEndpoint proxyEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyPort),
-                proxyConfig.getMemoryAddress(), null, null);
+        AuthenticEndpoint proxyEndpoint = new AuthenticEndpoint(proxyConfig.getListenAddress(), null, null);
         ssServer.onTcpRoute.replace((s, e) ->
                 e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), new SocksConfig(proxyPort), new UpstreamSupport(proxyEndpoint, null))));
 
@@ -743,16 +741,14 @@ class SocksProxyServerIntegrationTest {
         int proxyPort = 15312;
         int ssPort = 15313;
 
-        SocksConfig proxyConfig = new SocksConfig(proxyPort);
+        SocksConfig proxyConfig = new SocksConfig(new LocalAddress("SS_UDP_LOCAL_PROXY"));
         proxyConfig.getWhiteList();
-        proxyConfig.setMemoryAddress(new LocalAddress("SS_UDP_LOCAL_PROXY"));
         SocksProxyServer proxy = new SocksProxyServer(proxyConfig, null);
 
         ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
                 org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "udp-local-pwd");
         ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
-        AuthenticEndpoint proxyEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyPort),
-                proxyConfig.getMemoryAddress(), null, null);
+        AuthenticEndpoint proxyEndpoint = new AuthenticEndpoint(proxyConfig.getListenAddress(), null, null);
         ssServer.onUdpRoute.replace((s, e) ->
                 e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyPort), new UpstreamSupport(proxyEndpoint, null))));
 

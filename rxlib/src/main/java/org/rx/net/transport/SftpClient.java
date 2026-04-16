@@ -34,9 +34,10 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
 
     @SneakyThrows
     public SftpClient(@NonNull AuthenticEndpoint endpoint, int timeoutMillis) {
+        java.net.InetSocketAddress inetEndpoint = endpoint.requireEndpoint();
         client.setServerKeyVerifier(AcceptAllServerKeyVerifier.INSTANCE);
         client.start();
-        session = client.connect(endpoint.getUsername(), endpoint.getEndpoint().getHostString(), endpoint.getEndpoint().getPort())
+        session = client.connect(endpoint.getUsername(), inetEndpoint.getHostString(), inetEndpoint.getPort())
                 .verify(timeoutMillis)
                 .getSession();
         session.addPasswordIdentity(endpoint.getPassword());

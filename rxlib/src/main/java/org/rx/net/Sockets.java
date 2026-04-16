@@ -603,6 +603,11 @@ public final class Sockets {
         if (channel == null || !channel.isActive()) {
             return;
         }
+        // ServerChannel 没有可刷出的出站缓冲，直接 close 避免对监听通道执行 writeAndFlush。
+        if (channel instanceof ServerChannel) {
+            channel.close();
+            return;
+        }
         channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
@@ -804,6 +809,25 @@ public final class Sockets {
             return "NULL";
         }
         return String.format("%s:%s", endpoint.getHostString(), endpoint.getPort());
+    }
+
+    public static String toString(SocketAddress endpoint) {
+        if (endpoint instanceof InetSocketAddress) {
+            return toString((InetSocketAddress) endpoint);
+        }
+        return endpoint == null ? "NULL" : endpoint.toString();
+    }
+
+    public static InetSocketAddress asInetAddress(SocketAddress endpoint) {
+        return endpoint instanceof InetSocketAddress ? (InetSocketAddress) endpoint : null;
+    }
+
+    public static InetSocketAddress requireInetAddress(SocketAddress endpoint) {
+        InetSocketAddress address = asInetAddress(endpoint);
+        if (address == null) {
+            throw new InvalidException("SocketAddress {} is not InetSocketAddress", endpoint);
+        }
+        return address;
     }
 
     public static void closeOnFlushed(Socket socket) {

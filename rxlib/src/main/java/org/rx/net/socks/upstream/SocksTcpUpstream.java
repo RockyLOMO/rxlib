@@ -88,7 +88,7 @@ public class SocksTcpUpstream extends Upstream {
     }
 
     public void initTransport(Channel channel) {
-        Sockets.addTcpClientHandler(channel, config, next.getEndpoint().getEndpoint());
+        Sockets.addTcpClientHandler(channel, config, next.getEndpoint().getInetEndpoint());
     }
 
     public void initProxyHandler(Channel channel) {

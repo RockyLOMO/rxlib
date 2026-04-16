@@ -7,9 +7,11 @@ import lombok.ToString;
 import org.rx.core.cache.H2StoreCache;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
+import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.List;
 import java.util.Set;
 
@@ -21,8 +23,7 @@ public class SocksConfig extends SocketConfig {
     public static final int DEF_UDP_READ_TIMEOUT_SECONDS = 60 * 20;
 
     private static final long serialVersionUID = 3526543718065617052L;
-    private int listenPort;
-    private LocalAddress memoryAddress;
+    private SocketAddress listenAddress;
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = DEF_READ_TIMEOUT_SECONDS;
     private int writeTimeoutSeconds;
@@ -54,8 +55,36 @@ public class SocksConfig extends SocketConfig {
         return H2StoreCache.DEFAULT.asSet();
     }
 
+    public SocksConfig() {
+    }
+
     public SocksConfig(int listenPort) {
-        this.listenPort = listenPort;
+        this(Sockets.newAnyEndpoint(listenPort));
+    }
+
+    public SocksConfig(SocketAddress listenAddress) {
+        this.listenAddress = listenAddress;
+    }
+
+    public InetSocketAddress getInetListenAddress() {
+        return listenAddress instanceof InetSocketAddress ? (InetSocketAddress) listenAddress : null;
+    }
+
+    public int getListenPort() {
+        InetSocketAddress address = getInetListenAddress();
+        return address != null ? address.getPort() : 0;
+    }
+
+    public void setListenPort(int listenPort) {
+        listenAddress = Sockets.newAnyEndpoint(listenPort);
+    }
+
+    public LocalAddress getMemoryAddress() {
+        return listenAddress instanceof LocalAddress ? (LocalAddress) listenAddress : null;
+    }
+
+    public void setMemoryAddress(LocalAddress memoryAddress) {
+        listenAddress = memoryAddress;
     }
 
     /**

@@ -22,6 +22,7 @@ import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
@@ -38,8 +39,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final SocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel tcpChannel;
-    final ServerBootstrap memoryBootstrap;
-    final Channel memoryServerChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
@@ -48,8 +47,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     private PredicateFunc<UnresolvedEndpoint> cipherRouter;
 
     public boolean isBind() {
-        return tcpChannel != null && tcpChannel.isActive()
-                || memoryServerChannel != null && memoryServerChannel.isActive();
+        return tcpChannel != null && tcpChannel.isActive();
     }
 
     // public Integer getBindPort() {
@@ -98,22 +96,24 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 bootstrap = null;
                 tcpChannel = memoryChannel;
             }
-            memoryBootstrap = null;
-            memoryServerChannel = null;
         } else {
-            bootstrap = Sockets.serverBootstrap(config, this::acceptChannel);
-            tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).addListener((ChannelFutureListener) f -> {
-                if (f.isSuccess() && onBind != null) {
-                    onBind.accept(f.channel());
+            SocketAddress listenAddress = config.getListenAddress();
+            if (listenAddress == null) {
+                listenAddress = Sockets.newAnyEndpoint(0);
+            }
+            if (listenAddress instanceof LocalAddress) {
+                bootstrap = createMemoryServer().bootstrap;
+                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(listenAddress).syncUninterruptibly().channel();
+                if (onBind != null) {
+                    onBind.accept(tcpChannel);
                 }
-            }).channel();
-            if (config.getMemoryAddress() != null) {
-                ServerBootstrap localBootstrap = createMemoryServer().bootstrap;
-                memoryBootstrap = localBootstrap;
-                memoryServerChannel = localBootstrap.attr(SocksContext.SOCKS_SVR, this).bind(config.getMemoryAddress()).syncUninterruptibly().channel();
             } else {
-                memoryBootstrap = null;
-                memoryServerChannel = null;
+                bootstrap = Sockets.serverBootstrap(config, this::acceptChannel);
+                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(listenAddress).addListener((ChannelFutureListener) f -> {
+                    if (f.isSuccess() && onBind != null) {
+                        onBind.accept(f.channel());
+                    }
+                }).channel();
             }
         }
 
@@ -174,11 +174,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         if (bootstrap != null) {
             Sockets.closeOnFlushed(tcpChannel);
         }
-        if (memoryBootstrap != null) {
-            Sockets.closeOnFlushed(memoryServerChannel);
-        }
         Sockets.closeBootstrap(bootstrap);
-        Sockets.closeBootstrap(memoryBootstrap);
     }
 
     @SneakyThrows
