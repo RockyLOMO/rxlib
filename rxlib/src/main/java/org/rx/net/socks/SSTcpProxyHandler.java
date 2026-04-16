@@ -20,9 +20,9 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         Channel inbound = ctx.channel();
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
-        InetSocketAddress dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
+        UnresolvedEndpoint dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
 
-        SocksContext e = SocksContext.getCtx(Sockets.getRemoteAddress(inbound), new UnresolvedEndpoint(dstEp));
+        SocksContext e = SocksContext.getCtx(Sockets.getRemoteAddress(inbound), dstEp);
         server.raiseEvent(server.onTcpRoute, e);
         Upstream upstream = e.getUpstream();
         UnresolvedEndpoint upDstEp = upstream.getDestination();

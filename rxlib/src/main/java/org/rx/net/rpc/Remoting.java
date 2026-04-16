@@ -1,7 +1,11 @@
 package org.rx.net.rpc;
 
 import io.netty.channel.Channel;
+import io.netty.util.AttributeKey;
+import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.FastThreadLocal;
+import io.netty.util.concurrent.ImmediateEventExecutor;
+import io.netty.util.concurrent.Promise;
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
@@ -50,11 +54,14 @@ public final class Remoting {
 
     @RequiredArgsConstructor
     public static class ServerBean {
-        @AllArgsConstructor
-        @RequiredArgsConstructor
         static class EventContext {
             final EventArgs computedArgs;
+            final Promise<EventArgs> computedPromise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
             volatile TcpClient computingClient;
+
+            EventContext(EventArgs computedArgs) {
+                this.computedArgs = computedArgs;
+            }
         }
 
         static class EventBean {
@@ -67,7 +74,7 @@ public final class Remoting {
         final Map<String, EventBean> eventBeans = new ConcurrentHashMap<>();
     }
 
-    static final String HANDSHAKE_META_KEY = "HandshakeMeta";
+    static final AttributeKey<MetadataMessage> HANDSHAKE_META_KEY = AttributeKey.valueOf("HandshakeMeta");
     static final String M_0 = "raiseEvent", M_1 = "raiseEventAsync", M_2 = "attachEvent";
     static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
     // Per-contract init locks: avoids holding ConcurrentHashMap's bin lock during heavy TcpServer startup
@@ -211,8 +218,8 @@ public final class Remoting {
             boolean isMethodCall = methodMessage != null;
             try {
                 if (isMethodCall) {
-                    Sys.callLog(contract,
-                            String.format("Client %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
+                    Sys.callLog(contract, methodMessage.methodName,
+                            () -> String.format("Client %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
                                     Sockets.toString(client.getLocalEndpoint()),
                                     Sockets.toString(client.getConfig().getServerEndpoint())), methodMessage.parameters, () -> {
                                 // 必须先登记 wait map，再 send；否则极快返回的应答可能在 onReceive 中找不到 ClientBean（读超时）
@@ -380,45 +387,11 @@ public final class Remoting {
                             EventPublisher<?> eventTarget = (EventPublisher<?>) contractInstance;
                             eventTarget.attachEvent(p.eventName, (sender, args) -> {
                                 ServerBean.EventContext eCtx = new ServerBean.EventContext((EventArgs) args);
-                                List<TcpClient> broadcastTargets;
-                                synchronized (eventBean) {
-                                    if (config.getEventComputeVersion() == RpcServerConfig.EVENT_DISABLE_COMPUTE) {
-                                        eCtx.computingClient = null;
-                                    } else {
-                                        TcpClient computingClient;
-                                        Linq<TcpClient> subscribes = Linq.from(eventBean.subscribe).where(x -> x.attr(HANDSHAKE_META_KEY) != null);
-                                        if (config.getEventComputeVersion() == RpcServerConfig.EVENT_LATEST_COMPUTE) {
-                                            computingClient = subscribes.groupBy(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion(), (p1, p2) -> {
-                                                int i = ThreadLocalRandom.current().nextInt(0, p2.count());
-                                                return p2.skip(i).first();
-                                            }).orderByDescending(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion()).firstOrDefault();
-                                        } else {
-                                            computingClient = subscribes.where(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion() == config.getEventComputeVersion())
-                                                    .orderByRand().firstOrDefault();
-                                        }
-                                        if (computingClient == null) {
-                                            log.warn("serverSide event {} subscribe empty", p.eventName);
-                                        } else {
-                                            eCtx.computingClient = computingClient;
-                                            EventMessage pack = new EventMessage(p.eventName, EventFlag.COMPUTE_ARGS);
-                                            pack.computeId = Snowflake.DEFAULT.nextId();
-                                            pack.eventArgs = (EventArgs) args;
-                                            eventBean.contextMap.put(pack.computeId, eCtx);
-                                            try {
-                                                computingClient.send(pack);
-                                                log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, computingClient.getRemoteEndpoint(), s.getConfig().getConnectTimeoutMillis());
-                                                eventBean.wait(s.getConfig().getConnectTimeoutMillis());
-                                            } catch (Exception ex) {
-                                                log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, computingClient.getRemoteEndpoint(), ex);
-                                            } finally {
-                                                //delay purge
-                                                Tasks.setTimeout(() -> eventBean.contextMap.remove(pack.computeId), s.getConfig().getConnectTimeoutMillis() * 2L);
-                                            }
-                                        }
-                                    }
-                                    // Collect targets inside the lock, send outside to avoid blocking under lock
-                                    broadcastTargets = collectBroadcastTargets(bean, eventBean, eCtx);
+                                EventMessage computePack = prepareComputePack(bean, eventBean, p.eventName, (EventArgs) args, eCtx);
+                                if (computePack != null) {
+                                    awaitComputedArgs(eventBean, eCtx, computePack, s);
                                 }
+                                List<TcpClient> broadcastTargets = collectBroadcastTargets(bean, eventBean, eCtx);
                                 doSendBroadcast(bean, p, eCtx, broadcastTargets);
                             }, false); //must false
                             log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, e.getClient().getRemoteEndpoint());
@@ -429,24 +402,25 @@ public final class Remoting {
                             eventBean.subscribe.remove(e.getClient());
                             break;
                         case PUBLISH:
-                            ServerBean.EventContext publishCtx = new ServerBean.EventContext(p.eventArgs, e.getClient());
-                            List<TcpClient> publishTargets;
-                            synchronized (eventBean) {
-                                log.info("serverSide event {} {} -> PUBLISH", p.eventName, e.getClient().getRemoteEndpoint());
-                                publishTargets = collectBroadcastTargets(bean, eventBean, publishCtx);
-                            }
+                            ServerBean.EventContext publishCtx = new ServerBean.EventContext(p.eventArgs);
+                            publishCtx.computingClient = e.getClient();
+                            log.info("serverSide event {} {} -> PUBLISH", p.eventName, e.getClient().getRemoteEndpoint());
+                            List<TcpClient> publishTargets = collectBroadcastTargets(bean, eventBean, publishCtx);
                             doSendBroadcast(bean, p, publishCtx, publishTargets);
                             break;
                         case COMPUTE_ARGS:
-                            synchronized (eventBean) {
-                                ServerBean.EventContext ctx = eventBean.contextMap.get(p.computeId);
-                                if (ctx == null) {
-                                    log.warn("serverSide event {} [{}] -> COMPUTE_ARGS FAIL", p.eventName, p.computeId);
-                                } else {
+                            ServerBean.EventContext ctx = eventBean.contextMap.get(p.computeId);
+                            if (ctx == null) {
+                                log.warn("serverSide event {} [{}] -> COMPUTE_ARGS FAIL", p.eventName, p.computeId);
+                            } else {
+                                try {
                                     BeanMapper.DEFAULT.map(p.eventArgs, ctx.computedArgs);
+                                    ctx.computedPromise.trySuccess(ctx.computedArgs);
                                     log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, ctx.computingClient.getRemoteEndpoint(), toJsonString(ctx.computedArgs));
+                                } catch (Throwable ex) {
+                                    ctx.computedPromise.tryFailure(ex);
+                                    log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", p.eventName, ctx.computingClient.getRemoteEndpoint(), ex);
                                 }
-                                eventBean.notifyAll();
                             }
                             break;
                     }
@@ -460,8 +434,8 @@ public final class Remoting {
 
                 MethodMessage pack = (MethodMessage) e.getValue();
                 try {
-                    pack.returnValue = Sys.callLog(contractInstance.getClass(),
-                            String.format("Server %s.%s [%s -> %s]", contractInstance.getClass().getSimpleName(), pack.methodName,
+                    pack.returnValue = Sys.callLog(contractInstance.getClass(), pack.methodName,
+                            () -> String.format("Server %s.%s [%s -> %s]", contractInstance.getClass().getSimpleName(), pack.methodName,
                                     s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteEndpoint())),
                             pack.parameters, () -> RemotingContext.invoke(() -> {
                                 String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
@@ -489,7 +463,7 @@ public final class Remoting {
     private static List<TcpClient> collectBroadcastTargets(ServerBean s, ServerBean.EventBean eventBean,
                                                             ServerBean.EventContext context) {
         List<Integer> allow = s.config.getEventBroadcastVersions();
-        List<TcpClient> targets = new ArrayList<>();
+        List<TcpClient> targets = new ArrayList<>(eventBean.subscribe.size());
         for (TcpClient client : eventBean.subscribe) {
             if (!client.isConnected()) {
                 eventBean.subscribe.remove(client);
@@ -503,6 +477,53 @@ public final class Remoting {
             targets.add(client);
         }
         return targets;
+    }
+
+    private static EventMessage prepareComputePack(ServerBean bean, ServerBean.EventBean eventBean, String eventName,
+                                                   EventArgs args, ServerBean.EventContext context) {
+        if (bean.config.getEventComputeVersion() == RpcServerConfig.EVENT_DISABLE_COMPUTE) {
+            context.computingClient = null;
+            return null;
+        }
+
+        TcpClient computingClient = selectComputingClient(bean.config, eventBean);
+        if (computingClient == null) {
+            log.warn("serverSide event {} subscribe empty", eventName);
+            return null;
+        }
+        context.computingClient = computingClient;
+        EventMessage pack = new EventMessage(eventName, EventFlag.COMPUTE_ARGS);
+        pack.computeId = Snowflake.DEFAULT.nextId();
+        pack.eventArgs = args;
+        eventBean.contextMap.put(pack.computeId, context);
+        return pack;
+    }
+
+    private static TcpClient selectComputingClient(RpcServerConfig config, ServerBean.EventBean eventBean) {
+        Linq<TcpClient> subscribes = Linq.from(eventBean.subscribe).where(x -> x.attr(HANDSHAKE_META_KEY) != null);
+        if (config.getEventComputeVersion() == RpcServerConfig.EVENT_LATEST_COMPUTE) {
+            return subscribes.groupBy(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion(), (p1, p2) -> {
+                int i = ThreadLocalRandom.current().nextInt(0, p2.count());
+                return p2.skip(i).first();
+            }).orderByDescending(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion()).firstOrDefault();
+        }
+        return subscribes.where(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion() == config.getEventComputeVersion())
+                .orderByRand().firstOrDefault();
+    }
+
+    private static void awaitComputedArgs(ServerBean.EventBean eventBean, ServerBean.EventContext context, EventMessage pack, TcpServer s) {
+        try {
+            context.computingClient.send(pack);
+            log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, context.computingClient.getRemoteEndpoint(), s.getConfig().getConnectTimeoutMillis());
+            if (!context.computedPromise.await(s.getConfig().getConnectTimeoutMillis())) {
+                log.warn("serverSide event {} {} -> COMPUTE_ARGS TIMEOUT", pack.eventName, context.computingClient.getRemoteEndpoint());
+            }
+        } catch (Exception ex) {
+            context.computedPromise.tryFailure(ex);
+            log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, context.computingClient.getRemoteEndpoint(), ex);
+        } finally {
+            Tasks.setTimeout(() -> eventBean.contextMap.remove(pack.computeId), s.getConfig().getConnectTimeoutMillis() * 2L);
+        }
     }
 
     // Sends to the pre-collected targets — call this OUTSIDE synchronized(eventBean).

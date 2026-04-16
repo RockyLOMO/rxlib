@@ -3,6 +3,7 @@ package org.rx.net.socks;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.cache.MemoryCache;
 import org.rx.net.Sockets;
@@ -13,7 +14,6 @@ import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentMap;
-import io.netty.util.AttributeKey;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -68,11 +68,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 realDstEp = out.sender();
             }
 
-            ByteBuf addrBuf = ctx.alloc().buffer(64);
-            UdpManager.encode(addrBuf, realDstEp);
-            ByteBuf finalBuf = io.netty.buffer.Unpooled.wrappedBuffer(addrBuf, outBuf.retain());
-
-            sc.inbound.writeAndFlush(new DatagramPacket(finalBuf, srcEp));
+            sc.inbound.writeAndFlush(new DatagramPacket(UdpManager.prependAddress(ctx.alloc(), outBuf, realDstEp), srcEp));
             if (debug) {
                 log.info("SS UDP IN {}[{}] => {}", realDstEp, dstEp, srcEp);
             }
@@ -95,14 +91,11 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
         Channel inbound = ctx.channel();
         InetSocketAddress srcEp = in.sender();
-        UnresolvedEndpoint dstEp = new UnresolvedEndpoint(inbound.attr(ShadowsocksConfig.REMOTE_DEST).get());
+        UnresolvedEndpoint dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
 
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = inbound.attr(ATTR_ROUTE_MAP).get();
-        if (routeMap == null) {
-            inbound.attr(ATTR_ROUTE_MAP).set(routeMap = MemoryCache.<UnresolvedEndpoint, SocksContext>rootBuilder().maximumSize(256).build().asMap());
-        }
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = routeMap(inbound);
 
         SocksContext e = routeMap.get(dstEp);
         if (e == null) {
@@ -163,5 +156,15 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.warn("SS UDP frontend relay error", cause);
+    }
+
+    private static ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap(Channel inbound) {
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = inbound.attr(ATTR_ROUTE_MAP).get();
+        if (routeMap != null) {
+            return routeMap;
+        }
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> newMap = MemoryCache.<UnresolvedEndpoint, SocksContext>rootBuilder().maximumSize(256).build().asMap();
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> oldMap = inbound.attr(ATTR_ROUTE_MAP).setIfAbsent(newMap);
+        return oldMap != null ? oldMap : newMap;
     }
 }

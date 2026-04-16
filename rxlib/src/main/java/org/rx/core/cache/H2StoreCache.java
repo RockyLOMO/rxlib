@@ -13,6 +13,7 @@ import org.rx.io.EntityQueryLambda;
 import org.rx.third.guava.AbstractSequentialIterator;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Constants.NON_UNCHECKED;
@@ -121,8 +122,9 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     int prefetchCount = 100;
     @Setter
     long expungePeriod = 1000 * 60;
-    EntrySetView setView;
+    final EntrySetView setView = new EntrySetView();
     final MemoryCache<TK, H2CacheItem<TK, TV>> l1Cache = new MemoryCache<>(b -> b.maximumSize(2048));
+    final Set<Object> renewingKeys = ConcurrentHashMap.newKeySet();
 
     public H2StoreCache() {
         this(EntityDatabase.DEFAULT);
@@ -186,8 +188,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
                 return null;
             }
             if (item.slidingRenew()) {
-                final H2CacheItem<TK, TV> fItem = item;
-                Tasks.run(() -> db.save(fItem));
+                renewAsync(key, item);
             }
             return item.getValue();
         }
@@ -202,8 +203,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             return null;
         }
         if (item.slidingRenew()) {
-            final H2CacheItem<TK, TV> fItem = item;
-            Tasks.run(() -> db.save(fItem));
+            renewAsync(item.getKey(), item);
         }
         l1Cache.put((TK) key, item, item);
         return item.getValue();
@@ -216,7 +216,10 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             policy = CachePolicy.absolute(defaultExpireSeconds);
         }
 
-        H2CacheItem<TK, TV> oldItem = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
+        H2CacheItem<TK, TV> oldItem = l1Cache.get(key);
+        if (oldItem == null) {
+            oldItem = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
+        }
         TV oldValue = (oldItem != null && Objects.equals(key, oldItem.getKey())) ? oldItem.getValue() : null;
 
         H2CacheItem<TK, TV> newItem = new H2CacheItem<>(key, value, policy);
@@ -251,9 +254,19 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public Set<Entry<TK, TV>> entrySet() {
-        if (setView == null) {
-            setView = new EntrySetView();
-        }
         return setView;
+    }
+
+    void renewAsync(Object key, H2CacheItem<TK, TV> item) {
+        if (!renewingKeys.add(key)) {
+            return;
+        }
+        Tasks.run(() -> {
+            try {
+                db.save(item);
+            } finally {
+                renewingKeys.remove(key);
+            }
+        });
     }
 }

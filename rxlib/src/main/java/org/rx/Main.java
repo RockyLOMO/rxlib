@@ -123,6 +123,10 @@ public final class Main implements SocksRpcContract {
         public int shadowDnsPort = 753;
         public int dnsTtlMinutes = 600;
 
+        // rrp
+        public String rrpToken;
+        public Integer rrpPort;
+
         public List<AuthenticEndpoint> udp2rawSocksServers;
         public InetSocketAddress udp2rawClient;
         // 传递后tcp走kcptun
@@ -496,6 +500,8 @@ public final class Main implements SocksRpcContract {
         return inSvr;
     }
 
+    static RrpServer rrpServer;
+
     static void clientInit(int httpPort, DefaultSocksAuthenticator authenticator) {
         httpServer = new HttpServer(httpPort, true).requestMapping("/traces", (request, response) -> {
             Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
@@ -505,6 +511,13 @@ public final class Main implements SocksRpcContract {
         }).requestMapping("/usrInfo", (request, response) -> {
             response.jsonBody(authenticator.getStore());
         });
+
+        if (rssConf.rrpToken != null && !rssConf.rrpToken.isEmpty() && rssConf.rrpPort != null) {
+            RrpConfig c = new RrpConfig();
+            c.setToken(rssConf.rrpToken);
+            c.setBindPort(rssConf.rrpPort);
+            rrpServer = new RrpServer(c);
+        }
 
         Tasks.schedulePeriod(() -> {
             if (rssConf == null) {

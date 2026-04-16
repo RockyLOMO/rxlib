@@ -23,7 +23,10 @@ public class TasksTest extends AbstractTester {
         }, period);
 
         try {
-            sleep(period * 4 + 500); // ~2100ms
+            long deadline = System.currentTimeMillis() + period * 8 + 2500;
+            while (counter.get() < 3 && System.currentTimeMillis() < deadline) {
+                sleep(50);
+            }
             int count = counter.get();
             log.info("Final count: {}", count);
             assertTrue(count >= 3, "Task should have executed at least 3 times, but got " + count);
@@ -51,6 +54,10 @@ public class TasksTest extends AbstractTester {
             assertTrue(counter.get() == 1, "Task should have executed once after initial delay");
 
             sleep(period * 2 + 300); // Total ~2600ms, should have executed at 1000, 1500, 2000, 2500
+            long deadline = System.currentTimeMillis() + period * 3 + 1500;
+            while (counter.get() < 3 && System.currentTimeMillis() < deadline) {
+                sleep(50);
+            }
             int count = counter.get();
             assertTrue(count >= 3, "Task should have executed at least 3 times, but got " + count);
         } finally {

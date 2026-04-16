@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
@@ -115,6 +116,20 @@ public final class UdpManager {
 
     public static CompositeByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dst) {
         return socks5Encode(buf, dst.getHost(), dst.getPort());
+    }
+
+    public static CompositeByteBuf prependAddress(ByteBufAllocator allocator, ByteBuf payload, InetSocketAddress dst) {
+        ByteBuf header = allocator.directBuffer(64);
+        CompositeByteBuf compositeBuf = allocator.compositeDirectBuffer(2);
+        try {
+            encode(header, dst);
+            compositeBuf.addComponents(true, header, payload.retain());
+            return compositeBuf;
+        } catch (Throwable e) {
+            Bytes.release(header);
+            Bytes.release(compositeBuf);
+            throw e;
+        }
     }
 
     public static CompositeByteBuf socks5Encode(ByteBuf buf, InetSocketAddress dst) {

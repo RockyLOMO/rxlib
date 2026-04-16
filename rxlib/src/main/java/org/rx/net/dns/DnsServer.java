@@ -6,6 +6,7 @@ import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
 import io.netty.handler.codec.dns.TcpDnsQueryDecoder;
 import io.netty.handler.codec.dns.TcpDnsResponseEncoder;
 import io.netty.util.AttributeKey;
+import io.netty.util.concurrent.Promise;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
@@ -16,13 +17,13 @@ import org.rx.core.Cache;
 import org.rx.core.Disposable;
 import org.rx.core.Linq;
 import org.rx.core.cache.H2StoreCache;
+import org.rx.core.cache.MemoryCache;
 import org.rx.io.Files;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.*;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -48,8 +49,10 @@ public class DnsServer extends Disposable {
     int negativeTtl = 30;
     RandomList<ResolveInterceptor> interceptors;
     Cache<String, List<InetAddress>> interceptorCache;
+    final Cache<String, String> domainKeyCache = new MemoryCache<>(b -> b.maximumSize(4096));
     // Tracks keys currently being resolved to prevent thundering-herd cache stampede
     final Set<String> resolvingKeys = ConcurrentHashMap.newKeySet();
+    final Map<String, Promise<List<InetAddress>>> resolvingPromises = new ConcurrentHashMap<>();
 
     public void setInterceptors(RandomList<ResolveInterceptor> interceptors) {
         if (CollectionUtils.isEmpty(this.interceptors = interceptors)) {
@@ -111,7 +114,7 @@ public class DnsServer extends Disposable {
         if (ips.size() == 1) {
             return Collections.singletonList(ips.get(0));
         }
-        return enableHostsWeight ? Linq.from(ips.next(), ips.next()).distinct().toList() : new ArrayList<>(ips);
+        return enableHostsWeight ? weightedHosts(ips) : ips.readOnlySnapshot();
     }
 
     public List<InetAddress> getAllHosts(String host) {
@@ -120,6 +123,19 @@ public class DnsServer extends Disposable {
             return Collections.emptyList();
         }
         return new ArrayList<>(ips);
+    }
+
+    String cacheKey(String domain) {
+        return domainKeyCache.get(domain, k -> DOMAIN_PREFIX.concat(k));
+    }
+
+    private List<InetAddress> weightedHosts(RandomList<InetAddress> ips) {
+        InetAddress first = ips.next();
+        InetAddress second = ips.next();
+        if (Objects.equals(first, second)) {
+            return Collections.singletonList(first);
+        }
+        return Arrays.asList(first, second);
     }
 
     public boolean addHosts(String host, @NonNull String... ips) {

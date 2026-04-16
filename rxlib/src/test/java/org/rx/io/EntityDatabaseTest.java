@@ -16,6 +16,8 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
 
@@ -30,6 +32,28 @@ public class EntityDatabaseTest extends AbstractTester {
         String tableX;
         Long rowId;
         String json;
+    }
+
+    @Data
+    public static class SaveEntity implements Serializable {
+        @DbColumn(primaryKey = true)
+        String id;
+        String name;
+        Integer age;
+    }
+
+    static class CountingEntityDatabaseImpl extends EntityDatabaseImpl {
+        int existsByIdCalls;
+
+        public CountingEntityDatabaseImpl(String filePath, String timeRollingPattern) {
+            super(filePath, timeRollingPattern);
+        }
+
+        @Override
+        public <T> boolean existsById(Class<T> entityType, Serializable id) {
+            existsByIdCalls++;
+            return super.existsById(entityType, id);
+        }
     }
 
 //    @SneakyThrows
@@ -234,6 +258,68 @@ public class EntityDatabaseTest extends AbstractTester {
             assert updated.getAge() == 99;
         } finally {
             db.dropMapping(PersonBean.class);
+            db.close();
+        }
+    }
+
+    @Test
+    public void testSaveSkipsExistsForFullEntityAndKeepsPartialUpdate() {
+        CountingEntityDatabaseImpl db = new CountingEntityDatabaseImpl(path("h2/save_fast"), null);
+        db.createMapping(SaveEntity.class);
+        try {
+            SaveEntity full = new SaveEntity();
+            full.setId("row-1");
+            full.setName("origin");
+            full.setAge(18);
+            db.save(full);
+            assertEquals(0, db.existsByIdCalls);
+
+            db.existsByIdCalls = 0;
+            SaveEntity partial = new SaveEntity();
+            partial.setId("row-1");
+            partial.setAge(20);
+            db.save(partial);
+            assertEquals(1, db.existsByIdCalls);
+
+            SaveEntity loaded = db.findById(SaveEntity.class, "row-1");
+            assertEquals("origin", loaded.getName());
+            assertEquals(Integer.valueOf(20), loaded.getAge());
+        } finally {
+            db.dropMapping(SaveEntity.class);
+            db.close();
+        }
+    }
+
+    @Test
+    public void testCountAndExistsDoNotMutateQueryState() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/query_state"), null);
+        db.createMapping(SaveEntity.class);
+        try {
+            SaveEntity entity = new SaveEntity();
+            entity.setId("row-1");
+            entity.setName("query");
+            entity.setAge(30);
+            db.save(entity);
+
+            EntityQueryLambda<SaveEntity> query = new EntityQueryLambda<>(SaveEntity.class)
+                    .eq(SaveEntity::getName, "query")
+                    .orderBy(SaveEntity::getAge)
+                    .limit(1, 1);
+            int orderSize = query.orders.size();
+            Integer limit = query.limit;
+            Integer offset = query.offset;
+
+            assertTrue(db.exists(query));
+            assertEquals(orderSize, query.orders.size());
+            assertEquals(limit, query.limit);
+            assertEquals(offset, query.offset);
+
+            assertEquals(1L, db.count(query));
+            assertEquals(orderSize, query.orders.size());
+            assertEquals(limit, query.limit);
+            assertEquals(offset, query.offset);
+        } finally {
+            db.dropMapping(SaveEntity.class);
             db.close();
         }
     }

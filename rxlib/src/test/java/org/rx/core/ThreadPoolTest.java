@@ -351,7 +351,7 @@ public class ThreadPoolTest extends AbstractTester {
         CountDownLatch finishLatch = new CountDownLatch(1);
 
         // First task occupies the SINGLE lock
-        p.run(() -> {
+        Future<Void> first = p.run(() -> {
             counter.incrementAndGet();
             startedLatch.countDown();
             finishLatch.await();
@@ -360,10 +360,13 @@ public class ThreadPoolTest extends AbstractTester {
         // Wait for first task to start
         assertTrue(startedLatch.await(5, TimeUnit.SECONDS));
 
-        // Subsequent tasks with same taskId should be rejected (RejectedExecutionException in beforeExecute)
+        // Subsequent tasks with same taskId should be skipped quietly
         Thread.sleep(200);
+        List<Future<Void>> skipped = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
-            p.run(() -> counter.incrementAndGet(), taskId, RunFlag.SINGLE.flags());
+            skipped.add(p.run(() -> {
+                counter.incrementAndGet();
+            }, taskId, RunFlag.SINGLE.flags()));
         }
 
         Thread.sleep(1000);
@@ -371,7 +374,20 @@ public class ThreadPoolTest extends AbstractTester {
         assertEquals(1, counter.get());
 
         finishLatch.countDown();
-        Thread.sleep(500);
+        first.get(5, TimeUnit.SECONDS);
+        for (Future<Void> future : skipped) {
+            assertNull(future.get(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    public void testTasksSingleSelectsStablePoolByTaskId() {
+        Object taskId = "tasks-single";
+        FlagsEnum<RunFlag> flags = RunFlag.SINGLE.flags();
+        ThreadPool first = Tasks.nextPool(null, taskId, flags);
+        for (int i = 0; i < 16; i++) {
+            assertSame(first, Tasks.nextPool(null, taskId, flags));
+        }
     }
 
     // ===== RunFlag.SYNCHRONIZED =====
