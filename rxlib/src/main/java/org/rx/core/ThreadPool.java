@@ -9,6 +9,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.rx.bean.*;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
@@ -344,9 +345,21 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final FastThreadLocal<Object> CTX_STACK_TRACE = new FastThreadLocal<>();
     static final FastThreadLocal<Boolean> CONTINUE_FLAG = new FastThreadLocal<>();
     private static final FastThreadLocal<Object> COMPLETION_RETURNED_VALUE = new FastThreadLocal<>();
+    /**
+     * 不可经 {@link Reflects#getFieldMap}：其字段缓存走 Caffeine，会在 Tasks 完成 createPool 前回调 {@link Tasks#executor()}。
+     */
     @SuppressWarnings("unchecked")
-    private static final ThreadLocal<InternalThreadLocalMap> SLOW_THREAD_LOCAL_MAP =
-            Reflects.readStaticField(InternalThreadLocalMap.class, "slowThreadLocalMap");
+    private static final ThreadLocal<InternalThreadLocalMap> SLOW_THREAD_LOCAL_MAP;
+
+    static {
+        try {
+            SLOW_THREAD_LOCAL_MAP = (ThreadLocal<InternalThreadLocalMap>) FieldUtils.readStaticField(
+                    InternalThreadLocalMap.class, "slowThreadLocalMap", true);
+        } catch (IllegalAccessException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
     static final Map<Class<?>, Field> ASYNC_COMPLETION_FN_FIELDS = new ConcurrentHashMap<>();
     static final String POOL_NAME_PREFIX = "℞Threads-";
     static final Set<Object> runningSingleTasks = ConcurrentHashMap.newKeySet();

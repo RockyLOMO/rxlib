@@ -10,7 +10,7 @@ import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
 import org.rx.net.support.GeoManager;
-import org.rx.net.support.UltraDomainMatcher;
+import org.rx.net.support.UltraDomainTrieMatcher;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
 
@@ -50,7 +50,7 @@ public class TestBean extends AbstractTester {
         }
 
 
-        UltraDomainMatcher m = new UltraDomainMatcher();
+        UltraDomainTrieMatcher m = new UltraDomainTrieMatcher();
         m.build(Arrays.toList("google.com", "baidu.com", "my.site.cn", "long.suffix.domain.net"));
         System.out.println("True: " + m.matchSuffix("www.google.com"));
         System.out.println("True: " + m.matchSuffix("mail.baidu.com"));
