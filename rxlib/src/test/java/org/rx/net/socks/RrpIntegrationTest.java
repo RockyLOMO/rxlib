@@ -5,6 +5,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.local.LocalAddress;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
+import org.rx.net.support.EndpointTracer;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -349,6 +351,14 @@ class RrpIntegrationTest {
         assertFalse(remoteChannel.isOpen(), "slow remote channel should be closed once queue cap is exceeded");
         assertEquals(0, relayBuffer.pendingBytes.get());
         assertNull(remoteChannel.readOutbound());
+    }
+
+    @Test
+    void endpointTracerIgnoresLocalAddressChannels() {
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        localChannel.connect(new LocalAddress("rrp-local"));
+        assertEquals(Sockets.newAnyEndpoint(0), EndpointTracer.TCP.head(localChannel));
+        localChannel.close();
     }
 
     // Helper methods

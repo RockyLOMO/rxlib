@@ -19,7 +19,9 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
     @Override
     public void bind(ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise) throws Exception {
         super.bind(ctx, localAddress, promise);
-        ctx.channel().attr(ATTR_BIND_ADDR).set((InetSocketAddress) localAddress);
+        if (localAddress instanceof InetSocketAddress) {
+            ctx.channel().attr(ATTR_BIND_ADDR).set((InetSocketAddress) localAddress);
+        }
         if (promise != ctx.voidPromise()) {
             promise.addListener((ChannelFutureListener) f -> {
                 Channel ch = f.channel();
@@ -30,8 +32,8 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
                     log.error("Channel[{}] {} listen on {} fail", ch.id(), pn, bindAddr, f.cause());
                     return;
                 }
-                bindAddr = (InetSocketAddress) ch.localAddress();
-                log.info("Channel[{}] {} listened on {}", ch.id(), pn, bindAddr);
+                SocketAddress actualLocalAddress = ch.localAddress();
+                log.info("Channel[{}] {} listened on {}", ch.id(), pn, actualLocalAddress);
             });
         }
     }

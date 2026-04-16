@@ -51,7 +51,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
         }
 
-        InetSocketAddress srcEp = Sockets.getRemoteAddress(inCh);
+        InetSocketAddress srcEp = Sockets.getOriginRemoteAddress(inCh);
         if (msg.type() == Socks5CommandType.CONNECT) {
             SocksContext e = SocksContext.getCtx(srcEp, dstEp);
             server.raiseEvent(server.onTcpRoute, e);
@@ -65,7 +65,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
             // RFC 1928: create a dedicated per-client UDP relay channel
             final Channel tcpControl = inCh;
-            final InetSocketAddress clientTcpAddr = Sockets.getRemoteAddress(tcpControl);
+            final InetSocketAddress clientTcpAddr = Sockets.getOriginRemoteAddress(tcpControl);
             final boolean udp2raw = config.isEnableUdp2raw();
 
             InetSocketAddress tcpLocalAddr = Sockets.getLocalAddress(tcpControl);
@@ -84,6 +84,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             } else {
                 udpFuture.channel().attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientTcpAddr);
             }
+            udpFuture.channel().attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(clientTcpAddr);
             udpFuture.channel().attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(Boolean.FALSE);
 
             udpFuture.channel().closeFuture().addListener(f -> {
@@ -148,7 +149,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }
 
         ensureFrontendHandlers(inbound, outbound);
-        EndpointTracer.TCP.link(Sockets.getRemoteAddress(inbound), outbound);
+        EndpointTracer.TCP.link(Sockets.getOriginRemoteAddress(inbound), outbound);
 
         Socks5WarmupHandler warmupHandler = outbound.pipeline().get(Socks5WarmupHandler.class);
         if (warmupHandler == null) {
@@ -173,7 +174,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     private void connectSlow(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
-        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), e.getUpstream().getConfig(), outbound -> {
+        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), e.getUpstream().getConfig(), e.getUpstream().connectAddressHint(), outbound -> {
             e.getUpstream().initChannel(outbound);
             ensureFrontendHandlers(inbound, outbound);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
@@ -199,7 +200,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
             Channel outbound = f.channel();
-            EndpointTracer.TCP.link(Sockets.getRemoteAddress(inbound), outbound);
+            EndpointTracer.TCP.link(Sockets.getOriginRemoteAddress(inbound), outbound);
             Socks5ClientHandler proxyHandler;
             if (server.cipherRoute(e.getFirstDestination()) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {
                 proxyHandler.setHandshakeCallback(() -> {

@@ -125,6 +125,37 @@ class SocksProxyServerTest {
         }
     }
 
+    @Test
+    @Order(4)
+    @SneakyThrows
+    void testLocalListenAddressMode() {
+        LocalAddress localAddr = new LocalAddress("TEST_SOCKS_LISTEN_ADDRESS");
+        SocksConfig config = new SocksConfig(localAddr);
+        SocksProxyServer proxyServer = new SocksProxyServer(config, null);
+
+        try {
+            assertTrue(proxyServer.isBind(), "Local listenAddress proxy should be active");
+
+            Bootstrap cb = new Bootstrap()
+                    .group(new DefaultEventLoopGroup(1))
+                    .channel(LocalChannel.class)
+                    .handler(new ChannelInitializer<LocalChannel>() {
+                        @Override
+                        protected void initChannel(LocalChannel ch) {
+                        }
+                    });
+            Channel localClientChannel = cb.connect(localAddr).sync().channel();
+            try {
+                runSocks5NettyClientTest(localClientChannel, "Local ListenAddress Test");
+            } finally {
+                localClientChannel.close();
+                cb.config().group().shutdownGracefully();
+            }
+        } finally {
+            proxyServer.close();
+        }
+    }
+
     private void runSocks5NettyClientTest(Channel ch, String message) throws InterruptedException {
         CountDownLatch hsLatch = new CountDownLatch(1);
         CountDownLatch connLatch = new CountDownLatch(1);
