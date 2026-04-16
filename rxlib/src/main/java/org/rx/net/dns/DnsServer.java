@@ -164,17 +164,29 @@ public class DnsServer extends Disposable {
 
     public void addHostsFile(String filePath) {
         Files.readLines(filePath, line -> {
-            if (line.startsWith("#")) {
+            if (line.startsWith("#") || line.trim().isEmpty()) {
                 return;
             }
 
-            String t = "\t";
-            int s = line.indexOf(t), e = line.lastIndexOf(t);
-            if (s == -1 || e == -1) {
-                log.warn("Invalid line {}", line);
+            String trimmed = line.trim();
+            int spaceIdx = trimmed.indexOf(' ');
+            int tabIdx = trimmed.indexOf('\t');
+
+            int splitIdx;
+            if (spaceIdx == -1 && tabIdx == -1) {
+                log.warn("Invalid line (no delimiter): {}", line);
                 return;
+            } else if (spaceIdx == -1) {
+                splitIdx = tabIdx;
+            } else if (tabIdx == -1) {
+                splitIdx = spaceIdx;
+            } else {
+                splitIdx = Math.min(spaceIdx, tabIdx);
             }
-            addHosts(line.substring(e + t.length()), line.substring(0, s));
+
+            String ip = trimmed.substring(0, splitIdx);
+            String host = trimmed.substring(splitIdx + 1).trim();
+            addHosts(host, ip);
         });
     }
 }
