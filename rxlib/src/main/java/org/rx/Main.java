@@ -341,6 +341,7 @@ public final class Main implements SocksRpcContract {
         SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
         svrRefs.add(inSvr);
         Main app = new Main(inSvr);
+        SocksProxyServer inUdp2rawSvr = null;
         SocketAddress inUdp2rawSvrAddress = null;
         if (enableUdp2raw) {
             SocksConfig inTunConf = Sys.deepClone(inConf);
@@ -350,7 +351,7 @@ public final class Main implements SocksRpcContract {
             inTunConf.setUdpRedundantMultiplier(2);
 //            inTunConf.setEnableUdp2raw(enableUdp2raw);
 //            inTunConf.setUdp2rawClient(rssConf.udp2rawClient);
-            SocksProxyServer inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+            inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
             inUdp2rawSvrAddress = inTunConf.getListenAddress();
             svrRefs.add(inUdp2rawSvr);
         }
@@ -363,6 +364,7 @@ public final class Main implements SocksRpcContract {
         Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
 
         SocketAddress inSvrAddress = inConf.getListenAddress();
+        final SocksProxyServer finalInUdp2rawSvr = inUdp2rawSvr;
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
@@ -390,8 +392,10 @@ public final class Main implements SocksRpcContract {
             // toInConf.setTransportFlags(null);
             toInConf.setOptimalSettings(IN_OPS);
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
+            final SocksProxyServer ssUdpTargetSvr = usrName.startsWith("tun") && finalInUdp2rawSvr != null ? finalInUdp2rawSvr : inSvr;
             ssSvr.onTcpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
+                inSvr.getConfig().allowDynamicWhiteList(e.getSource().getAddress());
                 if (rssConf.hasDebugFlag()) {
                     log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
                 }
@@ -399,6 +403,7 @@ public final class Main implements SocksRpcContract {
             });
             ssSvr.onUdpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
+                ssUdpTargetSvr.getConfig().allowDynamicWhiteList(e.getSource().getAddress());
                 if (rssConf.hasDebugFlag()) {
                     log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
                 }
@@ -713,7 +718,7 @@ public final class Main implements SocksRpcContract {
 
     @Override
     public void addWhiteList(InetAddress endpoint) {
-        svrSide.getConfig().getWhiteList().add(endpoint);
+        svrSide.getConfig().allowWhiteList(endpoint);
     }
 
     @Override

@@ -167,9 +167,9 @@ public class TestCore extends AbstractTester {
         for (long i = 0; i < 20; i++) {
             assert xCache.put(i, i + 100 + "x") == null;
         }
-        Set<Object> xSet = xCache.asSet();
+        Set<Long> xSet = xCache.asSet();
         for (int i = 1000; i < 1010; i++) {
-            assert xSet.add(i);
+            assert xSet.add((long) i);
         }
         List<H2CacheItem> dbResult = EntityDatabase.DEFAULT.findBy(new EntityQueryLambda<>(H2CacheItem.class));
         int i = 0;

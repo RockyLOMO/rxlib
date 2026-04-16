@@ -12,6 +12,7 @@ import org.rx.io.EntityQueryLambda;
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -273,5 +274,32 @@ public class H2StoreCacheTest extends AbstractTester {
     public void testEntrySetReturnsStableView() {
         H2StoreCache<String, String> cache = new H2StoreCache<>(new TrackingEntityDatabase());
         assertSame(cache.entrySet(), cache.entrySet());
+    }
+
+    @Test
+    public void testPrefixedAsSetIsolated() {
+        H2StoreCache<String, Boolean> cache = new H2StoreCache<>();
+        String prefixA = "h2-prefix-a-" + UUID.randomUUID();
+        String prefixB = "h2-prefix-b-" + UUID.randomUUID();
+        Set<String> setA = cache.asSet(prefixA);
+        Set<String> setB = cache.asSet(prefixB);
+
+        try {
+            assertTrue(setA.add("same-key"));
+            assertTrue(setA.contains("same-key"));
+            assertFalse(setB.contains("same-key"));
+            assertEquals(1, cache.entrySet(prefixA).size());
+            assertEquals(0, cache.entrySet(prefixB).size());
+
+            assertTrue(setB.add("same-key"));
+            assertEquals(1, cache.entrySet(prefixA).size());
+            assertEquals(1, cache.entrySet(prefixB).size());
+            assertEquals("same-key", cache.entrySet(prefixA).iterator().next().getKey());
+        } finally {
+            setA.clear();
+            setB.clear();
+            assertEquals(0, cache.entrySet(prefixA).size());
+            assertEquals(0, cache.entrySet(prefixB).size());
+        }
     }
 }

@@ -1,11 +1,10 @@
 package org.rx.core.cache;
 
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
-import org.rx.bean.$;
+import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
@@ -20,98 +19,196 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
 public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2StoreCache<TK, TV>> {
-    class EntrySetView extends AbstractSet<Entry<TK, TV>> {
+    public class EntrySetView extends AbstractSet<Entry<TK, TV>> {
+        final String keyPrefix;
+        final KeySetView keyView = new KeySetView();
+
+        EntrySetView() {
+            this(null);
+        }
+
+        EntrySetView(String keyPrefix) {
+            this.keyPrefix = keyPrefix;
+        }
+
+        public class KeySetView extends AbstractSet<TK> {
+            @Override
+            public Iterator<TK> iterator() {
+                Iterator<H2CacheItem> iterator = itemIterator();
+                return new Iterator<TK>() {
+                    @Override
+                    public boolean hasNext() {
+                        return iterator.hasNext();
+                    }
+
+                    @SuppressWarnings(NON_UNCHECKED)
+                    @Override
+                    public TK next() {
+                        return (TK) unwrapPhysicalKey(iterator.next().getKey(), keyPrefix);
+                    }
+
+                    @Override
+                    public void remove() {
+                        iterator.remove();
+                    }
+                };
+            }
+
+            @Override
+            public int size() {
+                return EntrySetView.this.size();
+            }
+
+            @Override
+            public boolean contains(Object o) {
+                return EntrySetView.this.contains(o);
+            }
+
+            @SuppressWarnings(NON_UNCHECKED)
+            @Override
+            public boolean add(TK key) {
+                return EntrySetView.this.putKey(key, (TV) Boolean.TRUE) == null;
+            }
+
+            @Override
+            public boolean remove(Object o) {
+                return EntrySetView.this.remove(o);
+            }
+
+            @Override
+            public void clear() {
+                EntrySetView.this.clear();
+            }
+        }
+
         @Override
         public Iterator<Map.Entry<TK, TV>> iterator() {
-            Object[] iteCtx = ITERATOR_CTX.get();
-            boolean noCtx = iteCtx == null;
-            int offset = noCtx ? 0 : (int) iteCtx[0];
-            int size = noCtx ? Integer.MAX_VALUE : (int) iteCtx[1];
-            Class<?> keyType = noCtx ? null : (Class<?>) iteCtx[2];
-
-            //1 = readPos, 2 = remaining
-            final int[] wrap = {offset, 0, size};
-            $<List<H2CacheItem>> buf = $();
-            int readSize = Math.min(prefetchCount, wrap[2]);
-            buf.v = db.findBy(newQuery(keyType)
-                    .limit(wrap[0], readSize));
-            if (buf.v.isEmpty()) {
+            Iterator<H2CacheItem> iterator = itemIterator();
+            if (!iterator.hasNext()) {
                 return IteratorUtils.emptyIterator();
             }
-            wrap[0] += readSize;
-            return new AbstractSequentialIterator<Entry<TK, TV>>(buf.v.get(wrap[1])) {
-                Map.Entry<TK, TV> current;
+            return new Iterator<Map.Entry<TK, TV>>() {
+                H2CacheItem current;
 
                 @Override
-                protected Entry<TK, TV> computeNext(Entry<TK, TV> previous) {
+                public boolean hasNext() {
+                    return iterator.hasNext();
+                }
+
+                @Override
+                public Map.Entry<TK, TV> next() {
+                    return wrapEntry(current = iterator.next());
+                }
+
+                @Override
+                public void remove() {
+                    iterator.remove();
+                }
+            };
+        }
+
+        Iterator<H2CacheItem> itemIterator() {
+            final int[] state = {0, 0};
+            List<H2CacheItem> firstPage = db.findBy(newQuery().limit(0, prefetchCount));
+            if (firstPage.isEmpty()) {
+                return IteratorUtils.emptyIterator();
+            }
+            state[0] = firstPage.size();
+            return new AbstractSequentialIterator<H2CacheItem>(firstPage.get(0)) {
+                List<H2CacheItem> page = firstPage;
+                H2CacheItem current;
+
+                @Override
+                protected H2CacheItem computeNext(H2CacheItem previous) {
                     current = previous;
-                    if (--wrap[2] <= 0) {
-                        return null;
-                    }
                     while (true) {
-                        if (++wrap[1] == buf.v.size()) {
-                            int nextSize = Math.min(prefetchCount, wrap[2]);
-                            buf.v = db.findBy(newQuery(keyType)
-                                    .limit(wrap[0], nextSize));
-                            if (buf.v.isEmpty()) {
-                                return null;
-                            }
-                            wrap[0] += nextSize;
-                            wrap[1] = 0;
+                        if (++state[1] < page.size()) {
+                            return page.get(state[1]);
                         }
-                        return buf.v.get(wrap[1]);
+                        page = db.findBy(newQuery().limit(state[0], prefetchCount));
+                        if (page.isEmpty()) {
+                            return null;
+                        }
+                        state[0] += page.size();
+                        state[1] = 0;
+                        return page.get(0);
                     }
                 }
 
                 @Override
                 public void remove() {
-                    H2StoreCache.this.remove(current.getKey());
+                    H2StoreCache.this.removePhysicalKey(current.getKey());
                 }
             };
         }
 
-        EntityQueryLambda<H2CacheItem> newQuery(Class<?> keyType) {
+        EntityQueryLambda<H2CacheItem> newQuery() {
             EntityQueryLambda<H2CacheItem> q = new EntityQueryLambda<>(H2CacheItem.class);
-            if (keyType != null) {
-                q.eq(H2CacheItem::getRegion, keyType.getSimpleName());
+            if (keyPrefix != null) {
+                q.like(H2CacheItem::getRegion, buildRegionNamespace(keyPrefix) + ":%");
             }
             return q;
         }
 
+        public Set<TK> keys() {
+            return keyView;
+        }
+
         @Override
         public int size() {
-            return H2StoreCache.this.size();
+            return keyPrefix == null ? H2StoreCache.this.size() : (int) db.count(newQuery());
         }
 
         @Override
         public boolean contains(Object key) {
-            return H2StoreCache.this.containsKey(key);
+            Object lookupKey = key instanceof Map.Entry ? ((Map.Entry<?, ?>) key).getKey() : key;
+            return H2StoreCache.this.containsPhysicalKey(toPhysicalKey(lookupKey));
         }
 
         @Override
         public boolean add(Entry<TK, TV> entry) {
-            return H2StoreCache.this.put(entry.getKey(), entry.getValue()) == null;
+            return putKey(entry.getKey(), entry.getValue()) == null;
         }
 
         @Override
         public boolean remove(Object key) {
-            return H2StoreCache.this.remove(key) != null;
+            Object lookupKey = key instanceof Map.Entry ? ((Map.Entry<?, ?>) key).getKey() : key;
+            return H2StoreCache.this.removePhysicalKey(toPhysicalKey(lookupKey)) != null;
+        }
+
+        @Override
+        public void clear() {
+            Iterator<Entry<TK, TV>> iterator = iterator();
+            while (iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
+
+        @SuppressWarnings(NON_UNCHECKED)
+        Entry<TK, TV> wrapEntry(H2CacheItem item) {
+            if (keyPrefix == null) {
+                return item;
+            }
+            return new java.util.AbstractMap.SimpleEntry<>((TK) unwrapPhysicalKey(item.getKey(), keyPrefix), (TV) item.getValue());
+        }
+
+        Object toPhysicalKey(Object key) {
+            return wrapPhysicalKey(key, keyPrefix);
+        }
+
+        TV putKey(TK key, TV value) {
+            if (key == null) {
+                return null;
+            }
+            return H2StoreCache.this.putPhysicalKey(toPhysicalKey(key), key, value, null, buildRegion(key.getClass(), keyPrefix));
         }
     }
 
     public static final H2StoreCache<?, ?> DEFAULT;
-    static final FastThreadLocal<Object[]> ITERATOR_CTX = new FastThreadLocal<>();
 
     static {
         IOC.register(H2StoreCache.class, DEFAULT = new H2StoreCache<>());
-    }
-
-    public static void iteratorContext() {
-        iteratorContext(0, Integer.MAX_VALUE, null);
-    }
-
-    public static void iteratorContext(int offset, int size, Class<?> keyType) {
-        ITERATOR_CTX.set(new Object[]{offset, size, keyType});
     }
 
     public final Delegate<H2StoreCache<TK, TV>, Map.Entry<TK, TV>> onExpired = Delegate.create();
@@ -123,7 +220,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @Setter
     long expungePeriod = 1000 * 60;
     final EntrySetView setView = new EntrySetView();
-    final MemoryCache<TK, H2CacheItem<TK, TV>> l1Cache = new MemoryCache<>(b -> b.maximumSize(2048));
+    final MemoryCache<Object, H2CacheItem> l1Cache = new MemoryCache<>(b -> b.maximumSize(2048));
     final Set<Object> renewingKeys = ConcurrentHashMap.newKeySet();
 
     public H2StoreCache() {
@@ -162,12 +259,31 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public boolean containsKey(Object key) {
-        H2CacheItem<TK, TV> item = l1Cache.get(key);
+        return containsPhysicalKey(key);
+    }
+
+    boolean containsPhysicalKey(Object key) {
+        H2CacheItem<TK, TV> item = getL1(key);
         if (item != null) {
-            return !item.isExpired();
+            if (item.isExpired()) {
+                l1Cache.remove(key);
+                db.deleteById(H2CacheItem.class, item.id);
+                raiseEvent(onExpired, item);
+                return false;
+            }
+            return true;
         }
-        return db.exists(new EntityQueryLambda<>(H2CacheItem.class)
-                .eq(H2CacheItem::getId, CodecUtil.hash64(key)));
+        item = findPersisted(key);
+        if (item == null) {
+            return false;
+        }
+        if (item.isExpired()) {
+            db.deleteById(H2CacheItem.class, item.id);
+            raiseEvent(onExpired, item);
+            return false;
+        }
+        l1Cache.put(key, item, item);
+        return true;
     }
 
     @Override
@@ -179,7 +295,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV get(Object key) {
-        H2CacheItem<TK, TV> item = l1Cache.get(key);
+        H2CacheItem<TK, TV> item = getL1(key);
         if (item != null) {
             if (item.isExpired()) {
                 l1Cache.remove(key);
@@ -193,8 +309,8 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             return item.getValue();
         }
 
-        item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
-        if (item == null || !Objects.equals(key, item.getKey())) {
+        item = findPersisted(key);
+        if (item == null) {
             return null;
         }
         if (item.isExpired()) {
@@ -212,31 +328,75 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV put(TK key, TV value, CachePolicy policy) {
+        return putPhysicalKey(key, key, value, policy, buildRegion(key.getClass(), null));
+    }
+
+    public void fastPut(TK key, TV value) {
+        fastPut(key, value, null);
+    }
+
+    public void fastPut(TK key, TV value, CachePolicy policy) {
+        if (key == null) {
+            return;
+        }
+        fastPutPhysicalKey(key, value, policy, buildRegion(key.getClass(), null));
+    }
+
+    public void fastPut(String keyPrefix, TK key, TV value) {
+        fastPut(keyPrefix, key, value, null);
+    }
+
+    public void fastPut(String keyPrefix, TK key, TV value, CachePolicy policy) {
+        if (key == null) {
+            return;
+        }
+        fastPutPhysicalKey(wrapPhysicalKey(key, keyPrefix), value, policy, buildRegion(key.getClass(), keyPrefix));
+    }
+
+    @SuppressWarnings(NON_UNCHECKED)
+    TV putPhysicalKey(Object physicalKey, Object logicalKey, TV value, CachePolicy policy, String region) {
         if (policy == null) {
             policy = CachePolicy.absolute(defaultExpireSeconds);
         }
 
-        H2CacheItem<TK, TV> oldItem = l1Cache.get(key);
+        H2CacheItem<TK, TV> oldItem = getL1(physicalKey);
         if (oldItem == null) {
-            oldItem = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
+            oldItem = findPersisted(physicalKey);
         }
-        TV oldValue = (oldItem != null && Objects.equals(key, oldItem.getKey())) ? oldItem.getValue() : null;
+        TV oldValue = oldItem != null ? oldItem.getValue() : null;
 
-        H2CacheItem<TK, TV> newItem = new H2CacheItem<>(key, value, policy);
-        newItem.setRegion(key.getClass().getSimpleName());
+        H2CacheItem<Object, TV> newItem = new H2CacheItem<>(physicalKey, value, policy);
+        newItem.setRegion(region != null ? region : buildRegion(logicalKey.getClass(), null));
 
-        l1Cache.put(key, newItem, newItem);
+        l1Cache.put(physicalKey, newItem, newItem);
         db.save(newItem);
         return oldValue;
+    }
+
+    void fastPutPhysicalKey(Object physicalKey, TV value, CachePolicy policy, String region) {
+        if (policy == null) {
+            policy = CachePolicy.absolute(defaultExpireSeconds);
+        }
+
+        H2CacheItem<Object, TV> newItem = new H2CacheItem<>(physicalKey, value, policy);
+        newItem.setRegion(region);
+        l1Cache.put(physicalKey, newItem, newItem);
+        db.save(newItem);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV remove(Object key) {
-        H2CacheItem<TK, TV> removed = l1Cache.remove(key);
+        return removePhysicalKey(key);
+    }
+
+    @SuppressWarnings(NON_UNCHECKED)
+    TV removePhysicalKey(Object key) {
+        H2CacheItem<TK, TV> removed = getL1(key);
+        l1Cache.remove(key);
         TV val = removed != null ? removed.getValue() : null;
-        H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
-        if (item == null || !Objects.equals(key, item.getKey())) {
+        H2CacheItem<TK, TV> item = findPersisted(key);
+        if (item == null) {
             return val;
         }
         db.deleteById(H2CacheItem.class, item.id);
@@ -257,6 +417,19 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         return setView;
     }
 
+    public EntrySetView entrySet(String keyPrefix) {
+        return keyPrefix == null ? setView : new EntrySetView(keyPrefix);
+    }
+
+    @Override
+    public Set<TK> asSet() {
+        return setView.keys();
+    }
+
+    public Set<TK> asSet(String keyPrefix) {
+        return entrySet(keyPrefix).keys();
+    }
+
     void renewAsync(Object key, H2CacheItem<TK, TV> item) {
         if (!renewingKeys.add(key)) {
             return;
@@ -268,5 +441,42 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
                 renewingKeys.remove(key);
             }
         });
+    }
+
+    @SuppressWarnings(NON_UNCHECKED)
+    H2CacheItem<TK, TV> getL1(Object key) {
+        return (H2CacheItem<TK, TV>) l1Cache.get(key);
+    }
+
+    @SuppressWarnings(NON_UNCHECKED)
+    H2CacheItem<TK, TV> findPersisted(Object key) {
+        H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
+        return item != null && Objects.equals(key, item.getKey()) ? item : null;
+    }
+
+    static Object wrapPhysicalKey(Object key, String keyPrefix) {
+        if (keyPrefix == null) {
+            return key;
+        }
+        return Tuple.of(keyPrefix, key);
+    }
+
+    static Object unwrapPhysicalKey(Object key, String keyPrefix) {
+        if (keyPrefix == null || !(key instanceof Tuple)) {
+            return key;
+        }
+        return ((Tuple<?, ?>) key).right;
+    }
+
+    static String buildRegion(Class<?> keyType, String keyPrefix) {
+        String region = keyType == null ? Object.class.getSimpleName() : keyType.getSimpleName();
+        if (keyPrefix == null) {
+            return region;
+        }
+        return buildRegionNamespace(keyPrefix) + ":" + region;
+    }
+
+    static String buildRegionNamespace(String keyPrefix) {
+        return "KP@" + Long.toHexString(CodecUtil.hash64(keyPrefix));
     }
 }

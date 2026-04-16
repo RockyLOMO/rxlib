@@ -15,6 +15,7 @@ import org.rx.net.Sockets;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
@@ -154,6 +155,44 @@ class SocksProxyServerTest {
         } finally {
             proxyServer.close();
         }
+    }
+
+    @Test
+    @Order(5)
+    @SneakyThrows
+    void testStaticWhiteListUsesSharedPrefix() {
+        SocksConfig configA = new SocksConfig(15182);
+        SocksConfig configB = new SocksConfig(15183);
+        InetAddress publicIp = InetAddress.getByName("1.1.1.1");
+
+        configA.getWhiteList().remove(publicIp);
+        configB.getWhiteList().remove(publicIp);
+        try {
+            configA.allowWhiteList(publicIp);
+
+            assertTrue(configA.getWhiteList().contains(publicIp));
+            assertTrue(configB.getWhiteList().contains(publicIp));
+        } finally {
+            configA.getWhiteList().remove(publicIp);
+            configB.getWhiteList().remove(publicIp);
+        }
+    }
+
+    @Test
+    @Order(6)
+    @SneakyThrows
+    void testDynamicWhiteListDoesNotPersistToStaticSet() {
+        SocksConfig config = new SocksConfig(0);
+        InetAddress publicIp = InetAddress.getByName("8.8.8.8");
+
+        assertFalse(config.isAllowed(publicIp));
+        assertFalse(config.getWhiteList().contains(publicIp));
+
+        config.allowDynamicWhiteList(publicIp);
+
+        assertTrue(config.isAllowed(publicIp));
+        assertEquals(1, config.getDynamicWhiteListSize());
+        assertFalse(config.getWhiteList().contains(publicIp));
     }
 
     private void runSocks5NettyClientTest(Channel ch, String message) throws InterruptedException {
