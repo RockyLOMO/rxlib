@@ -2,6 +2,7 @@ package org.rx;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import io.netty.channel.local.LocalAddress;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -320,6 +321,7 @@ public final class Main implements SocksRpcContract {
         inConf.setDebug(rssConf.hasDebugFlag());
         // inConf.setTransportFlags(null);
         inConf.setOptimalSettings(IN_OPS);
+        inConf.setMemoryAddress(new LocalAddress("rss-in-" + port));
         inConf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
         inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
         inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
@@ -338,15 +340,18 @@ public final class Main implements SocksRpcContract {
         SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
         svrRefs.add(inSvr);
         Main app = new Main(inSvr);
+        LocalAddress inUdp2rawSvrMemoryAddr = null;
         if (enableUdp2raw) {
             SocksConfig inTunConf = Sys.deepClone(inConf);
             inTunConf.setDebug(rssConf.hasDebugFlag());
             inTunConf.setListenPort(udp2rawPort);
+            inTunConf.setMemoryAddress(new LocalAddress("rss-in-tun-" + udp2rawPort));
             inTunConf.setKcptunClient(rssConf.kcptunClient);
             inTunConf.setUdpRedundantMultiplier(2);
 //            inTunConf.setEnableUdp2raw(enableUdp2raw);
 //            inTunConf.setUdp2rawClient(rssConf.udp2rawClient);
             SocksProxyServer inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+            inUdp2rawSvrMemoryAddr = inTunConf.getMemoryAddress();
             svrRefs.add(inUdp2rawSvr);
         }
 
@@ -359,6 +364,7 @@ public final class Main implements SocksRpcContract {
 
         InetSocketAddress inSvrEp = Sockets.newLoopbackEndpoint(port);
         InetSocketAddress inUdp2rawSvrEp = Sockets.newLoopbackEndpoint(udp2rawPort);
+        LocalAddress inSvrMemoryAddr = inConf.getMemoryAddress();
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
@@ -377,9 +383,9 @@ public final class Main implements SocksRpcContract {
             if (usrName.startsWith("hysteria")) {
                 svrEp = rssConf.hysteriaClient;
             } else if (usrName.startsWith("tun")) {
-                svrEp = new AuthenticEndpoint(inUdp2rawSvrEp, usrName, usr.getPassword());
+                svrEp = new AuthenticEndpoint(inUdp2rawSvrEp, inUdp2rawSvrMemoryAddr, usrName, usr.getPassword());
             } else {
-                svrEp = new AuthenticEndpoint(inSvrEp, usrName, usr.getPassword());
+                svrEp = new AuthenticEndpoint(inSvrEp, inSvrMemoryAddr, usrName, usr.getPassword());
             }
 
             SocksConfig toInConf = new SocksConfig(svrEp.getEndpoint().getPort());

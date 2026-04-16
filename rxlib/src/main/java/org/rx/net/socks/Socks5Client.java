@@ -18,6 +18,7 @@ import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
+import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiAction;
 
@@ -212,7 +213,7 @@ public class Socks5Client extends Disposable {
     public Future<Channel> connect(@NonNull UnresolvedEndpoint destination, BiAction<Channel> initChannel) {
         checkNotClosed();
         Socks5ClientHandler handler = createHandler(Socks5CommandType.CONNECT);
-        Sockets.bootstrap(config, ch -> {
+        Sockets.bootstrap(config, proxyServer.getConnectEndpoint(), ch -> {
             Sockets.addTcpClientHandler(ch, config, proxyServer.getEndpoint());
             ch.pipeline().addLast(handler);
             if (initChannel != null) {
@@ -223,7 +224,7 @@ public class Socks5Client extends Disposable {
     }
 
     public CompletableFuture<Socks5UdpLease> udpAssociateLeaseAsync() {
-        return udpAssociateLeaseAsync(null);
+        return udpAssociateLeaseAsync(null, null);
     }
 
     /**
@@ -261,8 +262,9 @@ public class Socks5Client extends Disposable {
     public CompletableFuture<Socks5UdpSession> udpAssociateAsync(Channel udpChannel) {
         checkNotClosed();
         InetSocketAddress srcAddress = udpChannel != null ? (InetSocketAddress) udpChannel.localAddress() : null;
+        InetSocketAddress originRemoteAddress = udpChannel != null ? udpChannel.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).get() : null;
         CompletableFuture<Socks5UdpSession> result = new CompletableFuture<>();
-        udpAssociateLeaseAsync(srcAddress).whenComplete((lease, error) -> {
+        udpAssociateLeaseAsync(srcAddress, originRemoteAddress).whenComplete((lease, error) -> {
             if (error != null) {
                 result.completeExceptionally(error);
                 return;
@@ -306,7 +308,7 @@ public class Socks5Client extends Disposable {
         return result;
     }
 
-    private CompletableFuture<Socks5UdpLease> udpAssociateLeaseAsync(InetSocketAddress srcAddress) {
+    private CompletableFuture<Socks5UdpLease> udpAssociateLeaseAsync(InetSocketAddress srcAddress, InetSocketAddress originRemoteAddress) {
         checkNotClosed();
         CompletableFuture<Socks5UdpLease> result = new CompletableFuture<>();
         Socks5ClientHandler handler = createHandler(Socks5CommandType.UDP_ASSOCIATE);
@@ -334,11 +336,22 @@ public class Socks5Client extends Disposable {
         // sendCommand()).  We pass the proxy address as the bootstrap "destination" so
         // ProxyHandler connects to the right server; the destination value is ignored by
         // sendCommand() when commandType == UDP_ASSOCIATE.
-        Sockets.bootstrap(config, ch -> {
+        Sockets.bootstrap(config, proxyServer.getConnectEndpoint(), ch -> {
             Sockets.addTcpClientHandler(ch, config, proxyServer.getEndpoint());
+            if (originRemoteAddress != null) {
+                ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                    @Override
+                    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+                        Sockets.setOriginRemoteAddress(ctx.channel(), originRemoteAddress);
+                        EndpointTracer.TCP.link(originRemoteAddress, ctx.channel());
+                        ctx.pipeline().remove(this);
+                        super.channelActive(ctx);
+                    }
+                });
+            }
             ch.pipeline().addLast(handler);
         })
-                .connect(proxyServer.getEndpoint())
+                .connect(proxyServer.getConnectEndpoint())
                 .addListener((ChannelFutureListener) f -> {
                     if (!f.isSuccess()) {
                         result.completeExceptionally(f.cause());
@@ -365,7 +378,7 @@ public class Socks5Client extends Disposable {
 
     private Socks5ClientHandler createHandler(Socks5CommandType commandType) {
         return new Socks5ClientHandler(
-                proxyServer.getEndpoint(),
+                proxyServer.getConnectEndpoint(),
                 proxyServer.getUsername(),
                 proxyServer.getPassword(),
                 commandType);

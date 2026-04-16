@@ -2,6 +2,7 @@ package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
+import io.netty.channel.DefaultEventLoopGroup;
 import io.netty.channel.local.LocalAddress;
 import io.netty.channel.local.LocalServerChannel;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
@@ -37,6 +38,8 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final SocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel tcpChannel;
+    final ServerBootstrap memoryBootstrap;
+    final Channel memoryServerChannel;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
@@ -45,7 +48,8 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     private PredicateFunc<UnresolvedEndpoint> cipherRouter;
 
     public boolean isBind() {
-        return tcpChannel.isActive();
+        return tcpChannel != null && tcpChannel.isActive()
+                || memoryServerChannel != null && memoryServerChannel.isActive();
     }
 
     // public Integer getBindPort() {
@@ -80,22 +84,12 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
         if (enableMemoryChannel) {
             if (memoryChannel == null) {
-                EventLoopGroup reactor = Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true);
-                bootstrap = new ServerBootstrap()
-//                        .group(new DefaultEventLoopGroup(1), Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true))
-                        .group(reactor, reactor)
-                        .channel(LocalServerChannel.class)
-                        .childHandler(new ChannelInitializer<Channel>() {
-                            @Override
-                            protected void initChannel(Channel ch) {
-                                acceptChannel(ch);
-                            }
-                        });
                 LocalAddress memoryAddr = config.getMemoryAddress();
                 if (memoryAddr == null) {
                     memoryAddr = new LocalAddress(this.getClass());
                 }
-                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(memoryAddr).channel();
+                bootstrap = createMemoryServer().bootstrap;
+                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(memoryAddr).syncUninterruptibly().channel();
             } else {
                 if (!memoryChannel.isActive()) {
                     throw new InvalidException("memoryChannel not active");
@@ -104,6 +98,8 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 bootstrap = null;
                 tcpChannel = memoryChannel;
             }
+            memoryBootstrap = null;
+            memoryServerChannel = null;
         } else {
             bootstrap = Sockets.serverBootstrap(config, this::acceptChannel);
             tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(Sockets.newAnyEndpoint(config.getListenPort())).addListener((ChannelFutureListener) f -> {
@@ -111,8 +107,35 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                     onBind.accept(f.channel());
                 }
             }).channel();
+            if (config.getMemoryAddress() != null) {
+                ServerBootstrap localBootstrap = createMemoryServer().bootstrap;
+                memoryBootstrap = localBootstrap;
+                memoryServerChannel = localBootstrap.attr(SocksContext.SOCKS_SVR, this).bind(config.getMemoryAddress()).syncUninterruptibly().channel();
+            } else {
+                memoryBootstrap = null;
+                memoryServerChannel = null;
+            }
         }
 
+    }
+
+    private MemoryBind createMemoryServer() {
+        EventLoopGroup reactor = Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true);
+        ServerBootstrap localBootstrap = new ServerBootstrap()
+                .group(new DefaultEventLoopGroup(1), reactor)
+                .channel(LocalServerChannel.class)
+                .childHandler(new ChannelInitializer<Channel>() {
+                    @Override
+                    protected void initChannel(Channel ch) {
+                        acceptChannel(ch);
+                    }
+                });
+        return new MemoryBind(localBootstrap);
+    }
+
+    @RequiredArgsConstructor
+    static final class MemoryBind {
+        final ServerBootstrap bootstrap;
     }
 
     private void acceptChannel(Channel channel) {
@@ -151,7 +174,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         if (bootstrap != null) {
             Sockets.closeOnFlushed(tcpChannel);
         }
+        if (memoryBootstrap != null) {
+            Sockets.closeOnFlushed(memoryServerChannel);
+        }
         Sockets.closeBootstrap(bootstrap);
+        Sockets.closeBootstrap(memoryBootstrap);
     }
 
     @SneakyThrows
@@ -225,6 +252,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }
             relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientAddr);
         }
+        relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(null);
         relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(Boolean.TRUE);
     }
 

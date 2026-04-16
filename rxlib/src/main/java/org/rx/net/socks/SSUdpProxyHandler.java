@@ -105,6 +105,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             SocksContext finalE = e;
             ChannelFuture outboundFuture = UdpManager.open(UdpManager.ssRegion, srcEp, upstream.getConfig(), k -> {
                 ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
+                    ob.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(srcEp);
                     upstream.initChannel(ob);
                     if (server.config.getUdpReadTimeoutSeconds() > 0 || server.config.getUdpWriteTimeoutSeconds() > 0) {
                         ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()));

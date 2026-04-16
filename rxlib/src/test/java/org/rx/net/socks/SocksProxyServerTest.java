@@ -125,6 +125,42 @@ class SocksProxyServerTest {
         }
     }
 
+    @Test
+    @Order(4)
+    @SneakyThrows
+    void testDualBindMode() {
+        int proxyPort = 15182;
+        LocalAddress localAddr = new LocalAddress("TEST_SOCKS_DUAL_BIND");
+        SocksConfig config = new SocksConfig(proxyPort);
+        config.setMemoryAddress(localAddr);
+        SocksProxyServer proxyServer = new SocksProxyServer(config, null);
+
+        try {
+            Thread.sleep(500);
+            assertTrue(proxyServer.isBind(), "Dual bind proxy should be active");
+
+            runSocks5ClientTest(proxyPort, "Dual Bind TCP Test");
+
+            Bootstrap cb = new Bootstrap()
+                    .group(new DefaultEventLoopGroup(1))
+                    .channel(LocalChannel.class)
+                    .handler(new ChannelInitializer<LocalChannel>() {
+                        @Override
+                        protected void initChannel(LocalChannel ch) {
+                        }
+                    });
+            Channel localClientChannel = cb.connect(localAddr).sync().channel();
+            try {
+                runSocks5NettyClientTest(localClientChannel, "Dual Bind Local Test");
+            } finally {
+                localClientChannel.close();
+                cb.config().group().shutdownGracefully();
+            }
+        } finally {
+            proxyServer.close();
+        }
+    }
+
     private void runSocks5NettyClientTest(Channel ch, String message) throws InterruptedException {
         CountDownLatch hsLatch = new CountDownLatch(1);
         CountDownLatch connLatch = new CountDownLatch(1);

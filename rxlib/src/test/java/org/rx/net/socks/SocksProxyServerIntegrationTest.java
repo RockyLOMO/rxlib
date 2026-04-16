@@ -5,6 +5,8 @@ import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
+import io.netty.channel.local.LocalAddress;
+import io.netty.channel.local.LocalChannel;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.*;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.core.RxConfig;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
@@ -23,6 +26,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -667,6 +672,140 @@ class SocksProxyServerIntegrationTest {
             proxyA.close();
             proxyB.close();
             Socks5UpstreamPoolManager.INSTANCE.closeAll();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
+    void shadowsocksTcpConnect_socks5_localChannel_preservesOrigin_e2e() {
+        int proxyPort = 15310;
+        int ssPort = 15311;
+
+        SocksConfig proxyConfig = new SocksConfig(proxyPort);
+        proxyConfig.getWhiteList();
+        proxyConfig.setMemoryAddress(new LocalAddress("SS_TCP_LOCAL_PROXY"));
+        SocksProxyServer proxy = new SocksProxyServer(proxyConfig, null);
+        AtomicReference<InetSocketAddress> routedSource = new AtomicReference<>();
+        proxy.onTcpRoute.replace((s, e) -> routedSource.set(e.getSource()), SocksProxyServer.DIRECT_ROUTER);
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
+                org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "tcp-local-pwd");
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+        AuthenticEndpoint proxyEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyPort),
+                proxyConfig.getMemoryAddress(), null, null);
+        ssServer.onTcpRoute.replace((s, e) ->
+                e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), new SocksConfig(proxyPort), new UpstreamSupport(proxyEndpoint, null))));
+
+        try {
+            Thread.sleep(300);
+            InetAddress bindAddr = Sockets.getLocalAddress();
+            try (Socket s = new Socket()) {
+                s.bind(new InetSocketAddress(bindAddr, 0));
+                s.connect(new InetSocketAddress(bindAddr, ssPort));
+                s.setSoTimeout(4000);
+
+                OutputStream out = s.getOutputStream();
+                InputStream in = s.getInputStream();
+                org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword());
+                crypto.setForUdp(false);
+
+                ByteBuf buf = Unpooled.buffer();
+                UdpManager.encode(buf, "127.0.0.1", TCP_ECHO_PORT);
+                String message = "ss-local-tcp-origin";
+                buf.writeBytes(message.getBytes(StandardCharsets.UTF_8));
+                out.write(toBytes(crypto.encrypt(buf)));
+                out.flush();
+
+                ByteBuf decrypted = crypto.decrypt(Unpooled.wrappedBuffer(readAtLeast(in, 1, 1024, 3000)));
+                try {
+                    assertEquals(message, decrypted.toString(StandardCharsets.UTF_8));
+                } finally {
+                    decrypted.release();
+                }
+
+                waitForCondition(() -> routedSource.get() != null, 3000, "proxy should capture TCP source");
+                InetSocketAddress captured = routedSource.get();
+                assertNotNull(captured);
+                assertEquals(s.getLocalAddress(), captured.getAddress());
+                assertEquals(s.getLocalPort(), captured.getPort());
+            }
+        } finally {
+            ssServer.close();
+            proxy.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
+    void shadowsocksUdpRelay_socks5_localChannel_preservesOrigin_e2e() {
+        int proxyPort = 15312;
+        int ssPort = 15313;
+
+        SocksConfig proxyConfig = new SocksConfig(proxyPort);
+        proxyConfig.getWhiteList();
+        proxyConfig.setMemoryAddress(new LocalAddress("SS_UDP_LOCAL_PROXY"));
+        SocksProxyServer proxy = new SocksProxyServer(proxyConfig, null);
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
+                org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "udp-local-pwd");
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+        AuthenticEndpoint proxyEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyPort),
+                proxyConfig.getMemoryAddress(), null, null);
+        ssServer.onUdpRoute.replace((s, e) ->
+                e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyPort), new UpstreamSupport(proxyEndpoint, null))));
+
+        try {
+            Thread.sleep(300);
+            InetAddress bindAddr = Sockets.getLocalAddress();
+            DatagramSocket clientSock = new DatagramSocket(new InetSocketAddress(bindAddr, 0));
+            clientSock.setSoTimeout(4000);
+            try {
+                org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword(), true);
+                ByteBuf addrBuf = Unpooled.buffer(64);
+                UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
+                byte[] payload = "ss-local-udp-origin".getBytes(StandardCharsets.UTF_8);
+                addrBuf.writeBytes(payload);
+                byte[] encrypted = toBytes(crypto.encrypt(addrBuf));
+
+                clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length, bindAddr, ssPort));
+                byte[] respBuf = new byte[1024];
+                java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
+                clientSock.receive(p);
+
+                ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
+                try {
+                    UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+                    byte[] echoed = new byte[decBuf.readableBytes()];
+                    decBuf.readBytes(echoed);
+                    assertEquals(UDP_ECHO_PORT, srcEp.getPort());
+                    assertArrayEquals(payload, echoed);
+                } finally {
+                    decBuf.release();
+                }
+
+                waitForCondition(() -> !proxy.udpRelayRegistry.isEmpty(), 3000, "proxy relay should be created");
+                Channel relay = proxy.udpRelayRegistry.values().iterator().next();
+                InetSocketAddress originAttr = relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).get();
+                assertNotNull(originAttr);
+                assertEquals(clientSock.getLocalAddress(), originAttr.getAddress());
+                assertEquals(clientSock.getLocalPort(), originAttr.getPort());
+
+                ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(SocksUdpRelayHandler.ATTR_ROUTE_MAP).get();
+                assertNotNull(routeMap);
+                SocksContext sc = routeMap.get(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT));
+                assertNotNull(sc);
+                InetSocketAddress captured = sc.getSource();
+                assertNotNull(captured);
+                assertEquals(clientSock.getLocalAddress(), captured.getAddress());
+                assertEquals(clientSock.getLocalPort(), captured.getPort());
+            } finally {
+                clientSock.close();
+            }
+        } finally {
+            ssServer.close();
+            proxy.close();
         }
     }
 

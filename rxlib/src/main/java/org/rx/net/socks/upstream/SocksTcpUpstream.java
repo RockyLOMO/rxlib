@@ -19,6 +19,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
 import java.math.BigInteger;
+import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
@@ -92,8 +93,13 @@ public class SocksTcpUpstream extends Upstream {
 
     public void initProxyHandler(Channel channel) {
         AuthenticEndpoint svrEp = next.getEndpoint();
-        Socks5ClientHandler proxyHandler = new Socks5ClientHandler(svrEp.getEndpoint(), svrEp.getUsername(), svrEp.getPassword());
+        Socks5ClientHandler proxyHandler = new Socks5ClientHandler(svrEp.getConnectEndpoint(), svrEp.getUsername(), svrEp.getPassword());
         proxyHandler.setConnectTimeoutMillis(config.getConnectTimeoutMillis());
         channel.pipeline().addLast(proxyHandler);
+    }
+
+    @Override
+    public SocketAddress connectAddressHint() {
+        return next.getEndpoint().getConnectEndpoint();
     }
 }

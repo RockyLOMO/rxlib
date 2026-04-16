@@ -32,7 +32,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
 
     public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
         this.user = user;
-        InetSocketAddress realEp = EndpointTracer.TCP.head(ctx.channel());
+        InetSocketAddress realEp = Sockets.getOriginRemoteAddress(ctx.channel());
         info = user.getLoginIps().computeIfAbsent(realEp.getAddress(), ip -> new SocksUser.LoginInfo());
         if (user.getIpLimit() != -1 && user.getLoginIps().size() > user.getIpLimit()) {
             log.error("SocksUser {} maxIpCount={}\nconnectedIps={} incomingIp={}", user.getUsername(), user.getIpLimit(), user.getLoginIps().keySet(), realEp);
@@ -67,7 +67,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             info.totalWriteBytes.addAndGet(readBytes);
         }
 
-        InetSocketAddress remoteAddress = Sockets.getRemoteAddress(ctx.channel());
+        InetSocketAddress remoteAddress = Sockets.getOriginRemoteAddress(ctx.channel());
         log.info("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",
                 user.getUsername(), remoteAddress, Sys.formatNanosElapsed(elapsed),
                 Bytes.readableByteSize(readBytes), Bytes.readableByteSize(writeBytes));

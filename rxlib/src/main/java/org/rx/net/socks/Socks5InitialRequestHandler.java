@@ -31,7 +31,7 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
 
         SocksProxyServer server = Sockets.getAttr(ctx.channel(), SocksContext.SOCKS_SVR);
         Set<InetAddress> whiteList = server.getConfig().getWhiteList();
-        InetSocketAddress remoteEp = Sockets.getRemoteAddress(ctx.channel());
+        InetSocketAddress remoteEp = Sockets.getOriginRemoteAddress(ctx.channel());
         InetAddress raddr = remoteEp.getAddress();
         if (!Sockets.isPrivateIp(raddr) && !whiteList.contains(raddr)) {
             log.warn("socks5[{}] whiteList={}\n{} access blocked", server.getConfig().getListenPort(), toJsonString(whiteList), remoteEp);

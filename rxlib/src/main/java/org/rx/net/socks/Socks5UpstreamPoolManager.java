@@ -86,13 +86,13 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         }
 
         private Channel createWarmChannel() {
-            Socks5WarmupHandler handler = new Socks5WarmupHandler(serverEndpoint.getEndpoint(), serverEndpoint.getUsername(),
+            Socks5WarmupHandler handler = new Socks5WarmupHandler(serverEndpoint.getConnectEndpoint(), serverEndpoint.getUsername(),
                     serverEndpoint.getPassword(), config.getConnectTimeoutMillis());
             try {
-                ChannelFuture connectFuture = Sockets.bootstrap(config, ch -> {
+                ChannelFuture connectFuture = Sockets.bootstrap(config, serverEndpoint.getConnectEndpoint(), ch -> {
                     Sockets.addTcpClientHandler(ch, config, serverEndpoint.getEndpoint());
                     ch.pipeline().addLast(handler);
-                }).connect(serverEndpoint.getEndpoint());
+                }).connect(serverEndpoint.getConnectEndpoint());
                 long timeout = Math.max(config.getConnectTimeoutMillis(), 1000);
                 connectFuture.get(timeout, TimeUnit.MILLISECONDS);
                 return handler.readyFuture().get(timeout, TimeUnit.MILLISECONDS);

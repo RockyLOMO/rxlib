@@ -12,6 +12,7 @@ import org.rx.net.http.HttpClient;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,6 +50,7 @@ public class AuthenticEndpoint implements Serializable {
     }
 
     private final InetSocketAddress endpoint;
+    private transient SocketAddress connectEndpoint;
     private String username, password;
     @Setter(AccessLevel.NONE)
     private Map<String, String> parameters;
@@ -69,6 +71,23 @@ public class AuthenticEndpoint implements Serializable {
         this.username = username;
         this.password = password;
         this.parameters = parameters;
+    }
+
+    public AuthenticEndpoint(InetSocketAddress endpoint, SocketAddress connectEndpoint, String username, String password) {
+        this(endpoint, connectEndpoint, username, password, null);
+    }
+
+    public AuthenticEndpoint(InetSocketAddress endpoint, SocketAddress connectEndpoint, String username, String password, Map<String, String> parameters) {
+        this(endpoint, username, password, parameters);
+        this.connectEndpoint = connectEndpoint;
+    }
+
+    public SocketAddress getConnectEndpoint() {
+        return connectEndpoint != null ? connectEndpoint : endpoint;
+    }
+
+    public boolean isMemoryMode() {
+        return connectEndpoint != null && connectEndpoint != endpoint;
     }
 
     @Override

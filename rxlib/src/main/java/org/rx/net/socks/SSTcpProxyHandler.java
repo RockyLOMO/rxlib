@@ -22,12 +22,12 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         boolean debug = server.config.isDebug();
         UnresolvedEndpoint dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
 
-        SocksContext e = SocksContext.getCtx(Sockets.getRemoteAddress(inbound), dstEp);
+        SocksContext e = SocksContext.getCtx(Sockets.getOriginRemoteAddress(inbound), dstEp);
         server.raiseEvent(server.onTcpRoute, e);
         Upstream upstream = e.getUpstream();
         UnresolvedEndpoint upDstEp = upstream.getDestination();
 
-        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), outbound -> {
+        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), upstream.connectAddressHint(), outbound -> {
             upstream.initChannel(outbound);
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         }).connect(upDstEp.socketAddress()).addListener((ChannelFutureListener) f -> {
@@ -41,7 +41,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
             }
             Channel outbound = f.channel();
 //            BackpressureHandler.install(inbound, outbound);
-            EndpointTracer.TCP.link(Sockets.getRemoteAddress(inbound), outbound);
+            EndpointTracer.TCP.link(Sockets.getOriginRemoteAddress(inbound), outbound);
             outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
         });
         SocksContext.markCtx(inbound, outboundFuture, e);
