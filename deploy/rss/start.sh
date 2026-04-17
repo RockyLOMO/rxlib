@@ -71,6 +71,44 @@ rotate_latest_jar() {
     cleanup_backup_jars
 }
 
+# 优先按端口杀进程，端口未绑定时再按命令行兜底，确保发布前旧进程已退出。
+stop_old_process() {
+    local pid_list pid wait_count
+
+    sudo fuser -k ${PORT}/tcp >/dev/null 2>&1 || true
+
+    pid_list=$(pgrep -f "java .*app.jar .* -port=${PORT}" 2>/dev/null)
+    if [ -n "${pid_list}" ]; then
+        echo "${YELLOW}[${LOCAL_TIME}] 检测到残留进程，按命令行补充终止..."
+        while IFS= read -r pid; do
+            [ -n "${pid}" ] && kill "${pid}" >/dev/null 2>&1 || true
+        done <<EOF
+${pid_list}
+EOF
+    fi
+
+    wait_count=0
+    while [ ${wait_count} -lt 10 ]; do
+        if ! fuser ${PORT}/tcp >/dev/null 2>&1 && ! pgrep -f "java .*app.jar .* -port=${PORT}" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+        wait_count=$((wait_count + 1))
+    done
+
+    pid_list=$(pgrep -f "java .*app.jar .* -port=${PORT}" 2>/dev/null)
+    if [ -n "${pid_list}" ]; then
+        echo "${YELLOW}[${LOCAL_TIME}] 旧进程未在超时内退出，执行强制终止..."
+        while IFS= read -r pid; do
+            [ -n "${pid}" ] && kill -9 "${pid}" >/dev/null 2>&1 || true
+        done <<EOF
+${pid_list}
+EOF
+    fi
+    sudo fuser -k -9 ${PORT}/tcp >/dev/null 2>&1 || true
+    sleep 1
+}
+
 # 用法提示
 usage() {
     echo "用法: $0 [publish|start]"
@@ -87,8 +125,7 @@ ACTION="$1"
 # 根据参数决定是否 kill 端口
 if [ "$ACTION" = "publish" ]; then
     echo "${RED}[${LOCAL_TIME}] 发布模式：正在终止端口 ${PORT}/tcp 的旧进程..."
-    sudo fuser -k ${PORT}/tcp >/dev/null 2>&1 || true
-    sleep 2  # 等待进程完全退出和端口释放
+    stop_old_process
 
     if [ -f "app.jar.publish" ]; then
         rotate_latest_jar
