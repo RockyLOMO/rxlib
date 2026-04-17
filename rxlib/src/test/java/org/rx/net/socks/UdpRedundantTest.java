@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.socket.DatagramPacket;
@@ -81,6 +82,32 @@ public class UdpRedundantTest {
             assertEquals("hello", content.readCharSequence(content.readableBytes(), StandardCharsets.UTF_8).toString());
             out.release();
         }
+        assertNull(channel.readOutbound());
+    }
+
+    @Test
+    public void testRedundantCopiesUseContiguousBuffer() {
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0);
+        EmbeddedChannel channel = new EmbeddedChannel(encoder);
+
+        ByteBuf data = Unpooled.copiedBuffer("compat".getBytes(StandardCharsets.UTF_8));
+        channel.writeOutbound(new DatagramPacket(data, REMOTE));
+
+        DatagramPacket first = channel.readOutbound();
+        assertNotNull(first);
+        assertTrue(first.content() instanceof CompositeByteBuf, "首包保留零拷贝 composite");
+        first.release();
+
+        DatagramPacket redundant1 = channel.readOutbound();
+        assertNotNull(redundant1);
+        assertFalse(redundant1.content() instanceof CompositeByteBuf, "冗余副本应使用连续缓冲，避免 native sendmmsg 兼容性问题");
+        redundant1.release();
+
+        DatagramPacket redundant2 = channel.readOutbound();
+        assertNotNull(redundant2);
+        assertFalse(redundant2.content() instanceof CompositeByteBuf, "冗余副本应使用连续缓冲，避免 native sendmmsg 兼容性问题");
+        redundant2.release();
+
         assertNull(channel.readOutbound());
     }
 

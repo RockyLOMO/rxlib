@@ -20,6 +20,56 @@ PORT=6885
 MEM_OPTIONS="-Xms512m -Xmx1g -Xss512k -XX:MaxMetaspaceSize=128m -XX:MaxDirectMemorySize=2g -XX:-OmitStackTraceInFastThrow -XX:+UseCompressedClassPointers -XX:+UseStringDeduplication"
 APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.inlandServers=192.168.31.1:53"
 DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$SCRIPT_DIR/ -XX:ErrorFile=$SCRIPT_DIR/hs_err_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED"
+BACKUP_PREFIX="app.jar.backup."
+MAX_BACKUP_COUNT=5
+
+# 生成不会冲突的历史 jar 名称。
+next_backup_file() {
+    local ts index backup_file
+    ts=$(date +%Y%m%d_%H%M%S)
+    index=0
+    while true; do
+        backup_file="${BACKUP_PREFIX}${ts}"
+        if [ ${index} -gt 0 ]; then
+            backup_file="${backup_file}_${index}"
+        fi
+        backup_file="${backup_file}.jar"
+        if [ ! -e "${backup_file}" ]; then
+            echo "${backup_file}"
+            return 0
+        fi
+        index=$((index + 1))
+    done
+}
+
+# 只保留最近 5 个历史 jar，避免归档无限增长。
+cleanup_backup_jars() {
+    local backup_files remove_count
+    shopt -s nullglob
+    backup_files=( ${BACKUP_PREFIX}*.jar )
+    shopt -u nullglob
+    if [ ${#backup_files[@]} -le ${MAX_BACKUP_COUNT} ]; then
+        return 0
+    fi
+
+    remove_count=$((${#backup_files[@]} - MAX_BACKUP_COUNT))
+    printf '%s\n' "${backup_files[@]}" | sort | head -n "${remove_count}" | while IFS= read -r old_file; do
+        rm -f "${old_file}"
+    done
+}
+
+# 发布前先把旧的 latest 归档，再保留当前包为 latest。
+rotate_latest_jar() {
+    local backup_file
+    if [ ! -f "app.jar.latest" ]; then
+        return 0
+    fi
+
+    backup_file=$(next_backup_file)
+    mv "app.jar.latest" "${backup_file}"
+    echo "${YELLOW}[${LOCAL_TIME}] 已归档历史 latest -> ${backup_file}"
+    cleanup_backup_jars
+}
 
 # 用法提示
 usage() {
@@ -41,7 +91,10 @@ if [ "$ACTION" = "publish" ]; then
     sleep 2  # 等待进程完全退出和端口释放
 
     if [ -f "app.jar.publish" ]; then
-        mv "app.jar" "app.jar.latest"
+        rotate_latest_jar
+        if [ -f "app.jar" ]; then
+            mv "app.jar" "app.jar.latest"
+        fi
         mv "app.jar.publish" "app.jar"
         sleep 1
     fi
