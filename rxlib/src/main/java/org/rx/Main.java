@@ -395,7 +395,6 @@ public final class Main implements SocksRpcContract {
             final SocksProxyServer ssUdpTargetSvr = usrName.startsWith("tun") && finalInUdp2rawSvr != null ? finalInUdp2rawSvr : inSvr;
             ssSvr.onTcpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
-                inSvr.getConfig().allowDynamicWhiteList(e.getSource().getAddress());
                 if (rssConf.hasDebugFlag()) {
                     log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
                 }
@@ -403,7 +402,6 @@ public final class Main implements SocksRpcContract {
             });
             ssSvr.onUdpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
-                ssUdpTargetSvr.getConfig().allowDynamicWhiteList(e.getSource().getAddress());
                 if (rssConf.hasDebugFlag()) {
                     log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
                 }
@@ -652,6 +650,7 @@ public final class Main implements SocksRpcContract {
 
         SocksConfig outConf = new SocksConfig(port);
         outConf.setDebug(debugFlag);
+        outConf.setWhiteListEnabled(true);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setOptimalSettings(OUT_OPS);
         // outConf.setConnectTimeoutMillis(connectTimeout);

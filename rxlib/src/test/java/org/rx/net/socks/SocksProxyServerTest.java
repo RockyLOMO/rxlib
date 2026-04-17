@@ -168,6 +168,7 @@ class SocksProxyServerTest {
         configA.getWhiteList().remove(publicIp);
         configB.getWhiteList().remove(publicIp);
         try {
+            configA.setWhiteListEnabled(true);
             configA.allowWhiteList(publicIp);
 
             assertTrue(configA.getWhiteList().contains(publicIp));

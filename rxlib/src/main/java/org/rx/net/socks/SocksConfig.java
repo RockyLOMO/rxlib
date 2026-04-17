@@ -35,8 +35,8 @@ public class SocksConfig extends SocketConfig {
     @ToString.Exclude
     private transient volatile Set<InetAddress> whiteList;
     /**
-     * 是否启用「非公网仅白名单」访问控制：为 false 时 {@link #isAllowed(InetAddress)} 对任意非空地址放行，
-     * 且 {@link #allowWhiteList} 不再写入。
+     * 是否启用「非公网仅白名单」访问控制。默认 false（非公网一律放行）；为 true 时仅私网或 {@link #getWhiteList()} 内地址通过 {@link #isAllowed(InetAddress)}。
+     * 为 false 时 {@link #allowWhiteList} 不再写入。
      */
     private boolean whiteListEnabled = false;
     private boolean enableUdp2raw;
