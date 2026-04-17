@@ -170,14 +170,14 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
                 
                 ctx.write(new DatagramPacket(firstBuf, recipient), promise);
                 
-                // 优化：复用payloadSlice，避免重复分配
+                // 冗余副本改用连续 direct buffer，规避 epoll sendmmsg 对组合缓冲的兼容性风险
                 for (int i = 1; i < multiplier; i++) {
                     final int copyIndex = i;
                     final ByteBuf payload = payloadSlice.retainedSlice(); // 独立引用
                     long delayMicros = (long) intervalMicros * copyIndex;
                     ctx.executor().schedule(() -> {
                         try {
-                            writeRedundantCopyOptimized(ctx, seqId, payload, recipient);
+                            writeRedundantCopy(ctx, seqId, payload, recipient);
                             ctx.flush();
                         } finally {
                             payload.release();
@@ -197,7 +197,7 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
                 
                 try {
                     for (int i = 1; i < multiplier; i++) {
-                        writeRedundantCopyOptimized(ctx, seqId, payloadSlice, recipient);
+                        writeRedundantCopy(ctx, seqId, payloadSlice, recipient);
                     }
                 } finally {
                     payloadSlice.release();
@@ -228,25 +228,17 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
         }
     }
 
-    private void writeRedundantCopyOptimized(ChannelHandlerContext ctx, int seqId, ByteBuf payload, InetSocketAddress recipient) {
-        // 优化：使用CompositeByteBuf实现零拷贝
-        ByteBuf header = ctx.alloc().directBuffer(HEADER_SIZE);
+    private void writeRedundantCopy(ChannelHandlerContext ctx, int seqId, ByteBuf payload, InetSocketAddress recipient) {
+        int len = payload.readableBytes();
+        int ri = payload.readerIndex();
+        ByteBuf buf = ctx.alloc().directBuffer(HEADER_SIZE + len);
         try {
-            header.writeInt(HEADER_MAGIC);
-            header.writeInt(seqId);
-            
-            // 优化：使用CompositeByteBuf避免数据拷贝
-            CompositeByteBuf composite = ctx.alloc().compositeDirectBuffer(2);
-            try {
-                // payload已经是slice，需要retain以增加引用计数
-                composite.addComponents(true, header, payload.retain());
-                ctx.write(new DatagramPacket(composite, recipient), ctx.voidPromise());
-            } catch (Exception e) {
-                composite.release();
-                throw e;
-            }
+            buf.writeInt(HEADER_MAGIC);
+            buf.writeInt(seqId);
+            buf.writeBytes(payload, ri, len);
+            ctx.write(new DatagramPacket(buf, recipient), ctx.voidPromise());
         } catch (Exception e) {
-            header.release();
+            buf.release();
             log.warn("UDP redundant copy write failed, seq={}", seqId, e);
         }
     }
