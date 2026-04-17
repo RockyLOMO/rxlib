@@ -47,6 +47,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         final PendingOpType type;
         final H2CacheItem<Object, Object> itemSnapshot;
         volatile int retryCount;
+        volatile boolean rescheduleAfterFlush;
 
         PendingOp(Object physicalKey, long seq, long epoch, PendingOpType type, H2CacheItem<Object, Object> itemSnapshot) {
             this.physicalKey = physicalKey;
@@ -129,6 +130,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
                 PendingOp op = null;
                 try {
                     key = queue.take();
+                    processingKeys.add(key);
                     op = flushPendingKey(key);
                 } catch (InterruptedException e) {
                     if (stopped) {
@@ -140,6 +142,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
                     log.error("stripe[{}] worker error", index, e);
                 } finally {
                     if (key != null) {
+                        processingKeys.remove(key);
                         queuedKeys.remove(key);
                         if (shouldRequeue(key, op)) {
                             offer(key);
@@ -377,6 +380,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     final MemoryCache<Object, H2CacheItem> l1Cache;
     final long l1CacheMaxSize;
     final Set<Object> renewingKeys = ConcurrentHashMap.newKeySet();
+    final Set<Object> processingKeys = ConcurrentHashMap.newKeySet();
     final ConcurrentHashMap<Object, PendingOp> pendingLatest = new ConcurrentHashMap<>();
     final ConcurrentHashMap<Object, CompletableFuture<LoadResult>> loadingMap = new ConcurrentHashMap<>();
     final ConcurrentHashMap<Object, Long> persistedSeq = new ConcurrentHashMap<>();
@@ -759,6 +763,20 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         if (item == null || item.isTombstone() || !item.isSliding()) {
             return;
         }
+        PendingOp pending = pendingLatest.get(key);
+        if (pending != null && pending.epoch == epoch.get()) {
+            if (pending.type == PendingOpType.REMOVE) {
+                return;
+            }
+            if (!item.slidingRenew()) {
+                return;
+            }
+            l1Cache.put(key, item, item);
+            if (processingKeys.contains(key)) {
+                pending.rescheduleAfterFlush = true;
+            }
+            return;
+        }
         if (!renewingKeys.add(key)) {
             return;
         }
@@ -855,7 +873,9 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
         PendingOp current = pendingLatest.get(key);
         if (current != null && current.seq == op.seq && current.epoch == op.epoch) {
-            pendingLatest.remove(key, current);
+            if (!op.rescheduleAfterFlush) {
+                pendingLatest.remove(key, current);
+            }
         }
         return op;
     }
@@ -1150,7 +1170,17 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             return false;
         }
         PendingOp current = pendingLatest.get(key);
-        return current != null && current != processedOp;
+        if (current == null) {
+            return false;
+        }
+        if (current != processedOp) {
+            return true;
+        }
+        if (processedOp.rescheduleAfterFlush) {
+            processedOp.rescheduleAfterFlush = false;
+            return true;
+        }
+        return false;
     }
 
     synchronized void scheduleExpungeTask() {

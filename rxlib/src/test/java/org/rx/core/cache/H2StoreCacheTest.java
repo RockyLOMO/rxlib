@@ -389,6 +389,7 @@ public class H2StoreCacheTest extends AbstractTester {
         db.allowSave.countDown();
         db.blockSave = false;
         cache.flush("renew-key");
+        assertTrue(db.saveCalls.get() <= 3);
     }
 
     @Test
