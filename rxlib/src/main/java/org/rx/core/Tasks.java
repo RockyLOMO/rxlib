@@ -11,6 +11,7 @@ import org.rx.bean.FlagsEnum;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
+import java.lang.reflect.Field;
 import java.sql.Time;
 import java.util.Collections;
 import java.util.List;
@@ -93,17 +94,24 @@ public final class Tasks {
         }));
 
         try {
-            Reflects.writeStaticField(CompletableFuture.class, "asyncPool", executor); //jdk8
+            // Keep this path on plain JDK reflection to avoid pulling Reflects/ObjectChangeTracker during class init.
+            setStaticField(CompletableFuture.class, "asyncPool", executor); //jdk8
 //            ForkJoinPoolWrapper.transform();
         } catch (Throwable e) {
             try {
-                Reflects.writeStaticField(CompletableFuture.class, "ASYNC_POOL", executor); //jdk11
+                setStaticField(CompletableFuture.class, "ASYNC_POOL", executor); //jdk11
             } catch (Throwable ie) {
                 log.warn("setAsyncPool {}", e, ie);
             }
         }
 
         timer.setTimeout(() -> ObjectChangeTracker.DEFAULT.register(Tasks.class), 30000);
+    }
+
+    private static void setStaticField(Class<?> type, String fieldName, Object value) throws NoSuchFieldException, IllegalAccessException {
+        Field field = type.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(null, value);
     }
 
     @Subscribe(topicClass = RxConfig.class)
