@@ -92,6 +92,12 @@ public final class Tasks {
             }
         }));
 
+        // Delay CompletableFuture async-pool patching to avoid expanding the static-init dependency chain.
+        timer.setTimeout(Tasks::initCompletableFutureAsyncPool, 1000);
+        timer.setTimeout(() -> ObjectChangeTracker.DEFAULT.register(Tasks.class), 30000);
+    }
+
+    private static void initCompletableFutureAsyncPool() {
         try {
             Reflects.writeStaticField(CompletableFuture.class, "asyncPool", executor); //jdk8
 //            ForkJoinPoolWrapper.transform();
@@ -102,8 +108,6 @@ public final class Tasks {
                 log.warn("setAsyncPool {}", e, ie);
             }
         }
-
-        timer.setTimeout(() -> ObjectChangeTracker.DEFAULT.register(Tasks.class), 30000);
     }
 
     @Subscribe(topicClass = RxConfig.class)

@@ -321,6 +321,7 @@ public final class Main implements SocksRpcContract {
 
         SocksConfig inConf = new SocksConfig(new LocalAddress("rss-in-" + port));
         inConf.setDebug(rssConf.hasDebugFlag());
+        inConf.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.INLAND);
         // inConf.setTransportFlags(null);
         inConf.setOptimalSettings(IN_OPS);
         inConf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
@@ -651,6 +652,7 @@ public final class Main implements SocksRpcContract {
         SocksConfig outConf = new SocksConfig(port);
         outConf.setDebug(debugFlag);
         outConf.setWhiteListEnabled(true);
+        outConf.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.OUTLAND);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setOptimalSettings(OUT_OPS);
         // outConf.setConnectTimeoutMillis(connectTimeout);
@@ -711,8 +713,7 @@ public final class Main implements SocksRpcContract {
     @SneakyThrows
     @Override
     public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
-        // return DnsClient.outlandClient().resolveAll(host);
-        return Arrays.toList(InetAddress.getAllByName(host));
+        return DnsClient.outlandClient().resolveAll(host);
     }
 
     @Override
