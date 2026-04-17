@@ -23,8 +23,13 @@
 - `[已完成]` `loadingMap` 并发 miss 合并
   - 同 key 多线程 `get()` 在 `L1/pendingLatest` miss 时会共享同一个加载 future，避免重复 `findById` 打 H2。
   - `clear()` 会同时清理旧 epoch 的 `loadingMap`，避免旧轮次加载结果污染新状态。
-- `[暂未实现]` 监控 API 暴露
-  - 目前只完成 `pendingWriteCount()` 能力，完整指标接入仍需结合现有监控体系落地。
+- `[已完成]` 基础监控/可观测接口已暴露
+  - 已有：`pendingWriteCount()`、`stripeCount()`、`pendingQueueSize()`、`l1CacheMaxSize()`、`l1EstimatedSize()`
+  - 说明：这一步只补了进程内观测接口，完整指标上报仍需结合现有监控体系落地。
+- `[已完成]` 轻量级平衡默认值
+  - `DEFAULT_STRIPE_COUNT = 2`
+  - `DEFAULT_L1_CACHE_MAX_SIZE = 2048`
+  - `DEFAULT_EXPUNGE_PERIOD_MILLIS = 3min`
 
 ## 1. 背景与现状
 

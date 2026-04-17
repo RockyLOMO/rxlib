@@ -22,8 +22,9 @@ import static org.rx.core.Constants.NON_UNCHECKED;
 @Slf4j
 public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2StoreCache<TK, TV>> {
     static final int DEFAULT_ITERATOR_SIZE = 1000;
-    static final int DEFAULT_STRIPE_COUNT = 4;
+    static final int DEFAULT_STRIPE_COUNT = 2;
     static final long DEFAULT_TOMBSTONE_EXPIRE_MILLIS = TimeUnit.SECONDS.toMillis(15);
+    static final long DEFAULT_EXPUNGE_PERIOD_MILLIS = TimeUnit.MINUTES.toMillis(3);
     static final long DEFAULT_FLUSH_TIMEOUT_MILLIS = TimeUnit.SECONDS.toMillis(30);
     static final long DEFAULT_RETRY_DELAY_MILLIS = 200;
     static final long DEFAULT_L1_CACHE_MAX_SIZE = 2048L;
@@ -332,8 +333,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     int defaultExpireSeconds = 60 * 60 * 24 * 90;  //3 months
     @Setter
     int prefetchCount = 100;
-    @Setter
-    long expungePeriod = 1000 * 60;
+    long expungePeriod = DEFAULT_EXPUNGE_PERIOD_MILLIS;
     @Setter
     long tombstoneExpireMillis = DEFAULT_TOMBSTONE_EXPIRE_MILLIS;
     @Setter
@@ -342,6 +342,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     long retryDelayMillis = DEFAULT_RETRY_DELAY_MILLIS;
     final EntrySetView setView = new EntrySetView();
     final MemoryCache<Object, H2CacheItem> l1Cache;
+    final long l1CacheMaxSize;
     final Set<Object> renewingKeys = ConcurrentHashMap.newKeySet();
     final ConcurrentHashMap<Object, PendingOp> pendingLatest = new ConcurrentHashMap<>();
     final ConcurrentHashMap<Object, CompletableFuture<LoadResult>> loadingMap = new ConcurrentHashMap<>();
@@ -351,33 +352,51 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     final AtomicLong epoch = new AtomicLong();
     final ReentrantReadWriteLock dbLock = new ReentrantReadWriteLock();
     final List<StripeState> stripes;
+    final int stripeCount;
     final int stripeMask;
+    volatile ScheduledFuture<?> expungeTask;
 
     public H2StoreCache() {
-        this(EntityDatabase.DEFAULT, DEFAULT_L1_CACHE_MAX_SIZE);
+        this(EntityDatabase.DEFAULT, DEFAULT_L1_CACHE_MAX_SIZE, DEFAULT_STRIPE_COUNT);
     }
 
     public H2StoreCache(@NonNull EntityDatabase db) {
-        this(db, DEFAULT_L1_CACHE_MAX_SIZE);
+        this(db, DEFAULT_L1_CACHE_MAX_SIZE, DEFAULT_STRIPE_COUNT);
     }
 
     public H2StoreCache(@NonNull EntityDatabase db, long l1CacheMaxSize) {
+        this(db, l1CacheMaxSize, DEFAULT_STRIPE_COUNT);
+    }
+
+    public H2StoreCache(@NonNull EntityDatabase db, long l1CacheMaxSize, int stripeCount) {
         if (l1CacheMaxSize <= 0) {
             throw new IllegalArgumentException("l1CacheMaxSize must be > 0");
         }
+        if (stripeCount <= 0) {
+            throw new IllegalArgumentException("stripeCount must be > 0");
+        }
         db.createMapping(H2CacheItem.class);
         this.db = db;
+        this.l1CacheMaxSize = l1CacheMaxSize;
         l1Cache = new MemoryCache<>(b -> b.maximumSize(l1CacheMaxSize));
 
-        int stripeCount = roundUpToPowerOfTwo(Math.max(DEFAULT_STRIPE_COUNT, Math.min(8, Constants.CPU_THREADS)));
-        stripes = new ArrayList<>(stripeCount);
-        stripeMask = stripeCount - 1;
+        this.stripeCount = roundUpToPowerOfTwo(stripeCount);
+        stripes = new ArrayList<>(this.stripeCount);
+        stripeMask = this.stripeCount - 1;
         int cacheId = CACHE_COUNTER.incrementAndGet();
-        for (int i = 0; i < stripeCount; i++) {
+        for (int i = 0; i < this.stripeCount; i++) {
             stripes.add(new StripeState(cacheId, i));
         }
 
-        Tasks.schedulePeriod(this::expungeStale, expungePeriod);
+        scheduleExpungeTask();
+    }
+
+    public void setExpungePeriod(long expungePeriod) {
+        if (expungePeriod <= 0) {
+            throw new IllegalArgumentException("expungePeriod must be > 0");
+        }
+        this.expungePeriod = expungePeriod;
+        scheduleExpungeTask();
     }
 
     // region core api
@@ -547,6 +566,33 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     public long pendingWriteCount() {
         return pendingLatest.size();
+    }
+
+    public long l1CacheMaxSize() {
+        return l1CacheMaxSize;
+    }
+
+    public long l1EstimatedSize() {
+        return l1Cache.cache.estimatedSize();
+    }
+
+    public int stripeCount() {
+        return stripeCount;
+    }
+
+    public int pendingQueueSize() {
+        int size = 0;
+        for (StripeState stripe : stripes) {
+            size += stripe.queue.size();
+        }
+        return size;
+    }
+
+    public int pendingQueueSize(int stripeIndex) {
+        if (stripeIndex < 0 || stripeIndex >= stripeCount) {
+            throw new IllegalArgumentException("stripeIndex out of range");
+        }
+        return stripes.get(stripeIndex).queue.size();
     }
 
     @Override
@@ -1028,6 +1074,14 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             cap <<= 1;
         }
         return cap;
+    }
+
+    synchronized void scheduleExpungeTask() {
+        ScheduledFuture<?> task = expungeTask;
+        if (task != null) {
+            task.cancel(false);
+        }
+        expungeTask = Tasks.schedulePeriod(this::expungeStale, expungePeriod);
     }
 
     H2CacheItem<Object, Object> newTombstone(Object key, long seq) {

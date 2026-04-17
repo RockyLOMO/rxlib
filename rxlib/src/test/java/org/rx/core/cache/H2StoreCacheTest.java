@@ -292,10 +292,31 @@ public class H2StoreCacheTest extends AbstractTester {
     }
 
     @Test
-    public void testConstructorAppliesCustomL1MaxSize() {
-        H2StoreCache<String, String> cache = new H2StoreCache<>(new TrackingEntityDatabase(), 64);
+    public void testConstructorAppliesBalancedDefaults() {
+        H2StoreCache<String, String> cache = new H2StoreCache<>(new TrackingEntityDatabase());
+        assertEquals(H2StoreCache.DEFAULT_L1_CACHE_MAX_SIZE, cache.l1CacheMaxSize());
+        assertEquals(H2StoreCache.DEFAULT_STRIPE_COUNT, cache.stripeCount());
+    }
+
+    @Test
+    public void testConstructorAppliesCustomL1MaxSizeAndStripeCount() {
+        H2StoreCache<String, String> cache = new H2StoreCache<>(new TrackingEntityDatabase(), 64, 3);
         assertTrue(cache.l1Cache.cache.policy().eviction().isPresent());
+        assertEquals(64L, cache.l1CacheMaxSize());
         assertEquals(64L, cache.l1Cache.cache.policy().eviction().get().getMaximum());
+        assertEquals(4, cache.stripeCount());
+    }
+
+    @Test
+    public void testSetExpungePeriodReschedulesTask() {
+        H2StoreCache<String, String> cache = new H2StoreCache<>(new TrackingEntityDatabase(), 64, 1);
+        assertNotNull(cache.expungeTask);
+
+        java.util.concurrent.ScheduledFuture<?> first = cache.expungeTask;
+        cache.setExpungePeriod(5000);
+
+        assertTrue(first.isCancelled());
+        assertNotSame(first, cache.expungeTask);
     }
 
     @Test

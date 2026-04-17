@@ -31,7 +31,7 @@ app:
     maxItemSize: 5000
   disk:
     diskUsageWarningThreshold: 90
-    #    h2Settings: CACHE_SIZE=8192;COMPRESS=false;ASYNC=true;PAGE_SIZE=2048;MAX_COMPACT_TIME=100;THREAD_POOL_SIZE=2;MVCC=false;WRITE_BUFFER_SIZE=2048;
+    h2Settings: CACHE_SIZE=8192;MAX_MEMORY_ROWS=1024;MAX_OPERATION_MEMORY=4096;WRITE_DELAY=100
     h2DbPath: ./rx
     entityDatabaseRollPeriod: 10000
   net:
