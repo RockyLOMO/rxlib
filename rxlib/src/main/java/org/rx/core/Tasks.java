@@ -5,14 +5,12 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.reflect.FieldUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
-import java.lang.reflect.Field;
 import java.sql.Time;
 import java.util.Collections;
 import java.util.List;
@@ -94,27 +92,22 @@ public final class Tasks {
             }
         }));
 
+        // Delay CompletableFuture async-pool patching to avoid expanding the static-init dependency chain.
+        timer.setTimeout(Tasks::initCompletableFutureAsyncPool, 1000);
+        timer.setTimeout(() -> ObjectChangeTracker.DEFAULT.register(Tasks.class), 30000);
+    }
+
+    private static void initCompletableFutureAsyncPool() {
         try {
-            // Keep this path on plain JDK reflection to avoid pulling Reflects/ObjectChangeTracker during class init.
-            setStaticField(CompletableFuture.class, "asyncPool", executor); //jdk8
+            Reflects.writeStaticField(CompletableFuture.class, "asyncPool", executor); //jdk8
 //            ForkJoinPoolWrapper.transform();
         } catch (Throwable e) {
             try {
-                setStaticField(CompletableFuture.class, "ASYNC_POOL", executor); //jdk11
+                Reflects.writeStaticField(CompletableFuture.class, "ASYNC_POOL", executor); //jdk11
             } catch (Throwable ie) {
                 log.warn("setAsyncPool {}", e, ie);
             }
         }
-
-        timer.setTimeout(() -> ObjectChangeTracker.DEFAULT.register(Tasks.class), 30000);
-    }
-
-    private static void setStaticField(Class<?> type, String fieldName, Object value) throws NoSuchFieldException, IllegalAccessException {
-        Field field = type.getDeclaredField(fieldName);
-        // Avoid Reflects during Tasks bootstrap, but keep the old final-field stripping behavior.
-        FieldUtils.removeFinalModifier(field);
-        field.setAccessible(true);
-        field.set(null, value);
     }
 
     @Subscribe(topicClass = RxConfig.class)
