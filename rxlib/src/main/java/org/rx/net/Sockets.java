@@ -28,10 +28,10 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.netty.resolver.AddressResolverGroup;
+import io.netty.resolver.DefaultAddressResolverGroup;
 import io.netty.resolver.ResolvedAddressTypes;
 import io.netty.resolver.dns.DnsAddressResolverGroup;
 import io.netty.resolver.dns.DnsNameResolverBuilder;
-import io.netty.resolver.dns.DnsServerAddressStreamProviders;
 import io.netty.util.AttributeKey;
 import io.netty.util.NetUtil;
 import lombok.NonNull;
@@ -99,36 +99,86 @@ public final class Sockets {
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
-    /** 共享 TCP Bootstrap 用 Netty DNS 异步解析（避免 connect 路径上阻塞 JDK DNS）。 */
-    static volatile AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup;
+    /** 共享 TCP Bootstrap 可选解析器：走 inland DNS。 */
+    static volatile AddressResolverGroup<InetSocketAddress> tcpInlandDnsAddressResolverGroup;
+    /** 共享 TCP Bootstrap 可选解析器：走 outland DNS。 */
+    static volatile AddressResolverGroup<InetSocketAddress> tcpOutlandDnsAddressResolverGroup;
 
-    static AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup() {
-        AddressResolverGroup<InetSocketAddress> g = tcpDnsAddressResolverGroup;
-        if (g != null) {
-            return g;
+    static AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup(SocketConfig config) {
+        if (!(config instanceof SocksConfig)) {
+            return DefaultAddressResolverGroup.INSTANCE;
         }
-        synchronized (Sockets.class) {
-            if (tcpDnsAddressResolverGroup == null) {
-                DnsNameResolverBuilder nb = new DnsNameResolverBuilder()
-                        .channelType(udpChannelClass())
-                        .socketChannelType(tcpChannelClass())
-                        .nameServerProvider(DnsServerAddressStreamProviders.platformDefault())
-                        .ttl(5, 300)
-                        .negativeTtl(10)
-                        .queryTimeoutMillis(TimeUnit.SECONDS.toMillis(5))
-                        .resolvedAddressTypes(ResolvedAddressTypes.IPV4_PREFERRED)
-                        .recursionDesired(true)
-                        .maxQueriesPerResolve(8)
-                        .ndots(1);
-                tcpDnsAddressResolverGroup = new DnsAddressResolverGroup(nb);
-            }
-            return tcpDnsAddressResolverGroup;
+
+        SocksConfig socksConfig = (SocksConfig) config;
+        SocksConfig.TcpAsyncDnsMode mode = socksConfig.getTcpAsyncDnsMode();
+        if (mode == null || mode == SocksConfig.TcpAsyncDnsMode.SYSTEM) {
+            return DefaultAddressResolverGroup.INSTANCE;
         }
+        return tcpDnsAddressResolverGroup(mode);
     }
 
-//    static {
-//        InetAddress.getLoopbackAddress();
-//    }
+    static AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode mode) {
+        if (mode == null || mode == SocksConfig.TcpAsyncDnsMode.SYSTEM) {
+            return DefaultAddressResolverGroup.INSTANCE;
+        }
+        if (mode == SocksConfig.TcpAsyncDnsMode.INLAND) {
+            AddressResolverGroup<InetSocketAddress> g = tcpInlandDnsAddressResolverGroup;
+            if (g != null) {
+                return g;
+            }
+            synchronized (Sockets.class) {
+                if (tcpInlandDnsAddressResolverGroup == null) {
+                    tcpInlandDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.INLAND);
+                }
+                return tcpInlandDnsAddressResolverGroup;
+            }
+        }
+        if (mode == SocksConfig.TcpAsyncDnsMode.OUTLAND) {
+            AddressResolverGroup<InetSocketAddress> g = tcpOutlandDnsAddressResolverGroup;
+            if (g != null) {
+                return g;
+            }
+            synchronized (Sockets.class) {
+                if (tcpOutlandDnsAddressResolverGroup == null) {
+                    tcpOutlandDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.OUTLAND);
+                }
+                return tcpOutlandDnsAddressResolverGroup;
+            }
+        }
+        return DefaultAddressResolverGroup.INSTANCE;
+    }
+
+    private static AddressResolverGroup<InetSocketAddress> buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode mode) {
+        DnsClient client;
+        Collection<InetSocketAddress> nameServerList;
+        if (mode == SocksConfig.TcpAsyncDnsMode.INLAND) {
+            client = DnsClient.inlandClient();
+            nameServerList = DnsClient.inlandNameServers();
+        } else {
+            client = DnsClient.outlandClient();
+            nameServerList = DnsClient.outlandNameServers();
+        }
+
+        DnsNameResolverBuilder nb = new DnsNameResolverBuilder()
+                .channelType(udpChannelClass())
+                .socketChannelType(tcpChannelClass())
+                .nameServerProvider(client.getNameServerProvider())
+                .ttl(5, 300)
+                .negativeTtl(5)
+                .queryTimeoutMillis(TimeUnit.SECONDS.toMillis(5))
+                .resolvedAddressTypes(ResolvedAddressTypes.IPV4_PREFERRED)
+                .recursionDesired(true)
+                .maxQueriesPerResolve(8)
+                .ndots(1);
+        if (log.isInfoEnabled()) {
+            log.info("TCP DNS resolver use {} {}", mode, CollectionUtils.isEmpty(nameServerList) ? "platformDefault" : nameServerList);
+        }
+        return new DnsAddressResolverGroup(nb);
+    }
+
+    // static {
+    // InetAddress.getLoopbackAddress();
+    // }
 
     public static LengthFieldBasedFrameDecoder intLengthFieldDecoder() {
         return new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4);
@@ -306,12 +356,12 @@ public final class Sockets {
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis);
         } else {
             b.channel(tcpChannelClass())
-                    .resolver(tcpDnsAddressResolverGroup())
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
                     .option(ChannelOption.TCP_NODELAY, true)
                     .option(ChannelOption.SO_KEEPALIVE, true)
                     .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                     .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+            b.resolver(tcpDnsAddressResolverGroup(config));
             if (writeBufferWaterMark != null) {
                 b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
             }
@@ -561,7 +611,8 @@ public final class Sockets {
     /**
      * 向 pipeline 添加 UDP 多倍发包的 Decoder（入站去重）和 Encoder（出站冗余发送）。
      * 支持静态模式和自适应模式。
-     * <p>通过 {@link #udpBootstrap(SocketConfig, BiAction)} 创建 DatagramChannel 时会自动调用；
+     * <p>
+     * 通过 {@link #udpBootstrap(SocketConfig, BiAction)} 创建 DatagramChannel 时会自动调用；
      * 仅在自行组装 pipeline 时才需要直接调用本方法。
      */
     public static void addRedundantHandlers(ChannelPipeline pipeline, SocksConfig config) {
@@ -689,7 +740,8 @@ public final class Sockets {
     }
 
     public static InetSocketAddress getRemoteAddress(Channel channel) {
-        if (channel == null) return null;
+        if (channel == null)
+            return null;
         java.net.SocketAddress addr = channel.remoteAddress();
         if (addr instanceof InetSocketAddress) {
             return (InetSocketAddress) addr;
@@ -698,7 +750,8 @@ public final class Sockets {
     }
 
     public static InetSocketAddress getLocalAddress(Channel channel) {
-        if (channel == null) return null;
+        if (channel == null)
+            return null;
         java.net.SocketAddress addr = channel.localAddress();
         if (addr instanceof InetSocketAddress) {
             return (InetSocketAddress) addr;

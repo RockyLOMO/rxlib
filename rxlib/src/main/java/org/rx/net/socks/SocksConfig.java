@@ -20,6 +20,10 @@ import java.util.Set;
 @Setter
 @ToString
 public class SocksConfig extends SocketConfig {
+    public enum TcpAsyncDnsMode {
+        SYSTEM, INLAND, OUTLAND
+    }
+
     public static final int DEF_READ_TIMEOUT_SECONDS = 60 * 4;
     public static final int DEF_UDP_READ_TIMEOUT_SECONDS = 60 * 20;
     private static final String WHITE_LIST_KEY_PREFIX = "socksWhiteList";
@@ -31,6 +35,12 @@ public class SocksConfig extends SocketConfig {
     private int writeTimeoutSeconds;
     private int udpReadTimeoutSeconds = DEF_UDP_READ_TIMEOUT_SECONDS;
     private int udpWriteTimeoutSeconds;
+    /**
+     * TCP 出站建连时的 DNS 解析策略。
+     * SYSTEM: 不指定 Netty 异步 DNS，退回 Bootstrap 默认解析；
+     * INLAND/OUTLAND: 使用 Netty 异步 DNS，并分别走 RxConfig 配置的 inland/outland 服务器。
+     */
+    private TcpAsyncDnsMode tcpAsyncDnsMode = TcpAsyncDnsMode.SYSTEM;
     @Getter(AccessLevel.NONE)
     @ToString.Exclude
     private transient volatile Set<InetAddress> whiteList;
@@ -59,8 +69,7 @@ public class SocksConfig extends SocketConfig {
      */
     private UdpRedundantConfig udpRedundant;
 
-    public SocksConfig() {
-    }
+    public SocksConfig() {}
 
     public SocksConfig(int listenPort) {
         this(Sockets.newAnyEndpoint(listenPort));

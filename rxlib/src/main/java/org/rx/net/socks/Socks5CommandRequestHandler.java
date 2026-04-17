@@ -174,7 +174,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     private void connectSlow(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {
         SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
-        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), e.getUpstream().getConfig(), e.getUpstream().connectAddressHint(), outbound -> {
+        SocketConfig effectiveConfig = e.getUpstream().getConfig();
+        if (effectiveConfig == null) {
+            effectiveConfig = config;
+        }
+        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), effectiveConfig, e.getUpstream().connectAddressHint(), outbound -> {
             e.getUpstream().initChannel(outbound);
             ensureFrontendHandlers(inbound, outbound);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {

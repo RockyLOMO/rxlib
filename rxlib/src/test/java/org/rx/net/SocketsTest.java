@@ -5,25 +5,59 @@ import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.epoll.Epoll;
 import io.netty.channel.epoll.EpollEventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.resolver.DefaultAddressResolverGroup;
+import io.netty.resolver.dns.DnsServerAddressStreamProvider;
 import lombok.SneakyThrows;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.rx.core.RxConfig;
+import org.rx.net.dns.DnsClient;
+import org.rx.net.socks.SocksConfig;
 
+import java.lang.reflect.Field;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class SocketsTest {
+    private final List<String> originalOutlandServers = new ArrayList<>(RxConfig.INSTANCE.getNet().getDns().getOutlandServers());
+
+    @AfterEach
+    void restoreTcpDnsResolver() throws Exception {
+        RxConfig.INSTANCE.getNet().getDns().getOutlandServers().clear();
+        RxConfig.INSTANCE.getNet().getDns().getOutlandServers().addAll(originalOutlandServers);
+        for (String fieldName : new String[]{"tcpInlandDnsAddressResolverGroup", "tcpOutlandDnsAddressResolverGroup"}) {
+            Field field = Sockets.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.set(null, null);
+        }
+        closeAndClearDnsClient("inlandClient");
+        closeAndClearDnsClient("outlandClient");
+    }
+
+    private static void closeAndClearDnsClient(String fieldName) throws Exception {
+        Field field = DnsClient.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        DnsClient client = (DnsClient) field.get(null);
+        field.set(null, null);
+        if (client != null && !client.isClosed()) {
+            client.close();
+        }
+    }
 
     @Test
     public void testReactor() {
@@ -144,5 +178,53 @@ public class SocketsTest {
  
         assertNull(channel.pipeline().get(Sockets.ZIP_DECODER));
         assertNotNull(channel.pipeline().get(Sockets.ZIP_ENCODER));
+    }
+
+    @Test
+    public void testTcpDnsResolverUsesConfiguredOutlandDns() throws Exception {
+        RxConfig.INSTANCE.getNet().getDns().getOutlandServers().clear();
+        RxConfig.INSTANCE.getNet().getDns().getOutlandServers().add("127.0.0.1:5353");
+
+        Object resolverGroup = Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.OUTLAND);
+        Field builderField = resolverGroup.getClass().getDeclaredField("dnsResolverBuilder");
+        builderField.setAccessible(true);
+        Object builder = builderField.get(resolverGroup);
+
+        Field providerField = builder.getClass().getDeclaredField("dnsServerAddressStreamProvider");
+        providerField.setAccessible(true);
+        DnsServerAddressStreamProvider provider = (DnsServerAddressStreamProvider) providerField.get(builder);
+        assertNotNull(provider);
+        assertTrue(provider.getClass().getName().contains("DnsClient$DnsServerAddressStreamProviderImpl"), provider.getClass().getName());
+
+        InetSocketAddress first = provider.nameServerAddressStream("mail.proton.me").next();
+        assertEquals("127.0.0.1", first.getHostString());
+        assertEquals(5353, first.getPort());
+    }
+
+    @Test
+    public void testBootstrapSystemDnsModeDisablesNettyResolver() {
+        SocksConfig config = new SocksConfig();
+        config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.SYSTEM);
+
+        Bootstrap bootstrap = Sockets.bootstrap(config, ch -> {
+        });
+        assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
+    }
+
+    @Test
+    public void testBootstrapInlandDnsModeUsesInlandResolver() {
+        SocksConfig config = new SocksConfig();
+        config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.INLAND);
+
+        Bootstrap bootstrap = Sockets.bootstrap(config, ch -> {
+        });
+        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.INLAND), bootstrap.config().resolver());
+    }
+
+    @Test
+    public void testBootstrapDefaultUsesSystemResolver() {
+        Bootstrap bootstrap = Sockets.bootstrap(new SocketConfig(), ch -> {
+        });
+        assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
     }
 }

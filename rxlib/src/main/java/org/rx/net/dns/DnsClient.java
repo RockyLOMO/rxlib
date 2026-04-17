@@ -3,21 +3,25 @@ package org.rx.net.dns;
 import io.netty.channel.AddressedEnvelope;
 import io.netty.handler.codec.dns.DnsQuestion;
 import io.netty.handler.codec.dns.DnsResponse;
+import io.netty.resolver.ResolvedAddressTypes;
 import io.netty.resolver.dns.*;
 import io.netty.util.concurrent.Future;
 
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
-import org.rx.core.Linq;
 import org.rx.core.RxConfig;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Tasks.await;
 
@@ -42,7 +46,7 @@ public class DnsClient extends Disposable {
         if (inlandClient == null) {
             synchronized (DnsClient.class) {
                 if (inlandClient == null) {
-                    inlandClient = new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getInlandServers()).select(Sockets::parseEndpoint).toList());
+                    inlandClient = new DnsClient(inlandNameServers());
                 }
             }
         }
@@ -53,21 +57,68 @@ public class DnsClient extends Disposable {
         if (outlandClient == null) {
             synchronized (DnsClient.class) {
                 if (outlandClient == null) {
-                    outlandClient = new DnsClient(Linq.from(RxConfig.INSTANCE.getNet().getDns().getOutlandServers()).select(Sockets::parseEndpoint).toList());
+                    outlandClient = new DnsClient(outlandNameServers());
                 }
             }
         }
         return outlandClient;
     }
 
+    public static List<InetSocketAddress> inlandNameServers() {
+        return parseNameServers(RxConfig.INSTANCE.getNet().getDns().getInlandServers());
+    }
+
+    public static List<InetSocketAddress> outlandNameServers() {
+        return parseNameServers(RxConfig.INSTANCE.getNet().getDns().getOutlandServers());
+    }
+
+    public static DnsServerAddressStreamProvider nameServerProvider(Collection<InetSocketAddress> nameServerList) {
+        if (nameServerList == null || nameServerList.isEmpty()) {
+            return DnsServerAddressStreamProviders.platformDefault();
+        }
+        return new DnsServerAddressStreamProviderImpl(new LinkedHashSet<>(nameServerList));
+    }
+
+    static List<InetSocketAddress> parseNameServers(Collection<String> endpoints) {
+        if (endpoints == null || endpoints.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        LinkedHashSet<InetSocketAddress> result = new LinkedHashSet<>(endpoints.size());
+        for (String endpoint : endpoints) {
+            if (endpoint == null || endpoint.trim().isEmpty()) {
+                continue;
+            }
+            try {
+                result.add(Sockets.parseEndpoint(endpoint.trim()));
+            } catch (Exception e) {
+                log.warn("Ignore invalid dns server {}", endpoint, e);
+            }
+        }
+        if (result.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>(result);
+    }
+
+    @Getter
+    final DnsServerAddressStreamProvider nameServerProvider;
     final DnsNameResolver nameResolver;
 
     public DnsClient(@NonNull Collection<InetSocketAddress> nameServerList) {
+        nameServerProvider = nameServerProvider(nameServerList);
         nameResolver = new DnsNameResolverBuilder(Sockets.reactor(Sockets.ReactorNames.SHARED_UDP, false).next())
-                .nameServerProvider(!nameServerList.isEmpty() ? new DnsServerAddressStreamProviderImpl(new LinkedHashSet<>(nameServerList))
-                        : DnsServerAddressStreamProviders.platformDefault())
+                .nameServerProvider(nameServerProvider)
                 .channelType(Sockets.udpChannelClass())
-                .socketChannelType(Sockets.tcpChannelClass()).build();
+                .socketChannelType(Sockets.tcpChannelClass())
+                .ttl(5, 300)
+                .negativeTtl(5)
+                .queryTimeoutMillis(TimeUnit.SECONDS.toMillis(5))
+                .resolvedAddressTypes(ResolvedAddressTypes.IPV4_PREFERRED)
+                .recursionDesired(true)
+                .maxQueriesPerResolve(8)
+                .ndots(1)
+                .build();
     }
 
     @Override
