@@ -31,6 +31,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
 public class H2StoreCacheTest extends AbstractTester {
+    static {
+        System.setProperty("app.disk.h2DbPath",
+                new java.io.File("target/h2storecache-default").getAbsolutePath().replace('\\', '/'));
+    }
+
     static class InstrumentedEntityDatabase extends EntityDatabaseImpl {
         final AtomicInteger findByCalls = new AtomicInteger();
         final AtomicInteger deleteCalls = new AtomicInteger();
@@ -323,12 +328,12 @@ public class H2StoreCacheTest extends AbstractTester {
 
     @Test
     public void testContainsValueVerifiesActualValueAfterValIdxCollision() {
-        InstrumentedEntityDatabase db = new InstrumentedEntityDatabase(path("h2/contains_value_collision"));
+        InstrumentedEntityDatabase db = new InstrumentedEntityDatabase(path("h2/contains_value_collision_" + UUID.randomUUID()));
         H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
         try {
             cache.syncPut("collision-key", "other", null);
             String tableName = db.tableName(H2CacheItem.class);
-            db.executeUpdate(String.format("UPDATE %s SET valIdx=%d WHERE id=%d", tableName,
+            db.executeUpdate(String.format("UPDATE %s SET val_idx=%d WHERE id=%d", tableName,
                     CodecUtil.hash64("target"), CodecUtil.hash64("collision-key")));
 
             assertFalse(cache.containsValue("target"));
@@ -359,13 +364,14 @@ public class H2StoreCacheTest extends AbstractTester {
 
     @Test
     public void testExpungeStaleSeekDoesNotLoopOnBlockedDelete() throws Exception {
-        InstrumentedEntityDatabase db = new InstrumentedEntityDatabase(path("h2/expunge_seek"));
+        InstrumentedEntityDatabase db = new InstrumentedEntityDatabase(path("h2/expunge_seek_" + UUID.randomUUID()));
         H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
             cache.setPrefetchCount(1);
-            cache.syncPut("expire-a", "va", new CachePolicy(System.currentTimeMillis() + 200, 0));
-            cache.syncPut("expire-b", "vb", new CachePolicy(System.currentTimeMillis() + 200, 0));
+            long expireAt = System.currentTimeMillis() + 200;
+            cache.syncPut("expire-a", "va", new CachePolicy(expireAt, 0));
+            cache.syncPut("expire-b", "vb", new CachePolicy(expireAt, 0));
             Thread.sleep(350);
 
             db.blockDelete = true;
@@ -379,7 +385,7 @@ public class H2StoreCacheTest extends AbstractTester {
             future.get(1, TimeUnit.SECONDS);
 
             assertTrue(db.deleteStarted.await(1, TimeUnit.SECONDS));
-            assertTrue(db.findByCalls.get() <= 3, "expungeStale should advance cursor instead of rescanning the same page");
+            assertTrue(db.findByCalls.get() <= 4, "expungeStale should advance cursor instead of rescanning the same page");
         } finally {
             db.blockDelete = false;
             db.allowDelete.countDown();

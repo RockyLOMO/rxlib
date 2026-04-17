@@ -1290,20 +1290,29 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     List<H2CacheItem> findExpiredPage(ExpungeCursor cursor, long expireBefore, int limit) {
-        EntityQueryLambda<H2CacheItem> q = new EntityQueryLambda<>(H2CacheItem.class)
-                .le(H2CacheItem::getExpiration, expireBefore)
-                .orderBy(H2CacheItem::getExpiration)
-                .orderBy(H2CacheItem::getId)
-                .limit(limit);
-        if (cursor != null) {
-            EntityQueryLambda<H2CacheItem> seek = q.newClause()
-                    .gt(H2CacheItem::getExpiration, cursor.expiration)
-                    .or(q.newClause()
-                            .eq(H2CacheItem::getExpiration, cursor.expiration)
-                            .gt(H2CacheItem::getId, cursor.id));
-            q.and(seek);
+        if (cursor == null) {
+            return findPersistedItems(new EntityQueryLambda<>(H2CacheItem.class)
+                    .le(H2CacheItem::getExpiration, expireBefore)
+                    .orderBy(H2CacheItem::getExpiration)
+                    .orderBy(H2CacheItem::getId)
+                    .limit(limit));
         }
-        return findPersistedItems(q);
+
+        List<H2CacheItem> page = new ArrayList<>(limit);
+        page.addAll(findPersistedItems(new EntityQueryLambda<>(H2CacheItem.class)
+                .eq(H2CacheItem::getExpiration, cursor.expiration)
+                .gt(H2CacheItem::getId, cursor.id)
+                .orderBy(H2CacheItem::getId)
+                .limit(limit)));
+        if (page.size() < limit) {
+            page.addAll(findPersistedItems(new EntityQueryLambda<>(H2CacheItem.class)
+                    .le(H2CacheItem::getExpiration, expireBefore)
+                    .gt(H2CacheItem::getExpiration, cursor.expiration)
+                    .orderBy(H2CacheItem::getExpiration)
+                    .orderBy(H2CacheItem::getId)
+                    .limit(limit - page.size())));
+        }
+        return page;
     }
 
     List<H2CacheItem> findValueHashPage(long valueHash, Long afterId, int limit) {
