@@ -57,17 +57,40 @@ jobs:
           cp deploy/${{ env.REMOTE_DIR }}/start.sh ./
           cp deploy/${{ env.REMOTE_DIR }}/rollback.sh ./
 
-      # 4. 复制 JAR 到远程服务器
+      # 4. 复制 JAR 到远程服务器（带重试：Runner DNS 偶发超时，如 lookup on 168.63.129.16:53 i/o timeout）
       - name: Copy JAR to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_RSS_SVR_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_RSS_SVR_PORT }}
-          source: app.jar.publish,start.sh,rollback.sh
-          target: /home/${{ env.REMOTE_DIR }}/
-          overwrite: true
+        env:
+          SSH_RSS_SVR_HOST: ${{ secrets.SSH_RSS_SVR_HOST }}
+          SSH_RSS_SVR_PORT: ${{ secrets.SSH_RSS_SVR_PORT }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          HOST="$SSH_RSS_SVR_HOST"
+          PORT="$SSH_RSS_SVR_PORT"
+          USER="$SSH_USERNAME"
+          DEST="/home/${{ env.REMOTE_DIR }}/"
+          MAX_ATTEMPTS=5
+          RETRY_DELAY_SEC=15
+          for i in $(seq 1 "$MAX_ATTEMPTS"); do
+            echo "SCP attempt $i/$MAX_ATTEMPTS -> ${USER}@${HOST}:${DEST}"
+            getent hosts "$HOST" >/dev/null 2>&1 || true
+            if sshpass -e scp -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+                -o ConnectTimeout=30 -P "$PORT" \
+                app.jar.publish start.sh rollback.sh \
+                "${USER}@${HOST}:${DEST}"; then
+              echo "SCP succeeded."
+              exit 0
+            fi
+            if [[ "$i" -lt "$MAX_ATTEMPTS" ]]; then
+              echo "SCP failed, retrying in ${RETRY_DELAY_SEC}s..."
+              sleep "$RETRY_DELAY_SEC"
+            fi
+          done
+          echo "SCP failed after $MAX_ATTEMPTS attempts"
+          exit 1
       - name: Initial Wait for Service Startup
         run: sleep 2s  # 等待 60 秒，支持格式如 60、60s 或 1m
 
