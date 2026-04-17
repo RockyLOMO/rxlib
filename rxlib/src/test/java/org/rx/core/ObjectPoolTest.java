@@ -34,7 +34,7 @@ public class ObjectPoolTest {
         pool.recycle(i2);
 
         assertTrue(pool.size() >= 2 && pool.size() <= 4,
-                "Pool size should be between minSize and maxSize, actual: " + pool.size());
+                "Pool size should be between minIdleSize and maxPoolSize, actual: " + pool.size());
     }
 
     @Test
@@ -51,50 +51,90 @@ public class ObjectPoolTest {
         assertSame(obj1, obj2, "归还后再借应复用同一对象");
     }
 
-    // ========== MaxSize Enforcement ==========
+    @SneakyThrows
+    @Test
+    public void testMinIdleSizeMaintainsSharedIdleObjects() {
+        AtomicInteger created = new AtomicInteger();
+        ObjectPool<Object> pool = new ObjectPool<>(0, 4,
+                () -> {
+                    created.incrementAndGet();
+                    return new Object();
+                },
+                x -> true);
+        pool.setMinIdleSize(2);
+
+        waitForCondition(() -> pool.idleSize() == 2 && pool.size() == 2, 3000,
+                "应预热出 2 个 idle 对象");
+
+        Object b1 = pool.borrow();
+        Object b2 = pool.borrow();
+        assertNotNull(b1);
+        assertNotNull(b2);
+
+        waitForCondition(() -> pool.idleSize() == 2 && pool.size() == 4, 3000,
+                "借出中对象时应补足 minIdleSize 个待命对象");
+        assertEquals(4, created.get(), "borrow 后应后台补齐 idle buffer");
+    }
+
+    @SneakyThrows
+    @Test
+    public void testMinIdleSizeDisablesThreadLocalIdleCache() {
+        ObjectPool<Object> pool = new ObjectPool<>(0, 3, Object::new, x -> true);
+        pool.setMinIdleSize(1);
+
+        waitForCondition(() -> pool.idleSize() == 1, 3000, "应至少保留 1 个共享 idle 对象");
+
+        Object obj = pool.borrow();
+        pool.recycle(obj);
+
+        waitForCondition(() -> pool.idleSize() >= 1, 3000,
+                "recycle 后 idle 对象应回到共享 stack，而不是只留在 thread-local");
+    }
+
+    // ========== MaxPoolSize Enforcement ==========
 
     @Test
-    public void testMaxSizeEnforcement() throws TimeoutException {
-        int maxSize = 3;
+    public void testMaxPoolSizeEnforcement() throws TimeoutException {
+        int maxPoolSize = 3;
         AtomicInteger created = new AtomicInteger();
-        ObjectPool<Object> pool = new ObjectPool<>(0, maxSize,
+        ObjectPool<Object> pool = new ObjectPool<>(0, maxPoolSize,
                 () -> {
                     created.incrementAndGet();
                     return new Object();
                 },
                 x -> true);
 
-        // Borrow maxSize objects
-        Object[] borrowed = new Object[maxSize];
-        for (int i = 0; i < maxSize; i++) {
+        // Borrow maxPoolSize objects
+        Object[] borrowed = new Object[maxPoolSize];
+        for (int i = 0; i < maxPoolSize; i++) {
             borrowed[i] = pool.borrow();
         }
-        assertEquals(maxSize, created.get(), "应恰好创建 maxSize 个对象");
+        assertEquals(maxPoolSize, created.get(), "应恰好创建 maxPoolSize 个对象");
 
         // borrow 超出上限应超时
         pool.setBorrowTimeout(500);
-        assertThrows(TimeoutException.class, pool::borrow, "超出 maxSize 应抛 TimeoutException");
+        assertThrows(TimeoutException.class, pool::borrow, "超出 maxPoolSize 应抛 TimeoutException");
 
         // 创建数不应增加
-        assertEquals(maxSize, created.get(), "超时后不应创建额外对象");
+        assertEquals(maxPoolSize, created.get(), "超时后不应创建额外对象");
     }
 
     @Test
-    public void testMaxSizeReleaseThenBorrow() throws TimeoutException {
-        int maxSize = 2;
-        ObjectPool<Object> pool = new ObjectPool<>(0, maxSize,
+    public void testMaxPoolSizeReleaseThenBorrow() throws TimeoutException {
+        int maxPoolSize = 2;
+        ObjectPool<Object> pool = new ObjectPool<>(0, maxPoolSize,
                 Object::new,
                 x -> true);
 
         Object o1 = pool.borrow();
         Object o2 = pool.borrow();
-        assertEquals(maxSize, pool.size());
+        assertEquals(maxPoolSize, pool.size());
 
         // Pool 满，归还一个后应能再借
         pool.recycle(o1);
         Object o3 = pool.borrow();
         assertNotNull(o3, "归还后应能再次借出");
-        assertEquals(maxSize, pool.size(), "总数应保持 maxSize");
+        assertEquals(maxPoolSize, pool.size(), "总数应保持 maxPoolSize");
     }
 
     // ========== Borrow Timeout ==========
@@ -294,10 +334,10 @@ public class ObjectPoolTest {
     public void testConcurrency() {
         int threads = 10;
         int loops = 50;
-        int maxSize = 5;
+        int maxPoolSize = 5;
         AtomicInteger created = new AtomicInteger();
         AtomicInteger errors = new AtomicInteger();
-        ObjectPool<Object> pool = new ObjectPool<>(2, maxSize,
+        ObjectPool<Object> pool = new ObjectPool<>(2, maxPoolSize,
                 () -> {
                     created.incrementAndGet();
                     return new Object();
@@ -325,14 +365,14 @@ public class ObjectPoolTest {
 
         assertTrue(latch.await(30, TimeUnit.SECONDS), "并发测试未在 30 秒内完成");
         assertEquals(0, errors.get(), "并发测试不应有错误");
-        assertTrue(pool.size() <= maxSize, "pool size 不应超过 maxSize，actual: " + pool.size());
+        assertTrue(pool.size() <= maxPoolSize, "pool size 不应超过 maxPoolSize，actual: " + pool.size());
         log.info("Concurrency test: created={}, poolSize={}", created.get(), pool.size());
     }
 
     // ========== Adaptive Refill ==========
 
     /**
-     * 基线：demandFactor=0 时无论 borrow 频率多高，targetSize 始终等于 minSize。
+     * 基线：demandFactor=0 时无论 borrow 频率多高，targetSize 始终等于 minIdleSize。
      */
     @Test
     public void testAdaptiveRefillBaseline() {
@@ -343,12 +383,12 @@ public class ObjectPoolTest {
         Arrays.fill(pool.borrowSamples, 100L);
         pool.validNow();
 
-        assertEquals(2, pool.size(), "demandFactor=0 时 pool size 应等于 minSize");
+        assertEquals(2, pool.size(), "demandFactor=0 时 pool size 应等于 minIdleSize");
     }
 
     /**
      * 高负载：采样平均值高时，pool 应预热到 targetSize。
-     * SAMPLE_COUNT=12，每格 10 次 → avgPerPeriod=10 → target=ceil(10*2.0)=20，上限 maxSize=20。
+     * SAMPLE_COUNT=12，每格 10 次 → avgPerPeriod=10 → target=ceil(10*2.0)=20，上限 maxPoolSize=20。
      */
     @Test
     public void testAdaptiveRefillHighLoad() {
@@ -363,52 +403,52 @@ public class ObjectPoolTest {
     }
 
     /**
-     * 上限保护：target 超过 maxSize 时，pool size 不得超过 maxSize。
+     * 上限保护：target 超过 maxPoolSize 时，pool size 不得超过 maxPoolSize。
      */
     @Test
-    public void testAdaptiveRefillMaxSizeBound() {
-        int maxSize = 5;
-        ObjectPool<Object> pool = new ObjectPool<>(2, maxSize, Object::new, x -> true);
+    public void testAdaptiveRefillMaxPoolSizeBound() {
+        int maxPoolSize = 5;
+        ObjectPool<Object> pool = new ObjectPool<>(2, maxPoolSize, Object::new, x -> true);
         pool.setDemandFactor(10.0);
 
-        // 极高采样 → target 计算结果远超 maxSize
+        // 极高采样 → target 计算结果远超 maxPoolSize
         Arrays.fill(pool.borrowSamples, 100L);
         pool.validNow();
 
-        assertEquals(maxSize, pool.size(), "pool size 不应超过 maxSize");
+        assertEquals(maxPoolSize, pool.size(), "pool size 不应超过 maxPoolSize");
     }
 
     /**
-     * 负载回落：样本清零后 targetSize 回落到 minSize，idleTimeout 淘汰多余对象。
+     * 负载回落：样本清零后 targetSize 回落到 minIdleSize，idleTimeout 淘汰多余对象。
      * 直接写入 package-private 字段 idleTimeout 绕过 setter 的最小值限制。
      */
     @SneakyThrows
     @Test
     public void testAdaptiveRefillLoadDrop() {
-        int minSize = 2;
-        int maxSize = 20;
-        ObjectPool<Object> pool = new ObjectPool<>(minSize, maxSize, Object::new, x -> true);
+        int minIdleSize = 2;
+        int maxPoolSize = 20;
+        ObjectPool<Object> pool = new ObjectPool<>(minIdleSize, maxPoolSize, Object::new, x -> true);
         pool.setDemandFactor(2.0);
         pool.idleTimeout = 100; // 直接设置，绕过 setter 的 max(10000,...) 限制
 
         // Phase 1：注入高负载采样 → 预热到高水位
-        // avgPerPeriod=20 → target=ceil(40)=40 → clamp to maxSize=20
+        // avgPerPeriod=20 → target=ceil(40)=40 → clamp to maxPoolSize=20
         Arrays.fill(pool.borrowSamples, 20L);
         pool.validNow();
         int highSize = pool.size();
-        assertTrue(highSize > minSize, "预热后 size 应大于 minSize，actual: " + highSize);
+        assertTrue(highSize > minIdleSize, "预热后 size 应大于 minIdleSize，actual: " + highSize);
 
         // Phase 2：等待 idleTimeout 到期，再清空采样
         Thread.sleep(200);
         Arrays.fill(pool.borrowSamples, 0L);
 
-        // 多次 validNow()：每次淘汰 min(size,8) 个闲置超时对象，并以 targetSize=minSize 不再补充
+        // 多次 validNow()：每次淘汰 min(size,8) 个闲置超时对象，并以 targetSize=minIdleSize 不再补充
         for (int i = 0; i < 6; i++) {
             pool.validNow();
         }
 
-        assertTrue(pool.size() <= minSize + 1,
-                "负载回落后 pool size 应趋近 minSize，actual: " + pool.size());
+        assertTrue(pool.size() <= minIdleSize + 1,
+                "负载回落后 pool size 应趋近 minIdleSize，actual: " + pool.size());
     }
 
     /**
@@ -438,13 +478,13 @@ public class ObjectPoolTest {
     @SneakyThrows
     @Test
     public void testConcurrencyNoObjectLeak() {
-        int maxSize = 3;
+        int maxPoolSize = 3;
         int threads = 8;
         int loops = 30;
         AtomicInteger created = new AtomicInteger();
         AtomicInteger errors = new AtomicInteger();
 
-        ObjectPool<Object> pool = new ObjectPool<>(0, maxSize,
+        ObjectPool<Object> pool = new ObjectPool<>(0, maxPoolSize,
                 () -> {
                     created.incrementAndGet();
                     return new Object();
@@ -475,8 +515,20 @@ public class ObjectPoolTest {
         assertTrue(latch.await(30, TimeUnit.SECONDS), "泄漏测试未在 30 秒内完成");
         assertEquals(0, errors.get(), "泄漏测试不应有错误");
 
-        // 所有对象归还后，pool size 不应超过 maxSize
-        assertTrue(pool.size() <= maxSize,
-                "totalCount 不应超过 maxSize，actual: " + pool.size() + ", created: " + created.get());
+        // 所有对象归还后，pool size 不应超过 maxPoolSize
+        assertTrue(pool.size() <= maxPoolSize,
+                "totalCount 不应超过 maxPoolSize，actual: " + pool.size() + ", created: " + created.get());
+    }
+
+    @SneakyThrows
+    static void waitForCondition(Callable<Boolean> condition, long timeoutMs, String message) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.call()) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        fail(message);
     }
 }

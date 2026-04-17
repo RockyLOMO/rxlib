@@ -8,14 +8,18 @@ import org.rx.AbstractTester;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.*;
 import org.rx.core.*;
+import org.rx.core.cache.H2CacheItem;
 import org.rx.exception.TraceHandler;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
 
@@ -30,6 +34,86 @@ public class EntityDatabaseTest extends AbstractTester {
         String tableX;
         Long rowId;
         String json;
+    }
+
+    @Data
+    public static class SaveEntity implements Serializable {
+        @DbColumn(primaryKey = true)
+        String id;
+        String name;
+        Integer age;
+    }
+
+    static class CountingEntityDatabaseImpl extends EntityDatabaseImpl {
+        int existsByIdCalls;
+
+        public CountingEntityDatabaseImpl(String filePath, String timeRollingPattern) {
+            super(filePath, timeRollingPattern);
+        }
+
+        @Override
+        public <T> boolean existsById(Class<T> entityType, Serializable id) {
+            existsByIdCalls++;
+            return super.existsById(entityType, id);
+        }
+    }
+
+    @Test
+    public void testDefaultMaxConnectionsUsesRxConfig() {
+        RxConfig conf = RxConfig.INSTANCE;
+        int oldMaxConnections = conf.getDisk().getEntityDatabaseMaxConnections();
+        try {
+            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, 3));
+            EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/max-conn-default"), null);
+            try {
+                assertEquals(3, db.maxConnections);
+            } finally {
+                db.close();
+            }
+        } finally {
+            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, oldMaxConnections));
+        }
+    }
+
+    @Test
+    public void testExplicitMaxConnectionsOverridesRxConfig() {
+        RxConfig conf = RxConfig.INSTANCE;
+        int oldMaxConnections = conf.getDisk().getEntityDatabaseMaxConnections();
+        try {
+            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, 3));
+            EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/max-conn-explicit"), null, 6);
+            try {
+                assertEquals(6, db.maxConnections);
+            } finally {
+                db.close();
+            }
+        } finally {
+            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, oldMaxConnections));
+        }
+    }
+
+    @Test
+    public void testInheritedExpirationColumnCreatesIndex() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/cache_item_index"), null);
+        db.createMapping(H2CacheItem.class);
+        try {
+            String tableName = db.tableName(H2CacheItem.class).toUpperCase();
+            String indexName = db.indexName(tableName, "expiration").toUpperCase();
+            DataTable dt = db.executeQuery(String.format("SELECT INDEX_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.INDEX_COLUMNS WHERE UPPER(TABLE_NAME)='%s' AND UPPER(COLUMN_NAME)='EXPIRATION'", tableName));
+            boolean found = false;
+            for (DataRow row : dt.getRows()) {
+                String actualIndexName = row.get("INDEX_NAME");
+                String columnName = row.get("COLUMN_NAME");
+                if (indexName.equals(actualIndexName) && "EXPIRATION".equals(columnName)) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(found);
+        } finally {
+            db.dropMapping(H2CacheItem.class);
+            db.close();
+        }
     }
 
 //    @SneakyThrows
@@ -234,6 +318,68 @@ public class EntityDatabaseTest extends AbstractTester {
             assert updated.getAge() == 99;
         } finally {
             db.dropMapping(PersonBean.class);
+            db.close();
+        }
+    }
+
+    @Test
+    public void testSaveSkipsExistsForFullEntityAndKeepsPartialUpdate() {
+        CountingEntityDatabaseImpl db = new CountingEntityDatabaseImpl(path("h2/save_fast"), null);
+        db.createMapping(SaveEntity.class);
+        try {
+            SaveEntity full = new SaveEntity();
+            full.setId("row-1");
+            full.setName("origin");
+            full.setAge(18);
+            db.save(full);
+            assertEquals(0, db.existsByIdCalls);
+
+            db.existsByIdCalls = 0;
+            SaveEntity partial = new SaveEntity();
+            partial.setId("row-1");
+            partial.setAge(20);
+            db.save(partial);
+            assertEquals(1, db.existsByIdCalls);
+
+            SaveEntity loaded = db.findById(SaveEntity.class, "row-1");
+            assertEquals("origin", loaded.getName());
+            assertEquals(Integer.valueOf(20), loaded.getAge());
+        } finally {
+            db.dropMapping(SaveEntity.class);
+            db.close();
+        }
+    }
+
+    @Test
+    public void testCountAndExistsDoNotMutateQueryState() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/query_state"), null);
+        db.createMapping(SaveEntity.class);
+        try {
+            SaveEntity entity = new SaveEntity();
+            entity.setId("row-1");
+            entity.setName("query");
+            entity.setAge(30);
+            db.save(entity);
+
+            EntityQueryLambda<SaveEntity> query = new EntityQueryLambda<>(SaveEntity.class)
+                    .eq(SaveEntity::getName, "query")
+                    .orderBy(SaveEntity::getAge)
+                    .limit(1, 1);
+            int orderSize = query.orders.size();
+            Integer limit = query.limit;
+            Integer offset = query.offset;
+
+            assertTrue(db.exists(query));
+            assertEquals(orderSize, query.orders.size());
+            assertEquals(limit, query.limit);
+            assertEquals(offset, query.offset);
+
+            assertEquals(1L, db.count(query));
+            assertEquals(orderSize, query.orders.size());
+            assertEquals(limit, query.limit);
+            assertEquals(offset, query.offset);
+        } finally {
+            db.dropMapping(SaveEntity.class);
             db.close();
         }
     }

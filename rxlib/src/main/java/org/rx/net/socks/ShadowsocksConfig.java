@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.SocketConfig;
+import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.socks.encryption.ICrypto;
 
 import java.net.InetSocketAddress;
@@ -17,7 +18,7 @@ import java.net.InetSocketAddress;
 public class ShadowsocksConfig extends SocketConfig {
     public static final AttributeKey<ShadowsocksServer> SVR = AttributeKey.valueOf("ssSvr");
     public static final AttributeKey<ICrypto> CIPHER = AttributeKey.valueOf("CIPHER");
-    public static final AttributeKey<InetSocketAddress> REMOTE_DEST = AttributeKey.valueOf("REMOTE_DEST");
+    public static final AttributeKey<UnresolvedEndpoint> REMOTE_DEST = AttributeKey.valueOf("REMOTE_DEST");
 
     private static final long serialVersionUID = 9144214925505451056L;
     private final InetSocketAddress serverEndpoint;

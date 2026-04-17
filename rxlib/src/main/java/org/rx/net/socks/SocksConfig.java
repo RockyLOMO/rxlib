@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import lombok.AccessLevel;
 import io.netty.channel.local.LocalAddress;
 import lombok.Getter;
 import lombok.Setter;
@@ -7,9 +8,11 @@ import lombok.ToString;
 import org.rx.core.cache.H2StoreCache;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
+import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.List;
 import java.util.Set;
 
@@ -19,17 +22,23 @@ import java.util.Set;
 public class SocksConfig extends SocketConfig {
     public static final int DEF_READ_TIMEOUT_SECONDS = 60 * 4;
     public static final int DEF_UDP_READ_TIMEOUT_SECONDS = 60 * 20;
+    private static final String WHITE_LIST_KEY_PREFIX = "socksWhiteList";
 
     private static final long serialVersionUID = 3526543718065617052L;
-    private int listenPort;
-    private LocalAddress memoryAddress;
+    private SocketAddress listenAddress;
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = DEF_READ_TIMEOUT_SECONDS;
     private int writeTimeoutSeconds;
     private int udpReadTimeoutSeconds = DEF_UDP_READ_TIMEOUT_SECONDS;
     private int udpWriteTimeoutSeconds;
-    @Getter(lazy = true)
-    private final Set<InetAddress> whiteList = whiteList();
+    @Getter(AccessLevel.NONE)
+    @ToString.Exclude
+    private transient volatile Set<InetAddress> whiteList;
+    /**
+     * 是否启用「非公网仅白名单」访问控制。默认 false（非公网一律放行）；为 true 时仅私网或 {@link #getWhiteList()} 内地址通过 {@link #isAllowed(InetAddress)}。
+     * 为 false 时 {@link #allowWhiteList} 不再写入。
+     */
+    private boolean whiteListEnabled = false;
     private boolean enableUdp2raw;
     private InetSocketAddress udp2rawClient;
     private AuthenticEndpoint kcptunClient;
@@ -50,12 +59,71 @@ public class SocksConfig extends SocketConfig {
      */
     private UdpRedundantConfig udpRedundant;
 
-    private Set<InetAddress> whiteList() {
-        return H2StoreCache.DEFAULT.asSet();
+    public SocksConfig() {
     }
 
     public SocksConfig(int listenPort) {
-        this.listenPort = listenPort;
+        this(Sockets.newAnyEndpoint(listenPort));
+    }
+
+    public SocksConfig(SocketAddress listenAddress) {
+        this.listenAddress = listenAddress;
+    }
+
+    public void setListenAddress(SocketAddress listenAddress) {
+        this.listenAddress = listenAddress;
+    }
+
+    public InetSocketAddress getInetListenAddress() {
+        return listenAddress instanceof InetSocketAddress ? (InetSocketAddress) listenAddress : null;
+    }
+
+    public int getListenPort() {
+        InetSocketAddress address = getInetListenAddress();
+        return address != null ? address.getPort() : 0;
+    }
+
+    public void setListenPort(int listenPort) {
+        setListenAddress(Sockets.newAnyEndpoint(listenPort));
+    }
+
+    public LocalAddress getMemoryAddress() {
+        return listenAddress instanceof LocalAddress ? (LocalAddress) listenAddress : null;
+    }
+
+    public void setMemoryAddress(LocalAddress memoryAddress) {
+        setListenAddress(memoryAddress);
+    }
+
+    @SuppressWarnings("unchecked")
+    public Set<InetAddress> getWhiteList() {
+        Set<InetAddress> cached = whiteList;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (whiteList == null) {
+                whiteList = (Set<InetAddress>) H2StoreCache.DEFAULT.asSet(WHITE_LIST_KEY_PREFIX);
+            }
+            return whiteList;
+        }
+    }
+
+    public boolean isAllowed(InetAddress endpoint) {
+        if (endpoint == null) {
+            return false;
+        }
+        if (!whiteListEnabled) {
+            return true;
+        }
+        return Sockets.isPrivateIp(endpoint) || getWhiteList().contains(endpoint);
+    }
+
+    public void allowWhiteList(InetAddress endpoint) {
+        if (!whiteListEnabled || endpoint == null) {
+            return;
+        }
+        ((H2StoreCache<InetAddress, Boolean>) H2StoreCache.DEFAULT).fastPut(WHITE_LIST_KEY_PREFIX, endpoint, Boolean.TRUE);
     }
 
     /**

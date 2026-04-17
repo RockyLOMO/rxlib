@@ -5,6 +5,9 @@ import io.netty.channel.*;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.dns.*;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.ImmediateEventExecutor;
+import io.netty.util.concurrent.Promise;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
@@ -42,13 +45,12 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         DnsClient upstream = Sockets.getAttr(ch, DnsServer.ATTR_UPSTREAM);
 
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
-        // log.debug("dns query name={}", question.name());
-        String domain = question.name().substring(0, question.name().length() - 1);
+        String domain = normalizeDomain(question.name());
 
         List<InetAddress> hIps = server.getHosts(domain);
         if (!hIps.isEmpty()) {
             ctx.writeAndFlush(newResponse(query, isTcp, question, server.hostsTtl, hIps));
-            log.info("dns query {}+{} -> {}[HOSTS]", srcIp, domain, hIps.get(0).getHostAddress());
+            logQuery(srcIp, domain, hIps.get(0), "HOSTS");
             return;
         }
 
@@ -60,55 +62,21 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         if (interceptors != null && !domain.endsWith(".lan")) {
             DnsRecordType queryType = question.type();
             if (queryType == DnsRecordType.A || queryType == DnsRecordType.AAAA) {
-                String k = DOMAIN_PREFIX + domain;
+                String k = server.cacheKey(domain);
                 List<InetAddress> ips = server.interceptorCache.get(k);
                 if (ips != null) {
                     writeInterceptorResponse(ctx, query, isTcp, question, server, srcIp, domain, ips);
                     return;
                 }
-                // Prevent thundering-herd: only one resolve task per domain at a time.
-                // add() is atomic — returns true only for the first caller; others fall through to upstream.
-                if (server.resolvingKeys.add(k)) {
-                    query.retain();
-                    Tasks.run(() -> {
-                        try {
-                            List<InetAddress> resolvedIps;
-                            try {
-                                resolvedIps = interceptors.next().resolveHost(srcIp, domain);
-                            } catch (Exception e) {
-                                log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
-                                resolvedIps = null;
-                            }
-                            if (resolvedIps == null) {
-                                resolvedIps = Collections.emptyList();
-                            }
-                            server.interceptorCache.put(k, resolvedIps,
-                                    CachePolicy.absolute(resolvedIps.isEmpty() ? server.negativeTtl : server.ttl));
-                            List<InetAddress> finalIps = resolvedIps;
-                            ctx.channel().eventLoop().execute(() -> {
-                                try {
-                                    writeInterceptorResponse(ctx, query, isTcp, question, server, srcIp, domain, finalIps);
-                                } finally {
-                                    query.release();
-                                }
-                            });
-                        } catch (Exception e) {
-                            log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
-                            ctx.channel().eventLoop().execute(() -> {
-                                try {
-                                    ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
-                                } finally {
-                                    query.release();
-                                }
-                            });
-                        } finally {
-                            server.resolvingKeys.remove(k);
-                        }
-                    });
-                    return;
+                Promise<List<InetAddress>> newPromise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
+                Promise<List<InetAddress>> promise = server.resolvingPromises.putIfAbsent(k, newPromise);
+                if (promise == null) {
+                    promise = newPromise;
+                    server.resolvingKeys.add(k);
+                    resolveByInterceptor(server, interceptors, srcIp, domain, k, promise);
                 }
-                // Already resolving this domain; fall through to upstream for this concurrent request
-                log.debug("dns query {}+{} already resolving, forwarding to upstream", srcIp, domain);
+                writePromiseResponse(ctx, query, isTcp, question, server, srcIp, domain, promise);
+                return;
             }
         }
 
@@ -128,7 +96,7 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
                     DnsResponse response = envelope.content();
                     ctx.writeAndFlush(DnsMessageUtil.newResponse(query, response, isTcp));
                     int count = response.count(DnsSection.ANSWER);
-                    log.info("dns query {}+{} -> {}[ANSWER]", srcIp, domain, count);
+                    logQuery(srcIp, domain, Integer.valueOf(count), "ANSWER");
                 } finally {
                     envelope.release();
                 }
@@ -143,11 +111,73 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
             InetAddress srcIp, String domain, List<InetAddress> ips) {
         if (CollectionUtils.isEmpty(ips)) {
             ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN));
-            log.info("dns query {}+{} -> EMPTY", srcIp, domain);
+            logQuery(srcIp, domain, "EMPTY");
             return;
         }
         ctx.writeAndFlush(newResponse(query, isTcp, question, server.ttl, ips));
-        log.info("dns query {}+{} -> {}[SHADOW]", srcIp, domain, ips.get(0).getHostAddress());
+        logQuery(srcIp, domain, ips.get(0), "SHADOW");
+    }
+
+    private void writePromiseResponse(ChannelHandlerContext ctx, DefaultDnsQuery query, boolean isTcp, DefaultDnsQuestion question,
+                                      DnsServer server, InetAddress srcIp, String domain, Promise<List<InetAddress>> promise) {
+        query.retain();
+        promise.addListener(f -> ctx.channel().eventLoop().execute(() -> {
+            try {
+                if (!f.isSuccess()) {
+                    log.error("dns query {}+{} resolveHost error", srcIp, domain, f.cause());
+                    ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
+                    return;
+                }
+                writeInterceptorResponse(ctx, query, isTcp, question, server, srcIp, domain, promise.getNow());
+            } finally {
+                query.release();
+            }
+        }));
+    }
+
+    private void resolveByInterceptor(DnsServer server, RandomList<DnsServer.ResolveInterceptor> interceptors, InetAddress srcIp,
+                                      String domain, String cacheKey, Promise<List<InetAddress>> promise) {
+        Tasks.run(() -> {
+            try {
+                List<InetAddress> resolvedIps;
+                try {
+                    resolvedIps = interceptors.next().resolveHost(srcIp, domain);
+                } catch (Exception e) {
+                    log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
+                    resolvedIps = null;
+                }
+                if (resolvedIps == null) {
+                    resolvedIps = Collections.emptyList();
+                }
+                server.interceptorCache.put(cacheKey, resolvedIps,
+                        CachePolicy.absolute(resolvedIps.isEmpty() ? server.negativeTtl : server.ttl));
+                promise.trySuccess(resolvedIps);
+            } catch (Throwable e) {
+                promise.tryFailure(e);
+            } finally {
+                server.resolvingPromises.remove(cacheKey, promise);
+                server.resolvingKeys.remove(cacheKey);
+            }
+        });
+    }
+
+    private String normalizeDomain(String questionName) {
+        int len = questionName.length();
+        return len > 0 && questionName.charAt(len - 1) == '.' ? questionName.substring(0, len - 1) : questionName;
+    }
+
+    private void logQuery(InetAddress srcIp, String domain, Object result, String phase) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
+        log.debug("dns query {}+{} -> {}[{}]", srcIp, domain, result, phase);
+    }
+
+    private void logQuery(InetAddress srcIp, String domain, String result) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
+        log.debug("dns query {}+{} -> {}", srcIp, domain, result);
     }
 
     // ttl seconds

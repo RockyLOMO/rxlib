@@ -2,6 +2,7 @@ package org.rx;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import io.netty.channel.local.LocalAddress;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -46,6 +47,7 @@ import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -123,6 +125,10 @@ public final class Main implements SocksRpcContract {
         public int shadowDnsPort = 753;
         public int dnsTtlMinutes = 600;
 
+        // rrp
+        public String rrpToken;
+        public Integer rrpPort;
+
         public List<AuthenticEndpoint> udp2rawSocksServers;
         public InetSocketAddress udp2rawClient;
         // 传递后tcp走kcptun
@@ -186,7 +192,8 @@ public final class Main implements SocksRpcContract {
 
             SocksRpcContract firstFacade = null;
             for (AuthenticEndpoint socksServer : svrs) {
-                RpcClientConfig<SocksRpcContract> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(socksServer.getEndpoint(), socksServer.getEndpoint().getPort() + 1),
+                InetSocketAddress socksServerEp = socksServer.requireEndpoint();
+                RpcClientConfig<SocksRpcContract> rpcConf = RpcClientConfig.poolMode(Sockets.newEndpoint(socksServerEp, socksServerEp.getPort() + 1),
                         rssConf.rpcMinSize, rssConf.rpcMaxSize);
                 TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
                 tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
@@ -312,7 +319,7 @@ public final class Main implements SocksRpcContract {
             return Tuple.of(config, user);
         });
 
-        SocksConfig inConf = new SocksConfig(port);
+        SocksConfig inConf = new SocksConfig(new LocalAddress("rss-in-" + port));
         inConf.setDebug(rssConf.hasDebugFlag());
         // inConf.setTransportFlags(null);
         inConf.setOptimalSettings(IN_OPS);
@@ -334,15 +341,18 @@ public final class Main implements SocksRpcContract {
         SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
         svrRefs.add(inSvr);
         Main app = new Main(inSvr);
+        SocksProxyServer inUdp2rawSvr = null;
+        SocketAddress inUdp2rawSvrAddress = null;
         if (enableUdp2raw) {
             SocksConfig inTunConf = Sys.deepClone(inConf);
             inTunConf.setDebug(rssConf.hasDebugFlag());
-            inTunConf.setListenPort(udp2rawPort);
+            inTunConf.setListenAddress(new LocalAddress("rss-in-tun-" + udp2rawPort));
             inTunConf.setKcptunClient(rssConf.kcptunClient);
             inTunConf.setUdpRedundantMultiplier(2);
 //            inTunConf.setEnableUdp2raw(enableUdp2raw);
 //            inTunConf.setUdp2rawClient(rssConf.udp2rawClient);
-            SocksProxyServer inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+            inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
+            inUdp2rawSvrAddress = inTunConf.getListenAddress();
             svrRefs.add(inUdp2rawSvr);
         }
 
@@ -353,8 +363,8 @@ public final class Main implements SocksRpcContract {
         fn.invoke();
         Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
 
-        InetSocketAddress inSvrEp = Sockets.newLoopbackEndpoint(port);
-        InetSocketAddress inUdp2rawSvrEp = Sockets.newLoopbackEndpoint(udp2rawPort);
+        SocketAddress inSvrAddress = inConf.getListenAddress();
+        final SocksProxyServer finalInUdp2rawSvr = inUdp2rawSvr;
         for (Tuple<ShadowsocksConfig, SocksUser> tuple : shadowUsers) {
             ShadowsocksConfig conf = tuple.left;
             SocksUser usr = tuple.right;
@@ -373,15 +383,16 @@ public final class Main implements SocksRpcContract {
             if (usrName.startsWith("hysteria")) {
                 svrEp = rssConf.hysteriaClient;
             } else if (usrName.startsWith("tun")) {
-                svrEp = new AuthenticEndpoint(inUdp2rawSvrEp, usrName, usr.getPassword());
+                svrEp = new AuthenticEndpoint(inUdp2rawSvrAddress, usrName, usr.getPassword());
             } else {
-                svrEp = new AuthenticEndpoint(inSvrEp, usrName, usr.getPassword());
+                svrEp = new AuthenticEndpoint(inSvrAddress, usrName, usr.getPassword());
             }
 
-            SocksConfig toInConf = new SocksConfig(svrEp.getEndpoint().getPort());
+            SocksConfig toInConf = new SocksConfig();
             // toInConf.setTransportFlags(null);
             toInConf.setOptimalSettings(IN_OPS);
             UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
+            final SocksProxyServer ssUdpTargetSvr = usrName.startsWith("tun") && finalInUdp2rawSvr != null ? finalInUdp2rawSvr : inSvr;
             ssSvr.onTcpRoute.replace((s, e) -> {
                 UnresolvedEndpoint dstEp = e.getFirstDestination();
                 if (rssConf.hasDebugFlag()) {
@@ -496,8 +507,10 @@ public final class Main implements SocksRpcContract {
         return inSvr;
     }
 
+    static RrpServer rrpServer;
+
     static void clientInit(int httpPort, DefaultSocksAuthenticator authenticator) {
-        httpServer = new HttpServer(httpPort, true).requestMapping("/traces", (request, response) -> {
+        httpServer = new HttpServer(httpPort, true).requestBlocking("/traces", (request, response) -> {
             Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
             Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
             List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, newest, 50);
@@ -505,6 +518,13 @@ public final class Main implements SocksRpcContract {
         }).requestMapping("/usrInfo", (request, response) -> {
             response.jsonBody(authenticator.getStore());
         });
+
+        if (rssConf.rrpToken != null && !rssConf.rrpToken.isEmpty() && rssConf.rrpPort != null) {
+            RrpConfig c = new RrpConfig();
+            c.setToken(rssConf.rrpToken);
+            c.setBindPort(rssConf.rrpPort);
+            rrpServer = new RrpServer(c);
+        }
 
         Tasks.schedulePeriod(() -> {
             if (rssConf == null) {
@@ -630,6 +650,7 @@ public final class Main implements SocksRpcContract {
 
         SocksConfig outConf = new SocksConfig(port);
         outConf.setDebug(debugFlag);
+        outConf.setWhiteListEnabled(true);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setOptimalSettings(OUT_OPS);
         // outConf.setConnectTimeoutMillis(connectTimeout);
@@ -639,7 +660,7 @@ public final class Main implements SocksRpcContract {
         if (enableUdp2raw) {
             SocksConfig outTunConf = Sys.deepClone(outConf);
             outTunConf.setDebug(debugFlag);
-            outTunConf.setListenPort(udp2rawPort);
+            outTunConf.setListenAddress(Sockets.newAnyEndpoint(udp2rawPort));
             outTunConf.setUdpRedundantMultiplier(2);
 //            outTunConf.setEnableUdp2raw(enableUdp2raw);
             SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
@@ -657,14 +678,14 @@ public final class Main implements SocksRpcContract {
     }
 
     static void serverInit(int httpPort) {
-        httpServer = new HttpServer(httpPort, true).requestMapping("/traces", (request, response) -> {
+        httpServer = new HttpServer(httpPort, true).requestBlocking("/traces", (request, response) -> {
             Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
             Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
             List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, newest, 50);
             response.jsonBody(list);
         }).requestMapping("/getPublicIp", (request, response) -> {
             response.jsonBody(request.getRemoteEndpoint().getHostString());
-        }).requestMapping("/hf", (request, response) -> {
+        }).requestBlocking("/hf", (request, response) -> {
             String url = request.getQueryString().getFirst("fu");
             Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
             try (HttpClient client = new HttpClient()) {
@@ -696,7 +717,7 @@ public final class Main implements SocksRpcContract {
 
     @Override
     public void addWhiteList(InetAddress endpoint) {
-        svrSide.getConfig().getWhiteList().add(endpoint);
+        svrSide.getConfig().allowWhiteList(endpoint);
     }
 
     @Override

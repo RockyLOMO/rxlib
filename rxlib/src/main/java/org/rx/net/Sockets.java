@@ -8,6 +8,8 @@ import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.epoll.*;
+import io.netty.channel.local.LocalAddress;
+import io.netty.channel.local.LocalChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
@@ -25,6 +27,11 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.resolver.AddressResolverGroup;
+import io.netty.resolver.ResolvedAddressTypes;
+import io.netty.resolver.dns.DnsAddressResolverGroup;
+import io.netty.resolver.dns.DnsNameResolverBuilder;
+import io.netty.resolver.dns.DnsServerAddressStreamProviders;
 import io.netty.util.AttributeKey;
 import io.netty.util.NetUtil;
 import lombok.NonNull;
@@ -41,6 +48,7 @@ import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.socks.SocksConfig;
+import org.rx.net.support.EndpointTracer;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -49,6 +57,7 @@ import java.lang.reflect.Proxy;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Extends.ifNull;
@@ -84,11 +93,38 @@ public final class Sockets {
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
     public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
+    public static final AttributeKey<InetSocketAddress> ATTR_ORIGIN_REMOTE_ADDR = AttributeKey.valueOf("originRemoteAddr");
     static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
+    /** 共享 TCP Bootstrap 用 Netty DNS 异步解析（避免 connect 路径上阻塞 JDK DNS）。 */
+    static volatile AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup;
+
+    static AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup() {
+        AddressResolverGroup<InetSocketAddress> g = tcpDnsAddressResolverGroup;
+        if (g != null) {
+            return g;
+        }
+        synchronized (Sockets.class) {
+            if (tcpDnsAddressResolverGroup == null) {
+                DnsNameResolverBuilder nb = new DnsNameResolverBuilder()
+                        .channelType(udpChannelClass())
+                        .socketChannelType(tcpChannelClass())
+                        .nameServerProvider(DnsServerAddressStreamProviders.platformDefault())
+                        .ttl(5, 300)
+                        .negativeTtl(10)
+                        .queryTimeoutMillis(TimeUnit.SECONDS.toMillis(5))
+                        .resolvedAddressTypes(ResolvedAddressTypes.IPV4_PREFERRED)
+                        .recursionDesired(true)
+                        .maxQueriesPerResolve(8)
+                        .ndots(1);
+                tcpDnsAddressResolverGroup = new DnsAddressResolverGroup(nb);
+            }
+            return tcpDnsAddressResolverGroup;
+        }
+    }
 
 //    static {
 //        InetAddress.getLoopbackAddress();
@@ -240,6 +276,14 @@ public final class Sockets {
     }
 
     public static Bootstrap bootstrap(EventLoopGroup eventLoopGroup, SocketConfig config, BiAction<SocketChannel> initChannel) {
+        return bootstrap(eventLoopGroup, config, null, initChannel == null ? null : ch -> initChannel.accept((SocketChannel) ch));
+    }
+
+    public static Bootstrap bootstrap(SocketConfig config, SocketAddress connectHint, BiAction<Channel> initChannel) {
+        return bootstrap(null, config, connectHint, initChannel);
+    }
+
+    public static Bootstrap bootstrap(EventLoopGroup eventLoopGroup, SocketConfig config, SocketAddress connectHint, BiAction<Channel> initChannel) {
         if (config == null) {
             config = SocketConfig.EMPTY;
         }
@@ -256,16 +300,21 @@ public final class Sockets {
         WriteBufferWaterMark writeBufferWaterMark = op.writeBufferWaterMark;
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
-        Bootstrap b = new Bootstrap()
-                .group(eventLoopGroup)
-                .channel(tcpChannelClass())
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
-                .option(ChannelOption.TCP_NODELAY, true)
-                .option(ChannelOption.SO_KEEPALIVE, true)
-                .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
-        if (writeBufferWaterMark != null) {
-            b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+        Bootstrap b = new Bootstrap().group(eventLoopGroup);
+        if (connectHint instanceof LocalAddress) {
+            b.channel(LocalChannel.class)
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis);
+        } else {
+            b.channel(tcpChannelClass())
+                    .resolver(tcpDnsAddressResolverGroup())
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
+                    .option(ChannelOption.TCP_NODELAY, true)
+                    .option(ChannelOption.SO_KEEPALIVE, true)
+                    .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                    .option(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+            if (writeBufferWaterMark != null) {
+                b.option(ChannelOption.WRITE_BUFFER_WATER_MARK, writeBufferWaterMark);
+            }
         }
         if (initChannel != null) {
             b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
@@ -587,6 +636,11 @@ public final class Sockets {
         if (channel == null || !channel.isActive()) {
             return;
         }
+        // ServerChannel 没有可刷出的出站缓冲，直接 close 避免对监听通道执行 writeAndFlush。
+        if (channel instanceof ServerChannel) {
+            channel.close();
+            return;
+        }
         channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
@@ -650,6 +704,42 @@ public final class Sockets {
             return (InetSocketAddress) addr;
         }
         return new InetSocketAddress("127.0.0.1", 0);
+    }
+
+    public static void setOriginRemoteAddress(Channel channel, InetSocketAddress originRemoteAddress) {
+        if (channel == null || originRemoteAddress == null) {
+            return;
+        }
+        channel.attr(ATTR_ORIGIN_REMOTE_ADDR).set(originRemoteAddress);
+    }
+
+    public static InetSocketAddress getOriginRemoteAddress(Channel channel) {
+        if (channel == null) {
+            return null;
+        }
+
+        InetSocketAddress originRemoteAddress = getAttr(channel, ATTR_ORIGIN_REMOTE_ADDR, false);
+        if (originRemoteAddress != null) {
+            return originRemoteAddress;
+        }
+
+        originRemoteAddress = resolveOriginRemoteAddress(channel.remoteAddress(), EndpointTracer.TCP);
+        if (originRemoteAddress == null) {
+            originRemoteAddress = getRemoteAddress(channel);
+        }
+        setOriginRemoteAddress(channel, originRemoteAddress);
+        return originRemoteAddress;
+    }
+
+    public static InetSocketAddress resolveOriginRemoteAddress(SocketAddress remoteAddress, EndpointTracer tracer) {
+        if (remoteAddress == null || tracer == null) {
+            return null;
+        }
+        InetSocketAddress originRemoteAddress = tracer.find(remoteAddress);
+        if (originRemoteAddress != null) {
+            return originRemoteAddress;
+        }
+        return remoteAddress instanceof InetSocketAddress ? (InetSocketAddress) remoteAddress : null;
     }
 
     public static String getLoopbackHostAddress() {
@@ -752,6 +842,25 @@ public final class Sockets {
             return "NULL";
         }
         return String.format("%s:%s", endpoint.getHostString(), endpoint.getPort());
+    }
+
+    public static String toString(SocketAddress endpoint) {
+        if (endpoint instanceof InetSocketAddress) {
+            return toString((InetSocketAddress) endpoint);
+        }
+        return endpoint == null ? "NULL" : endpoint.toString();
+    }
+
+    public static InetSocketAddress asInetAddress(SocketAddress endpoint) {
+        return endpoint instanceof InetSocketAddress ? (InetSocketAddress) endpoint : null;
+    }
+
+    public static InetSocketAddress requireInetAddress(SocketAddress endpoint) {
+        InetSocketAddress address = asInetAddress(endpoint);
+        if (address == null) {
+            throw new InvalidException("SocketAddress {} is not InetSocketAddress", endpoint);
+        }
+        return address;
     }
 
     public static void closeOnFlushed(Socket socket) {

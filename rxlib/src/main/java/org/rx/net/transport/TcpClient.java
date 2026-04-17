@@ -27,19 +27,31 @@ public interface TcpClient extends AutoCloseable, EventPublisher<TcpClient> {
 
     Channel getChannel();
 
+    default <T> boolean hasAttr(AttributeKey<T> key) {
+        return getChannel().hasAttr(key);
+    }
+
     default boolean hasAttr(String name) {
-        return getChannel().hasAttr(AttributeKey.valueOf(name));
+        return hasAttr(AttributeKey.valueOf(name));
+    }
+
+    default <T> T attr(AttributeKey<T> key) {
+        return getChannel().attr(key).get();
     }
 
     default <T> T attr(String name) {
-        return (T) getChannel().attr(AttributeKey.valueOf(name)).get();
+        return attr(AttributeKey.valueOf(name));
     }
 
-    default <T> void attr(String name, T val) {
+    default <T> void attr(AttributeKey<T> key, T val) {
         if (!isConnected()) {
             throw new ClientDisconnectedException(Strings.EMPTY);
         }
 
-        getChannel().attr(AttributeKey.valueOf(name)).set(val);
+        getChannel().attr(key).set(val);
+    }
+
+    default <T> void attr(String name, T val) {
+        attr(AttributeKey.valueOf(name), val);
     }
 }

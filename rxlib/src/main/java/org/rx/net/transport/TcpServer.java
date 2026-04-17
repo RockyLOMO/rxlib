@@ -215,7 +215,9 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
     @Override
     protected void dispose() {
-        Sockets.closeOnFlushed(serverChannel);
+        if (serverChannel != null && serverChannel.isOpen()) {
+            serverChannel.close();
+        }
         Sockets.closeBootstrap(bootstrap);
         raiseEvent(onClosed, EventArgs.EMPTY);
     }

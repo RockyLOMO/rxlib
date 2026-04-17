@@ -1,13 +1,19 @@
 package org.rx.net;
 
 import io.netty.channel.*;
+import io.netty.channel.ConnectTimeoutException;
 import io.netty.channel.unix.Errors;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 
+import java.net.ConnectException;
 import java.net.InetSocketAddress;
+import java.net.NoRouteToHostException;
 import java.net.SocketAddress;
+import java.net.UnknownHostException;
 import java.nio.channels.ClosedChannelException;
+import java.nio.channels.UnresolvedAddressException;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -19,7 +25,9 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
     @Override
     public void bind(ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise) throws Exception {
         super.bind(ctx, localAddress, promise);
-        ctx.channel().attr(ATTR_BIND_ADDR).set((InetSocketAddress) localAddress);
+        if (localAddress instanceof InetSocketAddress) {
+            ctx.channel().attr(ATTR_BIND_ADDR).set((InetSocketAddress) localAddress);
+        }
         if (promise != ctx.voidPromise()) {
             promise.addListener((ChannelFutureListener) f -> {
                 Channel ch = f.channel();
@@ -30,8 +38,8 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
                     log.error("Channel[{}] {} listen on {} fail", ch.id(), pn, bindAddr, f.cause());
                     return;
                 }
-                bindAddr = (InetSocketAddress) ch.localAddress();
-                log.info("Channel[{}] {} listened on {}", ch.id(), pn, bindAddr);
+                SocketAddress actualLocalAddress = ch.localAddress();
+                log.info("Channel[{}] {} listened on {}", ch.id(), pn, actualLocalAddress);
             });
         }
     }
@@ -44,12 +52,37 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
                 Channel ch = f.channel();
                 String pn = Sockets.protocolName(ch);
                 if (!f.isSuccess()) {
-                    log.error("Channel[{}] {} connect to {} fail", ch.id(), pn, remoteAddress, f.cause());
+                    Throwable cause = f.cause();
+                    if (isExpectedConnectFailure(cause)) {
+                        log.warn("Channel[{}] {} connect to {} fail {}", ch.id(), pn, remoteAddress, connectFailureSummary(cause));
+                        return;
+                    }
+                    log.error("Channel[{}] {} connect to {} fail", ch.id(), pn, remoteAddress, cause);
                     return;
                 }
                 log.info("Channel[{}] {} connected to {}", ch.id(), pn, remoteAddress);
             });
         }
+    }
+
+    static boolean isExpectedConnectFailure(Throwable cause) {
+        Throwable rootCause = ExceptionUtils.getRootCause(cause);
+        Throwable actualCause = rootCause == null ? cause : rootCause;
+        return actualCause instanceof ConnectTimeoutException
+                || actualCause instanceof NoRouteToHostException
+                || actualCause instanceof ConnectException
+                || actualCause instanceof UnknownHostException
+                || actualCause instanceof UnresolvedAddressException;
+    }
+
+    static String connectFailureSummary(Throwable cause) {
+        Throwable rootCause = ExceptionUtils.getRootCause(cause);
+        Throwable actualCause = rootCause == null ? cause : rootCause;
+        String message = actualCause == null ? null : actualCause.getMessage();
+        if (message == null || message.isEmpty()) {
+            return actualCause == null ? "unknown" : actualCause.getClass().getSimpleName();
+        }
+        return actualCause.getClass().getSimpleName() + ": " + message;
     }
 
     @Override

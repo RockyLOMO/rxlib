@@ -103,9 +103,19 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
 
         // Security: reject packets from non-private IPs unless whitelisted
-        InetAddress senderIp = sender.getAddress();
-        if (!Sockets.isPrivateIp(senderIp) && !config.getWhiteList().contains(senderIp)) {
-            log.warn("socks5[{}] UDP security error, packet from {}", config.getListenPort(), sender);
+        InetSocketAddress clientOriginAddr = EndpointTracer.UDP.find(sender);
+        if (clientOriginAddr == null) {
+            clientOriginAddr = relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).get();
+        }
+        if (clientOriginAddr == null) {
+            clientOriginAddr = sender;
+        }
+        relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(clientOriginAddr);
+
+        InetAddress senderIp = clientOriginAddr.getAddress();
+        if (config.isWhiteListEnabled() && !config.isAllowed(senderIp)) {
+            log.warn("socks5[{}] UDP security error, whiteListSize={} packet from {}",
+                    config.getListenPort(), config.getWhiteList().size(), clientOriginAddr);
             return;
         }
 
@@ -136,7 +146,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         
         SocksContext e = routeMap.get(dstEp);
         if (e == null) {
-            e = SocksContext.getCtx(sender, dstEp);
+            e = SocksContext.getCtx(clientOriginAddr, dstEp);
             server.raiseEvent(server.onUdpRoute, e);
             Upstream upstream = e.getUpstream();
             upstream.initChannel(relay);
@@ -155,7 +165,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
         InetSocketAddress upDstAddr = keepSocksHeader ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : dstEp.socketAddress();
 
-        EndpointTracer.UDP.link(sender, relay);
+        EndpointTracer.UDP.link(clientOriginAddr, relay);
 
         inBuf.retain();
         if (config.isDebug()) {

@@ -11,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 import org.rx.net.support.UnresolvedEndpoint;
 
-import java.net.InetSocketAddress;
 import java.util.List;
 
 /**
@@ -68,8 +67,7 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
             }
             //IDN.toUnicode(this.host);
 
-            InetSocketAddress addr = addrRequest.socketAddress();
-            inbound.attr(ShadowsocksConfig.REMOTE_DEST).set(addr);
+            inbound.attr(ShadowsocksConfig.REMOTE_DEST).set(addrRequest);
 
             if (!isUdp) {
                 tcpAddressed = true;

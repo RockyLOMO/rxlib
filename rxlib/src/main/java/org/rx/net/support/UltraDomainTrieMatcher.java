@@ -16,7 +16,7 @@ import java.util.*;
  * 3. Fastutil 零分配
  * 4. CompactLabelMap (扁平化只读哈希)
  */
-public class UltraDomainMatcher implements Serializable {
+public class UltraDomainTrieMatcher implements Serializable {
     private static final long serialVersionUID = 9L;
 
     /**
@@ -145,7 +145,7 @@ public class UltraDomainMatcher implements Serializable {
     private transient List<String> tempIdToLabel;
     private transient int nextLabelId = 1;
 
-    public UltraDomainMatcher() {
+    public UltraDomainTrieMatcher() {
     }
 
     public void build(Collection<String> rawDomains) {
@@ -311,8 +311,7 @@ public class UltraDomainMatcher implements Serializable {
             boolean conflict = false;
             for (int lid : lids) {
                 int target = b + lid;
-                if (target >= check.length) break;
-                if (check[target] != EMPTY_CHECK) {
+                if (target < check.length && check[target] != EMPTY_CHECK) {
                     conflict = true;
                     break;
                 }

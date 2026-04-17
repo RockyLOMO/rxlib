@@ -53,6 +53,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     final List<WeightElement<T>> elements = new ArrayList<>();
     int maxRandomValue;
     CopyOnWriteArrayList<T> temp;
+    List<T> readOnlySnapshot;
     @Setter
     BiFunc<T, ? extends Comparable> sortFunc;
 
@@ -171,6 +172,7 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
                 });
             }
             temp = null;
+            readOnlySnapshot = null;
             maxRandomValue = 0;
         }
         return changed;
@@ -352,12 +354,29 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
     public Iterator<T> iterator() {
         lock.readLock().lock();
         try {
-            if (temp == null) {
-                temp = new CopyOnWriteArrayList<>(Linq.from(elements).select(p -> p.element).toList());
-            }
+            ensureSnapshot();
             return temp.iterator();
         } finally {
             lock.readLock().unlock();
+        }
+    }
+
+    public List<T> readOnlySnapshot() {
+        lock.readLock().lock();
+        try {
+            ensureSnapshot();
+            if (readOnlySnapshot == null) {
+                readOnlySnapshot = Collections.unmodifiableList(temp);
+            }
+            return readOnlySnapshot;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    private void ensureSnapshot() {
+        if (temp == null) {
+            temp = new CopyOnWriteArrayList<>(Linq.from(elements).select(p -> p.element).toList());
         }
     }
 

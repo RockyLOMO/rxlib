@@ -1,17 +1,20 @@
 package org.rx.net;
 
+import io.netty.channel.local.LocalAddress;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.apache.commons.collections4.MapUtils;
 import org.rx.bean.Tuple;
+import org.rx.exception.InvalidException;
 import org.rx.core.StringBuilder;
 import org.rx.core.Strings;
 import org.rx.net.http.HttpClient;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,11 +30,11 @@ public class AuthenticEndpoint implements Serializable {
         authenticEndpoint = authenticEndpoint.trim();
         int i = Strings.lastIndexOf(authenticEndpoint, AT_FLAG);
         if (i == -1) {
-            Tuple<InetSocketAddress, Map<String, String>> tuple = decodeEndpoint(authenticEndpoint);
+            Tuple<SocketAddress, Map<String, String>> tuple = decodeEndpoint(authenticEndpoint);
             return new AuthenticEndpoint(tuple.left, null, null, tuple.right);
         }
 
-        Tuple<InetSocketAddress, Map<String, String>> tuple = decodeEndpoint(authenticEndpoint.substring(i + AT_FLAG.length()));
+        Tuple<SocketAddress, Map<String, String>> tuple = decodeEndpoint(authenticEndpoint.substring(i + AT_FLAG.length()));
         String auth = authenticEndpoint.substring(0, i);
         i = auth.indexOf(AUTH_FLAG);
         if (i == -1) {
@@ -40,7 +43,7 @@ public class AuthenticEndpoint implements Serializable {
         return new AuthenticEndpoint(tuple.left, auth.substring(0, i), auth.substring(i + AUTH_FLAG.length()), tuple.right);
     }
 
-    private static Tuple<InetSocketAddress, Map<String, String>> decodeEndpoint(String endpoint) {
+    private static Tuple<SocketAddress, Map<String, String>> decodeEndpoint(String endpoint) {
         int i = endpoint.lastIndexOf(PARAM_FLAG);
         if (i == -1) {
             return Tuple.of(Sockets.parseEndpoint(endpoint), Collections.emptyMap());
@@ -48,7 +51,7 @@ public class AuthenticEndpoint implements Serializable {
         return Tuple.of(Sockets.parseEndpoint(endpoint.substring(0, i)), HttpClient.decodeQueryString(endpoint.substring(i)));
     }
 
-    private final InetSocketAddress endpoint;
+    private final SocketAddress endpoint;
     private String username, password;
     @Setter(AccessLevel.NONE)
     private Map<String, String> parameters;
@@ -60,15 +63,35 @@ public class AuthenticEndpoint implements Serializable {
         return parameters;
     }
 
-    public AuthenticEndpoint(InetSocketAddress endpoint, String username, String password) {
+    public AuthenticEndpoint(SocketAddress endpoint, String username, String password) {
         this(endpoint, username, password, null);
     }
 
-    public AuthenticEndpoint(InetSocketAddress endpoint, String username, String password, Map<String, String> parameters) {
+    public AuthenticEndpoint(SocketAddress endpoint, String username, String password, Map<String, String> parameters) {
         this(endpoint);
         this.username = username;
         this.password = password;
         this.parameters = parameters;
+    }
+
+    public SocketAddress getConnectEndpoint() {
+        return endpoint;
+    }
+
+    public InetSocketAddress getInetEndpoint() {
+        return endpoint instanceof InetSocketAddress ? (InetSocketAddress) endpoint : null;
+    }
+
+    public InetSocketAddress requireEndpoint() {
+        InetSocketAddress inetEndpoint = getInetEndpoint();
+        if (inetEndpoint == null) {
+            throw new InvalidException("Endpoint {} is not InetSocketAddress", Sockets.toString(endpoint));
+        }
+        return inetEndpoint;
+    }
+
+    public boolean isMemoryMode() {
+        return endpoint instanceof LocalAddress;
     }
 
     @Override

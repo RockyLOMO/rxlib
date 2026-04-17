@@ -6,6 +6,8 @@ import lombok.NonNull;
 import org.rx.net.SocketConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 
+import java.net.SocketAddress;
+
 @Getter
 public class Upstream {
     protected UnresolvedEndpoint destination;
@@ -26,5 +28,9 @@ public class Upstream {
     }
 
     public void initChannel(Channel channel) {
+    }
+
+    public SocketAddress connectAddressHint() {
+        return destination.socketAddress();
     }
 }

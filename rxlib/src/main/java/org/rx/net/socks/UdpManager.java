@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
@@ -117,6 +118,20 @@ public final class UdpManager {
         return socks5Encode(buf, dst.getHost(), dst.getPort());
     }
 
+    public static CompositeByteBuf prependAddress(ByteBufAllocator allocator, ByteBuf payload, InetSocketAddress dst) {
+        ByteBuf header = allocator.directBuffer(64);
+        CompositeByteBuf compositeBuf = allocator.compositeDirectBuffer(2);
+        try {
+            encode(header, dst);
+            compositeBuf.addComponents(true, header, payload.retain());
+            return compositeBuf;
+        } catch (Throwable e) {
+            Bytes.release(header);
+            Bytes.release(compositeBuf);
+            throw e;
+        }
+    }
+
     public static CompositeByteBuf socks5Encode(ByteBuf buf, InetSocketAddress dst) {
         return socks5Encode(buf, dst.getHostString(), dst.getPort());
     }
@@ -138,12 +153,48 @@ public final class UdpManager {
     }
 
     public static UnresolvedEndpoint socks5Decode(ByteBuf buf) {
-        // RSV(2) + FRAG(1) + ATYP(1) at minimum
-//        if (buf.readableBytes() < 4) {
-//            throw new IllegalArgumentException("socks5 UDP packet too short");
-//        }
+        if (!isValidSocks5UdpPacket(buf)) {
+            throw new IllegalArgumentException("invalid socks5 UDP packet");
+        }
         buf.skipBytes(3);
         return decode(buf);
+    }
+
+    public static boolean isValidSocks5UdpPacket(ByteBuf buf) {
+        int readerIndex = buf.readerIndex();
+        if (buf.readableBytes() < 4) {
+            return false;
+        }
+        if (buf.getUnsignedShort(readerIndex) != 0 || buf.getUnsignedByte(readerIndex + 2) != 0) {
+            return false;
+        }
+        return isValidAddressPayload(buf, readerIndex + 3, buf.readableBytes() - 3);
+    }
+
+    public static boolean isValidAddressPayload(ByteBuf buf) {
+        return isValidAddressPayload(buf, buf.readerIndex(), buf.readableBytes());
+    }
+
+    private static boolean isValidAddressPayload(ByteBuf buf, int index, int readableBytes) {
+        if (readableBytes < 1) {
+            return false;
+        }
+
+        short atyp = buf.getUnsignedByte(index);
+        switch (atyp) {
+            case 0x01:
+                return readableBytes >= 1 + 4 + 2;
+            case 0x04:
+                return readableBytes >= 1 + 16 + 2;
+            case 0x03:
+                if (readableBytes < 2) {
+                    return false;
+                }
+                int domainLength = buf.getUnsignedByte(index + 1);
+                return readableBytes >= 1 + 1 + domainLength + 2;
+            default:
+                return false;
+        }
     }
 
     public static void encode(ByteBuf buf, UnresolvedEndpoint dst) {
@@ -171,6 +222,9 @@ public final class UdpManager {
 
     @SneakyThrows
     public static UnresolvedEndpoint decode(ByteBuf buf) {
+        if (!isValidAddressPayload(buf)) {
+            throw new IllegalArgumentException("invalid udp address payload");
+        }
         Socks5AddressType addrType = Socks5AddressType.valueOf(buf.readByte());
         String dstAddr = Socks5AddressDecoder.DEFAULT.decodeAddress(addrType, buf);
         return new UnresolvedEndpoint(dstAddr, buf.readUnsignedShort());

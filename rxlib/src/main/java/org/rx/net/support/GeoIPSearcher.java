@@ -29,6 +29,7 @@ public class GeoIPSearcher implements Closeable {
     static final long CACHE_PUBLIC_IP_NANOS = TimeUnit.HOURS.toNanos(2);
     static final IpGeolocation PRIVATE_IP = new IpGeolocation(null, null, "private");
     static final IpGeolocation UNKNOWN_IP = new IpGeolocation(null, null, "unknown");
+    private static final String[] defaultPublicIpServices = new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
 
     final DatabaseReader reader;
     final Cache<String, IpGeolocation> lookupCache = MemoryCache.<String, IpGeolocation>rootBuilder()
@@ -37,15 +38,22 @@ public class GeoIPSearcher implements Closeable {
             .build();
     @Setter
     String resolveServer = org.rx.core.Constants.rSS();
-    String publicIp;
-    long lastPublicIpTime;
+    volatile PublicIpSnapshot publicIpSnapshot = PublicIpSnapshot.empty;
+
+    public GeoIPSearcher(File database) {
+        this(buildReader(database));
+    }
+
+    GeoIPSearcher(DatabaseReader reader) {
+        this.reader = reader;
+    }
 
     @SneakyThrows
-    public GeoIPSearcher(File database) {
-        reader = new DatabaseReader.Builder(database)
-                .withCache(new CHMCache())  // 可选：添加节点缓存，提升性能（约 2MB 内存开销）
-                .locales(Arrays.asList("zh-CN", "en"))  // 可选：语言优先级 fallback
-                .fileMode(Reader.FileMode.MEMORY_MAPPED)  // 可选：文件映射模式（默认 MEMORY_MAPPED）
+    private static DatabaseReader buildReader(File database) {
+        return new DatabaseReader.Builder(database)
+                .withCache(new CHMCache())
+                .locales(Arrays.asList("zh-CN", "en"))
+                .fileMode(Reader.FileMode.MEMORY_MAPPED)
                 .build();
     }
 
@@ -55,20 +63,19 @@ public class GeoIPSearcher implements Closeable {
     }
 
     public String getPublicIp() {
-        if (System.nanoTime() - lastPublicIpTime < CACHE_PUBLIC_IP_NANOS) {
-            return publicIp;
+        PublicIpSnapshot snapshot = publicIpSnapshot;
+        long now = System.nanoTime();
+        if (snapshot.isFresh(now)) {
+            return snapshot.ip;
         }
 
-        String[] services = resolveServer != null
-                ? new String[]{"https://" + resolveServer + ":8082/getPublicIp", "https://checkip.amazonaws.com", "https://api.seeip.org"}
-                : new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
-        try (HttpClient client = new HttpClient().withTimeoutMillis(5000)) {
-            for (String service : services) {
+        try (HttpClient client = createPublicIpClient()) {
+            for (String service : publicIpServices()) {
                 try {
-                    String ip = client.get(service).toString();
+                    String ip = trimAscii(queryPublicIp(client, service));
                     if (Sockets.isValidIp(ip)) {
-                        lastPublicIpTime = System.nanoTime();
-                        return publicIp = ip;
+                        publicIpSnapshot = new PublicIpSnapshot(ip, System.nanoTime());
+                        return ip;
                     }
                 } catch (Exception e) {
                     log.warn("getPublicIp retry", e);
@@ -79,16 +86,27 @@ public class GeoIPSearcher implements Closeable {
     }
 
     public IpGeolocation lookup(String host) {
-        return lookupCache.get(host, this::doLookup);
+        String normalizedHost = trimAscii(host);
+        if (normalizedHost == null || normalizedHost.isEmpty()) {
+            return UNKNOWN_IP;
+        }
+
+        byte[] ipBytes = NetUtil.createByteArrayFromIpAddressString(normalizedHost);
+        if (ipBytes == null) {
+            return UNKNOWN_IP;
+        }
+        String cacheKey = NetUtil.bytesToIpAddress(ipBytes);
+        return lookupCache.get(cacheKey, k -> doLookup(ipBytes));
     }
 
     @SneakyThrows
-    private IpGeolocation doLookup(String host) {
-        // 使用 NetUtil 解析 IP 字节，避免 InetAddress.getByName 触发 DNS
-        byte[] ipBytes = NetUtil.createByteArrayFromIpAddressString(host);
-        InetAddress ip = ipBytes != null ? InetAddress.getByAddress(ipBytes) : InetAddress.getByName(host);
+    private IpGeolocation doLookup(byte[] ipBytes) {
+        InetAddress ip = InetAddress.getByAddress(ipBytes);
         if (Sockets.isPrivateIp(ip)) {
             return PRIVATE_IP;
+        }
+        if (reader == null) {
+            return UNKNOWN_IP;
         }
 
         Optional<CountryResponse> countryResponse;
@@ -98,5 +116,49 @@ public class GeoIPSearcher implements Closeable {
         CountryResponse cp = countryResponse.get();
         Country c = cp.getCountry();
         return new IpGeolocation(c.getName(), c.getIsoCode(), c.getIsoCode());
+    }
+
+    HttpClient createPublicIpClient() {
+        return new HttpClient().withTimeoutMillis(5000);
+    }
+
+    String[] publicIpServices() {
+        return resolveServer != null
+                ? new String[]{"https://" + resolveServer + ":8082/getPublicIp", defaultPublicIpServices[0], defaultPublicIpServices[1]}
+                : defaultPublicIpServices;
+    }
+
+    String queryPublicIp(HttpClient client, String service) {
+        return client.get(service).toString();
+    }
+
+    static String trimAscii(String value) {
+        if (value == null) {
+            return null;
+        }
+        int start = 0;
+        int end = value.length();
+        while (start < end && value.charAt(start) <= ' ') {
+            start++;
+        }
+        while (end > start && value.charAt(end - 1) <= ' ') {
+            end--;
+        }
+        return start == 0 && end == value.length() ? value : value.substring(start, end);
+    }
+
+    static final class PublicIpSnapshot {
+        static final PublicIpSnapshot empty = new PublicIpSnapshot(null, 0L);
+        final String ip;
+        final long refreshTime;
+
+        PublicIpSnapshot(String ip, long refreshTime) {
+            this.ip = ip;
+            this.refreshTime = refreshTime;
+        }
+
+        boolean isFresh(long now) {
+            return ip != null && now - refreshTime < CACHE_PUBLIC_IP_NANOS;
+        }
     }
 }

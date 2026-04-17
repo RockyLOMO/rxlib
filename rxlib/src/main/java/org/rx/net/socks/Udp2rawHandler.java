@@ -12,6 +12,7 @@ import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
@@ -110,7 +111,11 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             relay.attr(ATTR_CLIENT_ADDR).set(sender);
         }
 
-        InetSocketAddress clientEp = sender;
+        InetSocketAddress clientEp = EndpointTracer.UDP.find(sender);
+        if (clientEp == null) {
+            clientEp = sender;
+        }
+        relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(clientEp);
         
         ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
         if (routeMap == null) {

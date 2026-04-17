@@ -25,5 +25,16 @@ class UdpValidationTest {
         ByteBuf buf = Unpooled.wrappedBuffer(new byte[]{0x00, 0x00, 0x00}); // < 4 bytes
         assertThrows(IllegalArgumentException.class, () -> UdpManager.socks5Decode(buf));
     }
+
+    @Test
+    void udpManagerRejectsUnsupportedAddressTypeZero() {
+        ByteBuf buf = Unpooled.wrappedBuffer(new byte[]{
+                0x00, 0x00, 0x00, 0x00,
+                0x7F, 0x00, 0x00, 0x01,
+                0x00, 0x35
+        });
+        assertFalse(UdpManager.isValidSocks5UdpPacket(buf));
+        assertThrows(IllegalArgumentException.class, () -> UdpManager.socks5Decode(buf));
+    }
 }
 
