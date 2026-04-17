@@ -7,14 +7,10 @@ import io.netty.handler.codec.socksx.v5.DefaultSocks5InitialResponse;
 import io.netty.handler.codec.socksx.v5.Socks5AuthMethod;
 import io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.cache.H2StoreCache;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.Set;
-
-import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -30,11 +26,12 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
 //        log.debug("socks5[{}] init connect: {}", server.getConfig().getListenPort(), msg);
 
         SocksProxyServer server = Sockets.getAttr(ctx.channel(), SocksContext.SOCKS_SVR);
-        Set<InetAddress> whiteList = server.getConfig().getWhiteList();
+        SocksConfig config = server.getConfig();
         InetSocketAddress remoteEp = Sockets.getOriginRemoteAddress(ctx.channel());
         InetAddress raddr = remoteEp.getAddress();
-        if (!Sockets.isPrivateIp(raddr) && !whiteList.contains(raddr)) {
-            log.warn("socks5[{}] whiteList={}\n{} access blocked", server.getConfig().getListenPort(), toJsonString(whiteList), remoteEp);
+        if (config.isWhiteListEnabled() && !config.isAllowed(raddr)) {
+            log.warn("socks5[{}] whiteListSize={} {} access blocked",
+                    config.getListenPort(), config.getWhiteList().size(), remoteEp);
             ctx.close();
             return;
         }

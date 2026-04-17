@@ -273,7 +273,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     public EntityDatabaseImpl(String filePath, String timeRollingPattern, int maxConnections) {
         if (maxConnections <= 0) {
-            maxConnections = Math.max(10, Constants.CPU_THREADS);
+            int configuredMaxConnections = RxConfig.INSTANCE.getDisk().getEntityDatabaseMaxConnections();
+            maxConnections = configuredMaxConnections > 0 ? configuredMaxConnections : Math.max(4, Math.min(8, Constants.CPU_THREADS));
         }
 
         this.filePath = filePath;
