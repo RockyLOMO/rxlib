@@ -113,9 +113,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(clientOriginAddr);
 
         InetAddress senderIp = clientOriginAddr.getAddress();
-        if (!config.isAllowed(senderIp)) {
-            log.warn("socks5[{}] UDP security error, staticWhiteListSize={} dynamicWhiteListSize={} packet from {}",
-                    config.getListenPort(), config.getStaticWhiteListSize(), config.getDynamicWhiteListSize(), clientOriginAddr);
+        if (config.isWhiteListEnabled() && !config.isAllowed(senderIp)) {
+            log.warn("socks5[{}] UDP security error, whiteListSize={} packet from {}",
+                    config.getListenPort(), config.getWhiteList().size(), clientOriginAddr);
             return;
         }
 

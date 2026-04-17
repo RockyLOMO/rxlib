@@ -39,10 +39,10 @@
 - `[已完成]` sliding renew 去重窗口收紧
   - 已有未落库 `PUT/RENEW` 时，后续 `get()` 只续期同一份快照，不再反复创建新的 `RENEW`
   - 若 renew 正在 worker 中刷库，会在刷完后最多补刷一次，避免把最新过期时间丢到 DB 之外
-- `[已完成]` `entrySet()/iterator()` 收敛为 seek pagination
-  - 当前分页查询已显式 `order by id asc`
-  - 对外仍保留 `offset/size` 语义，但内部已改为 `id > lastSeenId` 的游标推进
-  - 大 offset 不再直接下推成 H2 `OFFSET` 扫描
+- `[已完成]` `entrySet()/asSet()/iterator()` 改为 live view
+  - 视图语义已经和 `get/containsKey` 对齐，包含尚未 flush 的 pending 可见状态
+  - `contains/remove/clear` 不再混用 persisted view 与 live view
+  - 枚举内部仍按 `id` 稳定排序，并通过分批 seek 扫描 persisted 数据后叠加 `pendingLatest`
 - `[已完成]` `onExpired` 改为删除提交后触发
   - 过期路径会先把事件快照挂到 `REMOVE` op 上
   - 只有 stripe worker 成功完成删除提交后，才真正触发 `onExpired`
@@ -78,9 +78,10 @@
 
 需要额外澄清的非热点 API 语义：
 
-- `size()`、`entrySet()`、`asSet()`、`iterator()`、`containsValue()` 默认定义为“持久层视图”
-- 这些 API 在异步刷盘窗口内允许落后于 L1
-- 如果调用点要求“读到最新持久化状态”，先 `flush()` 再调用
+- `entrySet()`、`asSet()`、`iterator()` 默认定义为“live view”
+- 它们会合并 persisted 状态和 `pendingLatest`，反映当前进程内可见结果
+- `size()`、`containsValue()` 仍然是持久层侧查询
+- 如果调用点要求“只看已持久化状态”，先 `flush()` 再调用相关 API
 
 这点必须写进接口注释或文档，否则业务方会默认它们仍是强一致读。
 
@@ -470,17 +471,23 @@ Tasks.schedulePeriod(this::expungeStale, expungePeriod)
 
 它们追求的是“刚写完，自己立刻能读到”。
 
+### live view
+
+这类 API 合并当前进程内可见状态：
+
+- `entrySet`
+- `asSet`
+- `iterator`
+
+它们会把 persisted 数据和 `pendingLatest` 叠加起来，再按稳定顺序枚举。
+因此尚未 flush 的 `put/remove` 也会体现在这些视图里。
+
 ### 持久层视图
 
 这类 API 直接看 DB：
 
 - `size`
-- `entrySet`
-- `asSet`
-- `iterator`
 - `containsValue`
-
-它们反映的是“已经落盘”的状态，不保证包含还在 `pendingLatest` 里的脏写。
 
 这就是“弱一致”的真正落点。
 
@@ -853,22 +860,29 @@ worker 从队列取到 key 后：
 - `remove`
 - `fastRemove`（建议新增）
 
-### 11.2 持久层视图 API
+### 11.2 live view API
 
-- `size`
 - `entrySet`
 - `asSet`
 - `iterator`
+
+这类 API 默认反映当前进程内 live 可见状态，而不是“仅 H2 已落盘状态”。
+
+当前实现会先分批 seek 扫描 persisted 数据，再叠加 `pendingLatest` 生成 live snapshot。
+
+### 11.3 持久层视图 API
+
+- `size`
 - `containsValue`
 
-这类 API 默认反映 H2 已落盘状态，而不是“L1 最新状态”。
+这类 API 仍然反映 H2 已落盘状态。
 
-如果未来确实有“枚举也要包含 pendingLatest”的需求，建议另开一套显式接口，例如：
+如果未来确实有“只看 persisted 枚举”的需求，建议另开一套显式接口，例如：
 
 - `snapshotEntrySet()`
 - `approximateSize()`
 
-不要在现有 API 上偷偷改变语义。
+不要再把 `entrySet/asSet/iterator` 混回 persisted 语义。
 
 ## 12. 失败重试与背压
 

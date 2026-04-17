@@ -209,7 +209,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
             @Override
             public boolean contains(Object o) {
-                return EntrySetView.this.contains(o);
+                return o != null && H2StoreCache.this.containsPhysicalKey(toPhysicalKey(o));
             }
 
             @SuppressWarnings(NON_UNCHECKED)
@@ -220,7 +220,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
             @Override
             public boolean remove(Object o) {
-                return EntrySetView.this.remove(o);
+                return o != null && H2StoreCache.this.removePhysicalKey(toPhysicalKey(o)) != null;
             }
 
             @Override
@@ -256,45 +256,21 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         }
 
         Iterator<H2CacheItem> itemIterator() {
-            if (iterateSize == 0) {
+            List<H2CacheItem> items = liveItems();
+            if (items.isEmpty()) {
                 return IteratorUtils.emptyIterator();
             }
-
-            final Long[] cursor = {null};
-            final int[] remaining = {iterateSize};
-            if (!skipOffset(cursor, offset)) {
-                return IteratorUtils.emptyIterator();
-            }
-
-            int firstSize = pageBatchSize(remaining[0]);
-            List<H2CacheItem> firstPage = fetchPageAfterId(cursor[0], firstSize);
-            if (firstPage.isEmpty()) {
-                return IteratorUtils.emptyIterator();
-            }
-            cursor[0] = firstPage.get(firstPage.size() - 1).getId();
-            return new AbstractSequentialIterator<H2CacheItem>(firstPage.get(0)) {
-                List<H2CacheItem> page = firstPage;
+            return new AbstractSequentialIterator<H2CacheItem>(items.get(0)) {
                 H2CacheItem current;
-                int pageIndex;
+                int index;
 
                 @Override
                 protected H2CacheItem computeNext(H2CacheItem previous) {
                     current = previous;
-                    if (--remaining[0] <= 0) {
+                    if (++index >= items.size()) {
                         return null;
                     }
-                    while (true) {
-                        if (++pageIndex == page.size()) {
-                            int nextSize = pageBatchSize(remaining[0]);
-                            page = fetchPageAfterId(cursor[0], nextSize);
-                            if (page.isEmpty()) {
-                                return null;
-                            }
-                            cursor[0] = page.get(page.size() - 1).getId();
-                            pageIndex = 0;
-                        }
-                        return page.get(pageIndex);
-                    }
+                    return items.get(index);
                 }
 
                 @Override
@@ -313,20 +289,6 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             return q;
         }
 
-        boolean skipOffset(Long[] cursor, int offset) {
-            int remaining = offset;
-            while (remaining > 0) {
-                int batchSize = pageBatchSize(remaining);
-                List<H2CacheItem> skipped = fetchPageAfterId(cursor[0], batchSize);
-                if (skipped.isEmpty()) {
-                    return false;
-                }
-                cursor[0] = skipped.get(skipped.size() - 1).getId();
-                remaining -= skipped.size();
-            }
-            return true;
-        }
-
         List<H2CacheItem> fetchPageAfterId(Long afterId, int limit) {
             if (limit <= 0) {
                 return Collections.emptyList();
@@ -343,23 +305,125 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             return Math.max(1, Math.min(Math.max(1, prefetchCount), remaining));
         }
 
+        List<H2CacheItem> liveItems() {
+            if (iterateSize == 0) {
+                return Collections.emptyList();
+            }
+
+            Map<Object, H2CacheItem> visibleByKey = new HashMap<>();
+            Long cursor = null;
+            int batchSize = pageBatchSize(Integer.MAX_VALUE);
+            while (true) {
+                List<H2CacheItem> page = fetchPageAfterId(cursor, batchSize);
+                if (page.isEmpty()) {
+                    break;
+                }
+                for (H2CacheItem item : page) {
+                    Object physicalKey = item.getKey();
+                    if (!matchesPhysicalKey(physicalKey)) {
+                        continue;
+                    }
+                    H2CacheItem visible = persistedVisibleItem(physicalKey, item);
+                    if (visible != null) {
+                        visibleByKey.put(physicalKey, visible);
+                    }
+                }
+                if (page.size() < batchSize) {
+                    break;
+                }
+                cursor = page.get(page.size() - 1).getId();
+            }
+
+            long nowEpoch = epoch.get();
+            for (PendingOp op : new ArrayList<>(pendingLatest.values())) {
+                if (op == null) {
+                    continue;
+                }
+                if (op.epoch != nowEpoch) {
+                    pendingLatest.remove(op.physicalKey, op);
+                    continue;
+                }
+                if (!matchesPhysicalKey(op.physicalKey)) {
+                    continue;
+                }
+                H2CacheItem visible = pendingVisibleItem(op);
+                if (visible == null) {
+                    visibleByKey.remove(op.physicalKey);
+                } else {
+                    visibleByKey.put(op.physicalKey, visible);
+                }
+            }
+
+            List<H2CacheItem> items = new ArrayList<>(visibleByKey.values());
+            items.sort(Comparator.comparingLong(H2CacheItem::getId));
+            if (offset >= items.size()) {
+                return Collections.emptyList();
+            }
+            int toIndex = Math.min(items.size(), offset + iterateSize);
+            return new ArrayList<>(items.subList(offset, toIndex));
+        }
+
+        H2CacheItem persistedVisibleItem(Object physicalKey, H2CacheItem item) {
+            if (item == null || item.isTombstone()) {
+                return null;
+            }
+            if (item.isExpired()) {
+                scheduleExpiredRemove(physicalKey, item);
+                return null;
+            }
+            return item;
+        }
+
+        H2CacheItem pendingVisibleItem(PendingOp op) {
+            if (op.type == PendingOpType.REMOVE) {
+                return null;
+            }
+            H2CacheItem item = op.itemSnapshot;
+            if (item == null || item.isTombstone()) {
+                return null;
+            }
+            if (item.isExpired()) {
+                scheduleExpiredRemove(op.physicalKey, item);
+                return null;
+            }
+            return item;
+        }
+
+        boolean matchesPhysicalKey(Object physicalKey) {
+            if (keyPrefix == null) {
+                return true;
+            }
+            if (!(physicalKey instanceof Tuple)) {
+                return false;
+            }
+            return Objects.equals(((Tuple<?, ?>) physicalKey).left, keyPrefix);
+        }
+
+        boolean matchesViewEntry(H2CacheItem item, Map.Entry<?, ?> entry) {
+            Object viewKey = keyPrefix == null ? item.getKey() : unwrapPhysicalKey(item.getKey(), keyPrefix);
+            return Objects.equals(viewKey, entry.getKey()) && Objects.equals(item.getValue(), entry.getValue());
+        }
+
         public Set<TK> keys() {
             return keyView;
         }
 
         @Override
         public int size() {
-            int total = keyPrefix == null ? H2StoreCache.this.size() : countPersisted(newQuery());
-            if (offset >= total) {
-                return 0;
-            }
-            return Math.min(total - offset, iterateSize);
+            return liveItems().size();
         }
 
         @Override
         public boolean contains(Object key) {
-            Object lookupKey = key instanceof Map.Entry ? ((Map.Entry<?, ?>) key).getKey() : key;
-            return H2StoreCache.this.containsPhysicalKey(toPhysicalKey(lookupKey));
+            if (!(key instanceof Map.Entry)) {
+                return false;
+            }
+            Map.Entry<?, ?> entry = (Map.Entry<?, ?>) key;
+            if (entry.getKey() == null) {
+                return false;
+            }
+            H2CacheItem<TK, TV> item = H2StoreCache.this.resolveVisibleItem(toPhysicalKey(entry.getKey()), false);
+            return item != null && !item.isTombstone() && matchesViewEntry(item, entry);
         }
 
         @Override
@@ -369,8 +433,19 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
         @Override
         public boolean remove(Object key) {
-            Object lookupKey = key instanceof Map.Entry ? ((Map.Entry<?, ?>) key).getKey() : key;
-            return H2StoreCache.this.removePhysicalKey(toPhysicalKey(lookupKey)) != null;
+            if (!(key instanceof Map.Entry)) {
+                return false;
+            }
+            Map.Entry<?, ?> entry = (Map.Entry<?, ?>) key;
+            if (entry.getKey() == null) {
+                return false;
+            }
+            Object physicalKey = toPhysicalKey(entry.getKey());
+            H2CacheItem<TK, TV> item = H2StoreCache.this.resolveVisibleItem(physicalKey, false);
+            if (item == null || item.isTombstone() || !matchesViewEntry(item, entry)) {
+                return false;
+            }
+            return H2StoreCache.this.removePhysicalKey(physicalKey) != null;
         }
 
         @Override

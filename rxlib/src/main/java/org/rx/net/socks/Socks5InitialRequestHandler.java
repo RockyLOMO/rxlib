@@ -29,9 +29,9 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
         SocksConfig config = server.getConfig();
         InetSocketAddress remoteEp = Sockets.getOriginRemoteAddress(ctx.channel());
         InetAddress raddr = remoteEp.getAddress();
-        if (!config.isAllowed(raddr)) {
-            log.warn("socks5[{}] staticWhiteListSize={} dynamicWhiteListSize={} {} access blocked",
-                    config.getListenPort(), config.getStaticWhiteListSize(), config.getDynamicWhiteListSize(), remoteEp);
+        if (config.isWhiteListEnabled() && !config.isAllowed(raddr)) {
+            log.warn("socks5[{}] whiteListSize={} {} access blocked",
+                    config.getListenPort(), config.getWhiteList().size(), remoteEp);
             ctx.close();
             return;
         }

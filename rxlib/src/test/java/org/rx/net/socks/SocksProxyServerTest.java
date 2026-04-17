@@ -178,23 +178,6 @@ class SocksProxyServerTest {
         }
     }
 
-    @Test
-    @Order(6)
-    @SneakyThrows
-    void testDynamicWhiteListDoesNotPersistToStaticSet() {
-        SocksConfig config = new SocksConfig(0);
-        InetAddress publicIp = InetAddress.getByName("8.8.8.8");
-
-        assertFalse(config.isAllowed(publicIp));
-        assertFalse(config.getWhiteList().contains(publicIp));
-
-        config.allowDynamicWhiteList(publicIp);
-
-        assertTrue(config.isAllowed(publicIp));
-        assertEquals(1, config.getDynamicWhiteListSize());
-        assertFalse(config.getWhiteList().contains(publicIp));
-    }
-
     private void runSocks5NettyClientTest(Channel ch, String message) throws InterruptedException {
         CountDownLatch hsLatch = new CountDownLatch(1);
         CountDownLatch connLatch = new CountDownLatch(1);

@@ -536,6 +536,51 @@ public class H2StoreCacheTest extends AbstractTester {
     }
 
     @Test
+    public void testEntrySetUsesLiveEntrySemantics() {
+        H2StoreCache<String, String> cache = new H2StoreCache<>();
+        cache.clear();
+        try {
+            cache.fastPut("live-key", "v1");
+
+            assertEquals(1, cache.entrySet().size());
+            assertTrue(cache.entrySet().contains(new java.util.AbstractMap.SimpleEntry<>("live-key", "v1")));
+            assertFalse(cache.entrySet().contains(new java.util.AbstractMap.SimpleEntry<>("live-key", "wrong")));
+            assertFalse(cache.entrySet().remove(new java.util.AbstractMap.SimpleEntry<>("live-key", "wrong")));
+            assertTrue(cache.entrySet().remove(new java.util.AbstractMap.SimpleEntry<>("live-key", "v1")));
+            assertNull(cache.get("live-key"));
+            assertEquals(0, cache.entrySet().size());
+        } finally {
+            cache.clear();
+        }
+    }
+
+    @Test
+    public void testAsSetClearRemovesPendingOnlyItems() {
+        TrackingEntityDatabase db = new TrackingEntityDatabase();
+        db.blockSave = true;
+        db.resetSaveBlock();
+        H2StoreCache<String, Boolean> cache = new H2StoreCache<>(db, 64, 1);
+        String prefix = "h2-live-clear-" + UUID.randomUUID();
+        Set<String> set = cache.asSet(prefix);
+        try {
+            set.add("key-1");
+            set.add("key-2");
+
+            assertEquals(2, set.size());
+            set.clear();
+
+            assertEquals(0, set.size());
+            assertEquals(0, cache.entrySet(prefix).size());
+            assertFalse(cache.containsPhysicalKey(H2StoreCache.wrapPhysicalKey("key-1", prefix)));
+            assertFalse(cache.containsPhysicalKey(H2StoreCache.wrapPhysicalKey("key-2", prefix)));
+        } finally {
+            db.allowSave.countDown();
+            db.blockSave = false;
+            cache.close();
+        }
+    }
+
+    @Test
     public void testEntrySetOffsetAndSize() {
         H2StoreCache<String, Boolean> cache = new H2StoreCache<>();
         String prefix = "h2-page-" + UUID.randomUUID();
