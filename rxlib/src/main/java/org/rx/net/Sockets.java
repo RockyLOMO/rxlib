@@ -201,16 +201,16 @@ public final class Sockets {
                     nsInterceptor = interceptor;
                     Class<?> type = InetAddress.class;
                     try {
-                        Field field = type.getDeclaredField("nameService");
-                        Reflects.setAccess(field);
-                        field.set(null, nsProxy(field.get(null)));
-                        log.info("nsProxy jdk11 injected");
-                    } catch (NoSuchFieldException e) {
                         Field field = type.getDeclaredField("nameServices");
                         Reflects.setAccess(field);
                         List<Object> nsList = (List<Object>) field.get(null);
                         nsList.set(0, nsProxy(nsList.get(0)));
                         log.info("nsProxy jdk8 injected");
+                    } catch (NoSuchFieldException e) {
+                        Field field = type.getDeclaredField("nameService");
+                        Reflects.setAccess(field);
+                        field.set(null, nsProxy(field.get(null)));
+                        log.info("nsProxy jdk11 injected");
                     }
                 }
             }
