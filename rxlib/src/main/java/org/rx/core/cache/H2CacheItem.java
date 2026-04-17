@@ -15,11 +15,17 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
     @DbColumn(primaryKey = true)
     long id;
     @Getter
+    @Setter
+    long version;
+    @Getter
     @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
     long valIdx;
     @Getter
     @Setter
     String region;
+    @Getter
+    @Setter
+    boolean tombstone;
 
     //    @Getter
 //    K key;
