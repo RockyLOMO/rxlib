@@ -88,15 +88,25 @@ public class Reflects extends ClassUtils {
     static final Lazy<Cache<Class<?>, Map<String, Linq<Method>>>> methodCache = new Lazy<>(MemoryCache::new);
     static final Lazy<Cache<Class<?>, Map<String, Field>>> fieldCache = new Lazy<>(MemoryCache::new);
     static final Constructor<MethodHandles.Lookup> lookupConstructor;
+    static final Method privateLookupInMethod;
     static final List<ConvertBean<?, ?>> convertBeans = new CopyOnWriteArrayList<>();
 
     static {
+        Constructor<MethodHandles.Lookup> ctor = null;
+        Method privateLookupIn = null;
         try {
-            lookupConstructor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
-            setAccess(lookupConstructor);
+            privateLookupIn = MethodHandles.class.getMethod("privateLookupIn", Class.class, MethodHandles.Lookup.class);
         } catch (NoSuchMethodException e) {
-            throw InvalidException.sneaky(e);
+            // JDK8
         }
+        try {
+            ctor = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class, int.class);
+            setAccess(ctor);
+        } catch (NoSuchMethodException e) {
+            // JDK17+
+        }
+        lookupConstructor = ctor;
+        privateLookupInMethod = privateLookupIn;
 
         registerConvert(String.class, BigDecimal.class, (sv, tt) -> new BigDecimal(sv));
         registerConvert(String.class, UUID.class, (sv, tt) -> UUID.fromString(sv));
@@ -447,18 +457,15 @@ public class Reflects extends ClassUtils {
 
         Class<?> declaringClass = method.getDeclaringClass();
         MethodHandle methodHandle;
-//        if (Sys.IS_JAVA_11) {
-//            methodHandle = MethodHandles.lookup()
-//                    .findSpecial(
-//                            method.getDeclaringClass(),
-//                            method.getName(),
-//                            MethodType.methodType(method.getReturnType(), Arrays.EMPTY_CLASS_ARRAY),
-//                            method.getDeclaringClass()
-//                    );
-//        } else {
-        methodHandle = lookupConstructor.newInstance(declaringClass, LOOKUP_FLAGS)
-                .unreflectSpecial(method, declaringClass);
-//        }
+        if (privateLookupInMethod != null) {
+            MethodHandles.Lookup lookup = (MethodHandles.Lookup) privateLookupInMethod.invoke(null, declaringClass, MethodHandles.lookup());
+            methodHandle = lookup.unreflectSpecial(method, declaringClass);
+        } else if (lookupConstructor != null) {
+            methodHandle = lookupConstructor.newInstance(declaringClass, LOOKUP_FLAGS)
+                    .unreflectSpecial(method, declaringClass);
+        } else {
+            throw new InvalidException("No default method lookup strategy for {}", declaringClass.getName());
+        }
         return (T) methodHandle.bindTo(instance)
                 .invokeWithArguments(args);
     }
@@ -640,7 +647,13 @@ public class Reflects extends ClassUtils {
             List<Field> all = FieldUtils.getAllFieldsList(type);
             for (Field field : all) {
                 setAccess(field);
-                FieldUtils.removeFinalModifier(field);
+                if (Modifier.isFinal(field.getModifiers())) {
+                    try {
+                        FieldUtils.removeFinalModifier(field);
+                    } catch (Throwable e) {
+                        // Java 12+ no longer exposes Field.modifiers for mutation.
+                    }
+                }
             }
             return Collections.unmodifiableMap(Linq.from(all).toMap(Field::getName, p -> p));
         });
@@ -653,7 +666,13 @@ public class Reflects extends ClassUtils {
         try {
             if (member instanceof Field) {
                 Field field = (Field) member;
-                FieldUtils.removeFinalModifier(field);
+                if (Modifier.isFinal(field.getModifiers())) {
+                    try {
+                        FieldUtils.removeFinalModifier(field);
+                    } catch (Throwable e) {
+                        // Java 12+ no longer exposes Field.modifiers for mutation.
+                    }
+                }
             }
 
 //            member.setAccessible(true);
@@ -665,7 +684,7 @@ public class Reflects extends ClassUtils {
                     return null;
                 });
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
             log.warn("setAccess", e);
         }
     }

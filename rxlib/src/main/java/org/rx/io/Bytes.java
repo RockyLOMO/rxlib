@@ -9,6 +9,7 @@ import org.rx.core.Constants;
 import org.rx.core.Strings;
 
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
@@ -19,6 +20,24 @@ import java.util.EnumSet;
 import java.util.Set;
 
 public class Bytes {
+    static final Object unsafe;
+    static final Method invokeCleanerMethod;
+
+    static {
+        Object u = null;
+        Method method = null;
+        try {
+            Field field = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
+            field.setAccessible(true);
+            u = field.get(null);
+            method = u.getClass().getMethod("invokeCleaner", ByteBuffer.class);
+        } catch (Throwable e) {
+            // JDK8 fallback to legacy cleaner path.
+        }
+        unsafe = u;
+        invokeCleanerMethod = method;
+    }
+
     //region ByteBuf
     public static String hexDump(ByteBuf buf) {
         return ByteBufUtil.prettyHexDump(buf);
@@ -80,12 +99,20 @@ public class Bytes {
         }
     }
 
-    //jdk11 --add-opens java.base/java.lang=ALL-UNNAMED
+    // JDK9+ prefer Unsafe.invokeCleaner, JDK8 fallback to legacy cleaner path.
     public static void release(ByteBuffer buffer) {
         if (buffer == null || !buffer.isDirect() || buffer.capacity() == 0) {
             return;
         }
 
+        if (invokeCleanerMethod != null) {
+            try {
+                invokeCleanerMethod.invoke(unsafe, buffer);
+                return;
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }
         invoke(invoke(viewed(buffer), "cleaner"), "clean");
     }
 

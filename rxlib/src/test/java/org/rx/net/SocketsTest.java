@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -138,12 +139,23 @@ public class SocketsTest {
     @SneakyThrows
     @Test
     public void testInjectNameService() {
-        // This modifies static state, so it might affect other tests or be affected by them.
-        // We'll test if we can simply call it without error.
-        Sockets.injectNameService((srcIp, host) -> Collections.emptyList());
+        String host = "rxlib-" + UUID.randomUUID() + ".test";
+        InetAddress expected = InetAddress.getByAddress(host, new byte[]{127, 0, 0, 123});
+        try {
+            Sockets.injectNameService((srcIp, h) -> {
+                if (host.equals(h)) {
+                    return Collections.singletonList(expected);
+                }
+                return Collections.emptyList();
+            });
 
-        // Verify it was set
-        assertNotNull(Sockets.nsInterceptor);
+            InetAddress actual = InetAddress.getByName(host);
+            assertEquals(expected.getHostAddress(), actual.getHostAddress());
+            assertNotNull(Sockets.nsInterceptor);
+        } finally {
+            // Keep proxy installed but restore interceptor to delegate to the platform resolver.
+            Sockets.nsInterceptor = (srcIp, h) -> Collections.emptyList();
+        }
     }
 
     @Test
