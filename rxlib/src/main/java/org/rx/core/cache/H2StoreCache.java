@@ -93,6 +93,16 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         }
     }
 
+    static final class ExpungeCursor {
+        final long expiration;
+        final long id;
+
+        ExpungeCursor(long expiration, long id) {
+            this.expiration = expiration;
+            this.id = id;
+        }
+    }
+
     final class StripeState implements Runnable {
         final int index;
         final BlockingQueue<Object> queue = new LinkedBlockingQueue<>();
@@ -561,19 +571,22 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         if (closed) {
             return;
         }
+        long expireBefore = System.currentTimeMillis();
+        int batchSize = Math.max(1, prefetchCount);
+        ExpungeCursor cursor = null;
         while (true) {
-            List<H2CacheItem> stales = findPersistedItems(new EntityQueryLambda<>(H2CacheItem.class)
-                    .le(H2CacheItem::getExpiration, System.currentTimeMillis())
-                    .limit(prefetchCount));
+            List<H2CacheItem> stales = findExpiredPage(cursor, expireBefore, batchSize);
             if (stales.isEmpty()) {
                 break;
             }
             for (H2CacheItem stale : stales) {
                 scheduleExpiredRemove(stale.getKey(), stale);
             }
-            if (stales.size() < prefetchCount) {
+            if (stales.size() < batchSize) {
                 break;
             }
+            H2CacheItem tail = stales.get(stales.size() - 1);
+            cursor = new ExpungeCursor(tail.getExpiration(), tail.getId());
         }
     }
 
@@ -597,12 +610,27 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @Override
     public boolean containsValue(Object value) {
         ensureOpen();
-        dbLock.readLock().lock();
-        try {
-            return db.exists(new EntityQueryLambda<>(H2CacheItem.class)
-                    .eq(H2CacheItem::getValIdx, CodecUtil.hash64(value)));
-        } finally {
-            dbLock.readLock().unlock();
+        long valueHash = CodecUtil.hash64(value);
+        Long cursor = null;
+        int batchSize = Math.max(1, prefetchCount);
+        while (true) {
+            List<H2CacheItem> candidates = findValueHashPage(valueHash, cursor, batchSize);
+            if (candidates.isEmpty()) {
+                return false;
+            }
+            for (H2CacheItem candidate : candidates) {
+                if (!Objects.equals(value, candidate.getValue())) {
+                    continue;
+                }
+                H2CacheItem<TK, TV> visible = resolveVisibleItem(candidate.getKey(), false);
+                if (visible != null && !visible.isTombstone() && Objects.equals(value, visible.getValue())) {
+                    return true;
+                }
+            }
+            if (candidates.size() < batchSize) {
+                return false;
+            }
+            cursor = candidates.get(candidates.size() - 1).getId();
         }
     }
 
@@ -1259,6 +1287,34 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         } finally {
             dbLock.readLock().unlock();
         }
+    }
+
+    List<H2CacheItem> findExpiredPage(ExpungeCursor cursor, long expireBefore, int limit) {
+        EntityQueryLambda<H2CacheItem> q = new EntityQueryLambda<>(H2CacheItem.class)
+                .le(H2CacheItem::getExpiration, expireBefore)
+                .orderBy(H2CacheItem::getExpiration)
+                .orderBy(H2CacheItem::getId)
+                .limit(limit);
+        if (cursor != null) {
+            EntityQueryLambda<H2CacheItem> seek = q.newClause()
+                    .gt(H2CacheItem::getExpiration, cursor.expiration)
+                    .or(q.newClause()
+                            .eq(H2CacheItem::getExpiration, cursor.expiration)
+                            .gt(H2CacheItem::getId, cursor.id));
+            q.and(seek);
+        }
+        return findPersistedItems(q);
+    }
+
+    List<H2CacheItem> findValueHashPage(long valueHash, Long afterId, int limit) {
+        EntityQueryLambda<H2CacheItem> q = new EntityQueryLambda<>(H2CacheItem.class)
+                .eq(H2CacheItem::getValIdx, valueHash)
+                .orderBy(H2CacheItem::getId)
+                .limit(limit);
+        if (afterId != null) {
+            q.gt(H2CacheItem::getId, afterId);
+        }
+        return findPersistedItems(q);
     }
 
     int countPersisted(EntityQueryLambda<H2CacheItem> query) {

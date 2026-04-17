@@ -8,6 +8,7 @@ import org.rx.AbstractTester;
 import org.rx.annotation.DbColumn;
 import org.rx.bean.*;
 import org.rx.core.*;
+import org.rx.core.cache.H2CacheItem;
 import org.rx.exception.TraceHandler;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
@@ -88,6 +89,30 @@ public class EntityDatabaseTest extends AbstractTester {
             }
         } finally {
             conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, oldMaxConnections));
+        }
+    }
+
+    @Test
+    public void testInheritedExpirationColumnCreatesIndex() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/cache_item_index"), null);
+        db.createMapping(H2CacheItem.class);
+        try {
+            String tableName = db.tableName(H2CacheItem.class).toUpperCase();
+            String indexName = db.indexName(tableName, "expiration").toUpperCase();
+            DataTable dt = db.executeQuery(String.format("SELECT INDEX_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.INDEX_COLUMNS WHERE UPPER(TABLE_NAME)='%s' AND UPPER(COLUMN_NAME)='EXPIRATION'", tableName));
+            boolean found = false;
+            for (DataRow row : dt.getRows()) {
+                String actualIndexName = row.get("INDEX_NAME");
+                String columnName = row.get("COLUMN_NAME");
+                if (indexName.equals(actualIndexName) && "EXPIRATION".equals(columnName)) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(found);
+        } finally {
+            db.dropMapping(H2CacheItem.class);
+            db.close();
         }
     }
 

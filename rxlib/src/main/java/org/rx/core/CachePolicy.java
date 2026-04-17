@@ -1,6 +1,7 @@
 package org.rx.core;
 
 import lombok.Getter;
+import org.rx.annotation.DbColumn;
 import org.rx.bean.DateTime;
 import org.rx.exception.InvalidException;
 
@@ -29,7 +30,7 @@ public class CachePolicy implements Serializable {
 
     final int slidingSpan;
     @Getter
-//    @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
+    @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
     long expiration;
 
     public boolean isExpired() {

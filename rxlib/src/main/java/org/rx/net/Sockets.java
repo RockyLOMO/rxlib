@@ -27,6 +27,11 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.resolver.AddressResolverGroup;
+import io.netty.resolver.ResolvedAddressTypes;
+import io.netty.resolver.dns.DnsAddressResolverGroup;
+import io.netty.resolver.dns.DnsNameResolverBuilder;
+import io.netty.resolver.dns.DnsServerAddressStreamProviders;
 import io.netty.util.AttributeKey;
 import io.netty.util.NetUtil;
 import lombok.NonNull;
@@ -52,6 +57,7 @@ import java.lang.reflect.Proxy;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Extends.ifNull;
@@ -93,6 +99,32 @@ public final class Sockets {
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
+    /** 共享 TCP Bootstrap 用 Netty DNS 异步解析（避免 connect 路径上阻塞 JDK DNS）。 */
+    static volatile AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup;
+
+    static AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup() {
+        AddressResolverGroup<InetSocketAddress> g = tcpDnsAddressResolverGroup;
+        if (g != null) {
+            return g;
+        }
+        synchronized (Sockets.class) {
+            if (tcpDnsAddressResolverGroup == null) {
+                DnsNameResolverBuilder nb = new DnsNameResolverBuilder()
+                        .channelType(udpChannelClass())
+                        .socketChannelType(tcpChannelClass())
+                        .nameServerProvider(DnsServerAddressStreamProviders.platformDefault())
+                        .ttl(5, 300)
+                        .negativeTtl(10)
+                        .queryTimeoutMillis(TimeUnit.SECONDS.toMillis(5))
+                        .resolvedAddressTypes(ResolvedAddressTypes.IPV4_PREFERRED)
+                        .recursionDesired(true)
+                        .maxQueriesPerResolve(8)
+                        .ndots(1);
+                tcpDnsAddressResolverGroup = new DnsAddressResolverGroup(nb);
+            }
+            return tcpDnsAddressResolverGroup;
+        }
+    }
 
 //    static {
 //        InetAddress.getLoopbackAddress();
@@ -274,6 +306,7 @@ public final class Sockets {
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis);
         } else {
             b.channel(tcpChannelClass())
+                    .resolver(tcpDnsAddressResolverGroup())
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis)
                     .option(ChannelOption.TCP_NODELAY, true)
                     .option(ChannelOption.SO_KEEPALIVE, true)

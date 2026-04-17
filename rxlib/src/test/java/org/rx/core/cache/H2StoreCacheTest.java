@@ -7,6 +7,7 @@ import org.rx.bean.DataTable;
 import org.rx.codec.CodecUtil;
 import org.rx.core.CachePolicy;
 import org.rx.io.EntityDatabase;
+import org.rx.io.EntityDatabaseImpl;
 import org.rx.io.EntityQueryLambda;
 
 import java.io.Serializable;
@@ -19,6 +20,9 @@ import java.util.UUID;
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,6 +31,44 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
 public class H2StoreCacheTest extends AbstractTester {
+    static class InstrumentedEntityDatabase extends EntityDatabaseImpl {
+        final AtomicInteger findByCalls = new AtomicInteger();
+        final AtomicInteger deleteCalls = new AtomicInteger();
+        volatile boolean blockDelete;
+        CountDownLatch deleteStarted = new CountDownLatch(1);
+        CountDownLatch allowDelete = new CountDownLatch(1);
+
+        InstrumentedEntityDatabase(String filePath) {
+            super(filePath, null, 2);
+        }
+
+        void resetDeleteBlock() {
+            deleteStarted = new CountDownLatch(1);
+            allowDelete = new CountDownLatch(1);
+        }
+
+        @Override
+        public <T> List<T> findBy(EntityQueryLambda<T> query) {
+            findByCalls.incrementAndGet();
+            return super.findBy(query);
+        }
+
+        @Override
+        public <T> boolean deleteById(Class<T> entityType, Serializable id) {
+            deleteCalls.incrementAndGet();
+            if (blockDelete) {
+                deleteStarted.countDown();
+                try {
+                    assertTrue(allowDelete.await(2, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    fail(e);
+                }
+            }
+            return super.deleteById(entityType, id);
+        }
+    }
+
     static class TrackingEntityDatabase implements EntityDatabase {
         final ConcurrentHashMap<Long, H2CacheItem<Object, Object>> store = new ConcurrentHashMap<>();
         final AtomicInteger findByIdCalls = new AtomicInteger();
@@ -280,6 +322,26 @@ public class H2StoreCacheTest extends AbstractTester {
     }
 
     @Test
+    public void testContainsValueVerifiesActualValueAfterValIdxCollision() {
+        InstrumentedEntityDatabase db = new InstrumentedEntityDatabase(path("h2/contains_value_collision"));
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
+        try {
+            cache.syncPut("collision-key", "other", null);
+            String tableName = db.tableName(H2CacheItem.class);
+            db.executeUpdate(String.format("UPDATE %s SET valIdx=%d WHERE id=%d", tableName,
+                    CodecUtil.hash64("target"), CodecUtil.hash64("collision-key")));
+
+            assertFalse(cache.containsValue("target"));
+
+            cache.syncPut("real-key", "target", null);
+            assertTrue(cache.containsValue("target"));
+        } finally {
+            cache.close();
+            db.close();
+        }
+    }
+
+    @Test
     public void testExpungeStale() throws InterruptedException {
         H2StoreCache<String, String> cache = new H2StoreCache<>();
         cache.clear();
@@ -293,6 +355,38 @@ public class H2StoreCacheTest extends AbstractTester {
         assertNull(cache.get("expireKey"));
         cache.flush();
         assertEquals(0, cache.size());
+    }
+
+    @Test
+    public void testExpungeStaleSeekDoesNotLoopOnBlockedDelete() throws Exception {
+        InstrumentedEntityDatabase db = new InstrumentedEntityDatabase(path("h2/expunge_seek"));
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            cache.setPrefetchCount(1);
+            cache.syncPut("expire-a", "va", new CachePolicy(System.currentTimeMillis() + 200, 0));
+            cache.syncPut("expire-b", "vb", new CachePolicy(System.currentTimeMillis() + 200, 0));
+            Thread.sleep(350);
+
+            db.blockDelete = true;
+            db.resetDeleteBlock();
+            Future<?> future = executor.submit(new Runnable() {
+                @Override
+                public void run() {
+                    cache.expungeStale();
+                }
+            });
+            future.get(1, TimeUnit.SECONDS);
+
+            assertTrue(db.deleteStarted.await(1, TimeUnit.SECONDS));
+            assertTrue(db.findByCalls.get() <= 3, "expungeStale should advance cursor instead of rescanning the same page");
+        } finally {
+            db.blockDelete = false;
+            db.allowDelete.countDown();
+            executor.shutdownNow();
+            cache.close();
+            db.close();
+        }
     }
 
     @Test
