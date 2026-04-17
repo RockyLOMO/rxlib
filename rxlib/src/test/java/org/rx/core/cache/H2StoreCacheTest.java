@@ -320,6 +320,23 @@ public class H2StoreCacheTest extends AbstractTester {
     }
 
     @Test
+    public void testCloseStopsBackgroundResources() throws Exception {
+        H2StoreCache<String, String> cache = new H2StoreCache<>(new TrackingEntityDatabase(), 64, 1);
+        Thread worker = cache.stripes.get(0).worker;
+        java.util.concurrent.ScheduledFuture<?> task = cache.expungeTask;
+
+        cache.close();
+
+        for (int i = 0; i < 20 && worker.isAlive(); i++) {
+            Thread.sleep(50);
+        }
+
+        assertTrue(task.isCancelled());
+        assertFalse(worker.isAlive());
+        assertThrows(IllegalStateException.class, () -> cache.put("k", "v"));
+    }
+
+    @Test
     public void testNullKeyRejected() {
         H2StoreCache<String, String> cache = new H2StoreCache<>(new TrackingEntityDatabase());
 
@@ -327,6 +344,29 @@ public class H2StoreCacheTest extends AbstractTester {
         assertThrows(NullPointerException.class, () -> cache.put(null, "v"));
         assertThrows(NullPointerException.class, () -> cache.remove(null));
         assertThrows(NullPointerException.class, () -> cache.fastPut("p", null, "v"));
+    }
+
+    @Test
+    public void testQueueDedupKeepsSinglePendingNodePerKey() throws Exception {
+        TrackingEntityDatabase db = new TrackingEntityDatabase();
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
+        cache.setRetryDelayMillis(10);
+
+        db.blockSave = true;
+        db.resetSaveBlock();
+        cache.fastPut("blocker", "v1");
+        assertTrue(db.saveStarted.await(1, TimeUnit.SECONDS));
+
+        cache.fastPut("hot", "v1");
+        cache.fastPut("hot", "v2");
+        cache.fastPut("hot", "v3");
+
+        assertEquals(1, cache.pendingQueueSize());
+
+        db.allowSave.countDown();
+        db.blockSave = false;
+        cache.flush("hot");
+        assertEquals("v3", db.persistedValue("hot"));
     }
 
     @Test

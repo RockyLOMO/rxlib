@@ -20,7 +20,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import static org.rx.core.Constants.NON_UNCHECKED;
 
 @Slf4j
-public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2StoreCache<TK, TV>> {
+public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2StoreCache<TK, TV>>, AutoCloseable {
     static final int DEFAULT_ITERATOR_SIZE = 1000;
     static final int DEFAULT_STRIPE_COUNT = 2;
     static final long DEFAULT_TOMBSTONE_EXPIRE_MILLIS = TimeUnit.SECONDS.toMillis(15);
@@ -89,7 +89,9 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     final class StripeState implements Runnable {
         final int index;
         final BlockingQueue<Object> queue = new LinkedBlockingQueue<>();
+        final Set<Object> queuedKeys = ConcurrentHashMap.newKeySet();
         final Thread worker;
+        volatile boolean stopped;
 
         StripeState(int cacheId, int index) {
             this.index = index;
@@ -99,19 +101,50 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         }
 
         void offer(Object key) {
-            queue.offer(key);
+            if (stopped || !queuedKeys.add(key)) {
+                return;
+            }
+            boolean offered = false;
+            try {
+                queue.offer(key);
+                offered = true;
+            } finally {
+                if (!offered) {
+                    queuedKeys.remove(key);
+                }
+            }
+        }
+
+        void shutdown() {
+            stopped = true;
+            queue.clear();
+            queuedKeys.clear();
+            worker.interrupt();
         }
 
         @Override
         public void run() {
-            while (true) {
+            while (!stopped) {
+                Object key = null;
+                PendingOp op = null;
                 try {
-                    flushPendingKey(queue.take());
+                    key = queue.take();
+                    op = flushPendingKey(key);
                 } catch (InterruptedException e) {
+                    if (stopped) {
+                        return;
+                    }
                     Thread.currentThread().interrupt();
                     return;
                 } catch (Throwable e) {
                     log.error("stripe[{}] worker error", index, e);
+                } finally {
+                    if (key != null) {
+                        queuedKeys.remove(key);
+                        if (shouldRequeue(key, op)) {
+                            offer(key);
+                        }
+                    }
                 }
             }
         }
@@ -355,6 +388,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     final int stripeCount;
     final int stripeMask;
     volatile ScheduledFuture<?> expungeTask;
+    volatile boolean closed;
 
     public H2StoreCache() {
         this(EntityDatabase.DEFAULT, DEFAULT_L1_CACHE_MAX_SIZE, DEFAULT_STRIPE_COUNT);
@@ -392,6 +426,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void setExpungePeriod(long expungePeriod) {
+        ensureOpen();
         if (expungePeriod <= 0) {
             throw new IllegalArgumentException("expungePeriod must be > 0");
         }
@@ -401,6 +436,9 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     // region core api
     void expungeStale() {
+        if (closed) {
+            return;
+        }
         while (true) {
             List<H2CacheItem> stales = findPersistedItems(new EntityQueryLambda<>(H2CacheItem.class)
                     .le(H2CacheItem::getExpiration, System.currentTimeMillis())
@@ -419,11 +457,13 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public int size() {
+        ensureOpen();
         return countPersisted(new EntityQueryLambda<>(H2CacheItem.class));
     }
 
     @Override
     public boolean containsKey(Object key) {
+        ensureOpen();
         return containsPhysicalKey(requireKey(key));
     }
 
@@ -434,6 +474,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public boolean containsValue(Object value) {
+        ensureOpen();
         dbLock.readLock().lock();
         try {
             return db.exists(new EntityQueryLambda<>(H2CacheItem.class)
@@ -446,6 +487,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV get(Object key) {
+        ensureOpen();
         H2CacheItem<TK, TV> item = resolveVisibleItem(requireKey(key), true);
         return item == null || item.isTombstone() ? null : item.getValue();
     }
@@ -453,11 +495,13 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV put(TK key, TV value, CachePolicy policy) {
+        ensureOpen();
         requireKey(key);
         return putPhysicalKey(key, key, value, policy, buildRegion(key.getClass(), null));
     }
 
     public TV syncPut(TK key, TV value, CachePolicy policy) {
+        ensureOpen();
         requireKey(key);
         WriteResult<TV> result = submitPut(key, key, value, policy, buildRegion(key.getClass(), null), true);
         awaitFlush(result.op.physicalKey, result.op.seq);
@@ -469,6 +513,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void fastPut(TK key, TV value, CachePolicy policy) {
+        ensureOpen();
         requireKey(key);
         submitPut(key, key, value, policy, buildRegion(key.getClass(), null), false);
     }
@@ -478,6 +523,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void fastPut(String keyPrefix, TK key, TV value, CachePolicy policy) {
+        ensureOpen();
         requireKey(key);
         Object physicalKey = wrapPhysicalKey(key, keyPrefix);
         submitPut(physicalKey, key, value, policy, buildRegion(key.getClass(), keyPrefix), false);
@@ -495,10 +541,12 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV remove(Object key) {
+        ensureOpen();
         return removePhysicalKey(requireKey(key));
     }
 
     public TV syncRemove(Object key) {
+        ensureOpen();
         requireKey(key);
         WriteResult<TV> result = submitRemove(key, true);
         if (result.op != null) {
@@ -508,6 +556,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void fastRemove(Object key) {
+        ensureOpen();
         requireKey(key);
         submitRemove(key, false);
     }
@@ -519,6 +568,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public void clear() {
+        ensureOpen();
         dbLock.writeLock().lock();
         try {
             epoch.incrementAndGet();
@@ -535,6 +585,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void flush() {
+        ensureOpen();
         Map<Object, Long> snapshot = new LinkedHashMap<>();
         long nowEpoch = epoch.get();
         for (Map.Entry<Object, PendingOp> entry : pendingLatest.entrySet()) {
@@ -556,6 +607,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void flush(Object key) {
+        ensureOpen();
         requireKey(key);
         PendingOp op = pendingLatest.get(key);
         if (op == null) {
@@ -565,22 +617,27 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public long pendingWriteCount() {
+        ensureOpen();
         return pendingLatest.size();
     }
 
     public long l1CacheMaxSize() {
+        ensureOpen();
         return l1CacheMaxSize;
     }
 
     public long l1EstimatedSize() {
+        ensureOpen();
         return l1Cache.cache.estimatedSize();
     }
 
     public int stripeCount() {
+        ensureOpen();
         return stripeCount;
     }
 
     public int pendingQueueSize() {
+        ensureOpen();
         int size = 0;
         for (StripeState stripe : stripes) {
             size += stripe.queue.size();
@@ -589,6 +646,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public int pendingQueueSize(int stripeIndex) {
+        ensureOpen();
         if (stripeIndex < 0 || stripeIndex >= stripeCount) {
             throw new IllegalArgumentException("stripeIndex out of range");
         }
@@ -597,10 +655,12 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public Set<Entry<TK, TV>> entrySet() {
+        ensureOpen();
         return setView;
     }
 
     public EntrySetView entrySet(int offset, int size) {
+        ensureOpen();
         return new EntrySetView(null, offset, size);
     }
 
@@ -609,6 +669,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public EntrySetView entrySet(String keyPrefix, int offset, int size) {
+        ensureOpen();
         if (keyPrefix == null && offset == 0 && size == Integer.MAX_VALUE) {
             return setView;
         }
@@ -617,6 +678,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public Set<TK> asSet() {
+        ensureOpen();
         return setView.keys();
     }
 
@@ -625,14 +687,17 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public Set<TK> asSet(String keyPrefix, int offset, int size) {
+        ensureOpen();
         return entrySet(keyPrefix, offset, size).keys();
     }
 
     public Iterator<Entry<TK, TV>> iterator(int offset, int size) {
+        ensureOpen();
         return entrySet(offset, size).iterator();
     }
 
     public Iterator<Entry<TK, TV>> iterator(String keyPrefix, int offset, int size) {
+        ensureOpen();
         return entrySet(keyPrefix, offset, size).iterator();
     }
 
@@ -729,37 +794,40 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     void enqueueKey(Object key) {
+        if (closed) {
+            return;
+        }
         stripes.get(stripeIndex(key)).offer(key);
     }
 
-    void flushPendingKey(Object key) {
+    PendingOp flushPendingKey(Object key) {
         PendingOp op = pendingLatest.get(key);
         if (op == null) {
-            return;
+            return null;
         }
         if (op.epoch != epoch.get()) {
             pendingLatest.remove(key, op);
-            return;
+            return op;
         }
 
         try {
             PendingOp latest = pendingLatest.get(key);
             if (latest != null && latest.epoch == op.epoch && latest.seq > op.seq) {
-                return;
+                return op;
             }
             if (op.type != PendingOpType.REMOVE && op.itemSnapshot.isExpired()) {
                 scheduleExpiredRemove(key, op.itemSnapshot);
-                return;
+                return op;
             }
 
             dbLock.readLock().lock();
             try {
                 if (op.epoch != epoch.get()) {
-                    return;
+                    return op;
                 }
                 latest = pendingLatest.get(key);
                 if (latest != null && latest.epoch == op.epoch && latest.seq > op.seq) {
-                    return;
+                    return op;
                 }
                 switch (op.type) {
                     case PUT:
@@ -779,7 +847,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         } catch (Throwable e) {
             op.retryCount++;
             scheduleRetry(key, op, e);
-            return;
+            return op;
         }
 
         persistedSeq.merge(key, op.seq, Math::max);
@@ -789,6 +857,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         if (current != null && current.seq == op.seq && current.epoch == op.epoch) {
             pendingLatest.remove(key, current);
         }
+        return op;
     }
 
     void scheduleRetry(Object key, PendingOp op, Throwable error) {
@@ -1076,12 +1145,56 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         return cap;
     }
 
+    boolean shouldRequeue(Object key, PendingOp processedOp) {
+        if (closed) {
+            return false;
+        }
+        PendingOp current = pendingLatest.get(key);
+        return current != null && current != processedOp;
+    }
+
     synchronized void scheduleExpungeTask() {
+        if (closed) {
+            return;
+        }
         ScheduledFuture<?> task = expungeTask;
         if (task != null) {
             task.cancel(false);
         }
         expungeTask = Tasks.schedulePeriod(this::expungeStale, expungePeriod);
+    }
+
+    void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("cache closed");
+        }
+    }
+
+    @Override
+    public synchronized void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        ScheduledFuture<?> task = expungeTask;
+        expungeTask = null;
+        if (task != null) {
+            task.cancel(false);
+        }
+        for (StripeState stripe : stripes) {
+            stripe.shutdown();
+        }
+        dbLock.writeLock().lock();
+        try {
+            failAllWaiters(new IllegalStateException("cache closed"));
+            pendingLatest.clear();
+            loadingMap.clear();
+            persistedSeq.clear();
+            renewingKeys.clear();
+            l1Cache.clear();
+        } finally {
+            dbLock.writeLock().unlock();
+        }
     }
 
     H2CacheItem<Object, Object> newTombstone(Object key, long seq) {

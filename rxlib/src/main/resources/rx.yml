@@ -33,6 +33,7 @@ app:
     diskUsageWarningThreshold: 90
     h2Settings: CACHE_SIZE=8192;MAX_MEMORY_ROWS=1024;MAX_OPERATION_MEMORY=4096;WRITE_DELAY=100
     h2DbPath: ./rx
+    entityDatabaseMaxConnections: 4
     entityDatabaseRollPeriod: 10000
   net:
     reactorThreadAmount: 0

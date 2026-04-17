@@ -30,6 +30,12 @@
   - `DEFAULT_STRIPE_COUNT = 2`
   - `DEFAULT_L1_CACHE_MAX_SIZE = 2048`
   - `DEFAULT_EXPUNGE_PERIOD_MILLIS = 3min`
+- `[已完成]` 生命周期闭合
+  - `H2StoreCache` 已支持 `close()`
+  - 会取消 `expungeTask`、中断 stripe worker、清理 waiters / pending / L1
+- `[已完成]` stripe queue 去重降内存
+  - 同一个 key 同一时刻只保留一个排队节点
+  - 热 key 高频覆盖写不再把 queue 长度线性堆高
 
 ## 1. 背景与现状
 
@@ -987,3 +993,151 @@ worker 从队列取到 key 后：
 这是当前代码最容易演进、同时最符合“弱一致 + 高吞吐”目标的方案。
 
 如果后续进入实现阶段，我建议先做“阶段 1 + 阶段 2”，先把默认热路径从同步 H2 中摘出来，再处理 `clear/expunge/renew` 这些边界操作。
+
+## 17. 最新 Review 问题（2026-04-17）
+
+下面这些问题是基于当前 [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java) 已实现代码做的增量 review。  
+它们不是“理论风险”，而是当前实现里仍然存在、后续值得继续收口的点。
+
+### 17.1 生命周期未闭合：worker 线程与定时任务缺少显式释放
+
+状态：`已处理`
+
+现状：
+
+- 每个 `H2StoreCache` 实例都会创建 `stripeCount` 条 daemon worker 线程
+- 同时还会创建一个周期性的 `expungeTask`
+- 当前类没有 `close()/dispose()`，也没有统一 shutdown 入口
+
+对应代码点：
+
+- `StripeState` 创建线程 [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java:91)
+- `scheduleExpungeTask()` 注册周期任务 [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java:1079)
+
+问题：
+
+- 短生命周期实例会残留后台线程和定时任务
+- 单元测试、大量临时 cache、热重建场景下会形成资源泄漏
+- 这与“轻量级、低内存占用”的目标直接冲突
+
+建议方案：
+
+- 让 `H2StoreCache` 实现 `AutoCloseable` 或复用现有 `Disposable`
+- `close()` 中至少做：
+  - `expungeTask.cancel(false)`
+  - 标记 worker 退出
+  - `worker.interrupt()`
+  - 可选：先 `flush()` 再退出
+- `DEFAULT` 单例可以继续常驻，但显式 new 出来的实例必须可释放
+
+### 17.2 queue 是无界的，而且同 key 会重复入队，慢盘时容易放大内存占用
+
+状态：`已处理`
+
+现状：
+
+- stripe 内部使用 `LinkedBlockingQueue<Object>`
+- 队列元素只放 `key`
+- 设计上允许同一个 key 重复入队
+
+对应代码点：
+
+- 无界队列 [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java:91)
+- `enqueueKey()` 直接 `offer(key)` [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java:726)
+
+问题：
+
+- `pendingLatest` 虽然只保留最新 op，但 queue 仍可能堆很多重复 key
+- DB 变慢、失败重试、热点 key 高频覆盖写时，队列长度会持续增长
+- 当前新增的 `pendingQueueSize()` 只能观测，不能阻止膨胀
+
+建议方案：
+
+- 每个 stripe 增加一个 `queuedKeys` 集合
+- 只有 `queuedKeys.add(key)` 成功时才真正入队
+- worker 在完成一次 `flushPendingKey(key)` 后再 `queuedKeys.remove(key)`
+- 如果 worker 发现该 key 期间又有新 op，可在出队尾声再次补一次 `offer`
+
+这样可以把“每个 key 同一时刻至多一个队列节点”作为硬约束，显著降低内存波动。
+
+### 17.3 `renewingKeys` 只覆盖入队瞬间，热点 sliding key 仍可能产生续期写放大
+
+现状：
+
+- `scheduleRenew()` 用 `renewingKeys.add(key)` 做瞬时去重
+- 但在方法 `finally` 中会立即 `renewingKeys.remove(key)`
+- 此时续期 op 可能还在 queue 里，甚至还没真正刷库
+
+对应代码点：
+
+- `scheduleRenew()` [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java:693)
+- `finally` 中立即移除 [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java:715)
+
+问题：
+
+- 热点 sliding key 如果被连续 `get()`，在前一个 `RENEW` 还未落库时，仍可能再次生成新的 `RENEW`
+- 语义上仍然正确，但会重新引入续期写放大
+
+建议方案：
+
+- 不要在 `scheduleRenew()` 返回时立刻移除 `renewingKeys`
+- 改成在该 key 的 `RENEW` op 真正刷盘完成，或被更新的 `PUT/REMOVE` 覆盖时再释放
+- 更进一步，可以直接把“是否已有未完成 renew”并入 `PendingOp` 状态判断，而不是靠独立 set
+
+### 17.4 `entrySet()/iterator()` 的分页遍历缺少稳定排序，存在跳项/重复风险
+
+现状：
+
+- `EntrySetView.itemIterator()` 用 `offset + limit` 分页读 DB
+- `newQuery()` 只拼过滤条件，没有显式排序
+
+对应代码点：
+
+- `itemIterator()` [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java:216)
+- `newQuery()` [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java:259)
+
+问题：
+
+- 没有 `order by` 时，分页结果顺序本身就不稳定
+- 再叠加异步刷盘窗口，跨页遍历可能跳项或重复
+- 这会让 `entrySet(prefix, offset, size)` 的结果比文档里的“弱一致”更难推断
+
+建议方案：
+
+- 至少加稳定排序，例如按 `id` 或 `version` 升序
+- 如果后续要支持大规模稳定遍历，最好从 `offset + limit` 升级为“基于游标/上次 id”的 seek pagination
+
+### 17.5 `onExpired` 事件触发早于持久层删除完成，监听方可能看到“事件先于事实”
+
+现状：
+
+- `scheduleExpiredRemove()` 在安装 `REMOVE` op 成功后，会立即 `raiseEvent(onExpired, ...)`
+- 但此时真正的 DB 删除还在后续 stripe worker 中
+
+对应代码点：
+
+- `scheduleExpiredRemove()` [H2StoreCache.java](D:/projs_r/rxlib/rxlib/src/main/java/org/rx/core/cache/H2StoreCache.java:678)
+
+问题：
+
+- 监听方如果把 `onExpired` 理解成“已经从持久层删除完成”，会产生语义误判
+- 当前事件更接近“已判定过期并已入删除通道”，不是“删除已提交完成”
+
+建议方案：
+
+- 二选一：
+  - 把事件语义明确改名/改文档，说明它只是“过期删除已调度”
+  - 或增加一个真正的 `onExpiredCommitted`，由 worker 刷盘成功后触发
+
+## 18. 下一步建议顺序
+
+如果你的目标优先级是“轻量级 + 低内存占用 + 行为更可控”，建议按这个顺序继续做：
+
+1. 先收紧 `scheduleRenew()` 的去重窗口，减少热点续期写放大
+2. 再修正 `entrySet()` 的稳定排序，避免分页跳项/重复
+3. 最后明确 `onExpired` 的事件语义，或拆成“已调度”和“已提交”两类事件
+
+原因：
+
+- 生命周期和 queue 占用已经收口
+- 剩余三项主要是写放大优化和 API 语义边界修正
