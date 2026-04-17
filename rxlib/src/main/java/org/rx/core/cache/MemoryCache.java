@@ -69,8 +69,8 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     static Scheduler scheduler;
 
     static {
-        IOC.register(MemoryCache.class, new MemoryCache<>());
         scheduler = Scheduler.forScheduledExecutorService(Tasks.timer());
+        IOC.register(MemoryCache.class, new MemoryCache<>());
     }
 
     public static <TK, TV> Caffeine<TK, TV> weightBuilder(Caffeine<TK, TV> b, float memoryPercent, int entryBytes) {
@@ -89,7 +89,9 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
         if (executor != null) {
             builder.executor(executor);
         }
-        builder.scheduler(scheduler);
+        if (scheduler != null) {
+            builder.scheduler(scheduler);
+        }
         return (Caffeine<TK, TV>) builder;
     }
 
