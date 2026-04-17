@@ -23,6 +23,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiAction;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -324,7 +325,7 @@ public class Socks5Client extends Disposable {
             try {
                 Channel tcpControl = handler.getChannel();
                 InetSocketAddress bindAddr = handler.getBindAddress();
-                InetSocketAddress relayAddr = resolveRelayAddress(bindAddr);
+                InetSocketAddress relayAddr = validateRelayAddress(resolveRelayAddress(bindAddr, tcpControl.remoteAddress()));
                 log.debug("socks5 UDP_ASSOCIATE relay address: {}", relayAddr);
                 result.complete(new Socks5UdpLease(tcpControl, relayAddr));
             } catch (Throwable t) {
@@ -388,11 +389,36 @@ public class Socks5Client extends Disposable {
      * If the proxy replied with a wildcard bind address (e.g. {@code 0.0.0.0}), use the
      * proxy server's own IP together with the returned port; otherwise use the address as-is.
      */
-    private InetSocketAddress resolveRelayAddress(InetSocketAddress bindAddr) {
-        InetSocketAddress proxyAddress = proxyServer.getInetEndpoint();
-        if (proxyAddress != null && bindAddr.getAddress() != null && bindAddr.getAddress().isAnyLocalAddress()) {
-            return new InetSocketAddress(proxyAddress.getAddress(), bindAddr.getPort());
+    InetSocketAddress resolveRelayAddress(InetSocketAddress bindAddr, SocketAddress connectedRemoteAddress) {
+        if (bindAddr == null) {
+            return null;
+        }
+
+        if (bindAddr.getAddress() != null && bindAddr.getAddress().isAnyLocalAddress()) {
+            InetSocketAddress actualRemote = connectedRemoteAddress instanceof InetSocketAddress
+                    ? (InetSocketAddress) connectedRemoteAddress : null;
+            if (actualRemote != null && actualRemote.getAddress() != null) {
+                return new InetSocketAddress(actualRemote.getAddress(), bindAddr.getPort());
+            }
+
+            InetSocketAddress proxyAddress = proxyServer.getInetEndpoint();
+            if (proxyAddress != null && proxyAddress.getAddress() != null) {
+                return new InetSocketAddress(proxyAddress.getAddress(), bindAddr.getPort());
+            }
         }
         return bindAddr;
+    }
+
+    private InetSocketAddress validateRelayAddress(InetSocketAddress relayAddr) {
+        if (relayAddr == null) {
+            throw new IllegalStateException("SOCKS5 UDP relay address is null");
+        }
+        if (relayAddr.getPort() <= 0) {
+            throw new IllegalStateException("SOCKS5 UDP relay port invalid: " + relayAddr);
+        }
+        if (relayAddr.getAddress() == null || relayAddr.getAddress().isAnyLocalAddress()) {
+            throw new IllegalStateException("SOCKS5 UDP relay address unresolved or wildcard: " + relayAddr);
+        }
+        return relayAddr;
     }
 }

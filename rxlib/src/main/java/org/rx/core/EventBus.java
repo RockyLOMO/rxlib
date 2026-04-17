@@ -55,12 +55,12 @@ public class EventBus {
             for (Map.Entry<Serializable, Set<Tuple<Object, Method>>> subEntry : Linq.from(eventMethods).groupByIntoMap(p -> {
                 Subscribe m = p.right.getAnnotation(Subscribe.class);
                 if (m.topicClass() != Object.class) {
-                    return m.topicClass();
+                    return (Serializable) m.topicClass();
                 }
                 if (!m.topic().isEmpty()) {
-                    return m.topic();
+                    return (Serializable) m.topic();
                 }
-                return m.value();
+                return (Serializable) m.value();
             }, (p, x) -> x.toSet()).entrySet()) {
                 topicMap.computeIfAbsent(subEntry.getKey(), k -> new CopyOnWriteArraySet<>()).addAll(subEntry.getValue());
             }
