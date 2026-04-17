@@ -39,6 +39,12 @@
 - `[已完成]` sliding renew 去重窗口收紧
   - 已有未落库 `PUT/RENEW` 时，后续 `get()` 只续期同一份快照，不再反复创建新的 `RENEW`
   - 若 renew 正在 worker 中刷库，会在刷完后最多补刷一次，避免把最新过期时间丢到 DB 之外
+- `[已完成]` `entrySet()/iterator()` 改为稳定 `id` 排序分页
+  - 当前分页查询已显式 `order by id asc`
+  - `offset + limit` 至少建立在稳定顺序之上，跨页不再受 H2 默认返回顺序影响
+- `[已完成]` `onExpired` 改为删除提交后触发
+  - 过期路径会先把事件快照挂到 `REMOVE` op 上
+  - 只有 stripe worker 成功完成删除提交后，才真正触发 `onExpired`
 
 ## 1. 背景与现状
 
@@ -1091,6 +1097,8 @@ worker 从队列取到 key 后：
 
 ### 17.4 `entrySet()/iterator()` 的分页遍历缺少稳定排序，存在跳项/重复风险
 
+状态：`已处理`
+
 现状：
 
 - `EntrySetView.itemIterator()` 用 `offset + limit` 分页读 DB
@@ -1112,7 +1120,15 @@ worker 从队列取到 key 后：
 - 至少加稳定排序，例如按 `id` 或 `version` 升序
 - 如果后续要支持大规模稳定遍历，最好从 `offset + limit` 升级为“基于游标/上次 id”的 seek pagination
 
+当前实现：
+
+- `newQuery()` 已追加 `orderBy(H2CacheItem::getId)`
+- 这一步先保证“同一批数据分页顺序稳定可推断”
+- 后续如果数据量再上去，仍建议升级成 seek pagination，避免大 offset 扫描成本
+
 ### 17.5 `onExpired` 事件触发早于持久层删除完成，监听方可能看到“事件先于事实”
+
+状态：`已处理`
 
 现状：
 
@@ -1134,14 +1150,29 @@ worker 从队列取到 key 后：
   - 把事件语义明确改名/改文档，说明它只是“过期删除已调度”
   - 或增加一个真正的 `onExpiredCommitted`，由 worker 刷盘成功后触发
 
+当前实现：
+
+- 采用“保持原事件名，但把触发点后移”的方案
+- `scheduleExpiredRemove()` 只负责把过期键转成 `REMOVE` op，并记录一份事件快照
+- `flushPendingKey()` 在删除提交成功后才触发 `onExpired`
+- 如果删除因为更高版本数据而被跳过，则不会误发过期事件
+
 ## 18. 下一步建议顺序
 
-如果你的目标优先级是“轻量级 + 低内存占用 + 行为更可控”，建议按这个顺序继续做：
+本轮 review 列出的剩余问题已经全部收口，当前这套模型的状态可以归纳为：
 
-1. 先修正 `entrySet()` 的稳定排序，避免分页跳项/重复
-2. 再明确 `onExpired` 的事件语义，或拆成“已调度”和“已提交”两类事件
+1. 生命周期已闭合，临时实例可安全释放
+2. queue 已去重，热点 key 不会再把待刷队列线性堆高
+3. renew 写放大已压缩到“在途最多补刷一次”
+4. `entrySet()/iterator()` 已具备稳定分页顺序
+5. `onExpired` 已和删除提交点对齐
 
-原因：
+如果后续继续演进，我建议优先看这两个方向：
 
-- 生命周期、queue 占用和 renew 写放大已经收口
-- 剩余两项主要是 API 语义边界修正
+1. 把 `offset + limit` 升级成 seek pagination，进一步降低大页遍历成本
+2. 把当前进程内观测接口接入正式监控，持续跟踪：
+   - L1 命中率
+   - `pendingWriteCount`
+   - 每个 stripe 的 `pendingQueueSize`
+   - H2 连接池等待时间
+   - 堆外内存占用

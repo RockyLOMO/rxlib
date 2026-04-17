@@ -40,12 +40,18 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         RENEW
     }
 
+    enum DeleteResult {
+        COMMITTED,
+        SKIPPED_NEWER
+    }
+
     static final class PendingOp {
         final Object physicalKey;
         final long seq;
         final long epoch;
         final PendingOpType type;
         final H2CacheItem<Object, Object> itemSnapshot;
+        Map.Entry<Object, Object> expiredEventEntry;
         volatile int retryCount;
         volatile boolean rescheduleAfterFlush;
 
@@ -297,6 +303,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             if (keyPrefix != null) {
                 q.like(H2CacheItem::getRegion, buildRegionNamespace(keyPrefix) + ":%");
             }
+            q.orderBy(H2CacheItem::getId);
             return q;
         }
 
@@ -750,12 +757,13 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         long opEpoch = epoch.get();
         long seq = nextSeq();
         H2CacheItem<Object, Object> tombstone = newTombstone(key, seq);
-        PendingOp installed = installDerivedOp(new PendingOp(key, seq, opEpoch, PendingOpType.REMOVE, tombstone), observedVersion);
-        if (installed != null) {
+        PendingOp op = new PendingOp(key, seq, opEpoch, PendingOpType.REMOVE, tombstone);
+        op.expiredEventEntry = snapshotEntry(item);
+        PendingOp installed = installDerivedOp(op, observedVersion);
+        if (installed == op) {
             l1Cache.put(key, tombstone, tombstone);
             renewingKeys.remove(key);
             enqueueKey(key);
-            raiseEvent(onExpired, castEntry(item));
         }
     }
 
@@ -828,6 +836,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             return op;
         }
 
+        DeleteResult deleteResult = DeleteResult.COMMITTED;
         try {
             PendingOp latest = pendingLatest.get(key);
             if (latest != null && latest.epoch == op.epoch && latest.seq > op.seq) {
@@ -854,7 +863,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
                         db.save(op.itemSnapshot);
                         break;
                     case REMOVE:
-                        deletePersistedIfMatched(key, op.seq);
+                        deleteResult = deletePersistedIfMatched(key, op.seq);
                         break;
                     default:
                         break;
@@ -866,6 +875,10 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             op.retryCount++;
             scheduleRetry(key, op, e);
             return op;
+        }
+
+        if (op.type == PendingOpType.REMOVE && op.expiredEventEntry != null && deleteResult != DeleteResult.SKIPPED_NEWER) {
+            raiseEvent(onExpired, castEntry(op.expiredEventEntry));
         }
 
         persistedSeq.merge(key, op.seq, Math::max);
@@ -893,15 +906,16 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         }, delay);
     }
 
-    boolean deletePersistedIfMatched(Object key, long maxVersion) {
+    DeleteResult deletePersistedIfMatched(Object key, long maxVersion) {
         H2CacheItem<TK, TV> item = findPersisted(key);
         if (item == null) {
-            return false;
+            return DeleteResult.COMMITTED;
         }
         if (item.getVersion() > maxVersion) {
-            return false;
+            return DeleteResult.SKIPPED_NEWER;
         }
-        return db.deleteById(H2CacheItem.class, item.getId());
+        db.deleteById(H2CacheItem.class, item.getId());
+        return DeleteResult.COMMITTED;
     }
 
     TV visibleValue(Object key) {
@@ -1259,6 +1273,15 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     Map.Entry<TK, TV> castEntry(H2CacheItem<?, ?> item) {
         return (Map.Entry<TK, TV>) item;
+    }
+
+    @SuppressWarnings(NON_UNCHECKED)
+    Map.Entry<TK, TV> castEntry(Map.Entry<?, ?> entry) {
+        return (Map.Entry<TK, TV>) entry;
+    }
+
+    Map.Entry<Object, Object> snapshotEntry(H2CacheItem<?, ?> item) {
+        return new AbstractMap.SimpleEntry<Object, Object>(item.getKey(), item.getValue());
     }
 
     static Object wrapPhysicalKey(Object key, String keyPrefix) {

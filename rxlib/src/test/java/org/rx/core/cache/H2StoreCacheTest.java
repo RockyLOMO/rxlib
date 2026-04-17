@@ -4,12 +4,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.bean.DataTable;
+import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.CachePolicy;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
 
 import java.io.Serializable;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -35,10 +38,13 @@ public class H2StoreCacheTest extends AbstractTester {
         final AtomicInteger failDeleteTimes = new AtomicInteger();
         volatile boolean blockSave;
         volatile boolean blockFindById;
+        volatile boolean blockDelete;
         CountDownLatch saveStarted = new CountDownLatch(1);
         CountDownLatch allowSave = new CountDownLatch(1);
         CountDownLatch findStarted = new CountDownLatch(1);
         CountDownLatch allowFind = new CountDownLatch(1);
+        CountDownLatch deleteStarted = new CountDownLatch(1);
+        CountDownLatch allowDelete = new CountDownLatch(1);
 
         void resetSaveBlock() {
             saveStarted = new CountDownLatch(1);
@@ -48,6 +54,11 @@ public class H2StoreCacheTest extends AbstractTester {
         void resetFindBlock() {
             findStarted = new CountDownLatch(1);
             allowFind = new CountDownLatch(1);
+        }
+
+        void resetDeleteBlock() {
+            deleteStarted = new CountDownLatch(1);
+            allowDelete = new CountDownLatch(1);
         }
 
         void prime(String key, Object value) {
@@ -103,6 +114,15 @@ public class H2StoreCacheTest extends AbstractTester {
         @Override
         public <T> boolean deleteById(Class<T> entityType, Serializable id) {
             deleteCalls.incrementAndGet();
+            if (blockDelete) {
+                deleteStarted.countDown();
+                try {
+                    assertTrue(allowDelete.await(2, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    fail(e);
+                }
+            }
             if (failDeleteTimes.get() > 0) {
                 failDeleteTimes.decrementAndGet();
                 throw new IllegalStateException("delete failed");
@@ -540,6 +560,62 @@ public class H2StoreCacheTest extends AbstractTester {
             set.clear();
             cache.flush();
         }
+    }
+
+    @Test
+    public void testEntrySetUsesStableIdOrderingAcrossPages() {
+        H2StoreCache<String, Boolean> cache = new H2StoreCache<>();
+        String prefix = "h2-ordered-" + UUID.randomUUID();
+        Set<String> set = cache.asSet(prefix);
+        List<String> keys = Arrays.asList("key-a", "key-b", "key-c", "key-d", "key-e", "key-f");
+        try {
+            for (String key : keys) {
+                cache.fastPut(prefix, key, Boolean.TRUE);
+            }
+            cache.flush();
+
+            List<String> expected = new ArrayList<>(keys);
+            expected.sort(Comparator.comparingLong(p -> CodecUtil.hash64(Tuple.of(prefix, p))));
+
+            List<String> firstPage = new ArrayList<>();
+            for (Map.Entry<String, Boolean> entry : cache.entrySet(prefix, 0, 3)) {
+                firstPage.add(entry.getKey());
+            }
+
+            List<String> secondPage = new ArrayList<>();
+            for (Map.Entry<String, Boolean> entry : cache.entrySet(prefix, 3, 3)) {
+                secondPage.add(entry.getKey());
+            }
+
+            assertEquals(expected.subList(0, 3), firstPage);
+            assertEquals(expected.subList(3, 6), secondPage);
+        } finally {
+            set.clear();
+            cache.flush();
+        }
+    }
+
+    @Test
+    public void testExpiredEventFiresAfterDeleteCommitted() throws Exception {
+        TrackingEntityDatabase db = new TrackingEntityDatabase();
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
+        AtomicInteger expiredEvents = new AtomicInteger();
+        cache.onExpired.combine((s, e) -> expiredEvents.incrementAndGet());
+        cache.syncPut("expire-event", "v1", new CachePolicy(System.currentTimeMillis() + 200, 0));
+        assertEquals("v1", db.persistedValue("expire-event"));
+        Thread.sleep(300);
+
+        db.blockDelete = true;
+        db.resetDeleteBlock();
+        assertNull(cache.get("expire-event"));
+        assertTrue(db.deleteStarted.await(1, TimeUnit.SECONDS));
+        assertEquals(0, expiredEvents.get());
+
+        db.allowDelete.countDown();
+        db.blockDelete = false;
+        cache.flush("expire-event");
+
+        assertEquals(1, expiredEvents.get());
     }
 
     @Test
