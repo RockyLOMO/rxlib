@@ -72,12 +72,17 @@ jobs:
           PORT="$SSH_RSS_SVR_PORT"
           USER="$SSH_USERNAME"
           DEST="/home/${{ env.REMOTE_DIR }}/"
+          if [[ -z "${HOST:-}" || -z "${PORT:-}" || -z "${USER:-}" || -z "${SSHPASS:-}" ]]; then
+            echo "Error: SSH secrets are incomplete"
+            exit 1
+          fi
           MAX_ATTEMPTS=5
           RETRY_DELAY_SEC=15
           for i in $(seq 1 "$MAX_ATTEMPTS"); do
             echo "SCP attempt $i/$MAX_ATTEMPTS -> ${USER}@${HOST}:${DEST}"
             getent hosts "$HOST" >/dev/null 2>&1 || true
-            if sshpass -e scp -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+            if sshpass -e scp -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+                -o StrictHostKeyChecking=accept-new \
                 -o ConnectTimeout=30 -P "$PORT" \
                 app.jar.publish start.sh rollback.sh \
                 "${USER}@${HOST}:${DEST}"; then
