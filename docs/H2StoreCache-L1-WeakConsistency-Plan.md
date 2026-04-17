@@ -52,6 +52,12 @@
 - `[已完成]` `containsValue()` 增加真实值校验
   - 先按 `valIdx` 缩小候选集合
   - 再比对真实 `value`，避免哈希碰撞导致假阳性
+- `[已完成]` `DEFAULT` 默认实例改为 lazy start
+  - 类加载阶段不再立即建表、起 stripe worker、挂 `expungeTask`
+  - 只有第一次真正访问需要 H2/后台线程的 API 时，才启动底层资源
+- `[已完成]` 顶层 `Map` API 已与 live view 对齐
+  - `size()` 改为 live size
+  - `containsValue()` 现在会同时考虑 pending-only 值和 pending remove 覆盖
 
 ## 1. 背景与现状
 

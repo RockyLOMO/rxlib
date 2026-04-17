@@ -19,5 +19,7 @@
     "java.configuration.maven.userSettings": "C:\\Users\\R-wtg\\.m2\\settings.xml",
     //"java.server.launchMode": "Standard",
     "maven.view": "flat",
-    "java.configuration.updateBuildConfiguration": "automatic"
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "editor.fontSize": 15,
+    "window.zoomLevel": 0.2
 }

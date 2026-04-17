@@ -79,6 +79,7 @@ public class H2StoreCacheTest extends AbstractTester {
         final AtomicInteger findByIdCalls = new AtomicInteger();
         final AtomicInteger saveCalls = new AtomicInteger();
         final AtomicInteger deleteCalls = new AtomicInteger();
+        final AtomicInteger createMappingCalls = new AtomicInteger();
         final AtomicInteger failSaveTimes = new AtomicInteger();
         final AtomicInteger failDeleteTimes = new AtomicInteger();
         volatile boolean blockSave;
@@ -237,6 +238,7 @@ public class H2StoreCacheTest extends AbstractTester {
 
         @Override
         public void createMapping(Class<?>... entityTypes) {
+            createMappingCalls.incrementAndGet();
         }
 
         @Override
@@ -414,6 +416,25 @@ public class H2StoreCacheTest extends AbstractTester {
         H2StoreCache<String, String> cache = new H2StoreCache<>(new TrackingEntityDatabase());
         assertEquals(H2StoreCache.DEFAULT_L1_CACHE_MAX_SIZE, cache.l1CacheMaxSize());
         assertEquals(H2StoreCache.DEFAULT_STRIPE_COUNT, cache.stripeCount());
+    }
+
+    @Test
+    public void testLazyStartDefersWorkersAndMappingUntilFirstUse() {
+        TrackingEntityDatabase db = new TrackingEntityDatabase();
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1, true);
+        try {
+            assertEquals(0, db.createMappingCalls.get());
+            assertTrue(cache.stripes.isEmpty());
+            assertNull(cache.expungeTask);
+
+            assertNull(cache.put("lazy-key", "lazy-value", null));
+
+            assertEquals(1, db.createMappingCalls.get());
+            assertEquals(1, cache.stripes.size());
+            assertNotNull(cache.expungeTask);
+        } finally {
+            cache.close();
+        }
     }
 
     @Test
@@ -673,6 +694,31 @@ public class H2StoreCacheTest extends AbstractTester {
             assertEquals(0, cache.entrySet(prefix).size());
             assertFalse(cache.containsPhysicalKey(H2StoreCache.wrapPhysicalKey("key-1", prefix)));
             assertFalse(cache.containsPhysicalKey(H2StoreCache.wrapPhysicalKey("key-2", prefix)));
+        } finally {
+            db.allowSave.countDown();
+            db.blockSave = false;
+            cache.close();
+        }
+    }
+
+    @Test
+    public void testTopLevelMapApisFollowLiveViewForPendingOnlyItems() throws Exception {
+        TrackingEntityDatabase db = new TrackingEntityDatabase();
+        db.blockSave = true;
+        db.resetSaveBlock();
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
+        try {
+            cache.fastPut("map-live", "v1");
+            assertTrue(db.saveStarted.await(1, TimeUnit.SECONDS));
+
+            assertEquals(1, cache.size());
+            assertEquals(1, cache.entrySet().size());
+            assertTrue(cache.containsValue("v1"));
+
+            cache.fastRemove("map-live");
+            assertEquals(0, cache.size());
+            assertEquals(0, cache.entrySet().size());
+            assertFalse(cache.containsValue("v1"));
         } finally {
             db.allowSave.countDown();
             db.blockSave = false;

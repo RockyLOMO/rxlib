@@ -488,7 +488,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     public static final H2StoreCache<?, ?> DEFAULT;
 
     static {
-        IOC.register(H2StoreCache.class, DEFAULT = new H2StoreCache<>());
+        IOC.register(H2StoreCache.class, DEFAULT = new H2StoreCache<>(EntityDatabase.DEFAULT, DEFAULT_L1_CACHE_MAX_SIZE, DEFAULT_STRIPE_COUNT, true));
     }
 
     public final Delegate<H2StoreCache<TK, TV>, Map.Entry<TK, TV>> onExpired = Delegate.create();
@@ -519,8 +519,11 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     final List<StripeState> stripes;
     final int stripeCount;
     final int stripeMask;
+    final int cacheId;
+    final boolean lazyStart;
     volatile ScheduledFuture<?> expungeTask;
     volatile boolean closed;
+    volatile boolean started;
 
     public H2StoreCache() {
         this(EntityDatabase.DEFAULT, DEFAULT_L1_CACHE_MAX_SIZE, DEFAULT_STRIPE_COUNT);
@@ -535,26 +538,28 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public H2StoreCache(@NonNull EntityDatabase db, long l1CacheMaxSize, int stripeCount) {
+        this(db, l1CacheMaxSize, stripeCount, false);
+    }
+
+    H2StoreCache(@NonNull EntityDatabase db, long l1CacheMaxSize, int stripeCount, boolean lazyStart) {
         if (l1CacheMaxSize <= 0) {
             throw new IllegalArgumentException("l1CacheMaxSize must be > 0");
         }
         if (stripeCount <= 0) {
             throw new IllegalArgumentException("stripeCount must be > 0");
         }
-        db.createMapping(H2CacheItem.class);
         this.db = db;
         this.l1CacheMaxSize = l1CacheMaxSize;
+        this.lazyStart = lazyStart;
         l1Cache = new MemoryCache<>(b -> b.maximumSize(l1CacheMaxSize));
 
         this.stripeCount = roundUpToPowerOfTwo(stripeCount);
         stripes = new ArrayList<>(this.stripeCount);
         stripeMask = this.stripeCount - 1;
-        int cacheId = CACHE_COUNTER.incrementAndGet();
-        for (int i = 0; i < this.stripeCount; i++) {
-            stripes.add(new StripeState(cacheId, i));
+        cacheId = CACHE_COUNTER.incrementAndGet();
+        if (!lazyStart) {
+            startIfNeeded();
         }
-
-        scheduleExpungeTask();
     }
 
     public void setExpungePeriod(long expungePeriod) {
@@ -563,7 +568,9 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             throw new IllegalArgumentException("expungePeriod must be > 0");
         }
         this.expungePeriod = expungePeriod;
-        scheduleExpungeTask();
+        if (started) {
+            scheduleExpungeTask();
+        }
     }
 
     // region core api
@@ -592,13 +599,13 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public int size() {
-        ensureOpen();
-        return countPersisted(new EntityQueryLambda<>(H2CacheItem.class));
+        ensureReady();
+        return setView.size();
     }
 
     @Override
     public boolean containsKey(Object key) {
-        ensureOpen();
+        ensureReady();
         return containsPhysicalKey(requireKey(key));
     }
 
@@ -609,7 +616,22 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public boolean containsValue(Object value) {
-        ensureOpen();
+        ensureReady();
+        long nowEpoch = epoch.get();
+        for (PendingOp op : new ArrayList<>(pendingLatest.values())) {
+            if (op == null) {
+                continue;
+            }
+            if (op.epoch != nowEpoch) {
+                pendingLatest.remove(op.physicalKey, op);
+                continue;
+            }
+            H2CacheItem<TK, TV> pending = pendingVisibleItem(op.physicalKey);
+            if (pending != null && !pending.isTombstone() && Objects.equals(value, pending.getValue())) {
+                return true;
+            }
+        }
+
         long valueHash = CodecUtil.hash64(value);
         Long cursor = null;
         int batchSize = Math.max(1, prefetchCount);
@@ -637,7 +659,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV get(Object key) {
-        ensureOpen();
+        ensureReady();
         H2CacheItem<TK, TV> item = resolveVisibleItem(requireKey(key), true);
         return item == null || item.isTombstone() ? null : item.getValue();
     }
@@ -645,13 +667,13 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV put(TK key, TV value, CachePolicy policy) {
-        ensureOpen();
+        ensureReady();
         requireKey(key);
         return putPhysicalKey(key, key, value, policy, buildRegion(key.getClass(), null));
     }
 
     public TV syncPut(TK key, TV value, CachePolicy policy) {
-        ensureOpen();
+        ensureReady();
         requireKey(key);
         WriteResult<TV> result = submitPut(key, key, value, policy, buildRegion(key.getClass(), null), true);
         awaitFlush(result.op.physicalKey, result.op.seq);
@@ -663,7 +685,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void fastPut(TK key, TV value, CachePolicy policy) {
-        ensureOpen();
+        ensureReady();
         requireKey(key);
         submitPut(key, key, value, policy, buildRegion(key.getClass(), null), false);
     }
@@ -673,7 +695,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void fastPut(String keyPrefix, TK key, TV value, CachePolicy policy) {
-        ensureOpen();
+        ensureReady();
         requireKey(key);
         Object physicalKey = wrapPhysicalKey(key, keyPrefix);
         submitPut(physicalKey, key, value, policy, buildRegion(key.getClass(), keyPrefix), false);
@@ -691,12 +713,12 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     @SuppressWarnings(NON_UNCHECKED)
     @Override
     public TV remove(Object key) {
-        ensureOpen();
+        ensureReady();
         return removePhysicalKey(requireKey(key));
     }
 
     public TV syncRemove(Object key) {
-        ensureOpen();
+        ensureReady();
         requireKey(key);
         WriteResult<TV> result = submitRemove(key, true);
         if (result.op != null) {
@@ -706,7 +728,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void fastRemove(Object key) {
-        ensureOpen();
+        ensureReady();
         requireKey(key);
         submitRemove(key, false);
     }
@@ -718,7 +740,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public void clear() {
-        ensureOpen();
+        ensureReady();
         dbLock.writeLock().lock();
         try {
             epoch.incrementAndGet();
@@ -735,7 +757,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void flush() {
-        ensureOpen();
+        ensureReady();
         Map<Object, Long> snapshot = new LinkedHashMap<>();
         long nowEpoch = epoch.get();
         for (Map.Entry<Object, PendingOp> entry : pendingLatest.entrySet()) {
@@ -757,7 +779,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public void flush(Object key) {
-        ensureOpen();
+        ensureReady();
         requireKey(key);
         PendingOp op = pendingLatest.get(key);
         if (op == null) {
@@ -788,6 +810,9 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     public int pendingQueueSize() {
         ensureOpen();
+        if (!started) {
+            return 0;
+        }
         int size = 0;
         for (StripeState stripe : stripes) {
             size += stripe.queue.size();
@@ -800,17 +825,20 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         if (stripeIndex < 0 || stripeIndex >= stripeCount) {
             throw new IllegalArgumentException("stripeIndex out of range");
         }
+        if (!started) {
+            return 0;
+        }
         return stripes.get(stripeIndex).queue.size();
     }
 
     @Override
     public Set<Entry<TK, TV>> entrySet() {
-        ensureOpen();
+        ensureReady();
         return setView;
     }
 
     public EntrySetView entrySet(int offset, int size) {
-        ensureOpen();
+        ensureReady();
         return new EntrySetView(null, offset, size);
     }
 
@@ -819,7 +847,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public EntrySetView entrySet(String keyPrefix, int offset, int size) {
-        ensureOpen();
+        ensureReady();
         if (keyPrefix == null && offset == 0 && size == Integer.MAX_VALUE) {
             return setView;
         }
@@ -828,7 +856,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @Override
     public Set<TK> asSet() {
-        ensureOpen();
+        ensureReady();
         return setView.keys();
     }
 
@@ -837,17 +865,17 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     public Set<TK> asSet(String keyPrefix, int offset, int size) {
-        ensureOpen();
+        ensureReady();
         return entrySet(keyPrefix, offset, size).keys();
     }
 
     public Iterator<Entry<TK, TV>> iterator(int offset, int size) {
-        ensureOpen();
+        ensureReady();
         return entrySet(offset, size).iterator();
     }
 
     public Iterator<Entry<TK, TV>> iterator(String keyPrefix, int offset, int size) {
-        ensureOpen();
+        ensureReady();
         return entrySet(keyPrefix, offset, size).iterator();
     }
 
@@ -1384,10 +1412,29 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         expungeTask = Tasks.schedulePeriod(this::expungeStale, expungePeriod);
     }
 
+    synchronized void startIfNeeded() {
+        if (started || closed) {
+            return;
+        }
+        db.createMapping(H2CacheItem.class);
+        if (stripes.isEmpty()) {
+            for (int i = 0; i < stripeCount; i++) {
+                stripes.add(new StripeState(cacheId, i));
+            }
+        }
+        scheduleExpungeTask();
+        started = true;
+    }
+
     void ensureOpen() {
         if (closed) {
             throw new IllegalStateException("cache closed");
         }
+    }
+
+    void ensureReady() {
+        ensureOpen();
+        startIfNeeded();
     }
 
     @Override
