@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
@@ -110,6 +111,8 @@ public final class Tasks {
 
     private static void setStaticField(Class<?> type, String fieldName, Object value) throws NoSuchFieldException, IllegalAccessException {
         Field field = type.getDeclaredField(fieldName);
+        // Avoid Reflects during Tasks bootstrap, but keep the old final-field stripping behavior.
+        FieldUtils.removeFinalModifier(field);
         field.setAccessible(true);
         field.set(null, value);
     }
