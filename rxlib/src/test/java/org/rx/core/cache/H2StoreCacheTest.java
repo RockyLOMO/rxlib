@@ -4,7 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.bean.DataTable;
-import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.CachePolicy;
 import org.rx.io.EntityDatabase;
@@ -12,7 +11,6 @@ import org.rx.io.EntityQueryLambda;
 
 import java.io.Serializable;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -574,8 +572,13 @@ public class H2StoreCacheTest extends AbstractTester {
             }
             cache.flush();
 
-            List<String> expected = new ArrayList<>(keys);
-            expected.sort(Comparator.comparingLong(p -> CodecUtil.hash64(Tuple.of(prefix, p))));
+            List<H2CacheItem> persisted = cache.findPersistedItems(new EntityQueryLambda<>(H2CacheItem.class)
+                    .like(H2CacheItem::getRegion, H2StoreCache.buildRegionNamespace(prefix) + ":%")
+                    .orderBy(H2CacheItem::getId));
+            List<String> expected = new ArrayList<>();
+            for (H2CacheItem item : persisted) {
+                expected.add((String) H2StoreCache.unwrapPhysicalKey(item.getKey(), prefix));
+            }
 
             List<String> firstPage = new ArrayList<>();
             for (Map.Entry<String, Boolean> entry : cache.entrySet(prefix, 0, 3)) {
@@ -589,6 +592,39 @@ public class H2StoreCacheTest extends AbstractTester {
 
             assertEquals(expected.subList(0, 3), firstPage);
             assertEquals(expected.subList(3, 6), secondPage);
+        } finally {
+            set.clear();
+            cache.flush();
+        }
+    }
+
+    @Test
+    public void testEntrySetLargeOffsetUsesSeekPagination() {
+        H2StoreCache<String, Boolean> cache = new H2StoreCache<>();
+        cache.setPrefetchCount(2);
+        String prefix = "h2-seek-" + UUID.randomUUID();
+        Set<String> set = cache.asSet(prefix);
+        List<String> keys = Arrays.asList("key-0", "key-1", "key-2", "key-3", "key-4", "key-5", "key-6", "key-7", "key-8", "key-9");
+        try {
+            for (String key : keys) {
+                cache.fastPut(prefix, key, Boolean.TRUE);
+            }
+            cache.flush();
+
+            List<H2CacheItem> persisted = cache.findPersistedItems(new EntityQueryLambda<>(H2CacheItem.class)
+                    .like(H2CacheItem::getRegion, H2StoreCache.buildRegionNamespace(prefix) + ":%")
+                    .orderBy(H2CacheItem::getId));
+            List<String> expected = new ArrayList<>();
+            for (H2CacheItem item : persisted) {
+                expected.add((String) H2StoreCache.unwrapPhysicalKey(item.getKey(), prefix));
+            }
+
+            List<String> page = new ArrayList<>();
+            for (Map.Entry<String, Boolean> entry : cache.entrySet(prefix, 7, 2)) {
+                page.add(entry.getKey());
+            }
+
+            assertEquals(expected.subList(7, 9), page);
         } finally {
             set.clear();
             cache.flush();

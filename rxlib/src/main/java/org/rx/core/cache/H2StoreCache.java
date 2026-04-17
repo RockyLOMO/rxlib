@@ -260,34 +260,40 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
                 return IteratorUtils.emptyIterator();
             }
 
-            final int[] state = {offset, 0, iterateSize};
-            int firstSize = Math.min(prefetchCount, state[2]);
-            List<H2CacheItem> firstPage = findPersistedItems(newQuery().limit(state[0], firstSize));
+            final Long[] cursor = {null};
+            final int[] remaining = {iterateSize};
+            if (!skipOffset(cursor, offset)) {
+                return IteratorUtils.emptyIterator();
+            }
+
+            int firstSize = pageBatchSize(remaining[0]);
+            List<H2CacheItem> firstPage = fetchPageAfterId(cursor[0], firstSize);
             if (firstPage.isEmpty()) {
                 return IteratorUtils.emptyIterator();
             }
-            state[0] += firstPage.size();
+            cursor[0] = firstPage.get(firstPage.size() - 1).getId();
             return new AbstractSequentialIterator<H2CacheItem>(firstPage.get(0)) {
                 List<H2CacheItem> page = firstPage;
                 H2CacheItem current;
+                int pageIndex;
 
                 @Override
                 protected H2CacheItem computeNext(H2CacheItem previous) {
                     current = previous;
-                    if (--state[2] <= 0) {
+                    if (--remaining[0] <= 0) {
                         return null;
                     }
                     while (true) {
-                        if (++state[1] == page.size()) {
-                            int nextSize = Math.min(prefetchCount, state[2]);
-                            page = findPersistedItems(newQuery().limit(state[0], nextSize));
+                        if (++pageIndex == page.size()) {
+                            int nextSize = pageBatchSize(remaining[0]);
+                            page = fetchPageAfterId(cursor[0], nextSize);
                             if (page.isEmpty()) {
                                 return null;
                             }
-                            state[0] += page.size();
-                            state[1] = 0;
+                            cursor[0] = page.get(page.size() - 1).getId();
+                            pageIndex = 0;
                         }
-                        return page.get(state[1]);
+                        return page.get(pageIndex);
                     }
                 }
 
@@ -305,6 +311,36 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             }
             q.orderBy(H2CacheItem::getId);
             return q;
+        }
+
+        boolean skipOffset(Long[] cursor, int offset) {
+            int remaining = offset;
+            while (remaining > 0) {
+                int batchSize = pageBatchSize(remaining);
+                List<H2CacheItem> skipped = fetchPageAfterId(cursor[0], batchSize);
+                if (skipped.isEmpty()) {
+                    return false;
+                }
+                cursor[0] = skipped.get(skipped.size() - 1).getId();
+                remaining -= skipped.size();
+            }
+            return true;
+        }
+
+        List<H2CacheItem> fetchPageAfterId(Long afterId, int limit) {
+            if (limit <= 0) {
+                return Collections.emptyList();
+            }
+            EntityQueryLambda<H2CacheItem> q = newQuery();
+            if (afterId != null) {
+                q.gt(H2CacheItem::getId, afterId);
+            }
+            q.limit(limit);
+            return findPersistedItems(q);
+        }
+
+        int pageBatchSize(int remaining) {
+            return Math.max(1, Math.min(Math.max(1, prefetchCount), remaining));
         }
 
         public Set<TK> keys() {

@@ -39,9 +39,10 @@
 - `[已完成]` sliding renew 去重窗口收紧
   - 已有未落库 `PUT/RENEW` 时，后续 `get()` 只续期同一份快照，不再反复创建新的 `RENEW`
   - 若 renew 正在 worker 中刷库，会在刷完后最多补刷一次，避免把最新过期时间丢到 DB 之外
-- `[已完成]` `entrySet()/iterator()` 改为稳定 `id` 排序分页
+- `[已完成]` `entrySet()/iterator()` 收敛为 seek pagination
   - 当前分页查询已显式 `order by id asc`
-  - `offset + limit` 至少建立在稳定顺序之上，跨页不再受 H2 默认返回顺序影响
+  - 对外仍保留 `offset/size` 语义，但内部已改为 `id > lastSeenId` 的游标推进
+  - 大 offset 不再直接下推成 H2 `OFFSET` 扫描
 - `[已完成]` `onExpired` 改为删除提交后触发
   - 过期路径会先把事件快照挂到 `REMOVE` op 上
   - 只有 stripe worker 成功完成删除提交后，才真正触发 `onExpired`
@@ -1123,8 +1124,9 @@ worker 从队列取到 key 后：
 当前实现：
 
 - `newQuery()` 已追加 `orderBy(H2CacheItem::getId)`
-- 这一步先保证“同一批数据分页顺序稳定可推断”
-- 后续如果数据量再上去，仍建议升级成 seek pagination，避免大 offset 扫描成本
+- `itemIterator()` 已从 `offset + limit` 分页切到“基于上次 `id`”的 seek pagination
+- 对外 API 仍然维持 `entrySet(prefix, offset, size)`，但内部已不再依赖 H2 `OFFSET`
+- 这样既保留了现有调用方契约，也把大 offset 的扫描成本收敛到了逐页 seek 前进
 
 ### 17.5 `onExpired` 事件触发早于持久层删除完成，监听方可能看到“事件先于事实”
 
@@ -1169,7 +1171,7 @@ worker 从队列取到 key 后：
 
 如果后续继续演进，我建议优先看这两个方向：
 
-1. 把 `offset + limit` 升级成 seek pagination，进一步降低大页遍历成本
+1. 为遍历接口补显式 cursor API，避免超大 offset 仍需要前置跳页
 2. 把当前进程内观测接口接入正式监控，持续跟踪：
    - L1 命中率
    - `pendingWriteCount`
