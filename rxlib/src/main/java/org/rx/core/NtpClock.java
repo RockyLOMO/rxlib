@@ -10,11 +10,13 @@ import net.bytebuddy.implementation.Implementation;
 import net.bytebuddy.implementation.StubMethod;
 import net.bytebuddy.matcher.ElementMatchers;
 import org.rx.io.Files;
-import org.rx.third.apache.ntp.NTPUDPClient;
-import org.rx.third.apache.ntp.TimeInfo;
+import org.rx.net.Sockets;
+import org.rx.net.ntp.NtpPacket;
+import org.rx.net.ntp.NtpResult;
 
 import java.io.Serializable;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -110,23 +112,24 @@ public class NtpClock extends Clock implements Serializable {
 
     @SneakyThrows
     public static void sync() {
-        NTPUDPClient client = new NTPUDPClient();
-        RxConfig.NtpConfig conf = RxConfig.INSTANCE.net.ntp;
-        client.setDefaultTimeout((int) conf.timeoutMillis);
-        client.open();
-        eachQuietly(conf.servers, p -> {
-            final TimeInfo info = client.getTime(InetAddress.getByName(p));
-            info.computeDetails();
-            offset = ifNull(info.getOffset(), 0L);
-            log.debug("ntp sync with {} -> {}", p, offset);
-            long[] tsAgent = Sys.getAdviceShareTime();
-            if (injected = tsAgent != null) {
-                tsAgent[1] += offset;
-                log.debug("ntp inject offset {}", offset);
-            }
-            circuitContinue(false);
-        });
-        client.close();
+        try (org.rx.net.ntp.NtpClient client = new org.rx.net.ntp.NtpClient()) {
+            RxConfig.NtpConfig conf = RxConfig.INSTANCE.net.ntp;
+            client.setTimeoutMillis((int) conf.timeoutMillis);
+            eachQuietly(conf.servers, p -> {
+                InetSocketAddress server = p.contains(":") ? Sockets.parseEndpoint(p) : new InetSocketAddress(p, org.rx.net.ntp.NtpPacket.NTP_PORT);
+                try (org.rx.net.ntp.NtpResult result = client.getTime(server)) {
+                    offset = result.getOffsetMillis();
+                    log.debug("ntp sync with {} -> {}", p, offset);
+                    long[] tsAgent = Sys.getAdviceShareTime();
+                    if (tsAgent != null) {
+                        injected = true;
+                        tsAgent[1] += offset;
+                        log.debug("ntp inject offset {}", offset);
+                    }
+                    circuitContinue(false);
+                }
+            });
+        }
     }
 
     @Getter

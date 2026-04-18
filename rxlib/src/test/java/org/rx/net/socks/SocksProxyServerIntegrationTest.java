@@ -80,7 +80,7 @@ class SocksProxyServerIntegrationTest {
 
     @BeforeAll
     static void setup() throws Exception {
-        RxConfig.INSTANCE.getDisk().setH2DbPath("./target/test-h2-socks-" + System.nanoTime());
+        RxConfig.INSTANCE.getStorage().setH2DbPath("./target/test-h2-socks-" + System.nanoTime());
         tcpEchoBootstrap = Sockets.serverBootstrap(ch -> ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
             @Override
             public void channelRead(ChannelHandlerContext ctx, Object msg) {
