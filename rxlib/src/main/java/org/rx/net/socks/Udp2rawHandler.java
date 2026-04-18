@@ -110,6 +110,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         } else if (clientAddr == null || !clientAddr.equals(sender)) {
             relay.attr(ATTR_CLIENT_ADDR).set(sender);
         }
+        if (Boolean.TRUE.equals(relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).get())) {
+            UdpRelayAttributes.addRedundantPeer(relay, sender);
+        }
 
         InetSocketAddress clientEp = EndpointTracer.UDP.find(sender);
         if (clientEp == null) {
@@ -141,6 +144,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
 
         if (targetAddr != null) {
+            UdpRelayAttributes.addRedundantPeer(relay, targetAddr);
             ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
             if (ctxMap == null) {
                 relay.attr(ATTR_CTX_MAP).set(ctxMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap());
@@ -210,6 +214,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         } else if (clientAddr == null || !clientAddr.equals(sender)) {
             relay.attr(ATTR_CLIENT_ADDR).set(sender);
         }
+        if (Boolean.TRUE.equals(relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).get())) {
+            UdpRelayAttributes.addRedundantPeer(relay, sender);
+        }
 
         // Ensure per-relay context map exists
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
@@ -234,9 +241,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             
             // Register upstream address → context for response demultiplexing
             Upstream upstream = e.getUpstream();
-            InetSocketAddress udpRelayAddr = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream 
+            InetSocketAddress udpRelayAddr = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream
                     ? ((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
-            InetSocketAddress upDstAddr = udpRelayAddr != null ? udpRelayAddr : dstEp.socketAddress();
+            InetSocketAddress upDstAddr = udpRelayAddr != null ? udpRelayAddr : upstream.getDestination().socketAddress();
             ctxMap.put(upDstAddr, e);
             routeMap.put(dstEp, e);
         }
@@ -252,7 +259,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             upDstEp = new UnresolvedEndpoint(((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(relay));
             inBuf = UdpManager.socks5Encode(inBuf.retain(), dstEp);
         } else {
-            upDstEp = dstEp;
+            upDstEp = upstream.getDestination();
             inBuf = inBuf.retain();
         }
 

@@ -172,6 +172,34 @@ public class UdpRedundantTest {
         assertEquals(0, payload.refCnt());
     }
 
+    @Test
+    public void testEncoderOnlyAppliesToRegisteredTunnelPeers() {
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0);
+        EmbeddedChannel channel = new EmbeddedChannel(encoder);
+        UdpRelayAttributes.initRedundantPeers(channel);
+
+        ByteBuf directPayload = Unpooled.copiedBuffer("plain".getBytes(StandardCharsets.UTF_8));
+        channel.writeOutbound(new DatagramPacket(directPayload, REMOTE));
+
+        DatagramPacket direct = channel.readOutbound();
+        assertNotNull(direct);
+        assertEquals("plain", direct.content().toString(StandardCharsets.UTF_8));
+        direct.release();
+        assertNull(channel.readOutbound(), "未登记的目的地不应放大或添加 RDNT 头");
+
+        UdpRelayAttributes.addRedundantPeer(channel, REMOTE);
+        ByteBuf tunneledPayload = Unpooled.copiedBuffer("peer".getBytes(StandardCharsets.UTF_8));
+        channel.writeOutbound(new DatagramPacket(tunneledPayload, REMOTE));
+
+        for (int i = 0; i < 3; i++) {
+            DatagramPacket out = channel.readOutbound();
+            assertNotNull(out, "登记过的 tunnel peer 应继续走多倍发送");
+            assertEquals(UdpRedundantEncoder.HEADER_MAGIC, out.content().readInt());
+            out.release();
+        }
+        assertNull(channel.readOutbound());
+    }
+
     // ===================== Decoder 测试 =====================
 
     @Test
