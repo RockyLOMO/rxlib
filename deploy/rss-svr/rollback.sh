@@ -72,25 +72,14 @@ archive_current_jar() {
   cleanup_backup_jars
 }
 
-get_fuser_cmd() {
-  if [ -x "/usr/sbin/fuser" ]; then
-    echo "/usr/sbin/fuser"
-    return 0
+port_in_use() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${PORT}$" && return 0
   fi
-  if command -v fuser >/dev/null 2>&1; then
-    command -v fuser
-    return 0
+  if command -v netstat >/dev/null 2>&1; then
+    netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${PORT}$" && return 0
   fi
   return 1
-}
-
-run_fuser_kill() {
-  local signal_arg="${1:-}"
-  local fuser_cmd
-  fuser_cmd=$(get_fuser_cmd) || return 0
-  "${fuser_cmd}" ${signal_arg} ${PORT}/tcp >/dev/null 2>&1 && return 0
-  sudo -n "${fuser_cmd}" ${signal_arg} ${PORT}/tcp >/dev/null 2>&1 && return 0
-  return 0
 }
 
 kill_by_pattern() {
@@ -107,10 +96,52 @@ ${pid_list}
 EOF
 }
 
+process_exists() {
+  pgrep -f "${JAVA_PROCESS_KEYWORD}" >/dev/null 2>&1
+}
+
+get_process_pid() {
+  pgrep -f "${JAVA_PROCESS_KEYWORD}" | head -1
+}
+
+wait_for_startup() {
+  local wait_count pid
+  wait_count=0
+  while [ ${wait_count} -lt 30 ]; do
+    if port_in_use; then
+      pid=$(get_process_pid)
+      echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${pid}"
+      return 0
+    fi
+    if ! process_exists; then
+      echo "${RED}[${LOCAL_TIME}] 启动失败！进程已退出，请手动执行查看错误"
+      return 1
+    fi
+    if [ ${wait_count} -eq 0 ]; then
+      pid=$(get_process_pid)
+      echo "${YELLOW}[${LOCAL_TIME}] 进程已启动，等待端口 ${PORT}/tcp 完成绑定... PID: ${pid}"
+    fi
+    sleep 1
+    wait_count=$((wait_count + 1))
+  done
+  pid=$(get_process_pid)
+  echo "${RED}[${LOCAL_TIME}] 启动超时！进程仍在运行但端口 ${PORT}/tcp 未完成绑定，PID: ${pid}"
+  return 1
+}
+
 echo "${RED}[${LOCAL_TIME}] 发布模式：正在终止端口 ${PORT}/tcp 的旧进程..."
-run_fuser_kill "-k"
 kill_by_pattern "-15"
 sleep 2  # 等待进程完全退出和端口释放
+
+if process_exists || port_in_use; then
+  kill_by_pattern "-9"
+  sleep 1
+fi
+
+if process_exists || port_in_use; then
+  echo "${RED}[${LOCAL_TIME}] 旧进程仍未退出，请手动处理"
+  exit 1
+fi
 
 if [ -f "app.jar.latest" ]; then
   archive_current_jar
@@ -119,12 +150,4 @@ fi
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
 nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >/dev/null 2>&1 &
-sleep 5
-
-if /usr/sbin/fuser ${PORT}/tcp >/dev/null 2>&1; then
-    PID=$(/usr/sbin/fuser ${PORT}/tcp 2>/dev/null | awk '{print $1}' | head -1)
-    echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${PID}"
-else
-    echo "${RED}[${LOCAL_TIME}] 启动失败！请手动执行查看错误"
-    exit 1
-fi
+wait_for_startup || exit 1
