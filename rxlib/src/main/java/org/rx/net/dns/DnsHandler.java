@@ -196,8 +196,17 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        Throwable rootCause = cause instanceof DecoderException ? cause.getCause() : cause;
-        if (rootCause instanceof IndexOutOfBoundsException || rootCause instanceof io.netty.handler.codec.CorruptedFrameException) {
+        Throwable e = cause;
+        boolean isMalformed = false;
+        while (e != null) {
+            if (e instanceof IndexOutOfBoundsException || e instanceof io.netty.handler.codec.CorruptedFrameException) {
+                isMalformed = true;
+                break;
+            }
+            e = e.getCause();
+        }
+
+        if (isMalformed) {
             log.warn("丢弃畸形 DNS 数据包 (来源: {}): {}", ctx.channel().remoteAddress(), cause.getMessage());
             return;
         }

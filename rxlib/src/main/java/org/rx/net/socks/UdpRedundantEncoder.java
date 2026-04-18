@@ -1,7 +1,6 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
@@ -159,7 +158,8 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
             ByteBuf content = original.content();
             int seqId = seqGenerator.incrementAndGet();
 
-            // 优化：直接在原始内容上添加头部，避免额外拷贝
+            // 线上 epoll 已确认 composite 首包仍可能触发 sendmmsg/sendToAddress EINVAL，
+            // 冗余模式统一改为连续 direct buffer，优先保证 Linux 原生发送兼容性。
             ByteBuf firstBuf = prependHeader(ctx, content, seqId);
 
             if (intervalMicros > 0) {
@@ -209,21 +209,16 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
     }
 
     private ByteBuf prependHeader(ChannelHandlerContext ctx, ByteBuf payload, int seqId) {
-        // 优化：预计算头部大小，避免动态调整
-        ByteBuf header = ctx.alloc().directBuffer(HEADER_SIZE);
-        header.writeInt(HEADER_MAGIC);
-        header.writeInt(seqId);
-        
-        // 优化：使用CompositeByteBuf实现零拷贝
-        CompositeByteBuf composite = ctx.alloc().compositeDirectBuffer(2);
+        int len = payload.readableBytes();
+        int ri = payload.readerIndex();
+        ByteBuf buf = ctx.alloc().directBuffer(HEADER_SIZE + len);
         try {
-            // payload.retain()增加引用计数，确保payload不被释放
-            composite.addComponents(true, header, payload.retain());
-            return composite;
+            buf.writeInt(HEADER_MAGIC);
+            buf.writeInt(seqId);
+            buf.writeBytes(payload, ri, len);
+            return buf;
         } catch (Exception e) {
-            header.release();
-            composite.release();
-            payload.release(); // 释放之前retain的引用
+            buf.release();
             throw e;
         }
     }

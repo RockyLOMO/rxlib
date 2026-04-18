@@ -11,6 +11,9 @@ import org.rx.bean.FlagsEnum;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.sql.Time;
 import java.util.Collections;
 import java.util.List;
@@ -26,11 +29,33 @@ public final class Tasks {
     //Random load balance, if methodA wait methodA, methodA is executing wait and methodB is in ThreadPoolQueue, then there will be a false death.
     static final List<ThreadPool> nodes = new CopyOnWriteArrayList<>();
     static final ExecutorService executor;
+    static final ExecutorService completableFutureExecutor;
     static final WheelTimer timer;
     static final Queue<Action> shutdownActions = new ConcurrentLinkedQueue<>();
+    static final Object unsafe;
+    static final Method unsafeStaticFieldBase;
+    static final Method unsafeStaticFieldOffset;
+    static final Method unsafePutObject;
     static int poolCount;
 
     static {
+        Object u = null;
+        Method staticFieldBase = null, staticFieldOffset = null, putObject = null;
+        try {
+            Field field = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
+            field.setAccessible(true);
+            u = field.get(null);
+            Class<?> unsafeType = u.getClass();
+            staticFieldBase = unsafeType.getMethod("staticFieldBase", Field.class);
+            staticFieldOffset = unsafeType.getMethod("staticFieldOffset", Field.class);
+            putObject = unsafeType.getMethod("putObject", Object.class, long.class, Object.class);
+        } catch (Throwable e) {
+            log.warn("initUnsafe", e);
+        }
+        unsafe = u;
+        unsafeStaticFieldBase = staticFieldBase;
+        unsafeStaticFieldOffset = staticFieldOffset;
+        unsafePutObject = putObject;
         executor = new AbstractExecutorService() {
             @Getter
             boolean shutdown;
@@ -76,6 +101,7 @@ public final class Tasks {
                 return shutdown;
             }
         };
+        completableFutureExecutor = Executors.unconfigurableExecutorService(executor);
         timer = new WheelTimer(executor);
 
         createPool(new ObjectChangedEvent(RxConfig.INSTANCE, Collections.emptyMap()));
@@ -98,15 +124,43 @@ public final class Tasks {
     }
 
     private static void initCompletableFutureAsyncPool() {
+        if (!setCompletableFutureAsyncPool("asyncPool") && !setCompletableFutureAsyncPool("ASYNC_POOL")) {
+            log.warn("setAsyncPool field not found");
+        }
+    }
+
+    private static boolean setCompletableFutureAsyncPool(String fieldName) {
         try {
-            Reflects.writeStaticField(CompletableFuture.class, "asyncPool", executor); //jdk8
-//            ForkJoinPoolWrapper.transform();
-        } catch (Throwable e) {
-            try {
-                Reflects.writeStaticField(CompletableFuture.class, "ASYNC_POOL", executor); //jdk11
-            } catch (Throwable ie) {
-                log.warn("setAsyncPool {}", e, ie);
+            Field field = CompletableFuture.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            // Force class initialization first, otherwise JDK17 may overwrite the patched field later.
+            field.get(null);
+            if (!Modifier.isFinal(field.getModifiers())) {
+                field.set(null, completableFutureExecutor);
+            } else if (!unsafeWriteStaticField(field, completableFutureExecutor)) {
+                return false;
             }
+            return field.get(null) == completableFutureExecutor;
+        } catch (NoSuchFieldException e) {
+            return false;
+        } catch (Throwable e) {
+            log.warn("setAsyncPool {}", fieldName, e);
+            return false;
+        }
+    }
+
+    private static boolean unsafeWriteStaticField(Field field, Object value) {
+        if (unsafe == null || unsafeStaticFieldBase == null || unsafeStaticFieldOffset == null || unsafePutObject == null) {
+            return false;
+        }
+        try {
+            Object base = unsafeStaticFieldBase.invoke(unsafe, field);
+            long offset = ((Number) unsafeStaticFieldOffset.invoke(unsafe, field)).longValue();
+            unsafePutObject.invoke(unsafe, base, offset, value);
+            return field.get(null) == value;
+        } catch (Throwable e) {
+            log.warn("unsafeWriteStaticField {}", field.getName(), e);
+            return false;
         }
     }
 
