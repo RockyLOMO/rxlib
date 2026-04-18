@@ -22,6 +22,7 @@ APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.connectTimeoutMillis=100
 DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$SCRIPT_DIR/ -XX:ErrorFile=$SCRIPT_DIR/hs_err_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED"
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
+JAVA_PROCESS_PATTERN="java .*app.jar .* -port=${PORT}"
 
 # 生成不会冲突的历史 jar 名称。
 next_backup_file() {
@@ -71,42 +72,89 @@ rotate_latest_jar() {
     cleanup_backup_jars
 }
 
-# 优先按端口杀进程，端口未绑定时再按命令行兜底，确保发布前旧进程已退出。
-stop_old_process() {
-    local pid_list pid wait_count
+# 兼容不同环境的 fuser 路径。
+get_fuser_cmd() {
+    if [ -x "/usr/sbin/fuser" ]; then
+        echo "/usr/sbin/fuser"
+        return 0
+    fi
+    if command -v fuser >/dev/null 2>&1; then
+        command -v fuser
+        return 0
+    fi
+    return 1
+}
 
-    sudo fuser -k ${PORT}/tcp >/dev/null 2>&1 || true
+# 非交互场景优先直接执行，只有在允许免密 sudo 时才尝试 sudo -n。
+run_fuser_kill() {
+    local signal_arg="${1:-}"
+    local fuser_cmd
+    fuser_cmd=$(get_fuser_cmd) || return 0
 
-    pid_list=$(pgrep -f "java .*app.jar .* -port=${PORT}" 2>/dev/null)
-    if [ -n "${pid_list}" ]; then
-        echo "${YELLOW}[${LOCAL_TIME}] 检测到残留进程，按命令行补充终止..."
-        while IFS= read -r pid; do
-            [ -n "${pid}" ] && kill "${pid}" >/dev/null 2>&1 || true
-        done <<EOF
+    "${fuser_cmd}" ${signal_arg} ${PORT}/tcp >/dev/null 2>&1 && return 0
+    sudo -n "${fuser_cmd}" ${signal_arg} ${PORT}/tcp >/dev/null 2>&1 && return 0
+    return 0
+}
+
+port_in_use() {
+    local fuser_cmd
+    fuser_cmd=$(get_fuser_cmd) || return 1
+    "${fuser_cmd}" ${PORT}/tcp >/dev/null 2>&1
+}
+
+kill_by_pattern() {
+    local signal="$1"
+    local pid_list pid
+
+    pid_list=$(pgrep -f "${JAVA_PROCESS_PATTERN}" 2>/dev/null)
+    [ -z "${pid_list}" ] && return 0
+
+    while IFS= read -r pid; do
+        if [ -n "${pid}" ]; then
+            kill "${signal}" "${pid}" >/dev/null 2>&1 || true
+        fi
+    done <<EOF
 ${pid_list}
 EOF
+}
+
+process_exists() {
+    pgrep -f "${JAVA_PROCESS_PATTERN}" >/dev/null 2>&1
+}
+
+# 优先按端口杀进程，端口未绑定时再按命令行兜底，确保发布前旧进程已退出。
+stop_old_process() {
+    local wait_count
+
+    run_fuser_kill "-k"
+    if process_exists; then
+        echo "${YELLOW}[${LOCAL_TIME}] 检测到残留进程，按命令行补充终止..."
+        kill_by_pattern "-15"
     fi
 
     wait_count=0
-    while [ ${wait_count} -lt 10 ]; do
-        if ! fuser ${PORT}/tcp >/dev/null 2>&1 && ! pgrep -f "java .*app.jar .* -port=${PORT}" >/dev/null 2>&1; then
+    while [ ${wait_count} -lt 15 ]; do
+        if ! port_in_use && ! process_exists; then
+            echo "${GREEN}[${LOCAL_TIME}] 旧进程已完全退出"
             return 0
         fi
         sleep 1
         wait_count=$((wait_count + 1))
     done
 
-    pid_list=$(pgrep -f "java .*app.jar .* -port=${PORT}" 2>/dev/null)
-    if [ -n "${pid_list}" ]; then
+    if process_exists || port_in_use; then
         echo "${YELLOW}[${LOCAL_TIME}] 旧进程未在超时内退出，执行强制终止..."
-        while IFS= read -r pid; do
-            [ -n "${pid}" ] && kill -9 "${pid}" >/dev/null 2>&1 || true
-        done <<EOF
-${pid_list}
-EOF
+        kill_by_pattern "-9"
+        run_fuser_kill "-k -9"
+        sleep 1
     fi
-    sudo fuser -k -9 ${PORT}/tcp >/dev/null 2>&1 || true
-    sleep 1
+
+    if process_exists || port_in_use; then
+        echo "${RED}[${LOCAL_TIME}] 旧进程仍未退出，请检查权限或手动处理"
+        return 1
+    fi
+    echo "${GREEN}[${LOCAL_TIME}] 旧进程已强制终止"
+    return 0
 }
 
 # 用法提示
@@ -137,8 +185,8 @@ if [ "$ACTION" = "publish" ]; then
     fi
 elif [ "$ACTION" = "start" ]; then
     echo "${RED}[${LOCAL_TIME}] 启动模式：正在检测端口 ${PORT}/tcp 的进程..."
-    if fuser ${PORT}/tcp >/dev/null 2>&1; then
-        PID=$(fuser ${PORT}/tcp 2>/dev/null | awk '{print $1}' | head -1)
+    if port_in_use; then
+        PID=$(get_fuser_cmd | xargs -I{} sh -c "'{}' ${PORT}/tcp 2>/dev/null" | awk '{print $1}' | head -1)
         echo "${GREEN}[${LOCAL_TIME}] ${PORT}/tcp 已运行，PID: ${PID}"
         exit 0
     fi
@@ -151,8 +199,8 @@ echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
 nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -udp2raw=1 >/dev/null 2>&1 &
 sleep 5
 
-if fuser ${PORT}/tcp >/dev/null 2>&1; then
-    PID=$(fuser ${PORT}/tcp 2>/dev/null | awk '{print $1}' | head -1)
+if port_in_use; then
+    PID=$(get_fuser_cmd | xargs -I{} sh -c "'{}' ${PORT}/tcp 2>/dev/null" | awk '{print $1}' | head -1)
     echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${PID}"
 else
     echo "${RED}[${LOCAL_TIME}] 启动失败！请手动执行查看错误"

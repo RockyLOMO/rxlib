@@ -32,17 +32,24 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         }
 
         ByteBuf outBuf = crypt.encrypt(inBuf);
-        if (!outBuf.isReadable()) {
-            Bytes.release(outBuf);
-            return;
-        }
+        boolean transferred = false;
+        try {
+            if (!outBuf.isReadable()) {
+                return;
+            }
 
-        if (msg instanceof DatagramPacket) {
-            msg = ((DatagramPacket) msg).replace(outBuf);
-        } else {
-            msg = outBuf;
+            if (msg instanceof DatagramPacket) {
+                msg = ((DatagramPacket) msg).replace(outBuf);
+            } else {
+                msg = outBuf;
+            }
+            out.add(msg);
+            transferred = true;
+        } finally {
+            if (!transferred) {
+                Bytes.release(outBuf);
+            }
         }
-        out.add(msg);
     }
 
     @Override
@@ -59,17 +66,24 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         boolean isUdp = inbound instanceof DatagramChannel;
         try {
             ByteBuf outBuf = crypt.decrypt(inBuf);
-            if (!outBuf.isReadable()) {
-                Bytes.release(outBuf);
-                return;
-            }
+            boolean transferred = false;
+            try {
+                if (!outBuf.isReadable()) {
+                    return;
+                }
 
-            if (isUdp) {
-                msg = ((DatagramPacket) msg).replace(outBuf);
-            } else {
-                msg = outBuf;
+                if (isUdp) {
+                    msg = ((DatagramPacket) msg).replace(outBuf);
+                } else {
+                    msg = outBuf;
+                }
+                out.add(msg);
+                transferred = true;
+            } finally {
+                if (!transferred) {
+                    Bytes.release(outBuf);
+                }
             }
-            out.add(msg);
         } catch (Exception e) {
             if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
                 log.warn("cipher decode fail {}", ExceptionUtils.getRootCause(e).toString()); // 可能是密码错误或协议嗅探

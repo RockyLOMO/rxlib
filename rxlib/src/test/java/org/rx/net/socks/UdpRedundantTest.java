@@ -86,7 +86,7 @@ public class UdpRedundantTest {
     }
 
     @Test
-    public void testRedundantCopiesUseContiguousBuffer() {
+    public void testRedundantPacketsUseContiguousBuffer() {
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0);
         EmbeddedChannel channel = new EmbeddedChannel(encoder);
 
@@ -95,7 +95,7 @@ public class UdpRedundantTest {
 
         DatagramPacket first = channel.readOutbound();
         assertNotNull(first);
-        assertTrue(first.content() instanceof CompositeByteBuf, "首包保留零拷贝 composite");
+        assertFalse(first.content() instanceof CompositeByteBuf, "首包也应使用连续缓冲，避免 epoll native EINVAL");
         first.release();
 
         DatagramPacket redundant1 = channel.readOutbound();
@@ -160,8 +160,8 @@ public class UdpRedundantTest {
         assertEquals(1, payload.refCnt());
 
         channel.writeOutbound(new DatagramPacket(payload, REMOTE));
-        // 原 DatagramPacket 已释放；payload 仅被 composite 中 retain 的一份引用
-        assertEquals(1, payload.refCnt());
+        // 首包改为连续缓冲后，原 payload 会在编码阶段被完整拷贝并立即释放。
+        assertEquals(0, payload.refCnt());
 
         for (int i = 0; i < 2; i++) {
             DatagramPacket out = channel.readOutbound();
