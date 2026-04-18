@@ -120,7 +120,7 @@ public final class Sys extends SystemUtils {
         }
 
         public boolean hasDiskUsageWarning() {
-            return getUsedPercent() > RxConfig.INSTANCE.disk.diskUsageWarningThreshold;
+            return getUsedPercent() > RxConfig.INSTANCE.storage.diskUsageWarningThreshold;
         }
     }
 
@@ -203,12 +203,12 @@ public final class Sys extends SystemUtils {
             LoggingAgent.transform();
         }
 
-        int enableFlags = config.getNet().getNtp().getEnableFlags();
-        log.info("RxMeta {} changed {}", RxConfig.ConfigNames.NTP_ENABLE_FLAGS, enableFlags);
-        if ((enableFlags & 1) == 1) {
+        int syncMode = config.getNet().getNtp().getSyncMode();
+        log.info("RxMeta {} changed {}", RxConfig.ConfigNames.NTP_SYNC_MODE, syncMode);
+        if ((syncMode & 1) == 1) {
             NtpClock.scheduleTask();
         }
-        if ((enableFlags & 2) == 2) {
+        if ((syncMode & 2) == 2) {
             Tasks.setTimeout(() -> {
                 log.info("TimeAdvice inject..");
                 NtpClock.transform();

@@ -52,15 +52,15 @@ public final class RxConfig {
         String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
 
         String PHYSICAL_MEMORY_USAGE_WARNING = "app.cache.physicalMemoryUsageWarningThreshold";
-        String CACHE_MAIN_INSTANCE = "app.cache.mainInstance";
+        String CACHE_PROVIDER = "app.cache.provider";
         String CACHE_SLIDING_SECONDS = "app.cache.slidingSeconds";
         String CACHE_MAX_ITEM_SIZE = "app.cache.maxItemSize";
 
-        String DISK_H2_SETTINGS = "app.disk.h2Settings";
-        String DISK_H2_DB_PATH = "app.disk.h2DbPath";
-        String DISK_USAGE_WARNING = "app.disk.diskUsageWarningThreshold";
-        String DISK_ENTITY_DATABASE_MAX_CONNECTIONS = "app.disk.entityDatabaseMaxConnections";
-        String DISK_ENTITY_DATABASE_ROLL_PERIOD = "app.disk.entityDatabaseRollPeriod";
+        String STORAGE_USAGE_WARNING = "app.storage.diskUsageWarningThreshold";
+        String STORAGE_H2_SETTINGS = "app.storage.h2Settings";
+        String STORAGE_H2_DB_PATH = "app.storage.h2DbPath";
+        String STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS = "app.storage.entityDatabaseMaxConnections";
+        String STORAGE_ENTITY_DATABASE_ROLL_PERIOD = "app.storage.entityDatabaseRollPeriod";
 
         String NET_REACTOR_THREAD_AMOUNT = "app.net.reactorThreadAmount";
         String NET_ENABLE_LOG = "app.net.enableLog";
@@ -71,7 +71,7 @@ public final class RxConfig {
         String NET_USER_AGENT = "app.net.userAgent";
         String NET_BYPASS_HOSTS = "app.net.bypassHosts";
         String NET_CIPHERS_KEY = "app.net.ciphers";
-        String NTP_ENABLE_FLAGS = "app.net.ntp.enableFlags";
+        String NTP_SYNC_MODE = "app.net.ntp.syncMode";
         String NTP_SYNC_PERIOD = "app.net.ntp.syncPeriod";
         String NTP_TIMEOUT_MILLIS = "app.net.ntp.timeoutMillis";
         String NTP_SERVERS = "app.net.ntp.servers";
@@ -139,7 +139,7 @@ public final class RxConfig {
     public static class CacheConfig {
         int physicalMemoryUsageWarningThreshold;
 
-        Class<? extends Cache> mainInstance;
+        Class<? extends Cache> provider;
         int slidingSeconds;
         int maxItemSize;
     }
@@ -147,7 +147,7 @@ public final class RxConfig {
     @Getter
     @Setter
     @ToString
-    public static class DiskConfig {
+    public static class StorageConfig {
         int diskUsageWarningThreshold;
         String h2Settings;
         String h2DbPath;
@@ -177,7 +177,7 @@ public final class RxConfig {
     @ToString
     public static class NtpConfig {
         //1 syncTask, 2 injectJdkTime
-        int enableFlags;
+        int syncMode;
         long syncPeriod;
         long timeoutMillis;
         final List<String> servers = newConcurrentList(true);
@@ -241,7 +241,7 @@ public final class RxConfig {
     TraceConfig trace = new TraceConfig();
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
-    DiskConfig disk = new DiskConfig();
+    StorageConfig storage = new StorageConfig();
     NetConfig net = new NetConfig();
     RestConfig rest = new RestConfig();
 
@@ -345,18 +345,18 @@ public final class RxConfig {
         threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, threadPool.resizeQuantity);
 
         cache.physicalMemoryUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.PHYSICAL_MEMORY_USAGE_WARNING, cache.physicalMemoryUsageWarningThreshold);
-        String v = SystemPropertyUtil.get(ConfigNames.CACHE_MAIN_INSTANCE);
+        String v = SystemPropertyUtil.get(ConfigNames.CACHE_PROVIDER);
         if (v != null) {
-            cache.mainInstance = (Class<? extends Cache>) ClassUtils.getClass(v, true);
+            cache.provider = (Class<? extends Cache>) ClassUtils.getClass(v, true);
         }
         cache.slidingSeconds = SystemPropertyUtil.getInt(ConfigNames.CACHE_SLIDING_SECONDS, cache.slidingSeconds);
         cache.maxItemSize = SystemPropertyUtil.getInt(ConfigNames.CACHE_MAX_ITEM_SIZE, cache.maxItemSize);
 
-        disk.h2Settings = SystemPropertyUtil.get(ConfigNames.DISK_H2_SETTINGS, disk.h2Settings);
-        disk.h2DbPath = SystemPropertyUtil.get(ConfigNames.DISK_H2_DB_PATH, disk.h2DbPath);
-        disk.diskUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.DISK_USAGE_WARNING, disk.diskUsageWarningThreshold);
-        disk.entityDatabaseMaxConnections = SystemPropertyUtil.getInt(ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, disk.entityDatabaseMaxConnections);
-        disk.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.DISK_ENTITY_DATABASE_ROLL_PERIOD, disk.entityDatabaseRollPeriod);
+        storage.diskUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.STORAGE_USAGE_WARNING, storage.diskUsageWarningThreshold);
+        storage.h2Settings = SystemPropertyUtil.get(ConfigNames.STORAGE_H2_SETTINGS, storage.h2Settings);
+        storage.h2DbPath = SystemPropertyUtil.get(ConfigNames.STORAGE_H2_DB_PATH, storage.h2DbPath);
+        storage.entityDatabaseMaxConnections = SystemPropertyUtil.getInt(ConfigNames.STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS, storage.entityDatabaseMaxConnections);
+        storage.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.STORAGE_ENTITY_DATABASE_ROLL_PERIOD, storage.entityDatabaseRollPeriod);
 
         net.reactorThreadAmount = SystemPropertyUtil.getInt(ConfigNames.NET_REACTOR_THREAD_AMOUNT, net.reactorThreadAmount);
         net.enableLog = SystemPropertyUtil.getBoolean(ConfigNames.NET_ENABLE_LOG, net.enableLog);
@@ -368,7 +368,7 @@ public final class RxConfig {
         reset(net.bypassHosts, ConfigNames.NET_BYPASS_HOSTS);
         reset(net.ciphers, ConfigNames.NET_CIPHERS_KEY);
 
-        net.ntp.enableFlags = SystemPropertyUtil.getInt(ConfigNames.NTP_ENABLE_FLAGS, net.ntp.enableFlags);
+        net.ntp.syncMode = SystemPropertyUtil.getInt(ConfigNames.NTP_SYNC_MODE, net.ntp.syncMode);
         net.ntp.syncPeriod = SystemPropertyUtil.getLong(ConfigNames.NTP_SYNC_PERIOD, net.ntp.syncPeriod);
         net.ntp.timeoutMillis = SystemPropertyUtil.getLong(ConfigNames.NTP_TIMEOUT_MILLIS, net.ntp.timeoutMillis);
         reset(net.ntp.servers, ConfigNames.NTP_SERVERS);
