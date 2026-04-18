@@ -115,6 +115,8 @@ public final class Main implements SocksRpcContract {
         // socks
         public List<ShadowUser> shadowUsers;
         public List<AuthenticEndpoint> socksServers;
+        // false=LocalAddress 进程内转发，true=127.0.0.1:port 真实监听
+        public boolean socksBindPort;
         public String socksPwd;
         public int connectTimeoutSeconds = 10;
         public int tcpTimeoutSeconds = 60 * 2;
@@ -319,7 +321,7 @@ public final class Main implements SocksRpcContract {
             return Tuple.of(config, user);
         });
 
-        SocksConfig inConf = new SocksConfig(new LocalAddress("rss-in-" + port));
+        SocksConfig inConf = new SocksConfig(resolveClientInListenAddress(rssConf, port, "rss-in-"));
         inConf.setDebug(rssConf.hasDebugFlag());
         inConf.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.INLAND);
         // inConf.setTransportFlags(null);
@@ -330,6 +332,7 @@ public final class Main implements SocksRpcContract {
         inConf.setUdpRedundantMultiplier(2);
         DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+        log.info("rssConf socksBindPort={}, inListenAddress={}", rssConf.socksBindPort, inConf.getListenAddress());
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             // must first
@@ -347,11 +350,11 @@ public final class Main implements SocksRpcContract {
         if (enableUdp2raw) {
             SocksConfig inTunConf = Sys.deepClone(inConf);
             inTunConf.setDebug(rssConf.hasDebugFlag());
-            inTunConf.setListenAddress(new LocalAddress("rss-in-tun-" + udp2rawPort));
+            inTunConf.setListenAddress(resolveClientInListenAddress(rssConf, udp2rawPort, "rss-in-tun-"));
             inTunConf.setKcptunClient(rssConf.kcptunClient);
             inTunConf.setUdpRedundantMultiplier(2);
-//            inTunConf.setEnableUdp2raw(enableUdp2raw);
-//            inTunConf.setUdp2rawClient(rssConf.udp2rawClient);
+            // inTunConf.setEnableUdp2raw(enableUdp2raw);
+            // inTunConf.setUdp2rawClient(rssConf.udp2rawClient);
             inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
             inUdp2rawSvrAddress = inTunConf.getListenAddress();
             svrRefs.add(inUdp2rawSvr);
@@ -413,6 +416,13 @@ public final class Main implements SocksRpcContract {
         clientInit(httpPort, authenticator);
         log.info("Server started..");
         app.await();
+    }
+
+    static SocketAddress resolveClientInListenAddress(RSSConf conf, int port, String localNamePrefix) {
+        if (conf != null && conf.socksBindPort) {
+            return Sockets.newLoopbackEndpoint(port);
+        }
+        return new LocalAddress(localNamePrefix + port);
     }
 
     static SocksProxyServer createInSvr(SocksConfig inConf, DefaultSocksAuthenticator authenticator,
@@ -665,7 +675,7 @@ public final class Main implements SocksRpcContract {
             outTunConf.setDebug(debugFlag);
             outTunConf.setListenAddress(Sockets.newAnyEndpoint(udp2rawPort));
             outTunConf.setUdpRedundantMultiplier(2);
-//            outTunConf.setEnableUdp2raw(enableUdp2raw);
+            // outTunConf.setEnableUdp2raw(enableUdp2raw);
             SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
             outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         }
