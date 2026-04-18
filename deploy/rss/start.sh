@@ -17,12 +17,12 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd $SCRIPT_DIR
 
 PORT=6885
-MEM_OPTIONS="-Xms512m -Xmx1g -Xss512k -XX:MaxMetaspaceSize=128m -XX:MaxDirectMemorySize=2g -XX:-OmitStackTraceInFastThrow -XX:+UseCompressedClassPointers -XX:+UseStringDeduplication"
-APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.inlandServers=192.168.31.1:53"
+MEM_OPTIONS="-Xms1g -Xmx2g -Xss512k -XX:MaxMetaspaceSize=128m -XX:MaxDirectMemorySize=2g -XX:-OmitStackTraceInFastThrow -XX:+UseCompressedClassPointers -XX:+UseStringDeduplication"
+APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.inlandServers=192.168.31.1:53 -Dio.netty.allocator.type=pooled"
 DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$SCRIPT_DIR/ -XX:ErrorFile=$SCRIPT_DIR/hs_err_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED"
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
-JAVA_PROCESS_PATTERN="java .*app.jar .* -port=${PORT}"
+JAVA_PROCESS_KEYWORD="app.jar -port=${PORT}"
 
 # 生成不会冲突的历史 jar 名称。
 next_backup_file() {
@@ -106,7 +106,7 @@ kill_by_pattern() {
     local signal="$1"
     local pid_list pid
 
-    pid_list=$(pgrep -f "${JAVA_PROCESS_PATTERN}" 2>/dev/null)
+    pid_list=$(pgrep -f "${JAVA_PROCESS_KEYWORD}" 2>/dev/null)
     [ -z "${pid_list}" ] && return 0
 
     while IFS= read -r pid; do
@@ -119,7 +119,7 @@ EOF
 }
 
 process_exists() {
-    pgrep -f "${JAVA_PROCESS_PATTERN}" >/dev/null 2>&1
+    pgrep -f "${JAVA_PROCESS_KEYWORD}" >/dev/null 2>&1
 }
 
 # 优先按端口杀进程，端口未绑定时再按命令行兜底，确保发布前旧进程已退出。
@@ -173,7 +173,7 @@ ACTION="$1"
 # 根据参数决定是否 kill 端口
 if [ "$ACTION" = "publish" ]; then
     echo "${RED}[${LOCAL_TIME}] 发布模式：正在终止端口 ${PORT}/tcp 的旧进程..."
-    stop_old_process
+    stop_old_process || exit 1
 
     if [ -f "app.jar.publish" ]; then
         rotate_latest_jar
