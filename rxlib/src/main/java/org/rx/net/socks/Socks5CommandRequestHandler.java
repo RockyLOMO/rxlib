@@ -11,7 +11,9 @@ import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.math.BigInteger;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -69,14 +71,14 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             final boolean udp2raw = config.isEnableUdp2raw();
 
             InetSocketAddress tcpLocalAddr = Sockets.getLocalAddress(tcpControl);
-            String host = tcpLocalAddr.getAddress().getHostAddress();
+            SocketAddress udpBindAddr = resolveUdpRelayBindAddress(tcpLocalAddr);
             ChannelFuture udpFuture = Sockets.udpBootstrap(config, ch -> {
                 ChannelPipeline p = ch.pipeline();
                 if (config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0) {
                     p.addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
                 }
                 p.addLast(udp2raw ? Udp2rawHandler.DEFAULT : SocksUdpRelayHandler.DEFAULT);
-            }).attr(SocksContext.SOCKS_SVR, server).bind(host, 0);
+            }).attr(SocksContext.SOCKS_SVR, server).bind(udpBindAddr);
 
             // Pre-set client addr so first packet can be identified
             if (udp2raw) {
@@ -111,20 +113,51 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                             .addListener(ChannelFutureListener.CLOSE);
                     return;
                 }
-                InetSocketAddress udpBindAddr = (InetSocketAddress) f.channel().localAddress();
+                InetSocketAddress udpBindLocalAddr = (InetSocketAddress) f.channel().localAddress();
+                InetSocketAddress udpAdvertiseAddr = resolveUdpRelayAdvertiseAddress(tcpLocalAddr, udpBindLocalAddr);
                 server.registerUdpRelay(f.channel());
-                // InetSocketAddress tcpLocalAddr = Sockets.getLocalAddress(tcpControl);
-                log.debug("socks5[{}] UDP_ASSOCIATE relay bound {} for {}", config.getListenPort(), udpBindAddr, clientTcpAddr);
-                // Use IPv4/IPv6 type based on the actual bound address; relay addr is always a real IP.
-                boolean isIpv6 = udpBindAddr.getAddress() instanceof java.net.Inet6Address;
+                log.debug("socks5[{}] UDP_ASSOCIATE relay bound {} advertised {} for {}",
+                        config.getListenPort(), udpBindLocalAddr, udpAdvertiseAddr, clientTcpAddr);
+                // 绑定到 any-local 时，仍向客户端通告 TCP 控制连接可达的本地地址。
+                boolean isIpv6 = udpAdvertiseAddr.getAddress() instanceof java.net.Inet6Address;
                 Socks5AddressType atyp = isIpv6 ? Socks5AddressType.IPv6 : Socks5AddressType.IPv4;
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(
-                        Socks5CommandStatus.SUCCESS, atyp, udpBindAddr.getAddress().getHostAddress(), udpBindAddr.getPort()));
+                        Socks5CommandStatus.SUCCESS, atyp, udpAdvertiseAddr.getAddress().getHostAddress(), udpAdvertiseAddr.getPort()));
             });
         } else {
             log.warn("Command {} not support", msg.type());
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
         }
+    }
+
+    static SocketAddress resolveUdpRelayBindAddress(InetSocketAddress tcpLocalAddr) {
+        if (tcpLocalAddr == null) {
+            return Sockets.newAnyEndpoint(0);
+        }
+
+        InetAddress address = tcpLocalAddr.getAddress();
+        if (address == null || address.isAnyLocalAddress() || address.isLoopbackAddress()) {
+            // 绑定 loopback 后无法向公网目的地发包，Linux 会直接返回 EINVAL。
+            return Sockets.newAnyEndpoint(0);
+        }
+        return new InetSocketAddress(address, 0);
+    }
+
+    static InetSocketAddress resolveUdpRelayAdvertiseAddress(InetSocketAddress tcpLocalAddr, InetSocketAddress udpBindLocalAddr) {
+        if (udpBindLocalAddr == null) {
+            return null;
+        }
+
+        InetAddress bindAddr = udpBindLocalAddr.getAddress();
+        if (bindAddr != null && !bindAddr.isAnyLocalAddress()) {
+            return udpBindLocalAddr;
+        }
+
+        InetAddress tcpAddr = tcpLocalAddr != null ? tcpLocalAddr.getAddress() : null;
+        if (tcpAddr != null && !tcpAddr.isAnyLocalAddress()) {
+            return new InetSocketAddress(tcpAddr, udpBindLocalAddr.getPort());
+        }
+        return udpBindLocalAddr;
     }
 
     private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {
