@@ -122,6 +122,10 @@ process_exists() {
     pgrep -f "${JAVA_PROCESS_KEYWORD}" >/dev/null 2>&1
 }
 
+get_process_pid() {
+    pgrep -f "${JAVA_PROCESS_KEYWORD}" | head -1
+}
+
 # 优先按端口杀进程，端口未绑定时再按命令行兜底，确保发布前旧进程已退出。
 stop_old_process() {
     local wait_count
@@ -155,6 +159,36 @@ stop_old_process() {
     fi
     echo "${GREEN}[${LOCAL_TIME}] 旧进程已强制终止"
     return 0
+}
+
+# 启动后等待端口真正绑定，避免 JVM 已启动但服务尚未完成初始化时误判失败。
+wait_for_startup() {
+    local wait_count pid
+
+    wait_count=0
+    while [ ${wait_count} -lt 30 ]; do
+        if port_in_use; then
+            PID=$(get_fuser_cmd | xargs -I{} sh -c "'{}' ${PORT}/tcp 2>/dev/null" | awk '{print $1}' | head -1)
+            echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${PID}"
+            return 0
+        fi
+
+        if ! process_exists; then
+            echo "${RED}[${LOCAL_TIME}] 启动失败！进程已退出，请手动执行查看错误"
+            return 1
+        fi
+
+        if [ ${wait_count} -eq 0 ]; then
+            pid=$(get_process_pid)
+            echo "${YELLOW}[${LOCAL_TIME}] 进程已启动，等待端口 ${PORT}/tcp 完成绑定... PID: ${pid}"
+        fi
+        sleep 1
+        wait_count=$((wait_count + 1))
+    done
+
+    pid=$(get_process_pid)
+    echo "${RED}[${LOCAL_TIME}] 启动超时！进程仍在运行但端口 ${PORT}/tcp 未完成绑定，PID: ${pid}"
+    return 1
 }
 
 # 用法提示
@@ -197,12 +231,4 @@ fi
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
 nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -udp2raw=1 >/dev/null 2>&1 &
-sleep 5
-
-if port_in_use; then
-    PID=$(get_fuser_cmd | xargs -I{} sh -c "'{}' ${PORT}/tcp 2>/dev/null" | awk '{print $1}' | head -1)
-    echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${PID}"
-else
-    echo "${RED}[${LOCAL_TIME}] 启动失败！请手动执行查看错误"
-    exit 1
-fi
+wait_for_startup || exit 1

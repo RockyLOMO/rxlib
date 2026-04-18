@@ -108,9 +108,15 @@ jobs:
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_RSS_SVR_PORT }}
           script: |
+            set -e
             cd /home/${{ env.REMOTE_DIR }}/
             chmod 755 start.sh
-            ./start.sh publish
+            chmod 755 rollback.sh
+            echo "=== before publish ==="
+            ps -ef | grep "[a]pp.jar" || true
+            bash ./start.sh publish
+            echo "=== after publish ==="
+            ps -ef | grep "[a]pp.jar" || true
             echo "Deployment completed"
 
       - name: Initial Wait for Service Startup
