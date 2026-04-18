@@ -72,34 +72,14 @@ rotate_latest_jar() {
     cleanup_backup_jars
 }
 
-# 兼容不同环境的 fuser 路径。
-get_fuser_cmd() {
-    if [ -x "/usr/sbin/fuser" ]; then
-        echo "/usr/sbin/fuser"
-        return 0
+port_in_use() {
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${PORT}$" && return 0
     fi
-    if command -v fuser >/dev/null 2>&1; then
-        command -v fuser
-        return 0
+    if command -v netstat >/dev/null 2>&1; then
+        netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${PORT}$" && return 0
     fi
     return 1
-}
-
-# 非交互场景优先直接执行，只有在允许免密 sudo 时才尝试 sudo -n。
-run_fuser_kill() {
-    local signal_arg="${1:-}"
-    local fuser_cmd
-    fuser_cmd=$(get_fuser_cmd) || return 0
-
-    "${fuser_cmd}" ${signal_arg} ${PORT}/tcp >/dev/null 2>&1 && return 0
-    sudo -n "${fuser_cmd}" ${signal_arg} ${PORT}/tcp >/dev/null 2>&1 && return 0
-    return 0
-}
-
-port_in_use() {
-    local fuser_cmd
-    fuser_cmd=$(get_fuser_cmd) || return 1
-    "${fuser_cmd}" ${PORT}/tcp >/dev/null 2>&1
 }
 
 kill_by_pattern() {
@@ -130,7 +110,6 @@ get_process_pid() {
 stop_old_process() {
     local wait_count
 
-    run_fuser_kill "-k"
     if process_exists; then
         echo "${YELLOW}[${LOCAL_TIME}] 检测到残留进程，按命令行补充终止..."
         kill_by_pattern "-15"
@@ -149,7 +128,6 @@ stop_old_process() {
     if process_exists || port_in_use; then
         echo "${YELLOW}[${LOCAL_TIME}] 旧进程未在超时内退出，执行强制终止..."
         kill_by_pattern "-9"
-        run_fuser_kill "-k -9"
         sleep 1
     fi
 
@@ -168,7 +146,7 @@ wait_for_startup() {
     wait_count=0
     while [ ${wait_count} -lt 30 ]; do
         if port_in_use; then
-            PID=$(get_fuser_cmd | xargs -I{} sh -c "'{}' ${PORT}/tcp 2>/dev/null" | awk '{print $1}' | head -1)
+            PID=$(get_process_pid)
             echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${PID}"
             return 0
         fi
@@ -218,16 +196,9 @@ if [ "$ACTION" = "publish" ]; then
     fi
 elif [ "$ACTION" = "start" ]; then
     echo "${RED}[${LOCAL_TIME}] 启动模式：正在检测端口 ${PORT}/tcp 的进程..."
-    if port_in_use; then
-        PID=$(get_fuser_cmd | xargs -I{} sh -c "'{}' ${PORT}/tcp 2>/dev/null" | awk '{print $1}' | head -1)
+    if port_in_use || process_exists; then
+        PID=$(get_process_pid)
         echo "${GREEN}[${LOCAL_TIME}] ${PORT}/tcp 已运行，PID: ${PID}"
-        exit 0
-    fi
-    # 增加进程检测，防止端口未绑定时的重复启动（解决 Cron 与 SSH 并发/启动间隙问题）
-    # pgrep -f 匹配完整命令行
-    PID_P=$(pgrep -f "app.jar -port=${PORT}" | head -1)
-    if [ -n "$PID_P" ]; then
-        echo "${GREEN}[${LOCAL_TIME}] 进程已存在(正在启动中)，PID: ${PID_P}"
         exit 0
     fi
 else

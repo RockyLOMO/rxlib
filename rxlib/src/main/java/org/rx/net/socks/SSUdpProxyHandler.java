@@ -125,7 +125,12 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         EndpointTracer.UDP.link(srcEp, outbound);
         inBuf.retain();
         if (e.outboundActive) {
-            DatagramPacket packet = buildOutboundPacket(e, outbound, dstEp, inBuf);
+            DatagramPacket packet = null;
+            try {
+                packet = buildOutboundPacket(e, outbound, dstEp, inBuf);
+            } catch (Throwable ex) {
+                log.warn("SS UDP relay build packet error for {}, drop packet from {}", dstEp, srcEp, ex);
+            }
             if (packet == null) {
                 inBuf.release();
                 log.warn("SS UDP relay not ready for {}, drop packet from {}", dstEp, srcEp);
@@ -139,7 +144,12 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                     finalInBuf.release();
                     return;
                 }
-                DatagramPacket packet = buildOutboundPacket(finalE, f.channel(), dstEp, finalInBuf);
+                DatagramPacket packet = null;
+                try {
+                    packet = buildOutboundPacket(finalE, f.channel(), dstEp, finalInBuf);
+                } catch (Throwable ex) {
+                    log.warn("SS UDP relay build packet error for {}, drop packet from {}", dstEp, srcEp, ex);
+                }
                 if (packet == null) {
                     finalInBuf.release();
                     log.warn("SS UDP relay not ready after bind for {}, drop packet from {}", dstEp, srcEp);
