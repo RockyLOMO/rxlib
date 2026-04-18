@@ -168,7 +168,7 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
                                                  firstBuf.readableBytes() - HEADER_SIZE);
                 payloadSlice.retain();
                 
-                ctx.write(new DatagramPacket(firstBuf, recipient), promise);
+                ctx.writeAndFlush(new DatagramPacket(firstBuf, recipient), promise);
                 
                 // 冗余副本改用连续 direct buffer，规避 epoll sendmmsg 对组合缓冲的兼容性风险
                 for (int i = 1; i < multiplier; i++) {
@@ -193,11 +193,12 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
                                                  firstBuf.readableBytes() - HEADER_SIZE);
                 payloadSlice.retain();
                 
-                ctx.write(new DatagramPacket(firstBuf, recipient), promise);
+                ctx.writeAndFlush(new DatagramPacket(firstBuf, recipient), promise);
                 
                 try {
                     for (int i = 1; i < multiplier; i++) {
                         writeRedundantCopy(ctx, seqId, payloadSlice, recipient);
+                        ctx.flush();
                     }
                 } finally {
                     payloadSlice.release();
@@ -231,7 +232,7 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
             buf.writeInt(HEADER_MAGIC);
             buf.writeInt(seqId);
             buf.writeBytes(payload, ri, len);
-            ctx.write(new DatagramPacket(buf, recipient), ctx.voidPromise());
+            ctx.writeAndFlush(new DatagramPacket(buf, recipient), ctx.voidPromise());
         } catch (Exception e) {
             buf.release();
             log.warn("UDP redundant copy write failed, seq={}", seqId, e);
