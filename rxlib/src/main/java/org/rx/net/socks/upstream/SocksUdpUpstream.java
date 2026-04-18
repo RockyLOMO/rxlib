@@ -99,7 +99,7 @@ public class SocksUdpUpstream extends Upstream {
     private boolean claimRelay(Channel channel, Socks5UdpLease lease, SocksRpcContract facade,
                                Socks5UpstreamPoolManager poolManager, SocksConfig socksConfig) {
         try {
-            InetSocketAddress clientAddr = (InetSocketAddress) channel.localAddress();
+            InetSocketAddress clientAddr = resolveClaimClientAddress(channel, lease);
             boolean ok = facade.claimUdpRelay(lease.getRelayPort(), clientAddr);
             if (ok) {
                 poolManager.onUdpRpcSuccess(poolKey());
@@ -110,6 +110,27 @@ public class SocksUdpUpstream extends Upstream {
             poolManager.onUdpRpcFailure(poolKey(), socksConfig, "claim", e);
         }
         return false;
+    }
+
+    static InetSocketAddress resolveClaimClientAddress(Channel channel, Socks5UdpLease lease) {
+        InetSocketAddress udpLocalAddr = channel.localAddress() instanceof InetSocketAddress
+                ? (InetSocketAddress) channel.localAddress() : null;
+        if (udpLocalAddr == null) {
+            return null;
+        }
+
+        if (udpLocalAddr.getAddress() != null && !udpLocalAddr.getAddress().isAnyLocalAddress()) {
+            return udpLocalAddr;
+        }
+
+        InetSocketAddress tcpLocalAddr = lease != null && lease.getTcpControl() != null
+                && lease.getTcpControl().localAddress() instanceof InetSocketAddress
+                ? (InetSocketAddress) lease.getTcpControl().localAddress() : null;
+        if (tcpLocalAddr != null && tcpLocalAddr.getAddress() != null
+                && !tcpLocalAddr.getAddress().isAnyLocalAddress()) {
+            return new InetSocketAddress(tcpLocalAddr.getAddress(), udpLocalAddr.getPort());
+        }
+        return udpLocalAddr;
     }
 
     private void initSlowPath(Channel channel) {
