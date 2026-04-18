@@ -20,9 +20,22 @@ import java.util.concurrent.ConcurrentMap;
 public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     public static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
             AttributeKey.valueOf("ssUdpRouteMap");
+    static final String REDUNDANT_DECODER_NAME = "SS_UDP_REDUNDANT_DECODER";
 
     private static InetSocketAddress relayAddress(Upstream upstream, Channel channel) {
         return upstream instanceof SocksUdpUpstream ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(channel) : null;
+    }
+
+    private static void ensureRelayResponseDecoder(ChannelPipeline pipeline, Upstream upstream) {
+        if (!(upstream instanceof SocksUdpUpstream)) {
+            return;
+        }
+        if (pipeline.get(REDUNDANT_DECODER_NAME) != null || pipeline.get(UdpRedundantDecoder.class) != null) {
+            return;
+        }
+        // SS -> socks a 不需要做冗余发送，但 socks a -> 本地 relay 的回包可能带 RDNT 头；
+        // 这里仅补一个 decoder，负责去重/剥头，不安装 encoder 避免把本地跳也放大。
+        pipeline.addLast(REDUNDANT_DECODER_NAME, new UdpRedundantDecoder());
     }
 
     private static DatagramPacket buildOutboundPacket(SocksContext sc, Channel outbound, UnresolvedEndpoint dstEp, ByteBuf payload) {
@@ -107,6 +120,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
                     ob.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(srcEp);
                     upstream.initChannel(ob);
+                    ensureRelayResponseDecoder(ob.pipeline(), upstream);
                     if (server.config.getUdpReadTimeoutSeconds() > 0 || server.config.getUdpWriteTimeoutSeconds() > 0) {
                         ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()));
                     }
