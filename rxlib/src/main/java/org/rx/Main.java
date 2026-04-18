@@ -656,6 +656,7 @@ public final class Main implements SocksRpcContract {
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setOptimalSettings(OUT_OPS);
         // outConf.setConnectTimeoutMillis(connectTimeout);
+        outConf.setUdpRedundantMultiplier(2);
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
