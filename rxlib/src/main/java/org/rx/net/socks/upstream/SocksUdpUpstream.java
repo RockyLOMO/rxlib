@@ -12,6 +12,7 @@ import org.rx.net.socks.Socks5Client.Socks5UdpSession;
 import org.rx.net.socks.Socks5UpstreamPoolManager;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksRpcContract;
+import org.rx.net.socks.UdpRelayAttributes;
 import org.rx.net.socks.UdpLeasePoolKey;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
@@ -149,6 +150,7 @@ public class SocksUdpUpstream extends Upstream {
 
     private void bindHolder(Channel channel, SessionHolder holder) {
         channel.attr(ATTR_UDP_SESSION).set(holder);
+        UdpRelayAttributes.addRedundantPeer(channel, holder.relayAddr);
         final SessionHolder finalHolder = holder;
         channel.closeFuture().addListener(f -> {
             SessionHolder active = channel.attr(ATTR_UDP_SESSION).getAndSet(null);

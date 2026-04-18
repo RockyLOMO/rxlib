@@ -129,6 +129,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         } else if (clientAddr == null || !clientAddr.equals(sender)) {
             relay.attr(ATTR_CLIENT_ADDR).set(sender);
         }
+        if (Boolean.TRUE.equals(relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).get())) {
+            UdpRelayAttributes.addRedundantPeer(relay, sender);
+        }
 
         // Ensure per-relay context map exists
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
@@ -151,9 +154,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             Upstream upstream = e.getUpstream();
             upstream.initChannel(relay);
             
-            InetSocketAddress udpRelayAddr = upstream instanceof SocksUdpUpstream 
+            InetSocketAddress udpRelayAddr = upstream instanceof SocksUdpUpstream
                     ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
-            InetSocketAddress upDstAddr = udpRelayAddr != null ? udpRelayAddr : dstEp.socketAddress();
+            InetSocketAddress upDstAddr = udpRelayAddr != null ? udpRelayAddr : upstream.getDestination().socketAddress();
             ctxMap.put(upDstAddr, e);
             routeMap.put(dstEp, e);
         }
@@ -163,7 +166,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         if (keepSocksHeader) {
             inBuf.resetReaderIndex();
         }
-        InetSocketAddress upDstAddr = keepSocksHeader ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : dstEp.socketAddress();
+        InetSocketAddress upDstAddr = keepSocksHeader
+                ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay)
+                : upstream.getDestination().socketAddress();
 
         EndpointTracer.UDP.link(clientOriginAddr, relay);
 

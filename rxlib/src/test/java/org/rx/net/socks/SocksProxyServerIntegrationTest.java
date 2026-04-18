@@ -16,6 +16,7 @@ import org.rx.core.RxConfig;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
@@ -371,6 +372,83 @@ class SocksProxyServerIntegrationTest {
 
     @Test
     @SneakyThrows
+    @Timeout(value = 60)
+    void socks5UdpRelay_chained_withUdpRedundant_plainReplyToClient_e2e() {
+        int proxyAPort = 15318;
+        int proxyBPort = 15319;
+
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        configB.setUdpRedundantMultiplier(2);
+        SocksProxyServer proxyB = new SocksProxyServer(configB, null);
+
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        configA.setUdpRedundantMultiplier(2);
+        SocksProxyServer proxyA = new SocksProxyServer(configA, null);
+
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+        proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), configA, supportB)));
+
+        try {
+            Thread.sleep(1000);
+
+            Socket tcp = new Socket("127.0.0.1", proxyAPort);
+            tcp.setSoTimeout(10000);
+            OutputStream tcpOut = tcp.getOutputStream();
+            InputStream tcpIn = tcp.getInputStream();
+
+            tcpOut.write(new byte[]{0x05, 0x01, 0x00});
+            tcpOut.flush();
+            readExact(tcpIn, 2, 4000);
+
+            tcpOut.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            tcpOut.flush();
+            byte[] response = readAtLeast(tcpIn, 10, 32, 4000);
+            int relayPortA = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
+
+            DatagramSocket clientSock = new DatagramSocket();
+            clientSock.setSoTimeout(10000);
+            try {
+                byte[] payload = "chained-udp-rdnt".getBytes(StandardCharsets.UTF_8);
+                ByteBuf header = Unpooled.buffer();
+                header.writeZero(3);
+                header.writeByte(0x01);
+                header.writeBytes(new byte[]{127, 0, 0, 1});
+                header.writeShort(UDP_ECHO_PORT);
+                header.writeBytes(payload);
+                byte[] req = toBytes(header);
+
+                clientSock.send(new java.net.DatagramPacket(req, req.length,
+                        InetAddress.getByName("127.0.0.1"), relayPortA));
+
+                byte[] resp = new byte[512];
+                java.net.DatagramPacket p = new java.net.DatagramPacket(resp, resp.length);
+                clientSock.receive(p);
+
+                assertTrue(p.getLength() >= 10);
+                assertEquals(0, resp[0] & 0xFF, "local SOCKS5 client 不应看到 RDNT 头");
+                assertEquals(0, resp[1] & 0xFF, "local SOCKS5 client 不应看到 RDNT 头");
+                assertEquals(0, resp[2] & 0xFF, "FRAG must stay 0");
+                assertEquals(0x01, resp[3] & 0xFF, "ATYP must remain IPv4");
+                int respPort = ((resp[8] & 0xFF) << 8) | (resp[9] & 0xFF);
+                assertEquals(UDP_ECHO_PORT, respPort);
+
+                byte[] echoed = new byte[p.getLength() - 10];
+                System.arraycopy(resp, 10, echoed, 0, echoed.length);
+                assertArrayEquals(payload, echoed);
+            } finally {
+                clientSock.close();
+                tcp.close();
+            }
+        } finally {
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
     @Timeout(value = 40)
     void socks5UdpRelay_chained_withLeasePool_reusesProxyBRelay() {
         int proxyAPort = 15286;
@@ -590,6 +668,77 @@ class SocksProxyServerIntegrationTest {
             ssServer.close();
             proxyA.close();
             proxyB.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
+    void socks5UdpRelay_respectsAlternateDirectUpstream_e2e() {
+        int proxyPort = 15317;
+        SocksConfig config = new SocksConfig(proxyPort);
+        config.getWhiteList();
+        SocksProxyServer proxy = new SocksProxyServer(config, null);
+        proxy.onUdpRoute.replace((s, e) -> e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT))));
+
+        try {
+            Thread.sleep(1000);
+
+            Socket tcp = new Socket("127.0.0.1", proxyPort);
+            tcp.setSoTimeout(4000);
+            OutputStream tcpOut = tcp.getOutputStream();
+            InputStream tcpIn = tcp.getInputStream();
+
+            tcpOut.write(new byte[]{0x05, 0x01, 0x00});
+            tcpOut.flush();
+            assertArrayEquals(new byte[]{0x05, 0x00}, readExact(tcpIn, 2, 4000));
+
+            tcpOut.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            tcpOut.flush();
+            byte[] response = readAtLeast(tcpIn, 10, 32, 4000);
+            int relayPort = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
+
+            DatagramSocket sock = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            sock.setSoTimeout(4000);
+            try {
+                byte[] payload = "udp-reroute".getBytes(StandardCharsets.UTF_8);
+                ByteBuf header = Unpooled.buffer();
+                header.writeShort(0);
+                header.writeByte(0);
+                header.writeByte(0x01);
+                header.writeBytes(new byte[]{1, 1, 1, 1});
+                header.writeShort(53);
+                header.writeBytes(payload);
+                byte[] req = toBytes(header);
+
+                sock.send(new java.net.DatagramPacket(req, req.length,
+                        InetAddress.getByName("127.0.0.1"), relayPort));
+
+                byte[] resp = new byte[256];
+                java.net.DatagramPacket p = new java.net.DatagramPacket(resp, resp.length);
+                sock.receive(p);
+
+                assertTrue(p.getLength() >= 10, "response too short");
+                assertEquals(0, resp[0]);
+                assertEquals(0, resp[1]);
+                assertEquals(0, resp[2]);
+                assertEquals(0x01, resp[3] & 0xFF);
+                assertEquals(127, resp[4] & 0xFF);
+                assertEquals(0, resp[5] & 0xFF);
+                assertEquals(0, resp[6] & 0xFF);
+                assertEquals(1, resp[7] & 0xFF);
+                int respPort = ((resp[8] & 0xFF) << 8) | (resp[9] & 0xFF);
+                assertEquals(UDP_ECHO_PORT, respPort);
+
+                byte[] echoed = new byte[p.getLength() - 10];
+                System.arraycopy(resp, 10, echoed, 0, echoed.length);
+                assertArrayEquals(payload, echoed);
+            } finally {
+                sock.close();
+                tcp.close();
+            }
+        } finally {
+            proxy.close();
         }
     }
 

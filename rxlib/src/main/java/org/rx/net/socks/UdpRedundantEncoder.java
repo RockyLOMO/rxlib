@@ -148,6 +148,10 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
 
         DatagramPacket original = (DatagramPacket) msg;
         InetSocketAddress recipient = original.recipient();
+        if (!UdpRelayAttributes.shouldEncode(ctx.channel(), recipient)) {
+            super.write(ctx, msg, promise);
+            return;
+        }
         int multiplier = effectiveMultiplier(recipient);
         if (multiplier <= 1) {
             super.write(ctx, msg, promise);
