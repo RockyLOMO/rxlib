@@ -12,10 +12,12 @@ import org.rx.annotation.Metadata;
 import org.rx.bean.IntWaterMark;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.TrieMatcher;
+import org.rx.diagnostic.DiagnosticLevel;
 import org.rx.net.Sockets;
 import org.rx.util.function.BiFunc;
 import org.springframework.core.env.Environment;
 
+import java.io.File;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -61,6 +63,54 @@ public final class RxConfig {
         String STORAGE_H2_DB_PATH = "app.storage.h2DbPath";
         String STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS = "app.storage.entityDatabaseMaxConnections";
         String STORAGE_ENTITY_DATABASE_ROLL_PERIOD = "app.storage.entityDatabaseRollPeriod";
+
+        String DIAGNOSTIC_ENABLED = "app.diagnostic.enabled";
+        String DIAGNOSTIC_LEVEL = "app.diagnostic.level";
+        String DIAGNOSTIC_SAMPLE_INTERVAL_MILLIS = "app.diagnostic.sample.intervalMillis";
+        String DIAGNOSTIC_RING_BUFFER_MAX_SAMPLES = "app.diagnostic.ringBuffer.maxSamples";
+        String DIAGNOSTIC_H2_ENABLED = "app.diagnostic.h2.enabled";
+        String DIAGNOSTIC_H2_JDBC_URL = "app.diagnostic.h2.jdbcUrl";
+        String DIAGNOSTIC_H2_PATH = "app.diagnostic.h2.path";
+        String DIAGNOSTIC_H2_BATCH_SIZE = "app.diagnostic.h2.batchSize";
+        String DIAGNOSTIC_H2_QUEUE_SIZE = "app.diagnostic.h2.queueSize";
+        String DIAGNOSTIC_H2_FLUSH_INTERVAL_MILLIS = "app.diagnostic.h2.flushIntervalMillis";
+        String DIAGNOSTIC_H2_TTL_MILLIS = "app.diagnostic.h2.ttlMillis";
+        String DIAGNOSTIC_H2_MAX_BYTES = "app.diagnostic.h2.maxBytes";
+        String DIAGNOSTIC_H2_FAILURE_DEGRADE_MILLIS = "app.diagnostic.h2.failureDegradeMillis";
+        String DIAGNOSTIC_DIR = "app.diagnostic.dir";
+        String DIAGNOSTIC_DIR_MAX_BYTES = "app.diagnostic.dir.maxBytes";
+        String DIAGNOSTIC_EVIDENCE_MIN_FREE_BYTES = "app.diagnostic.evidence.minFreeBytes";
+        String DIAGNOSTIC_EVIDENCE_HEAVY_COOLDOWN_MILLIS = "app.diagnostic.evidence.heavyCooldownMillis";
+        String DIAGNOSTIC_INCIDENT_COOLDOWN_MILLIS = "app.diagnostic.incident.cooldownMillis";
+        String DIAGNOSTIC_DIAG_DURATION_MILLIS = "app.diagnostic.diagDurationMillis";
+        String DIAGNOSTIC_CPU_THRESHOLD_PERCENT = "app.diagnostic.cpu.thresholdPercent";
+        String DIAGNOSTIC_CPU_SUSTAIN_MILLIS = "app.diagnostic.cpu.sustainMillis";
+        String DIAGNOSTIC_CPU_TOP_THREADS = "app.diagnostic.cpu.topThreads";
+        String DIAGNOSTIC_CPU_EVIDENCE_SAMPLES = "app.diagnostic.cpu.evidenceSamples";
+        String DIAGNOSTIC_CPU_EVIDENCE_INTERVAL_MILLIS = "app.diagnostic.cpu.evidenceIntervalMillis";
+        String DIAGNOSTIC_STACK_MAX_FRAMES = "app.diagnostic.stack.maxFrames";
+        String DIAGNOSTIC_MEMORY_HEAP_THRESHOLD_PERCENT = "app.diagnostic.memory.heapThresholdPercent";
+        String DIAGNOSTIC_MEMORY_DIRECT_THRESHOLD_PERCENT = "app.diagnostic.memory.directThresholdPercent";
+        String DIAGNOSTIC_MEMORY_METASPACE_THRESHOLD_PERCENT = "app.diagnostic.memory.metaspaceThresholdPercent";
+        String DIAGNOSTIC_DISK_FREE_PERCENT_THRESHOLD = "app.diagnostic.disk.freePercentThreshold";
+        String DIAGNOSTIC_DISK_MIN_FREE_BYTES = "app.diagnostic.disk.minFreeBytes";
+        String DIAGNOSTIC_DISK_IO_BYTES_PER_SECOND_THRESHOLD = "app.diagnostic.disk.ioBytesPerSecondThreshold";
+        String DIAGNOSTIC_DISK_IO_SUSTAIN_MILLIS = "app.diagnostic.disk.ioSustainMillis";
+        String DIAGNOSTIC_DISK_SCAN_ENABLED = "app.diagnostic.disk.scan.enabled";
+        String DIAGNOSTIC_DISK_SCAN_MAX_DEPTH = "app.diagnostic.disk.scan.maxDepth";
+        String DIAGNOSTIC_DISK_SCAN_MAX_FILES = "app.diagnostic.disk.scan.maxFiles";
+        String DIAGNOSTIC_DISK_SCAN_TOP_FILES = "app.diagnostic.disk.scan.topFiles";
+        String DIAGNOSTIC_DISK_SCAN_TIMEOUT_MILLIS = "app.diagnostic.disk.scan.timeoutMillis";
+        String DIAGNOSTIC_DISK_SCAN_ROOTS = "app.diagnostic.disk.scan.roots";
+        String DIAGNOSTIC_FILE_IO_STACK_SAMPLE_RATE = "app.diagnostic.fileIo.stackSampleRate";
+        String DIAGNOSTIC_FILE_IO_DIAG_STACK_SAMPLE_RATE = "app.diagnostic.fileIo.diagStackSampleRate";
+        String DIAGNOSTIC_HEAP_DUMP_ENABLED = "app.diagnostic.heapDump.enabled";
+        String DIAGNOSTIC_HEAP_DUMP_MIN_FREE_BYTES = "app.diagnostic.heapDump.minFreeBytes";
+        String DIAGNOSTIC_JFR_MODE = "app.diagnostic.jfr.mode";
+        String DIAGNOSTIC_JFR_SETTINGS = "app.diagnostic.jfr.settings";
+        String DIAGNOSTIC_JFR_DURATION_SECONDS = "app.diagnostic.jfr.durationSeconds";
+        String DIAGNOSTIC_JFR_MIN_FREE_BYTES = "app.diagnostic.jfr.minFreeBytes";
+        String DIAGNOSTIC_NMT_ENABLED = "app.diagnostic.nmt.enabled";
 
         String NET_REACTOR_THREAD_AMOUNT = "app.net.reactorThreadAmount";
         String NET_ENABLE_LOG = "app.net.enableLog";
@@ -158,6 +208,136 @@ public final class RxConfig {
     @Getter
     @Setter
     @ToString
+    public static class DiagnosticConfig {
+        boolean enabled = true;
+        DiagnosticLevel level = DiagnosticLevel.LIGHT;
+        long sampleIntervalMillis = 10000L;
+        int ringBufferMaxSamples = 4096;
+
+        boolean h2Enabled = true;
+        String h2JdbcUrl;
+        File h2File = new File(new File(System.getProperty("java.io.tmpdir"), "rx-diagnostics"), "diag");
+        int h2BatchSize = 128;
+        int h2QueueSize = 8192;
+        long h2FlushIntervalMillis = 1000L;
+        long h2TtlMillis = 3L * 24L * 60L * 60L * 1000L;
+        long h2MaxBytes = 256L * 1024L * 1024L;
+        long h2FailureDegradeMillis = 60000L;
+
+        File diagnosticsDirectory = new File(System.getProperty("java.io.tmpdir"), "rx-diagnostics");
+        long diagnosticsMaxBytes = 1024L * 1024L * 1024L;
+        long evidenceMinFreeBytes = 64L * 1024L * 1024L;
+        long jfrMinFreeBytes = 256L * 1024L * 1024L;
+        long heapDumpMinFreeBytes = 2L * 1024L * 1024L * 1024L;
+        long heavyEvidenceCooldownMillis = 300000L;
+        long incidentCooldownMillis = 300000L;
+        long diagDurationMillis = 60000L;
+
+        double cpuThresholdPercent = 80D;
+        long cpuSustainMillis = 30000L;
+        int cpuTopThreads = 10;
+        int cpuEvidenceSamples = 5;
+        long cpuEvidenceIntervalMillis = 300L;
+        int maxStackFrames = 64;
+
+        double heapUsedThresholdPercent = 85D;
+        double directUsedThresholdPercent = 80D;
+        double metaspaceUsedThresholdPercent = 85D;
+
+        double diskFreePercentThreshold = 15D;
+        long diskMinFreeBytes = 5L * 1024L * 1024L * 1024L;
+        long diskIoBytesPerSecondThreshold = 100L * 1024L * 1024L;
+        long diskIoSustainMillis = 30000L;
+        boolean diskScanEnabled = true;
+        int diskScanMaxDepth = 4;
+        int diskScanMaxFiles = 10000;
+        int diskScanTopFiles = 50;
+        long diskScanTimeoutMillis = 5000L;
+        final List<File> diskScanRoots = newConcurrentList(true);
+
+        double fileIoSampleRate = 0.001D;
+        double fileIoDiagSampleRate = 0.1D;
+
+        boolean heapDumpEnabled;
+        String jfrMode = "auto";
+        String jfrSettings = "profile";
+        int jfrDurationSeconds = 60;
+        boolean nativeMemoryTrackingEnabled = true;
+
+        public void normalize() {
+            sampleIntervalMillis = positive(sampleIntervalMillis, 10000L);
+            ringBufferMaxSamples = Math.max(16, ringBufferMaxSamples);
+            h2BatchSize = Math.max(1, h2BatchSize);
+            h2QueueSize = Math.max(h2BatchSize, h2QueueSize);
+            h2FlushIntervalMillis = positive(h2FlushIntervalMillis, 1000L);
+            h2MaxBytes = Math.max(0L, h2MaxBytes);
+            h2FailureDegradeMillis = Math.max(0L, h2FailureDegradeMillis);
+            if (diagnosticsDirectory == null) {
+                diagnosticsDirectory = new File(System.getProperty("java.io.tmpdir"), "rx-diagnostics");
+            }
+            if (h2File == null) {
+                h2File = new File(diagnosticsDirectory, "diag");
+            }
+            diagnosticsMaxBytes = Math.max(0L, diagnosticsMaxBytes);
+            evidenceMinFreeBytes = Math.max(0L, evidenceMinFreeBytes);
+            jfrMinFreeBytes = Math.max(0L, jfrMinFreeBytes);
+            heapDumpMinFreeBytes = Math.max(0L, heapDumpMinFreeBytes);
+            heavyEvidenceCooldownMillis = Math.max(0L, heavyEvidenceCooldownMillis);
+            incidentCooldownMillis = Math.max(0L, incidentCooldownMillis);
+            diagDurationMillis = positive(diagDurationMillis, 60000L);
+            cpuEvidenceSamples = Math.max(1, cpuEvidenceSamples);
+            cpuEvidenceIntervalMillis = positive(cpuEvidenceIntervalMillis, 300L);
+            cpuTopThreads = Math.max(1, cpuTopThreads);
+            maxStackFrames = Math.max(1, maxStackFrames);
+            diskScanMaxDepth = Math.max(0, diskScanMaxDepth);
+            diskIoBytesPerSecondThreshold = Math.max(0L, diskIoBytesPerSecondThreshold);
+            diskIoSustainMillis = Math.max(0L, diskIoSustainMillis);
+            diskScanMaxFiles = Math.max(1, diskScanMaxFiles);
+            diskScanTopFiles = Math.max(1, diskScanTopFiles);
+            diskScanTimeoutMillis = positive(diskScanTimeoutMillis, 5000L);
+            fileIoSampleRate = clampRate(fileIoSampleRate);
+            fileIoDiagSampleRate = clampRate(fileIoDiagSampleRate);
+        }
+
+        public String jdbcUrl() {
+            if (h2JdbcUrl != null && h2JdbcUrl.length() != 0) {
+                return h2JdbcUrl;
+            }
+            File parent = h2File.getAbsoluteFile().getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+            return "jdbc:h2:" + h2File.getAbsolutePath().replace('\\', '/')
+                    + ";DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;";
+        }
+
+        public boolean isFileH2Storage() {
+            return h2JdbcUrl == null || h2JdbcUrl.length() == 0
+                    || !h2JdbcUrl.toLowerCase(Locale.ENGLISH).startsWith("jdbc:h2:mem:");
+        }
+
+        public double effectiveFileIoSampleRate(DiagnosticLevel currentLevel) {
+            return currentLevel != null && currentLevel.atLeast(DiagnosticLevel.DIAG) ? fileIoDiagSampleRate : fileIoSampleRate;
+        }
+
+        private static long positive(long value, long def) {
+            return value <= 0L ? def : value;
+        }
+
+        private static double clampRate(double value) {
+            if (value < 0D) {
+                return 0D;
+            }
+            if (value > 1D) {
+                return 1D;
+            }
+            return value;
+        }
+    }
+
+    @Getter
+    @Setter
+    @ToString
     public static class NetConfig {
         boolean enableLog;
         int reactorThreadAmount;
@@ -242,6 +422,7 @@ public final class RxConfig {
     ThreadPoolConfig threadPool = new ThreadPoolConfig();
     CacheConfig cache = new CacheConfig();
     StorageConfig storage = new StorageConfig();
+    DiagnosticConfig diagnostic = new DiagnosticConfig();
     NetConfig net = new NetConfig();
     RestConfig rest = new RestConfig();
 
@@ -295,6 +476,7 @@ public final class RxConfig {
         if (id == null) {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
+        diagnostic.normalize();
     }
 
 //    public void refreshFromSystemProperty() {
@@ -358,6 +540,60 @@ public final class RxConfig {
         storage.entityDatabaseMaxConnections = SystemPropertyUtil.getInt(ConfigNames.STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS, storage.entityDatabaseMaxConnections);
         storage.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.STORAGE_ENTITY_DATABASE_ROLL_PERIOD, storage.entityDatabaseRollPeriod);
 
+        diagnostic.enabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_ENABLED, diagnostic.enabled);
+        diagnostic.level = getEnum(ConfigNames.DIAGNOSTIC_LEVEL, diagnostic.level);
+        diagnostic.sampleIntervalMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_SAMPLE_INTERVAL_MILLIS, diagnostic.sampleIntervalMillis);
+        diagnostic.ringBufferMaxSamples = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_RING_BUFFER_MAX_SAMPLES, diagnostic.ringBufferMaxSamples);
+        diagnostic.h2Enabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_H2_ENABLED, diagnostic.h2Enabled);
+        diagnostic.h2JdbcUrl = SystemPropertyUtil.get(ConfigNames.DIAGNOSTIC_H2_JDBC_URL, diagnostic.h2JdbcUrl);
+        String diagPath = SystemPropertyUtil.get(ConfigNames.DIAGNOSTIC_H2_PATH);
+        if (diagPath != null && diagPath.length() != 0) {
+            diagnostic.h2File = new File(diagPath);
+        }
+        diagnostic.h2BatchSize = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_H2_BATCH_SIZE, diagnostic.h2BatchSize);
+        diagnostic.h2QueueSize = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_H2_QUEUE_SIZE, diagnostic.h2QueueSize);
+        diagnostic.h2FlushIntervalMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_H2_FLUSH_INTERVAL_MILLIS, diagnostic.h2FlushIntervalMillis);
+        diagnostic.h2TtlMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_H2_TTL_MILLIS, diagnostic.h2TtlMillis);
+        diagnostic.h2MaxBytes = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_H2_MAX_BYTES, diagnostic.h2MaxBytes);
+        diagnostic.h2FailureDegradeMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_H2_FAILURE_DEGRADE_MILLIS, diagnostic.h2FailureDegradeMillis);
+        diagPath = SystemPropertyUtil.get(ConfigNames.DIAGNOSTIC_DIR);
+        if (diagPath != null && diagPath.length() != 0) {
+            diagnostic.diagnosticsDirectory = new File(diagPath);
+        }
+        diagnostic.diagnosticsMaxBytes = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_DIR_MAX_BYTES, diagnostic.diagnosticsMaxBytes);
+        diagnostic.evidenceMinFreeBytes = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_EVIDENCE_MIN_FREE_BYTES, diagnostic.evidenceMinFreeBytes);
+        diagnostic.heavyEvidenceCooldownMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_EVIDENCE_HEAVY_COOLDOWN_MILLIS, diagnostic.heavyEvidenceCooldownMillis);
+        diagnostic.incidentCooldownMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_INCIDENT_COOLDOWN_MILLIS, diagnostic.incidentCooldownMillis);
+        diagnostic.diagDurationMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_DIAG_DURATION_MILLIS, diagnostic.diagDurationMillis);
+        diagnostic.cpuThresholdPercent = getDouble(ConfigNames.DIAGNOSTIC_CPU_THRESHOLD_PERCENT, diagnostic.cpuThresholdPercent);
+        diagnostic.cpuSustainMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_CPU_SUSTAIN_MILLIS, diagnostic.cpuSustainMillis);
+        diagnostic.cpuTopThreads = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_CPU_TOP_THREADS, diagnostic.cpuTopThreads);
+        diagnostic.cpuEvidenceSamples = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_CPU_EVIDENCE_SAMPLES, diagnostic.cpuEvidenceSamples);
+        diagnostic.cpuEvidenceIntervalMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_CPU_EVIDENCE_INTERVAL_MILLIS, diagnostic.cpuEvidenceIntervalMillis);
+        diagnostic.maxStackFrames = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_STACK_MAX_FRAMES, diagnostic.maxStackFrames);
+        diagnostic.heapUsedThresholdPercent = getDouble(ConfigNames.DIAGNOSTIC_MEMORY_HEAP_THRESHOLD_PERCENT, diagnostic.heapUsedThresholdPercent);
+        diagnostic.directUsedThresholdPercent = getDouble(ConfigNames.DIAGNOSTIC_MEMORY_DIRECT_THRESHOLD_PERCENT, diagnostic.directUsedThresholdPercent);
+        diagnostic.metaspaceUsedThresholdPercent = getDouble(ConfigNames.DIAGNOSTIC_MEMORY_METASPACE_THRESHOLD_PERCENT, diagnostic.metaspaceUsedThresholdPercent);
+        diagnostic.diskFreePercentThreshold = getDouble(ConfigNames.DIAGNOSTIC_DISK_FREE_PERCENT_THRESHOLD, diagnostic.diskFreePercentThreshold);
+        diagnostic.diskMinFreeBytes = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_DISK_MIN_FREE_BYTES, diagnostic.diskMinFreeBytes);
+        diagnostic.diskIoBytesPerSecondThreshold = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_DISK_IO_BYTES_PER_SECOND_THRESHOLD, diagnostic.diskIoBytesPerSecondThreshold);
+        diagnostic.diskIoSustainMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_DISK_IO_SUSTAIN_MILLIS, diagnostic.diskIoSustainMillis);
+        diagnostic.diskScanEnabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_DISK_SCAN_ENABLED, diagnostic.diskScanEnabled);
+        diagnostic.diskScanMaxDepth = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_DISK_SCAN_MAX_DEPTH, diagnostic.diskScanMaxDepth);
+        diagnostic.diskScanMaxFiles = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_DISK_SCAN_MAX_FILES, diagnostic.diskScanMaxFiles);
+        diagnostic.diskScanTopFiles = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_DISK_SCAN_TOP_FILES, diagnostic.diskScanTopFiles);
+        diagnostic.diskScanTimeoutMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_DISK_SCAN_TIMEOUT_MILLIS, diagnostic.diskScanTimeoutMillis);
+        resetFiles(diagnostic.diskScanRoots, ConfigNames.DIAGNOSTIC_DISK_SCAN_ROOTS);
+        diagnostic.fileIoSampleRate = getDouble(ConfigNames.DIAGNOSTIC_FILE_IO_STACK_SAMPLE_RATE, diagnostic.fileIoSampleRate);
+        diagnostic.fileIoDiagSampleRate = getDouble(ConfigNames.DIAGNOSTIC_FILE_IO_DIAG_STACK_SAMPLE_RATE, diagnostic.fileIoDiagSampleRate);
+        diagnostic.heapDumpEnabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_HEAP_DUMP_ENABLED, diagnostic.heapDumpEnabled);
+        diagnostic.heapDumpMinFreeBytes = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_HEAP_DUMP_MIN_FREE_BYTES, diagnostic.heapDumpMinFreeBytes);
+        diagnostic.jfrMode = SystemPropertyUtil.get(ConfigNames.DIAGNOSTIC_JFR_MODE, diagnostic.jfrMode);
+        diagnostic.jfrSettings = SystemPropertyUtil.get(ConfigNames.DIAGNOSTIC_JFR_SETTINGS, diagnostic.jfrSettings);
+        diagnostic.jfrDurationSeconds = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_JFR_DURATION_SECONDS, diagnostic.jfrDurationSeconds);
+        diagnostic.jfrMinFreeBytes = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_JFR_MIN_FREE_BYTES, diagnostic.jfrMinFreeBytes);
+        diagnostic.nativeMemoryTrackingEnabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_NMT_ENABLED, diagnostic.nativeMemoryTrackingEnabled);
+
         net.reactorThreadAmount = SystemPropertyUtil.getInt(ConfigNames.NET_REACTOR_THREAD_AMOUNT, net.reactorThreadAmount);
         net.enableLog = SystemPropertyUtil.getBoolean(ConfigNames.NET_ENABLE_LOG, net.enableLog);
         net.connectTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_CONNECT_TIMEOUT_MILLIS, net.connectTimeoutMillis);
@@ -408,5 +644,42 @@ public final class RxConfig {
         }
         conf.clear();
         conf.addAll(Linq.from(Strings.split(v, ",")).toSet());
+    }
+
+    void resetFiles(Collection<File> conf, String propName) {
+        String v = SystemPropertyUtil.get(propName);
+        if (v == null) {
+            return;
+        }
+        conf.clear();
+        for (String path : Strings.split(v, ",")) {
+            if (path != null && path.trim().length() != 0) {
+                conf.add(new File(path.trim()));
+            }
+        }
+    }
+
+    static <T extends Enum<T>> T getEnum(String propName, T def) {
+        String v = SystemPropertyUtil.get(propName);
+        if (v == null || v.length() == 0) {
+            return def;
+        }
+        try {
+            return Enum.valueOf(def.getDeclaringClass(), v.trim().toUpperCase(Locale.ENGLISH));
+        } catch (IllegalArgumentException e) {
+            return def;
+        }
+    }
+
+    static double getDouble(String propName, double def) {
+        String v = SystemPropertyUtil.get(propName);
+        if (v == null || v.length() == 0) {
+            return def;
+        }
+        try {
+            return Double.parseDouble(v);
+        } catch (NumberFormatException e) {
+            return def;
+        }
     }
 }

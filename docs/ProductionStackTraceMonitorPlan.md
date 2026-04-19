@@ -11,7 +11,14 @@
 
 - `[已完成]` 新增独立诊断包 `org.rx.diagnostic`
   - 当前实现不依赖 Spring，不改动旧 `CpuWatchman` / `Sys.Info` / `H2StoreCache` 等既有逻辑，便于后续逐步替换旧监控相关代码。
-  - 主要类：`DiagnosticMonitor`、`DiagnosticConfig`、`ResourceSampler`、`H2DiagnosticStore`、`DiagnosticFileIo`、`JvmDiagnosticSupport`。
+  - 主要类：`DiagnosticMonitor`、`RxConfig.DiagnosticConfig`、`ResourceSampler`、`H2DiagnosticStore`、`DiagnosticFileIo`、`JvmDiagnosticSupport`。
+- `[已完成]` 配置整合进 `RxConfig`
+  - 原独立 `DiagnosticConfig` 已整合为 `RxConfig.DiagnosticConfig`。
+  - 诊断模块统一通过 `RxConfig.INSTANCE.getDiagnostic()` 获取默认配置。
+  - `app.diagnostic.*` 系统属性仍保持不变，支持现有配置键继续生效。
+- `[已完成]` 使用 Lombok 精简诊断类
+  - `DiagnosticMetric`、`ThreadCpuSample`、`ResourceSnapshot` 等数据类已用 Lombok 生成 getter / 构造器。
+  - `DiagnosticMonitor`、`H2DiagnosticStore` 已改用 Lombok 日志注解，减少模板代码。
 - `[已完成]` 常态轻量采样 MVP
   - 已覆盖进程 CPU、系统 CPU、线程数、Heap、Non-Heap、MemoryPool、Metaspace、Direct Buffer、Mapped Buffer、GC、物理内存、文件描述符、磁盘分区空间。
   - 采样线程独立运行，不进入 Netty EventLoop。
@@ -46,6 +53,10 @@
   - 新增 H2 写失败降级测试。
   - 新增证据目录磁盘预算不足时跳过 bundle 创建测试。
   - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticMonitorTest" test`，结果 6 个测试通过。
+- `[已评估]` `H2DiagnosticStore` 与 `EntityDatabase` 复用
+  - 当前不直接复用 `EntityDatabase.save()` / entity mapping。
+  - 原因：诊断写入路径需要单写线程、有界队列、prepared batch、批量事务、降级丢弃和低对象分配；`EntityDatabase` 当前偏通用实体映射，存在反射、序列化、逐行保存和连接池语义，不适合直接进入监控写入路径。
+  - 后续建议抽取底层批量 JDBC 能力，例如 `executeBatch` / `withConnection` / `JdbcBatchExecutor`，再让 `EntityDatabaseImpl` 和 `H2DiagnosticStore` 共享底层能力，而不是让诊断模块复用高层实体 API。
 
 ## 1. 背景与目标
 
@@ -138,6 +149,107 @@ H2AsyncWriter <-------------+
 - 取证线程：独立线程池，限制并发数，严禁占用 I/O 线程。
 - H2 写线程：单线程批量写，避免多线程抢 H2 锁。
 - 目录扫描线程：独立限速，磁盘异常时优先降级。
+
+## 3.1 代码入口与类交互
+
+### 3.1.1 推荐入口
+
+- 默认启动入口：`DiagnosticMonitor.startDefault()`
+  - 读取 `RxConfig.INSTANCE.getDiagnostic()`。
+  - 适合应用启动阶段显式调用。
+- 自定义启动入口：`new DiagnosticMonitor(config).start()`
+  - 适合测试、临时诊断或隔离 H2 存储。
+  - `config` 类型为 `RxConfig.DiagnosticConfig`。
+- 文件 I/O 埋点入口：`DiagnosticFileIo.recordRead(...)` / `DiagnosticFileIo.recordWrite(...)`
+  - 适合文件读写封装层、日志/缓存/导出等关键文件路径。
+  - 默认按采样率记录 stacktrace，异常升档时提高采样率。
+- 关闭入口：`DiagnosticMonitor.close()`
+  - 停止采样线程、取证线程和 H2 写线程。
+
+### 3.1.2 核心类职责
+
+- `RxConfig.DiagnosticConfig`：统一配置入口，承载 `app.diagnostic.*` 配置。
+- `DiagnosticMonitor`：模块门面，负责启动、采样调度、阈值触发、incident 生命周期。
+- `ResourceSampler`：采集 MXBean、BufferPool、GC、磁盘分区、TopN 线程 CPU。
+- `H2DiagnosticStore`：有界队列、单写线程、批量 H2 落库、TTL、容量保护、失败降级。
+- `DiagnosticFileIo`：应用层文件读写采样入口，解决磁盘容量/读写问题的 stacktrace 归因。
+- `IncidentBundleWriter`：incident 证据目录创建、文本证据写入、目录容量保护。
+- `JvmDiagnosticSupport`：JFR、thread dump、class histogram、NMT、heap dump 的能力探测与调用。
+- `DiagnosticFileSupport`：H2 文件大小、证据目录大小、可用空间预算、受限目录裁剪。
+
+### 3.1.3 启动与采样交互图
+
+```mermaid
+flowchart TD
+    A["应用启动"] --> B["DiagnosticMonitor.startDefault()"]
+    B --> C["RxConfig.INSTANCE.getDiagnostic()"]
+    B --> D["H2DiagnosticStore.start()"]
+    B --> E["采样线程 rx-diagnostic-sampler"]
+    E --> F["ResourceSampler.sample()"]
+    F --> G["MXBean / BufferPool / GC / File roots"]
+    F --> H["ResourceSnapshot ring buffer"]
+    F --> I["H2DiagnosticStore.recordMetric()"]
+    E --> J["DiagnosticMonitor.evaluate()"]
+    J --> K{"阈值持续超限?"}
+    K -->|否| E
+    K -->|是| L["openIncident()"]
+    L --> M["取证线程 rx-diagnostic-evidence"]
+```
+
+### 3.1.4 异常取证交互图
+
+```mermaid
+flowchart TD
+    A["openIncident(type)"] --> B["IncidentBundleWriter.createBundleDir()"]
+    B --> C{"磁盘预算足够?"}
+    C -->|否| D["仅记录 incident 摘要到 H2"]
+    C -->|是| E["按类型取证"]
+    E --> F["CPU_HIGH: ResourceSampler.sampleTopThreads()"]
+    E --> G["MEMORY_HIGH: classHistogram / NMT / heapDump"]
+    E --> H["DISK_SPACE_HIGH: 限速目录扫描"]
+    E --> I["DISK_IO_HIGH: 复用 DiagnosticFileIo 样本"]
+    F --> J["H2DiagnosticStore.recordThreadCpu()"]
+    G --> K["IncidentBundleWriter.writeText()"]
+    H --> L["H2DiagnosticStore.recordFileSize()"]
+    I --> M["H2DiagnosticStore.recordFileIo()"]
+    J --> N["H2 batch writer"]
+    K --> N
+    L --> N
+    M --> N
+```
+
+### 3.1.5 文件 I/O 采样交互图
+
+```mermaid
+flowchart TD
+    A["业务文件读写封装"] --> B["DiagnosticFileIo.recordRead/write"]
+    B --> C["DiagnosticMonitor.getDefault()"]
+    C --> D["更新 I/O bytes/sec 窗口"]
+    D --> E{"超过 disk I/O 阈值?"}
+    E -->|是| F["触发 DISK_IO_HIGH incident"]
+    B --> G{"采样命中?"}
+    G -->|否| H["直接返回"]
+    G -->|是| I["抓当前线程 stacktrace"]
+    I --> J["StackTraceCodec.hash()"]
+    J --> K["H2DiagnosticStore.recordStackTrace()"]
+    J --> L["H2DiagnosticStore.recordFileIo()"]
+```
+
+### 3.1.6 H2 存储与 EntityDatabase 复用结论
+
+当前 `H2DiagnosticStore` 暂不直接复用 `EntityDatabase` 高层实体 API。
+
+原因：
+
+- 诊断写入是事故期间的保护路径，优先级是低分配、批量写、可丢弃、可降级。
+- 当前 `EntityDatabase` 主要服务通用实体映射，`save()` 路径存在反射、字段映射、序列化和逐行写入成本。
+- `H2DiagnosticStore` 需要按事件类型批量 prepared statement、单事务提交、容量裁剪和失败降级，这些能力当前不适合塞进高层实体 API。
+
+后续扩展方向：
+
+- 在 `EntityDatabase` 或新低层接口中增加批量 JDBC 能力，例如 `executeBatch(sql, argsList)`。
+- 或增加受控连接回调，例如 `withConnection(BiAction<Connection>)`，但必须限制只给内部低层组件使用，避免业务代码绕过事务模型。
+- 待底层批量能力稳定后，`EntityDatabaseImpl` 与 `H2DiagnosticStore` 可以共享连接创建、H2 参数、慢 SQL 日志和批量执行工具。
 
 ## 4. 运行级别
 
