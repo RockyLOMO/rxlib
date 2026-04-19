@@ -16,6 +16,7 @@ import org.rx.core.Arrays;
 import org.rx.core.Disposable;
 import org.rx.core.Tasks;
 import org.rx.core.Strings;
+import org.rx.diagnostic.DiagnosticHttpHandler;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 
@@ -188,7 +189,8 @@ public class HttpServer extends Disposable {
                 response.headers().setAll(res.getHeaders());
                 return response;
             }
-            DefaultFullHttpResponse response = new DefaultFullHttpResponse(state.request.protocolVersion(), OK, ifNull(res.getContent(), Unpooled.EMPTY_BUFFER));
+            DefaultFullHttpResponse response = new DefaultFullHttpResponse(state.request.protocolVersion(),
+                    ifNull(res.getStatus(), OK), ifNull(res.getContent(), Unpooled.EMPTY_BUFFER));
             response.headers().setAll(res.getHeaders());
             if (state.handler.blocking()) {
                 response.headers().set(BLOCKING_HANDLER_HEADER, "1");
@@ -354,5 +356,13 @@ public class HttpServer extends Disposable {
 
     public HttpServer requestBlocking(String path, Handler handler) {
         return requestMapping(path, blocking(handler));
+    }
+
+    public HttpServer requestDiagnostic() {
+        return requestDiagnostic("/rx-diagnostic");
+    }
+
+    public HttpServer requestDiagnostic(String path) {
+        return requestBlocking(path, new DiagnosticHttpHandler());
     }
 }

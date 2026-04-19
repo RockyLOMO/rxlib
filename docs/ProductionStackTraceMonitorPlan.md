@@ -32,6 +32,12 @@
   - 已实现有界队列、单写线程、批量写入、flush 屏障、基础 TTL 清理、丢弃计数。
   - H2 只保存指标、事件、stacktrace、incident 和证据路径索引，不保存 heap dump / JFR 等大文件。
   - `H2DiagnosticStore` 已复用 `EntityDatabase` 底层连接池、连接生命周期和慢 SQL 日志能力，不再直接使用 `DriverManager` 创建连接。
+  - `H2DiagnosticStore` 已移除重复的 `Class.forName("org.h2.Driver")`，H2 driver 由 `EntityDatabaseImpl` 统一加载。
+- `[已完成]` 内置只读诊断页面 MVP
+  - `HttpServer.requestDiagnostic()` 默认注册 `/rx-diagnostic`，也支持指定路径。
+  - 页面通过 Basic Auth 保护，用户名固定 `rxlib`，密码使用 `RxConfig.rtoken`。
+  - 页面查询 H2 的 incident、metric、thread CPU、file I/O、file size、stacktrace，兼容移动端布局。
+  - H2 查询通过 `requestBlocking` 下放后台线程，避免阻塞 Netty EventLoop。
 - `[已完成]` JDK 8 / JDK 17 兼容方向
   - 代码语法保持 Java 8。
   - JFR、class histogram、NMT、thread dump 通过 `com.sun.management:type=DiagnosticCommand` MBean 运行时探测，不直接依赖 JDK 17 的 `jdk.jfr` API。
@@ -160,6 +166,10 @@ H2AsyncWriter <-------------+
 - 默认启动入口：`DiagnosticMonitor.startDefault()`
   - 读取 `RxConfig.INSTANCE.getDiagnostic()`。
   - 适合应用启动阶段显式调用。
+- 默认查看入口：`HttpServer.requestDiagnostic()` / `HttpServer.requestDiagnostic("/path")`
+  - 基于现有 `HttpServer` 注册只读 HTML 页面。
+  - Basic Auth 用户名固定为 `rxlib`，密码为 `RxConfig.INSTANCE.getRtoken()`。
+  - 内部使用 blocking handler 读取 H2，避免阻塞 Netty EventLoop。
 - 自定义启动入口：`new DiagnosticMonitor(config).start()`
   - 适合测试、临时诊断或隔离 H2 存储。
   - `config` 类型为 `RxConfig.DiagnosticConfig`。
@@ -176,6 +186,7 @@ H2AsyncWriter <-------------+
 - `ResourceSampler`：采集 MXBean、BufferPool、GC、磁盘分区、TopN 线程 CPU。
 - `H2DiagnosticStore`：有界队列、单写线程、批量 H2 落库、TTL、容量保护、失败降级。
 - `DiagnosticFileIo`：应用层文件读写采样入口，解决磁盘容量/读写问题的 stacktrace 归因。
+- `DiagnosticHttpHandler`：基于 `HttpServer` 的只读 H2 查看页面，负责 Basic Auth、HTML 渲染和移动端布局。
 - `IncidentBundleWriter`：incident 证据目录创建、文本证据写入、目录容量保护。
 - `JvmDiagnosticSupport`：JFR、thread dump、class histogram、NMT、heap dump 的能力探测与调用。
 - `DiagnosticFileSupport`：H2 文件大小、证据目录大小、可用空间预算、受限目录裁剪。

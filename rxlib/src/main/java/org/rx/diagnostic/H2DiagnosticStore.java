@@ -54,7 +54,6 @@ public class H2DiagnosticStore implements DiagnosticStore {
             return;
         }
         try {
-            Class.forName("org.h2.Driver");
             initSchema();
         } catch (Throwable e) {
             running.set(false);
@@ -555,7 +554,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
         }
     }
 
-    private static EntityDatabase createDatabase(DiagnosticConfig config) {
+    static EntityDatabase createDatabase(DiagnosticConfig config) {
         config.normalize();
         int maxConnections = 1;
         if (config.getH2JdbcUrl() != null && config.getH2JdbcUrl().length() != 0) {
