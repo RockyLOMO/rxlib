@@ -6,22 +6,50 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.rx.net.Sockets;
 import org.rx.net.ntp.NtpPacket;
 
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.time.Instant;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+@Slf4j
 public class NtpClockTest {
+
+    /** 与 {@link org.rx.net.ntp.NtpClientIntegrationTest} 一致的公网 NTP（阿里云 ntp1 常见解析地址）。 */
+    private static final String NTP_PUBLIC_IP = "118.31.3.89";
+
+    private static boolean ntpReachable(String ip) {
+        try {
+            InetAddress addr = InetAddress.getByName(ip);
+            try (DatagramSocket s = new DatagramSocket()) {
+                s.setSoTimeout(1500);
+                s.connect(addr, NtpPacket.NTP_PORT);
+                return true;
+            }
+        } catch (Exception e) {
+            log.info("NTP probe failed for {}: {}", ip, e.getMessage());
+            return false;
+        }
+    }
 
     @Test
     public void testSync() throws Exception {
         int mockPort = 12346;
         long mockOffset = 10000; // 10 seconds offset
+
+        List<String> serversBackup = new ArrayList<>(RxConfig.INSTANCE.net.ntp.getServers());
+        long timeoutBackup = RxConfig.INSTANCE.net.ntp.timeoutMillis;
+        long offsetBackup = NtpClock.offset;
+        boolean injectedBackup = NtpClock.injected;
 
         // 1. Setup Mock NTP Server
         Bootstrap sb = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
@@ -73,6 +101,43 @@ public class NtpClockTest {
 
         } finally {
             serverChannel.close().sync();
+            RxConfig.INSTANCE.net.ntp.getServers().clear();
+            RxConfig.INSTANCE.net.ntp.getServers().addAll(serversBackup);
+            RxConfig.INSTANCE.net.ntp.timeoutMillis = timeoutBackup;
+            NtpClock.offset = offsetBackup;
+            NtpClock.injected = injectedBackup;
+        }
+    }
+
+    /**
+     * 使用公网 NTP 118.31.3.89 验证 {@link NtpClock#sync()} 与 {@link org.rx.net.ntp.NtpClient} 联调（无 mock）。
+     */
+    @Test
+    @Timeout(25)
+    public void ntpClock_sync_withPublicNtp118_succeedsIfReachable() throws Exception {
+        assumeTrue(ntpReachable(NTP_PUBLIC_IP), "公网 NTP 不可达，跳过");
+
+        List<String> serversBackup = new ArrayList<>(RxConfig.INSTANCE.net.ntp.getServers());
+        long timeoutBackup = RxConfig.INSTANCE.net.ntp.timeoutMillis;
+        long offsetBackup = NtpClock.offset;
+        boolean injectedBackup = NtpClock.injected;
+
+        try {
+            RxConfig.INSTANCE.net.ntp.getServers().clear();
+            RxConfig.INSTANCE.net.ntp.getServers().add(NTP_PUBLIC_IP);
+            RxConfig.INSTANCE.net.ntp.timeoutMillis = 8000;
+            NtpClock.offset = 0;
+            NtpClock.injected = false;
+
+            NtpClock.sync();
+
+            assertTrue(Math.abs(NtpClock.offset) < 120_000, "offset 应在合理范围内: " + NtpClock.offset);
+        } finally {
+            RxConfig.INSTANCE.net.ntp.getServers().clear();
+            RxConfig.INSTANCE.net.ntp.getServers().addAll(serversBackup);
+            RxConfig.INSTANCE.net.ntp.timeoutMillis = timeoutBackup;
+            NtpClock.offset = offsetBackup;
+            NtpClock.injected = injectedBackup;
         }
     }
 }
