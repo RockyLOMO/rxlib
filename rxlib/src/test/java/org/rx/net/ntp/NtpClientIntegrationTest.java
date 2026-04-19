@@ -2,6 +2,7 @@ package org.rx.net.ntp;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -16,6 +17,9 @@ import org.rx.net.Sockets;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.channels.ClosedChannelException;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -42,8 +46,19 @@ public class NtpClientIntegrationTest {
 
     // ---- Constant Helpers ----
 
-    private static final String NTP_HOST = "ntp1.aliyun.com";
-    private static final String NTP_IP = "118.31.3.89"; // Known working Aliyun NTP IP
+    private static final String NTP_IP = System.getProperty("rx.ntp.test.ip", "118.31.3.89");
+
+    private static ByteBuf buildServerResponse(ByteBufAllocator alloc, int li, int stratum,
+                                               long originateNtp, long receiveNtp, long transmitNtp) {
+        ByteBuf resp = alloc.heapBuffer(NtpPacket.PACKET_LENGTH, NtpPacket.PACKET_LENGTH);
+        resp.writeZero(NtpPacket.PACKET_LENGTH);
+        resp.setByte(0, ((li & 0x3) << 6) | (NtpPacket.VERSION_3 << 3) | NtpPacket.MODE_SERVER);
+        resp.setByte(1, stratum);
+        resp.setLong(24, originateNtp);
+        resp.setLong(32, receiveNtp);
+        resp.setLong(40, transmitNtp);
+        return resp;
+    }
 
     /**
      * Probes if external NTP is reachable. Handles DNS hijacking.
@@ -82,6 +97,20 @@ public class NtpClientIntegrationTest {
             () -> c.getTimeAsync(new InetSocketAddress("127.0.0.1", 123)));
     }
 
+    @Test
+    void ntpClient_sameMillis_generatesUniqueTransmitTimestamp() {
+        client = new NtpClient();
+        long fixedMillis = System.currentTimeMillis();
+        Set<Long> values = new HashSet<Long>();
+        long prev = Long.MIN_VALUE;
+        for (int i = 0; i < 256; i++) {
+            long current = client.nextTransmitNtp(fixedMillis);
+            assertTrue(values.add(current), "Transmit timestamp must stay unique within the same millisecond");
+            assertTrue(current > prev, "Transmit timestamp must stay monotonic");
+            prev = current;
+        }
+    }
+
     // ---- 2. Mock Server Integration (Reliable Local Test) ----
 
     @Test
@@ -94,12 +123,7 @@ public class NtpClientIntegrationTest {
             protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
                 long xmitNtp = NtpPacket.getTransmitNtp(packet.content());
                 long nowNtp = NtpPacket.millisToNtp(System.currentTimeMillis());
-                ByteBuf resp = ctx.alloc().heapBuffer(NtpPacket.PACKET_LENGTH).writeZero(NtpPacket.PACKET_LENGTH);
-                resp.setByte(0, (NtpPacket.VERSION_3 << 3) | NtpPacket.MODE_SERVER);
-                resp.setByte(1, 1); // Stratum 1
-                resp.setLong(24, xmitNtp); // Echo originate
-                resp.setLong(32, nowNtp);  // Receive
-                resp.setLong(40, nowNtp);  // Transmit
+                ByteBuf resp = buildServerResponse(ctx.alloc(), 0, 1, xmitNtp, nowNtp, nowNtp);
                 ctx.writeAndFlush(new DatagramPacket(resp, packet.sender()));
             }
         }));
@@ -113,6 +137,48 @@ public class NtpClientIntegrationTest {
             }
         } finally {
             serverChannel.close().sync();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    @SneakyThrows
+    void ntpClient_ignoresUnexpectedAndInvalidResponses_thenAcceptsValidReply() {
+        int mockPort = 12346;
+        int roguePort = 12347;
+        Channel rogueChannel = Sockets.udpBootstrap(null, ch -> {
+        }).bind(roguePort).sync().channel();
+        Bootstrap sb = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
+            @Override
+            protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
+                long xmitNtp = NtpPacket.getTransmitNtp(packet.content());
+                long nowNtp = NtpPacket.millisToNtp(System.currentTimeMillis());
+
+                ByteBuf wrongSource = buildServerResponse(rogueChannel.alloc(), 0, 1, xmitNtp, nowNtp, nowNtp);
+                rogueChannel.writeAndFlush(new DatagramPacket(wrongSource, packet.sender()));
+
+                ByteBuf invalidResp = buildServerResponse(ctx.alloc(), 0, 0, xmitNtp, nowNtp, nowNtp);
+                ctx.writeAndFlush(new DatagramPacket(invalidResp, packet.sender()));
+
+                ctx.executor().schedule(() -> {
+                    long replyNtp = NtpPacket.millisToNtp(System.currentTimeMillis());
+                    ByteBuf validResp = buildServerResponse(ctx.alloc(), 0, 1, xmitNtp, replyNtp, replyNtp);
+                    ctx.writeAndFlush(new DatagramPacket(validResp, packet.sender()));
+                }, 50, TimeUnit.MILLISECONDS);
+            }
+        }));
+        Channel serverChannel = sb.bind(mockPort).sync().channel();
+        try {
+            client = new NtpClient();
+            try (NtpResult result = client.getTimeAsync(new InetSocketAddress("127.0.0.1", mockPort)).get(5, TimeUnit.SECONDS)) {
+                assertNotNull(result);
+                assertEquals(1, result.getStratum());
+                assertEquals(mockPort, result.getServerAddress().getPort());
+            }
+            assertTrue(client.pendingRequests.isEmpty(), "Pending requests must be cleared after valid reply");
+        } finally {
+            serverChannel.close().sync();
+            rogueChannel.close().sync();
         }
     }
 
@@ -130,6 +196,21 @@ public class NtpClientIntegrationTest {
         assertThrows(Exception.class, () -> future.get(2, TimeUnit.SECONDS));
         Thread.sleep(200);
         assertTrue(client.pendingRequests.isEmpty(), "Pending requests must be cleared after timeout");
+    }
+
+    @Test
+    @Timeout(5)
+    @SneakyThrows
+    void ntpClient_close_failsInFlightRequestsImmediately() {
+        client = new NtpClient();
+        client.setTimeoutMillis(5000);
+        CompletableFuture<NtpResult> future = client.getTimeAsync(new InetSocketAddress("127.0.0.1", 19998));
+
+        client.close();
+
+        ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(1, TimeUnit.SECONDS));
+        assertTrue(ex.getCause() instanceof ClosedChannelException);
+        assertTrue(client.pendingRequests.isEmpty(), "Pending requests must be cleared on close");
     }
 
     // ---- 4. Real Network Tests (Best effort) ----

@@ -13,15 +13,18 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Tasks;
+import org.rx.core.TimeoutFuture;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.channels.ClosedChannelException;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * High-performance Netty-based NTP client.
@@ -42,9 +45,19 @@ public class NtpClient implements AutoCloseable {
     static final class PendingRequest {
         final CompletableFuture<NtpResult> future = new CompletableFuture<>();
         final long t1Millis;
+        final InetSocketAddress server;
+        volatile TimeoutFuture<?> timeoutTask;
 
-        PendingRequest(long t1Millis) {
+        PendingRequest(long t1Millis, InetSocketAddress server) {
             this.t1Millis = t1Millis;
+            this.server = server;
+        }
+
+        void cancelTimeout() {
+            TimeoutFuture<?> timeout = timeoutTask;
+            if (timeout != null) {
+                timeout.cancel(false);
+            }
         }
     }
 
@@ -82,15 +95,37 @@ public class NtpClient implements AutoCloseable {
                 return;
             }
 
-            final PendingRequest req = client.pendingRequests.remove(originateNtp);
+            final PendingRequest req = client.pendingRequests.get(originateNtp);
             if (req == null) {
                 log.debug("NTP: received unsolicited or duplicate NTP response");
                 return;
             }
+            if (!matchesSender(req.server, msg.sender())) {
+                log.warn("NTP: ignoring response from unexpected sender {}, expect {}", msg.sender(), req.server);
+                return;
+            }
+            if (NtpPacket.getLeapIndicator(content) == 3) {
+                log.warn("NTP: ignoring unsynchronized response from {}", msg.sender());
+                return;
+            }
+            if (NtpPacket.getStratum(content) == 0) {
+                log.warn("NTP: ignoring kiss-o'-death response from {}", msg.sender());
+                return;
+            }
+            final long transmitNtp = NtpPacket.getTransmitNtp(content);
+            if (transmitNtp == 0) {
+                log.warn("NTP: ignoring response with zero transmit timestamp from {}", msg.sender());
+                return;
+            }
+            if (!client.pendingRequests.remove(originateNtp, req)) {
+                log.debug("NTP: response already completed or timed out");
+                return;
+            }
+            req.cancelTimeout();
 
             // t2 = receive timestamp set by server, t3 = transmit timestamp set by server
             final long t2Millis = NtpPacket.ntpToMillis(NtpPacket.getReceiveNtp(content));
-            final long t3Millis = NtpPacket.ntpToMillis(NtpPacket.getTransmitNtp(content));
+            final long t3Millis = NtpPacket.ntpToMillis(transmitNtp);
             final long t1Millis = req.t1Millis;
 
             final long delayMillis  = NtpPacket.computeDelay(t1Millis, t2Millis, t3Millis, t4Millis);
@@ -104,6 +139,19 @@ public class NtpClient implements AutoCloseable {
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             log.warn("NTP handler exception", cause);
         }
+
+        private static boolean matchesSender(InetSocketAddress expect, InetSocketAddress actual) {
+            if (expect == null || actual == null || expect.getPort() != actual.getPort()) {
+                return false;
+            }
+
+            InetAddress expectAddr = expect.getAddress();
+            InetAddress actualAddr = actual.getAddress();
+            if (expectAddr != null && actualAddr != null) {
+                return expectAddr.equals(actualAddr);
+            }
+            return expect.getHostString().equalsIgnoreCase(actual.getHostString());
+        }
     }
 
     private static final Handler HANDLER = new Handler();
@@ -112,6 +160,8 @@ public class NtpClient implements AutoCloseable {
 
     private final Bootstrap bootstrap;
     final Channel channel;
+    private final AtomicLong lastTransmitNtp = new AtomicLong();
+    private volatile boolean closed;
 
     /** Key: 64-bit NTP transmit timestamp embedded in the request packet. */
     final Map<Long, PendingRequest> pendingRequests = new ConcurrentHashMap<>();
@@ -123,6 +173,7 @@ public class NtpClient implements AutoCloseable {
         bootstrap = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(HANDLER));
         channel = bootstrap.bind(0).syncUninterruptibly().channel();
         channel.attr(OWNER).set(this);
+        channel.closeFuture().addListener(f -> failPendingRequests(new ClosedChannelException()));
     }
 
     // ---- Public API ----
@@ -152,15 +203,15 @@ public class NtpClient implements AutoCloseable {
      * </p>
      */
     public CompletableFuture<NtpResult> getTimeAsync(InetSocketAddress server) {
-        if (!channel.isActive()) {
+        if (closed || !channel.isActive()) {
             throw new IllegalStateException("NtpClient is closed");
         }
 
         // Snapshot time as close to the send as possible (t1)
         final long t1Millis    = System.currentTimeMillis();
-        final long xmitNtp     = NtpPacket.millisToNtp(t1Millis);
+        final long xmitNtp     = nextTransmitNtp(t1Millis);
 
-        final PendingRequest req = new PendingRequest(t1Millis);
+        final PendingRequest req = new PendingRequest(t1Millis, server);
         pendingRequests.put(xmitNtp, req);
 
         // Encode request directly into a pooled heap buffer — no byte[] involved
@@ -170,13 +221,14 @@ public class NtpClient implements AutoCloseable {
             if (!f.isSuccess()) {
                 PendingRequest removed = pendingRequests.remove(xmitNtp);
                 if (removed != null) {
+                    removed.cancelTimeout();
                     removed.future.completeExceptionally(f.cause());
                 }
             }
         });
 
         // Timeout cleanup — no object allocation beyond the lambda capture
-        Tasks.setTimeout(() -> {
+        req.timeoutTask = Tasks.setTimeout(() -> {
             PendingRequest removed = pendingRequests.remove(xmitNtp);
             if (removed != null) {
                 removed.future.completeExceptionally(
@@ -189,8 +241,33 @@ public class NtpClient implements AutoCloseable {
 
     @Override
     public void close() {
+        closed = true;
         if (channel != null) {
+            failPendingRequests(new ClosedChannelException());
             channel.close();
+        }
+    }
+
+    long nextTransmitNtp(long t1Millis) {
+        long candidate = NtpPacket.millisToNtp(t1Millis);
+        for (;;) {
+            long prev = lastTransmitNtp.get();
+            if (candidate <= prev) {
+                candidate = prev + 1;
+            }
+            if (lastTransmitNtp.compareAndSet(prev, candidate)) {
+                return candidate;
+            }
+        }
+    }
+
+    private void failPendingRequests(Throwable cause) {
+        for (Map.Entry<Long, PendingRequest> entry : pendingRequests.entrySet()) {
+            if (!pendingRequests.remove(entry.getKey(), entry.getValue())) {
+                continue;
+            }
+            entry.getValue().cancelTimeout();
+            entry.getValue().future.completeExceptionally(cause);
         }
     }
 }

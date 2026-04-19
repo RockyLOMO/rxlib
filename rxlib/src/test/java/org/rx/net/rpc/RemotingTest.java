@@ -5,6 +5,7 @@ import org.junit.jupiter.api.*;
 import org.rx.AbstractTester;
 import org.rx.bean.ULID;
 import org.rx.core.EventArgs;
+import org.rx.net.transport.ClientDisconnectedException;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.test.*;
@@ -26,6 +27,21 @@ import static org.rx.core.Sys.toJsonString;
 @Slf4j
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class RemotingTest extends AbstractTester {
+    public interface DisconnectService {
+        int disconnectBeforeReply();
+    }
+
+    public static class DisconnectServiceImpl implements DisconnectService {
+        @Override
+        public int disconnectBeforeReply() {
+            try {
+                RemotingContext.context().getClient().close();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            return 1;
+        }
+    }
 
     static int freePort() throws Exception {
         try (ServerSocket ss = new ServerSocket(0)) {
@@ -109,6 +125,23 @@ public class RemotingTest extends AbstractTester {
         assertEquals(2, facade.computeLevel(1, 1));
         restartServer(impl, endpoint_3307, startDelay);
         assertEquals(2, facade.computeLevel(1, 1));
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void rpcPoolMode_disconnectDuringMethodCall_doesNotDoubleRecycle() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        DisconnectServiceImpl service = new DisconnectServiceImpl();
+        startServer(service, endpoint);
+
+        RpcClientConfig<DisconnectService> config = RpcClientConfig.poolMode(endpoint, 1, 1);
+        config.getTcpConfig().setConnectTimeoutMillis(1000);
+        DisconnectService facade = Remoting.createFacade(DisconnectService.class, config);
+
+        assertThrows(ClientDisconnectedException.class, facade::disconnectBeforeReply,
+                "断链时应保留客户端断开异常，不能被连接池重复回收异常覆盖");
     }
 
     private void rpcApiEvent(UserManagerImpl svcImpl, List<UserManager> facadeGroup) {
