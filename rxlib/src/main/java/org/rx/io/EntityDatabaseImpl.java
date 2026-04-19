@@ -248,7 +248,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         String filePath = getFilePath();
         curFilePath = filePath;
         //http://www.h2database.com/html/commands.html#set_cache_size
-        String h2Settings = ifNull(RxConfig.INSTANCE.getDisk().getH2Settings(), "");
+        String h2Settings = ifNull(RxConfig.INSTANCE.getStorage().getH2Settings(), "");
         log.info("h2Settings: {}", h2Settings);
         JdbcConnectionPool pool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;", filePath) + h2Settings, null, null);
         pool.setMaxConnections(maxConnections);
@@ -264,7 +264,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     public EntityDatabaseImpl() {
-        this(RxConfig.INSTANCE.getDisk().getH2DbPath(), null);
+        this(RxConfig.INSTANCE.getStorage().getH2DbPath(), null);
     }
 
     public EntityDatabaseImpl(String filePath, String timeRollingPattern) {
@@ -273,7 +273,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     public EntityDatabaseImpl(String filePath, String timeRollingPattern, int maxConnections) {
         if (maxConnections <= 0) {
-            int configuredMaxConnections = RxConfig.INSTANCE.getDisk().getEntityDatabaseMaxConnections();
+            int configuredMaxConnections = RxConfig.INSTANCE.getStorage().getEntityDatabaseMaxConnections();
             maxConnections = configuredMaxConnections > 0 ? configuredMaxConnections : Math.max(4, Math.min(8, Constants.CPU_THREADS));
         }
 
@@ -294,7 +294,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 }
 
                 connPool = null;
-            }, d -> RxConfig.INSTANCE.getDisk().getEntityDatabaseRollPeriod(), null, Constants.TIMER_PERIOD_FLAG);
+            }, d -> RxConfig.INSTANCE.getStorage().getEntityDatabaseRollPeriod(), null, Constants.TIMER_PERIOD_FLAG);
         }
     }
 

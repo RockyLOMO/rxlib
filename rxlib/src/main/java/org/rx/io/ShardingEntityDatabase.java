@@ -49,7 +49,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
     }
 
     public ShardingEntityDatabase(int rpcPort, String... registerEndpoints) {
-        this(RxConfig.INSTANCE.getDisk().getH2DbPath(), null, 0, rpcPort, registerEndpoints);
+        this(RxConfig.INSTANCE.getStorage().getH2DbPath(), null, 0, rpcPort, registerEndpoints);
     }
 
     public ShardingEntityDatabase(String filePath, String timeRollingPattern, int maxConnections,

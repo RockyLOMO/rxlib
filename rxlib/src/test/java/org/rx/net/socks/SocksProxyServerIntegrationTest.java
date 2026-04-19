@@ -80,7 +80,7 @@ class SocksProxyServerIntegrationTest {
 
     @BeforeAll
     static void setup() throws Exception {
-        RxConfig.INSTANCE.getDisk().setH2DbPath("./target/test-h2-socks-" + System.nanoTime());
+        RxConfig.INSTANCE.getStorage().setH2DbPath("./target/test-h2-socks-" + System.nanoTime());
         tcpEchoBootstrap = Sockets.serverBootstrap(ch -> ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
             @Override
             public void channelRead(ChannelHandlerContext ctx, Object msg) {
@@ -673,6 +673,53 @@ class SocksProxyServerIntegrationTest {
 
     @Test
     @SneakyThrows
+    @Timeout(value = 20)
+    void shadowsocksUdpRelay_sameDestinationDifferentClientPorts_e2e() {
+        int proxyBPort = 15320;
+        int proxyAPort = 15321;
+        int ssPort = 15322;
+
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        SocksProxyServer proxyB = new SocksProxyServer(configB);
+
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        SocksProxyServer proxyA = new SocksProxyServer(configA);
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
+                org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "same-dst-pwd");
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+
+        UpstreamSupport supportA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyAPort), null, null), null);
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+        ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyAPort), supportA)));
+        proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), configA, supportB)));
+
+        try {
+            Thread.sleep(1000);
+            org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword(), true);
+            DatagramSocket firstClient = new DatagramSocket();
+            DatagramSocket secondClient = new DatagramSocket();
+            firstClient.setSoTimeout(5000);
+            secondClient.setSoTimeout(5000);
+            try {
+                assertNotEquals(firstClient.getLocalPort(), secondClient.getLocalPort(), "test requires different SS UDP client ports");
+                assertShadowsocksUdpEcho(firstClient, ssPort, crypto, "ss-first-port");
+                assertShadowsocksUdpEcho(secondClient, ssPort, crypto, "ss-second-port");
+            } finally {
+                firstClient.close();
+                secondClient.close();
+            }
+        } finally {
+            ssServer.close();
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
     @Timeout(value = 15)
     void socks5UdpRelay_respectsAlternateDirectUpstream_e2e() {
         int proxyPort = 15317;
@@ -1201,6 +1248,37 @@ class SocksProxyServerIntegrationTest {
         buf.readBytes(b);
         buf.release();
         return b;
+    }
+
+    static void assertShadowsocksUdpEcho(DatagramSocket clientSock, int ssPort,
+            org.rx.net.socks.encryption.ICrypto crypto, String message) throws Exception {
+        ByteBuf addrBuf = Unpooled.buffer(64);
+        UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
+        byte[] payload = message.getBytes(StandardCharsets.UTF_8);
+        addrBuf.writeBytes(payload);
+        byte[] encrypted;
+        try {
+            encrypted = toBytes(crypto.encrypt(addrBuf));
+        } finally {
+            addrBuf.release();
+        }
+
+        clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
+
+        byte[] respBuf = new byte[1024];
+        java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
+        clientSock.receive(p);
+
+        ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
+        try {
+            UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+            byte[] echoed = new byte[decBuf.readableBytes()];
+            decBuf.readBytes(echoed);
+            assertEquals(UDP_ECHO_PORT, srcEp.getPort());
+            assertArrayEquals(payload, echoed);
+        } finally {
+            decBuf.release();
+        }
     }
 
     @SneakyThrows

@@ -246,8 +246,14 @@ public final class Remoting {
                 }
             } catch (ClientDisconnectedException e) {
                 if (!client.getConfig().isEnableReconnect()) {
-                    pool.returnClient(client);
-                    sync.v = null;
+                    synchronized (sync) {
+                        if (sync.v == client) {
+                            sync.v = null;
+                        }
+                    }
+                    if (!isMethodCall || waitBeans.get() == null) {
+                        pool.returnClient(client);
+                    }
                     throw e;
                 }
 
@@ -269,9 +275,7 @@ public final class Remoting {
                 if (wb != null) {
                     wb.remove(clientBean.pack.id);
                     if (wb.isEmpty()) {
-                        synchronized (sync) {
-                            sync.v = pool.returnClient(client);
-                        }
+                        recycleClient(pool, sync, client);
                     }
                 }
             }
@@ -325,6 +329,16 @@ public final class Remoting {
 
     private static Map<Integer, ClientBean> getClientBeans(StatefulTcpClient client) {
         return clientBeans.computeIfAbsent(client, k -> new ConcurrentHashMap<>());
+    }
+
+    private static void recycleClient(TcpClientPool pool, $<StatefulTcpClient> sync, StatefulTcpClient client) {
+        synchronized (sync) {
+            if (sync.v == client) {
+                sync.v = pool.returnClient(client);
+                return;
+            }
+        }
+        pool.returnClient(client);
     }
 
     private static void setReturnValue(ClientBean clientBean, Object value) {

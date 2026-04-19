@@ -61,9 +61,9 @@ public class EntityDatabaseTest extends AbstractTester {
     @Test
     public void testDefaultMaxConnectionsUsesRxConfig() {
         RxConfig conf = RxConfig.INSTANCE;
-        int oldMaxConnections = conf.getDisk().getEntityDatabaseMaxConnections();
+        int oldMaxConnections = conf.getStorage().getEntityDatabaseMaxConnections();
         try {
-            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, 3));
+            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS, 3));
             EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/max-conn-default"), null);
             try {
                 assertEquals(3, db.maxConnections);
@@ -71,16 +71,16 @@ public class EntityDatabaseTest extends AbstractTester {
                 db.close();
             }
         } finally {
-            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, oldMaxConnections));
+            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS, oldMaxConnections));
         }
     }
 
     @Test
     public void testExplicitMaxConnectionsOverridesRxConfig() {
         RxConfig conf = RxConfig.INSTANCE;
-        int oldMaxConnections = conf.getDisk().getEntityDatabaseMaxConnections();
+        int oldMaxConnections = conf.getStorage().getEntityDatabaseMaxConnections();
         try {
-            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, 3));
+            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS, 3));
             EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/max-conn-explicit"), null, 6);
             try {
                 assertEquals(6, db.maxConnections);
@@ -88,7 +88,7 @@ public class EntityDatabaseTest extends AbstractTester {
                 db.close();
             }
         } finally {
-            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.DISK_ENTITY_DATABASE_MAX_CONNECTIONS, oldMaxConnections));
+            conf.refreshFrom(Collections.<String, Object>singletonMap(RxConfig.ConfigNames.STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS, oldMaxConnections));
         }
     }
 

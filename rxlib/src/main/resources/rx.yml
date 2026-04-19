@@ -26,10 +26,10 @@ app:
     resizeQuantity: 2
   cache:
     physicalMemoryUsageWarningThreshold: 95
-    mainInstance: org.rx.core.cache.MemoryCache
+    provider: org.rx.core.cache.MemoryCache
     slidingSeconds: 60
     maxItemSize: 5000
-  disk:
+  storage:
     diskUsageWarningThreshold: 90
     h2Settings: CACHE_SIZE=8192;MAX_MEMORY_ROWS=1024;MAX_OPERATION_MEMORY=4096;WRITE_DELAY=100
     h2DbPath: ./rx
@@ -52,7 +52,7 @@ app:
       - 1,℞FREEDOM
       - 2,juTKxjSE+VQHBvVH8OO23gh1uQY7GQCq1XU7bGSijfA=
     ntp:
-      enableFlags: 0
+      syncMode: 0
       syncPeriod: 128000
       timeoutMillis: 2048
       servers:

@@ -754,17 +754,17 @@ public class TestCore extends AbstractTester {
         Map<String, Object> props = new HashMap<>();
         props.put(RxConfig.ConfigNames.OMEGA, "rx");
         props.put(RxConfig.ConfigNames.NET_USER_AGENT, "rxlib");
-        props.put(RxConfig.ConfigNames.NTP_ENABLE_FLAGS, 1);
+        props.put(RxConfig.ConfigNames.NTP_SYNC_MODE, 1);
         props.put(RxConfig.ConfigNames.JSON_SKIP_TYPES, Collections.singletonList(TestCore.class));
-        props.put(RxConfig.ConfigNames.CACHE_MAIN_INSTANCE, MemoryCache.class.getName());
+        props.put(RxConfig.ConfigNames.CACHE_PROVIDER, MemoryCache.class.getName());
         props.put(RxConfig.ConfigNames.LOG_STRATEGY, LogStrategy.ALWAYS.name());
         rxConf.refreshFrom(props, (byte) 1);
         assert rxConf.getOmega().equals("rx");
         assert rxConf.getNet().getUserAgent().equals("rxlib");
-        assert rxConf.getNet().getNtp().getEnableFlags() == 1;
+        assert rxConf.getNet().getNtp().getSyncMode() == 1;
         assert rxConf.getLogStrategy() == LogStrategy.ALWAYS;
         System.out.println(rxConf.getJsonSkipTypes());
-        System.out.println(rxConf.getCache().getMainInstance());
+        System.out.println(rxConf.getCache().getProvider());
 
         sleep(5000);
     }
