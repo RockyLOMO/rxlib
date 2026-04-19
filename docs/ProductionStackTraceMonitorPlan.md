@@ -16,6 +16,7 @@
   - 原独立 `DiagnosticConfig` 已整合为 `RxConfig.DiagnosticConfig`。
   - 诊断模块统一通过 `RxConfig.INSTANCE.getDiagnostic()` 获取默认配置。
   - `app.diagnostic.*` 系统属性仍保持不变，支持现有配置键继续生效。
+  - 诊断 H2 文件与 incident 证据目录默认放在当前工作目录 `./`，避免默认写入系统临时目录导致生产排查路径不明确。
 - `[已完成]` 使用 Lombok 精简诊断类
   - `DiagnosticMetric`、`ThreadCpuSample`、`ResourceSnapshot` 等数据类已用 Lombok 生成 getter / 构造器。
   - `DiagnosticMonitor`、`H2DiagnosticStore` 已改用 Lombok 日志注解，减少模板代码。
@@ -30,14 +31,15 @@
 - `[已完成]` H2 异步索引化存储 MVP
   - 已实现有界队列、单写线程、批量写入、flush 屏障、基础 TTL 清理、丢弃计数。
   - H2 只保存指标、事件、stacktrace、incident 和证据路径索引，不保存 heap dump / JFR 等大文件。
+  - `H2DiagnosticStore` 已复用 `EntityDatabase` 底层连接池、连接生命周期和慢 SQL 日志能力，不再直接使用 `DriverManager` 创建连接。
 - `[已完成]` JDK 8 / JDK 17 兼容方向
   - 代码语法保持 Java 8。
   - JFR、class histogram、NMT、thread dump 通过 `com.sun.management:type=DiagnosticCommand` MBean 运行时探测，不直接依赖 JDK 17 的 `jdk.jfr` API。
   - CPU/内存指标优先走公开 MXBean 接口，降低 JDK 17 模块反射限制风险。
 - `[已完成]` 基础测试
   - 新增 `DiagnosticMonitorTest`。
-  - 已验证 stack hash 稳定性、H2 异步落库、文件 I/O 采样落库、磁盘 I/O 高触发 incident。
-  - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticMonitorTest" test`，当前结果 6 个测试通过。
+  - 已验证 stack hash 稳定性、默认诊断目录、EntityDatabase 底层批处理、H2 异步落库、文件 I/O 采样落库、磁盘 I/O 高触发 incident。
+  - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticMonitorTest" test`，当前结果 8 个测试通过。
 - `[未完成]` Netty / rxlib 网络运行指标接入
   - 当前还没有接入连接数、吞吐、延迟、Channel 写水位、pending write bytes、EventLoop 队列积压。
   - 后续需要从 `transport` / `socks` / `rpc` / `http` 等网络模块按低侵入方式补指标。
@@ -52,11 +54,12 @@
 - `[已完成]` 生产保护补充测试
   - 新增 H2 写失败降级测试。
   - 新增证据目录磁盘预算不足时跳过 bundle 创建测试。
-  - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticMonitorTest" test`，结果 6 个测试通过。
-- `[已评估]` `H2DiagnosticStore` 与 `EntityDatabase` 复用
-  - 当前不直接复用 `EntityDatabase.save()` / entity mapping。
-  - 原因：诊断写入路径需要单写线程、有界队列、prepared batch、批量事务、降级丢弃和低对象分配；`EntityDatabase` 当前偏通用实体映射，存在反射、序列化、逐行保存和连接池语义，不适合直接进入监控写入路径。
-  - 后续建议抽取底层批量 JDBC 能力，例如 `executeBatch` / `withConnection` / `JdbcBatchExecutor`，再让 `EntityDatabaseImpl` 和 `H2DiagnosticStore` 共享底层能力，而不是让诊断模块复用高层实体 API。
+  - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticMonitorTest" test`，结果 8 个测试通过。
+- `[已完成]` `H2DiagnosticStore` 与 `EntityDatabase` 底层复用
+  - `EntityDatabase` 新增受控低层入口：`withConnection(...)` 与 `executeBatch(...)`。
+  - `EntityDatabaseImpl` 已实现直接 JDBC URL 模式，测试可继续使用 `jdbc:h2:mem:`，文件模式继续复用原 H2 连接池配置。
+  - `H2DiagnosticStore` 复用 `EntityDatabase` 连接池和连接生命周期，但仍保留自有 prepared batch、单事务提交、容量裁剪和失败降级逻辑。
+  - 仍不复用 `EntityDatabase.save()` / entity mapping，避免诊断事故路径引入反射映射、逐行保存和额外对象分配。
 
 ## 1. 背景与目标
 
@@ -237,19 +240,31 @@ flowchart TD
 
 ### 3.1.6 H2 存储与 EntityDatabase 复用结论
 
-当前 `H2DiagnosticStore` 暂不直接复用 `EntityDatabase` 高层实体 API。
+当前 `H2DiagnosticStore` 已复用 `EntityDatabase` 的底层 JDBC 能力，但不复用高层实体 API。
 
-原因：
+已实现：
+
+- `EntityDatabase` 增加 `withConnection(BiAction<Connection>)`、`withConnection(BiFunc<Connection, T>)`、`executeBatch(sql, argsList)`。
+- `EntityDatabaseImpl` 增加直接 JDBC URL 模式，支持诊断测试继续使用 `jdbc:h2:mem:`。
+- `H2DiagnosticStore` 通过 `EntityDatabase.withConnection(...)` 初始化 schema、批量写入、TTL 清理和容量裁剪。
+- `H2DiagnosticStore` 关闭时同步关闭底层 `EntityDatabase`，避免连接池泄漏。
+
+保留边界：
 
 - 诊断写入是事故期间的保护路径，优先级是低分配、批量写、可丢弃、可降级。
-- 当前 `EntityDatabase` 主要服务通用实体映射，`save()` 路径存在反射、字段映射、序列化和逐行写入成本。
-- `H2DiagnosticStore` 需要按事件类型批量 prepared statement、单事务提交、容量裁剪和失败降级，这些能力当前不适合塞进高层实体 API。
+- `EntityDatabase.save()` 路径存在反射、字段映射、序列化和逐行写入成本，暂不进入诊断写入路径。
+- `withConnection(...)` 是内部低层组件复用入口，不建议业务代码绕过事务模型直接使用。
 
-后续扩展方向：
-
-- 在 `EntityDatabase` 或新低层接口中增加批量 JDBC 能力，例如 `executeBatch(sql, argsList)`。
-- 或增加受控连接回调，例如 `withConnection(BiAction<Connection>)`，但必须限制只给内部低层组件使用，避免业务代码绕过事务模型。
-- 待底层批量能力稳定后，`EntityDatabaseImpl` 与 `H2DiagnosticStore` 可以共享连接创建、H2 参数、慢 SQL 日志和批量执行工具。
+```mermaid
+flowchart TD
+    A["H2DiagnosticStore"] --> B["EntityDatabase.withConnection()"]
+    B --> C["EntityDatabaseImpl.invoke()"]
+    C --> D["JdbcConnectionPool"]
+    D --> E["H2 Connection"]
+    A --> F["prepared batch / single transaction"]
+    F --> G["diag_* tables"]
+    A --> H["TTL / storage budget / degrade"]
+```
 
 ## 4. 运行级别
 
@@ -946,12 +961,14 @@ app.diagnostic.level=LIGHT
 app.diagnostic.sample.intervalMillis=10000
 app.diagnostic.ringBuffer.maxSamples=4096
 app.diagnostic.h2.enabled=true
+app.diagnostic.h2.path=./rx-diagnostic
 app.diagnostic.h2.batchSize=128
 app.diagnostic.h2.flushIntervalMillis=1000
 app.diagnostic.h2.queueSize=8192
 app.diagnostic.h2.ttlMillis=259200000
 app.diagnostic.h2.maxBytes=268435456
 app.diagnostic.h2.failureDegradeMillis=60000
+app.diagnostic.dir=.
 app.diagnostic.dir.maxBytes=1073741824
 app.diagnostic.evidence.minFreeBytes=67108864
 app.diagnostic.evidence.heavyCooldownMillis=300000

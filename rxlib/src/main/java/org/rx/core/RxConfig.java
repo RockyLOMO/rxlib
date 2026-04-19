@@ -216,7 +216,7 @@ public final class RxConfig {
 
         boolean h2Enabled = true;
         String h2JdbcUrl;
-        File h2File = new File(new File(System.getProperty("java.io.tmpdir"), "rx-diagnostics"), "diag");
+        File h2File = new File(".", "rx-diagnostic");
         int h2BatchSize = 128;
         int h2QueueSize = 8192;
         long h2FlushIntervalMillis = 1000L;
@@ -224,7 +224,7 @@ public final class RxConfig {
         long h2MaxBytes = 256L * 1024L * 1024L;
         long h2FailureDegradeMillis = 60000L;
 
-        File diagnosticsDirectory = new File(System.getProperty("java.io.tmpdir"), "rx-diagnostics");
+        File diagnosticsDirectory = new File(".");
         long diagnosticsMaxBytes = 1024L * 1024L * 1024L;
         long evidenceMinFreeBytes = 64L * 1024L * 1024L;
         long jfrMinFreeBytes = 256L * 1024L * 1024L;
@@ -273,10 +273,10 @@ public final class RxConfig {
             h2MaxBytes = Math.max(0L, h2MaxBytes);
             h2FailureDegradeMillis = Math.max(0L, h2FailureDegradeMillis);
             if (diagnosticsDirectory == null) {
-                diagnosticsDirectory = new File(System.getProperty("java.io.tmpdir"), "rx-diagnostics");
+                diagnosticsDirectory = new File(".");
             }
             if (h2File == null) {
-                h2File = new File(diagnosticsDirectory, "diag");
+                h2File = new File(diagnosticsDirectory, "rx-diagnostic");
             }
             diagnosticsMaxBytes = Math.max(0L, diagnosticsMaxBytes);
             evidenceMinFreeBytes = Math.max(0L, evidenceMinFreeBytes);
@@ -380,16 +380,18 @@ public final class RxConfig {
         final Set<String> logNameList = ConcurrentHashMap.newKeySet();
         //key1: controller, key2: method, value: url
         final Map<String, Map<String, String>> forwards = new ConcurrentHashMap<>(8);
-        private TrieMatcher.PrefixMatcher logNameMatcher;
+        private volatile TrieMatcher.PrefixMatcher logNameMatcher;
 
         public TrieMatcher.PrefixMatcher getLogNameMatcher() {
-            if (logNameMatcher == null) {
-                logNameMatcher = new TrieMatcher.PrefixMatcher(logMode == 1, logClassNameFn);
+            TrieMatcher.PrefixMatcher matcher = logNameMatcher;
+            if (matcher == null) {
+                matcher = new TrieMatcher.PrefixMatcher(logMode == 1, logClassNameFn);
                 for (String p : logNameList) {
-                    logNameMatcher.insert(p);
+                    matcher.insert(p);
                 }
+                logNameMatcher = matcher;
             }
-            return logNameMatcher;
+            return matcher;
         }
     }
 
@@ -414,7 +416,7 @@ public final class RxConfig {
     final Set<Class<?>> jsonSkipTypes = ConcurrentHashMap.newKeySet();
     LogStrategy logStrategy;
     final Set<String> logNameList = ConcurrentHashMap.newKeySet();
-    private TrieMatcher.PrefixMatcher logNameMatcher;
+    private volatile TrieMatcher.PrefixMatcher logNameMatcher;
     String omega;
     String rtoken;
     long mxSamplingPeriod;
@@ -427,21 +429,23 @@ public final class RxConfig {
     RestConfig rest = new RestConfig();
 
     public int getIntId() {
-        Integer v = Integer.getInteger(id);
-        if (v != null) {
-            return v;
+        try {
+            return Integer.parseInt(id);
+        } catch (NumberFormatException e) {
+            return id.hashCode();
         }
-        return id.hashCode();
     }
 
     public TrieMatcher.PrefixMatcher getLogNameMatcher() {
-        if (logNameMatcher == null) {
-            logNameMatcher = new TrieMatcher.PrefixMatcher(logStrategy == LogStrategy.WHITELIST, logClassNameFn);
+        TrieMatcher.PrefixMatcher matcher = logNameMatcher;
+        if (matcher == null) {
+            matcher = new TrieMatcher.PrefixMatcher(logStrategy == LogStrategy.WHITELIST, logClassNameFn);
             for (String p : logNameList) {
-                logNameMatcher.insert(p);
+                matcher.insert(p);
             }
+            logNameMatcher = matcher;
         }
-        return logNameMatcher;
+        return matcher;
     }
 
     private RxConfig() {
@@ -465,7 +469,15 @@ public final class RxConfig {
             return null;
         });
 
+        invalidateLogNameMatchers();
         afterSet();
+    }
+
+    void invalidateLogNameMatchers() {
+        logNameMatcher = null;
+        if (rest != null) {
+            rest.logNameMatcher = null;
+        }
     }
 
     void afterSet() {
@@ -516,7 +528,7 @@ public final class RxConfig {
         threadPool.cpuWaterMark.setHigh(SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_WATER_MARK_HIGH, threadPool.cpuWaterMark.getHigh()));
         threadPool.watchSystemCpu = SystemPropertyUtil.getBoolean(ConfigNames.THREAD_POOL_WATCH_SYSTEM_CPU, threadPool.watchSystemCpu);
         threadPool.replicas = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_REPLICAS, threadPool.replicas);
-        threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME);
+        threadPool.traceName = SystemPropertyUtil.get(ConfigNames.THREAD_POOL_TRACE_NAME, threadPool.traceName);
         threadPool.maxTraceDepth = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_TRACE_DEPTH, threadPool.maxTraceDepth);
         threadPool.slowMethodSamplingPercent = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SLOW_METHOD_SAMPLING_PERCENT, threadPool.slowMethodSamplingPercent);
         threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, threadPool.cpuLoadWarningThreshold);

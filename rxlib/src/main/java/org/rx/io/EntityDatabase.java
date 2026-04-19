@@ -3,9 +3,12 @@ package org.rx.io;
 import lombok.SneakyThrows;
 import org.rx.bean.DataTable;
 import org.rx.util.function.Action;
+import org.rx.util.function.BiAction;
+import org.rx.util.function.BiFunc;
 import org.rx.util.function.Func;
 
 import java.io.Serializable;
+import java.sql.Connection;
 import java.util.List;
 
 public interface EntityDatabase extends AutoCloseable {
@@ -44,6 +47,19 @@ public interface EntityDatabase extends AutoCloseable {
     <T> DataTable executeQuery(String sql, Class<T> entityType);
 
     int executeUpdate(String sql);
+
+    // 内部低层组件复用连接池、事务和慢 SQL 记录，避免重复造 JDBC 生命周期。
+    default void withConnection(BiAction<Connection> fn) {
+        throw new UnsupportedOperationException("Low-level JDBC connection is not supported");
+    }
+
+    default <T> T withConnection(BiFunc<Connection, T> fn) {
+        throw new UnsupportedOperationException("Low-level JDBC connection is not supported");
+    }
+
+    default int[] executeBatch(String sql, List<List<Object>> argsList) {
+        throw new UnsupportedOperationException("Batch JDBC execution is not supported");
+    }
 
     @SneakyThrows
     default void transInvoke(int transactionIsolation, Action fn) {
