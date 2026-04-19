@@ -1,24 +1,21 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.util.concurrent.DefaultPromise;
-import io.netty.util.concurrent.Promise;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
-import org.rx.net.socks.UdpRedundantEncoder;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * UDP冗余编码器性能测试
- * 验证内存优化效果和零拷贝实现
+ * 验证连续 direct buffer、批量 flush 与内存释放行为。
  */
 @Slf4j
 public class UdpRedundantEncoderPerformanceTest {
@@ -76,8 +73,8 @@ public class UdpRedundantEncoderPerformanceTest {
     }
 
     @Test
-    public void testZeroCopyOptimization() {
-        log.info("=== 测试零拷贝优化 ===");
+    public void testContiguousDirectBufferCompatibility() {
+        log.info("=== 测试连续 direct buffer 兼容性 ===");
         
         EmbeddedChannel channel = new EmbeddedChannel();
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(TEST_MULTIPLIER, 0, null);
@@ -94,20 +91,28 @@ public class UdpRedundantEncoderPerformanceTest {
         DatagramPacket packet = new DatagramPacket(originalPayload, recipient);
         channel.writeOutbound(packet);
         
-        // 验证零拷贝：原始payload应该被复用
-        assertEquals(originalRefCnt, originalPayload.refCnt(), 
-                  "零拷贝优化失败：原始payload引用计数发生变化");
+        // 连续 direct buffer 模式会拷贝 payload 后释放原始包，避免 composite 在 epoll sendmmsg 下触发 EINVAL。
+        assertEquals(0, originalPayload.refCnt(),
+                  "连续 direct buffer 模式下原始payload应被释放");
         
         // 检查输出包
         int packetCount = 0;
+        long firstMemoryAddress = -1;
         while (channel.outboundMessages().peek() != null) {
             DatagramPacket outPacket = channel.readOutbound();
             assertNotNull(outPacket);
             
-            // 验证CompositeByteBuf的使用
             ByteBuf content = outPacket.content();
-            assertTrue(content.getClass().getSimpleName().contains("Composite"), 
-                      "应该使用CompositeByteBuf实现零拷贝");
+            assertTrue(content.isDirect(), "多倍发包应使用 direct buffer");
+            assertFalse(content instanceof CompositeByteBuf, "不应恢复 CompositeByteBuf，避免 native UDP 发送兼容性风险");
+            if (content.hasMemoryAddress()) {
+                long memoryAddress = content.memoryAddress();
+                if (firstMemoryAddress < 0) {
+                    firstMemoryAddress = memoryAddress;
+                } else {
+                    assertEquals(firstMemoryAddress, memoryAddress, "冗余副本应共享同一个连续 direct packet 内存");
+                }
+            }
             
             packetCount++;
             outPacket.release();
@@ -118,7 +123,31 @@ public class UdpRedundantEncoderPerformanceTest {
     }
 
     @Test
-    public void testIntervalSendingMemoryEfficiency() {
+    public void testZeroIntervalCopiesBatchFlushOnce() {
+        FlushCountingHandler flushCounter = new FlushCountingHandler();
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.pipeline().addLast(flushCounter);
+        channel.pipeline().addLast(new UdpRedundantEncoder(TEST_MULTIPLIER, 0, null));
+
+        InetSocketAddress recipient = new InetSocketAddress("127.0.0.1", 8080);
+        ByteBuf payload = createTestPayload(TEST_PACKET_SIZE);
+
+        channel.pipeline().write(new DatagramPacket(payload, recipient));
+
+        int packetCount = 0;
+        while (channel.outboundMessages().peek() != null) {
+            DatagramPacket outPacket = channel.readOutbound();
+            packetCount++;
+            outPacket.release();
+        }
+
+        assertEquals(TEST_MULTIPLIER, packetCount);
+        assertEquals(1, flushCounter.flushCount, "零间隔冗余包应批量写入后只 flush 一次");
+        channel.close();
+    }
+
+    @Test
+    public void testIntervalSendingMemoryEfficiency() throws Exception {
         log.info("=== 测试间隔发送内存效率 ===");
         
         EmbeddedChannel channel = new EmbeddedChannel();
@@ -131,13 +160,14 @@ public class UdpRedundantEncoderPerformanceTest {
         long startTime = System.nanoTime();
         
         // 发送数据包
-        DatagramPacket packet = new DatagramPacket(payload.copy(), recipient);
+        ByteBuf sentPayload = payload.copy();
+        DatagramPacket packet = new DatagramPacket(sentPayload, recipient);
         channel.writeOutbound(packet);
+        assertEquals(0, sentPayload.refCnt(), "间隔发送也应释放原始payload");
         
-        // 运行所有延迟任务
-        for (int i = 0; i < TEST_MULTIPLIER * 2; i++) { // 确保运行足够的任务
-            channel.runPendingTasks();
-        }
+        Thread.sleep(5);
+        channel.runScheduledPendingTasks();
+        channel.runPendingTasks();
         
         long endTime = System.nanoTime();
         log.info("间隔发送处理时间: {} ns", endTime - startTime);
@@ -152,8 +182,7 @@ public class UdpRedundantEncoderPerformanceTest {
             ((DatagramPacket) msg).release();
         }
         
-        // 验证至少有一个包（延迟任务在EmbeddedChannel中可能不完全模拟）
-        assertTrue(packetCount >= 1, "至少应该有一个包被发送");
+        assertEquals(TEST_MULTIPLIER, packetCount, "间隔发送也应输出完整冗余副本");
         log.info("实际发送包数: {}", packetCount);
         
         payload.release();
@@ -275,5 +304,15 @@ public class UdpRedundantEncoderPerformanceTest {
         }
         buffer.writeBytes(data);
         return buffer;
+    }
+
+    static final class FlushCountingHandler extends ChannelOutboundHandlerAdapter {
+        int flushCount;
+
+        @Override
+        public void flush(io.netty.channel.ChannelHandlerContext ctx) throws Exception {
+            flushCount++;
+            super.flush(ctx);
+        }
     }
 }
