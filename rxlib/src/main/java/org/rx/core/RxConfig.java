@@ -80,6 +80,7 @@ public final class RxConfig {
         String DIAGNOSTIC_H2_FAILURE_DEGRADE_MILLIS = "app.diagnostic.h2.failureDegradeMillis";
         String DIAGNOSTIC_DIR = "app.diagnostic.dir";
         String DIAGNOSTIC_DIR_MAX_BYTES = "app.diagnostic.dir.maxBytes";
+        String DIAGNOSTIC_DIR_TTL_MILLIS = "app.diagnostic.dir.ttlMillis";
         String DIAGNOSTIC_EVIDENCE_MIN_FREE_BYTES = "app.diagnostic.evidence.minFreeBytes";
         String DIAGNOSTIC_EVIDENCE_HEAVY_COOLDOWN_MILLIS = "app.diagnostic.evidence.heavyCooldownMillis";
         String DIAGNOSTIC_INCIDENT_COOLDOWN_MILLIS = "app.diagnostic.incident.cooldownMillis";
@@ -229,8 +230,9 @@ public final class RxConfig {
         long h2MaxBytes = 256L * 1024L * 1024L;
         long h2FailureDegradeMillis = 60000L;
 
-        File diagnosticsDirectory = new File(".");
+        File diagnosticsDirectory = new File(".", "rx-diagnostic");
         long diagnosticsMaxBytes = 1024L * 1024L * 1024L;
+        long diagnosticsTtlMillis = 3L * 24L * 60L * 60L * 1000L;
         long evidenceMinFreeBytes = 64L * 1024L * 1024L;
         long jfrMinFreeBytes = 256L * 1024L * 1024L;
         long heapDumpMinFreeBytes = 2L * 1024L * 1024L * 1024L;
@@ -278,12 +280,13 @@ public final class RxConfig {
             h2MaxBytes = Math.max(0L, h2MaxBytes);
             h2FailureDegradeMillis = Math.max(0L, h2FailureDegradeMillis);
             if (diagnosticsDirectory == null) {
-                diagnosticsDirectory = new File(".");
+                diagnosticsDirectory = new File(".", "rx-diagnostic");
             }
             if (h2File == null) {
                 h2File = new File(diagnosticsDirectory, "rx-diagnostic");
             }
             diagnosticsMaxBytes = Math.max(0L, diagnosticsMaxBytes);
+            diagnosticsTtlMillis = Math.max(0L, diagnosticsTtlMillis);
             evidenceMinFreeBytes = Math.max(0L, evidenceMinFreeBytes);
             jfrMinFreeBytes = Math.max(0L, jfrMinFreeBytes);
             heapDumpMinFreeBytes = Math.max(0L, heapDumpMinFreeBytes);
@@ -599,6 +602,7 @@ public final class RxConfig {
             diagnostic.diagnosticsDirectory = new File(diagPath);
         }
         diagnostic.diagnosticsMaxBytes = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_DIR_MAX_BYTES, diagnostic.diagnosticsMaxBytes);
+        diagnostic.diagnosticsTtlMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_DIR_TTL_MILLIS, diagnostic.diagnosticsTtlMillis);
         diagnostic.evidenceMinFreeBytes = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_EVIDENCE_MIN_FREE_BYTES, diagnostic.evidenceMinFreeBytes);
         diagnostic.heavyEvidenceCooldownMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_EVIDENCE_HEAVY_COOLDOWN_MILLIS, diagnostic.heavyEvidenceCooldownMillis);
         diagnostic.incidentCooldownMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_INCIDENT_COOLDOWN_MILLIS, diagnostic.incidentCooldownMillis);

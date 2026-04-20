@@ -45,7 +45,7 @@ final class DiagnosticFileSupport {
         long total = 0L;
         for (File file : files) {
             String name = file.getName();
-            if (name.equals(baseName) || name.startsWith(baseName + ".")) {
+            if ((name.equals(baseName) && file.isFile()) || name.startsWith(baseName + ".")) {
                 total += fileTreeBytes(file, 1024);
             }
         }
@@ -98,6 +98,34 @@ final class DiagnosticFileSupport {
         }
     }
 
+    static void deleteExpiredBundles(File root, long ttlMillis, File protectedPath, long now) {
+        if (root == null || ttlMillis <= 0L || now <= ttlMillis || !root.exists()) {
+            return;
+        }
+        File absRoot;
+        try {
+            absRoot = root.getCanonicalFile();
+        } catch (IOException e) {
+            return;
+        }
+        File[] children = absRoot.listFiles();
+        if (children == null || children.length == 0) {
+            return;
+        }
+        long threshold = now - ttlMillis;
+        final File protectedCanonical = canonicalOrNull(protectedPath);
+        for (File child : children) {
+            if (!isIncidentBundleDir(child) || child.lastModified() >= threshold) {
+                continue;
+            }
+            File canonical = canonicalOrNull(child);
+            if (canonical == null || isSameOrParent(canonical, protectedCanonical)) {
+                continue;
+            }
+            deleteTree(canonical, absRoot);
+        }
+    }
+
     private static void accumulate(File file, Counter counter) {
         if (file == null || !file.exists() || counter.files >= counter.maxFiles) {
             return;
@@ -138,6 +166,22 @@ final class DiagnosticFileSupport {
         } catch (IOException e) {
             return false;
         }
+    }
+
+    private static boolean isIncidentBundleDir(File file) {
+        if (file == null || !file.isDirectory()) {
+            return false;
+        }
+        String name = file.getName();
+        if (name.length() == 0 || !Character.isDigit(name.charAt(0))) {
+            return false;
+        }
+        return name.indexOf("-cpu_high-") > 0
+                || name.indexOf("-heap_memory_high-") > 0
+                || name.indexOf("-direct_memory_high-") > 0
+                || name.indexOf("-metaspace_high-") > 0
+                || name.indexOf("-disk_space_high-") > 0
+                || name.indexOf("-disk_io_high-") > 0;
     }
 
     private static boolean isSameOrChild(File root, File child) throws IOException {

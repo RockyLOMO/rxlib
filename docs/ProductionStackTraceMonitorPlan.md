@@ -16,7 +16,7 @@
   - 原独立 `DiagnosticConfig` 已整合为 `RxConfig.DiagnosticConfig`。
   - 诊断模块统一通过 `RxConfig.INSTANCE.getDiagnostic()` 获取默认配置。
   - `app.diagnostic.*` 系统属性仍保持不变，支持现有配置键继续生效。
-  - 诊断 H2 文件与 incident 证据目录默认放在当前工作目录 `./`，避免默认写入系统临时目录导致生产排查路径不明确。
+  - 诊断 H2 文件默认使用 `./rx-diagnostic` H2 base path，incident 证据目录默认统一放入 `./rx-diagnostic/`，避免零散输出到工作目录。
 - `[已完成]` 使用 Lombok 精简诊断类
   - `DiagnosticMetric`、`ThreadCpuSample`、`ResourceSnapshot` 等数据类已用 Lombok 生成 getter / 构造器。
   - `DiagnosticMonitor`、`H2DiagnosticStore` 已改用 Lombok 日志注解，减少模板代码。
@@ -855,7 +855,7 @@ diagnostics/
 
 交付内容：
 
-- `[部分完成]` TTL 清理。
+- `[已完成]` TTL 清理。
 - `[已完成]` H2 容量保护 MVP。
 - `[已完成]` incident bundle 容量保护 MVP。
 - `[已完成]` 重型取证磁盘预算和 cooldown。
@@ -881,6 +881,7 @@ diagnostics/
 
 - `[已完成]` H2 增加最大体积控制，超过阈值后优先删除最老的普通 metric / file I/O / thread CPU / file size / stacktrace 样本，保留 incident 摘要。
 - `[已完成]` incident bundle 增加最大目录体积控制。
+- `[已完成]` incident bundle 增加 `app.diagnostic.dir.ttlMillis` 周期清理，采样线程最多每分钟触发一次。
 - `[已完成]` heap dump、JFR、class histogram 前增加磁盘空间预算和 cooldown。
 - `[已完成]` 目录扫描增加周期性 `Thread.yield()`，避免大目录扫描长期占用后台线程。
 - `[已完成]` H2 写失败时进入降级状态，短时间只保留 incident / flush，丢弃低优先级样本。
@@ -985,8 +986,9 @@ app.diagnostic.h2.queueSize=8192
 app.diagnostic.h2.ttlMillis=259200000
 app.diagnostic.h2.maxBytes=268435456
 app.diagnostic.h2.failureDegradeMillis=60000
-app.diagnostic.dir=.
+app.diagnostic.dir=./rx-diagnostic
 app.diagnostic.dir.maxBytes=1073741824
+app.diagnostic.dir.ttlMillis=259200000
 app.diagnostic.evidence.minFreeBytes=67108864
 app.diagnostic.evidence.heavyCooldownMillis=300000
 app.diagnostic.incident.cooldownMillis=300000

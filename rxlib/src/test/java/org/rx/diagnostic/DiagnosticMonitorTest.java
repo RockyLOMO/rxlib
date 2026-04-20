@@ -28,10 +28,10 @@ public class DiagnosticMonitorTest {
     }
 
     @Test
-    public void diagnosticConfigDefaultsToCurrentDirectory() {
+    public void diagnosticConfigDefaultsToRxDiagnosticDirectory() {
         DiagnosticConfig config = new DiagnosticConfig();
         config.normalize();
-        assertEquals(new File(".").getPath(), config.getDiagnosticsDirectory().getPath());
+        assertEquals(new File(".", "rx-diagnostic").getPath(), config.getDiagnosticsDirectory().getPath());
         assertEquals(new File(".", "rx-diagnostic").getPath(), config.getH2File().getPath());
     }
 
@@ -159,6 +159,31 @@ public class DiagnosticMonitorTest {
         config.setEvidenceMinFreeBytes(Long.MAX_VALUE);
         IncidentBundleWriter writer = new IncidentBundleWriter(config);
         assertNull(writer.createBundleDir("no-space", DiagnosticIncidentType.CPU_HIGH));
+    }
+
+    @Test
+    public void incidentBundleCleanupDeletesExpiredBundles() {
+        DiagnosticConfig config = new DiagnosticConfig();
+        File root = new File("target/diagnostics-cleanup-test-" + System.nanoTime());
+        config.setDiagnosticsDirectory(root);
+        config.setDiagnosticsTtlMillis(1000L);
+        config.setDiagnosticsMaxBytes(0L);
+        config.setEvidenceMinFreeBytes(0L);
+        IncidentBundleWriter writer = new IncidentBundleWriter(config);
+
+        long now = System.currentTimeMillis();
+        File oldDir = writer.createBundleDir("1000-cpu_high-1", DiagnosticIncidentType.CPU_HIGH);
+        assertNotNull(oldDir);
+        assertTrue(oldDir.exists());
+        assertTrue(oldDir.setLastModified(now - 10000L));
+
+        File currentDir = writer.createBundleDir(now + "-cpu_high-2", DiagnosticIncidentType.CPU_HIGH);
+        assertNotNull(currentDir);
+        assertTrue(currentDir.exists());
+
+        writer.cleanup(now);
+        assertFalse(oldDir.exists());
+        assertTrue(currentDir.exists());
     }
 
     private DiagnosticConfig memConfig(String name) {

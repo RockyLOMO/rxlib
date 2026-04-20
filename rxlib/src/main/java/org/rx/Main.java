@@ -59,32 +59,36 @@ import static org.rx.core.Sys.toJsonString;
 @Slf4j
 @RequiredArgsConstructor
 public final class Main implements SocksRpcContract {
-    @SneakyThrows
     public static void main(String[] args) {
-        Class.forName(Sys.class.getName());
-        DiagnosticMonitor.startDefault();
+        try {
+            Class.forName(Sys.class.getName());
+            DiagnosticMonitor.startDefault();
 
-        // String hfSvr = "AS(104,116,116,112,115,58,47,47,102,45,108,105,46,99,110,58,56,48,56,50)/hf";
-        // String fu = "https://api.web.ecapi.cn/platform/dmOrder?page=1&pageSize=100&time_from=2024-11-20%2019%3A36%3A48&time_to=2024-11-23%2019%3A36%3A48&apkey=33b26a2d-9111-40ec-eff0-d1f7316cb689";
-        // System.out.println(new HttpClient().get(HttpClient.buildUrl(hfSvr, Collections.singletonMap("fu", fu))).toString());
-        // System.in.read();
+            // String hfSvr = "AS(104,116,116,112,115,58,47,47,102,45,108,105,46,99,110,58,56,48,56,50)/hf";
+            // String fu = "https://api.web.ecapi.cn/platform/dmOrder?page=1&pageSize=100&time_from=2024-11-20%2019%3A36%3A48&time_to=2024-11-23%2019%3A36%3A48&apkey=33b26a2d-9111-40ec-eff0-d1f7316cb689";
+            // System.out.println(new HttpClient().get(HttpClient.buildUrl(hfSvr, Collections.singletonMap("fu", fu))).toString());
+            // System.in.read();
 
-        Map<String, String> options = Sys.mainOptions(args);
-        Integer port = Reflects.convertQuietly(options.get("port"), Integer.class);
-        if (port == null) {
-            log.info("Invalid port arg");
-            return;
+            Map<String, String> options = Sys.mainOptions(args);
+            Integer port = Reflects.convertQuietly(options.get("port"), Integer.class);
+            if (port == null) {
+                log.info("Invalid port arg");
+                return;
+            }
+
+            int httpPort = Reflects.convertQuietly(options.get("httpPort"), Integer.class, 8082);
+            RxConfig.INSTANCE.getNet().getHttp().setServerPort(httpPort);
+            RxConfig.INSTANCE.getNet().getHttp().setServerTls(true);
+            String mode = options.get("shadowMode");
+            if (eq(mode, "1")) {
+                launchServer(options, port, httpPort);
+                return;
+            }
+            launchClient(options, port, httpPort);
+        } catch (Throwable e) {
+            log.error("Main error", e);
+            System.exit(-1);
         }
-
-        int httpPort = Reflects.convertQuietly(options.get("httpPort"), Integer.class, 8082);
-        RxConfig.INSTANCE.getNet().getHttp().setServerPort(httpPort);
-        RxConfig.INSTANCE.getNet().getHttp().setServerTls(true);
-        String mode = options.get("shadowMode");
-        if (eq(mode, "1")) {
-            launchServer(options, port, httpPort);
-            return;
-        }
-        launchClient(options, port, httpPort);
     }
 
     @Getter

@@ -13,14 +13,17 @@ public class IncidentBundleWriter {
     public IncidentBundleWriter(File diagnosticsDirectory) {
         this.config = new DiagnosticConfig();
         this.diagnosticsDirectory = diagnosticsDirectory;
+        this.config.normalize();
     }
 
     public IncidentBundleWriter(DiagnosticConfig config) {
         this.config = config == null ? new DiagnosticConfig() : config;
+        this.config.normalize();
         this.diagnosticsDirectory = this.config.getDiagnosticsDirectory();
     }
 
     public File createBundleDir(String incidentId, DiagnosticIncidentType type) {
+        cleanup(System.currentTimeMillis(), null);
         if (!DiagnosticFileSupport.hasUsableSpace(diagnosticsDirectory, config.getEvidenceMinFreeBytes())) {
             return null;
         }
@@ -47,7 +50,7 @@ public class IncidentBundleWriter {
             }
             writer = new FileWriter(file);
             writer.write(text);
-            DiagnosticFileSupport.trimDirectory(diagnosticsDirectory, config.getDiagnosticsMaxBytes(), dir);
+            cleanup(System.currentTimeMillis(), dir);
             return file;
         } catch (IOException e) {
             return null;
@@ -59,5 +62,14 @@ public class IncidentBundleWriter {
                 }
             }
         }
+    }
+
+    public void cleanup(long now) {
+        cleanup(now, null);
+    }
+
+    private void cleanup(long now, File protectedPath) {
+        DiagnosticFileSupport.deleteExpiredBundles(diagnosticsDirectory, config.getDiagnosticsTtlMillis(), protectedPath, now);
+        DiagnosticFileSupport.trimDirectory(diagnosticsDirectory, config.getDiagnosticsMaxBytes(), protectedPath);
     }
 }
