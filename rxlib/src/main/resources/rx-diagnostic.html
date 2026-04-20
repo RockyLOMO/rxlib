@@ -1,0 +1,191 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>${title}</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f6f2ea;
+            --ink: #17211b;
+            --muted: #617066;
+            --card: #fffaf0;
+            --line: #dfd3bf;
+            --accent: #126c5a;
+        }
+
+        body {
+            margin: 0;
+            background: linear-gradient(135deg, #f6f2ea, #e9f3ee);
+            color: var(--ink);
+            font-family: Georgia, "Times New Roman", serif;
+        }
+
+        main {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 22px;
+        }
+
+        h1 {
+            font-size: 34px;
+            margin: 0 0 8px;
+        }
+
+        h2 {
+            font-size: 21px;
+            margin: 0 0 14px;
+        }
+
+        .hero {
+            display: flex;
+            gap: 16px;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin: 8px 0 18px;
+        }
+
+        .hero p {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .pill {
+            background: var(--accent);
+            color: white;
+            border-radius: 999px;
+            padding: 10px 14px;
+            word-break: break-all;
+        }
+
+        .card {
+            background: rgba(255, 250, 240, .92);
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            box-shadow: 0 14px 36px rgba(45, 32, 10, .08);
+            margin: 14px 0;
+            padding: 16px;
+            overflow: hidden;
+        }
+
+        .warn {
+            border-color: #c57b57;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 12px;
+        }
+
+        .item {
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 12px;
+            background: #fffdf7;
+        }
+
+        .item strong {
+            display: block;
+            font-size: 16px;
+        }
+
+        .item span,
+        .meta {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .path {
+            font-size: 12px;
+            word-break: break-all;
+            color: var(--muted);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th,
+        td {
+            border-bottom: 1px solid var(--line);
+            padding: 9px 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        td {
+            word-break: break-word;
+        }
+
+        a {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            background: #17211b;
+            color: #f7f1e6;
+            padding: 14px;
+            border-radius: 14px;
+            overflow: auto;
+        }
+
+        .empty {
+            color: var(--muted);
+        }
+
+        @media (max-width: 720px) {
+            main {
+                padding: 12px;
+            }
+
+            .hero {
+                display: block;
+            }
+
+            .pill {
+                margin-top: 12px;
+                display: inline-block;
+            }
+
+            table,
+            thead,
+            tbody,
+            tr,
+            th,
+            td {
+                display: block;
+            }
+
+            thead {
+                display: none;
+            }
+
+            tr {
+                border: 1px solid var(--line);
+                border-radius: 14px;
+                margin: 10px 0;
+                background: #fffdf7;
+            }
+
+            td {
+                border: 0;
+                padding: 8px 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+<main>${body}</main>
+</body>
+</html>

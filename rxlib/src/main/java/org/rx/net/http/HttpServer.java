@@ -20,7 +20,10 @@ import org.rx.diagnostic.DiagnosticHttpHandler;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +34,7 @@ import static org.rx.core.Extends.ifNull;
 @Slf4j
 public class HttpServer extends Disposable {
     static final String BLOCKING_HANDLER_HEADER = "X-Http-Blocking-Handler";
+    static volatile HttpServer DEFAULT;
 
     static final class RequestState {
         HttpRequest request;
@@ -326,10 +330,16 @@ public class HttpServer extends Disposable {
 
     final ServerBootstrap serverBootstrap;
     @Getter
+    final int port;
+    @Getter
+    final boolean tls;
+    @Getter
     final Map<String, Handler> mapping = new ConcurrentHashMap<>();
 
     @SneakyThrows
     public HttpServer(int port, boolean tls) {
+        this.port = port;
+        this.tls = tls;
         serverBootstrap = Sockets.serverBootstrap(ch -> {
             ChannelPipeline p = ch.pipeline();
             if (tls) {
@@ -347,6 +357,11 @@ public class HttpServer extends Disposable {
     @Override
     protected void dispose() {
         Sockets.closeBootstrap(serverBootstrap);
+        synchronized (HttpServer.class) {
+            if (DEFAULT == this) {
+                DEFAULT = null;
+            }
+        }
     }
 
     public HttpServer requestMapping(String path, Handler handler) {
@@ -364,5 +379,60 @@ public class HttpServer extends Disposable {
 
     public HttpServer requestDiagnostic(String path) {
         return requestBlocking(path, new DiagnosticHttpHandler());
+    }
+
+    public static HttpServer getDefault() {
+        return DEFAULT;
+    }
+
+    public static HttpServer ensureDefault(int port) {
+        return ensureDefault(port, false);
+    }
+
+    public static synchronized HttpServer ensureDefault(int port, boolean tls) {
+        if (port <= 0) {
+            return DEFAULT;
+        }
+        HttpServer server = DEFAULT;
+        if (server == null) {
+            DEFAULT = server = new HttpServer(port, tls);
+            log.info("Default http server bind on port {}", port);
+            return server;
+        }
+        if (server.port != port || server.tls != tls) {
+            log.warn("Default http server already bind on port {}, ignore new port {}", server.port, port);
+        }
+        return server;
+    }
+
+    public static String renderTemplate(CharSequence template, Map<String, Object> vars) {
+        return Strings.resolveVarExpression(template, vars);
+    }
+
+    @SneakyThrows
+    public static String renderHtmlTemplate(String resourcePath, Map<String, Object> vars) {
+        String path = resourcePath;
+        while (path.startsWith("/")) {
+            path = path.substring(1);
+        }
+        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+        InputStream in = loader != null ? loader.getResourceAsStream(path) : null;
+        if (in == null) {
+            in = HttpServer.class.getClassLoader().getResourceAsStream(path);
+        }
+        if (in == null) {
+            throw new IllegalArgumentException("Template not found: " + resourcePath);
+        }
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
+            byte[] buf = new byte[4096];
+            int len;
+            while ((len = in.read(buf)) != -1) {
+                out.write(buf, 0, len);
+            }
+            return renderTemplate(new String(out.toByteArray(), StandardCharsets.UTF_8), vars);
+        } finally {
+            in.close();
+        }
     }
 }

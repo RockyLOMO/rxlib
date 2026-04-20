@@ -2,7 +2,9 @@ package org.rx.core;
 
 import org.junit.jupiter.api.Test;
 import org.rx.bean.LogStrategy;
+import org.rx.net.http.HttpServer;
 
+import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -11,7 +13,10 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class RxConfigTest {
     @Test
@@ -92,11 +97,42 @@ class RxConfigTest {
         }
     }
 
+    @Test
+    void refreshFrom_initializesDefaultHttpServerWhenBindPortConfigured() throws Exception {
+        assumeTrue(HttpServer.getDefault() == null);
+        RxConfig conf = RxConfig.INSTANCE;
+        int oldPort = conf.net.httpServerBindPort;
+        int port = freePort();
+        try {
+            Map<String, Object> props = new HashMap<>();
+            props.put(RxConfig.ConfigNames.NET_HTTP_SERVER_BIND_PORT, port);
+            conf.refreshFrom(props);
+
+            HttpServer server = HttpServer.getDefault();
+            assertNotNull(server);
+            assertEquals(port, server.getPort());
+            assertTrue(server.getMapping().containsKey("/rx-diagnostic"));
+            assertSame(server, HttpServer.ensureDefault(port + 1, false));
+        } finally {
+            HttpServer server = HttpServer.getDefault();
+            if (server != null) {
+                server.close();
+            }
+            conf.net.httpServerBindPort = oldPort;
+        }
+    }
+
     private static void restoreProperty(String name, String value) {
         if (value == null) {
             System.clearProperty(name);
             return;
         }
         System.setProperty(name, value);
+    }
+
+    private static int freePort() throws Exception {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        }
     }
 }

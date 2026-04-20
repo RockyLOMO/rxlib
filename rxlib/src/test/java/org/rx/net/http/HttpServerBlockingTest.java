@@ -4,6 +4,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -58,5 +60,15 @@ public class HttpServerBlockingTest {
             assertTrue(client.get(BASE_URL + "/blocking").toString().contains("ok"));
             assertTrue(client.get(BASE_URL + "/normal").toString().contains("ok"));
         }
+    }
+
+    @Test
+    public void htmlTemplate_resolvesResourceVariables() {
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("title", "Template OK");
+        vars.put("body", "<section>body</section>");
+        String html = HttpServer.renderHtmlTemplate("rx-diagnostic.html", vars);
+        assertTrue(html.contains("<title>Template OK</title>"));
+        assertTrue(html.contains("<section>body</section>"));
     }
 }
