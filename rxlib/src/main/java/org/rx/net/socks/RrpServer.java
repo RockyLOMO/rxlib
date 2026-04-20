@@ -279,6 +279,10 @@ public class RrpServer extends Disposable {
                     return;
                 }
                 byte action = buf.readByte();
+                if (action == RrpConfig.ACTION_HEARTBEAT) {
+                    RrpConfig.writeHeartbeat(clientChannel);
+                    return;
+                }
                 if (action == RrpConfig.ACTION_REGISTER) {
                     //step2
                     if (buf.readableBytes() < 4) {

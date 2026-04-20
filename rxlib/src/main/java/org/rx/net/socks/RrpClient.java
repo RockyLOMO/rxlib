@@ -100,6 +100,11 @@ public class RrpClient extends Disposable {
             RpClientProxy proxyCtx = attr.left;
             String channelId = attr.right;
             Channel serverChannel = proxyCtx.serverChannel;
+            if (!serverChannel.isActive()) {
+                io.netty.util.ReferenceCountUtil.release(msg);
+                Sockets.closeOnFlushed(localChannel);
+                return;
+            }
             //step5
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
             buf.writeByte(RrpConfig.ACTION_FORWARD);
@@ -109,7 +114,8 @@ public class RrpClient extends Disposable {
             buf.writeBytes(bytes);
 //            serverChannel.write(buf);
 
-            serverChannel.writeAndFlush(Unpooled.wrappedBuffer(buf, (ByteBuf) msg));
+            serverChannel.writeAndFlush(Unpooled.wrappedBuffer(buf, (ByteBuf) msg))
+                    .addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
             log.debug("RrpClient step5 {}({}) {} -> serverChannel", proxyCtx.serverChannel, channelId, localChannel);
         }
 
@@ -120,6 +126,10 @@ public class RrpClient extends Disposable {
             RpClientProxy proxyCtx = attr.left;
             String channelId = attr.right;
             Channel serverChannel = proxyCtx.serverChannel;
+            proxyCtx.localChannels.remove(channelId, localChannel);
+            if (!serverChannel.isActive()) {
+                return;
+            }
             //step9 localClose
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
             buf.writeByte(RrpConfig.ACTION_SYNC_CLOSE);
@@ -127,9 +137,7 @@ public class RrpClient extends Disposable {
             byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
-            serverChannel.writeAndFlush(buf);
-
-            Sockets.closeOnFlushed(proxyCtx.localChannels.remove(channelId));
+            serverChannel.writeAndFlush(buf).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         }
 
         @Override
@@ -147,6 +155,8 @@ public class RrpClient extends Disposable {
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             Channel serverChannel = ctx.channel();
+            channel = serverChannel;
+            closeClientProxies();
             for (RrpConfig.Proxy p : config.getProxies()) {
                 proxyMap.computeIfAbsent(p.getRemotePort(), k -> new RpClientProxy(p, serverChannel));
             }
@@ -165,7 +175,8 @@ public class RrpClient extends Disposable {
             byte[] bytes = Serializer.DEFAULT.serializeToBytes(config.getProxies());
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
-            serverChannel.writeAndFlush(buf);
+            serverChannel.writeAndFlush(buf).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+            startHeartbeat(serverChannel);
             log.debug("RrpClient step1 {} -> {}", toJsonString(config.getProxies()), serverChannel);
         }
 
@@ -174,10 +185,18 @@ public class RrpClient extends Disposable {
             Channel serverChannel = ctx.channel();
             ByteBuf buf = (ByteBuf) msg;
             try {
-                if (buf.readableBytes() < 1 + 4 + 4) {
+                if (buf.readableBytes() < 1) {
                     return;
                 }
                 byte action = buf.readByte();
+                if (action == RrpConfig.ACTION_HEARTBEAT) {
+                    return;
+                }
+                if (buf.readableBytes() < 4 + 4) {
+                    log.warn("RrpClient error Invalid frame action {} from {}", action, serverChannel.remoteAddress());
+                    Sockets.closeOnFlushed(serverChannel);
+                    return;
+                }
                 int remotePort = buf.readInt();
                 int idLen = buf.readInt();
                 if (idLen < 0 || idLen > MAX_CHANNEL_ID_LEN || buf.readableBytes() < idLen) {
@@ -253,7 +272,14 @@ public class RrpClient extends Disposable {
             Channel serverChannel = ctx.channel();
             log.debug("clientInactive {}", serverChannel.remoteAddress());
 
-            reconnectAsync();
+            stopHeartbeat();
+            if (channel == serverChannel) {
+                channel = null;
+            }
+            closeClientProxies();
+            if (isShouldReconnect()) {
+                reconnectAsync();
+            }
         }
 
         @Override
@@ -269,6 +295,7 @@ public class RrpClient extends Disposable {
     Future<Void> connectingFutureWrapper;
     volatile Channel channel;
     volatile ChannelFuture connectingFuture;
+    volatile ScheduledFuture<?> heartbeatFuture;
 
     public boolean isConnected() {
         Channel c = channel;
@@ -286,7 +313,39 @@ public class RrpClient extends Disposable {
     @Override
     protected void dispose() throws Throwable {
         config.setEnableReconnect(false);
+        stopHeartbeat();
+        closeClientProxies();
         Sockets.closeOnFlushed(channel);
+    }
+
+    void closeClientProxies() {
+        for (RpClientProxy proxy : proxyMap.values()) {
+            tryClose(proxy);
+        }
+        proxyMap.clear();
+    }
+
+    void startHeartbeat(Channel serverChannel) {
+        stopHeartbeat();
+        int seconds = config.getHeartbeatSeconds();
+        if (seconds <= 0) {
+            return;
+        }
+        heartbeatFuture = serverChannel.eventLoop().scheduleAtFixedRate(() -> {
+            if (channel != serverChannel || !serverChannel.isActive()) {
+                return;
+            }
+            RrpConfig.writeHeartbeat(serverChannel);
+        }, seconds, seconds, TimeUnit.SECONDS);
+    }
+
+    void stopHeartbeat() {
+        ScheduledFuture<?> f = heartbeatFuture;
+        if (f == null) {
+            return;
+        }
+        heartbeatFuture = null;
+        f.cancel(false);
     }
 
     public synchronized Future<Void> connectAsync() {
