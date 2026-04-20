@@ -41,6 +41,7 @@ public class DiagnosticMonitor implements AutoCloseable {
     private final AtomicLong lastJfrMillis = new AtomicLong();
     private final AtomicLong lastClassHistogramMillis = new AtomicLong();
     private final AtomicLong lastHeapDumpMillis = new AtomicLong();
+    private final AtomicLong lastBundleCleanupMillis = new AtomicLong();
 
     private ScheduledExecutorService scheduler;
     private ExecutorService evidenceExecutor;
@@ -119,6 +120,7 @@ public class DiagnosticMonitor implements AutoCloseable {
             store.recordMetric(metric);
         }
         evaluate(snapshot);
+        cleanupBundles(snapshot.getTimestampMillis());
         return snapshot;
     }
 
@@ -175,6 +177,14 @@ public class DiagnosticMonitor implements AutoCloseable {
         checkCpu(snapshot, now);
         checkMemory(snapshot, now);
         checkDisk(snapshot, now);
+    }
+
+    private void cleanupBundles(long now) {
+        long last = lastBundleCleanupMillis.get();
+        if (now - last < 60000L || !lastBundleCleanupMillis.compareAndSet(last, now)) {
+            return;
+        }
+        bundleWriter.cleanup(now);
     }
 
     private void checkCpu(ResourceSnapshot snapshot, long now) {
