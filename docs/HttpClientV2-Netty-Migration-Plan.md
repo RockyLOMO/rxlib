@@ -20,8 +20,17 @@
     - [`PersistentCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/PersistentCookieStorage.java)
     - [`VolatileCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/VolatileCookieStorage.java)
     - [`HttpTunnelClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/socks/httptunnel/HttpTunnelClient.java)
-- `[未开始]` `HttpClientV2` 代码实现
+- `[部分完成]` `HttpClientV2` 代码实现
+  - 新增 [`HttpClientV2.java`](/E:/rxdev/projs/rxlib/rxlib/src/main/java/org/rx/net/http/HttpClientV2.java)。
+  - 已实现：Netty `Bootstrap` 复用、`FixedChannelPool` 按目标端点建池、HTTP/HTTPS pipeline、GET/HEAD、JSON/form/multipart body、PUT/PATCH/DELETE body、基础 Cookie、响应 `toString()/toJson()/toFile()/toStream()`、请求/响应/超时/字节数/堆外内存基础指标。
+  - 已修复连接复用风险：无 body 请求使用 `FullHttpRequest` 显式结束请求，避免 Netty encoder 复用连接时停留在等待 body 状态。
+  - 已补充 [`HttpClientV2IntegrationTest.java`](/E:/rxdev/projs/rxlib/rxlib/src/test/java/org/rx/net/http/HttpClientV2IntegrationTest.java) 覆盖 GET/HEAD、JSON、form、multipart、Cookie、响应缓存/落盘。
+- `[部分完成]` 配置/测试兼容
+  - `RxConfig` 当前已迁移为 `net.http.*` 结构，已同步修正相关测试引用。
+  - `AuthenticProxy` 已保留 username/password 字段，便于 Netty `HttpProxyHandler` 复用代理认证配置。
 - `[未开始]` 调用方切换与 `okhttp` 彻底下线
+  - 旧 `HttpClient`、`RestClient`、`forward(...)`、`HttpTunnelClient` 尚未切换。
+  - `okhttp` 依赖仍然保留。
 
 ## 1. 背景与目标
 

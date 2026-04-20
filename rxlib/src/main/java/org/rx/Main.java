@@ -12,6 +12,7 @@ import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.core.Arrays;
+import org.rx.diagnostic.DiagnosticMonitor;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.IOStream;
@@ -61,8 +62,8 @@ public final class Main implements SocksRpcContract {
     @SneakyThrows
     public static void main(String[] args) {
         Class.forName(Sys.class.getName());
-        // serverInit();
-        //
+        DiagnosticMonitor.startDefault();
+
         // String hfSvr = "AS(104,116,116,112,115,58,47,47,102,45,108,105,46,99,110,58,56,48,56,50)/hf";
         // String fu = "https://api.web.ecapi.cn/platform/dmOrder?page=1&pageSize=100&time_from=2024-11-20%2019%3A36%3A48&time_to=2024-11-23%2019%3A36%3A48&apkey=33b26a2d-9111-40ec-eff0-d1f7316cb689";
         // System.out.println(new HttpClient().get(HttpClient.buildUrl(hfSvr, Collections.singletonMap("fu", fu))).toString());
