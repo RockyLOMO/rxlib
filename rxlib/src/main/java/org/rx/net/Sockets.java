@@ -26,7 +26,6 @@ import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
-import io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.netty.resolver.AddressResolverGroup;
 import io.netty.resolver.DefaultAddressResolverGroup;
 import io.netty.resolver.ResolvedAddressTypes;
@@ -38,6 +37,10 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNamesBuilder;
+import org.bouncycastle.x509.X509V3CertificateGenerator;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
@@ -52,9 +55,19 @@ import org.rx.net.support.EndpointTracer;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.security.auth.x500.X500Principal;
+import java.io.File;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
+import java.math.BigInteger;
 import java.net.*;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.KeyStore;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -517,8 +530,69 @@ public final class Sockets {
 
     @SneakyThrows
     public static SslContext getSelfSignedTls() {
-        SelfSignedCertificate ssc = new SelfSignedCertificate("qq.com");
-        return SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
+        SecureRandom random = new SecureRandom();
+        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+        keyPairGenerator.initialize(2048, random);
+        KeyPair keyPair = keyPairGenerator.generateKeyPair();
+        X509Certificate certificate = newSelfSignedCertificate(keyPair, random);
+        return SslContextBuilder.forServer(keyPair.getPrivate(), certificate).build();
+    }
+
+    @SneakyThrows
+    public static SslContext sslContext(String certificatePath, String certificatePassword) {
+        if (Strings.isEmpty(certificatePath)) {
+            log.warn("TLS enabled without certificate, use localhost self-signed certificate");
+            return getSelfSignedTls();
+        }
+        File file = new File(certificatePath);
+        if (!file.exists()) {
+            log.warn("Certificate file not found: {}", certificatePath);
+            return getSelfSignedTls();
+        }
+
+        if (certificatePath.endsWith(".pfx") || certificatePath.endsWith(".p12") || certificatePath.endsWith(".jks")) {
+            KeyStore keyStore = KeyStore.getInstance(certificatePath.endsWith(".jks") ? "JKS" : "PKCS12");
+            try (InputStream is = java.nio.file.Files.newInputStream(file.toPath())) {
+                keyStore.load(is, certificatePassword == null ? null : certificatePassword.toCharArray());
+            }
+            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            kmf.init(keyStore, certificatePassword == null ? null : certificatePassword.toCharArray());
+            return SslContextBuilder.forServer(kmf).build();
+        }
+        return SslContextBuilder.forServer(file, file, certificatePassword).build();
+    }
+
+    @SneakyThrows
+    static X509Certificate newSelfSignedCertificate(KeyPair keyPair, SecureRandom random) {
+        long now = System.currentTimeMillis();
+        X500Principal principal = new X500Principal("CN=localhost");
+        X509V3CertificateGenerator generator = new X509V3CertificateGenerator();
+        generator.setSerialNumber(new BigInteger(64, random).abs().add(BigInteger.ONE));
+        generator.setIssuerDN(principal);
+        generator.setSubjectDN(principal);
+        generator.setNotBefore(new Date(now - TimeUnit.DAYS.toMillis(1)));
+        generator.setNotAfter(new Date(now + TimeUnit.DAYS.toMillis(3650)));
+        generator.setPublicKey(keyPair.getPublic());
+        generator.setSignatureAlgorithm("SHA256withRSA");
+
+        GeneralNamesBuilder subjectAltNames = new GeneralNamesBuilder();
+        subjectAltNames.addName(new GeneralName(GeneralName.dNSName, "localhost"));
+        addLocalHostName(subjectAltNames);
+        subjectAltNames.addName(new GeneralName(GeneralName.iPAddress, "127.0.0.1"));
+        subjectAltNames.addName(new GeneralName(GeneralName.iPAddress, "::1"));
+        generator.addExtension(Extension.subjectAlternativeName, false, subjectAltNames.build());
+        return generator.generate(keyPair.getPrivate(), random);
+    }
+
+    private static void addLocalHostName(GeneralNamesBuilder subjectAltNames) {
+        try {
+            String hostName = InetAddress.getLocalHost().getHostName();
+            if (!Strings.isEmpty(hostName) && !Strings.hashEquals(hostName, "localhost")) {
+                subjectAltNames.addName(new GeneralName(GeneralName.dNSName, hostName));
+            }
+        } catch (Throwable e) {
+            log.debug("local host name unavailable", e);
+        }
     }
 
     public static void dumpPipeline(String prefix, Channel channel) {

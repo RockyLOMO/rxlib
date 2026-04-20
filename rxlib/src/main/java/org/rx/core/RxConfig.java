@@ -121,6 +121,8 @@ public final class RxConfig {
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_HTTP_SERVER_PORT = "app.net.httpServerPort";
         String NET_HTTP_SERVER_TLS = "app.net.httpServerTls";
+        String NET_HTTP_SERVER_CERTIFICATE_PATH = "app.net.httpServerCertificatePath";
+        String NET_HTTP_SERVER_CERTIFICATE_PASSWORD = "app.net.httpServerCertificatePassword";
         String NET_USER_AGENT = "app.net.userAgent";
         String NET_BYPASS_HOSTS = "app.net.bypassHosts";
         String NET_CIPHERS_KEY = "app.net.ciphers";
@@ -350,6 +352,8 @@ public final class RxConfig {
         int poolKeepAliveSeconds;
         int httpServerPort;
         boolean httpServerTls;
+        String httpServerCertificatePath;
+        String httpServerCertificatePassword;
         String userAgent;
         final List<String> bypassHosts = newConcurrentList(true);
         final List<String> ciphers = newConcurrentList(true);
@@ -626,6 +630,8 @@ public final class RxConfig {
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, net.poolKeepAliveSeconds);
         net.httpServerPort = SystemPropertyUtil.getInt(ConfigNames.NET_HTTP_SERVER_PORT, net.httpServerPort);
         net.httpServerTls = SystemPropertyUtil.getBoolean(ConfigNames.NET_HTTP_SERVER_TLS, net.httpServerTls);
+        net.httpServerCertificatePath = SystemPropertyUtil.get(ConfigNames.NET_HTTP_SERVER_CERTIFICATE_PATH, net.httpServerCertificatePath);
+        net.httpServerCertificatePassword = SystemPropertyUtil.get(ConfigNames.NET_HTTP_SERVER_CERTIFICATE_PASSWORD, net.httpServerCertificatePassword);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, net.userAgent);
         reset(net.bypassHosts, ConfigNames.NET_BYPASS_HOSTS);
         reset(net.ciphers, ConfigNames.NET_CIPHERS_KEY);

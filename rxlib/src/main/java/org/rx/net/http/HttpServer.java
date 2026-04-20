@@ -322,6 +322,7 @@ public class HttpServer extends Disposable {
     final int port;
     @Getter
     final boolean tls;
+    final io.netty.handler.ssl.SslContext sslContext;
     @Getter
     final Map<String, Mapping> mapping = new ConcurrentHashMap<>();
 
@@ -329,10 +330,17 @@ public class HttpServer extends Disposable {
     public HttpServer(int port, boolean tls) {
         this.port = port;
         this.tls = tls;
+        if (tls) {
+            RxConfig.NetConfig net = RxConfig.INSTANCE.getNet();
+            sslContext = Sockets.sslContext(net.getHttpServerCertificatePath(), net.getHttpServerCertificatePassword());
+        } else {
+            sslContext = null;
+        }
+
         serverBootstrap = Sockets.serverBootstrap(ch -> {
             ChannelPipeline p = ch.pipeline();
             if (tls) {
-                p.addLast(Sockets.getSelfSignedTls().newHandler(ch.alloc()));
+                p.addLast(sslContext.newHandler(ch.alloc()));
             }
             p.addLast(new HttpServerCodec(),
                     new HttpServerExpectContinueHandler(),
