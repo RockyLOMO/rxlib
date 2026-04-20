@@ -331,8 +331,8 @@ public class HttpServer extends Disposable {
         this.port = port;
         this.tls = tls;
         if (tls) {
-            RxConfig.NetConfig net = RxConfig.INSTANCE.getNet();
-            sslContext = Sockets.sslContext(net.getHttpServerCertificatePath(), net.getHttpServerCertificatePassword());
+            RxConfig.HttpConfig http = RxConfig.INSTANCE.getNet().getHttp();
+            sslContext = Sockets.sslContext(http.getServerCertificatePath(), http.getServerCertificatePassword());
         } else {
             sslContext = null;
         }
@@ -387,12 +387,12 @@ public class HttpServer extends Disposable {
         if (server != null) {
             return server;
         }
-        RxConfig.NetConfig net = RxConfig.INSTANCE.getNet();
-        int port = net.getHttpServerPort();
+        RxConfig.HttpConfig http = RxConfig.INSTANCE.getNet().getHttp();
+        int port = http.getServerPort();
         if (port <= 0) {
             return null;
         }
-        boolean tls = net.isHttpServerTls();
+        boolean tls = http.isServerTls();
         synchronized (HttpServer.class) {
             server = DEFAULT;
             if (server != null) {

@@ -76,8 +76,8 @@ public final class Main implements SocksRpcContract {
         }
 
         int httpPort = Reflects.convertQuietly(options.get("httpPort"), Integer.class, 8082);
-        RxConfig.INSTANCE.getNet().setHttpServerPort(httpPort);
-        RxConfig.INSTANCE.getNet().setHttpServerTls(true);
+        RxConfig.INSTANCE.getNet().getHttp().setServerPort(httpPort);
+        RxConfig.INSTANCE.getNet().getHttp().setServerTls(true);
         String mode = options.get("shadowMode");
         if (eq(mode, "1")) {
             launchServer(options, port, httpPort);
