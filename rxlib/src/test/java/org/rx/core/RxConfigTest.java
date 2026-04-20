@@ -98,27 +98,31 @@ class RxConfigTest {
     }
 
     @Test
-    void refreshFrom_initializesDefaultHttpServerWhenBindPortConfigured() throws Exception {
+    void refreshFrom_initializesDefaultHttpServerWhenPortConfigured() throws Exception {
         assumeTrue(HttpServer.getDefault() == null);
         RxConfig conf = RxConfig.INSTANCE;
-        int oldPort = conf.net.httpServerBindPort;
+        int oldPort = conf.net.httpServerPort;
+        boolean oldTls = conf.net.httpServerTls;
         int port = freePort();
         try {
             Map<String, Object> props = new HashMap<>();
-            props.put(RxConfig.ConfigNames.NET_HTTP_SERVER_BIND_PORT, port);
+            props.put(RxConfig.ConfigNames.NET_HTTP_SERVER_PORT, port);
+            props.put(RxConfig.ConfigNames.NET_HTTP_SERVER_TLS, false);
             conf.refreshFrom(props);
 
             HttpServer server = HttpServer.getDefault();
             assertNotNull(server);
             assertEquals(port, server.getPort());
+            assertFalse(server.isTls());
             assertTrue(server.getMapping().containsKey("/rx-diagnostic"));
-            assertSame(server, HttpServer.ensureDefault(port + 1, false));
+            assertSame(server, HttpServer.getDefault());
         } finally {
             HttpServer server = HttpServer.getDefault();
             if (server != null) {
                 server.close();
             }
-            conf.net.httpServerBindPort = oldPort;
+            conf.net.httpServerPort = oldPort;
+            conf.net.httpServerTls = oldTls;
         }
     }
 

@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.MultiValueMap;
 import org.rx.core.Arrays;
 import org.rx.core.Disposable;
+import org.rx.core.RxConfig;
 import org.rx.core.Tasks;
 import org.rx.core.Strings;
 import org.rx.diagnostic.DiagnosticHttpHandler;
@@ -33,14 +34,24 @@ import static org.rx.core.Extends.ifNull;
 
 @Slf4j
 public class HttpServer extends Disposable {
-    static final String BLOCKING_HANDLER_HEADER = "X-Http-Blocking-Handler";
+    static final String ASYNC_HANDLER_HEADER = "X-Http-Async-Handler";
     static volatile HttpServer DEFAULT;
 
     static final class RequestState {
         HttpRequest request;
         HttpPostRequestDecoder decoder;
-        Handler handler;
+        Mapping mapping;
         ServerRequest req;
+    }
+
+    public static final class Mapping {
+        final Handler handler;
+        final boolean async;
+
+        Mapping(Handler handler, boolean async) {
+            this.handler = handler;
+            this.async = async;
+        }
     }
 
     class ServerHandler extends SimpleChannelInboundHandler<HttpObject> {
@@ -56,11 +67,12 @@ public class HttpServer extends Disposable {
                     return;
                 }
                 QueryStringDecoder queryStringDecoder = new QueryStringDecoder(request.uri());
-                Handler handler = mapping.get(queryStringDecoder.path());
-                if (handler == null) {
+                Mapping mapping = HttpServer.this.mapping.get(queryStringDecoder.path());
+                if (mapping == null) {
                     sendError(ctx, request, null, NOT_FOUND, false);
                     return;
                 }
+                Handler handler = mapping.handler;
                 HttpMethod[] method = handler.method();
                 if (method != null && !Arrays.contains(method, request.method())) {
                     sendError(ctx, request, null, METHOD_NOT_ALLOWED, false);
@@ -69,7 +81,7 @@ public class HttpServer extends Disposable {
 
                 RequestState state = new RequestState();
                 state.request = request;
-                state.handler = handler;
+                state.mapping = mapping;
                 state.req = new ServerRequest((InetSocketAddress) ctx.channel().remoteAddress(), request.uri(), request.method());
                 this.state = state;
                 ServerRequest req = state.req;
@@ -151,7 +163,7 @@ public class HttpServer extends Disposable {
 
                 if (msg instanceof LastHttpContent) {
                     this.state = null;
-                    if (state.handler.blocking()) {
+                    if (state.mapping.async) {
                         ctx.channel().config().setAutoRead(false);
                         final RequestState current = state;
                         Tasks.run(() -> {
@@ -187,7 +199,7 @@ public class HttpServer extends Disposable {
 
         private FullHttpResponse invokeHandler(RequestState state) throws Throwable {
             ServerResponse res = new ServerResponse();
-            state.handler.handle(state.req, res);
+            state.mapping.handler.handle(state.req, res);
             if (res.getHeaders().contains(HttpHeaderNames.LOCATION)) {
                 FullHttpResponse response = new DefaultFullHttpResponse(state.request.protocolVersion(), FOUND, Unpooled.EMPTY_BUFFER);
                 response.headers().setAll(res.getHeaders());
@@ -196,8 +208,8 @@ public class HttpServer extends Disposable {
             DefaultFullHttpResponse response = new DefaultFullHttpResponse(state.request.protocolVersion(),
                     ifNull(res.getStatus(), OK), ifNull(res.getContent(), Unpooled.EMPTY_BUFFER));
             response.headers().setAll(res.getHeaders());
-            if (state.handler.blocking()) {
-                response.headers().set(BLOCKING_HANDLER_HEADER, "1");
+            if (state.mapping.async) {
+                response.headers().set(ASYNC_HANDLER_HEADER, "1");
             }
             return response;
         }
@@ -279,30 +291,7 @@ public class HttpServer extends Disposable {
             return null;
         }
 
-        default boolean blocking() {
-            return false;
-        }
-
         void handle(ServerRequest request, ServerResponse response) throws Throwable;
-    }
-
-    public static Handler blocking(Handler handler) {
-        return new Handler() {
-            @Override
-            public HttpMethod[] method() {
-                return handler.method();
-            }
-
-            @Override
-            public boolean blocking() {
-                return true;
-            }
-
-            @Override
-            public void handle(ServerRequest request, ServerResponse response) throws Throwable {
-                handler.handle(request, response);
-            }
-        };
     }
 
     static final HttpDataFactory factory = new DefaultHttpDataFactory(DefaultHttpDataFactory.MINSIZE); // Disk if size exceed
@@ -334,7 +323,7 @@ public class HttpServer extends Disposable {
     @Getter
     final boolean tls;
     @Getter
-    final Map<String, Handler> mapping = new ConcurrentHashMap<>();
+    final Map<String, Mapping> mapping = new ConcurrentHashMap<>();
 
     @SneakyThrows
     public HttpServer(int port, boolean tls) {
@@ -365,12 +354,16 @@ public class HttpServer extends Disposable {
     }
 
     public HttpServer requestMapping(String path, Handler handler) {
-        mapping.put(normalize(path), handler);
+        return requestMapping(path, handler, false);
+    }
+
+    public HttpServer requestMapping(String path, Handler handler, boolean async) {
+        mapping.put(normalize(path), new Mapping(handler, async));
         return this;
     }
 
-    public HttpServer requestBlocking(String path, Handler handler) {
-        return requestMapping(path, blocking(handler));
+    public HttpServer requestAsync(String path, Handler handler) {
+        return requestMapping(path, handler, true);
     }
 
     public HttpServer requestDiagnostic() {
@@ -378,31 +371,30 @@ public class HttpServer extends Disposable {
     }
 
     public HttpServer requestDiagnostic(String path) {
-        return requestBlocking(path, new DiagnosticHttpHandler());
+        return requestAsync(path, new DiagnosticHttpHandler());
     }
 
     public static HttpServer getDefault() {
-        return DEFAULT;
-    }
-
-    public static HttpServer ensureDefault(int port) {
-        return ensureDefault(port, false);
-    }
-
-    public static synchronized HttpServer ensureDefault(int port, boolean tls) {
-        if (port <= 0) {
-            return DEFAULT;
-        }
         HttpServer server = DEFAULT;
-        if (server == null) {
+        if (server != null) {
+            return server;
+        }
+        RxConfig.NetConfig net = RxConfig.INSTANCE.getNet();
+        int port = net.getHttpServerPort();
+        if (port <= 0) {
+            return null;
+        }
+        boolean tls = net.isHttpServerTls();
+        synchronized (HttpServer.class) {
+            server = DEFAULT;
+            if (server != null) {
+                return server;
+            }
             DEFAULT = server = new HttpServer(port, tls);
+            server.requestDiagnostic();
             log.info("Default http server bind on port {}", port);
             return server;
         }
-        if (server.port != port || server.tls != tls) {
-            log.warn("Default http server already bind on port {}, ignore new port {}", server.port, port);
-        }
-        return server;
     }
 
     public static String renderTemplate(CharSequence template, Map<String, Object> vars) {

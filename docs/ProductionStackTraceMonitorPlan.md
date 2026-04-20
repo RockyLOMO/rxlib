@@ -35,11 +35,11 @@
   - `H2DiagnosticStore` 已移除重复的 `Class.forName("org.h2.Driver")`，H2 driver 由 `EntityDatabaseImpl` 统一加载。
 - `[已完成]` 内置只读诊断页面 MVP
   - `HttpServer.requestDiagnostic()` 默认注册 `/rx-diagnostic`，也支持指定路径。
-  - `RxConfig` 增加 `app.net.httpServerBindPort`，配置后会初始化并复用全局默认 `HttpServer` 实例，避免多个模块各自占用端口。
+  - `RxConfig` 增加 `app.net.httpServerPort` / `app.net.httpServerTls`，配置端口后会初始化并复用全局默认 `HttpServer` 实例，避免多个模块各自占用端口。
   - 页面通过 Basic Auth 保护，用户名固定 `rxlib`，密码使用 `RxConfig.rtoken`。
   - 页面查询 H2 的 incident、metric、thread CPU、file I/O、file size、stacktrace，兼容移动端布局。
   - 页面壳已迁移到 `src/main/resources/rx-diagnostic.html`，由 `HttpServer.renderHtmlTemplate(...)` 基于 `${name}` 变量做简易模板渲染。
-  - H2 查询通过 `requestBlocking` 下放后台线程，避免阻塞 Netty EventLoop。
+  - H2 查询通过 `requestAsync` 下放后台线程，避免阻塞 Netty EventLoop。
 - `[已完成]` JDK 8 / JDK 17 兼容方向
   - 代码语法保持 Java 8。
   - JFR、class histogram、NMT、thread dump 通过 `com.sun.management:type=DiagnosticCommand` MBean 运行时探测，不直接依赖 JDK 17 的 `jdk.jfr` API。
@@ -171,10 +171,11 @@ H2AsyncWriter <-------------+
 - 默认查看入口：`HttpServer.requestDiagnostic()` / `HttpServer.requestDiagnostic("/path")`
   - 基于现有 `HttpServer` 注册只读 HTML 页面。
   - Basic Auth 用户名固定为 `rxlib`，密码为 `RxConfig.INSTANCE.getRtoken()`。
-  - 内部使用 blocking handler 读取 H2，避免阻塞 Netty EventLoop。
-- 全局 HTTP Server 入口：`HttpServer.getDefault()` / `HttpServer.ensureDefault(port)`
-  - 配置 `app.net.httpServerBindPort` 大于 0 后自动初始化。
-  - 多次初始化会复用同一个实例，避免重复占用端口。
+  - 内部使用 async handler 读取 H2，避免阻塞 Netty EventLoop。
+- 全局 HTTP Server 入口：`HttpServer.getDefault()`
+  - 配置 `app.net.httpServerPort` 大于 0 后自动初始化。
+  - TLS 由 `app.net.httpServerTls` 控制，默认 false。
+  - 首次初始化后固定复用同一个实例，避免重复占用端口，也避免运行中被其他模块改端口。
 - 自定义启动入口：`new DiagnosticMonitor(config).start()`
   - 适合测试、临时诊断或隔离 H2 存储。
   - `config` 类型为 `RxConfig.DiagnosticConfig`。
@@ -1013,7 +1014,8 @@ app.diagnostic.heapDump.minFreeBytes=2147483648
 app.diagnostic.jfr.mode=auto
 app.diagnostic.jfr.minFreeBytes=268435456
 app.diagnostic.nmt.enabled=auto
-app.net.httpServerBindPort=0
+app.net.httpServerPort=0
+app.net.httpServerTls=false
 ```
 
 ## 16. 提交前检查清单
