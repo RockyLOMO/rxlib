@@ -103,6 +103,92 @@
             color: var(--muted);
         }
 
+        .summary {
+            white-space: normal;
+            line-height: 1.5;
+        }
+
+        .filters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 10px;
+            align-items: end;
+            margin: 0 0 14px;
+        }
+
+        .filters label {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .filters input {
+            box-sizing: border-box;
+            width: 100%;
+            margin-top: 5px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: #fffdf7;
+            color: var(--ink);
+            padding: 9px 10px;
+            font: inherit;
+        }
+
+        button,
+        .button {
+            border: 0;
+            border-radius: 999px;
+            background: var(--accent);
+            color: #fff;
+            cursor: pointer;
+            display: inline-block;
+            font: inherit;
+            font-weight: 700;
+            padding: 10px 14px;
+            text-align: center;
+            text-decoration: none;
+        }
+
+        .charts {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 12px;
+            margin: 0 0 14px;
+        }
+
+        .chart {
+            background: #fffdf7;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 12px;
+        }
+
+        .chart-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            word-break: break-word;
+        }
+
+        .metric-chart {
+            height: 130px;
+            margin: 8px 0;
+            width: 100%;
+        }
+
+        .axis {
+            stroke: #d7c9b2;
+            stroke-width: 2;
+        }
+
+        .series {
+            fill: none;
+            stroke: var(--accent);
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-width: 3;
+            vector-effect: non-scaling-stroke;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;

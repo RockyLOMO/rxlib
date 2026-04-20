@@ -27,11 +27,12 @@ public class DiagnosticHttpHandlerTest {
             store.start();
             long now = System.currentTimeMillis();
             store.recordMetric(new DiagnosticMetric(now, "http.metric", 42D, "k=v", "inc-http"));
+            store.recordMetric(new DiagnosticMetric(now - 500L, "disk.used.bytes", 524288D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now, "disk.used.bytes", 1048576D, "path=/tmp", "inc-http"));
             store.recordStackTrace(456L, "stack body", now);
             store.recordThreadCpu(new ThreadCpuSample(now, 7L, "diag-thread", "RUNNABLE", 1000000L, 456L, "stack body"), "inc-http");
             store.recordIncident("inc-http", DiagnosticIncidentType.CPU_HIGH, DiagnosticLevel.DIAG, now, now,
-                    "incidentId=inc-http\nsummary=cpu high\n", null);
+                    "incidentId=inc-http\nsummary=directUsedBytes=48623489\n", null);
             assertTrue(store.flush(5000L));
 
             int port = freePort();
@@ -50,8 +51,17 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("inc-http"));
                 assertTrue(html.contains("http.metric"));
                 assertTrue(html.contains("1.00 MB"));
-                assertTrue(html.contains("summary=cpu high"));
+                assertTrue(html.contains("directUsedBytes=48623489 (46.37 MB)"));
+                assertTrue(html.contains("metric-chart"));
                 assertFalse(html.contains("clob"));
+
+                HttpClient.ResponseContent filtered = client.get(url + "?limit=10&metric=disk.used.bytes&from="
+                        + (now - 1000L) + "&to=" + (now + 1000L));
+                String filteredHtml = filtered.toString();
+                assertTrue(filteredHtml.contains("disk.used.bytes"));
+                assertTrue(filteredHtml.contains("512.00 KB"));
+                assertTrue(filteredHtml.contains("1.00 MB"));
+                assertFalse(filteredHtml.contains("http.metric</td>"));
 
                 HttpClient.ResponseContent stack = client.get(url + "?stack=456");
                 assertTrue(stack.toString().contains("stack body"));
