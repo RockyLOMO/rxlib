@@ -215,6 +215,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     final String filePath;
     final String timeRollingPattern;
+    final boolean jdbcUrlMode;
     @Setter
     int rollingHours = 48;
     final int maxConnections;
@@ -249,8 +250,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         curFilePath = filePath;
         //http://www.h2database.com/html/commands.html#set_cache_size
         String h2Settings = ifNull(RxConfig.INSTANCE.getStorage().getH2Settings(), "");
-        log.info("h2Settings: {}", h2Settings);
-        JdbcConnectionPool pool = JdbcConnectionPool.create(String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;", filePath) + h2Settings, null, null);
+        String jdbcUrl = jdbcUrlMode ? filePath : String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;", filePath) + h2Settings;
+        log.info("h2Settings: {}", jdbcUrlMode ? "<custom-jdbc-url>" : h2Settings);
+        JdbcConnectionPool pool = JdbcConnectionPool.create(jdbcUrl, null, null);
         pool.setMaxConnections(maxConnections);
         connPool = pool;
         if (!mappedEntityTypes.isEmpty()) {
@@ -260,6 +262,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     String getFilePath() {
+        if (jdbcUrlMode) {
+            return filePath;
+        }
         return timeRollingPattern != null ? filePath + "_" + DateTime.now().toString(timeRollingPattern) : filePath;
     }
 
@@ -272,6 +277,10 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     }
 
     public EntityDatabaseImpl(String filePath, String timeRollingPattern, int maxConnections) {
+        this(filePath, timeRollingPattern, maxConnections, false);
+    }
+
+    public EntityDatabaseImpl(String filePath, String timeRollingPattern, int maxConnections, boolean jdbcUrlMode) {
         if (maxConnections <= 0) {
             int configuredMaxConnections = RxConfig.INSTANCE.getStorage().getEntityDatabaseMaxConnections();
             maxConnections = configuredMaxConnections > 0 ? configuredMaxConnections : Math.max(4, Math.min(8, Constants.CPU_THREADS));
@@ -279,9 +288,10 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
         this.filePath = filePath;
         this.timeRollingPattern = timeRollingPattern;
+        this.jdbcUrlMode = jdbcUrlMode;
         this.maxConnections = maxConnections;
 
-        if (timeRollingPattern != null) {
+        if (timeRollingPattern != null && !jdbcUrlMode) {
             Tasks.timer().setTimeout(() -> {
                 if (connPool == null || Strings.hashEquals(curFilePath, getFilePath())) {
                     return;
@@ -833,6 +843,33 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     public int executeUpdate(String sql) {
         return invoke(conn -> {
             return conn.createStatement().executeUpdate(sql);
+        }, sql, Collections.emptyList());
+    }
+
+    @Override
+    public void withConnection(BiAction<Connection> fn) {
+        invoke(fn, "withConnection", Collections.emptyList());
+    }
+
+    @Override
+    public <T> T withConnection(BiFunc<Connection, T> fn) {
+        return invoke(fn, "withConnection", Collections.emptyList());
+    }
+
+    @Override
+    public int[] executeBatch(String sql, List<List<Object>> argsList) {
+        if (argsList == null || argsList.isEmpty()) {
+            return new int[0];
+        }
+        return invoke(conn -> {
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                for (List<Object> args : argsList) {
+                    stmt.clearParameters();
+                    fillParams(stmt, args == null ? Collections.emptyList() : args);
+                    stmt.addBatch();
+                }
+                return stmt.executeBatch();
+            }
         }, sql, Collections.emptyList());
     }
 

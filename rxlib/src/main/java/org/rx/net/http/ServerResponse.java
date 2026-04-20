@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.cookie.Cookie;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.AsciiString;
@@ -21,6 +22,9 @@ public class ServerResponse {
     public static final AsciiString APPLICATION_JSON = AsciiString.cached("application/json; charset=UTF-8");
     public static final AsciiString TEXT_HTML = AsciiString.cached("text/html; charset=UTF-8");
     private final HttpHeaders headers = new DefaultHttpHeaders();
+
+    @Setter
+    private HttpResponseStatus status = HttpResponseStatus.OK;
 
     public void addCookie(Cookie cookie) {
         headers.add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.STRICT.encode(cookie));

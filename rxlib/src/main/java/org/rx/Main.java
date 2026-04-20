@@ -76,6 +76,8 @@ public final class Main implements SocksRpcContract {
         }
 
         int httpPort = Reflects.convertQuietly(options.get("httpPort"), Integer.class, 8082);
+        RxConfig.INSTANCE.getNet().setHttpServerPort(httpPort);
+        RxConfig.INSTANCE.getNet().setHttpServerTls(true);
         String mode = options.get("shadowMode");
         if (eq(mode, "1")) {
             launchServer(options, port, httpPort);
@@ -521,7 +523,7 @@ public final class Main implements SocksRpcContract {
     static RrpServer rrpServer;
 
     static void clientInit(int httpPort, DefaultSocksAuthenticator authenticator) {
-        httpServer = new HttpServer(httpPort, true).requestBlocking("/traces", (request, response) -> {
+        httpServer = HttpServer.getDefault().requestAsync("/traces", (request, response) -> {
             Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
             Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
             List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, newest, 50);
@@ -691,14 +693,14 @@ public final class Main implements SocksRpcContract {
     }
 
     static void serverInit(int httpPort) {
-        httpServer = new HttpServer(httpPort, true).requestBlocking("/traces", (request, response) -> {
+        httpServer = HttpServer.getDefault().requestAsync("/traces", (request, response) -> {
             Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
             Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
             List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, newest, 50);
             response.jsonBody(list);
         }).requestMapping("/getPublicIp", (request, response) -> {
             response.jsonBody(request.getRemoteEndpoint().getHostString());
-        }).requestBlocking("/hf", (request, response) -> {
+        }).requestAsync("/hf", (request, response) -> {
             String url = request.getQueryString().getFirst("fu");
             Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
             try (HttpClient client = new HttpClient()) {
