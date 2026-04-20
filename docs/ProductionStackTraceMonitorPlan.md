@@ -34,8 +34,8 @@
   - `H2DiagnosticStore` 已复用 `EntityDatabase` 底层连接池、连接生命周期和慢 SQL 日志能力，不再直接使用 `DriverManager` 创建连接。
   - `H2DiagnosticStore` 已移除重复的 `Class.forName("org.h2.Driver")`，H2 driver 由 `EntityDatabaseImpl` 统一加载。
 - `[已完成]` 内置只读诊断页面 MVP
-  - `HttpServer.requestDiagnostic()` 默认注册 `/rx-diagnostic`，也支持指定路径。
-  - `RxConfig` 增加 `app.net.httpServerPort` / `app.net.httpServerTls`，配置端口后会初始化并复用全局默认 `HttpServer` 实例，避免多个模块各自占用端口。
+  - `HttpServer.requestDiagnostic()` 默认注册 `/rdiag`，也支持指定路径。
+  - `RxConfig` 增加 `app.net.http.serverPort` / `app.net.http.serverTls`，配置端口后会初始化并复用全局默认 `HttpServer` 实例，避免多个模块各自占用端口。
   - 页面通过 Basic Auth 保护，用户名固定 `rxlib`，密码使用 `RxConfig.rtoken`。
   - 页面查询 H2 的 incident、metric、thread CPU、file I/O、file size、stacktrace，兼容移动端布局。
   - 页面壳已迁移到 `src/main/resources/rx-diagnostic.html`，由 `HttpServer.renderHtmlTemplate(...)` 基于 `${name}` 变量做简易模板渲染。
@@ -173,8 +173,8 @@ H2AsyncWriter <-------------+
   - Basic Auth 用户名固定为 `rxlib`，密码为 `RxConfig.INSTANCE.getRtoken()`。
   - 内部使用 async handler 读取 H2，避免阻塞 Netty EventLoop。
 - 全局 HTTP Server 入口：`HttpServer.getDefault()`
-  - 配置 `app.net.httpServerPort` 大于 0 后自动初始化。
-  - TLS 由 `app.net.httpServerTls` 控制，默认 false。
+  - 配置 `app.net.http.serverPort` 大于 0 后自动初始化。
+  - TLS 由 `app.net.http.serverTls` 控制，默认 false。
   - 首次初始化后固定复用同一个实例，避免重复占用端口，也避免运行中被其他模块改端口。
 - 自定义启动入口：`new DiagnosticMonitor(config).start()`
   - 适合测试、临时诊断或隔离 H2 存储。
@@ -1014,8 +1014,8 @@ app.diagnostic.heapDump.minFreeBytes=2147483648
 app.diagnostic.jfr.mode=auto
 app.diagnostic.jfr.minFreeBytes=268435456
 app.diagnostic.nmt.enabled=auto
-app.net.httpServerPort=0
-app.net.httpServerTls=false
+app.net.http.serverPort=0
+app.net.http.serverTls=false
 ```
 
 ## 16. 提交前检查清单

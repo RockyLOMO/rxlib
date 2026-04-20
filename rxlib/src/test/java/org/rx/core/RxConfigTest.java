@@ -114,7 +114,7 @@ class RxConfigTest {
             assertNotNull(server);
             assertEquals(port, server.getPort());
             assertFalse(server.isTls());
-            assertTrue(server.getMapping().containsKey("/rx-diagnostic"));
+            assertTrue(server.getMapping().containsKey("/rdiag"));
             assertSame(server, HttpServer.getDefault());
         } finally {
             HttpServer server = HttpServer.getDefault();
