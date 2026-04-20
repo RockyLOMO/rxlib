@@ -119,8 +119,10 @@ public final class RxConfig {
         String NET_READ_WRITE_TIMEOUT_MILLIS = "app.net.readWriteTimeoutMillis";
         String NET_POOL_MAX_SIZE = "app.net.poolMaxSize";
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
-        String NET_HTTP_SERVER_PORT = "app.net.httpServerPort";
-        String NET_HTTP_SERVER_TLS = "app.net.httpServerTls";
+        String NET_HTTP_SERVER_PORT = "app.net.http.serverPort";
+        String NET_HTTP_SERVER_TLS = "app.net.http.serverTls";
+        String NET_HTTP_SERVER_CERTIFICATE_PATH = "app.net.http.serverCertificatePath";
+        String NET_HTTP_SERVER_CERTIFICATE_PASSWORD = "app.net.http.serverCertificatePassword";
         String NET_USER_AGENT = "app.net.userAgent";
         String NET_BYPASS_HOSTS = "app.net.bypassHosts";
         String NET_CIPHERS_KEY = "app.net.ciphers";
@@ -348,13 +350,25 @@ public final class RxConfig {
         int readWriteTimeoutMillis;
         int poolMaxSize;
         int poolKeepAliveSeconds;
-        int httpServerPort;
-        boolean httpServerTls;
+        HttpConfig http = new HttpConfig();
+
+
+
         String userAgent;
         final List<String> bypassHosts = newConcurrentList(true);
         final List<String> ciphers = newConcurrentList(true);
         NtpConfig ntp = new NtpConfig();
         DnsConfig dns = new DnsConfig();
+    }
+
+    @Getter
+    @Setter
+    @ToString
+    public static class HttpConfig {
+        int serverPort;
+        boolean serverTls;
+        String serverCertificatePath;
+        String serverCertificatePassword;
     }
 
     @Getter
@@ -494,11 +508,11 @@ public final class RxConfig {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
         diagnostic.normalize();
-        if (net.httpServerPort > 0) {
+        if (net.http.serverPort > 0) {
             try {
                 HttpServer.getDefault();
             } catch (Throwable e) {
-                log.warn("init default http server failed, port={}", net.httpServerPort, e);
+                log.warn("init default http server failed, port={}", net.http.serverPort, e);
             }
         }
     }
@@ -624,8 +638,10 @@ public final class RxConfig {
         net.readWriteTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_READ_WRITE_TIMEOUT_MILLIS, net.readWriteTimeoutMillis);
         net.poolMaxSize = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_MAX_SIZE, net.poolMaxSize);
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, net.poolKeepAliveSeconds);
-        net.httpServerPort = SystemPropertyUtil.getInt(ConfigNames.NET_HTTP_SERVER_PORT, net.httpServerPort);
-        net.httpServerTls = SystemPropertyUtil.getBoolean(ConfigNames.NET_HTTP_SERVER_TLS, net.httpServerTls);
+        net.http.serverPort = SystemPropertyUtil.getInt(ConfigNames.NET_HTTP_SERVER_PORT, net.http.serverPort);
+        net.http.serverTls = SystemPropertyUtil.getBoolean(ConfigNames.NET_HTTP_SERVER_TLS, net.http.serverTls);
+        net.http.serverCertificatePath = SystemPropertyUtil.get(ConfigNames.NET_HTTP_SERVER_CERTIFICATE_PATH, net.http.serverCertificatePath);
+        net.http.serverCertificatePassword = SystemPropertyUtil.get(ConfigNames.NET_HTTP_SERVER_CERTIFICATE_PASSWORD, net.http.serverCertificatePassword);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, net.userAgent);
         reset(net.bypassHosts, ConfigNames.NET_BYPASS_HOSTS);
         reset(net.ciphers, ConfigNames.NET_CIPHERS_KEY);

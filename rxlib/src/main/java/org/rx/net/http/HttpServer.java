@@ -322,6 +322,7 @@ public class HttpServer extends Disposable {
     final int port;
     @Getter
     final boolean tls;
+    final io.netty.handler.ssl.SslContext sslContext;
     @Getter
     final Map<String, Mapping> mapping = new ConcurrentHashMap<>();
 
@@ -329,10 +330,17 @@ public class HttpServer extends Disposable {
     public HttpServer(int port, boolean tls) {
         this.port = port;
         this.tls = tls;
+        if (tls) {
+            RxConfig.HttpConfig http = RxConfig.INSTANCE.getNet().getHttp();
+            sslContext = Sockets.sslContext(http.getServerCertificatePath(), http.getServerCertificatePassword());
+        } else {
+            sslContext = null;
+        }
+
         serverBootstrap = Sockets.serverBootstrap(ch -> {
             ChannelPipeline p = ch.pipeline();
             if (tls) {
-                p.addLast(Sockets.getSelfSignedTls().newHandler(ch.alloc()));
+                p.addLast(sslContext.newHandler(ch.alloc()));
             }
             p.addLast(new HttpServerCodec(),
                     new HttpServerExpectContinueHandler(),
@@ -379,12 +387,12 @@ public class HttpServer extends Disposable {
         if (server != null) {
             return server;
         }
-        RxConfig.NetConfig net = RxConfig.INSTANCE.getNet();
-        int port = net.getHttpServerPort();
+        RxConfig.HttpConfig http = RxConfig.INSTANCE.getNet().getHttp();
+        int port = http.getServerPort();
         if (port <= 0) {
             return null;
         }
-        boolean tls = net.isHttpServerTls();
+        boolean tls = http.isServerTls();
         synchronized (HttpServer.class) {
             server = DEFAULT;
             if (server != null) {
