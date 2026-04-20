@@ -27,9 +27,11 @@ public class DiagnosticHttpHandlerTest {
             store.start();
             long now = System.currentTimeMillis();
             store.recordMetric(new DiagnosticMetric(now, "http.metric", 42D, "k=v", "inc-http"));
+            store.recordMetric(new DiagnosticMetric(now, "disk.used.bytes", 1048576D, "path=/tmp", "inc-http"));
             store.recordStackTrace(456L, "stack body", now);
             store.recordThreadCpu(new ThreadCpuSample(now, 7L, "diag-thread", "RUNNABLE", 1000000L, 456L, "stack body"), "inc-http");
-            store.recordIncident("inc-http", DiagnosticIncidentType.CPU_HIGH, DiagnosticLevel.DIAG, now, now, "cpu high", null);
+            store.recordIncident("inc-http", DiagnosticIncidentType.CPU_HIGH, DiagnosticLevel.DIAG, now, now,
+                    "incidentId=inc-http\nsummary=cpu high\n", null);
             assertTrue(store.flush(5000L));
 
             int port = freePort();
@@ -47,6 +49,9 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("RXlib Diagnostics"));
                 assertTrue(html.contains("inc-http"));
                 assertTrue(html.contains("http.metric"));
+                assertTrue(html.contains("1.00 MB"));
+                assertTrue(html.contains("summary=cpu high"));
+                assertFalse(html.contains("clob"));
 
                 HttpClient.ResponseContent stack = client.get(url + "?stack=456");
                 assertTrue(stack.toString().contains("stack body"));

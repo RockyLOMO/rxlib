@@ -13,6 +13,7 @@ import org.rx.net.http.ServerResponse;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.sql.Clob;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -146,6 +147,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private void appendThreadCpu(StringBuilder out, List<Map<String, Object>> rows) {
         out.append("<section class=\"card\"><h2>Thread CPU</h2><table><thead><tr><th>Time</th><th>Thread</th><th>CPU</th><th>State</th><th>Stack</th></tr></thead><tbody>");
+        if (rows.isEmpty()) {
+            appendEmptyRow(out, 5, "No CPU evidence yet. It is collected after CPU_HIGH is triggered.");
+        }
         for (Map<String, Object> row : rows) {
             out.append("<tr><td>").append(formatMillis(row.get("ts"))).append("</td><td>")
                     .append(escape(value(row, "thread_name"))).append("</td><td>")
@@ -158,6 +162,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private void appendFileIo(StringBuilder out, List<Map<String, Object>> rows) {
         out.append("<section class=\"card\"><h2>File I/O</h2><table><thead><tr><th>Time</th><th>Path</th><th>Op</th><th>Bytes</th><th>Elapsed</th><th>Stack</th></tr></thead><tbody>");
+        if (rows.isEmpty()) {
+            appendEmptyRow(out, 6, "No file I/O sample yet. Add DiagnosticFileIo record calls around file reads/writes.");
+        }
         for (Map<String, Object> row : rows) {
             out.append("<tr><td>").append(formatMillis(row.get("ts"))).append("</td><td>")
                     .append(escape(value(row, "path_sample"))).append("</td><td>")
@@ -171,6 +178,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private void appendFileSize(StringBuilder out, List<Map<String, Object>> rows) {
         out.append("<section class=\"card\"><h2>File Size</h2><table><thead><tr><th>Time</th><th>Path</th><th>Size</th><th>Modified</th><th>Incident</th></tr></thead><tbody>");
+        if (rows.isEmpty()) {
+            appendEmptyRow(out, 5, "No file size sample yet. It is collected after DISK_SPACE_HIGH scans configured roots.");
+        }
         for (Map<String, Object> row : rows) {
             out.append("<tr><td>").append(formatMillis(row.get("ts"))).append("</td><td>")
                     .append(escape(value(row, "path_sample"))).append("</td><td>")
@@ -186,11 +196,16 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         for (Map<String, Object> row : rows) {
             out.append("<tr><td>").append(formatMillis(row.get("ts"))).append("</td><td>")
                     .append(escape(value(row, "metric"))).append("</td><td>")
-                    .append(escape(value(row, "metric_value"))).append("</td><td>")
+                    .append(escape(formatMetricValue(row.get("metric"), row.get("metric_value")))).append("</td><td>")
                     .append(escape(value(row, "tags"))).append("</td><td>")
                     .append(escape(value(row, "incident_id"))).append("</td></tr>");
         }
         out.append("</tbody></table></section>");
+    }
+
+    private void appendEmptyRow(StringBuilder out, int columns, String message) {
+        out.append("<tr><td class=\"empty\" colspan=\"").append(columns).append("\">")
+                .append(escape(message)).append("</td></tr>");
     }
 
     private boolean authorize(ServerRequest request) {
@@ -233,12 +248,24 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             while (rows.next()) {
                 Map<String, Object> row = new LinkedHashMap<>();
                 for (int i = 1; i <= len; i++) {
-                    row.put(meta.getColumnLabel(i).toLowerCase(Locale.ENGLISH), rows.getObject(i));
+                    row.put(meta.getColumnLabel(i).toLowerCase(Locale.ENGLISH), readValue(rows.getObject(i)));
                 }
                 result.add(row);
             }
             return result;
         }
+    }
+
+    private Object readValue(Object value) throws Exception {
+        if (value instanceof Clob) {
+            Clob clob = (Clob) value;
+            long len = clob.length();
+            if (len <= 0L) {
+                return "";
+            }
+            return clob.getSubString(1L, (int) Math.min(len, Integer.MAX_VALUE));
+        }
+        return value;
     }
 
     private int limit(ServerRequest request) {
@@ -294,6 +321,28 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         return String.format(Locale.ENGLISH, "%.2f %s", n, units[unit]);
     }
 
+    private static String formatMetricValue(Object metricValue, Object value) {
+        Double number = toDouble(value);
+        if (number == null) {
+            return "";
+        }
+        String metric = metricValue == null ? "" : String.valueOf(metricValue).toLowerCase(Locale.ENGLISH);
+        if (metric.endsWith(".bytes") || metric.contains(".bytes.")) {
+            String bytes = formatBytes(Long.valueOf(number.longValue()));
+            return metric.endsWith("per.second") ? bytes + "/s" : bytes;
+        }
+        if (metric.endsWith(".percent")) {
+            return String.format(Locale.ENGLISH, "%.2f %%", number);
+        }
+        if (metric.endsWith(".count")) {
+            return String.format(Locale.ENGLISH, "%.0f", number);
+        }
+        if (Math.rint(number) == number) {
+            return String.format(Locale.ENGLISH, "%.0f", number);
+        }
+        return String.format(Locale.ENGLISH, "%.3f", number);
+    }
+
     private static String formatNanos(Object value) {
         Long nanos = toLong(value);
         if (nanos == null) {
@@ -328,6 +377,17 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             return ((Number) value).longValue();
         }
         return parseLong(value == null ? null : String.valueOf(value));
+    }
+
+    private static Double toDouble(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        try {
+            return value == null ? null : Double.parseDouble(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static String escape(String value) {

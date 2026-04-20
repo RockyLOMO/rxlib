@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import javax.net.ssl.SSLHandshakeException;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static org.rx.core.Extends.ifNull;
@@ -273,6 +274,14 @@ public class HttpServer extends Disposable {
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+            SSLHandshakeException sslHandshake = findSslHandshakeException(cause);
+            if (sslHandshake != null) {
+                log.warn("TLS handshake failed from {}: {}", ctx.channel().remoteAddress(), sslHandshake.getMessage());
+                log.debug("TLS handshake failure detail", cause);
+                ctx.close();
+                return;
+            }
+
             log.error("caught", cause);
             if (ctx.channel().isActive()) {
                 RequestState state = this.state;
@@ -284,6 +293,16 @@ public class HttpServer extends Disposable {
                 }
             }
         }
+    }
+
+    static SSLHandshakeException findSslHandshakeException(Throwable cause) {
+        for (int i = 0; cause != null && i < 16; i++) {
+            if (cause instanceof SSLHandshakeException) {
+                return (SSLHandshakeException) cause;
+            }
+            cause = cause.getCause();
+        }
+        return null;
     }
 
     public interface Handler {
@@ -375,7 +394,7 @@ public class HttpServer extends Disposable {
     }
 
     public HttpServer requestDiagnostic() {
-        return requestDiagnostic("/rx-diagnostic");
+        return requestDiagnostic("/rdiag");
     }
 
     public HttpServer requestDiagnostic(String path) {

@@ -87,13 +87,13 @@ public class HttpServerBlockingTest {
 
     @Test
     public void tlsWithoutCertificate_servesLocalhostRequest() throws Exception {
-        RxConfig.NetConfig net = RxConfig.INSTANCE.getNet();
-        String oldCertificatePath = net.getHttpServerCertificatePath();
-        String oldCertificatePassword = net.getHttpServerCertificatePassword();
+        RxConfig.HttpConfig http = RxConfig.INSTANCE.getNet().getHttp();
+        String oldCertificatePath = http.getServerCertificatePath();
+        String oldCertificatePassword = http.getServerCertificatePassword();
         HttpServer tlsServer = null;
         try {
-            net.setHttpServerCertificatePath(null);
-            net.setHttpServerCertificatePassword(null);
+            http.setServerCertificatePath(null);
+            http.setServerCertificatePassword(null);
 
             int port = freePort();
             tlsServer = new HttpServer(port, true);
@@ -109,8 +109,8 @@ public class HttpServerBlockingTest {
             if (tlsServer != null) {
                 tlsServer.close();
             }
-            net.setHttpServerCertificatePath(oldCertificatePath);
-            net.setHttpServerCertificatePassword(oldCertificatePassword);
+            http.setServerCertificatePath(oldCertificatePath);
+            http.setServerCertificatePassword(oldCertificatePassword);
         }
     }
 
