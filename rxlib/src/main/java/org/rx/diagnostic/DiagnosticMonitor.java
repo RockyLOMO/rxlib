@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -190,24 +191,24 @@ public class DiagnosticMonitor implements AutoCloseable {
     private void checkCpu(ResourceSnapshot snapshot, long now) {
         boolean high = snapshot.getProcessCpuPercent() >= config.getCpuThresholdPercent();
         updateTrigger(DiagnosticIncidentType.CPU_HIGH, high, now, config.getCpuSustainMillis(),
-                "processCpu=" + snapshot.getProcessCpuPercent());
+                "processCpu=" + formatPercent(snapshot.getProcessCpuPercent()));
     }
 
     private void checkMemory(ResourceSnapshot snapshot, long now) {
         updateTrigger(DiagnosticIncidentType.HEAP_MEMORY_HIGH,
                 snapshot.heapUsedPercent() >= config.getHeapUsedThresholdPercent(),
                 now, config.getSampleIntervalMillis(),
-                "heapUsedPercent=" + snapshot.heapUsedPercent());
+                "heapUsedPercent=" + formatPercent(snapshot.heapUsedPercent()));
 
         updateTrigger(DiagnosticIncidentType.DIRECT_MEMORY_HIGH,
                 snapshot.directUsedPercent() >= config.getDirectUsedThresholdPercent() && snapshot.getDirectCapacityBytes() > 0L,
                 now, config.getSampleIntervalMillis(),
-                "directUsedBytes=" + snapshot.getDirectUsedBytes());
+                "directUsedBytes=" + formatBytes(snapshot.getDirectUsedBytes()) + " (" + snapshot.getDirectUsedBytes() + " bytes)");
 
         updateTrigger(DiagnosticIncidentType.METASPACE_HIGH,
                 snapshot.metaspaceUsedPercent() >= config.getMetaspaceUsedThresholdPercent() && snapshot.getMetaspaceMaxBytes() > 0L,
                 now, config.getSampleIntervalMillis(),
-                "metaspaceUsedPercent=" + snapshot.metaspaceUsedPercent());
+                "metaspaceUsedPercent=" + formatPercent(snapshot.metaspaceUsedPercent()));
     }
 
     private void checkDisk(ResourceSnapshot snapshot, long now) {
@@ -216,7 +217,8 @@ public class DiagnosticMonitor implements AutoCloseable {
             boolean lowBytes = disk.getFreeBytes() <= config.getDiskMinFreeBytes();
             if (lowPercent || lowBytes) {
                 updateTrigger(DiagnosticIncidentType.DISK_SPACE_HIGH, true, now, config.getSampleIntervalMillis(),
-                        "path=" + disk.getPath() + ",freePercent=" + disk.getFreePercent() + ",freeBytes=" + disk.getFreeBytes());
+                        "path=" + disk.getPath() + ",freePercent=" + formatPercent(disk.getFreePercent())
+                                + ",freeBytes=" + formatBytes(disk.getFreeBytes()) + " (" + disk.getFreeBytes() + " bytes)");
                 return;
             }
         }
@@ -241,7 +243,7 @@ public class DiagnosticMonitor implements AutoCloseable {
             fileIoWindowStartMillis = now;
             fileIoWindowBytes = 0L;
             updateTrigger(DiagnosticIncidentType.DISK_IO_HIGH, bytesPerSecond >= threshold, now,
-                    config.getDiskIoSustainMillis(), "fileIoBytesPerSecond=" + bytesPerSecond);
+                    config.getDiskIoSustainMillis(), "fileIoBytesPerSecond=" + formatBytes(bytesPerSecond) + "/s (" + bytesPerSecond + " bytes/s)");
         }
     }
 
@@ -489,6 +491,21 @@ public class DiagnosticMonitor implements AutoCloseable {
             return false;
         }
         return holder.compareAndSet(last, now);
+    }
+
+    private static String formatBytes(long bytes) {
+        double n = bytes;
+        String[] units = {"B", "KB", "MB", "GB", "TB"};
+        int unit = 0;
+        while (n >= 1024D && unit < units.length - 1) {
+            n /= 1024D;
+            unit++;
+        }
+        return String.format(Locale.ENGLISH, "%.2f %s", n, units[unit]);
+    }
+
+    private static String formatPercent(double value) {
+        return String.format(Locale.ENGLISH, "%.2f %%", value);
     }
 
     private static final class TriggerState {

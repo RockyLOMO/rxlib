@@ -38,6 +38,7 @@
   - `RxConfig` 增加 `app.net.http.serverPort` / `app.net.http.serverTls`，配置端口后会初始化并复用全局默认 `HttpServer` 实例，避免多个模块各自占用端口。
   - 页面通过 Basic Auth 保护，用户名固定 `rxlib`，密码使用 `RxConfig.rtoken`。
   - 页面查询 H2 的 incident、metric、thread CPU、file I/O、file size、stacktrace，兼容移动端布局。
+  - Metrics 支持按时间范围、metric 名过滤，并以服务端生成 SVG 走势图展示；incident summary 中的 bytes 字段会显示人类可读单位。
   - 页面壳已迁移到 `src/main/resources/rx-diagnostic.html`，由 `HttpServer.renderHtmlTemplate(...)` 基于 `${name}` 变量做简易模板渲染。
   - H2 查询通过 `requestAsync` 下放后台线程，避免阻塞 Netty EventLoop。
 - `[已完成]` JDK 8 / JDK 17 兼容方向
@@ -192,7 +193,7 @@ H2AsyncWriter <-------------+
 - `ResourceSampler`：采集 MXBean、BufferPool、GC、磁盘分区、TopN 线程 CPU。
 - `H2DiagnosticStore`：有界队列、单写线程、批量 H2 落库、TTL、容量保护、失败降级。
 - `DiagnosticFileIo`：应用层文件读写采样入口，解决磁盘容量/读写问题的 stacktrace 归因。
-- `DiagnosticHttpHandler`：基于 `HttpServer` 的只读 H2 查看页面，负责 Basic Auth、HTML 渲染和移动端布局。
+- `DiagnosticHttpHandler`：基于 `HttpServer` 的只读 H2 查看页面，负责 Basic Auth、HTML 渲染、Metrics 过滤/走势图和移动端布局。
 - `IncidentBundleWriter`：incident 证据目录创建、文本证据写入、目录容量保护。
 - `JvmDiagnosticSupport`：JFR、thread dump、class histogram、NMT、heap dump 的能力探测与调用。
 - `DiagnosticFileSupport`：H2 文件大小、证据目录大小、可用空间预算、受限目录裁剪。
