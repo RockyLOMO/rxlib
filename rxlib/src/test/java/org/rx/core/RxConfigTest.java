@@ -101,8 +101,8 @@ class RxConfigTest {
     void refreshFrom_initializesDefaultHttpServerWhenPortConfigured() throws Exception {
         assumeTrue(HttpServer.getDefault() == null);
         RxConfig conf = RxConfig.INSTANCE;
-        int oldPort = conf.net.httpServerPort;
-        boolean oldTls = conf.net.httpServerTls;
+        int oldPort = conf.net.http.serverPort;
+        boolean oldTls = conf.net.http.serverTls;
         int port = freePort();
         try {
             Map<String, Object> props = new HashMap<>();
@@ -121,8 +121,8 @@ class RxConfigTest {
             if (server != null) {
                 server.close();
             }
-            conf.net.httpServerPort = oldPort;
-            conf.net.httpServerTls = oldTls;
+            conf.net.http.serverPort = oldPort;
+            conf.net.http.serverTls = oldTls;
         }
     }
 

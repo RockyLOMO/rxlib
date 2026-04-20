@@ -1,6 +1,9 @@
 package org.rx.net.socks;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.util.AttributeKey;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -25,6 +28,16 @@ public class RrpConfig extends SocketConfig {
     public static final byte ACTION_REGISTER = 1;
     public static final byte ACTION_FORWARD = 2;
     public static final byte ACTION_SYNC_CLOSE = 3;
+    public static final byte ACTION_HEARTBEAT = 4;
+
+    static void writeHeartbeat(Channel channel) {
+        if (channel == null || !channel.isActive() || !channel.isWritable()) {
+            return;
+        }
+        ByteBuf buf = channel.alloc().ioBuffer(1, 1);
+        buf.writeByte(ACTION_HEARTBEAT);
+        channel.writeAndFlush(buf).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+    }
 
     @Data
     public static class Proxy implements Serializable {
@@ -46,5 +59,6 @@ public class RrpConfig extends SocketConfig {
     String serverEndpoint;
     boolean enableReconnect = true;
     int waitConnectMillis = 4000;
+    int heartbeatSeconds = 25;
     List<Proxy> proxies;
 }

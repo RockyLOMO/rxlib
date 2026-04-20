@@ -282,6 +282,84 @@ class RrpIntegrationTest {
     }
 
     @Test
+    void clientIgnoresHeartbeatAndReleases() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        conf.setProxies(Collections.emptyList());
+        RrpClient client = new RrpClient(conf);
+        RrpClient.ClientHandler h = client.new ClientHandler();
+
+        EmbeddedChannel ch = new EmbeddedChannel(h);
+        releaseOutbound(ch);
+        ByteBuf buf = Unpooled.buffer(1);
+        buf.writeByte(RrpConfig.ACTION_HEARTBEAT);
+
+        ch.writeInbound(buf);
+        assertEquals(0, buf.refCnt(), "heartbeat should be released by handler");
+        assertTrue(ch.isOpen(), "heartbeat must not close client channel");
+        Object out = ch.readOutbound();
+        if (out != null) {
+            io.netty.util.ReferenceCountUtil.release(out);
+        }
+        assertNull(out, "client should not reply to heartbeat");
+    }
+
+    @Test
+    void serverRepliesHeartbeatAndReleases() {
+        RrpConfig conf = new RrpConfig();
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        try {
+            EmbeddedChannel ch = new EmbeddedChannel();
+            ch.attr(ATTR_SVR).set(server);
+            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
+            ch.pipeline().fireChannelActive();
+
+            ByteBuf buf = Unpooled.buffer(1);
+            buf.writeByte(RrpConfig.ACTION_HEARTBEAT);
+
+            ch.writeInbound(buf);
+            assertEquals(0, buf.refCnt(), "heartbeat should be released by handler");
+
+            ByteBuf out = ch.readOutbound();
+            assertNotNull(out, "server should reply heartbeat");
+            try {
+                assertEquals(RrpConfig.ACTION_HEARTBEAT, out.readByte());
+            } finally {
+                out.release();
+            }
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void clientInactiveClearsStaleProxyContexts() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        conf.setProxies(Collections.singletonList(newProxy("stale", 19101, "u1:p1")));
+        RrpClient client = new RrpClient(conf);
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        try {
+            RrpClient.RpClientProxy proxy = new RrpClient.RpClientProxy(conf.getProxies().get(0), serverChannel);
+            proxy.localChannels.put("old", localChannel);
+            client.proxyMap.put(proxy.p.getRemotePort(), proxy);
+
+            EmbeddedChannel ch = new EmbeddedChannel(client.new ClientHandler());
+            releaseOutbound(ch);
+            ch.pipeline().fireChannelInactive();
+
+            assertTrue(client.proxyMap.isEmpty(), "main channel inactive should drop stale proxy contexts");
+            assertTrue(proxy.localChannels.isEmpty(), "stale local channel map should be cleared");
+        } finally {
+            client.close();
+            serverChannel.close();
+            localChannel.close();
+        }
+    }
+
+    @Test
     void serverRetryRegisterAfterBindFailureShouldSucceed() throws Exception {
         RrpConfig conf = new RrpConfig();
         conf.setToken("t");
@@ -392,6 +470,13 @@ class RrpIntegrationTest {
             Thread.sleep(50);
         }
         fail(message);
+    }
+
+    static void releaseOutbound(EmbeddedChannel ch) {
+        Object msg;
+        while ((msg = ch.readOutbound()) != null) {
+            io.netty.util.ReferenceCountUtil.release(msg);
+        }
     }
 }
 
