@@ -23,6 +23,8 @@ import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -163,6 +165,11 @@ public class DnsServer extends Disposable {
     }
 
     public void addHostsFile(String filePath) {
+        Path path = Paths.get(filePath);
+        if (!java.nio.file.Files.isRegularFile(path)) {
+            log.warn("Hosts file not found, skip {}", filePath);
+            return;
+        }
         Files.readLines(filePath, line -> {
             if (line.startsWith("#") || line.trim().isEmpty()) {
                 return;
