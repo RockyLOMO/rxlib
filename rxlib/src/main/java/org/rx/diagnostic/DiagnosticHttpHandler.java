@@ -89,11 +89,23 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             StringBuilder body = new StringBuilder(16384);
             appendHeader(body, config, filter);
             appendStack(body, db, stackHash);
+            appendTabsStart(body);
+            appendTabPanelStart(body, "incidents", true);
             appendIncidents(body, query(db, "SELECT incident_id,type,level,start_ts,end_ts,summary,bundle_path FROM diag_incident ORDER BY start_ts DESC LIMIT ?", filter.limit));
-            appendThreadCpu(body, query(db, "SELECT ts,thread_id,thread_name,cpu_nanos_delta,state,stack_hash,incident_id FROM diag_thread_cpu_sample ORDER BY ts DESC,cpu_nanos_delta DESC LIMIT ?", filter.limit));
-            appendFileIo(body, query(db, "SELECT ts,path_sample,op,bytes,elapsed_nanos,stack_hash,incident_id FROM diag_file_io_sample ORDER BY ts DESC,id DESC LIMIT ?", filter.limit));
-            appendFileSize(body, query(db, "SELECT ts,path_sample,size_bytes,last_modified,incident_id FROM diag_file_size_sample ORDER BY size_bytes DESC,ts DESC LIMIT ?", filter.limit));
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "metrics", false);
             appendMetrics(body, queryMetrics(db, filter), filter);
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "thread-cpu", false);
+            appendThreadCpu(body, query(db, "SELECT ts,thread_id,thread_name,cpu_nanos_delta,state,stack_hash,incident_id FROM diag_thread_cpu_sample ORDER BY ts DESC,cpu_nanos_delta DESC LIMIT ?", filter.limit));
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "file-io", false);
+            appendFileIo(body, query(db, "SELECT ts,path_sample,op,bytes,elapsed_nanos,stack_hash,incident_id FROM diag_file_io_sample ORDER BY ts DESC,id DESC LIMIT ?", filter.limit));
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "file-size", false);
+            appendFileSize(body, query(db, "SELECT ts,path_sample,size_bytes,last_modified,incident_id FROM diag_file_size_sample ORDER BY size_bytes DESC,ts DESC LIMIT ?", filter.limit));
+            appendTabPanelEnd(body);
+            appendTabsEnd(body);
             return page("RXlib Diagnostics", body.toString());
         } catch (Throwable e) {
             return page("RXlib Diagnostics", "<section class=\"card warn\"><h2>Read failed</h2><pre>"
@@ -111,6 +123,32 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append(filter.limit).append(" rows per section.</p></div><div class=\"pill\">")
                 .append(escape(config.isFileH2Storage() ? config.getH2File().getPath() : "memory H2"))
                 .append("</div></section>");
+    }
+
+    private void appendTabsStart(StringBuilder out) {
+        out.append("<nav class=\"tabs\">")
+                .append("<a class=\"tab-link active\" href=\"#incidents\" data-tab=\"incidents\">Incidents</a>")
+                .append("<a class=\"tab-link\" href=\"#metrics\" data-tab=\"metrics\">Metrics</a>")
+                .append("<a class=\"tab-link\" href=\"#thread-cpu\" data-tab=\"thread-cpu\">Thread CPU</a>")
+                .append("<a class=\"tab-link\" href=\"#file-io\" data-tab=\"file-io\">File I/O</a>")
+                .append("<a class=\"tab-link\" href=\"#file-size\" data-tab=\"file-size\">File Size</a>")
+                .append("</nav><div class=\"tab-panels\">");
+    }
+
+    private void appendTabPanelStart(StringBuilder out, String id, boolean active) {
+        out.append("<div class=\"tab-panel");
+        if (active) {
+            out.append(" active");
+        }
+        out.append("\" id=\"").append(id).append("\">");
+    }
+
+    private void appendTabPanelEnd(StringBuilder out) {
+        out.append("</div>");
+    }
+
+    private void appendTabsEnd(StringBuilder out) {
+        out.append("</div>");
     }
 
     private void appendStack(StringBuilder out, EntityDatabase db, String stackHash) {
@@ -198,7 +236,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private void appendMetrics(StringBuilder out, List<Map<String, Object>> rows, Query filter) {
-        out.append("<section class=\"card\" id=\"metrics\"><h2>Metrics</h2>");
+        out.append("<section class=\"card\"><h2>Metrics</h2>");
         appendMetricFilter(out, filter);
         appendMetricCharts(out, rows);
         out.append("<table><thead><tr><th>Time</th><th>Metric</th><th>Value</th><th>Tags</th><th>Incident</th></tr></thead><tbody>");
@@ -303,12 +341,29 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append("\" preserveAspectRatio=\"none\"><line class=\"axis\" x1=\"")
                 .append(pad).append("\" y1=\"").append(height - pad).append("\" x2=\"")
                 .append(width - pad).append("\" y2=\"").append(height - pad)
-                .append("\"/><polyline class=\"series\" points=\"").append(points).append("\"/></svg>")
+                .append("\"/><polyline class=\"series\" points=\"").append(points).append("\"/>");
+        appendChartPoints(out, rows, minTs, maxTs, min, max, width, height, pad);
+        out.append("</svg>")
                 .append("<div class=\"meta\">")
                 .append(formatMillis(Long.valueOf(minTs))).append(" - ").append(formatMillis(Long.valueOf(maxTs)))
                 .append(" · min ").append(escape(formatMetricValue(metric, Double.valueOf(min))))
                 .append(" · max ").append(escape(formatMetricValue(metric, Double.valueOf(max))))
                 .append("</div></article>");
+    }
+
+    private void appendChartPoints(StringBuilder out, List<Map<String, Object>> rows, long minTs, long maxTs,
+                                   double min, double max, int width, int height, int pad) {
+        for (Map<String, Object> row : rows) {
+            long ts = toLong(row.get("ts"));
+            double value = toDouble(row.get("metric_value"));
+            double x = maxTs == minTs ? width / 2D : pad + (double) (ts - minTs) * (width - pad * 2D) / (double) (maxTs - minTs);
+            double y = max == min ? height / 2D : height - pad - (value - min) * (height - pad * 2D) / (max - min);
+            out.append("<circle class=\"point\" cx=\"")
+                    .append(String.format(Locale.ENGLISH, "%.1f", x))
+                    .append("\" cy=\"")
+                    .append(String.format(Locale.ENGLISH, "%.1f", y))
+                    .append("\" r=\"3\"/>");
+        }
     }
 
     private void appendEmptyRow(StringBuilder out, int columns, String message) {
@@ -517,7 +572,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             String key = matcher.group(1);
             String raw = matcher.group(3);
             Long bytes = parseLong(raw);
-            if (bytes == null) {
+            if (bytes == null || hasReadableUnitAfter(summary, matcher.end())) {
                 continue;
             }
             String unit = formatBytes(bytes);
@@ -528,6 +583,38 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         }
         matcher.appendTail(formatted);
         return escape(formatted.toString()).replace("\r\n", "\n").replace('\r', '\n').replace("\n", "<br>");
+    }
+
+    private static boolean hasReadableUnitAfter(String text, int index) {
+        if (index < text.length() && text.charAt(index) == '.') {
+            return true;
+        }
+        int i = index;
+        while (i < text.length() && Character.isWhitespace(text.charAt(i))) {
+            i++;
+        }
+        if (i >= text.length()) {
+            return false;
+        }
+        if (text.charAt(i) == '(') {
+            return true;
+        }
+        String tail = text.substring(i).toLowerCase(Locale.ENGLISH);
+        return isUnitPrefix(tail, "b")
+                || tail.startsWith("bytes")
+                || tail.startsWith("byte")
+                || tail.startsWith("kb")
+                || tail.startsWith("mb")
+                || tail.startsWith("gb")
+                || tail.startsWith("tb");
+    }
+
+    private static boolean isUnitPrefix(String tail, String unit) {
+        if (!tail.startsWith(unit)) {
+            return false;
+        }
+        return tail.length() == unit.length()
+                || !Character.isLetterOrDigit(tail.charAt(unit.length()));
     }
 
     private static String formatNanos(Object value) {

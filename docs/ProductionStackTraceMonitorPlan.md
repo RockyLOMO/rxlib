@@ -39,6 +39,7 @@
   - 页面通过 Basic Auth 保护，用户名固定 `rxlib`，密码使用 `RxConfig.rtoken`。
   - 页面查询 H2 的 incident、metric、thread CPU、file I/O、file size、stacktrace，兼容移动端布局。
   - Metrics 支持按时间范围、metric 名过滤，并以服务端生成 SVG 走势图展示；incident summary 中的 bytes 字段会显示人类可读单位。
+  - 页面已改为 tabs 分区展示 Incidents / Metrics / Thread CPU / File I/O / File Size，避免 incident 过多时挤占整页。
   - 页面壳已迁移到 `src/main/resources/rx-diagnostic.html`，由 `HttpServer.renderHtmlTemplate(...)` 基于 `${name}` 变量做简易模板渲染。
   - H2 查询通过 `requestAsync` 下放后台线程，避免阻塞 Netty EventLoop。
 - `[已完成]` JDK 8 / JDK 17 兼容方向

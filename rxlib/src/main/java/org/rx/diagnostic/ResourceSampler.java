@@ -13,8 +13,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 public class ResourceSampler {
+    private static final long DIRECT_MEMORY_MAX_BYTES = detectDirectMemoryMaxBytes();
+
     private final java.lang.management.OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
     private final ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
 
@@ -89,6 +92,9 @@ public class ResourceSampler {
                 mappedCapacity = capacity;
             }
         }
+        add(metrics, now, "jvm.direct.max.bytes", DIRECT_MEMORY_MAX_BYTES, null);
+        add(metrics, now, "jvm.direct.used.percent", percent(directUsed, DIRECT_MEMORY_MAX_BYTES), null);
+        add(metrics, now, "jvm.direct.capacity.percent", percent(directUsed, directCapacity), null);
 
         for (GarbageCollectorMXBean gc : ManagementFactory.getGarbageCollectorMXBeans()) {
             String tags = "gc=" + gc.getName();
@@ -115,7 +121,8 @@ public class ResourceSampler {
         }
 
         return new ResourceSnapshot(now, processCpu, systemCpu, threadCount, heapUsed, heapMax, nonHeapUsed,
-                directUsed, directCapacity, mappedUsed, mappedCapacity, metaspaceUsed, metaspaceMax, disks, metrics);
+                directUsed, directCapacity, DIRECT_MEMORY_MAX_BYTES,
+                mappedUsed, mappedCapacity, metaspaceUsed, metaspaceMax, disks, metrics);
     }
 
     public List<ThreadCpuSample> sampleTopThreads(long intervalMillis, int topN, int maxStackFrames) throws InterruptedException {
@@ -246,6 +253,84 @@ public class ResourceSampler {
             return -1D;
         }
         return value <= 1D ? value * 100D : value;
+    }
+
+    private static double percent(long used, long max) {
+        return max <= 0L ? 0D : (double) used * 100D / (double) max;
+    }
+
+    private static long detectDirectMemoryMaxBytes() {
+        long value = invokeVmMaxDirectMemory("jdk.internal.misc.VM");
+        if (value > 0L) {
+            return value;
+        }
+        value = invokeVmMaxDirectMemory("sun.misc.VM");
+        if (value > 0L) {
+            return value;
+        }
+        value = parseMaxDirectMemoryArgument();
+        if (value > 0L) {
+            return value;
+        }
+        return Runtime.getRuntime().maxMemory();
+    }
+
+    private static long invokeVmMaxDirectMemory(String className) {
+        try {
+            Class<?> vmClass = Class.forName(className);
+            Method method = vmClass.getDeclaredMethod("maxDirectMemory");
+            method.setAccessible(true);
+            Object value = method.invoke(null);
+            return value instanceof Number ? ((Number) value).longValue() : 0L;
+        } catch (Throwable ignored) {
+            return 0L;
+        }
+    }
+
+    private static long parseMaxDirectMemoryArgument() {
+        try {
+            for (String arg : ManagementFactory.getRuntimeMXBean().getInputArguments()) {
+                String prefix = "-XX:MaxDirectMemorySize=";
+                if (arg != null && arg.startsWith(prefix)) {
+                    return parseSizeBytes(arg.substring(prefix.length()));
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return 0L;
+    }
+
+    private static long parseSizeBytes(String value) {
+        if (value == null || value.length() == 0) {
+            return 0L;
+        }
+        String text = value.trim().toLowerCase(Locale.ENGLISH);
+        long multiplier = 1L;
+        char last = text.charAt(text.length() - 1);
+        if (last == 'k' || last == 'm' || last == 'g' || last == 't') {
+            text = text.substring(0, text.length() - 1);
+            switch (last) {
+                case 'k':
+                    multiplier = 1024L;
+                    break;
+                case 'm':
+                    multiplier = 1024L * 1024L;
+                    break;
+                case 'g':
+                    multiplier = 1024L * 1024L * 1024L;
+                    break;
+                case 't':
+                    multiplier = 1024L * 1024L * 1024L * 1024L;
+                    break;
+                default:
+                    break;
+            }
+        }
+        try {
+            return Long.parseLong(text) * multiplier;
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     private static double readDouble(Object target, String methodName) {
