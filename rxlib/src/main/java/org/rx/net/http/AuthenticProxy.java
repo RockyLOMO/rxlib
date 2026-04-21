@@ -12,6 +12,8 @@ import java.net.SocketAddress;
 @Getter
 public class AuthenticProxy extends Proxy {
     private final Authenticator authenticator;
+    private final String username;
+    private final String password;
     @Setter
     private boolean directOnFail;
 
@@ -21,6 +23,8 @@ public class AuthenticProxy extends Proxy {
 
     public AuthenticProxy(Type type, SocketAddress sa, String username, String password) {
         super(type, sa);
+        this.username = username;
+        this.password = password;
         authenticator = (route, response) -> {
             String name = HttpHeaderNames.PROXY_AUTHORIZATION.toString();
             if (directOnFail && response.request().header(name) != null) {

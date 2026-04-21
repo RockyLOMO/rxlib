@@ -16,6 +16,7 @@ import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -99,6 +100,18 @@ public class DnsServerIntegrationTest extends AbstractTester {
             assertEquals(30, server.getNegativeTtl());
             server.setNegativeTtl(60);
             assertEquals(60, server.getNegativeTtl());
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void addHostsFile_missingFile_skips() throws Exception {
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        try {
+            String missing = Paths.get("target", "missing-hosts-" + UUID.randomUUID() + ".txt").toString();
+            assertDoesNotThrow(() -> server.addHostsFile(missing));
+            assertTrue(server.getHosts().isEmpty());
         } finally {
             server.close();
         }
