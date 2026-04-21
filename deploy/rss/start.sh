@@ -20,7 +20,7 @@ PORT=${PORT:-6885}
 HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8082}
 REQUIRED_TCP_PORTS=("${PORT}" "${HTTP_SERVER_PORT}")
 MEM_OPTIONS="-Xms1g -Xmx2g -Xss512k -XX:MaxMetaspaceSize=128m -XX:MaxDirectMemorySize=2g -XX:-OmitStackTraceInFastThrow -XX:+UseCompressedClassPointers -XX:+UseStringDeduplication"
-APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.inlandServers=192.168.31.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.storage.entityDatabaseMaxConnections=6 -Dio.netty.allocator.type=pooled"
+APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.inlandServers=192.168.31.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=false -Dapp.storage.entityDatabaseMaxConnections=6 -Dio.netty.allocator.type=pooled"
 DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$SCRIPT_DIR/ -XX:ErrorFile=$SCRIPT_DIR/hs_err_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED"
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
