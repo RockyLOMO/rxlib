@@ -30,7 +30,7 @@ public final class HttpClientConfig {
     @Setter
     private Proxy proxy;
     private SslContext sslContext;
-    private HttpClientV2.HttpClientCookieJar cookieJar;
+    private HttpClientCookieJar cookieJar;
 
     public static HttpClientConfig defaults() {
         return new HttpClientConfig();
@@ -47,7 +47,7 @@ public final class HttpClientConfig {
         uploadFlushBytes = Constants.HEAP_BUF_SIZE << 4;
         uploadFlushChunks = 16;
         enableLog = conf.isEnableLog();
-        cookieJar = HttpClientV2.COOKIES;
+        cookieJar = HttpClientCookieJar.COOKIES;
         sslContext = defaultSslContext();
     }
 
@@ -133,8 +133,8 @@ public final class HttpClientConfig {
         return this;
     }
 
-    public HttpClientConfig setCookieJar(HttpClientV2.HttpClientCookieJar cookieJar) {
-        this.cookieJar = cookieJar != null ? cookieJar : HttpClientV2.COOKIES;
+    public HttpClientConfig setCookieJar(HttpClientCookieJar cookieJar) {
+        this.cookieJar = cookieJar != null ? cookieJar : HttpClientCookieJar.COOKIES;
         return this;
     }
 

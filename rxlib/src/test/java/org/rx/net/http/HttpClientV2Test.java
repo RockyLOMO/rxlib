@@ -117,7 +117,7 @@ public class HttpClientV2Test {
 
     @Test
     public void testCookieRoundTrip() {
-        HttpClientV2.HttpClientCookieJar jar = new HttpClientV2.HttpClientCookieJar();
+        HttpClientCookieJar jar = new HttpClientCookieJar();
         try (HttpClientV2 client = new HttpClientV2(jar).withFeatures(true, false)) {
             assertTrue(client.get(BASE_URL + "/cookie-set").toString().contains("cookie-set"));
             assertTrue(client.get(BASE_URL + "/cookie-check").toString().contains("v2"));
@@ -130,7 +130,7 @@ public class HttpClientV2Test {
                 .setEnableCookie(true)
                 .setEnableLog(false)
                 .setPool(2, 3, 400)
-                .setCookieJar(new HttpClientV2.HttpClientCookieJar());
+                .setCookieJar(new HttpClientCookieJar());
         try (HttpClientV2 client = new HttpClientV2(config)) {
             assertEquals(2, client.config().getMaxConnectionsPerHost());
             assertEquals(3, client.config().getPendingAcquireMaxCount());
@@ -147,12 +147,12 @@ public class HttpClientV2Test {
         assertTrue(file.delete());
         EntityDatabaseImpl db = new EntityDatabaseImpl(path, null, 1);
         try {
-            HttpClientV2.HttpClientCookieJar jar = HttpClientV2.HttpClientCookieJar.h2(db);
+            HttpClientCookieJar jar = HttpClientCookieJar.h2(db);
             try (HttpClientV2 client = new HttpClientV2(jar).withFeatures(true, false)) {
                 assertTrue(client.get(BASE_URL + "/cookie-persistent-set").toString().contains("cookie-persistent-set"));
             }
 
-            HttpClientV2.HttpClientCookieJar reloaded = HttpClientV2.HttpClientCookieJar.h2(db);
+            HttpClientCookieJar reloaded = HttpClientCookieJar.h2(db);
             try (HttpClientV2 client = new HttpClientV2(reloaded).withFeatures(true, false)) {
                 assertTrue(client.get(BASE_URL + "/cookie-check").toString().contains("persist-v2"));
             }
