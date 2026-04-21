@@ -16,6 +16,7 @@ import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.bean.DynamicProxyBean;
 import org.rx.core.*;
+import org.rx.diagnostic.DiagnosticNetMetrics;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.protocol.EventFlag;
 import org.rx.net.rpc.protocol.EventMessage;
@@ -85,6 +86,7 @@ public final class Remoting {
 
     @SneakyThrows
     public static <T> T createFacade(@NonNull Class<T> contract, @NonNull RpcClientConfig<T> config) {
+        DiagnosticNetMetrics.setComponent(config.getTcpConfig(), DiagnosticNetMetrics.RPC_CLIENT);
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
         $<StatefulTcpClient> sync = $();
         return proxy(contract, (m, p) -> {
@@ -387,6 +389,7 @@ public final class Remoting {
     }
 
     private static ServerBean doRegister(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
+            DiagnosticNetMetrics.setComponent(config.getTcpConfig(), DiagnosticNetMetrics.RPC_SERVER);
             ServerBean bean = new ServerBean(config, new TcpServer(config.getTcpConfig()));
             bean.server.onClosed.combine((s, e) -> serverBeans.remove(contractInstance));
             bean.server.onError.combine((s, e) -> {

@@ -12,6 +12,11 @@ public final class DiagnosticNetIo {
         record(endpoint, DiagnosticNetOperation.OUTBOUND, bytes);
     }
 
+    public static boolean isEnabled() {
+        DiagnosticMonitor monitor = DiagnosticMonitor.getDefault();
+        return monitor != null && monitor.isNetIoSamplingEnabled();
+    }
+
     private static void record(String endpoint, DiagnosticNetOperation operation, long bytes) {
         DiagnosticMonitor monitor = DiagnosticMonitor.getDefault();
         if (monitor == null || endpoint == null || bytes <= 0L) {

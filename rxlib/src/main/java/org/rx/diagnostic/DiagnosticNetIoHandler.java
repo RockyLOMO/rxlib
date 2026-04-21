@@ -2,26 +2,68 @@ package org.rx.diagnostic;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.FileRegion;
+import io.netty.channel.socket.DatagramPacket;
+import io.netty.channel.AddressedEnvelope;
 
 import java.net.SocketAddress;
 
 @ChannelHandler.Sharable
 public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
+    private static final String HANDLER_NAME = "rx-diagnostic-net-io";
     public static final DiagnosticNetIoHandler INSTANCE = new DiagnosticNetIoHandler();
 
+    private final String component;
+
     private DiagnosticNetIoHandler() {
+        this("net");
+    }
+
+    public DiagnosticNetIoHandler(String component) {
+        this.component = component == null || component.length() == 0 ? "net" : component;
+    }
+
+    public static void install(ChannelPipeline pipeline, String component) {
+        if (pipeline != null && pipeline.get(HANDLER_NAME) == null) {
+            pipeline.addLast(HANDLER_NAME, new DiagnosticNetIoHandler(component));
+        }
+    }
+
+    @Override
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        Channel channel = ctx.channel();
+        if (channel.isActive()) {
+            DiagnosticNetMetrics.register(channel, component);
+        }
+        super.handlerAdded(ctx);
+    }
+
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        DiagnosticNetMetrics.register(ctx.channel(), component);
+        super.channelActive(ctx);
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        DiagnosticNetMetrics.unregister(ctx.channel());
+        super.channelInactive(ctx);
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         long bytes = readableBytes(msg);
         if (bytes > 0L) {
-            DiagnosticNetIo.recordInbound(endpoint(ctx), bytes);
+            DiagnosticNetMetrics.recordInbound(component, bytes);
+            if (DiagnosticNetIo.isEnabled()) {
+                DiagnosticNetIo.recordInbound(endpoint(ctx), bytes);
+            }
         }
         super.channelRead(ctx, msg);
     }
@@ -30,7 +72,10 @@ public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         long bytes = readableBytes(msg);
         if (bytes > 0L) {
-            DiagnosticNetIo.recordOutbound(endpoint(ctx), bytes);
+            DiagnosticNetMetrics.recordOutbound(component, bytes);
+            if (DiagnosticNetIo.isEnabled()) {
+                DiagnosticNetIo.recordOutbound(endpoint(ctx), bytes);
+            }
         }
         super.write(ctx, msg, promise);
     }
@@ -44,6 +89,15 @@ public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
         }
         if (msg instanceof FileRegion) {
             return ((FileRegion) msg).count();
+        }
+        if (msg instanceof DatagramPacket) {
+            return ((DatagramPacket) msg).content().readableBytes();
+        }
+        if (msg instanceof AddressedEnvelope) {
+            Object content = ((AddressedEnvelope) msg).content();
+            if (content instanceof ByteBuf) {
+                return ((ByteBuf) content).readableBytes();
+            }
         }
         return 0L;
     }

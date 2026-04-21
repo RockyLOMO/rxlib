@@ -109,16 +109,15 @@ public class DiagnosticMonitorTest {
     }
 
     @Test
-    public void diagnosticEventsRecordMetricWithStack() throws Exception {
-        DiagnosticConfig config = memConfig("diag_event");
+    public void diagnosticMetricsRecordLightweightMetric() throws Exception {
+        DiagnosticConfig config = memConfig("diag_metric_bridge");
         config.setSampleIntervalMillis(60000L);
         DiagnosticMonitor monitor = new DiagnosticMonitor(config);
         monitor.start();
         try {
-            DiagnosticEvents.record("legacy.event", "hello");
+            DiagnosticMetrics.record("bridge.metric", 1D, "k=v");
             assertTrue(monitor.getStore().flush(5000L));
-            assertEquals(1, countWhere(config, "diag_metric_sample", "metric='legacy.event' AND stack_hash<>0"));
-            assertTrue(count(config, "diag_stack_trace") >= 1);
+            assertEquals(1, countWhere(config, "diag_metric_sample", "metric='bridge.metric' AND tags='k=v'"));
         } finally {
             monitor.close();
         }

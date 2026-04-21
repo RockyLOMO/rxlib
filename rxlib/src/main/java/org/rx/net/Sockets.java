@@ -46,6 +46,8 @@ import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.rx.diagnostic.DiagnosticNetIoHandler;
+import org.rx.diagnostic.DiagnosticNetMetrics;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
@@ -306,7 +308,8 @@ public final class Sockets {
                 .childOption(ChannelOption.TCP_NODELAY, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator);
+                .childOption(ChannelOption.RCVBUF_ALLOCATOR, recvByteBufAllocator)
+                .childAttr(SocketConfig.ATTR_CONF, config);
         // When you call .handler()/.childHandler() multiple times on a Netty Bootstrap, only the last handler set is actually used.
         // parent channel bind log
         b.handler(GlobalChannelHandler.DEFAULT);
@@ -366,6 +369,7 @@ public final class Sockets {
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
         Bootstrap b = new Bootstrap().group(eventLoopGroup);
+        b.attr(SocketConfig.ATTR_CONF, config);
         if (connectHint instanceof LocalAddress) {
             b.channel(LocalChannel.class)
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis);
@@ -459,6 +463,8 @@ public final class Sockets {
                 pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
             }
         }
+        DiagnosticNetIoHandler.install(pipeline, DiagnosticNetMetrics.component(config,
+                config instanceof SocksConfig ? DiagnosticNetMetrics.SOCKS_SERVER : DiagnosticNetMetrics.TRANSPORT_SERVER));
         dumpPipeline("server", channel);
         return channel;
     }
@@ -524,6 +530,8 @@ public final class Sockets {
                 pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
             }
         }
+        DiagnosticNetIoHandler.install(pipeline, DiagnosticNetMetrics.component(config,
+                config instanceof SocksConfig ? DiagnosticNetMetrics.SOCKS_CLIENT : DiagnosticNetMetrics.TRANSPORT_CLIENT));
         dumpPipeline("client", channel);
         return channel;
     }
@@ -676,6 +684,8 @@ public final class Sockets {
             if (finalConfig instanceof SocksConfig) {
                 addRedundantHandlers(ch.pipeline(), (SocksConfig) finalConfig);
             }
+            DiagnosticNetIoHandler.install(ch.pipeline(), finalConfig instanceof SocksConfig
+                    ? DiagnosticNetMetrics.SOCKS_CLIENT : DiagnosticNetMetrics.TRANSPORT_CLIENT);
             if (initChannel != null) {
                 initChannel.accept((DatagramChannel) ch);
             }

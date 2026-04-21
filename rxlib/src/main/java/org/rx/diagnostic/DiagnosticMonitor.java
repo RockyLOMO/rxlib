@@ -195,6 +195,10 @@ public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, Aut
         store.recordNetIo(now, endpoint, operation, normalizedBytes, stackHash, null);
     }
 
+    boolean isNetIoSamplingEnabled() {
+        return running.get() && config.effectiveNetIoSampleRate(currentLevel()) > 0D;
+    }
+
     @Override
     public void close() {
         running.set(false);

@@ -128,6 +128,7 @@ public class ResourceSampler {
                 add(metrics, now, "disk.free.percent", total <= 0L ? 100D : (double) free * 100D / (double) total, tags);
             }
         }
+        metrics.addAll(DiagnosticNetMetrics.snapshot(now));
 
         return new ResourceSnapshot(now, processCpu, systemCpu, threadCount, heapUsed, heapMax, nonHeapUsed,
                 directUsed, directCapacity, DIRECT_MEMORY_MAX_BYTES,

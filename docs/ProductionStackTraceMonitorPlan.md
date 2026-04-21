@@ -50,10 +50,11 @@
   - 新增 `DiagnosticMonitorTest`。
   - 已验证 stack hash 稳定性、默认诊断目录、EntityDatabase 底层批处理、H2 异步落库、文件 I/O 采样落库、磁盘 I/O 高触发 incident。
   - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticMonitorTest" test`，当前结果 8 个测试通过。
-- `[进行中]` Netty / rxlib 网络运行指标接入
+- `[已完成]` Netty / rxlib 网络运行指标接入
   - 已补 Net I/O 采样门面与可插拔 Netty handler，可记录入站/出站吞吐样本和 stack hash。
-  - 仍需接入连接数、延迟、Channel 写水位、pending write bytes、EventLoop 队列积压。
-  - 后续需要从 `transport` / `socks` / `rpc` / `http` 等网络模块按低侵入方式补聚合指标。
+  - 已新增 `DiagnosticNetMetrics` 热点路径聚合器，EventLoop 侧只做内存计数，不做 H2 写入。
+  - 已接入连接数、入站/出站吞吐、Channel pending write bytes、写水位不可写数量、EventLoop pending task 积压。
+  - 已从 `transport` / `socks` / `rpc` / `http` 等网络模块按低侵入方式接入关键 pipeline，后台采样线程周期性落 H2 metric。
 - `[已完成]` 生产级磁盘保护 MVP
   - 已避免磁盘容量 incident 时启动 JFR，避免加剧磁盘满。
   - 已补 H2 最大体积限制、证据目录最大体积限制、证据写文件前可用空间预算。
@@ -85,6 +86,11 @@
   - 新增 `DiagnosticNetIo.recordInbound/recordOutbound(...)`。
   - 新增可插拔 Netty `DiagnosticNetIoHandler`，只统计 `ByteBuf` / `ByteBufHolder` / `FileRegion` 字节数，不改变引用计数。
   - H2 新增 `diag_net_io_sample`，页面新增 `Net I/O` tab。
+- `[已完成]` rxlib 网络核心指标接入。
+  - 新增 `DiagnosticNetMetrics`，按 component 聚合 `transport` / `http` / `socks` / `rpc` 连接数、吞吐、pending write bytes、写水位和 EventLoop 队列积压。
+  - `DiagnosticNetIoHandler` 支持通过 handler name 低侵入安装到 pipeline，热点路径只更新内存计数；stacktrace 采样仍受诊断采样率控制。
+  - `Sockets`、`HttpServer`、`HttpClientV2`、`Remoting` 已接入关键 pipeline；`SocksProxyServer` 补 UDP relay 与 session 相关 metric。
+  - `EventBus`、`ObjectChangeTracker` 已移除 `DiagnosticEvents` 依赖，改为直接写 `DiagnosticMetric`；`DiagnosticEvents` 已删除。
 - `[已完成]` Thread WAITING / BLOCKED / 死锁高效检测基础。
   - 常态只通过 `ThreadMXBean#getThreadInfo(ids, 0)` 读取线程状态，不抓栈。
   - 只在阈值持续超限或发现死锁后抓 TopN 线程栈，并落 `diag_thread_state_sample`。
@@ -211,8 +217,11 @@ H2AsyncWriter <-------------+
   - 默认按采样率记录 stacktrace，异常升档时提高采样率。
 - 网络 I/O 埋点入口：`DiagnosticNetIo.recordInbound(...)` / `DiagnosticNetIo.recordOutbound(...)`
   - 适合已有网络抽象层手动打点。
-  - Netty pipeline 可插入 `DiagnosticNetIoHandler.INSTANCE` 做入站/出站字节数采样。
-  - handler 只读消息大小，不释放对象、不改引用计数、不做 H2 写入。
+  - Netty pipeline 可通过 `DiagnosticNetIoHandler.install(pipeline, component)` 做入站/出站字节数采样。
+  - handler 只读消息大小，不释放对象、不改引用计数；热点路径仅更新 `DiagnosticNetMetrics` 内存计数，不直接写 H2。
+- 网络聚合指标入口：`DiagnosticNetMetrics`
+  - 适合 transport / http / socks / rpc 统一上报核心网络指标。
+  - 后台 `ResourceSampler` 周期性快照聚合计数并写入 H2 metric。
 - Incident 异步通知入口：`DiagnosticMonitor.onIncident`
   - 订阅方通过 `Delegate` 接收 `DiagnosticIncidentEvent`。
   - 通知异步执行，异常默认静默记录，不影响采样线程。
@@ -227,6 +236,7 @@ H2AsyncWriter <-------------+
 - `H2DiagnosticStore`：有界队列、单写线程、批量 H2 落库、TTL、容量保护、失败降级。
 - `DiagnosticFileIo`：应用层文件读写采样入口，解决磁盘容量/读写问题的 stacktrace 归因。
 - `DiagnosticNetIo` / `DiagnosticNetIoHandler`：应用层和 Netty pipeline 网络读写采样入口，解决 net I/O stacktrace 归因。
+- `DiagnosticNetMetrics`：网络热点路径聚合器，负责连接数、吞吐、pending write bytes、写水位、EventLoop 队列积压等低成本指标。
 - `ThreadStateSampler`：常态低成本统计 BLOCKED/WAITING/死锁，触发后抓 TopN 线程栈。
 - `DiagnosticHttpHandler`：基于 `HttpServer` 的只读 H2 查看页面，负责 Basic Auth、HTML 渲染、Metrics 过滤/走势图和移动端布局。
 - `IncidentBundleWriter`：incident 证据目录创建、文本证据写入、目录容量保护。
@@ -298,7 +308,35 @@ flowchart TD
     J --> L["H2DiagnosticStore.recordFileIo()"]
 ```
 
-### 3.1.6 H2 存储与 EntityDatabase 复用结论
+### 3.1.6 网络 I/O 与核心指标交互图
+
+```mermaid
+flowchart TD
+    A["transport / http / socks / rpc pipeline"] --> B["DiagnosticNetIoHandler.install()"]
+    B --> C["channelActive / channelInactive"]
+    B --> D["channelRead / write"]
+    C --> E["DiagnosticNetMetrics.register/unregister"]
+    D --> F["DiagnosticNetMetrics.recordInbound/Outbound"]
+    D --> G{"Net I/O stack 采样开启?"}
+    G -->|否| H["不抓栈，直接返回"]
+    G -->|是| I["DiagnosticNetIo.recordInbound/Outbound"]
+    I --> J["StackTraceCodec.hash()"]
+    I --> K["H2DiagnosticStore.recordNetIo()"]
+    L["ResourceSampler.sample()"] --> M["DiagnosticNetMetrics.snapshot()"]
+    M --> N["net.connection.active.count"]
+    M --> O["net.write.pending.bytes / net.write.unwritable.count"]
+    M --> P["net.eventLoop.pending.count / max"]
+    M --> Q["H2DiagnosticStore.recordMetric()"]
+```
+
+设计边界：
+
+- EventLoop 热点路径不写 H2、不扫描目录、不抓全量线程栈。
+- `DiagnosticNetMetrics` 按 component 聚合，当前 component 包含 `transport.server/client`、`http.server/client`、`socks.server/client`、`rpc.server/client`。
+- `pending write bytes`、写水位和 EventLoop pending task 由后台采样线程读取 Channel / EventLoop 状态，降低业务 I/O 路径开销。
+- `SocksProxyServer` 的 UDP relay 注册、关闭、reset、claim 以及 `ProxyManageHandler` 会话流量通过 `DiagnosticMetrics.record(...)` 直接写轻量 metric。
+
+### 3.1.7 H2 存储与 EntityDatabase 复用结论
 
 当前 `H2DiagnosticStore` 已复用 `EntityDatabase` 的底层 JDBC 能力，但不复用高层实体 API。
 
@@ -998,23 +1036,24 @@ diagnostics/
 
 ### 下一步 3：接入 rxlib 网络核心指标
 
-当前状态：`Net I/O 采样入口已完成，核心 pipeline 聚合接入待完成`
+当前状态：`已完成代码接入，待压测与网络集成测试验证`
 
 目标：让诊断模块满足 rxlib 高性能网络项目的核心观测要求。
 
 - `[已完成]` 新增 `DiagnosticNetIo` 和 `DiagnosticNetIoHandler`，可在 Netty pipeline 中采样入站/出站字节数。
 - `[已完成]` H2 增加 `diag_net_io_sample`，页面增加 `Net I/O` tab。
-- `transport` 层接入连接数、入站/出站字节数、连接生命周期事件。
-- `BackpressureHandler` 或 Channel 写路径接入 pending write bytes、写水位状态、限流事件。
-- `SocksProxyServer` / `SocksContext` 接入会话数、上游连接数、异常断开原因。
-- EventLoop 侧只做无阻塞计数，不做 H2 写入、目录扫描、stacktrace 采样。
-- 诊断模块后台线程周期性拉取聚合计数并落 H2。
+- `[已完成]` `transport` / `http` / `socks` / `rpc` 关键 pipeline 接入连接数、入站/出站字节数、连接生命周期事件。
+- `[已完成]` Channel 写路径接入 pending write bytes、写水位不可写数量。
+- `[已完成]` EventLoop pending task 积压由后台采样线程读取并落 H2 metric。
+- `[已完成]` `SocksProxyServer` / `ProxyManageHandler` 接入 UDP relay、session active time、session inbound/outbound bytes 指标。
+- `[待验证]` 在 socks / remoting / http 集成测试中确认 metric 标签、连接生命周期和吞吐计数符合预期。
+- `[待压测]` 验证高连接数、高吞吐下 `DiagnosticNetMetrics` 的 map / LongAdder 开销和 Channel 引用释放情况。
 
 验收：
 
-- 核心监控至少包含堆外内存占用、连接数、吞吐、延迟、背压事件。
-- 网络热点路径不新增高频对象分配。
-- 不引入 EventLoop 阻塞。
+- `[已完成]` 核心监控至少包含堆外内存占用、连接数、吞吐、pending write bytes、写水位和 EventLoop 积压。
+- `[已完成]` 网络热点路径不做 H2 写入、不做阻塞采集。
+- `[待验证]` 大流量场景下不出现 Channel 引用滞留和明显吞吐回退。
 
 ### 下一步 4：完善 JDK 8 / JDK 17 运行矩阵
 
