@@ -72,10 +72,28 @@ public class HttpClient implements AutoCloseable {
     public static final String JSON_TYPE = "application/json; charset=UTF-8";
     static final AttributeKey<RequestState> STATE_KEY = AttributeKey.valueOf("HttpClientState");
 
+    /** 与 {@link #getDefault()} 为同一实例，双检锁懒初始化 */
+    private static volatile HttpClient DEFAULT;
+
     final Map<PoolKey, FixedChannelPool> pools = new ConcurrentHashMap<>();
+    @Getter
     final Metrics metrics = new Metrics();
-    volatile HttpClientConfig config;
+    final HttpClientConfig config;
     final HttpHeaders reqHeaders = new DefaultHttpHeaders();
+
+    public static HttpClient getDefault() {
+        HttpClient d = DEFAULT;
+        if (d != null) {
+            return d;
+        }
+        synchronized (HttpClient.class) {
+            d = DEFAULT;
+            if (d == null) {
+                DEFAULT = d = new HttpClient();
+            }
+            return d;
+        }
+    }
 
     public HttpClient() {
         this(new HttpClientConfig());
@@ -91,10 +109,6 @@ public class HttpClient implements AutoCloseable {
 
     public HttpClientConfig config() {
         return config;
-    }
-
-    public Metrics metrics() {
-        return metrics;
     }
 
     public HttpClient requestUserAgent() {
@@ -123,61 +137,6 @@ public class HttpClient implements AutoCloseable {
             pool.close();
         }
         pools.clear();
-    }
-    
-    public static Request request(HttpMethod method, String url) {
-        return new Request(method, url);
-    }
-
-    public static final class Request {
-        @Getter
-        private final HttpMethod method;
-        @Getter
-        private final String url;
-        @Getter
-        private final HttpHeaders headers = new DefaultHttpHeaders(false);
-        @Getter
-        private RequestContent body = EmptyContent.INSTANCE;
-        private int timeoutMillis;
-        private Proxy proxy;
-        private Boolean enableCookie;
-
-        Request(HttpMethod method, String url) {
-            this.method = method;
-            this.url = url;
-        }
-
-        public Request header(CharSequence name, Object value) {
-            headers.set(name, value);
-            return this;
-        }
-
-        public Request headers(HttpHeaders headers) {
-            if (headers != null) {
-                this.headers.set(headers);
-            }
-            return this;
-        }
-
-        public Request body(RequestContent body) {
-            this.body = body != null ? body : EmptyContent.INSTANCE;
-            return this;
-        }
-
-        public Request timeoutMillis(int timeoutMillis) {
-            this.timeoutMillis = timeoutMillis;
-            return this;
-        }
-
-        public Request proxy(Proxy proxy) {
-            this.proxy = proxy;
-            return this;
-        }
-
-        public Request enableCookie(boolean enableCookie) {
-            this.enableCookie = enableCookie;
-            return this;
-        }
     }
 
     public static final class Metrics {
@@ -234,6 +193,61 @@ public class HttpClient implements AutoCloseable {
                     return;
                 }
             }
+        }
+    }
+    
+    public static Request request(HttpMethod method, String url) {
+        return new Request(method, url);
+    }
+
+    public static final class Request {
+        @Getter
+        private final HttpMethod method;
+        @Getter
+        private final String url;
+        @Getter
+        private final HttpHeaders headers = new DefaultHttpHeaders(false);
+        @Getter
+        private RequestContent body = EmptyContent.INSTANCE;
+        private int timeoutMillis;
+        private Proxy proxy;
+        private Boolean enableCookie;
+
+        Request(HttpMethod method, String url) {
+            this.method = method;
+            this.url = url;
+        }
+
+        public Request header(CharSequence name, Object value) {
+            headers.set(name, value);
+            return this;
+        }
+
+        public Request headers(HttpHeaders headers) {
+            if (headers != null) {
+                this.headers.set(headers);
+            }
+            return this;
+        }
+
+        public Request body(RequestContent body) {
+            this.body = body != null ? body : EmptyContent.INSTANCE;
+            return this;
+        }
+
+        public Request timeoutMillis(int timeoutMillis) {
+            this.timeoutMillis = timeoutMillis;
+            return this;
+        }
+
+        public Request proxy(Proxy proxy) {
+            this.proxy = proxy;
+            return this;
+        }
+
+        public Request enableCookie(boolean enableCookie) {
+            this.enableCookie = enableCookie;
+            return this;
         }
     }
 
