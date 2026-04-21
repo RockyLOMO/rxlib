@@ -37,6 +37,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
     private static final int MAX_CHART_SERIES = 8;
+    private static final int MAX_CHART_POINTS_PER_SERIES = 240;
     private static final Pattern SUMMARY_BYTES_PATTERN = Pattern.compile("([A-Za-z0-9_.-]*(?:BytesPerSecond|bytesPerSecond|Bytes|bytes))(=)(\\d+)");
 
     private final DiagnosticConfig config;
@@ -94,7 +95,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendIncidents(body, query(db, "SELECT incident_id,type,level,start_ts,end_ts,summary,bundle_path FROM diag_incident ORDER BY start_ts DESC LIMIT ?", filter.limit));
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "metrics", false);
-            appendMetrics(body, queryMetrics(db, filter), filter);
+            appendMetrics(body, queryMetrics(db, filter), queryMetricChartRows(db, filter), filter);
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "thread-cpu", false);
             appendThreadCpu(body, query(db, "SELECT ts,thread_id,thread_name,cpu_nanos_delta,state,stack_hash,incident_id FROM diag_thread_cpu_sample ORDER BY ts DESC,cpu_nanos_delta DESC LIMIT ?", filter.limit));
@@ -235,10 +236,11 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</tbody></table></section>");
     }
 
-    private void appendMetrics(StringBuilder out, List<Map<String, Object>> rows, Query filter) {
+    private void appendMetrics(StringBuilder out, List<Map<String, Object>> rows,
+                               List<Map<String, Object>> chartRows, Query filter) {
         out.append("<section class=\"card\"><h2>Metrics</h2>");
         appendMetricFilter(out, filter);
-        appendMetricCharts(out, rows);
+        appendMetricCharts(out, chartRows);
         out.append("<table><thead><tr><th>Time</th><th>Metric</th><th>Value</th><th>Tags</th><th>Incident</th></tr></thead><tbody>");
         if (rows.isEmpty()) {
             appendEmptyRow(out, 5, "No metric found in the selected range.");
@@ -346,6 +348,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</svg>")
                 .append("<div class=\"meta\">")
                 .append(formatMillis(Long.valueOf(minTs))).append(" - ").append(formatMillis(Long.valueOf(maxTs)))
+                .append(" · samples ").append(rows.size())
                 .append(" · min ").append(escape(formatMetricValue(metric, Double.valueOf(min))))
                 .append(" · max ").append(escape(formatMetricValue(metric, Double.valueOf(max))))
                 .append("</div></article>");
@@ -388,6 +391,54 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private List<Map<String, Object>> queryMetrics(EntityDatabase db, Query filter) {
         StringBuilder sql = new StringBuilder("SELECT ts,metric,metric_value,tags,incident_id FROM diag_metric_sample WHERE 1=1");
         List<Object> args = new ArrayList<>();
+        appendMetricWhere(sql, args, filter);
+        if (!Strings.isEmpty(filter.metric)) {
+            sql.append(" AND metric = ?");
+            args.add(filter.metric);
+        }
+        sql.append(" ORDER BY ts DESC,id DESC LIMIT ?");
+        args.add(Integer.valueOf(filter.limit));
+        return query(db, sql.toString(), args.toArray());
+    }
+
+    private List<Map<String, Object>> queryMetricChartRows(EntityDatabase db, Query filter) {
+        List<Map<String, Object>> series = queryMetricSeries(db, filter);
+        if (series.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Map<String, Object>> rows = new ArrayList<>(series.size() * MAX_CHART_POINTS_PER_SERIES);
+        for (Map<String, Object> item : series) {
+            String metric = value(item, "metric");
+            String tags = value(item, "tags");
+            StringBuilder sql = new StringBuilder("SELECT * FROM (SELECT ts,metric,metric_value,COALESCE(tags,'') tags,incident_id"
+                    + " FROM diag_metric_sample WHERE 1=1");
+            List<Object> args = new ArrayList<>();
+            appendMetricWhere(sql, args, filter);
+            sql.append(" AND metric = ? AND COALESCE(tags,'') = ? ORDER BY ts DESC,id DESC LIMIT ?)"
+                    + " ORDER BY ts ASC");
+            args.add(metric);
+            args.add(tags);
+            args.add(Integer.valueOf(MAX_CHART_POINTS_PER_SERIES));
+            rows.addAll(query(db, sql.toString(), args.toArray()));
+        }
+        return rows;
+    }
+
+    private List<Map<String, Object>> queryMetricSeries(EntityDatabase db, Query filter) {
+        StringBuilder sql = new StringBuilder("SELECT metric,COALESCE(tags,'') tags,MAX(ts) last_ts,COUNT(*) sample_count"
+                + " FROM diag_metric_sample WHERE 1=1");
+        List<Object> args = new ArrayList<>();
+        appendMetricWhere(sql, args, filter);
+        if (!Strings.isEmpty(filter.metric)) {
+            sql.append(" AND metric = ?");
+            args.add(filter.metric);
+        }
+        sql.append(" GROUP BY metric,COALESCE(tags,'') ORDER BY last_ts DESC,sample_count DESC LIMIT ?");
+        args.add(Integer.valueOf(MAX_CHART_SERIES));
+        return query(db, sql.toString(), args.toArray());
+    }
+
+    private void appendMetricWhere(StringBuilder sql, List<Object> args, Query filter) {
         if (filter.fromMillis != null) {
             sql.append(" AND ts >= ?");
             args.add(filter.fromMillis);
@@ -396,13 +447,6 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             sql.append(" AND ts <= ?");
             args.add(filter.toMillis);
         }
-        if (!Strings.isEmpty(filter.metric)) {
-            sql.append(" AND metric = ?");
-            args.add(filter.metric);
-        }
-        sql.append(" ORDER BY ts DESC,id DESC LIMIT ?");
-        args.add(Integer.valueOf(filter.limit));
-        return query(db, sql.toString(), args.toArray());
     }
 
     private List<Map<String, Object>> query(EntityDatabase db, String sql, Object... args) {

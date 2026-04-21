@@ -27,6 +27,7 @@ public class DiagnosticHttpHandlerTest {
             store.start();
             long now = System.currentTimeMillis();
             store.recordMetric(new DiagnosticMetric(now, "http.metric", 42D, "k=v", "inc-http"));
+            store.recordMetric(new DiagnosticMetric(now - 5000L, "disk.used.bytes", 262144D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now - 500L, "disk.used.bytes", 524288D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now, "disk.used.bytes", 1048576D, "path=/tmp", "inc-http"));
             store.recordStackTrace(456L, "stack body", now);
@@ -67,7 +68,13 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(filteredHtml.contains("disk.used.bytes"));
                 assertTrue(filteredHtml.contains("512.00 KB"));
                 assertTrue(filteredHtml.contains("1.00 MB"));
+                assertTrue(filteredHtml.contains("samples 2"));
+                assertFalse(filteredHtml.contains("256.00 KB"));
                 assertFalse(filteredHtml.contains("http.metric</td>"));
+
+                HttpClient.ResponseContent chartLimited = client.get(url + "?limit=1&from="
+                        + (now - 1000L) + "&to=" + (now + 1000L));
+                assertTrue(chartLimited.toString().contains("samples 2"));
 
                 HttpClient.ResponseContent stack = client.get(url + "?stack=456");
                 assertTrue(stack.toString().contains("stack body"));
