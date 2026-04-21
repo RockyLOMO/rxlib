@@ -39,7 +39,13 @@ public class DiagnosticHttpHandlerTest {
             store.recordMetric(new DiagnosticMetric(now, "disk.used.bytes", 1048576D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now, "disk.free.percent", 38D, "path=/tmp", null));
             store.recordMetric(new DiagnosticMetric(now, "net.io.inbound.bytes.per.second", 2048D, "component=http.server", null));
+            store.recordMetric(new DiagnosticMetric(now, "net.io.inbound.bytes.per.second", 4096D, "component=rpc.server", null));
+            store.recordMetric(new DiagnosticMetric(now, "net.io.outbound.bytes.per.second", 1024D, "component=http.client", null));
+            store.recordMetric(new DiagnosticMetric(now, "rx.thread_pool.active.count", 2D, "pool=test", null));
+            store.recordMetric(new DiagnosticMetric(now, "rx.wheel_timer.holder.count", 3D, "timer=abc", null));
+            store.recordMetric(new DiagnosticMetric(now, "rx.object_pool.size.count", 4D, "pool=obj", null));
             store.recordThreadCpu(new ThreadCpuSample(now, 7L, "diag-thread", "RUNNABLE", 1000000L, 456L, "stack body"), "inc-http");
+            store.recordThreadCpu(new ThreadCpuSample(now, 8L, "diag-waiting-thread", "WAITING", 100L, 456L, "stack body"), "inc-http");
             store.recordThreadState(new ThreadStateSample(now, 7L, "blocked-thread", "BLOCKED", 10L, 0L, 30000L,
                     "lock", 8L, "owner-thread", 456L, "stack body"), "inc-http");
             store.recordNetIo(now, "127.0.0.1:8080", DiagnosticNetOperation.INBOUND, 2048L, 456L, "inc-http");
@@ -74,6 +80,9 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("jvm.app.memory.used.percent"));
                 assertTrue(html.contains("jvm.heap.used.percent"));
                 assertTrue(html.contains("net.io.inbound.bytes.per.second"));
+                assertTrue(html.contains("net.io.outbound.bytes.per.second"));
+                assertTrue(html.contains("total=in"));
+                assertTrue(html.contains("total=out"));
                 assertTrue(html.contains("disk.free.percent"));
                 assertTrue(html.contains("1.00 MB"));
                 assertTrue(html.contains("directUsedBytes=48623489 (46.37 MB)"));
@@ -86,7 +95,14 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("Top N"));
                 assertTrue(html.contains("jvm.*"));
                 assertFalse(html.contains("<th>Sum</th>"));
+                assertTrue(html.contains("RXlib"));
+                assertTrue(html.contains("rx.thread_pool.active.count"));
+                assertTrue(html.contains("rx.wheel_timer.holder.count"));
+                assertTrue(html.contains("rx.object_pool.size.count"));
                 assertTrue(html.contains("Thread CPU"));
+                assertTrue(html.contains("Thread State Counts"));
+                assertTrue(html.contains("thread.cpu.state.count"));
+                assertTrue(html.contains("state=RUNNABLE"));
                 assertTrue(html.contains("name=\"capture\" value=\"thread-cpu\""));
                 assertTrue(html.contains("name=\"capture\" value=\"thread-state\""));
                 assertTrue(html.contains("Capture Now"));

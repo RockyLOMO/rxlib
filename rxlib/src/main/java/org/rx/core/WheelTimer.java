@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -32,6 +33,8 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.LongUnaryOperator;
 
 @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
@@ -72,6 +75,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
             try {
                 Future<T> submitted = executor.submit(() -> {
+                    executedCount.increment();
+                    recordDiagnosticMetrics(false);
                     beginTrace(traceId, stackTrace);
                     boolean doContinue = flags.has(TimeoutFlag.PERIOD);
                     try {
@@ -90,9 +95,11 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                     submitted.cancel(true);
                 }
             } catch (Throwable e) {
+                errorCount.increment();
                 terminalError = e;
                 removeHolder();
                 publish();
+                recordDiagnosticMetrics(false);
             }
         }
 
@@ -176,8 +183,12 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 changed = currentTimeout.cancel() || changed;
             }
             if (cancelRequested.get()) {
+                if (changed) {
+                    cancelledCount.increment();
+                }
                 removeHolder();
                 publish();
+                recordDiagnosticMetrics(false);
             }
             return changed;
         }
@@ -282,6 +293,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             long safeDelay = Math.max(0L, delayMillis);
             expiredTime = System.currentTimeMillis() + safeDelay;
             timeout = timer.newTimeout(this, safeDelay, TimeUnit.MILLISECONDS);
+            scheduledCount.increment();
+            recordDiagnosticMetrics(false);
         }
 
         @Override
@@ -294,13 +307,17 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
             try {
                 Future<?> submitted = executor.submit(() -> {
+                    executedCount.increment();
+                    recordDiagnosticMetrics(false);
                     beginTrace(traceId, stackTrace);
                     try {
                         command.run();
                         scheduleNext();
                     } catch (Throwable e) {
+                        errorCount.increment();
                         terminalError = e;
                         signalComplete();
+                        recordDiagnosticMetrics(false);
                         throw e;
                     } finally {
                         endTrace();
@@ -311,8 +328,10 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                     submitted.cancel(true);
                 }
             } catch (Throwable e) {
+                errorCount.increment();
                 terminalError = e;
                 signalComplete();
+                recordDiagnosticMetrics(false);
             }
         }
 
@@ -384,6 +403,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             if (currentFuture != null) {
                 currentFuture.cancel(mayInterruptIfRunning);
             }
+            cancelledCount.increment();
+            recordDiagnosticMetrics(false);
             signalComplete();
             return true;
         }
@@ -473,6 +494,12 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER", Thread.NORM_PRIORITY), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
     final Map<Object, TimeoutFuture<?>> holder = new java.util.concurrent.ConcurrentHashMap<>();
+    final LongAdder scheduledCount = new LongAdder();
+    final LongAdder executedCount = new LongAdder();
+    final LongAdder cancelledCount = new LongAdder();
+    final LongAdder errorCount = new LongAdder();
+    final LongAdder rejectedCount = new LongAdder();
+    final AtomicLong lastDiagnosticMillis = new AtomicLong();
     @Getter
     volatile boolean shutdown;
     volatile boolean shutdownNow;
@@ -571,6 +598,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
         task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
         task.expiredTime = System.currentTimeMillis() + task.delay;
+        scheduledCount.increment();
+        recordDiagnosticMetrics(false);
         return true;
     }
 
@@ -598,8 +627,45 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     private void ensureRunning() {
         if (shutdown) {
+            rejectedCount.increment();
+            recordDiagnosticMetrics(false);
             throw new RejectedExecutionException("WheelTimer is shutdown");
         }
+    }
+
+    private void recordDiagnosticMetrics(boolean force) {
+        if (!DiagnosticMetrics.isEnabled()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long last = lastDiagnosticMillis.get();
+        if (!force && now - last < 1000L) {
+            return;
+        }
+        if (!lastDiagnosticMillis.compareAndSet(last, now)) {
+            return;
+        }
+        String tags = diagnosticTags();
+        DiagnosticMetrics.record(now, "rx.wheel_timer.holder.count", holder.size(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.pending.count", timer.pendingTimeouts(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.scheduled.count", scheduledCount.sum(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.executed.count", executedCount.sum(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.cancelled.count", cancelledCount.sum(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.error.count", errorCount.sum(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.rejected.count", rejectedCount.sum(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.shutdown.count", shutdown ? 1D : 0D, tags, null);
+    }
+
+    private String diagnosticTags() {
+        return "timer=" + Integer.toHexString(System.identityHashCode(this))
+                + ",executor=" + sanitizeMetricTag(executor.getClass().getName());
+    }
+
+    private static String sanitizeMetricTag(String value) {
+        if (value == null || value.length() == 0) {
+            return "unknown";
+        }
+        return value.replace(',', '_').replace('\r', ' ').replace('\n', ' ');
     }
 
     private void validatePeriodic(long periodMillis, String name) {
@@ -653,11 +719,13 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     public void execute(Runnable command) {
         ensureRunning();
         executor.execute(command);
+        recordDiagnosticMetrics(false);
     }
 
     @Override
     public void shutdown() {
         shutdown = true;
+        recordDiagnosticMetrics(true);
     }
 
     @Override
@@ -669,6 +737,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
         holder.clear();
         timer.stop();
+        recordDiagnosticMetrics(true);
         return Collections.emptyList();
     }
 
