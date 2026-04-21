@@ -61,10 +61,6 @@ public final class HttpClientConfig {
         cookieJar = src.cookieJar;
     }
 
-    public HttpClientConfig copy() {
-        return new HttpClientConfig(this);
-    }
-
     public HttpClientConfig setTimeoutMillis(int timeoutMillis) {
         return setTimeoutMillis(timeoutMillis, timeoutMillis);
     }

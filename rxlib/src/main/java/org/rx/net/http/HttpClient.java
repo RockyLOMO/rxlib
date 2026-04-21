@@ -75,115 +75,45 @@ public class HttpClient implements AutoCloseable {
     final Map<PoolKey, FixedChannelPool> pools = new ConcurrentHashMap<>();
     final Metrics metrics = new Metrics();
     volatile HttpClientConfig config;
-    HttpHeaders reqHeaders;
+    final HttpHeaders reqHeaders = new DefaultHttpHeaders();
 
     public HttpClient() {
-        this(HttpClientConfig.defaults());
+        this(new HttpClientConfig());
     }
 
     public HttpClient(HttpClientCookieJar cookieJar) {
-        this(HttpClientConfig.defaults().setCookieJar(cookieJar));
+        this(new HttpClientConfig().setCookieJar(cookieJar));
     }
 
     public HttpClient(HttpClientConfig config) {
-        this.config = config != null ? config.copy() : HttpClientConfig.defaults();
+        this.config = config != null ? config : new HttpClientConfig();
     }
 
-    public static Request request(HttpMethod method, String url) {
-        return new Request(method, url);
+    public HttpClientConfig config() {
+        return config;
     }
 
     public Metrics metrics() {
         return metrics;
     }
 
-    public HttpClientCookieJar cookieJar() {
-        return config.getCookieJar();
-    }
-
-    public HttpClientConfig config() {
-        return config.copy();
-    }
-
-    public synchronized HttpClient withConfig(HttpClientConfig config) {
-        this.config = config != null ? config.copy() : HttpClientConfig.defaults();
-        close();
-        return this;
-    }
-
-    public HttpClient withFeatures(boolean enableCookie, boolean enableLog) {
-        HttpClientConfig next = config.copy().setEnableCookie(enableCookie).setEnableLog(enableLog);
-        return updateConfig(next, false);
-    }
-
-    public HttpClient withCookies(boolean enableCookie) {
-        HttpClientConfig next = config.copy().setEnableCookie(enableCookie);
-        return updateConfig(next, false);
-    }
-
-    public HttpClient withTimeoutMillis(int timeoutMillis) {
-        return withTimeoutMillis(timeoutMillis, timeoutMillis);
-    }
-
-    public HttpClient withTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
-        HttpClientConfig next = config.copy().setTimeoutMillis(connectTimeoutMillis, readWriteTimeoutMillis);
-        return updateConfig(next, true);
-    }
-
-    public synchronized HttpClient withMaxConnectionsPerHost(int maxConnectionsPerHost) {
-        HttpClientConfig next = config.copy().setMaxConnectionsPerHost(maxConnectionsPerHost);
-        return updateConfig(next, true);
-    }
-
-    public synchronized HttpClient withPendingAcquireMaxCount(int pendingAcquireMaxCount) {
-        HttpClientConfig next = config.copy().setPendingAcquireMaxCount(pendingAcquireMaxCount);
-        return updateConfig(next, true);
-    }
-
-    public synchronized HttpClient withAcquireTimeoutMillis(int acquireTimeoutMillis) {
-        HttpClientConfig next = config.copy().setAcquireTimeoutMillis(acquireTimeoutMillis);
-        return updateConfig(next, true);
-    }
-
-    public synchronized HttpClient withProxy(Proxy proxy) {
-        HttpClientConfig next = config.copy().setProxy(proxy);
-        return updateConfig(next, true);
-    }
-
-    public HttpClient withProxy(AuthenticProxy proxy) {
-        return withProxy((Proxy) proxy);
-    }
-
-    public HttpClient withUserAgent() {
+    public HttpClient requestUserAgent() {
         requestHeaders().set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
         return this;
     }
 
-    public HttpClient withRequestCookie(String rawCookie) {
+    public HttpClient requestCookie(String rawCookie) {
         requestHeaders().set(HttpHeaderNames.COOKIE, rawCookie);
         return this;
     }
 
-    private synchronized HttpClient updateConfig(HttpClientConfig config, boolean closePools) {
-        this.config = config;
-        if (closePools) {
-            close();
-        }
-        return this;
-    }
-
-    public synchronized HttpHeaders requestHeaders() {
-        if (reqHeaders == null) {
-            reqHeaders = new DefaultHttpHeaders();
-        }
+    public HttpHeaders requestHeaders() {
         return reqHeaders;
     }
 
-    synchronized HttpHeaders requestHeadersSnapshot() {
-        HttpHeaders headers = new DefaultHttpHeaders();
-        if (reqHeaders != null) {
-            headers.set(reqHeaders);
-        }
+    HttpHeaders requestHeadersSnapshot() {
+        HttpHeaders headers = new DefaultHttpHeaders(false);
+        headers.set(reqHeaders);
         return headers;
     }
 
@@ -193,6 +123,10 @@ public class HttpClient implements AutoCloseable {
             pool.close();
         }
         pools.clear();
+    }
+    
+    public static Request request(HttpMethod method, String url) {
+        return new Request(method, url);
     }
 
     public static final class Request {
@@ -717,7 +651,7 @@ public class HttpClient implements AutoCloseable {
             responseOffloadThreshold = config.getResponseOffloadThreshold();
             uploadFlushBytes = config.getUploadFlushBytes();
             uploadFlushChunks = config.getUploadFlushChunks();
-            this.requestHeaders = requestHeaders;
+            this.requestHeaders = requestHeaders != null ? requestHeaders : EmptyHttpHeaders.INSTANCE;
             this.content = content;
             this.metrics = metrics;
             cookieJar = config.getCookieJar();
@@ -868,7 +802,7 @@ public class HttpClient implements AutoCloseable {
         }
 
         private void completeFuture(RequestState state, ResponseContent content) {
-            if (state.cookieEnabled) {
+            if (state.cookieEnabled && state.cookieJar != null) {
                 state.cookieJar.saveFromResponse(state.uri, content.headers.getAll(HttpHeaderNames.SET_COOKIE));
             }
             if (state.logEnabled) {
@@ -1094,10 +1028,11 @@ public class HttpClient implements AutoCloseable {
             future.completeExceptionally(new IllegalArgumentException("request is null"));
             return future;
         }
+        Proxy requestProxy = request.proxy != null ? request.proxy : cfg.getProxy();
+        boolean requestCookie = cfg.getCookieJar() != null
+                && (request.enableCookie == null || request.enableCookie);
         HttpHeaders headers = requestHeadersSnapshot();
         headers.set(request.headers);
-        Proxy requestProxy = request.proxy != null ? request.proxy : cfg.getProxy();
-        boolean requestCookie = request.enableCookie != null ? request.enableCookie : cfg.isEnableCookie();
         return invokeAsync(request.url, request.method, request.body, headers, cfg, requestProxy, requestCookie, request.timeoutMillis);
     }
 
@@ -1184,7 +1119,7 @@ public class HttpClient implements AutoCloseable {
     ResponseContent invoke(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders) {
         ensureBlockingCallAllowed();
         HttpClientConfig cfg = config;
-        CompletableFuture<ResponseContent> future = invokeAsync(url, method, content, requestHeaders, cfg, cfg.getProxy(), cfg.isEnableCookie(), 0);
+        CompletableFuture<ResponseContent> future = invokeAsync(url, method, content, requestHeaders, cfg, cfg.getProxy(), cfg.getCookieJar() != null, 0);
         try {
             return future.get(callTimeoutMillis(cfg, 0), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
@@ -1338,7 +1273,7 @@ public class HttpClient implements AutoCloseable {
         if (!headers.contains(HttpHeaderNames.ACCEPT_ENCODING)) {
             headers.set(HttpHeaderNames.ACCEPT_ENCODING, HttpHeaderValues.GZIP);
         }
-        if (state.cookieEnabled) {
+        if (state.cookieEnabled && state.cookieJar != null) {
             String cookie = state.cookieJar.loadForRequest(uri);
             if (!Strings.isEmpty(cookie)) {
                 headers.add(HttpHeaderNames.COOKIE, cookie);
@@ -1531,6 +1466,6 @@ public class HttpClient implements AutoCloseable {
     }
 
     public static void saveRawCookie(@NonNull String url, @NonNull String cookie) {
-        HttpClientCookieJar.COOKIES.saveRawCookie(URI.create(url), cookie);
+        HttpClientCookieJar.DEFAULT.saveRawCookie(URI.create(url), cookie);
     }
 }
