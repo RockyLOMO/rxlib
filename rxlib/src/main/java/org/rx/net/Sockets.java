@@ -46,8 +46,7 @@ import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
-import org.rx.diagnostic.DiagnosticNetIoHandler;
-import org.rx.diagnostic.DiagnosticNetMetrics;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
@@ -463,8 +462,8 @@ public final class Sockets {
                 pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
             }
         }
-        DiagnosticNetIoHandler.install(pipeline, DiagnosticNetMetrics.component(config,
-                config instanceof SocksConfig ? DiagnosticNetMetrics.SOCKS_SERVER : DiagnosticNetMetrics.TRANSPORT_SERVER));
+        DiagnosticMetrics.installNetIoHandler(pipeline, DiagnosticMetrics.netComponent(config,
+                config instanceof SocksConfig ? DiagnosticMetrics.NET_SOCKS_SERVER : DiagnosticMetrics.NET_TRANSPORT_SERVER));
         dumpPipeline("server", channel);
         return channel;
     }
@@ -530,8 +529,8 @@ public final class Sockets {
                 pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
             }
         }
-        DiagnosticNetIoHandler.install(pipeline, DiagnosticNetMetrics.component(config,
-                config instanceof SocksConfig ? DiagnosticNetMetrics.SOCKS_CLIENT : DiagnosticNetMetrics.TRANSPORT_CLIENT));
+        DiagnosticMetrics.installNetIoHandler(pipeline, DiagnosticMetrics.netComponent(config,
+                config instanceof SocksConfig ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT));
         dumpPipeline("client", channel);
         return channel;
     }
@@ -684,8 +683,8 @@ public final class Sockets {
             if (finalConfig instanceof SocksConfig) {
                 addRedundantHandlers(ch.pipeline(), (SocksConfig) finalConfig);
             }
-            DiagnosticNetIoHandler.install(ch.pipeline(), finalConfig instanceof SocksConfig
-                    ? DiagnosticNetMetrics.SOCKS_CLIENT : DiagnosticNetMetrics.TRANSPORT_CLIENT);
+            DiagnosticMetrics.installNetIoHandler(ch.pipeline(), finalConfig instanceof SocksConfig
+                    ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT);
             if (initChannel != null) {
                 initChannel.accept((DatagramChannel) ch);
             }

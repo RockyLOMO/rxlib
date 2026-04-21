@@ -45,8 +45,7 @@ import org.rx.io.EntityQueryLambda;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
-import org.rx.diagnostic.DiagnosticNetIoHandler;
-import org.rx.diagnostic.DiagnosticNetMetrics;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 import org.rx.util.function.BiFunc;
@@ -1278,7 +1277,7 @@ public class HttpClientV2 implements AutoCloseable {
         if (key.isHttps()) {
             p.addLast(sslContext.newHandler(ch.alloc(), key.host, key.port));
         }
-        DiagnosticNetIoHandler.install(p, DiagnosticNetMetrics.HTTP_CLIENT);
+        DiagnosticMetrics.installNetIoHandler(p, DiagnosticMetrics.NET_HTTP_CLIENT);
         p.addLast(new ReadTimeoutHandler(readWriteTimeoutMillis, TimeUnit.MILLISECONDS),
                 new WriteTimeoutHandler(readWriteTimeoutMillis, TimeUnit.MILLISECONDS),
                 new HttpClientCodec(),

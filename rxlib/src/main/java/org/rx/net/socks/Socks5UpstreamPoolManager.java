@@ -10,7 +10,7 @@ import org.rx.core.Disposable;
 import org.rx.core.ObjectPool;
 import org.rx.core.Tasks;
 import org.rx.core.cache.MemoryCache;
-import org.rx.exception.TraceHandler;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.support.UpstreamSupport;
@@ -44,7 +44,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
             for (; ; ) {
                 Channel channel = readyChannels.pollFirst();
                 if (channel == null) {
-                    TraceHandler.INSTANCE.saveMetric("TCP_WARM_MISS", key.toString());
+                    DiagnosticMetrics.record("socks.tcp.warm.miss.count", 1D, "key=" + key);
                     return null;
                 }
                 Socks5WarmupHandler handler = channel.pipeline().get(Socks5WarmupHandler.class);
@@ -57,7 +57,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
                     retire(channel, "stale-age");
                     continue;
                 }
-                TraceHandler.INSTANCE.saveMetric("TCP_WARM_HIT", key.toString());
+                DiagnosticMetrics.record("socks.tcp.warm.hit.count", 1D, "key=" + key);
                 return channel;
             }
         }
@@ -76,7 +76,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
                     int failures = Math.min(createFailures.incrementAndGet(), 10);
                     long delay = Math.min(config.getTcpWarmPoolRefillIntervalMillis() * (1L << failures), 30_000L);
                     nextRefillAt = now + delay;
-                    TraceHandler.INSTANCE.saveMetric("TCP_WARM_CREATE_BACKOFF", key + " delay=" + delay);
+                    DiagnosticMetrics.record("socks.tcp.warm.create.backoff.count", 1D, "key=" + key + ",delay=" + delay);
                     break;
                 }
                 createFailures.set(0);
@@ -112,7 +112,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         }
 
         void retire(Channel channel, String reason) {
-            TraceHandler.INSTANCE.saveMetric("TCP_WARM_RETIRE", key + " reason=" + reason);
+            DiagnosticMetrics.record("socks.tcp.warm.retire.count", 1D, "key=" + key + ",reason=" + reason);
             Sockets.closeOnFlushed(channel);
         }
 
@@ -183,7 +183,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         }
         long idleHint = upstream.resolveRelayIdleHintMillis();
         if (idleHint > 0 && idleHint < 1000L) {
-            TraceHandler.INSTANCE.saveMetric("UDP_LEASE_DISABLED", upstream.poolKey() + " reason=remote-idle");
+            DiagnosticMetrics.record("socks.udp.lease.disabled.count", 1D, "key=" + upstream.poolKey() + ",reason=remote-idle");
             return null;
         }
         long effectiveIdle = idleHint > 0 ? Math.min(config.getUdpLeasePoolMaxIdleMillis(), idleHint) : config.getUdpLeasePoolMaxIdleMillis();
@@ -214,12 +214,12 @@ public final class Socks5UpstreamPoolManager extends Disposable {
     public void onUdpRpcFailure(UdpLeasePoolKey key, SocksConfig config, String phase, Throwable cause) {
         AtomicInteger failures = udpRpcFailures.computeIfAbsent(key, k -> new AtomicInteger());
         int count = failures.incrementAndGet();
-        TraceHandler.INSTANCE.saveMetric("UDP_LEASE_RPC_FAIL", key + " phase=" + phase + " count=" + count);
+        DiagnosticMetrics.record("socks.udp.lease.rpc.fail.count", 1D, "key=" + key + ",phase=" + phase + ",count=" + count);
         if (count >= config.getUdpLeaseRpcBreakerThreshold()) {
             breakerCache.put(key, Boolean.TRUE,
                     CachePolicy.absolute(config.getUdpLeaseRpcBreakerOpenSeconds()));
             failures.set(0);
-            TraceHandler.INSTANCE.saveMetric("UDP_LEASE_BREAKER_OPEN", key.toString());
+            DiagnosticMetrics.record("socks.udp.lease.breaker.open.count", 1D, "key=" + key);
         }
         if (cause != null) {
             log.warn("udp lease rpc {} fail {}", phase, key, cause);

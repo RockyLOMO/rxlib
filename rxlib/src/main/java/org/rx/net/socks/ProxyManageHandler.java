@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.core.Constants;
 import org.rx.core.Sys;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.support.EndpointTracer;
@@ -68,6 +69,10 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         }
 
         InetSocketAddress remoteAddress = Sockets.getOriginRemoteAddress(ctx.channel());
+        String tags = "user=" + user.getUsername() + ",remote=" + remoteAddress;
+        DiagnosticMetrics.record("socks.session.active.millis", elapsed / Constants.NANO_TO_MILLIS, tags);
+        DiagnosticMetrics.record("socks.session.inbound.bytes", readBytes, tags);
+        DiagnosticMetrics.record("socks.session.outbound.bytes", writeBytes, tags);
         log.info("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",
                 user.getUsername(), remoteAddress, Sys.formatNanosElapsed(elapsed),
                 Bytes.readableByteSize(readBytes), Bytes.readableByteSize(writeBytes));

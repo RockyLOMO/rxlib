@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
-public final class DiagnosticNetMetrics {
+final class DiagnosticNetMetrics {
     public static final String TRANSPORT_SERVER = "transport.server";
     public static final String TRANSPORT_CLIENT = "transport.client";
     public static final String HTTP_SERVER = "http.server";

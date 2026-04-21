@@ -87,10 +87,10 @@
   - 新增可插拔 Netty `DiagnosticNetIoHandler`，只统计 `ByteBuf` / `ByteBufHolder` / `FileRegion` 字节数，不改变引用计数。
   - H2 新增 `diag_net_io_sample`，页面新增 `Net I/O` tab。
 - `[已完成]` rxlib 网络核心指标接入。
-  - 新增 `DiagnosticNetMetrics`，按 component 聚合 `transport` / `http` / `socks` / `rpc` 连接数、吞吐、pending write bytes、写水位和 EventLoop 队列积压。
-  - `DiagnosticNetIoHandler` 支持通过 handler name 低侵入安装到 pipeline，热点路径只更新内存计数；stacktrace 采样仍受诊断采样率控制。
+  - 新增内部 `DiagnosticNetMetrics`，按 component 聚合 `transport` / `http` / `socks` / `rpc` 连接数、吞吐、pending write bytes、写水位和 EventLoop 队列积压。
+  - 外部统一通过 `DiagnosticMetrics.installNetIoHandler(...)` 接入 pipeline，热点路径只更新内存计数；stacktrace 采样仍受诊断采样率控制。
   - `Sockets`、`HttpServer`、`HttpClientV2`、`Remoting` 已接入关键 pipeline；`SocksProxyServer` 补 UDP relay 与 session 相关 metric。
-  - `EventBus`、`ObjectChangeTracker` 已移除 `DiagnosticEvents` 依赖，改为直接写 `DiagnosticMetric`；`DiagnosticEvents` 已删除。
+  - `EventBus`、`ObjectChangeTracker` 已移除 `DiagnosticEvents` 依赖，改为通过 `DiagnosticMetrics.record(...)` 写轻量 metric；`DiagnosticEvents` 已删除。
 - `[已完成]` Thread WAITING / BLOCKED / 死锁高效检测基础。
   - 常态只通过 `ThreadMXBean#getThreadInfo(ids, 0)` 读取线程状态，不抓栈。
   - 只在阈值持续超限或发现死锁后抓 TopN 线程栈，并落 `diag_thread_state_sample`。
@@ -215,12 +215,15 @@ H2AsyncWriter <-------------+
 - 文件 I/O 埋点入口：`DiagnosticFileIo.recordRead(...)` / `DiagnosticFileIo.recordWrite(...)`
   - 适合文件读写封装层、日志/缓存/导出等关键文件路径。
   - 默认按采样率记录 stacktrace，异常升档时提高采样率。
+- 通用指标埋点入口：`DiagnosticMetrics.record(...)`
+  - 适合外部模块记录轻量 metric，不抓 stacktrace。
+  - 业务模块、core 模块、socks 辅助指标统一优先使用该入口，避免直接依赖 `DiagnosticMonitor` / `DiagnosticMetric` / 内部 store。
 - 网络 I/O 埋点入口：`DiagnosticNetIo.recordInbound(...)` / `DiagnosticNetIo.recordOutbound(...)`
   - 适合已有网络抽象层手动打点。
-  - Netty pipeline 可通过 `DiagnosticNetIoHandler.install(pipeline, component)` 做入站/出站字节数采样。
+  - Netty pipeline 可通过 `DiagnosticMetrics.installNetIoHandler(pipeline, component)` 做入站/出站字节数采样。
   - handler 只读消息大小，不释放对象、不改引用计数；热点路径仅更新 `DiagnosticNetMetrics` 内存计数，不直接写 H2。
-- 网络聚合指标入口：`DiagnosticNetMetrics`
-  - 适合 transport / http / socks / rpc 统一上报核心网络指标。
+- 网络聚合指标入口：`DiagnosticMetrics.setNetComponent(...)` / `DiagnosticMetrics.netComponent(...)`
+  - 适合 transport / http / socks / rpc 统一标记核心网络指标 component。
   - 后台 `ResourceSampler` 周期性快照聚合计数并写入 H2 metric。
 - Incident 异步通知入口：`DiagnosticMonitor.onIncident`
   - 订阅方通过 `Delegate` 接收 `DiagnosticIncidentEvent`。
@@ -236,7 +239,8 @@ H2AsyncWriter <-------------+
 - `H2DiagnosticStore`：有界队列、单写线程、批量 H2 落库、TTL、容量保护、失败降级。
 - `DiagnosticFileIo`：应用层文件读写采样入口，解决磁盘容量/读写问题的 stacktrace 归因。
 - `DiagnosticNetIo` / `DiagnosticNetIoHandler`：应用层和 Netty pipeline 网络读写采样入口，解决 net I/O stacktrace 归因。
-- `DiagnosticNetMetrics`：网络热点路径聚合器，负责连接数、吞吐、pending write bytes、写水位、EventLoop 队列积压等低成本指标。
+- `DiagnosticMetrics`：外部轻量 metric 统一门面，负责 `record(...)`、Netty handler 安装和网络 component 标记。
+- `DiagnosticNetMetrics`：内部网络热点路径聚合器，负责连接数、吞吐、pending write bytes、写水位、EventLoop 队列积压等低成本指标。
 - `ThreadStateSampler`：常态低成本统计 BLOCKED/WAITING/死锁，触发后抓 TopN 线程栈。
 - `DiagnosticHttpHandler`：基于 `HttpServer` 的只读 H2 查看页面，负责 Basic Auth、HTML 渲染、Metrics 过滤/走势图和移动端布局。
 - `IncidentBundleWriter`：incident 证据目录创建、文本证据写入、目录容量保护。
@@ -312,7 +316,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["transport / http / socks / rpc pipeline"] --> B["DiagnosticNetIoHandler.install()"]
+    A["transport / http / socks / rpc pipeline"] --> B["DiagnosticMetrics.installNetIoHandler()"]
     B --> C["channelActive / channelInactive"]
     B --> D["channelRead / write"]
     C --> E["DiagnosticNetMetrics.register/unregister"]
@@ -332,9 +336,11 @@ flowchart TD
 设计边界：
 
 - EventLoop 热点路径不写 H2、不扫描目录、不抓全量线程栈。
+- 外部接入统一使用 `DiagnosticMetrics`；`DiagnosticNetMetrics` 是 diagnostic 包内部实现，不建议业务或网络模块直接依赖。
 - `DiagnosticNetMetrics` 按 component 聚合，当前 component 包含 `transport.server/client`、`http.server/client`、`socks.server/client`、`rpc.server/client`。
 - `pending write bytes`、写水位和 EventLoop pending task 由后台采样线程读取 Channel / EventLoop 状态，降低业务 I/O 路径开销。
 - `SocksProxyServer` 的 UDP relay 注册、关闭、reset、claim 以及 `ProxyManageHandler` 会话流量通过 `DiagnosticMetrics.record(...)` 直接写轻量 metric。
+- `ProxyManageHandler` 与网络聚合指标只在 bytes 维度有重叠：前者是 user/remote 维度的会话关闭汇总，后者是 component 级周期快照；保留 session 指标用于账号/客户端归因。
 
 ### 3.1.7 H2 存储与 EntityDatabase 复用结论
 

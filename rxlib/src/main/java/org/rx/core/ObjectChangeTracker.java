@@ -5,8 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.map.AbstractReferenceMap;
 import org.apache.commons.collections4.map.ReferenceIdentityMap;
 import org.rx.annotation.Metadata;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
 import org.springframework.cglib.proxy.Enhancer;
 
 import java.lang.reflect.Field;
@@ -137,7 +137,7 @@ public class ObjectChangeTracker {
         Class<?> type = val.getClass();
         if (!Reflects.isBasicType(type)) {
             if (++recursionDepth > 128) {
-                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_TRACK_OVERFLOW.name(), String.format("%s recursion overflow", type));
+                DiagnosticMetrics.record(Constants.MetricName.OBJECT_TRACK_OVERFLOW.name(), 1D, "type=" + type.getName());
                 return val;
             }
             log.debug("recursion {} -> {}", type, recursionDepth);
@@ -149,6 +149,8 @@ public class ObjectChangeTracker {
         }
         return val;
     }
+
+
 
     static String concatName(String parentName, boolean concatName, String name) {
         if (parentName == null || !concatName) {

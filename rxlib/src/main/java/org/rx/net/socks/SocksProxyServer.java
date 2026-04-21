@@ -13,6 +13,7 @@ import lombok.*;
 import org.rx.core.Delegate;
 import org.rx.core.Disposable;
 import org.rx.core.EventPublisher;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
@@ -191,10 +192,15 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             return;
         }
         udpRelayRegistry.put(local.getPort(), relay);
-        relay.closeFuture().addListener(f -> udpRelayRegistry.remove(local.getPort(), relay));
+        DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=register,port=" + local.getPort());
+        relay.closeFuture().addListener(f -> {
+            udpRelayRegistry.remove(local.getPort(), relay);
+            DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=close,port=" + local.getPort());
+        });
     }
 
     public boolean resetUdpRelay(int relayPort) {
+        DiagnosticMetrics.record("socks.udp.relay.reset.count", 1D, "port=" + relayPort);
         return withUdpRelay(relayPort, relay -> {
             clearUdpRelayState(relay, null);
             return true;
@@ -202,6 +208,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     }
 
     public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
+        DiagnosticMetrics.record("socks.udp.relay.claim.count", 1D, "port=" + relayPort);
         return withUdpRelay(relayPort, relay -> {
             clearUdpRelayState(relay, clientAddr);
             return true;
