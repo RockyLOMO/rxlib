@@ -24,17 +24,11 @@ public final class HttpClientConfig {
     private int uploadFlushBytes;
     private int uploadFlushChunks;
     @Setter
-    private boolean enableCookie;
-    @Setter
     private boolean enableLog;
     @Setter
     private Proxy proxy;
     private SslContext sslContext;
     private HttpClientCookieJar cookieJar;
-
-    public static HttpClientConfig defaults() {
-        return new HttpClientConfig();
-    }
 
     public HttpClientConfig() {
         RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
@@ -47,12 +41,12 @@ public final class HttpClientConfig {
         uploadFlushBytes = Constants.HEAP_BUF_SIZE << 4;
         uploadFlushChunks = 16;
         enableLog = conf.isEnableLog();
-        cookieJar = HttpClientCookieJar.COOKIES;
+        cookieJar = HttpClientCookieJar.DEFAULT;
         sslContext = defaultSslContext();
     }
 
     public HttpClientConfig(HttpClientConfig source) {
-        HttpClientConfig src = source != null ? source : defaults();
+        HttpClientConfig src = source != null ? source : new HttpClientConfig();
         connectTimeoutMillis = src.connectTimeoutMillis;
         readWriteTimeoutMillis = src.readWriteTimeoutMillis;
         acquireTimeoutMillis = src.acquireTimeoutMillis;
@@ -61,7 +55,6 @@ public final class HttpClientConfig {
         responseOffloadThreshold = src.responseOffloadThreshold;
         uploadFlushBytes = src.uploadFlushBytes;
         uploadFlushChunks = src.uploadFlushChunks;
-        enableCookie = src.enableCookie;
         enableLog = src.enableLog;
         proxy = src.proxy;
         sslContext = src.sslContext;
@@ -134,7 +127,7 @@ public final class HttpClientConfig {
     }
 
     public HttpClientConfig setCookieJar(HttpClientCookieJar cookieJar) {
-        this.cookieJar = cookieJar != null ? cookieJar : HttpClientCookieJar.COOKIES;
+        this.cookieJar = cookieJar;
         return this;
     }
 

@@ -125,6 +125,8 @@ public final class RxConfig {
 
         String NET_REACTOR_THREAD_AMOUNT = "app.net.reactorThreadAmount";
         String NET_ENABLE_LOG = "app.net.enableLog";
+        /** 全局默认 HttpClient Cookie 实现：memory（内存）或 storage（H2 持久化，同 HttpClientCookieJar.h2） */
+        String NET_HTTP_CLIENT_COOKIE_JAR = "app.net.http.clientCookieJar";
         String NET_CONNECT_TIMEOUT_MILLIS = "app.net.connectTimeoutMillis";
         String NET_READ_WRITE_TIMEOUT_MILLIS = "app.net.readWriteTimeoutMillis";
         String NET_POOL_MAX_SIZE = "app.net.poolMaxSize";
@@ -399,6 +401,10 @@ public final class RxConfig {
     @Setter
     @ToString
     public static class HttpConfig {
+        /**
+         * 默认 {@link org.rx.net.http.HttpClientCookieJar#DEFAULT} 的存储方式：memory（默认）或 storage（H2）。
+         */
+        String clientCookieJar = "memory";
         int serverPort;
         boolean serverTls;
         String serverCertificatePath;
@@ -686,6 +692,7 @@ public final class RxConfig {
         net.http.serverTls = SystemPropertyUtil.getBoolean(ConfigNames.NET_HTTP_SERVER_TLS, net.http.serverTls);
         net.http.serverCertificatePath = SystemPropertyUtil.get(ConfigNames.NET_HTTP_SERVER_CERTIFICATE_PATH, net.http.serverCertificatePath);
         net.http.serverCertificatePassword = SystemPropertyUtil.get(ConfigNames.NET_HTTP_SERVER_CERTIFICATE_PASSWORD, net.http.serverCertificatePassword);
+        net.http.clientCookieJar = SystemPropertyUtil.get(ConfigNames.NET_HTTP_CLIENT_COOKIE_JAR, net.http.clientCookieJar);
         net.userAgent = SystemPropertyUtil.get(ConfigNames.NET_USER_AGENT, net.userAgent);
         reset(net.bypassHosts, ConfigNames.NET_BYPASS_HOSTS);
         reset(net.ciphers, ConfigNames.NET_CIPHERS_KEY);

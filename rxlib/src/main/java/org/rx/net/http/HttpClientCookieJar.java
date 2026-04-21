@@ -8,6 +8,7 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import lombok.Getter;
 import org.rx.annotation.DbColumn;
 import org.rx.codec.CodecUtil;
+import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
@@ -34,7 +35,21 @@ public final class HttpClientCookieJar {
     private static final int MAX_COOKIES_PER_DOMAIN = 50;
     private static final long MAX_COOKIE_AGE_SECONDS = TimeUnit.DAYS.toSeconds(400);
     private static final PublicSuffixMatcher PUBLIC_SUFFIX_MATCHER = PublicSuffixMatcher.DEFAULT;
-    public static final HttpClientCookieJar COOKIES = new HttpClientCookieJar();
+    /**
+     * 进程内共享的默认 Cookie 罐，由 {@link RxConfig.HttpConfig#getClientCookieJar()}（配置键 app.net.http.clientCookieJar）决定 memory 或 H2 storage。
+     */
+    public static final HttpClientCookieJar DEFAULT = createDefaultJar();
+
+    private static HttpClientCookieJar createDefaultJar() {
+        try {
+            String kind = RxConfig.INSTANCE.getNet().getHttp().getClientCookieJar();
+            if ("storage".equalsIgnoreCase(kind)) {
+                return storage(EntityDatabase.DEFAULT);
+            }
+        } catch (Throwable ignored) {
+        }
+        return memory();
+    }
     private static final AtomicLong COOKIE_SEQUENCE = new AtomicLong();
     private static final Comparator<StoredCookie> COOKIE_ORDER = new Comparator<StoredCookie>() {
         @Override
@@ -75,7 +90,7 @@ public final class HttpClientCookieJar {
         return new HttpClientCookieJar(new MemoryCookieStorage());
     }
 
-    public static HttpClientCookieJar h2(EntityDatabase db) {
+    public static HttpClientCookieJar storage(EntityDatabase db) {
         return new HttpClientCookieJar(new H2CookieStorage(db));
     }
 
