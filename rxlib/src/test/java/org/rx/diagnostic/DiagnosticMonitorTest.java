@@ -36,6 +36,18 @@ public class DiagnosticMonitorTest {
     }
 
     @Test
+    public void directUsedPercentUsesDirectMaxInsteadOfCurrentCapacity() {
+        ResourceSnapshot snapshot = new ResourceSnapshot(System.currentTimeMillis(), 0D, 0D, 1,
+                0L, 0L, 0L,
+                100L * 1024L * 1024L, 100L * 1024L * 1024L, 2L * 1024L * 1024L * 1024L,
+                0L, 0L, 0L, 0L,
+                java.util.Collections.<ResourceSnapshot.DiskUsage>emptyList(),
+                java.util.Collections.<DiagnosticMetric>emptyList());
+        assertEquals(100D, snapshot.directCapacityPercent(), 0.001D);
+        assertTrue(snapshot.directUsedPercent() < 5D);
+    }
+
+    @Test
     public void entityDatabaseSupportsDirectJdbcUrlAndBatch() throws Exception {
         String jdbcUrl = "jdbc:h2:mem:diag_entity_db_" + System.nanoTime()
                 + ";DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL";

@@ -33,6 +33,8 @@ public class DiagnosticHttpHandlerTest {
             store.recordThreadCpu(new ThreadCpuSample(now, 7L, "diag-thread", "RUNNABLE", 1000000L, 456L, "stack body"), "inc-http");
             store.recordIncident("inc-http", DiagnosticIncidentType.CPU_HIGH, DiagnosticLevel.DIAG, now, now,
                     "incidentId=inc-http\nsummary=directUsedBytes=48623489\n", null);
+            store.recordIncident("inc-human", DiagnosticIncidentType.DIRECT_MEMORY_HIGH, DiagnosticLevel.DIAG, now + 1L, now + 1L,
+                    "directUsedBytes=97.52 MB (102253591 bytes)", null);
             assertTrue(store.flush(5000L));
 
             int port = freePort();
@@ -52,7 +54,11 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("http.metric"));
                 assertTrue(html.contains("1.00 MB"));
                 assertTrue(html.contains("directUsedBytes=48623489 (46.37 MB)"));
+                assertTrue(html.contains("directUsedBytes=97.52 MB (102253591 bytes)"));
+                assertFalse(html.contains("directUsedBytes=97 (97.00 B).52 MB"));
+                assertTrue(html.contains("tab-link"));
                 assertTrue(html.contains("metric-chart"));
+                assertTrue(html.contains("class=\"point\""));
                 assertFalse(html.contains("clob"));
 
                 HttpClient.ResponseContent filtered = client.get(url + "?limit=10&metric=disk.used.bytes&from="

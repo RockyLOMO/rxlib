@@ -33,6 +33,7 @@ public final class ResourceSnapshot {
     private final long nonHeapUsedBytes;
     private final long directUsedBytes;
     private final long directCapacityBytes;
+    private final long directMaxBytes;
     private final long mappedUsedBytes;
     private final long mappedCapacityBytes;
     private final long metaspaceUsedBytes;
@@ -42,7 +43,8 @@ public final class ResourceSnapshot {
 
     public ResourceSnapshot(long timestampMillis, double processCpuPercent, double systemCpuPercent, int threadCount,
                             long heapUsedBytes, long heapMaxBytes, long nonHeapUsedBytes,
-                            long directUsedBytes, long directCapacityBytes, long mappedUsedBytes, long mappedCapacityBytes,
+                            long directUsedBytes, long directCapacityBytes, long directMaxBytes,
+                            long mappedUsedBytes, long mappedCapacityBytes,
                             long metaspaceUsedBytes, long metaspaceMaxBytes,
                             List<DiskUsage> disks, List<DiagnosticMetric> metrics) {
         this.timestampMillis = timestampMillis;
@@ -54,6 +56,7 @@ public final class ResourceSnapshot {
         this.nonHeapUsedBytes = nonHeapUsedBytes;
         this.directUsedBytes = directUsedBytes;
         this.directCapacityBytes = directCapacityBytes;
+        this.directMaxBytes = directMaxBytes;
         this.mappedUsedBytes = mappedUsedBytes;
         this.mappedCapacityBytes = mappedCapacityBytes;
         this.metaspaceUsedBytes = metaspaceUsedBytes;
@@ -67,6 +70,10 @@ public final class ResourceSnapshot {
     }
 
     public double directUsedPercent() {
+        return percent(directUsedBytes, directMaxBytes);
+    }
+
+    public double directCapacityPercent() {
         return percent(directUsedBytes, directCapacityBytes);
     }
 

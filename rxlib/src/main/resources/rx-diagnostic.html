@@ -69,6 +69,42 @@
             overflow: hidden;
         }
 
+        .tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 0 0 14px;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            padding: 8px 0;
+            background: linear-gradient(135deg, rgba(246, 242, 234, .96), rgba(233, 243, 238, .96));
+            backdrop-filter: blur(8px);
+        }
+
+        .tab-link {
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: #fffdf7;
+            color: var(--muted);
+            padding: 9px 13px;
+            text-decoration: none;
+        }
+
+        .tab-link.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
         .warn {
             border-color: #c57b57;
         }
@@ -189,6 +225,13 @@
             vector-effect: non-scaling-stroke;
         }
 
+        .point {
+            fill: #fffdf7;
+            stroke: var(--accent);
+            stroke-width: 2;
+            vector-effect: non-scaling-stroke;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -273,5 +316,33 @@
 </head>
 <body>
 <main>${body}</main>
+<script>
+    (function () {
+        var links = document.querySelectorAll('.tab-link');
+        var panels = document.querySelectorAll('.tab-panel');
+
+        function activate(id) {
+            if (!id || !document.getElementById(id)) {
+                id = 'incidents';
+            }
+            for (var i = 0; i < panels.length; i++) {
+                panels[i].classList.toggle('active', panels[i].id === id);
+            }
+            for (var j = 0; j < links.length; j++) {
+                links[j].classList.toggle('active', links[j].getAttribute('data-tab') === id);
+            }
+        }
+
+        for (var k = 0; k < links.length; k++) {
+            links[k].addEventListener('click', function () {
+                activate(this.getAttribute('data-tab'));
+            });
+        }
+        window.addEventListener('hashchange', function () {
+            activate(location.hash ? location.hash.substring(1) : null);
+        });
+        activate(location.hash ? location.hash.substring(1) : null);
+    })();
+</script>
 </body>
 </html>

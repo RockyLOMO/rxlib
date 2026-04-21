@@ -201,9 +201,11 @@ public class DiagnosticMonitor implements AutoCloseable {
                 "heapUsedPercent=" + formatPercent(snapshot.heapUsedPercent()));
 
         updateTrigger(DiagnosticIncidentType.DIRECT_MEMORY_HIGH,
-                snapshot.directUsedPercent() >= config.getDirectUsedThresholdPercent() && snapshot.getDirectCapacityBytes() > 0L,
+                snapshot.directUsedPercent() >= config.getDirectUsedThresholdPercent() && snapshot.getDirectMaxBytes() > 0L,
                 now, config.getSampleIntervalMillis(),
-                "directUsedBytes=" + formatBytes(snapshot.getDirectUsedBytes()) + " (" + snapshot.getDirectUsedBytes() + " bytes)");
+                "directUsedBytes=" + formatBytes(snapshot.getDirectUsedBytes()) + " (" + snapshot.getDirectUsedBytes() + " bytes)"
+                        + ",directMaxBytes=" + formatBytes(snapshot.getDirectMaxBytes()) + " (" + snapshot.getDirectMaxBytes() + " bytes)"
+                        + ",directUsedPercent=" + formatPercent(snapshot.directUsedPercent()));
 
         updateTrigger(DiagnosticIncidentType.METASPACE_HIGH,
                 snapshot.metaspaceUsedPercent() >= config.getMetaspaceUsedThresholdPercent() && snapshot.getMetaspaceMaxBytes() > 0L,
