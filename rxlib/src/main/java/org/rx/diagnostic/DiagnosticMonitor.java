@@ -30,6 +30,8 @@ import java.util.concurrent.ThreadLocalRandom;
 @Slf4j
 public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, AutoCloseable {
     private static volatile DiagnosticMonitor DEFAULT;
+    private static final long MIN_MANUAL_CAPTURE_SECONDS = 1L;
+    private static final long MAX_MANUAL_CAPTURE_SECONDS = 60L;
 
     public final Delegate<DiagnosticMonitor, DiagnosticIncidentEvent> onIncident = Delegate.create();
 
@@ -153,6 +155,44 @@ public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, Aut
             }
         });
         return list;
+    }
+
+    public int captureThreadCpu(long seconds, int topN) throws InterruptedException {
+        if (!running.get()) {
+            return 0;
+        }
+        int limit = topN > 0 ? topN : config.getCpuTopThreads();
+        List<ThreadCpuSample> samples = sampler.sampleTopThreads(manualCaptureMillis(seconds), limit, config.getMaxStackFrames());
+        int count = 0;
+        for (ThreadCpuSample sample : samples) {
+            store.recordStackTrace(sample.getStackHash(), sample.getStackTrace(), sample.getTimestampMillis());
+            store.recordThreadCpu(sample, null);
+            count++;
+        }
+        return count;
+    }
+
+    public int captureThreadState(long seconds, int topN) throws InterruptedException {
+        if (!running.get() || !config.isThreadStateEnabled()) {
+            return 0;
+        }
+        int limit = topN > 0 ? topN : config.getThreadStateTopThreads();
+        long endMillis = System.currentTimeMillis() + manualCaptureMillis(seconds);
+        int count = 0;
+        do {
+            long now = System.currentTimeMillis();
+            List<ThreadStateSample> samples = threadStateSampler.sampleAll(limit, config.getMaxStackFrames(), now);
+            for (ThreadStateSample sample : samples) {
+                store.recordStackTrace(sample.getStackHash(), sample.getStackTrace(), sample.getTimestampMillis());
+                store.recordThreadState(sample, null);
+                count++;
+            }
+            long sleepMillis = Math.min(1000L, endMillis - System.currentTimeMillis());
+            if (sleepMillis > 0L && running.get()) {
+                Thread.sleep(sleepMillis);
+            }
+        } while (running.get() && System.currentTimeMillis() < endMillis);
+        return count;
     }
 
     void recordFileIo(String path, DiagnosticFileOperation operation, long bytes, long elapsedNanos) {
@@ -631,6 +671,11 @@ public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, Aut
             return false;
         }
         return holder.compareAndSet(last, now);
+    }
+
+    private static long manualCaptureMillis(long seconds) {
+        long normalized = Math.max(MIN_MANUAL_CAPTURE_SECONDS, Math.min(MAX_MANUAL_CAPTURE_SECONDS, seconds));
+        return normalized * 1000L;
     }
 
     private static String formatBytes(long bytes) {

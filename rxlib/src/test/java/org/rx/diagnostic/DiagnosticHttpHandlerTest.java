@@ -86,6 +86,10 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("Top N"));
                 assertTrue(html.contains("jvm.*"));
                 assertFalse(html.contains("<th>Sum</th>"));
+                assertTrue(html.contains("Thread CPU"));
+                assertTrue(html.contains("name=\"capture\" value=\"thread-cpu\""));
+                assertTrue(html.contains("name=\"capture\" value=\"thread-state\""));
+                assertTrue(html.contains("Capture Now"));
                 assertTrue(html.contains("Thread State"));
                 assertFalse(html.contains("Thread Trace"));
                 assertTrue(html.contains("Net I/O"));
