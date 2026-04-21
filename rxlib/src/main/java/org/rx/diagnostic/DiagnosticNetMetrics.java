@@ -95,11 +95,19 @@ final class DiagnosticNetMetrics {
             ComponentStats stats = entry.getValue();
             Snapshot snapshot = snapshotChannels(component, seenLoops);
             String tags = "component=" + component;
+            long lastSnapshotMillis = stats.lastSnapshotMillis.getAndSet(timestampMillis);
+            long elapsedMillis = lastSnapshotMillis <= 0L ? 0L : Math.max(1L, timestampMillis - lastSnapshotMillis);
+            long inboundDelta = delta(stats.inboundBytes, stats.lastInboundBytes);
+            long outboundDelta = delta(stats.outboundBytes, stats.lastOutboundBytes);
             add(metrics, timestampMillis, "net.connection.active.count", stats.active.sum(), tags);
             add(metrics, timestampMillis, "net.connection.open.total.count", stats.openTotal.sum(), tags);
             add(metrics, timestampMillis, "net.connection.close.total.count", stats.closeTotal.sum(), tags);
-            add(metrics, timestampMillis, "net.io.inbound.bytes", delta(stats.inboundBytes, stats.lastInboundBytes), tags);
-            add(metrics, timestampMillis, "net.io.outbound.bytes", delta(stats.outboundBytes, stats.lastOutboundBytes), tags);
+            add(metrics, timestampMillis, "net.io.inbound.bytes", inboundDelta, tags);
+            add(metrics, timestampMillis, "net.io.outbound.bytes", outboundDelta, tags);
+            if (elapsedMillis > 0L) {
+                add(metrics, timestampMillis, "net.io.inbound.bytes.per.second", inboundDelta * 1000D / elapsedMillis, tags);
+                add(metrics, timestampMillis, "net.io.outbound.bytes.per.second", outboundDelta * 1000D / elapsedMillis, tags);
+            }
             add(metrics, timestampMillis, "net.io.inbound.total.bytes", stats.inboundBytes.sum(), tags);
             add(metrics, timestampMillis, "net.io.outbound.total.bytes", stats.outboundBytes.sum(), tags);
             add(metrics, timestampMillis, "net.write.pending.bytes", snapshot.pendingWriteBytes, tags);
@@ -201,6 +209,7 @@ final class DiagnosticNetMetrics {
         final LongAdder outboundBytes = new LongAdder();
         final AtomicLong lastInboundBytes = new AtomicLong();
         final AtomicLong lastOutboundBytes = new AtomicLong();
+        final AtomicLong lastSnapshotMillis = new AtomicLong();
     }
 
     private static final class ChannelState {

@@ -47,6 +47,10 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private static final String[] DISK_CHART_METRICS = {
             "disk.used.bytes", "disk.free.bytes", "disk.free.percent"
     };
+    private static final String[] MEMORY_CHART_METRICS = {
+            "jvm.heap.used.bytes", "jvm.heap.max.bytes", "jvm.nonheap.used.bytes",
+            "jvm.direct.used.percent", "jvm.direct.capacity.percent"
+    };
     private static final Pattern SUMMARY_BYTES_PATTERN = Pattern.compile("([A-Za-z0-9_.-]*(?:BytesPerSecond|bytesPerSecond|Bytes|bytes))(=)(\\d+)");
 
     private final DiagnosticConfig config;
@@ -102,6 +106,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendTabsStart(body);
             appendTabPanelStart(body, "overview", true);
             appendOverview(body, queryNamedMetricChartRows(db, filter, CPU_CHART_METRICS),
+                    queryNamedMetricChartRows(db, filter, MEMORY_CHART_METRICS),
                     queryNamedMetricChartRows(db, filter, DISK_CHART_METRICS), filter);
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "incidents", false);
@@ -123,7 +128,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendFileIo(body, query(db, "SELECT ts,path_sample,op,bytes,elapsed_nanos,stack_hash,incident_id FROM diag_file_io_sample ORDER BY ts DESC,id DESC LIMIT ?", filter.limit));
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "net-io", false);
-            appendNetIo(body, queryOptional(db, "SELECT ts,endpoint_sample,op,bytes,stack_hash,incident_id FROM diag_net_io_sample ORDER BY ts DESC,id DESC LIMIT ?", filter.limit));
+            appendNetIo(body, queryNetIoGroups(db, filter),
+                    queryOptional(db, "SELECT ts,endpoint_sample,op,bytes,stack_hash,incident_id FROM diag_net_io_sample ORDER BY ts DESC,id DESC LIMIT ?", filter.limit));
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "file-size", false);
             appendFileSize(body, query(db, "SELECT ts,path_sample,size_bytes,last_modified,incident_id FROM diag_file_size_sample ORDER BY size_bytes DESC,ts DESC LIMIT ?", filter.limit));
@@ -179,10 +185,12 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private void appendOverview(StringBuilder out, List<Map<String, Object>> cpuRows,
+                                List<Map<String, Object>> memoryRows,
                                 List<Map<String, Object>> diskRows, Query filter) {
         out.append("<section class=\"card\"><h2>Overview</h2>");
         appendOverviewFilter(out, filter);
         appendChartGroup(out, "CPU Charts", cpuRows, "No CPU metric found in the selected range.");
+        appendChartGroup(out, "Memory Charts", memoryRows, "No memory metric found in the selected range.");
         appendChartGroup(out, "Disk Charts", diskRows, "No disk metric found in the selected range.");
         out.append("</section>");
     }
@@ -356,8 +364,25 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</tbody></table></section>");
     }
 
-    private void appendNetIo(StringBuilder out, List<Map<String, Object>> rows) {
-        out.append("<section class=\"card\"><h2>Net I/O</h2><table><thead><tr><th>Time</th><th>Endpoint</th><th>Op</th><th>Bytes</th><th>Stack</th><th>Incident</th></tr></thead><tbody>");
+    private void appendNetIo(StringBuilder out, List<Map<String, Object>> groupRows, List<Map<String, Object>> rows) {
+        out.append("<section class=\"card\"><h2>Net I/O</h2>");
+        out.append("<h3 class=\"chart-group-title\">By Endpoint</h3><table><thead><tr><th>Endpoint</th><th>Op</th><th>Min</th><th>Avg</th><th>Max</th><th>Total</th><th>Samples</th><th>Last</th></tr></thead><tbody>");
+        if (groupRows.isEmpty()) {
+            appendEmptyRow(out, 8, "No net I/O endpoint group data in the selected range.");
+        }
+        for (Map<String, Object> row : groupRows) {
+            out.append("<tr><td>").append(escape(value(row, "endpoint_sample"))).append("</td><td>")
+                    .append(escape(value(row, "op"))).append("</td><td>")
+                    .append(formatBytes(row.get("min_bytes"))).append("</td><td>")
+                    .append(formatBytes(row.get("avg_bytes"))).append("</td><td>")
+                    .append(formatBytes(row.get("max_bytes"))).append("</td><td>")
+                    .append(formatBytes(row.get("total_bytes"))).append("</td><td>")
+                    .append(escape(value(row, "sample_count"))).append("</td><td>")
+                    .append(formatMillis(row.get("last_ts"))).append("</td></tr>");
+        }
+        out.append("</tbody></table>");
+
+        out.append("<h3 class=\"chart-group-title\">Recent Samples</h3><table><thead><tr><th>Time</th><th>Endpoint</th><th>Op</th><th>Bytes</th><th>Stack</th><th>Incident</th></tr></thead><tbody>");
         if (rows.isEmpty()) {
             appendEmptyRow(out, 6, "No net I/O sample yet. Add DiagnosticNetIoHandler to Netty pipelines or call DiagnosticNetIo directly.");
         }
@@ -409,20 +434,38 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private void appendMetricTop(StringBuilder out, List<Map<String, Object>> rows) {
-        out.append("<h3 class=\"chart-group-title\">Top N</h3><table><thead><tr><th>Metric</th><th>Max</th><th>Avg</th><th>Sum</th><th>Samples</th><th>Tags</th></tr></thead><tbody>");
+        out.append("<h3 class=\"chart-group-title\">Top N</h3>");
         if (rows.isEmpty()) {
-            appendEmptyRow(out, 6, "No metric top data in the selected range.");
+            out.append("<table><tbody>");
+            appendEmptyRow(out, 7, "No metric top data in the selected range.");
+            out.append("</tbody></table>");
+            return;
         }
+        Map<String, List<Map<String, Object>>> groups = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
-            Object metric = row.get("metric");
-            out.append("<tr><td>").append(escape(value(row, "metric"))).append("</td><td>")
-                    .append(escape(formatMetricValue(metric, row.get("max_value")))).append("</td><td>")
-                    .append(escape(formatMetricValue(metric, row.get("avg_value")))).append("</td><td>")
-                    .append(escape(formatMetricValue(metric, row.get("sum_value")))).append("</td><td>")
-                    .append(escape(value(row, "sample_count"))).append("</td><td>")
-                    .append(escape(value(row, "tags"))).append("</td></tr>");
+            String group = metricGroup(value(row, "metric"));
+            List<Map<String, Object>> groupRows = groups.get(group);
+            if (groupRows == null) {
+                groupRows = new ArrayList<>();
+                groups.put(group, groupRows);
+            }
+            groupRows.add(row);
         }
-        out.append("</tbody></table>");
+        for (Map.Entry<String, List<Map<String, Object>>> entry : groups.entrySet()) {
+            out.append("<h4 class=\"metric-group-title\">").append(escape(entry.getKey())).append("</h4>")
+                    .append("<table><thead><tr><th>Metric</th><th>Min</th><th>Avg</th><th>Max</th><th>Sum</th><th>Samples</th><th>Tags</th></tr></thead><tbody>");
+            for (Map<String, Object> row : entry.getValue()) {
+                Object metric = row.get("metric");
+                out.append("<tr><td>").append(escape(value(row, "metric"))).append("</td><td>")
+                        .append(escape(formatMetricValue(metric, row.get("min_value")))).append("</td><td>")
+                        .append(escape(formatMetricValue(metric, row.get("avg_value")))).append("</td><td>")
+                        .append(escape(formatMetricValue(metric, row.get("max_value")))).append("</td><td>")
+                        .append(escape(formatMetricValue(metric, row.get("sum_value")))).append("</td><td>")
+                        .append(escape(value(row, "sample_count"))).append("</td><td>")
+                        .append(escape(value(row, "tags"))).append("</td></tr>");
+            }
+            out.append("</tbody></table>");
+        }
     }
 
     private void appendMetricFilter(StringBuilder out, Query filter) {
@@ -480,6 +523,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         long maxTs = Long.MIN_VALUE;
         double min = Double.MAX_VALUE;
         double max = -Double.MAX_VALUE;
+        double sum = 0D;
         for (Map<String, Object> row : rows) {
             long ts = toLong(row.get("ts"));
             double value = toDouble(row.get("metric_value"));
@@ -487,7 +531,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             maxTs = Math.max(maxTs, ts);
             min = Math.min(min, value);
             max = Math.max(max, value);
+            sum += value;
         }
+        double avg = rows.isEmpty() ? 0D : sum / rows.size();
 
         final int width = 640;
         final int height = 160;
@@ -522,6 +568,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append(formatMillis(Long.valueOf(minTs))).append(" - ").append(formatMillis(Long.valueOf(maxTs)))
                 .append(" · samples ").append(rows.size())
                 .append(" · min ").append(escape(formatMetricValue(metric, Double.valueOf(min))))
+                .append(" · avg ").append(escape(formatMetricValue(metric, Double.valueOf(avg))))
                 .append(" · max ").append(escape(formatMetricValue(metric, Double.valueOf(max))))
                 .append("</div></article>");
     }
@@ -591,7 +638,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private List<Map<String, Object>> queryMetricTop(EntityDatabase db, Query filter) {
-        StringBuilder sql = new StringBuilder("SELECT metric,COALESCE(tags,'') tags,MAX(metric_value) max_value,"
+        StringBuilder sql = new StringBuilder("SELECT metric,COALESCE(tags,'') tags,MIN(metric_value) min_value,MAX(metric_value) max_value,"
                 + "AVG(metric_value) avg_value,SUM(metric_value) sum_value,COUNT(*) sample_count"
                 + " FROM diag_metric_sample WHERE 1=1");
         List<Object> args = new ArrayList<>();
@@ -600,9 +647,20 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             sql.append(" AND metric = ?");
             args.add(filter.metric);
         }
-        sql.append(" GROUP BY metric,COALESCE(tags,'') ORDER BY max_value DESC,sample_count DESC LIMIT ?");
+        sql.append(" GROUP BY metric,COALESCE(tags,'') ORDER BY metric ASC,max_value DESC,sample_count DESC LIMIT ?");
         args.add(Integer.valueOf(filter.limit));
         return query(db, sql.toString(), args.toArray());
+    }
+
+    private List<Map<String, Object>> queryNetIoGroups(EntityDatabase db, Query filter) {
+        StringBuilder sql = new StringBuilder("SELECT endpoint_sample,op,MIN(bytes) min_bytes,AVG(bytes) avg_bytes,"
+                + "MAX(bytes) max_bytes,SUM(bytes) total_bytes,COUNT(*) sample_count,MAX(ts) last_ts"
+                + " FROM diag_net_io_sample WHERE 1=1");
+        List<Object> args = new ArrayList<>();
+        appendMetricWhere(sql, args, filter);
+        sql.append(" GROUP BY endpoint_sample,op ORDER BY total_bytes DESC,last_ts DESC LIMIT ?");
+        args.add(Integer.valueOf(filter.limit));
+        return queryOptional(db, sql.toString(), args.toArray());
     }
 
     private List<Map<String, Object>> queryMetricChartRows(EntityDatabase db, Query filter) {
@@ -955,6 +1013,14 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private static String value(Map<String, Object> row, String key) {
         Object value = row.get(key);
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private static String metricGroup(String metric) {
+        if (metric == null || metric.length() == 0) {
+            return "other";
+        }
+        int index = metric.indexOf('.');
+        return index <= 0 ? "other" : metric.substring(0, index) + ".*";
     }
 
     private static Long parseLong(String value) {

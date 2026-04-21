@@ -12,6 +12,8 @@ import io.netty.channel.FileRegion;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.AddressedEnvelope;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
 @ChannelHandler.Sharable
@@ -31,7 +33,7 @@ public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
 
     public static void install(ChannelPipeline pipeline, String component) {
         if (pipeline != null && pipeline.get(HANDLER_NAME) == null) {
-            pipeline.addLast(HANDLER_NAME, new DiagnosticNetIoHandler(component));
+            pipeline.addFirst(HANDLER_NAME, new DiagnosticNetIoHandler(component));
         }
     }
 
@@ -59,10 +61,11 @@ public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         long bytes = readableBytes(msg);
-        if (bytes > 0L) {
+        SocketAddress endpoint = endpointAddress(ctx, msg, true);
+        if (bytes > 0L && !isLoopback(endpoint)) {
             DiagnosticNetMetrics.recordInbound(component, bytes);
             if (DiagnosticNetIo.isEnabled()) {
-                DiagnosticNetIo.recordInbound(endpoint(ctx), bytes);
+                DiagnosticNetIo.recordInbound(endpoint(ctx, endpoint), bytes);
             }
         }
         super.channelRead(ctx, msg);
@@ -71,10 +74,11 @@ public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         long bytes = readableBytes(msg);
-        if (bytes > 0L) {
+        SocketAddress endpoint = endpointAddress(ctx, msg, false);
+        if (bytes > 0L && !isLoopback(endpoint)) {
             DiagnosticNetMetrics.recordOutbound(component, bytes);
             if (DiagnosticNetIo.isEnabled()) {
-                DiagnosticNetIo.recordOutbound(endpoint(ctx), bytes);
+                DiagnosticNetIo.recordOutbound(endpoint(ctx, endpoint), bytes);
             }
         }
         super.write(ctx, msg, promise);
@@ -102,10 +106,36 @@ public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
         return 0L;
     }
 
-    private static String endpoint(ChannelHandlerContext ctx) {
+    private static SocketAddress endpointAddress(ChannelHandlerContext ctx, Object msg, boolean inbound) {
+        if (msg instanceof AddressedEnvelope) {
+            AddressedEnvelope envelope = (AddressedEnvelope) msg;
+            SocketAddress address = inbound ? envelope.sender() : envelope.recipient();
+            if (address != null) {
+                return address;
+            }
+        }
         SocketAddress remote = ctx.channel().remoteAddress();
         if (remote != null) {
-            return remote.toString();
+            return remote;
+        }
+        return ctx.channel().localAddress();
+    }
+
+    private static boolean isLoopback(SocketAddress address) {
+        if (address instanceof InetSocketAddress) {
+            InetAddress inetAddress = ((InetSocketAddress) address).getAddress();
+            if (inetAddress != null) {
+                return inetAddress.isLoopbackAddress();
+            }
+            String host = ((InetSocketAddress) address).getHostString();
+            return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "::1".equals(host);
+        }
+        return false;
+    }
+
+    private static String endpoint(ChannelHandlerContext ctx, SocketAddress endpoint) {
+        if (endpoint != null) {
+            return endpoint.toString();
         }
         SocketAddress local = ctx.channel().localAddress();
         return local == null ? "unknown" : local.toString();
