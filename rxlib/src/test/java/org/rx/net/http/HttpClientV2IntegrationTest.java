@@ -1,6 +1,8 @@
 package org.rx.net.http;
 
+import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.multipart.FileUpload;
 import io.netty.util.CharsetUtil;
@@ -9,19 +11,32 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
+import org.rx.net.Sockets;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class HttpClientV2IntegrationTest {
     private static HttpServer server;
     private static String baseUrl;
+    private static final Set<Integer> remotePorts = Collections.newSetFromMap(new ConcurrentHashMap<Integer, Boolean>());
+    private static volatile CountDownLatch slowStarted;
 
     @BeforeAll
     public static void setup() throws Exception {
@@ -51,6 +66,24 @@ public class HttpClientV2IntegrationTest {
                 sb.append("rxlib");
             }
             res.htmlBody(sb.toString());
+        });
+        server.requestMapping("/gzip", (req, res) -> {
+            res.getHeaders().set(HttpHeaderNames.CONTENT_ENCODING, HttpHeaderValues.GZIP);
+            res.setContentType(ServerResponse.TEXT_HTML.toString());
+            res.setContent(Unpooled.wrappedBuffer(gzip("gzip-ok")));
+        });
+        server.requestMapping("/remote-port", (req, res) -> {
+            int portValue = req.getRemoteEndpoint().getPort();
+            remotePorts.add(portValue);
+            res.htmlBody(String.valueOf(portValue));
+        });
+        server.requestAsync("/slow", (req, res) -> {
+            CountDownLatch latch = slowStarted;
+            if (latch != null) {
+                latch.countDown();
+            }
+            Thread.sleep(300L);
+            res.htmlBody("slow");
         });
     }
 
@@ -146,9 +179,89 @@ public class HttpClientV2IntegrationTest {
         }
     }
 
+    @Test
+    public void syncApiRejectsEventLoopThread() throws Exception {
+        try (HttpClientV2 client = new HttpClientV2()) {
+            Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true).next()
+                    .submit(() -> assertThrows(IllegalStateException.class, () -> client.get(baseUrl + "/get?q=ok")))
+                    .get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    public void gzipResponseIsDecoded() {
+        try (HttpClientV2 client = new HttpClientV2()) {
+            assertEquals("gzip-ok", client.get(baseUrl + "/gzip").toString());
+        }
+    }
+
+    @Test
+    public void keepAliveReusesFixedPoolChannel() {
+        remotePorts.clear();
+        try (HttpClientV2 client = new HttpClientV2().withMaxConnectionsPerHost(1)) {
+            String first = client.get(baseUrl + "/remote-port").toString();
+            String second = client.get(baseUrl + "/remote-port").toString();
+            assertEquals(first, second);
+            assertEquals(1, remotePorts.size());
+        }
+    }
+
+    @Test
+    public void requestTimeoutCompletesExceptionally() {
+        try (HttpClientV2 client = new HttpClientV2().withTimeoutMillis(1000, 1000)) {
+            HttpClientV2.Request request = HttpClientV2.request(HttpMethod.GET, baseUrl + "/slow")
+                    .timeoutMillis(100);
+            ExecutionException error = assertThrows(ExecutionException.class,
+                    () -> client.executeAsync(request).get(2, TimeUnit.SECONDS));
+            assertTrue(hasCause(error, TimeoutException.class), error.toString());
+            assertEquals(1, client.metrics().timeout());
+        }
+    }
+
+    @Test
+    public void fixedPoolLimitsConcurrentAcquire() throws Exception {
+        slowStarted = new CountDownLatch(1);
+        try (HttpClientV2 client = new HttpClientV2().withTimeoutMillis(80, 1000).withMaxConnectionsPerHost(1)) {
+            CompletableFuture<HttpClientV2.ResponseContent> first = client.executeAsync(
+                    HttpClientV2.request(HttpMethod.GET, baseUrl + "/slow").timeoutMillis(1000));
+            assertTrue(slowStarted.await(2, TimeUnit.SECONDS));
+
+            CompletableFuture<HttpClientV2.ResponseContent> queued = client.executeAsync(
+                    HttpClientV2.request(HttpMethod.GET, baseUrl + "/get?q=queued").timeoutMillis(1000));
+            ExecutionException error = assertThrows(ExecutionException.class,
+                    () -> queued.get(2, TimeUnit.SECONDS));
+            assertTrue(hasCause(error, TimeoutException.class), error.toString());
+            assertEquals(200, first.get(2, TimeUnit.SECONDS).getStatusCode());
+            assertTrue(client.metrics().failed() >= 1);
+        } finally {
+            slowStarted = null;
+        }
+    }
+
     private static int freePort() throws Exception {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
         }
+    }
+
+    private static byte[] gzip(String value) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        GZIPOutputStream gzip = new GZIPOutputStream(out);
+        try {
+            gzip.write(value.getBytes(StandardCharsets.UTF_8));
+        } finally {
+            gzip.close();
+        }
+        return out.toByteArray();
+    }
+
+    private static boolean hasCause(Throwable error, Class<? extends Throwable> type) {
+        for (int i = 0; error != null && i < 16; i++) {
+            if (type.isInstance(error)) {
+                return true;
+            }
+            error = error.getCause();
+        }
+        return false;
     }
 }

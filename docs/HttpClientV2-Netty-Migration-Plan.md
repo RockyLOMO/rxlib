@@ -6,7 +6,7 @@
 - Java 8 约束
 - 目标：新增基于 Netty 的 `HttpClientV2`，覆盖现有 `HttpClient` 主要能力，逐步移除 `okhttp` 依赖，同时保持低延迟、低额外分配、可控的连接与内存生命周期。
 
-## 进度同步（2026-04-20）
+## 进度同步（2026-04-21）
 
 - `[已完成]` 现状盘点
   - 现有 [`HttpClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/HttpClient.java) 完全基于 `okhttp`。
@@ -20,15 +20,25 @@
     - [`PersistentCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/PersistentCookieStorage.java)
     - [`VolatileCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/VolatileCookieStorage.java)
     - [`HttpTunnelClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/socks/httptunnel/HttpTunnelClient.java)
-- `[部分完成]` `HttpClientV2` 代码实现
-  - 新增 [`HttpClientV2.java`](/E:/rxdev/projs/rxlib/rxlib/src/main/java/org/rx/net/http/HttpClientV2.java)。
-  - 已实现：Netty `Bootstrap` 复用、`FixedChannelPool` 按目标端点建池、HTTP/HTTPS pipeline、GET/HEAD、JSON/form/multipart body、PUT/PATCH/DELETE body、基础 Cookie、响应 `toString()/toJson()/toFile()/toStream()`、请求/响应/超时/字节数/堆外内存基础指标。
-  - 已修复连接复用风险：无 body 请求使用 `FullHttpRequest` 显式结束请求，避免 Netty encoder 复用连接时停留在等待 body 状态。
-  - 已补充 [`HttpClientV2IntegrationTest.java`](/E:/rxdev/projs/rxlib/rxlib/src/test/java/org/rx/net/http/HttpClientV2IntegrationTest.java) 覆盖 GET/HEAD、JSON、form、multipart、Cookie、响应缓存/落盘。
-- `[部分完成]` 配置/测试兼容
-  - `RxConfig` 当前已迁移为 `net.http.*` 结构，已同步修正相关测试引用。
-  - `AuthenticProxy` 已保留 username/password 字段，便于 Netty `HttpProxyHandler` 复用代理认证配置。
-- `[未开始]` 调用方切换与 `okhttp` 彻底下线
+- `[已完成]` `HttpClientV2` 核心代码实现
+  - 新增 [`HttpClientV2.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/HttpClientV2.java)。
+  - 已实现：Netty `Bootstrap` 复用、`FixedChannelPool` 按目标端点建池、HTTP/HTTPS pipeline、GET/HEAD、JSON/form/multipart body、PUT/PATCH/DELETE body、基础 Cookie、响应 `toString()/toJson()/toFile()/toStream()`、Servlet `forward(...)` 流式转发、HTTP/SOCKS 代理配置。
+  - 连接池已使用 `ChannelHealthChecker.ACTIVE`，并补齐 `maxConnectionsPerHost`、`maxPendingAcquires`、pending acquire timeout，避免无上限建连。
+  - 响应未使用 `HttpObjectAggregator`，按 `HttpContent` 写入 `HybridStream`；大响应超过阈值后暂停 `autoRead`，把落盘写入切到业务线程，完成后再恢复读取。
+  - multipart/stream 上传按写水位、累计字节数和 chunk 数批量 flush，文件读取放到 worker 线程，避免在 Netty I/O 线程执行阻塞文件读，且不再每个 8K chunk 阻塞等待。
+  - 同步 API 已增加 EventLoop 线程运行时保护，禁止在共享 TCP Reactor 内阻塞等待响应。
+  - Cookie 存储已拆分为内存存储与 H2 持久化存储；H2 版本基于 [`EntityDatabase.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/io/EntityDatabase.java)，热请求匹配仍走内存快照，H2 只在加载/保存/删除时访问。
+  - 已补充 [`HttpClientV2Test.java`](/D:/projs_r/rxlib/rxlib/src/test/java/org/rx/net/http/HttpClientV2Test.java) 覆盖 GET、JSON、form、multipart、内存 Cookie、H2 Cookie、forward、SOCKS 代理认证成功与失败。
+  - 已补充 [`HttpClientV2IntegrationTest.java`](/D:/projs_r/rxlib/rxlib/src/test/java/org/rx/net/http/HttpClientV2IntegrationTest.java) 覆盖 GET/HEAD、JSON `POST/PUT/PATCH/DELETE`、form、multipart、Cookie、响应缓存、gzip 解压、keep-alive 复用、请求超时、FixedChannelPool acquire 限流、EventLoop 同步 API 保护。
+- `[已完成]` 配置/测试兼容
+  - `RxConfig` 当前已有 `net.http.*` 服务端配置结构。
+  - `HttpClientV2` 已接入 Netty `HttpProxyHandler` / `Socks5ProxyHandler`，连接池 key 已按代理类型、地址、用户名隔离。
+  - `AuthenticProxy` 已补充 username/password 字段供 `HttpClientV2` 复用，但旧 `okhttp3.Authenticator` 仍保留，后续旧客户端清理阶段再移除。
+  - 已执行：`mvn -pl rxlib "-Dtest=org.rx.net.http.HttpClientV2Test,org.rx.net.http.HttpClientV2IntegrationTest" test`，结果 18 个测试通过。
+- `[暂不执行]` 旧 `HttpClient` / `HttpTunnelClient` / `CookieContainer` 的 `okhttp` 引用清理
+  - 按当前要求暂不处理。
+- `[暂缓]` 调用方切换与 `okhttp` 彻底下线
+  - 按当前要求暂不处理旧客户端 okhttp 引用清理，因此该阶段只保留计划，不执行。
   - 旧 `HttpClient`、`RestClient`、`forward(...)`、`HttpTunnelClient` 尚未切换。
   - `okhttp` 依赖仍然保留。
 
@@ -202,12 +212,13 @@
 - 代理配置
 - TLS 配置
 
-实现建议：
+实现状态：
 
-- 基于 Netty `SimpleChannelPool` / `FixedChannelPool`
-- 支持 keep-alive 复用
-- 支持空闲连接淘汰
-- 支持最大并发建连数与等待队列上限
+- 已基于 Netty `FixedChannelPool`
+- 已支持 keep-alive 复用
+- 已支持最大并发建连数、等待队列上限、pending acquire 超时
+- 已使用 `ChannelHealthChecker.ACTIVE` 做复用前活性校验
+- 空闲连接淘汰当前依赖 Netty 池关闭和服务端 keep-alive 关闭；如后续压测发现长空闲连接堆积，再补主动 idle eviction
 
 ### 4.2 生命周期控制
 
@@ -330,7 +341,9 @@
 - 代理鉴权通过
 - `forward` 可透传 query/header/body/status/header
 
-### 阶段 5：调用方切换
+### 阶段 5：调用方切换（暂缓）
+
+当前状态：按用户要求暂不处理旧 `HttpClient` / `HttpTunnelClient` / `CookieContainer` 的 okhttp 引用清理，因此调用方切换阶段只保留迁移计划。
 
 优先迁移：
 
@@ -344,7 +357,9 @@
 - 主要调用方不再依赖 `okhttp` 类型
 - 旧功能回归通过
 
-### 阶段 6：彻底移除 `okhttp`
+### 阶段 6：彻底移除 `okhttp`（暂缓）
+
+当前状态：等待旧客户端迁移范围重新打开后再执行。
 
 需要同时改造：
 
@@ -422,39 +437,35 @@
 
 ### 8.1 单元测试
 
-新增建议：
+已覆盖：
 
-- `HttpClientV2RequestBuilderTest`
-  - URL 编解码
-  - Header 合并
-  - QueryString 构建
-- `HttpClientV2MultipartTest`
-  - boundary 生成
-  - 文本字段编码
-  - 文件 part 头部格式
-- `HttpClientV2CookieJarTest`
-  - domain/path 匹配
-  - 过期淘汰
-- `HttpClientV2ResponseCacheTest`
-  - `toString()/toJson()/toFile()/toStream()` 组合调用
+- `HttpClientV2Test`
+  - GET、JSON、form、multipart
+  - 内存 Cookie、H2 持久化 Cookie
+  - Servlet forward
+  - SOCKS 代理认证成功与失败
+
+后续如继续细拆，可把当前覆盖拆成更小的 request builder、multipart、cookie jar、response cache 专项测试类。
 
 ### 8.2 集成测试
 
-新增建议：
+已覆盖：
 
 - `HttpClientV2IntegrationTest`
-  - `GET`
-  - `POST JSON`
-  - `POST multipart file`
-  - `PUT/PATCH/DELETE`
-  - 大响应下载到文件
-  - gzip 响应
-  - keep-alive 复用
-  - 超时
-- `HttpClientV2ForwardIntegrationTest`
-  - Servlet -> 上游请求转发
-- `HttpClientV2ProxyIntegrationTest`
-  - 代理认证与失败回退
+  - GET、HEAD、metrics
+  - JSON `POST/PUT/PATCH/DELETE`
+  - form、multipart
+  - Cookie 往返、响应缓存、`toStream()/responseStream()/toFile()`
+  - gzip 响应解压
+  - keep-alive 连接复用
+  - 请求超时
+  - FixedChannelPool 最大连接数与 pending acquire 超时
+  - 同步 API 禁止在 EventLoop 调用
+
+暂缓：
+
+- 真实 Servlet 容器级 forward 集成测试，当前只用 mock servlet 回归。
+- HTTP 代理认证专项测试，当前已覆盖 Netty SOCKS5 代理认证成功与失败。
 
 ### 8.3 既有回归
 

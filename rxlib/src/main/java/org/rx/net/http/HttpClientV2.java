@@ -5,92 +5,198 @@ import com.alibaba.fastjson2.annotation.JSONField;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.*;
 import io.netty.channel.pool.AbstractChannelPoolHandler;
+import io.netty.channel.pool.ChannelHealthChecker;
 import io.netty.channel.pool.FixedChannelPool;
-import io.netty.handler.codec.http.DefaultFullHttpRequest;
-import io.netty.handler.codec.http.DefaultHttpHeaders;
-import io.netty.handler.codec.http.DefaultHttpRequest;
-import io.netty.handler.codec.http.FullHttpRequest;
-import io.netty.handler.codec.http.HttpClientCodec;
-import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpContentDecompressor;
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpHeaderValues;
-import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpObject;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.HttpResponse;
-import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpUtil;
-import io.netty.handler.codec.http.HttpVersion;
-import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.cookie.ClientCookieDecoder;
 import io.netty.handler.codec.http.cookie.ClientCookieEncoder;
 import io.netty.handler.codec.http.cookie.Cookie;
-import io.netty.handler.proxy.HttpProxyHandler;
+import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
-import io.netty.handler.stream.ChunkedStream;
 import io.netty.handler.stream.ChunkedWriteHandler;
-import io.netty.handler.codec.http.HttpChunkedInput;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.timeout.WriteTimeoutHandler;
+import io.netty.handler.proxy.HttpProxyHandler;
+import io.netty.handler.proxy.ProxyHandler;
+import io.netty.handler.proxy.Socks5ProxyHandler;
+import io.netty.resolver.NoopAddressResolverGroup;
 import io.netty.util.AttributeKey;
-import io.netty.util.CharsetUtil;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.MapUtils;
+import org.rx.annotation.DbColumn;
+import org.rx.bean.Tuple;
 import org.rx.core.Constants;
 import org.rx.core.RxConfig;
 import org.rx.core.Strings;
-import org.rx.exception.InvalidException;
+import org.rx.core.Sys;
+import org.rx.core.Tasks;
+import org.rx.io.EntityDatabase;
+import org.rx.io.EntityQueryLambda;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.io.IOStream;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
+import org.rx.util.function.BiFunc;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
+import java.net.SocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
-import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.tryClose;
-import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class HttpClientV2 implements AutoCloseable {
-    private static final AttributeKey<Exchange> EXCHANGE = AttributeKey.valueOf("rx.http.client.v2.exchange");
-    private static final int BODY_CHUNK_SIZE = 8192;
-    private static final long NO_EXPIRES = Long.MAX_VALUE;
+    public static final String FORM_TYPE = "application/x-www-form-urlencoded;charset=UTF-8";
+    public static final String JSON_TYPE = "application/json; charset=UTF-8";
+    static final AttributeKey<RequestState> STATE_KEY = AttributeKey.valueOf("httpClientV2State");
+    static final HttpClientCookieJar COOKIES = new HttpClientCookieJar();
+    static final int RESPONSE_OFFLOAD_THRESHOLD = Constants.MAX_HEAP_BUF_SIZE;
+    static final int UPLOAD_FLUSH_BYTES = Constants.HEAP_BUF_SIZE << 4;
+    static final int UPLOAD_FLUSH_CHUNKS = 16;
+
+    final Map<PoolKey, FixedChannelPool> pools = new ConcurrentHashMap<>();
+    final SslContext sslContext;
+    final HttpClientCookieJar cookieJar;
+    final Metrics metrics = new Metrics();
+    volatile int connectTimeoutMillis;
+    volatile int readWriteTimeoutMillis;
+    volatile int maxConnectionsPerHost;
+    volatile int maxPendingAcquires;
+    volatile boolean enableCookie;
+    volatile boolean enableLog;
+    volatile Proxy proxy;
+    HttpHeaders reqHeaders;
+
+    public HttpClientV2() {
+        this(COOKIES);
+    }
+
+    @SneakyThrows
+    public HttpClientV2(HttpClientCookieJar cookieJar) {
+        this.cookieJar = cookieJar != null ? cookieJar : COOKIES;
+        sslContext = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
+        RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
+        withFeatures(false, conf.isEnableLog());
+        withTimeoutMillis(conf.getConnectTimeoutMillis(), conf.getReadWriteTimeoutMillis());
+        maxConnectionsPerHost = Math.max(1, conf.getPoolMaxSize());
+        maxPendingAcquires = Math.max(16, maxConnectionsPerHost << 2);
+    }
+
+    public static Request request(HttpMethod method, String url) {
+        return new Request(method, url);
+    }
+
+    public Metrics metrics() {
+        return metrics;
+    }
+
+    public HttpClientCookieJar cookieJar() {
+        return cookieJar;
+    }
+
+    public HttpClientV2 withFeatures(boolean enableCookie, boolean enableLog) {
+        this.enableCookie = enableCookie;
+        this.enableLog = enableLog;
+        return this;
+    }
+
+    public HttpClientV2 withCookies(boolean enableCookie) {
+        this.enableCookie = enableCookie;
+        return this;
+    }
+
+    public HttpClientV2 withTimeoutMillis(int timeoutMillis) {
+        return withTimeoutMillis(timeoutMillis, timeoutMillis);
+    }
+
+    public HttpClientV2 withTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
+        this.connectTimeoutMillis = connectTimeoutMillis;
+        this.readWriteTimeoutMillis = readWriteTimeoutMillis;
+        close();
+        return this;
+    }
+
+    public synchronized HttpClientV2 withMaxConnectionsPerHost(int maxConnectionsPerHost) {
+        this.maxConnectionsPerHost = Math.max(1, maxConnectionsPerHost);
+        this.maxPendingAcquires = Math.max(16, this.maxConnectionsPerHost << 2);
+        close();
+        return this;
+    }
+
+    public synchronized HttpClientV2 withProxy(Proxy proxy) {
+        this.proxy = proxy;
+        close();
+        return this;
+    }
+
+    public HttpClientV2 withProxy(AuthenticProxy proxy) {
+        return withProxy((Proxy) proxy);
+    }
+
+    public HttpClientV2 withUserAgent() {
+        requestHeaders().set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
+        return this;
+    }
+
+    public HttpClientV2 withRequestCookie(String rawCookie) {
+        requestHeaders().set(HttpHeaderNames.COOKIE, rawCookie);
+        return this;
+    }
+
+    public synchronized HttpHeaders requestHeaders() {
+        if (reqHeaders == null) {
+            reqHeaders = new DefaultHttpHeaders();
+        }
+        return reqHeaders;
+    }
+
+    synchronized HttpHeaders requestHeadersSnapshot() {
+        HttpHeaders headers = new DefaultHttpHeaders();
+        if (reqHeaders != null) {
+            headers.set(reqHeaders);
+        }
+        return headers;
+    }
+
+    @Override
+    public void close() {
+        for (FixedChannelPool pool : pools.values()) {
+            pool.close();
+        }
+        pools.clear();
+    }
 
     public static final class Request {
         @Getter
@@ -100,7 +206,7 @@ public class HttpClientV2 implements AutoCloseable {
         @Getter
         private final HttpHeaders headers = new DefaultHttpHeaders(false);
         @Getter
-        private HttpClientBody body = HttpClientBody.EMPTY;
+        private RequestContent body = EmptyContent.INSTANCE;
         private int timeoutMillis;
         private Proxy proxy;
         private Boolean enableCookie;
@@ -117,13 +223,13 @@ public class HttpClientV2 implements AutoCloseable {
 
         public Request headers(HttpHeaders headers) {
             if (headers != null) {
-                this.headers.setAll(headers);
+                this.headers.set(headers);
             }
             return this;
         }
 
-        public Request body(HttpClientBody body) {
-            this.body = ifNull(body, HttpClientBody.EMPTY);
+        public Request body(RequestContent body) {
+            this.body = body != null ? body : EmptyContent.INSTANCE;
             return this;
         }
 
@@ -140,233 +246,6 @@ public class HttpClientV2 implements AutoCloseable {
         public Request enableCookie(boolean enableCookie) {
             this.enableCookie = enableCookie;
             return this;
-        }
-    }
-
-    public static abstract class HttpClientBody implements AutoCloseable {
-        public static final HttpClientBody EMPTY = new EmptyBody();
-
-        final HttpHeaders headers = new DefaultHttpHeaders(false);
-
-        public HttpHeaders headers() {
-            return headers;
-        }
-
-        public abstract long contentLength();
-
-        public boolean hasContent() {
-            return contentLength() != 0L;
-        }
-
-        public abstract InputStream openStream();
-
-        @Override
-        public void close() {
-        }
-
-        public static HttpClientBody bytes(byte[] bytes, CharSequence contentType) {
-            return new BytesBody(bytes, contentType);
-        }
-
-        public static HttpClientBody json(Object json) {
-            byte[] bytes = toJsonString(json).getBytes(StandardCharsets.UTF_8);
-            return bytes(bytes, "application/json; charset=UTF-8");
-        }
-
-        public static HttpClientBody form(Map<String, Object> forms) {
-            String form = buildUrl(null, forms);
-            if (!Strings.isEmpty(form)) {
-                form = form.substring(1);
-            }
-            return bytes(form.getBytes(StandardCharsets.UTF_8), "application/x-www-form-urlencoded;charset=UTF-8");
-        }
-
-        public static HttpClientBody multipart(Map<String, Object> forms, Map<String, IOStream> files) {
-            return new MultipartBody(forms, files);
-        }
-    }
-
-    static final class EmptyBody extends HttpClientBody {
-        @Override
-        public long contentLength() {
-            return 0L;
-        }
-
-        @Override
-        public InputStream openStream() {
-            return new ByteArrayInputStream(new byte[0]);
-        }
-    }
-
-    static class BytesBody extends HttpClientBody {
-        final byte[] bytes;
-
-        BytesBody(byte[] bytes, CharSequence contentType) {
-            this.bytes = ifNull(bytes, new byte[0]);
-            if (contentType != null) {
-                headers.set(HttpHeaderNames.CONTENT_TYPE, contentType);
-            }
-        }
-
-        @Override
-        public long contentLength() {
-            return bytes.length;
-        }
-
-        @Override
-        public InputStream openStream() {
-            return new ByteArrayInputStream(bytes);
-        }
-    }
-
-    static final class MultipartBody extends HttpClientBody {
-        final String boundary;
-        final HybridStream stream;
-        final List<IOStream> files;
-
-        @SneakyThrows
-        MultipartBody(Map<String, Object> forms, Map<String, IOStream> files) {
-            this.boundary = "----rxlib-" + Long.toHexString(System.nanoTime());
-            this.files = files == null ? Collections.emptyList() : new ArrayList<>(files.values());
-            this.stream = new HybridStream(Constants.MAX_HEAP_BUF_SIZE, false);
-            headers.set(HttpHeaderNames.CONTENT_TYPE, "multipart/form-data; boundary=" + boundary);
-
-            if (!MapUtils.isEmpty(forms)) {
-                for (Map.Entry<String, Object> entry : forms.entrySet()) {
-                    if (entry.getValue() == null) {
-                        continue;
-                    }
-                    writeAscii("--" + boundary + "\r\n");
-                    writeAscii("Content-Disposition: form-data; name=\"" + escape(entry.getKey()) + "\"\r\n\r\n");
-                    stream.writeString(String.valueOf(entry.getValue()), StandardCharsets.UTF_8);
-                    writeAscii("\r\n");
-                }
-            }
-            if (!MapUtils.isEmpty(files)) {
-                for (Map.Entry<String, IOStream> entry : files.entrySet()) {
-                    IOStream file = entry.getValue();
-                    if (file == null) {
-                        continue;
-                    }
-                    String fileName = ifNull(file.getName(), entry.getKey());
-                    writeAscii("--" + boundary + "\r\n");
-                    writeAscii("Content-Disposition: form-data; name=\"" + escape(entry.getKey())
-                            + "\"; filename=\"" + escape(fileName) + "\"\r\n");
-                    writeAscii("Content-Type: " + Files.getMediaTypeFromName(fileName) + "\r\n\r\n");
-                    if (file.canSeek()) {
-                        file.rewind();
-                    }
-                    stream.write(file.getReader());
-                    writeAscii("\r\n");
-                }
-            }
-            writeAscii("--" + boundary + "--\r\n");
-            stream.rewind();
-        }
-
-        void writeAscii(String value) {
-            stream.write(value.getBytes(StandardCharsets.US_ASCII));
-        }
-
-        String escape(String value) {
-            return value == null ? Strings.EMPTY : value.replace("\\", "\\\\").replace("\"", "\\\"");
-        }
-
-        @Override
-        public long contentLength() {
-            return stream.getLength();
-        }
-
-        @Override
-        public synchronized InputStream openStream() {
-            return stream.rewind().getReader();
-        }
-
-        @Override
-        public void close() {
-            tryClose(stream);
-            tryClose(files);
-        }
-    }
-
-    public static final class Response implements AutoCloseable {
-        @Getter
-        private final String requestUrl;
-        @Getter
-        private final int statusCode;
-        @Getter
-        private final HttpResponseStatus status;
-        @Getter
-        private final HttpHeaders headers;
-        @Getter
-        private final long elapsedNanos;
-        @JSONField(serialize = false)
-        private final HybridStream stream;
-        private String text;
-        private File file;
-
-        Response(String requestUrl, HttpResponseStatus status, HttpHeaders headers, HybridStream stream, long elapsedNanos) {
-            this.requestUrl = requestUrl;
-            this.status = status;
-            this.statusCode = status.code();
-            this.headers = headers;
-            this.stream = stream.rewind();
-            this.elapsedNanos = elapsedNanos;
-        }
-
-        public InputStream responseStream() {
-            return stream.rewind().getReader();
-        }
-
-        public Charset charset() {
-            String contentType = headers.get(HttpHeaderNames.CONTENT_TYPE);
-            if (contentType == null) {
-                return StandardCharsets.UTF_8;
-            }
-            String lower = contentType.toLowerCase(Locale.ENGLISH);
-            int i = lower.indexOf("charset=");
-            if (i == -1) {
-                return StandardCharsets.UTF_8;
-            }
-            String charset = contentType.substring(i + 8).trim();
-            int semicolon = charset.indexOf(';');
-            if (semicolon != -1) {
-                charset = charset.substring(0, semicolon).trim();
-            }
-            try {
-                return Charset.forName(charset);
-            } catch (Exception e) {
-                return StandardCharsets.UTF_8;
-            }
-        }
-
-        public synchronized HybridStream toStream() {
-            return stream.rewind();
-        }
-
-        public synchronized File toFile(String filePath) {
-            if (file == null) {
-                Files.saveFile(filePath, responseStream());
-                file = new File(filePath);
-            }
-            return file;
-        }
-
-        public <T extends Serializable> T toJson() {
-            return (T) JSON.parse(toString());
-        }
-
-        @Override
-        public synchronized String toString() {
-            if (text == null) {
-                text = IOStream.readString(responseStream(), charset());
-            }
-            return text;
-        }
-
-        @Override
-        public void close() {
-            tryClose(stream);
         }
     }
 
@@ -427,140 +306,310 @@ public class HttpClientV2 implements AutoCloseable {
         }
     }
 
-    public static final class HttpClientCookie {
-        final String name;
-        final String value;
-        final String domain;
-        final String path;
-        final long expiresAt;
-        final boolean secure;
-        final boolean httpOnly;
-        final boolean hostOnly;
+    public interface RequestContent extends AutoCloseable {
+        String contentType();
 
-        HttpClientCookie(Cookie cookie, URI uri, long now) {
-            name = cookie.name();
-            value = cookie.value();
-            String d = cookie.domain();
-            hostOnly = Strings.isEmpty(d);
-            domain = normalizeDomain(hostOnly ? uri.getHost() : d);
-            path = Strings.isEmpty(cookie.path()) ? "/" : cookie.path();
-            secure = cookie.isSecure();
-            httpOnly = cookie.isHttpOnly();
-            if (cookie.maxAge() == Cookie.UNDEFINED_MAX_AGE) {
-                expiresAt = NO_EXPIRES;
-            } else {
-                expiresAt = cookie.maxAge() <= 0 ? 0L : now + TimeUnit.SECONDS.toMillis(cookie.maxAge());
-            }
-        }
+        boolean streaming();
 
-        Cookie toNettyCookie() {
-            io.netty.handler.codec.http.cookie.DefaultCookie cookie = new io.netty.handler.codec.http.cookie.DefaultCookie(name, value);
-            cookie.setDomain(domain);
-            cookie.setPath(path);
-            cookie.setSecure(secure);
-            cookie.setHttpOnly(httpOnly);
-            return cookie;
-        }
+        ByteBuf toFullContent(Channel channel);
 
-        boolean expired(long now) {
-            return expiresAt < now;
-        }
-
-        boolean matches(URI uri, long now) {
-            if (expired(now)) {
-                return false;
-            }
-            if (secure && !"https".equalsIgnoreCase(uri.getScheme())) {
-                return false;
-            }
-            String host = normalizeDomain(uri.getHost());
-            if (hostOnly) {
-                if (!Strings.hashEquals(domain, host)) {
-                    return false;
-                }
-            } else if (!host.equals(domain) && !host.endsWith("." + domain)) {
-                return false;
-            }
-            String requestPath = Strings.isEmpty(uri.getPath()) ? "/" : uri.getPath();
-            return requestPath.startsWith(path);
-        }
-
-        static String normalizeDomain(String domain) {
-            if (domain == null) {
-                return Strings.EMPTY;
-            }
-            domain = domain.toLowerCase(Locale.ENGLISH);
-            while (domain.startsWith(".")) {
-                domain = domain.substring(1);
-            }
-            return domain;
-        }
+        void writeStreaming(Channel channel, RequestState state) throws Exception;
 
         @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof HttpClientCookie)) {
-                return false;
-            }
-            HttpClientCookie that = (HttpClientCookie) o;
-            return secure == that.secure && hostOnly == that.hostOnly
-                    && name.equals(that.name) && domain.equals(that.domain) && path.equals(that.path);
-        }
-
-        @Override
-        public int hashCode() {
-            int result = name.hashCode();
-            result = 31 * result + domain.hashCode();
-            result = 31 * result + path.hashCode();
-            result = 31 * result + (secure ? 1 : 0);
-            result = 31 * result + (hostOnly ? 1 : 0);
-            return result;
+        default void close() {
         }
     }
 
-    public static final class HttpClientCookieJar {
-        final Set<HttpClientCookie> cookies = ConcurrentHashMap.newKeySet();
-
-        String load(URI uri) {
-            long now = System.currentTimeMillis();
-            List<Cookie> matched = new ArrayList<>();
-            for (Iterator<HttpClientCookie> it = cookies.iterator(); it.hasNext(); ) {
-                HttpClientCookie cookie = it.next();
-                if (cookie.expired(now)) {
-                    it.remove();
-                    continue;
-                }
-                if (cookie.matches(uri, now)) {
-                    matched.add(cookie.toNettyCookie());
-                }
-            }
-            return matched.isEmpty() ? null : ClientCookieEncoder.STRICT.encode(matched);
+    public static final class HttpClientBody {
+        private HttpClientBody() {
         }
 
-        void save(URI uri, HttpHeaders headers) {
-            long now = System.currentTimeMillis();
-            List<String> setCookies = headers.getAll(HttpHeaderNames.SET_COOKIE);
-            if (setCookies.isEmpty()) {
+        public static RequestContent bytes(byte[] bytes, CharSequence contentType) {
+            return new BytesContent(contentType == null ? null : contentType.toString(), bytes);
+        }
+
+        public static RequestContent json(Object json) {
+            return new JsonContent(json);
+        }
+
+        public static RequestContent form(Map<String, Object> forms) {
+            return new FormContent(forms);
+        }
+
+        public static RequestContent multipart(Map<String, Object> forms, Map<String, IOStream> files) {
+            return new MultipartContent(forms, files);
+        }
+    }
+
+    static final class EmptyContent implements RequestContent {
+        static final EmptyContent INSTANCE = new EmptyContent();
+
+        @Override
+        public String contentType() {
+            return null;
+        }
+
+        @Override
+        public boolean streaming() {
+            return false;
+        }
+
+        @Override
+        public ByteBuf toFullContent(Channel channel) {
+            return channel.alloc().buffer(0, 0);
+        }
+
+        @Override
+        public void writeStreaming(Channel channel, RequestState state) {
+        }
+    }
+
+    static class BytesContent implements RequestContent {
+        final String contentType;
+        final byte[] data;
+
+        BytesContent(String contentType, byte[] data) {
+            this.contentType = contentType;
+            this.data = data != null ? data : new byte[0];
+        }
+
+        @Override
+        public String contentType() {
+            return contentType;
+        }
+
+        @Override
+        public boolean streaming() {
+            return false;
+        }
+
+        @Override
+        public ByteBuf toFullContent(Channel channel) {
+            ByteBuf buf = channel.alloc().buffer(data.length, data.length);
+            buf.writeBytes(data);
+            return buf;
+        }
+
+        @Override
+        public void writeStreaming(Channel channel, RequestState state) {
+        }
+    }
+
+    static final class StreamContent implements RequestContent {
+        final String contentType;
+        final InputStream in;
+
+        StreamContent(String contentType, InputStream in) {
+            this.contentType = contentType;
+            this.in = in;
+        }
+
+        @Override
+        public String contentType() {
+            return contentType;
+        }
+
+        @Override
+        public boolean streaming() {
+            return true;
+        }
+
+        @Override
+        public ByteBuf toFullContent(Channel channel) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void writeStreaming(Channel channel, RequestState state) throws Exception {
+            UploadWriter writer = new UploadWriter(channel, state);
+            byte[] buffer = new byte[Constants.HEAP_BUF_SIZE];
+            int read;
+            while ((read = in.read(buffer)) != Constants.IO_EOF) {
+                if (!channel.isActive()) {
+                    throw new IllegalStateException("Channel closed");
+                }
+                ByteBuf buf = channel.alloc().buffer(read, read);
+                buf.writeBytes(buffer, 0, read);
+                writer.write(buf, read);
+            }
+            writer.finish();
+        }
+    }
+
+    public static final class JsonContent extends BytesContent {
+        @Getter
+        final Object json;
+
+        JsonContent(Object json) {
+            super(JSON_TYPE, Sys.toJsonString(json).getBytes(StandardCharsets.UTF_8));
+            this.json = json;
+        }
+    }
+
+    public static final class FormContent extends BytesContent {
+        FormContent(Map<String, Object> forms) {
+            super(FORM_TYPE, formBytes(forms));
+        }
+
+        private static byte[] formBytes(Map<String, Object> forms) {
+            String formString = buildUrl(null, forms);
+            if (!Strings.isEmpty(formString)) {
+                formString = formString.substring(1);
+            }
+            return formString.getBytes(StandardCharsets.UTF_8);
+        }
+    }
+
+    public static final class MultipartContent implements RequestContent {
+        static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
+
+        final Map<String, Object> forms;
+        final Map<String, IOStream> files;
+        final String boundary;
+        final String contentType;
+
+        MultipartContent(Map<String, Object> forms, Map<String, IOStream> files) {
+            this.forms = forms != null ? forms : Collections.emptyMap();
+            this.files = files != null ? files : Collections.emptyMap();
+            boundary = "----RxNettyBoundary" + Long.toHexString(System.nanoTime()) + Long.toHexString(ThreadLocalRandom.current().nextLong());
+            contentType = "multipart/form-data; boundary=" + boundary;
+        }
+
+        @Override
+        public String contentType() {
+            return contentType;
+        }
+
+        @Override
+        public boolean streaming() {
+            return true;
+        }
+
+        @Override
+        public ByteBuf toFullContent(Channel channel) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void writeStreaming(Channel channel, RequestState state) throws Exception {
+            UploadWriter writer = new UploadWriter(channel, state);
+            for (Map.Entry<String, Object> entry : forms.entrySet()) {
+                Object value = entry.getValue();
+                if (value == null) {
+                    continue;
+                }
+                writeAscii(writer, partPrefix(entry.getKey(), null, null));
+                writeAscii(writer, value.toString());
+                writeBytes(writer, CRLF);
+            }
+            for (Map.Entry<String, IOStream> entry : files.entrySet()) {
+                IOStream stream = entry.getValue();
+                if (stream == null) {
+                    continue;
+                }
+                String fileName = Strings.isEmpty(stream.getName()) ? entry.getKey() : stream.getName();
+                writeAscii(writer, partPrefix(entry.getKey(), fileName, Files.getMediaTypeFromName(fileName)));
+                writeStream(writer, stream.rewind().getReader());
+                writeBytes(writer, CRLF);
+            }
+            writeAscii(writer, "--" + boundary + "--\r\n");
+            writer.finish();
+        }
+
+        private String partPrefix(String name, String fileName, String mediaType) {
+            StringBuilder sb = new StringBuilder(128);
+            sb.append("--").append(boundary).append("\r\n");
+            sb.append("Content-Disposition: form-data; name=\"").append(escapeHeader(name)).append("\"");
+            if (fileName != null) {
+                sb.append("; filename=\"").append(escapeHeader(fileName)).append("\"");
+            }
+            sb.append("\r\n");
+            if (mediaType != null) {
+                sb.append("Content-Type: ").append(mediaType).append("\r\n");
+            }
+            sb.append("\r\n");
+            return sb.toString();
+        }
+
+        private String escapeHeader(String value) {
+            return value == null ? Strings.EMPTY : value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", Strings.EMPTY).replace("\n", Strings.EMPTY);
+        }
+
+        private void writeAscii(UploadWriter writer, String value) throws Exception {
+            writeBytes(writer, value.getBytes(StandardCharsets.UTF_8));
+        }
+
+        private void writeBytes(UploadWriter writer, byte[] bytes) throws Exception {
+            ByteBuf buf = writer.channel.alloc().buffer(bytes.length, bytes.length);
+            buf.writeBytes(bytes);
+            writer.write(buf, bytes.length);
+        }
+
+        private void writeStream(UploadWriter writer, InputStream in) throws Exception {
+            byte[] buffer = new byte[Constants.HEAP_BUF_SIZE];
+            int read;
+            while ((read = in.read(buffer)) != Constants.IO_EOF) {
+                if (!writer.channel.isActive()) {
+                    throw new IllegalStateException("Channel closed");
+                }
+                ByteBuf buf = writer.channel.alloc().buffer(read, read);
+                buf.writeBytes(buffer, 0, read);
+                writer.write(buf, read);
+            }
+        }
+
+        @Override
+        public void close() {
+            tryClose(files.values());
+        }
+    }
+
+    static final class UploadWriter {
+        final Channel channel;
+        final RequestState state;
+        int pendingBytes;
+        int pendingChunks;
+        ChannelFuture lastFuture;
+
+        UploadWriter(Channel channel, RequestState state) {
+            this.channel = channel;
+            this.state = state;
+        }
+
+        void write(ByteBuf buf, int bytes) throws Exception {
+            if (!channel.isActive()) {
+                ReferenceCountUtil.release(buf);
+                throw new IllegalStateException("Channel closed");
+            }
+            try {
+                lastFuture = channel.write(new DefaultHttpContent(buf));
+            } catch (Throwable e) {
+                ReferenceCountUtil.release(buf);
+                throw e;
+            }
+            state.metrics.uploadBytes.addAndGet(bytes);
+            pendingBytes += bytes;
+            pendingChunks++;
+            if (pendingBytes >= UPLOAD_FLUSH_BYTES || pendingChunks >= UPLOAD_FLUSH_CHUNKS || !channel.isWritable()) {
+                flush();
+            }
+        }
+
+        void flush() throws Exception {
+            if (pendingChunks == 0) {
                 return;
             }
-            for (String raw : setCookies) {
-                Cookie cookie = ClientCookieDecoder.STRICT.decode(raw);
-                if (cookie == null) {
-                    continue;
-                }
-                HttpClientCookie c = new HttpClientCookie(cookie, uri, now);
-                cookies.remove(c);
-                if (!c.expired(now)) {
-                    cookies.add(c);
-                }
-            }
+            channel.flush();
+            awaitWrite(lastFuture, state.readWriteTimeoutMillis);
+            pendingBytes = 0;
+            pendingChunks = 0;
         }
 
-        public void clearSession() {
-            cookies.removeIf(p -> p.expiresAt == NO_EXPIRES);
-        }
-
-        public void clear() {
-            cookies.clear();
+        void finish() throws Exception {
+            ChannelFuture future = channel.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+            pendingBytes = 0;
+            pendingChunks = 0;
+            awaitWrite(future, state.readWriteTimeoutMillis);
         }
     }
 
@@ -568,34 +617,57 @@ public class HttpClientV2 implements AutoCloseable {
         final String scheme;
         final String host;
         final int port;
+
         final Proxy.Type proxyType;
-        final String proxyAddress;
+        final SocketAddress proxyAddress;
+        final String proxyUsername;
+        final String proxyPassword;
 
         PoolKey(URI uri, Proxy proxy) {
             scheme = uri.getScheme().toLowerCase(Locale.ENGLISH);
-            host = uri.getHost();
-            port = effectivePort(uri);
+            host = uri.getHost().toLowerCase(Locale.ENGLISH);
+            int p = uri.getPort();
+            port = p > 0 ? p : (isHttps() ? 443 : 80);
             if (proxy == null || proxy.type() == Proxy.Type.DIRECT) {
                 proxyType = Proxy.Type.DIRECT;
-                proxyAddress = Strings.EMPTY;
+                proxyAddress = null;
+                proxyUsername = null;
+                proxyPassword = null;
             } else {
                 proxyType = proxy.type();
-                proxyAddress = String.valueOf(proxy.address());
+                proxyAddress = proxy.address();
+                if (proxy instanceof AuthenticProxy) {
+                    proxyUsername = ((AuthenticProxy) proxy).getUsername();
+                    proxyPassword = ((AuthenticProxy) proxy).getPassword();
+                } else {
+                    proxyUsername = null;
+                    proxyPassword = null;
+                }
             }
         }
 
-        boolean https() {
-            return "https".equalsIgnoreCase(scheme);
+        boolean isHttps() {
+            return "https".equals(scheme);
+        }
+
+        InetSocketAddress unresolvedAddress() {
+            return InetSocketAddress.createUnresolved(host, port);
         }
 
         @Override
         public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
             if (!(o instanceof PoolKey)) {
                 return false;
             }
-            PoolKey that = (PoolKey) o;
-            return port == that.port && scheme.equals(that.scheme) && host.equals(that.host)
-                    && proxyType == that.proxyType && proxyAddress.equals(that.proxyAddress);
+            PoolKey poolKey = (PoolKey) o;
+            return port == poolKey.port && scheme.equals(poolKey.scheme) && host.equals(poolKey.host)
+                    && proxyType == poolKey.proxyType
+                    && Objects.equals(proxyAddress, poolKey.proxyAddress)
+                    && Objects.equals(proxyUsername, poolKey.proxyUsername)
+                    && Objects.equals(proxyPassword, poolKey.proxyPassword);
         }
 
         @Override
@@ -604,65 +676,54 @@ public class HttpClientV2 implements AutoCloseable {
             result = 31 * result + host.hashCode();
             result = 31 * result + port;
             result = 31 * result + proxyType.hashCode();
-            result = 31 * result + proxyAddress.hashCode();
+            result = 31 * result + (proxyAddress != null ? proxyAddress.hashCode() : 0);
+            result = 31 * result + (proxyUsername != null ? proxyUsername.hashCode() : 0);
+            result = 31 * result + (proxyPassword != null ? proxyPassword.hashCode() : 0);
             return result;
         }
     }
 
-    static final class Exchange {
+    static final class RequestState {
+        final URI uri;
+        final PoolKey key;
         final FixedChannelPool pool;
-        final Channel channel;
-        final Request request;
-        final CompletableFuture<Response> future;
+        final CompletableFuture<ResponseContent> future;
+        final int readWriteTimeoutMillis;
+        final HttpHeaders requestHeaders;
+        final RequestContent content;
         final Metrics metrics;
         final long startNanos;
-        final HybridStream stream = new HybridStream(Constants.MAX_HEAP_BUF_SIZE, false);
-        final HttpHeaders responseHeaders = new DefaultHttpHeaders(false);
-        HttpResponseStatus status;
-        boolean keepAlive = true;
+        final boolean cookieEnabled;
+        final boolean logEnabled;
+        final AtomicBoolean completed = new AtomicBoolean();
+        final AtomicBoolean contentClosed = new AtomicBoolean();
+        final Object responseWriteLock = new Object();
+        CompletableFuture<Void> responseWriteTail = CompletableFuture.completedFuture(null);
+        HttpResponse response;
+        HybridStream stream;
         ScheduledFuture<?> timeoutFuture;
-        boolean done;
+        long responseBytes;
+        boolean responseOffloaded;
 
-        Exchange(FixedChannelPool pool, Channel channel, Request request, CompletableFuture<Response> future, Metrics metrics, long startNanos) {
+        RequestState(URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<ResponseContent> future, int readWriteTimeoutMillis,
+                     HttpHeaders requestHeaders, RequestContent content, Metrics metrics, long startNanos, boolean cookieEnabled, boolean logEnabled) {
+            this.uri = uri;
+            this.key = key;
             this.pool = pool;
-            this.channel = channel;
-            this.request = request;
             this.future = future;
+            this.readWriteTimeoutMillis = readWriteTimeoutMillis;
+            this.requestHeaders = requestHeaders;
+            this.content = content;
             this.metrics = metrics;
             this.startNanos = startNanos;
+            this.cookieEnabled = cookieEnabled;
+            this.logEnabled = logEnabled;
         }
 
-        void complete() {
-            if (done) {
-                return;
+        void closeContent() {
+            if (contentClosed.compareAndSet(false, true)) {
+                tryClose(content);
             }
-            done = true;
-            cancelTimeout();
-            long elapsed = System.nanoTime() - startNanos;
-            metrics.success.incrementAndGet();
-            metrics.recordLatency(elapsed);
-            Response response = new Response(request.url, ifNull(status, HttpResponseStatus.OK),
-                    new DefaultHttpHeaders(false).set(responseHeaders), stream, elapsed);
-            future.complete(response);
-            releaseOrClose();
-        }
-
-        void fail(Throwable e) {
-            if (done) {
-                return;
-            }
-            done = true;
-            cancelTimeout();
-            metrics.failed.incrementAndGet();
-            tryClose(stream);
-            future.completeExceptionally(e);
-            channel.attr(EXCHANGE).set(null);
-            channel.close();
-        }
-
-        void timeout(int timeoutMillis) {
-            metrics.timeout.incrementAndGet();
-            fail(new TimeoutException("HTTP request timeout " + timeoutMillis + "ms: " + request.url));
         }
 
         void cancelTimeout() {
@@ -671,393 +732,693 @@ public class HttpClientV2 implements AutoCloseable {
             }
         }
 
-        void releaseOrClose() {
-            channel.attr(EXCHANGE).set(null);
-            if (keepAlive && channel.isActive()) {
-                pool.release(channel);
-            } else {
-                channel.close();
+        CompletableFuture<Void> appendResponseContent(ByteBuf src, int readableBytes) {
+            ByteBuf retained = src.retainedSlice(src.readerIndex(), readableBytes);
+            synchronized (responseWriteLock) {
+                responseWriteTail = responseWriteTail.thenRunAsync(() -> {
+                    try {
+                        stream.write(retained, retained.readableBytes());
+                        metrics.downloadBytes.addAndGet(readableBytes);
+                    } finally {
+                        ReferenceCountUtil.release(retained);
+                    }
+                }, Tasks.executor());
+                return responseWriteTail;
+            }
+        }
+
+        CompletableFuture<Void> responseWriteTail() {
+            synchronized (responseWriteLock) {
+                return responseWriteTail;
             }
         }
     }
 
-    final Map<PoolKey, FixedChannelPool> pools = new ConcurrentHashMap<>();
-    final HttpHeaders defaultHeaders = new DefaultHttpHeaders(false);
-    final HttpClientCookieJar cookieJar = new HttpClientCookieJar();
-    final Metrics metrics = new Metrics();
-    int connectTimeoutMillis;
-    int readWriteTimeoutMillis;
-    int maxConnectionsPerHost;
-    int maxPendingAcquires;
-    boolean enableCookie;
-    Proxy proxy;
-    volatile SslContext sslContext;
+    final class ClientInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) {
+            RequestState state = ctx.channel().attr(STATE_KEY).get();
+            if (state == null) {
+                return;
+            }
 
-    public HttpClientV2() {
-        RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
-        connectTimeoutMillis = conf.getConnectTimeoutMillis();
-        readWriteTimeoutMillis = conf.getReadWriteTimeoutMillis();
-        maxConnectionsPerHost = Math.max(1, conf.getPoolMaxSize());
-        maxPendingAcquires = Math.max(16, maxConnectionsPerHost * 4);
+            if (msg instanceof HttpResponse) {
+                state.response = (HttpResponse) msg;
+                Long len = parseLong(state.response.headers().get(HttpHeaderNames.CONTENT_LENGTH));
+                state.stream = new HybridStream(len != null && len > Constants.MAX_HEAP_BUF_SIZE ? HybridStream.NON_MEMORY_SIZE : Constants.MAX_HEAP_BUF_SIZE, false);
+            }
+
+            if (msg instanceof HttpContent) {
+                HttpContent content = (HttpContent) msg;
+                if (state.stream == null) {
+                    state.stream = new HybridStream(Constants.MAX_HEAP_BUF_SIZE, false);
+                }
+                int readableBytes = content.content().readableBytes();
+                if (readableBytes > 0) {
+                    boolean offload = state.responseOffloaded || state.responseBytes + readableBytes > RESPONSE_OFFLOAD_THRESHOLD;
+                    state.responseBytes += readableBytes;
+                    if (offload) {
+                        state.responseOffloaded = true;
+                        ctx.channel().config().setAutoRead(false);
+                        CompletableFuture<Void> writeFuture = state.appendResponseContent(content.content(), readableBytes);
+                        boolean last = msg instanceof LastHttpContent;
+                        writeFuture.whenComplete((v, e) -> ctx.channel().eventLoop().execute(() -> {
+                            if (e != null) {
+                                fail(ctx.channel(), e);
+                                return;
+                            }
+                            if (last) {
+                                complete(ctx.channel(), state);
+                                return;
+                            }
+                            if (!state.completed.get() && ctx.channel().isActive()) {
+                                ctx.channel().config().setAutoRead(true);
+                                ctx.channel().read();
+                            }
+                        }));
+                        return;
+                    }
+                    state.stream.write(content.content(), readableBytes);
+                    state.metrics.downloadBytes.addAndGet(readableBytes);
+                }
+                if (msg instanceof LastHttpContent) {
+                    completeAfterWrites(ctx.channel(), state);
+                }
+            }
+        }
+
+        private void completeAfterWrites(Channel channel, RequestState state) {
+            CompletableFuture<Void> writeTail = state.responseWriteTail();
+            if (writeTail.isDone()) {
+                if (writeTail.isCompletedExceptionally()) {
+                    writeTail.whenComplete((v, e) -> fail(channel, e));
+                } else {
+                    complete(channel, state);
+                }
+                return;
+            }
+            writeTail.whenComplete((v, e) -> channel.eventLoop().execute(() -> {
+                if (e != null) {
+                    fail(channel, e);
+                } else {
+                    complete(channel, state);
+                }
+            }));
+        }
+
+        private Long parseLong(String value) {
+            if (Strings.isEmpty(value)) {
+                return null;
+            }
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+
+        private void complete(Channel channel, RequestState state) {
+            if (!state.completed.compareAndSet(false, true)) {
+                return;
+            }
+            channel.attr(STATE_KEY).set(null);
+            state.cancelTimeout();
+            state.closeContent();
+            HttpResponse response = state.response;
+            boolean keepAlive = response != null && HttpUtil.isKeepAlive(response) && channel.isActive();
+            long elapsedNanos = System.nanoTime() - state.startNanos;
+            ResponseContent content = new ResponseContent(state.uri.toString(), response, state.stream, elapsedNanos);
+            state.metrics.success.incrementAndGet();
+            state.metrics.recordLatency(elapsedNanos);
+            if (channel.isActive()) {
+                channel.config().setAutoRead(true);
+            }
+            release(channel, state, keepAlive);
+            if (state.cookieEnabled) {
+                Tasks.run(() -> completeFuture(state, content));
+            } else {
+                completeFuture(state, content);
+            }
+        }
+
+        private void completeFuture(RequestState state, ResponseContent content) {
+            if (state.cookieEnabled) {
+                cookieJar.saveFromResponse(state.uri, content.headers.getAll(HttpHeaderNames.SET_COOKIE));
+            }
+            if (state.logEnabled) {
+                log.info("{} -> {}", state.uri, content.getStatusCode());
+            }
+            state.future.complete(content);
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) {
+            fail(ctx.channel(), new IllegalStateException("HTTP channel closed"));
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            fail(ctx.channel(), cause);
+        }
     }
 
-    public static Request request(HttpMethod method, String url) {
-        return new Request(method, url);
+    @Getter
+    public static class Response implements AutoCloseable {
+        final String responseUrl;
+        final String requestUrl;
+        @JSONField(serialize = false)
+        final HttpResponse response;
+        final HttpResponseStatus status;
+        final int statusCode;
+        final HttpHeaders headers;
+        final HybridStream stream;
+        final long elapsedNanos;
+        String str;
+        File file;
+
+        Response(String responseUrl, HttpResponse response, HybridStream stream, long elapsedNanos) {
+            this.responseUrl = responseUrl;
+            this.requestUrl = responseUrl;
+            this.response = response;
+            status = response != null ? response.status() : HttpResponseStatus.OK;
+            statusCode = status.code();
+            headers = new DefaultHttpHeaders(false);
+            if (response != null) {
+                headers.set(response.headers());
+            }
+            this.stream = stream != null ? stream.rewind() : new HybridStream(Constants.MAX_HEAP_BUF_SIZE, false);
+            this.elapsedNanos = elapsedNanos;
+        }
+
+        public HttpHeaders responseHeaders() {
+            return headers;
+        }
+
+        @JSONField(serialize = false)
+        public Charset getCharset() {
+            String contentType = headers.get(HttpHeaderNames.CONTENT_TYPE);
+            if (Strings.isEmpty(contentType)) {
+                return StandardCharsets.UTF_8;
+            }
+            String[] parts = contentType.split(";");
+            for (String part : parts) {
+                String p = part.trim();
+                if (Strings.startsWithIgnoreCase(p, "charset=")) {
+                    try {
+                        return Charset.forName(p.substring("charset=".length()));
+                    } catch (Exception e) {
+                        return StandardCharsets.UTF_8;
+                    }
+                }
+            }
+            return StandardCharsets.UTF_8;
+        }
+
+        public synchronized InputStream responseStream() {
+            return stream.rewind().getReader();
+        }
+
+        public synchronized HybridStream toStream() {
+            return stream.rewind();
+        }
+
+        @SneakyThrows
+        public synchronized File toFile(String filePath) {
+            if (file == null) {
+                Files.saveFile(filePath, stream.rewind().getReader());
+                file = new File(filePath);
+            }
+            return file;
+        }
+
+        public <T extends Serializable> T toJson() {
+            return (T) JSON.parse(toString());
+        }
+
+        @SneakyThrows
+        public synchronized <T> T handle(BiFunc<InputStream, T> fn) {
+            return fn.invoke(stream.rewind().getReader());
+        }
+
+        @Override
+        public synchronized String toString() {
+            if (str == null) {
+                str = IOStream.readString(stream.rewind().getReader(), getCharset());
+            }
+            return str;
+        }
+
+        @Override
+        public void close() {
+            tryClose(stream);
+        }
     }
 
-    public Metrics metrics() {
-        return metrics;
+    public static final class ResponseContent extends Response {
+        ResponseContent(String responseUrl, HttpResponse response, HybridStream stream, long elapsedNanos) {
+            super(responseUrl, response, stream, elapsedNanos);
+        }
+
+        public String getResponseText() {
+            return toString();
+        }
+
+        @SneakyThrows
+        public synchronized <T> T handle(BiFunc<InputStream, T> fn) {
+            return fn.invoke(stream.rewind().getReader());
+        }
     }
 
-    public HttpClientCookieJar cookieJar() {
-        return cookieJar;
+    public ResponseContent head(@NonNull String url) {
+        return invoke(url, HttpMethod.HEAD, EmptyContent.INSTANCE);
     }
 
-    public HttpHeaders requestHeaders() {
-        return defaultHeaders;
+    public ResponseContent get(@NonNull String url) {
+        return invoke(url, HttpMethod.GET, EmptyContent.INSTANCE);
     }
 
-    public HttpClientV2 withTimeoutMillis(int timeoutMillis) {
-        return withTimeoutMillis(timeoutMillis, timeoutMillis);
-    }
-
-    public HttpClientV2 withTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
-        this.connectTimeoutMillis = connectTimeoutMillis;
-        this.readWriteTimeoutMillis = readWriteTimeoutMillis;
-        return this;
-    }
-
-    public HttpClientV2 withMaxConnectionsPerHost(int maxConnectionsPerHost) {
-        this.maxConnectionsPerHost = Math.max(1, maxConnectionsPerHost);
-        return this;
-    }
-
-    public HttpClientV2 withProxy(Proxy proxy) {
-        this.proxy = proxy;
-        return this;
-    }
-
-    public HttpClientV2 withCookies(boolean enableCookie) {
-        this.enableCookie = enableCookie;
-        return this;
-    }
-
-    public HttpClientV2 withUserAgent() {
-        defaultHeaders.set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
-        return this;
-    }
-
-    public Response head(@NonNull String url) {
-        return execute(request(HttpMethod.HEAD, url));
-    }
-
-    public Response get(@NonNull String url) {
-        return execute(request(HttpMethod.GET, url));
-    }
-
-    public Response post(@NonNull String url, Map<String, Object> forms) {
+    public ResponseContent post(String url, Map<String, Object> forms) {
         return post(url, forms, Collections.emptyMap());
     }
 
-    public Response post(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
-        HttpClientBody body = MapUtils.isEmpty(files) ? HttpClientBody.form(forms) : HttpClientBody.multipart(forms, files);
-        return execute(request(HttpMethod.POST, url).body(body));
+    public ResponseContent post(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
+        if (MapUtils.isEmpty(files)) {
+            return invoke(url, HttpMethod.POST, new FormContent(forms));
+        }
+        return invoke(url, HttpMethod.POST, new MultipartContent(forms, files));
     }
 
-    public Response postJson(@NonNull String url, @NonNull Object json) {
-        return execute(request(HttpMethod.POST, url).body(HttpClientBody.json(json)));
+    public ResponseContent postJson(@NonNull String url, @NonNull Object json) {
+        return invoke(url, HttpMethod.POST, new JsonContent(json));
     }
 
-    public Response put(@NonNull String url, Map<String, Object> forms) {
-        return execute(request(HttpMethod.PUT, url).body(HttpClientBody.form(forms)));
+    public ResponseContent put(String url, Map<String, Object> forms) {
+        return put(url, forms, Collections.emptyMap());
     }
 
-    public Response putJson(@NonNull String url, @NonNull Object json) {
-        return execute(request(HttpMethod.PUT, url).body(HttpClientBody.json(json)));
+    public ResponseContent put(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
+        if (MapUtils.isEmpty(files)) {
+            return invoke(url, HttpMethod.PUT, new FormContent(forms));
+        }
+        return invoke(url, HttpMethod.PUT, new MultipartContent(forms, files));
     }
 
-    public Response patch(@NonNull String url, Map<String, Object> forms) {
-        return execute(request(HttpMethod.PATCH, url).body(HttpClientBody.form(forms)));
+    public ResponseContent putJson(@NonNull String url, @NonNull Object json) {
+        return invoke(url, HttpMethod.PUT, new JsonContent(json));
     }
 
-    public Response patchJson(@NonNull String url, @NonNull Object json) {
-        return execute(request(HttpMethod.PATCH, url).body(HttpClientBody.json(json)));
+    public ResponseContent patch(String url, Map<String, Object> forms) {
+        return patch(url, forms, Collections.emptyMap());
     }
 
-    public Response delete(@NonNull String url, Map<String, Object> forms) {
-        return execute(request(HttpMethod.DELETE, url).body(HttpClientBody.form(forms)));
+    public ResponseContent patch(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
+        if (MapUtils.isEmpty(files)) {
+            return invoke(url, HttpMethod.PATCH, new FormContent(forms));
+        }
+        return invoke(url, HttpMethod.PATCH, new MultipartContent(forms, files));
     }
 
-    public Response deleteJson(@NonNull String url, @NonNull Object json) {
-        return execute(request(HttpMethod.DELETE, url).body(HttpClientBody.json(json)));
+    public ResponseContent patchJson(@NonNull String url, @NonNull Object json) {
+        return invoke(url, HttpMethod.PATCH, new JsonContent(json));
+    }
+
+    public ResponseContent delete(String url, Map<String, Object> forms) {
+        return delete(url, forms, Collections.emptyMap());
+    }
+
+    public ResponseContent delete(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
+        if (MapUtils.isEmpty(files)) {
+            return invoke(url, HttpMethod.DELETE, new FormContent(forms));
+        }
+        return invoke(url, HttpMethod.DELETE, new MultipartContent(forms, files));
+    }
+
+    public ResponseContent deleteJson(@NonNull String url, @NonNull Object json) {
+        return invoke(url, HttpMethod.DELETE, new JsonContent(json));
     }
 
     @SneakyThrows
-    public Response execute(Request request) {
-        return executeAsync(request).get();
+    public ResponseContent execute(Request request) {
+        ensureBlockingCallAllowed();
+        CompletableFuture<ResponseContent> future = executeAsync(request);
+        try {
+            return future.get(callTimeoutMillis(request != null ? request.timeoutMillis : 0), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw e;
+        }
     }
 
-    public CompletableFuture<Response> executeAsync(Request request) {
+    public CompletableFuture<ResponseContent> executeAsync(Request request) {
+        if (request == null) {
+            CompletableFuture<ResponseContent> future = new CompletableFuture<>();
+            future.completeExceptionally(new IllegalArgumentException("request is null"));
+            return future;
+        }
+        HttpHeaders headers = requestHeadersSnapshot();
+        headers.set(request.headers);
+        Proxy requestProxy = request.proxy != null ? request.proxy : proxy;
+        boolean requestCookie = request.enableCookie != null ? request.enableCookie : enableCookie;
+        return invokeAsync(request.url, request.method, request.body, headers, requestProxy, requestCookie, request.timeoutMillis);
+    }
+
+    public Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
+        return forward(servletRequest, servletResponse, forwardUrl, null);
+    }
+
+    @SneakyThrows
+    public Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl,
+                                                          BiFunc<RequestContent, RequestContent> requestInterceptor) {
+        HttpHeaders headers = new DefaultHttpHeaders();
+        for (String name : Collections.list(servletRequest.getHeaderNames())) {
+            if (Strings.equalsIgnoreCase(name, HttpHeaderNames.HOST)
+                    || Strings.equalsIgnoreCase(name, HttpHeaderNames.CONTENT_LENGTH)
+                    || Strings.equalsIgnoreCase(name, HttpHeaderNames.TRANSFER_ENCODING)) {
+                continue;
+            }
+            headers.set(name, servletRequest.getHeader(name));
+        }
+
+        String query = servletRequest.getQueryString();
+        if (!Strings.isEmpty(query)) {
+            forwardUrl += (forwardUrl.lastIndexOf("?") == -1 ? "?" : "&") + query;
+        }
+
+        HttpMethod method = HttpMethod.valueOf(servletRequest.getMethod());
+        RequestContent content;
+        if (HttpMethod.GET.equals(method) || HttpMethod.HEAD.equals(method)) {
+            content = EmptyContent.INSTANCE;
+        } else {
+            content = new StreamContent(servletRequest.getContentType(), servletRequest.getInputStream());
+        }
+        if (requestInterceptor != null) {
+            RequestContent intercepted = requestInterceptor.invoke(content);
+            if (intercepted != null) {
+                content = intercepted;
+            }
+        }
+
+        ResponseContent response = invoke(forwardUrl, method, content, headers);
+        servletResponse.setStatus(response.getStatusCode());
+        for (Map.Entry<String, String> header : response.responseHeaders()) {
+            if (Strings.equalsIgnoreCase(header.getKey(), HttpHeaderNames.SET_COOKIE)) {
+                servletResponse.addHeader(header.getKey(), header.getValue());
+            } else {
+                servletResponse.setHeader(header.getKey(), header.getValue());
+            }
+        }
+        Long length = responseLength(response);
+        if (length != null && length <= Integer.MAX_VALUE) {
+            servletResponse.setContentLength(length.intValue());
+        }
+        String contentType = response.responseHeaders().get(HttpHeaderNames.CONTENT_TYPE);
+        if (!Strings.isEmpty(contentType)) {
+            servletResponse.setContentType(contentType);
+        }
+        ServletOutputStream out = servletResponse.getOutputStream();
+        IOStream.copy(response.responseStream(), IOStream.NON_READ_FULLY, out);
+        return Tuple.of(content, response);
+    }
+
+    private Long responseLength(ResponseContent response) {
+        String value = response.responseHeaders().get(HttpHeaderNames.CONTENT_LENGTH);
+        if (!Strings.isEmpty(value)) {
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        try {
+            return response.stream.getLength();
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    @SneakyThrows
+    ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
+        return invoke(url, method, content, requestHeadersSnapshot());
+    }
+
+    @SneakyThrows
+    ResponseContent invoke(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders) {
+        ensureBlockingCallAllowed();
+        CompletableFuture<ResponseContent> future = invokeAsync(url, method, content, requestHeaders, proxy, enableCookie, 0);
+        try {
+            return future.get(callTimeoutMillis(0), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw e;
+        }
+    }
+
+    CompletableFuture<ResponseContent> invokeAsync(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
+                                                   Proxy requestProxy, boolean cookieEnabled, int timeoutMillis) {
         metrics.requests.incrementAndGet();
-        CompletableFuture<Response> future = new CompletableFuture<>();
+        CompletableFuture<ResponseContent> future = new CompletableFuture<>();
         URI uri;
         try {
-            uri = URI.create(request.url);
-            validateUri(uri);
+            uri = URI.create(url);
+            if (Strings.isEmpty(uri.getScheme()) || Strings.isEmpty(uri.getHost())) {
+                throw new IllegalArgumentException("Invalid http url " + url);
+            }
         } catch (Throwable e) {
             metrics.failed.incrementAndGet();
             future.completeExceptionally(e);
+            tryClose(content);
             return future;
         }
-
-        Proxy requestProxy = request.proxy != null ? request.proxy : proxy;
         PoolKey key = new PoolKey(uri, requestProxy);
-        FixedChannelPool pool = pool(key, requestProxy);
+        FixedChannelPool pool = pools.computeIfAbsent(key, this::newPool);
+        AtomicReference<Channel> acquiredChannel = new AtomicReference<>();
         long startNanos = System.nanoTime();
-        io.netty.util.concurrent.Future<Channel> acquireFuture = pool.acquire();
-        acquireFuture.addListener(f -> {
+        int requestTimeout = timeoutMillis > 0 ? timeoutMillis : readWriteTimeoutMillis;
+
+        pool.acquire().addListener((io.netty.util.concurrent.Future<Channel> f) -> {
             if (!f.isSuccess()) {
                 metrics.failed.incrementAndGet();
                 future.completeExceptionally(f.cause());
+                tryClose(content);
                 return;
             }
-            Channel channel = ((io.netty.util.concurrent.Future<Channel>) f).getNow();
-            channel.eventLoop().execute(() -> send(pool, channel, uri, request, future, startNanos));
+            Channel channel = f.getNow();
+            acquiredChannel.set(channel);
+            if (future.isDone()) {
+                release(channel, pool, true);
+                return;
+            }
+            RequestState state = new RequestState(uri, key, pool, future, requestTimeout, requestHeaders, content,
+                    metrics, startNanos, cookieEnabled, enableLog);
+            channel.attr(STATE_KEY).set(state);
+            state.timeoutFuture = channel.eventLoop().schedule(() -> {
+                metrics.timeout.incrementAndGet();
+                fail(channel, new TimeoutException("HTTP request timeout " + requestTimeout + "ms: " + url));
+            }, requestTimeout, TimeUnit.MILLISECONDS);
+            try {
+                writeRequest(channel, uri, method, content, state);
+            } catch (Throwable e) {
+                fail(channel, e);
+            }
+        });
+
+        future.whenComplete((r, e) -> {
+            if (!future.isCancelled()) {
+                return;
+            }
+            Channel channel = acquiredChannel.get();
+            if (channel != null) {
+                fail(channel, new TimeoutException("HTTP request cancelled: " + url));
+            }
         });
         return future;
     }
 
-    FixedChannelPool pool(PoolKey key, Proxy requestProxy) {
-        return pools.computeIfAbsent(key, k -> {
-            SocketConfig config = new SocketConfig();
-            config.setConnectTimeoutMillis(connectTimeoutMillis);
-            Bootstrap bootstrap = Sockets.bootstrap(config, ch -> {
-            });
-            bootstrap.remoteAddress(k.host, k.port);
-            return new FixedChannelPool(bootstrap, new PoolHandler(k, requestProxy), maxConnectionsPerHost, maxPendingAcquires);
-        });
-    }
-
-    void send(FixedChannelPool pool, Channel channel, URI uri, Request request, CompletableFuture<Response> future, long startNanos) {
-        Exchange old = channel.attr(EXCHANGE).get();
-        if (old != null) {
-            old.fail(new IllegalStateException("Channel already has active HTTP exchange"));
-        }
-        Exchange exchange = new Exchange(pool, channel, request, future, metrics, startNanos);
-        channel.attr(EXCHANGE).set(exchange);
-        int timeoutMillis = request.timeoutMillis > 0 ? request.timeoutMillis : readWriteTimeoutMillis;
-        exchange.timeoutFuture = channel.eventLoop().schedule(() -> exchange.timeout(timeoutMillis), timeoutMillis, TimeUnit.MILLISECONDS);
-        try {
-            writeRequest(channel, uri, request, exchange);
-        } catch (Throwable e) {
-            exchange.fail(e);
+    private void ensureBlockingCallAllowed() {
+        Thread current = Thread.currentThread();
+        for (EventExecutor executor : Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true)) {
+            if (executor.inEventLoop(current)) {
+                throw new IllegalStateException("HttpClientV2 sync API cannot be called from Netty EventLoop; use executeAsync instead");
+            }
         }
     }
 
-    void writeRequest(Channel channel, URI uri, Request request, Exchange exchange) throws Exception {
-        HttpClientBody body = ifNull(request.body, HttpClientBody.EMPTY);
-        boolean hasBody = body.hasContent() || HttpMethod.POST.equals(request.method) || HttpMethod.PUT.equals(request.method)
-                || HttpMethod.PATCH.equals(request.method) || HttpMethod.DELETE.equals(request.method);
+    private int callTimeoutMillis(int requestTimeoutMillis) {
+        int rw = requestTimeoutMillis > 0 ? requestTimeoutMillis : readWriteTimeoutMillis;
+        return Math.max(connectTimeoutMillis + rw, rw + (rw >>> 1));
+    }
+
+    private FixedChannelPool newPool(PoolKey key) {
+        SocketConfig config = new SocketConfig();
+        config.setConnectTimeoutMillis(connectTimeoutMillis);
+        Bootstrap bootstrap = Sockets.bootstrap(config, key.unresolvedAddress(), null)
+                .remoteAddress(key.unresolvedAddress());
+        if (key.proxyType != Proxy.Type.DIRECT) {
+            // 保持目标地址 unresolved，让 HTTP CONNECT / SOCKS 交给代理端解析。
+            bootstrap.resolver(NoopAddressResolverGroup.INSTANCE);
+        }
+        return new FixedChannelPool(bootstrap, new AbstractChannelPoolHandler() {
+            @Override
+            public void channelCreated(Channel ch) throws Exception {
+                initChannel(ch, key);
+            }
+        }, ChannelHealthChecker.ACTIVE, FixedChannelPool.AcquireTimeoutAction.FAIL,
+                connectTimeoutMillis, maxConnectionsPerHost, maxPendingAcquires, true, true);
+    }
+
+    private void initChannel(Channel ch, PoolKey key) throws Exception {
+        ChannelPipeline p = ch.pipeline();
+        ProxyHandler proxyHandler = newProxyHandler(key);
+        if (proxyHandler != null) {
+            proxyHandler.setConnectTimeoutMillis(connectTimeoutMillis);
+            p.addLast(proxyHandler);
+        }
+        if (key.isHttps()) {
+            p.addLast(sslContext.newHandler(ch.alloc(), key.host, key.port));
+        }
+        p.addLast(new ReadTimeoutHandler(readWriteTimeoutMillis, TimeUnit.MILLISECONDS),
+                new WriteTimeoutHandler(readWriteTimeoutMillis, TimeUnit.MILLISECONDS),
+                new HttpClientCodec(),
+                new HttpContentDecompressor(),
+                new ChunkedWriteHandler(),
+                new ClientInboundHandler());
+    }
+
+    private ProxyHandler newProxyHandler(PoolKey key) {
+        if (key.proxyType == Proxy.Type.DIRECT) {
+            return null;
+        }
+        if (key.proxyAddress == null) {
+            throw new IllegalArgumentException("Proxy address is required");
+        }
+        boolean hasAuth = !Strings.isEmpty(key.proxyUsername);
+        if (key.proxyType == Proxy.Type.HTTP) {
+            return hasAuth ? new HttpProxyHandler(key.proxyAddress, key.proxyUsername, key.proxyPassword)
+                    : new HttpProxyHandler(key.proxyAddress);
+        }
+        if (key.proxyType == Proxy.Type.SOCKS) {
+            return hasAuth ? new Socks5ProxyHandler(key.proxyAddress, key.proxyUsername, key.proxyPassword)
+                    : new Socks5ProxyHandler(key.proxyAddress);
+        }
+        return null;
+    }
+
+    private void writeRequest(Channel channel, URI uri, HttpMethod method, RequestContent content, RequestState state) {
         String requestUri = requestUri(uri);
-        HttpHeaders headers = new DefaultHttpHeaders(false);
-        headers.set(defaultHeaders);
-        headers.set(request.headers);
-        headers.set(body.headers());
-        headers.set(HttpHeaderNames.HOST, hostHeader(uri));
-        headers.set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-        headers.set(HttpHeaderNames.ACCEPT_ENCODING, HttpHeaderValues.GZIP + "," + HttpHeaderValues.DEFLATE);
-        if (Boolean.TRUE.equals(request.enableCookie) || (request.enableCookie == null && enableCookie)) {
-            String cookie = cookieJar.load(uri);
+        HttpHeaders headers = new DefaultHttpHeaders();
+        headers.set(state.requestHeaders);
+        if (!headers.contains(HttpHeaderNames.HOST)) {
+            headers.set(HttpHeaderNames.HOST, hostHeader(uri, state.key));
+        }
+        if (!headers.contains(HttpHeaderNames.CONNECTION)) {
+            headers.set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+        }
+        if (!headers.contains(HttpHeaderNames.ACCEPT_ENCODING)) {
+            headers.set(HttpHeaderNames.ACCEPT_ENCODING, HttpHeaderValues.GZIP);
+        }
+        if (state.cookieEnabled) {
+            String cookie = cookieJar.loadForRequest(uri);
             if (!Strings.isEmpty(cookie)) {
-                headers.set(HttpHeaderNames.COOKIE, cookie);
+                headers.add(HttpHeaderNames.COOKIE, cookie);
             }
         }
+        String contentType = content.contentType();
+        if (!Strings.isEmpty(contentType)) {
+            headers.set(HttpHeaderNames.CONTENT_TYPE, contentType);
+        }
 
-        if (!hasBody) {
-            FullHttpRequest httpRequest = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, request.method, requestUri);
-            httpRequest.headers().set(headers);
-            ChannelFuture writeFuture = channel.writeAndFlush(httpRequest);
-            writeFuture.addListener(f -> {
+        if (!content.streaming()) {
+            ByteBuf body = content.toFullContent(channel);
+            DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, method, requestUri, body);
+            request.headers().set(headers);
+            HttpUtil.setContentLength(request, body.readableBytes());
+            state.metrics.uploadBytes.addAndGet(body.readableBytes());
+            channel.writeAndFlush(request).addListener(f -> {
+                state.closeContent();
                 if (!f.isSuccess()) {
-                    exchange.fail(f.cause());
+                    fail(channel, f.cause());
                 }
             });
             return;
         }
 
-        long contentLength = body.contentLength();
-        if (contentLength >= 0) {
-            headers.set(HttpHeaderNames.CONTENT_LENGTH, contentLength);
-        }
-        if (contentLength == 0) {
-            FullHttpRequest httpRequest = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, request.method, requestUri);
-            httpRequest.headers().set(headers);
-            ChannelFuture writeFuture = channel.writeAndFlush(httpRequest);
-            writeFuture.addListener(f -> {
-                tryClose(body);
-                if (!f.isSuccess()) {
-                    exchange.fail(f.cause());
-                }
-            });
-            return;
-        }
-
-        HttpRequest httpRequest = new DefaultHttpRequest(HttpVersion.HTTP_1_1, request.method, requestUri);
-        httpRequest.headers().set(headers);
-        if (contentLength < 0) {
-            HttpUtil.setTransferEncodingChunked(httpRequest, true);
-        }
-        channel.write(httpRequest);
-        InputStream in = body.openStream();
-        metrics.uploadBytes.addAndGet(Math.max(0L, contentLength));
-        ChannelFuture writeFuture = channel.writeAndFlush(new HttpChunkedInput(new ChunkedStream(in, BODY_CHUNK_SIZE)));
-        writeFuture.addListener(f -> {
-            tryClose(in);
-            tryClose(body);
+        DefaultHttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, method, requestUri);
+        request.headers().set(headers);
+        HttpUtil.setTransferEncodingChunked(request, true);
+        channel.writeAndFlush(request).addListener(f -> {
             if (!f.isSuccess()) {
-                exchange.fail(f.cause());
+                state.closeContent();
+                fail(channel, f.cause());
+                return;
             }
+            Tasks.run(() -> {
+                try {
+                    content.writeStreaming(channel, state);
+                } catch (Throwable e) {
+                    fail(channel, e);
+                } finally {
+                    state.closeContent();
+                }
+            });
         });
     }
 
-    static void validateUri(URI uri) {
-        if (Strings.isEmpty(uri.getScheme()) || Strings.isEmpty(uri.getHost())) {
-            throw new InvalidException("Invalid http url {}", uri);
+    private String requestUri(URI uri) {
+        String rawPath = uri.getRawPath();
+        if (Strings.isEmpty(rawPath)) {
+            rawPath = "/";
         }
-        if (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme())) {
-            throw new InvalidException("Unsupported http scheme {}", uri.getScheme());
-        }
+        String rawQuery = uri.getRawQuery();
+        return Strings.isEmpty(rawQuery) ? rawPath : rawPath + "?" + rawQuery;
     }
 
-    static int effectivePort(URI uri) {
-        if (uri.getPort() > 0) {
-            return uri.getPort();
-        }
-        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
-    }
-
-    static String requestUri(URI uri) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(Strings.isEmpty(uri.getRawPath()) ? "/" : uri.getRawPath());
-        if (!Strings.isEmpty(uri.getRawQuery())) {
-            sb.append('?').append(uri.getRawQuery());
-        }
-        return sb.toString();
-    }
-
-    static String hostHeader(URI uri) {
-        int port = effectivePort(uri);
-        if (("http".equalsIgnoreCase(uri.getScheme()) && port == 80)
-                || ("https".equalsIgnoreCase(uri.getScheme()) && port == 443)) {
+    private String hostHeader(URI uri, PoolKey key) {
+        int port = key.port;
+        if (("http".equals(key.scheme) && port == 80) || ("https".equals(key.scheme) && port == 443)) {
             return uri.getHost();
         }
         return uri.getHost() + ":" + port;
     }
 
-    @SneakyThrows
-    SslContext sslContext() {
-        SslContext ctx = sslContext;
-        if (ctx == null) {
-            synchronized (this) {
-                ctx = sslContext;
-                if (ctx == null) {
-                    sslContext = ctx = SslContextBuilder.forClient()
-                            .trustManager(InsecureTrustManagerFactory.INSTANCE)
-                            .build();
-                }
-            }
+    static void fail(Channel channel, Throwable cause) {
+        RequestState state = channel.attr(STATE_KEY).get();
+        channel.attr(STATE_KEY).set(null);
+        if (state == null || !state.completed.compareAndSet(false, true)) {
+            channel.close();
+            return;
         }
-        return ctx;
+        state.cancelTimeout();
+        state.closeContent();
+        state.metrics.failed.incrementAndGet();
+        release(channel, state, false);
+        state.future.completeExceptionally(cause);
     }
 
-    @Override
-    public void close() {
-        for (FixedChannelPool pool : pools.values()) {
-            pool.close();
-        }
-        pools.clear();
+    static void release(Channel channel, RequestState state, boolean keepAlive) {
+        release(channel, state.pool, keepAlive);
     }
 
-    final class PoolHandler extends AbstractChannelPoolHandler {
-        final PoolKey key;
-        final Proxy requestProxy;
-
-        PoolHandler(PoolKey key, Proxy requestProxy) {
-            this.key = key;
-            this.requestProxy = requestProxy;
+    static void release(Channel channel, FixedChannelPool pool, boolean keepAlive) {
+        if (!keepAlive || !channel.isActive()) {
+            channel.close();
         }
-
-        @Override
-        public void channelCreated(Channel ch) throws Exception {
-            if (requestProxy != null && requestProxy.type() == Proxy.Type.HTTP) {
-                if (requestProxy instanceof AuthenticProxy
-                        && !Strings.isEmpty(((AuthenticProxy) requestProxy).getUsername())) {
-                    AuthenticProxy proxy = (AuthenticProxy) requestProxy;
-                    ch.pipeline().addLast(new HttpProxyHandler(proxy.address(), proxy.getUsername(), proxy.getPassword()));
-                } else {
-                    ch.pipeline().addLast(new HttpProxyHandler(requestProxy.address()));
-                }
+        pool.release(channel).addListener(f -> {
+            if (!f.isSuccess()) {
+                channel.close();
             }
-            if (key.https()) {
-                ch.pipeline().addLast(sslContext().newHandler(ch.alloc(), key.host, key.port));
-            }
-            ch.pipeline().addLast(new HttpClientCodec(),
-                    new HttpContentDecompressor(),
-                    new ChunkedWriteHandler(),
-                    new ClientHandler());
-        }
+        });
     }
 
-    final class ClientHandler extends SimpleChannelInboundHandler<HttpObject> {
-        @Override
-        protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) {
-            Exchange exchange = ctx.channel().attr(EXCHANGE).get();
-            if (exchange == null) {
-                return;
-            }
-            if (msg instanceof HttpResponse) {
-                HttpResponse response = (HttpResponse) msg;
-                if (response.status().code() < 200) {
-                    return;
-                }
-                exchange.status = response.status();
-                exchange.responseHeaders.set(response.headers());
-                exchange.keepAlive = HttpUtil.isKeepAlive(response);
-                if (Boolean.TRUE.equals(exchange.request.enableCookie) || (exchange.request.enableCookie == null && enableCookie)) {
-                    cookieJar.save(URI.create(exchange.request.url), response.headers());
-                }
-            }
-            if (msg instanceof HttpContent) {
-                HttpContent content = (HttpContent) msg;
-                ByteBuf buf = content.content();
-                int readableBytes = buf.readableBytes();
-                if (readableBytes > 0) {
-                    exchange.stream.write(buf, readableBytes);
-                    metrics.downloadBytes.addAndGet(readableBytes);
-                }
-                if (msg instanceof LastHttpContent) {
-                    exchange.complete();
-                }
-            }
+    static void awaitWrite(ChannelFuture future, int timeoutMillis) throws Exception {
+        if (!future.await(timeoutMillis)) {
+            throw new TimeoutException("HTTP write timeout");
         }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            Exchange exchange = ctx.channel().attr(EXCHANGE).get();
-            if (exchange != null) {
-                exchange.fail(cause);
-            } else {
-                ctx.close();
+        if (!future.isSuccess()) {
+            Throwable cause = future.cause();
+            if (cause instanceof Exception) {
+                throw (Exception) cause;
             }
-        }
-
-        @Override
-        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-            Exchange exchange = ctx.channel().attr(EXCHANGE).get();
-            if (exchange != null) {
-                exchange.fail(new IllegalStateException("HTTP channel inactive: " + exchange.request.url));
-            }
-            super.channelInactive(ctx);
+            throw new RuntimeException(cause);
         }
     }
 
@@ -1069,8 +1430,7 @@ public class HttpClientV2 implements AutoCloseable {
             return url;
         }
 
-        Map<String, Object> query = new LinkedHashMap<>();
-        query.putAll((Map) decodeQueryString(url));
+        Map<String, Object> query = (Map) decodeQueryString(url);
         query.putAll(queryString);
         int i = url.indexOf("?");
         if (i != -1) {
@@ -1108,6 +1468,28 @@ public class HttpClientV2 implements AutoCloseable {
         return params;
     }
 
+    public static Map<String, String> decodeHeader(String raw) {
+        return decodeHeader(Arrays.asList(Strings.split(raw.trim(), "\n")));
+    }
+
+    public static Map<String, String> decodeHeader(List<String> pairs) {
+        Map<String, String> map = new LinkedHashMap<>();
+        if (pairs == null || pairs.isEmpty()) {
+            return map;
+        }
+
+        for (String pair : pairs) {
+            int idx = pair.indexOf(":");
+            if (idx == -1) {
+                continue;
+            }
+            String key = pair.substring(0, idx);
+            String value = pair.length() > idx + 1 ? pair.substring(idx + 1).trim() : Strings.EMPTY;
+            map.put(key, value);
+        }
+        return map;
+    }
+
     @SneakyThrows
     public static String encodeUrl(String str) {
         if (Strings.isEmpty(str)) {
@@ -1124,5 +1506,297 @@ public class HttpClientV2 implements AutoCloseable {
         }
 
         return URLDecoder.decode(str, StandardCharsets.UTF_8.name()).replace("%20", "+");
+    }
+
+    public static void saveRawCookie(@NonNull String url, @NonNull String cookie) {
+        COOKIES.saveRawCookie(URI.create(url), cookie);
+    }
+
+    public static final class HttpClientCookieJar {
+        final HttpClientCookieStorage storage;
+        final CopyOnWriteArrayList<StoredCookie> cookies;
+
+        public HttpClientCookieJar() {
+            this(new MemoryCookieStorage());
+        }
+
+        public HttpClientCookieJar(HttpClientCookieStorage storage) {
+            this.storage = storage != null ? storage : new MemoryCookieStorage();
+            cookies = new CopyOnWriteArrayList<>(this.storage.loadAll());
+        }
+
+        public static HttpClientCookieJar memory() {
+            return new HttpClientCookieJar(new MemoryCookieStorage());
+        }
+
+        public static HttpClientCookieJar h2(EntityDatabase db) {
+            return new HttpClientCookieJar(new H2CookieStorage(db));
+        }
+
+        public String loadForRequest(URI uri) {
+            long now = System.currentTimeMillis();
+            List<Cookie> matched = new ArrayList<>();
+            for (StoredCookie stored : cookies) {
+                if (stored.isExpired(now)) {
+                    cookies.remove(stored);
+                    storage.remove(stored);
+                    continue;
+                }
+                if (stored.matches(uri)) {
+                    matched.add(stored.cookie);
+                }
+            }
+            return matched.isEmpty() ? null : ClientCookieEncoder.STRICT.encode(matched);
+        }
+
+        public void saveFromResponse(URI uri, List<String> setCookies) {
+            if (setCookies == null || setCookies.isEmpty()) {
+                return;
+            }
+            for (String raw : setCookies) {
+                Cookie cookie = ClientCookieDecoder.STRICT.decode(raw);
+                if (cookie != null) {
+                    save(uri, cookie);
+                }
+            }
+        }
+
+        public void saveRawCookie(URI uri, String rawCookie) {
+            if (Strings.isEmpty(rawCookie)) {
+                return;
+            }
+            for (String pair : Strings.split(rawCookie, ";")) {
+                int i = pair.indexOf("=");
+                if (i <= 0) {
+                    continue;
+                }
+                DefaultCookie cookie = new DefaultCookie(pair.substring(0, i).trim(), pair.substring(i + 1).trim());
+                save(uri, cookie);
+            }
+        }
+
+        void save(URI uri, Cookie cookie) {
+            if (Strings.isEmpty(cookie.domain())) {
+                cookie.setDomain(uri.getHost());
+            }
+            if (Strings.isEmpty(cookie.path())) {
+                cookie.setPath("/");
+            }
+            StoredCookie stored = new StoredCookie(cookie);
+            cookies.remove(stored);
+            if (stored.isExpired(System.currentTimeMillis())) {
+                storage.remove(stored);
+                return;
+            }
+            cookies.add(stored);
+            storage.save(stored);
+        }
+
+        public void clearSession() {
+            long now = System.currentTimeMillis();
+            for (StoredCookie cookie : cookies) {
+                if (cookie.session || cookie.isExpired(now)) {
+                    cookies.remove(cookie);
+                    storage.remove(cookie);
+                }
+            }
+        }
+
+        public void clear() {
+            cookies.clear();
+            storage.clear();
+        }
+    }
+
+    public interface HttpClientCookieStorage {
+        List<StoredCookie> loadAll();
+
+        void save(StoredCookie cookie);
+
+        void remove(StoredCookie cookie);
+
+        void clear();
+    }
+
+    public static final class MemoryCookieStorage implements HttpClientCookieStorage {
+        final CopyOnWriteArrayList<StoredCookie> store = new CopyOnWriteArrayList<>();
+
+        @Override
+        public List<StoredCookie> loadAll() {
+            return new ArrayList<>(store);
+        }
+
+        @Override
+        public void save(StoredCookie cookie) {
+            store.remove(cookie);
+            store.add(cookie);
+        }
+
+        @Override
+        public void remove(StoredCookie cookie) {
+            store.remove(cookie);
+        }
+
+        @Override
+        public void clear() {
+            store.clear();
+        }
+    }
+
+    public static final class H2CookieStorage implements HttpClientCookieStorage {
+        final EntityDatabase db;
+
+        public H2CookieStorage(EntityDatabase db) {
+            this.db = db != null ? db : EntityDatabase.DEFAULT;
+            this.db.createMapping(CookieEntity.class);
+        }
+
+        @Override
+        public List<StoredCookie> loadAll() {
+            long now = System.currentTimeMillis();
+            List<StoredCookie> result = new ArrayList<>();
+            List<CookieEntity> entities = db.findBy(new EntityQueryLambda<>(CookieEntity.class));
+            for (CookieEntity entity : entities) {
+                StoredCookie cookie = entity.toStoredCookie(now);
+                if (cookie == null || cookie.isExpired(now)) {
+                    db.deleteById(CookieEntity.class, entity.id);
+                    continue;
+                }
+                result.add(cookie);
+            }
+            return result;
+        }
+
+        @Override
+        public void save(StoredCookie cookie) {
+            if (cookie.session) {
+                remove(cookie);
+                return;
+            }
+            db.save(CookieEntity.from(cookie), true);
+        }
+
+        @Override
+        public void remove(StoredCookie cookie) {
+            db.deleteById(CookieEntity.class, CookieEntity.id(cookie.name, cookie.domain, cookie.path));
+        }
+
+        @Override
+        public void clear() {
+            db.truncateMapping(CookieEntity.class);
+        }
+    }
+
+    public static final class CookieEntity implements Serializable {
+        private static final long serialVersionUID = -1714170629027078331L;
+
+        @DbColumn(primaryKey = true, length = 512)
+        public String id;
+        @DbColumn(index = DbColumn.IndexKind.INDEX_ASC, length = 255)
+        public String domain;
+        public String path;
+        public String name;
+        public String value;
+        public Boolean secure;
+        public Boolean httpOnly;
+        @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
+        public Long expiresAt;
+
+        public static CookieEntity from(StoredCookie cookie) {
+            CookieEntity entity = new CookieEntity();
+            entity.id = id(cookie.name, cookie.domain, cookie.path);
+            entity.domain = cookie.domain;
+            entity.path = cookie.path;
+            entity.name = cookie.name;
+            entity.value = cookie.cookie.value();
+            entity.secure = cookie.secure;
+            entity.httpOnly = cookie.httpOnly;
+            entity.expiresAt = cookie.expiresAt;
+            return entity;
+        }
+
+        public static String id(String name, String domain, String path) {
+            return (domain == null ? Strings.EMPTY : domain.toLowerCase(Locale.ENGLISH)) + "|" + (path == null ? "/" : path) + "|" + name;
+        }
+
+        StoredCookie toStoredCookie(long now) {
+            if (Strings.isEmpty(name) || Strings.isEmpty(domain) || Strings.isEmpty(path) || expiresAt == null || expiresAt <= now) {
+                return null;
+            }
+            DefaultCookie cookie = new DefaultCookie(name, value != null ? value : Strings.EMPTY);
+            cookie.setDomain(domain);
+            cookie.setPath(path);
+            cookie.setSecure(Boolean.TRUE.equals(secure));
+            cookie.setHttpOnly(Boolean.TRUE.equals(httpOnly));
+            long seconds = Math.max(1L, (expiresAt - now + 999L) / 1000L);
+            cookie.setMaxAge(seconds);
+            return new StoredCookie(cookie, false, expiresAt);
+        }
+    }
+
+    public static final class StoredCookie {
+        final Cookie cookie;
+        final String name;
+        final String domain;
+        final String path;
+        final boolean secure;
+        final boolean httpOnly;
+        final boolean session;
+        final long expiresAt;
+
+        StoredCookie(Cookie cookie) {
+            this(cookie, cookie.maxAge() == Long.MIN_VALUE,
+                    cookie.maxAge() == Long.MIN_VALUE ? Long.MAX_VALUE : System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(cookie.maxAge()));
+        }
+
+        StoredCookie(Cookie cookie, boolean session, long expiresAt) {
+            this.cookie = cookie;
+            name = cookie.name();
+            domain = cookie.domain() != null ? cookie.domain().toLowerCase(Locale.ENGLISH) : Strings.EMPTY;
+            path = cookie.path() != null ? cookie.path() : "/";
+            secure = cookie.isSecure();
+            httpOnly = cookie.isHttpOnly();
+            this.session = session;
+            this.expiresAt = expiresAt;
+        }
+
+        boolean isExpired(long now) {
+            return expiresAt <= now;
+        }
+
+        boolean matches(URI uri) {
+            if (secure && !"https".equalsIgnoreCase(uri.getScheme())) {
+                return false;
+            }
+            String host = uri.getHost().toLowerCase(Locale.ENGLISH);
+            if (!host.equals(domain) && !host.endsWith("." + domain)) {
+                return false;
+            }
+            String rawPath = uri.getRawPath();
+            if (Strings.isEmpty(rawPath)) {
+                rawPath = "/";
+            }
+            return rawPath.startsWith(path);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof StoredCookie)) {
+                return false;
+            }
+            StoredCookie that = (StoredCookie) o;
+            return name.equals(that.name) && domain.equals(that.domain) && path.equals(that.path);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = name.hashCode();
+            result = 31 * result + domain.hashCode();
+            result = 31 * result + path.hashCode();
+            return result;
+        }
     }
 }
