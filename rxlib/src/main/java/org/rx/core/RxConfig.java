@@ -107,6 +107,8 @@ public final class RxConfig {
         String DIAGNOSTIC_FILE_IO_STACK_SAMPLE_RATE = "app.diagnostic.fileIo.stackSampleRate";
         String DIAGNOSTIC_FILE_IO_DIAG_STACK_SAMPLE_RATE = "app.diagnostic.fileIo.diagStackSampleRate";
         String DIAGNOSTIC_NET_IO_BYTES_PER_SECOND_THRESHOLD = "app.diagnostic.net.ioBytesPerSecondThreshold";
+        String DIAGNOSTIC_NET_IO_BANDWIDTH_BYTES_PER_SECOND = "app.diagnostic.net.ioBandwidthBytesPerSecond";
+        String DIAGNOSTIC_NET_IO_BANDWIDTH_THRESHOLD_PERCENT = "app.diagnostic.net.ioBandwidthThresholdPercent";
         String DIAGNOSTIC_NET_IO_SUSTAIN_MILLIS = "app.diagnostic.net.ioSustainMillis";
         String DIAGNOSTIC_NET_IO_STACK_SAMPLE_RATE = "app.diagnostic.netIo.stackSampleRate";
         String DIAGNOSTIC_NET_IO_DIAG_STACK_SAMPLE_RATE = "app.diagnostic.netIo.diagStackSampleRate";
@@ -228,7 +230,7 @@ public final class RxConfig {
     public static class DiagnosticConfig {
         boolean enabled = true;
         DiagnosticLevel level = DiagnosticLevel.LIGHT;
-        long sampleIntervalMillis = 10000L;
+        long sampleIntervalMillis = 15000L;
         int ringBufferMaxSamples = 4096;
 
         boolean h2Enabled = true;
@@ -276,8 +278,10 @@ public final class RxConfig {
         double fileIoSampleRate = 0.001D;
         double fileIoDiagSampleRate = 0.1D;
         long netIoBytesPerSecondThreshold = 100L * 1024L * 1024L;
+        long netIoBandwidthBytesPerSecond;
+        double netIoBandwidthThresholdPercent = 80D;
         long netIoSustainMillis = 30000L;
-        double netIoSampleRate = 0.001D;
+        double netIoSampleRate = 0D;
         double netIoDiagSampleRate = 0.1D;
 
         boolean threadStateEnabled = true;
@@ -293,7 +297,7 @@ public final class RxConfig {
         boolean nativeMemoryTrackingEnabled = true;
 
         public void normalize() {
-            sampleIntervalMillis = positive(sampleIntervalMillis, 10000L);
+            sampleIntervalMillis = positive(sampleIntervalMillis, 15000L);
             ringBufferMaxSamples = Math.max(16, ringBufferMaxSamples);
             h2BatchSize = Math.max(1, h2BatchSize);
             h2QueueSize = Math.max(h2BatchSize, h2QueueSize);
@@ -327,6 +331,8 @@ public final class RxConfig {
             fileIoSampleRate = clampRate(fileIoSampleRate);
             fileIoDiagSampleRate = clampRate(fileIoDiagSampleRate);
             netIoBytesPerSecondThreshold = Math.max(0L, netIoBytesPerSecondThreshold);
+            netIoBandwidthBytesPerSecond = Math.max(0L, netIoBandwidthBytesPerSecond);
+            netIoBandwidthThresholdPercent = Math.max(0D, netIoBandwidthThresholdPercent);
             netIoSustainMillis = Math.max(0L, netIoSustainMillis);
             netIoSampleRate = clampRate(netIoSampleRate);
             netIoDiagSampleRate = clampRate(netIoDiagSampleRate);
@@ -359,6 +365,13 @@ public final class RxConfig {
 
         public double effectiveNetIoSampleRate(DiagnosticLevel currentLevel) {
             return currentLevel != null && currentLevel.atLeast(DiagnosticLevel.DIAG) ? netIoDiagSampleRate : netIoSampleRate;
+        }
+
+        public long effectiveNetIoBytesPerSecondThreshold() {
+            if (netIoBandwidthBytesPerSecond > 0L && netIoBandwidthThresholdPercent > 0D) {
+                return Math.max(1L, (long) (netIoBandwidthBytesPerSecond * netIoBandwidthThresholdPercent / 100D));
+            }
+            return netIoBytesPerSecondThreshold;
         }
 
         private static long positive(long value, long def) {
@@ -666,6 +679,8 @@ public final class RxConfig {
         diagnostic.fileIoSampleRate = getDouble(ConfigNames.DIAGNOSTIC_FILE_IO_STACK_SAMPLE_RATE, diagnostic.fileIoSampleRate);
         diagnostic.fileIoDiagSampleRate = getDouble(ConfigNames.DIAGNOSTIC_FILE_IO_DIAG_STACK_SAMPLE_RATE, diagnostic.fileIoDiagSampleRate);
         diagnostic.netIoBytesPerSecondThreshold = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_NET_IO_BYTES_PER_SECOND_THRESHOLD, diagnostic.netIoBytesPerSecondThreshold);
+        diagnostic.netIoBandwidthBytesPerSecond = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_NET_IO_BANDWIDTH_BYTES_PER_SECOND, diagnostic.netIoBandwidthBytesPerSecond);
+        diagnostic.netIoBandwidthThresholdPercent = getDouble(ConfigNames.DIAGNOSTIC_NET_IO_BANDWIDTH_THRESHOLD_PERCENT, diagnostic.netIoBandwidthThresholdPercent);
         diagnostic.netIoSustainMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_NET_IO_SUSTAIN_MILLIS, diagnostic.netIoSustainMillis);
         diagnostic.netIoSampleRate = getDouble(ConfigNames.DIAGNOSTIC_NET_IO_STACK_SAMPLE_RATE, diagnostic.netIoSampleRate);
         diagnostic.netIoDiagSampleRate = getDouble(ConfigNames.DIAGNOSTIC_NET_IO_DIAG_STACK_SAMPLE_RATE, diagnostic.netIoDiagSampleRate);

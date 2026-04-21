@@ -337,6 +337,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         + "stack_hash BIGINT,"
                         + "incident_id VARCHAR(96))");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_thread_cpu_incident ON diag_thread_cpu_sample(incident_id, cpu_nanos_delta)");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_thread_cpu_ts ON diag_thread_cpu_sample(ts)");
 
                 stmt.execute("CREATE TABLE IF NOT EXISTS diag_file_io_sample ("
                         + "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
@@ -350,6 +351,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         + "incident_id VARCHAR(96))");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_file_io_incident ON diag_file_io_sample(incident_id, bytes)");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_file_io_path ON diag_file_io_sample(path_hash, ts)");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_file_io_ts ON diag_file_io_sample(ts)");
 
                 stmt.execute("CREATE TABLE IF NOT EXISTS diag_net_io_sample ("
                         + "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
@@ -362,6 +364,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         + "incident_id VARCHAR(96))");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_net_io_incident ON diag_net_io_sample(incident_id, bytes)");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_net_io_endpoint ON diag_net_io_sample(endpoint_hash, ts)");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_net_io_ts ON diag_net_io_sample(ts)");
 
                 stmt.execute("CREATE TABLE IF NOT EXISTS diag_thread_state_sample ("
                         + "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
@@ -389,6 +392,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         + "last_modified BIGINT,"
                         + "incident_id VARCHAR(96))");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_file_size_incident ON diag_file_size_sample(incident_id, size_bytes)");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_file_size_ts ON diag_file_size_sample(ts)");
 
                 stmt.execute("CREATE TABLE IF NOT EXISTS diag_incident ("
                         + "incident_id VARCHAR(96) PRIMARY KEY,"
@@ -398,6 +402,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         + "end_ts BIGINT,"
                         + "summary CLOB,"
                         + "bundle_path VARCHAR(2048))");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_incident_start ON diag_incident(start_ts)");
             }
         });
     }
