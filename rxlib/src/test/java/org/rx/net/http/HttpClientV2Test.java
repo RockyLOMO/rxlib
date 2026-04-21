@@ -125,6 +125,21 @@ public class HttpClientV2Test {
     }
 
     @Test
+    public void testConfigConstructor() {
+        HttpClientConfig config = HttpClientConfig.defaults()
+                .withFeatures(true, false)
+                .withPool(2, 3, 400)
+                .withCookieJar(new HttpClientV2.HttpClientCookieJar());
+        try (HttpClientV2 client = new HttpClientV2(config)) {
+            assertEquals(2, client.config().getMaxConnectionsPerHost());
+            assertEquals(3, client.config().getPendingAcquireMaxCount());
+            assertEquals(400, client.config().getAcquireTimeoutMillis());
+            assertTrue(client.get(BASE_URL + "/cookie-set").toString().contains("cookie-set"));
+            assertTrue(client.get(BASE_URL + "/cookie-check").toString().contains("v2"));
+        }
+    }
+
+    @Test
     public void testH2CookieStorage() throws Exception {
         File file = File.createTempFile("rx-http-cookie", "");
         String path = file.getAbsolutePath();

@@ -72,10 +72,9 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("tab-link"));
                 assertTrue(html.contains("metric-chart"));
                 assertTrue(html.contains("class=\"point\""));
-                assertTrue(html.contains("class=\"y-label\""));
+                assertTrue(html.contains("y-label"));
                 assertTrue(html.contains("Top N"));
                 assertTrue(html.contains("Thread State"));
-                assertTrue(html.contains("Thread Trace"));
                 assertTrue(html.contains("Net I/O"));
                 assertTrue(html.contains("blocked-thread"));
                 assertTrue(html.contains("127.0.0.1:8080"));

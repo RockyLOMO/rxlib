@@ -33,14 +33,16 @@
 - `[已完成]` 配置/测试兼容
   - `RxConfig` 当前已有 `net.http.*` 服务端配置结构。
   - `HttpClientV2` 已接入 Netty `HttpProxyHandler` / `Socks5ProxyHandler`，连接池 key 已按代理类型、地址、用户名隔离。
-  - `AuthenticProxy` 已补充 username/password 字段供 `HttpClientV2` 复用，但旧 `okhttp3.Authenticator` 仍保留，后续旧客户端清理阶段再移除。
+  - `AuthenticProxy` 已改为纯代理配置对象，旧 `okhttp3.Authenticator` 已清理。
   - 已执行：`mvn -pl rxlib "-Dtest=org.rx.net.http.HttpClientV2Test,org.rx.net.http.HttpClientV2IntegrationTest" test`，结果 18 个测试通过。
-- `[暂不执行]` 旧 `HttpClient` / `HttpTunnelClient` / `CookieContainer` 的 `okhttp` 引用清理
-  - 按当前要求暂不处理。
-- `[暂缓]` 调用方切换与 `okhttp` 彻底下线
-  - 按当前要求暂不处理旧客户端 okhttp 引用清理，因此该阶段只保留计划，不执行。
-  - 旧 `HttpClient`、`RestClient`、`forward(...)`、`HttpTunnelClient` 尚未切换。
-  - `okhttp` 依赖仍然保留。
+- `[已完成]` 旧 `HttpClient` / `HttpTunnelClient` / `CookieContainer` 的 `okhttp` 引用清理
+  - [`HttpClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/HttpClient.java) 已改为 `HttpClientV2` 兼容适配层，不再持有 `okhttp` 客户端。
+  - [`CookieContainer.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/CookieContainer.java)、[`PersistentCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/PersistentCookieStorage.java)、[`VolatileCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/VolatileCookieStorage.java) 已切到仓内 Cookie 模型。
+  - [`HttpTunnelClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/socks/httptunnel/HttpTunnelClient.java) 已切到 `HttpClientV2` 原始字节上传路径。
+- `[已完成]` 调用方切换与 `okhttp` 彻底下线
+  - [`RestClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/RestClient.java)、[`HandlerUtil.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/springframework/service/HandlerUtil.java)、[`RWebConfig.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/springframework/service/RWebConfig.java)、[`GeoManager.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/support/GeoManager.java)、[`GeoIPSearcher.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/support/GeoIPSearcher.java)、[`NetEventWait.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/NetEventWait.java)、[`Main.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/Main.java) 已完成切换。
+  - `rxlib/pom.xml` 已删除 `okhttp` 依赖；源码与测试源码已无 `okhttp3.*` / `okio.*` 直接引用。
+  - 已追加验证：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticHttpHandlerTest,org.rx.net.http.HttpClientTest,org.rx.net.http.HttpServerBlockingTest,org.rx.net.http.HttpClientV2Test,org.rx.net.http.HttpClientV2IntegrationTest,org.rx.net.support.GeoIPSearcherTest" test` 与 `mvn -pl rxlib "-Dtest=org.rx.net.socks.httptunnel.HttpTunnelTest" test`，结果均通过。
 
 ## 1. 背景与目标
 
@@ -341,9 +343,9 @@
 - 代理鉴权通过
 - `forward` 可透传 query/header/body/status/header
 
-### 阶段 5：调用方切换（暂缓）
+### 阶段 5：调用方切换（已完成）
 
-当前状态：按用户要求暂不处理旧 `HttpClient` / `HttpTunnelClient` / `CookieContainer` 的 okhttp 引用清理，因此调用方切换阶段只保留迁移计划。
+当前状态：主干调用方已切到 `HttpClientV2`，旧 `HttpClient` 仅保留兼容适配层角色。
 
 优先迁移：
 
@@ -357,9 +359,9 @@
 - 主要调用方不再依赖 `okhttp` 类型
 - 旧功能回归通过
 
-### 阶段 6：彻底移除 `okhttp`（暂缓）
+### 阶段 6：彻底移除 `okhttp`（已完成）
 
-当前状态：等待旧客户端迁移范围重新打开后再执行。
+当前状态：`okhttp` Maven 依赖与源码直接引用均已删除。
 
 需要同时改造：
 
@@ -462,7 +464,7 @@
   - FixedChannelPool 最大连接数与 pending acquire 超时
   - 同步 API 禁止在 EventLoop 调用
 
-暂缓：
+待补充：
 
 - 真实 Servlet 容器级 forward 集成测试，当前只用 mock servlet 回归。
 - HTTP 代理认证专项测试，当前已覆盖 Netty SOCKS5 代理认证成功与失败。
