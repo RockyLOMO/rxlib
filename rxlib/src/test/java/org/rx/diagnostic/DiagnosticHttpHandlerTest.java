@@ -64,10 +64,19 @@ public class DiagnosticHttpHandlerTest {
                 assertNotNull(unauthorized.getResponse().header(HttpHeaderNames.WWW_AUTHENTICATE.toString()));
 
                 client.requestHeaders().set(HttpHeaderNames.AUTHORIZATION, basic("secret"));
+                HttpClient.ResponseContent defaultPage = client.get(url);
+                assertTrue(defaultPage.toString().contains("name=\"limit\" value=\"1000\""));
+
                 HttpClient.ResponseContent ok = client.get(url + "?limit=10");
                 String html = ok.toString();
                 assertEquals(200, ok.getResponse().code());
                 assertTrue(html.contains("RXlib Diagnostics"));
+                assertTrue(html.contains("Default range is the last 15 minutes"));
+                assertTrue(html.contains("All tabs use this time range and row limit"));
+                assertFalse(html.contains("action=\"#overview\""));
+                assertFalse(html.contains("action=\"#metrics\""));
+                assertFalse(html.contains("action=\"#rxlib\""));
+                assertFalse(html.contains("Metric<input"));
                 assertTrue(html.contains("Overview"));
                 assertTrue(html.contains("CPU Charts"));
                 assertTrue(html.contains("Memory Charts"));
