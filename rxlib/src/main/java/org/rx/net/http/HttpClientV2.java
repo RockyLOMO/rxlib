@@ -14,9 +14,6 @@ import io.netty.handler.codec.http.cookie.ClientCookieDecoder;
 import io.netty.handler.codec.http.cookie.ClientCookieEncoder;
 import io.netty.handler.codec.http.cookie.Cookie;
 import io.netty.handler.codec.http.cookie.DefaultCookie;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
@@ -83,36 +80,22 @@ public class HttpClientV2 implements AutoCloseable {
     public static final String JSON_TYPE = "application/json; charset=UTF-8";
     static final AttributeKey<RequestState> STATE_KEY = AttributeKey.valueOf("httpClientV2State");
     static final HttpClientCookieJar COOKIES = new HttpClientCookieJar();
-    static final int RESPONSE_OFFLOAD_THRESHOLD = Constants.MAX_HEAP_BUF_SIZE;
-    static final int UPLOAD_FLUSH_BYTES = Constants.HEAP_BUF_SIZE << 4;
-    static final int UPLOAD_FLUSH_CHUNKS = 16;
 
     final Map<PoolKey, FixedChannelPool> pools = new ConcurrentHashMap<>();
-    final SslContext sslContext;
-    final HttpClientCookieJar cookieJar;
     final Metrics metrics = new Metrics();
-    volatile int connectTimeoutMillis;
-    volatile int readWriteTimeoutMillis;
-    volatile int maxConnectionsPerHost;
-    volatile int maxPendingAcquires;
-    volatile boolean enableCookie;
-    volatile boolean enableLog;
-    volatile Proxy proxy;
+    volatile HttpClientConfig config;
     HttpHeaders reqHeaders;
 
     public HttpClientV2() {
-        this(COOKIES);
+        this(HttpClientConfig.defaults());
     }
 
-    @SneakyThrows
     public HttpClientV2(HttpClientCookieJar cookieJar) {
-        this.cookieJar = cookieJar != null ? cookieJar : COOKIES;
-        sslContext = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-        RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
-        withFeatures(false, conf.isEnableLog());
-        withTimeoutMillis(conf.getConnectTimeoutMillis(), conf.getReadWriteTimeoutMillis());
-        maxConnectionsPerHost = Math.max(1, conf.getPoolMaxSize());
-        maxPendingAcquires = Math.max(16, maxConnectionsPerHost << 2);
+        this(HttpClientConfig.defaults().setCookieJar(cookieJar));
+    }
+
+    public HttpClientV2(HttpClientConfig config) {
+        this.config = config != null ? config.copy() : HttpClientConfig.defaults();
     }
 
     public static Request request(HttpMethod method, String url) {
@@ -124,18 +107,27 @@ public class HttpClientV2 implements AutoCloseable {
     }
 
     public HttpClientCookieJar cookieJar() {
-        return cookieJar;
+        return config.getCookieJar();
+    }
+
+    public HttpClientConfig config() {
+        return config.copy();
+    }
+
+    public synchronized HttpClientV2 withConfig(HttpClientConfig config) {
+        this.config = config != null ? config.copy() : HttpClientConfig.defaults();
+        close();
+        return this;
     }
 
     public HttpClientV2 withFeatures(boolean enableCookie, boolean enableLog) {
-        this.enableCookie = enableCookie;
-        this.enableLog = enableLog;
-        return this;
+        HttpClientConfig next = config.copy().setEnableCookie(enableCookie).setEnableLog(enableLog);
+        return updateConfig(next, false);
     }
 
     public HttpClientV2 withCookies(boolean enableCookie) {
-        this.enableCookie = enableCookie;
-        return this;
+        HttpClientConfig next = config.copy().setEnableCookie(enableCookie);
+        return updateConfig(next, false);
     }
 
     public HttpClientV2 withTimeoutMillis(int timeoutMillis) {
@@ -143,23 +135,28 @@ public class HttpClientV2 implements AutoCloseable {
     }
 
     public HttpClientV2 withTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
-        this.connectTimeoutMillis = connectTimeoutMillis;
-        this.readWriteTimeoutMillis = readWriteTimeoutMillis;
-        close();
-        return this;
+        HttpClientConfig next = config.copy().setTimeoutMillis(connectTimeoutMillis, readWriteTimeoutMillis);
+        return updateConfig(next, true);
     }
 
     public synchronized HttpClientV2 withMaxConnectionsPerHost(int maxConnectionsPerHost) {
-        this.maxConnectionsPerHost = Math.max(1, maxConnectionsPerHost);
-        this.maxPendingAcquires = Math.max(16, this.maxConnectionsPerHost << 2);
-        close();
-        return this;
+        HttpClientConfig next = config.copy().setMaxConnectionsPerHost(maxConnectionsPerHost);
+        return updateConfig(next, true);
+    }
+
+    public synchronized HttpClientV2 withPendingAcquireMaxCount(int pendingAcquireMaxCount) {
+        HttpClientConfig next = config.copy().setPendingAcquireMaxCount(pendingAcquireMaxCount);
+        return updateConfig(next, true);
+    }
+
+    public synchronized HttpClientV2 withAcquireTimeoutMillis(int acquireTimeoutMillis) {
+        HttpClientConfig next = config.copy().setAcquireTimeoutMillis(acquireTimeoutMillis);
+        return updateConfig(next, true);
     }
 
     public synchronized HttpClientV2 withProxy(Proxy proxy) {
-        this.proxy = proxy;
-        close();
-        return this;
+        HttpClientConfig next = config.copy().setProxy(proxy);
+        return updateConfig(next, true);
     }
 
     public HttpClientV2 withProxy(AuthenticProxy proxy) {
@@ -173,6 +170,14 @@ public class HttpClientV2 implements AutoCloseable {
 
     public HttpClientV2 withRequestCookie(String rawCookie) {
         requestHeaders().set(HttpHeaderNames.COOKIE, rawCookie);
+        return this;
+    }
+
+    private synchronized HttpClientV2 updateConfig(HttpClientConfig config, boolean closePools) {
+        this.config = config;
+        if (closePools) {
+            close();
+        }
         return this;
     }
 
@@ -591,7 +596,7 @@ public class HttpClientV2 implements AutoCloseable {
             state.metrics.uploadBytes.addAndGet(bytes);
             pendingBytes += bytes;
             pendingChunks++;
-            if (pendingBytes >= UPLOAD_FLUSH_BYTES || pendingChunks >= UPLOAD_FLUSH_CHUNKS || !channel.isWritable()) {
+            if (pendingBytes >= state.uploadFlushBytes || pendingChunks >= state.uploadFlushChunks || !channel.isWritable()) {
                 flush();
             }
         }
@@ -690,9 +695,13 @@ public class HttpClientV2 implements AutoCloseable {
         final FixedChannelPool pool;
         final CompletableFuture<ResponseContent> future;
         final int readWriteTimeoutMillis;
+        final int responseOffloadThreshold;
+        final int uploadFlushBytes;
+        final int uploadFlushChunks;
         final HttpHeaders requestHeaders;
         final RequestContent content;
         final Metrics metrics;
+        final HttpClientCookieJar cookieJar;
         final long startNanos;
         final boolean cookieEnabled;
         final boolean logEnabled;
@@ -706,16 +715,21 @@ public class HttpClientV2 implements AutoCloseable {
         long responseBytes;
         boolean responseOffloaded;
 
-        RequestState(URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<ResponseContent> future, int readWriteTimeoutMillis,
-                     HttpHeaders requestHeaders, RequestContent content, Metrics metrics, long startNanos, boolean cookieEnabled, boolean logEnabled) {
+        RequestState(URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<ResponseContent> future, HttpClientConfig config,
+                     int readWriteTimeoutMillis, HttpHeaders requestHeaders, RequestContent content, Metrics metrics,
+                     long startNanos, boolean cookieEnabled, boolean logEnabled) {
             this.uri = uri;
             this.key = key;
             this.pool = pool;
             this.future = future;
             this.readWriteTimeoutMillis = readWriteTimeoutMillis;
+            responseOffloadThreshold = config.getResponseOffloadThreshold();
+            uploadFlushBytes = config.getUploadFlushBytes();
+            uploadFlushChunks = config.getUploadFlushChunks();
             this.requestHeaders = requestHeaders;
             this.content = content;
             this.metrics = metrics;
+            cookieJar = config.getCookieJar();
             this.startNanos = startNanos;
             this.cookieEnabled = cookieEnabled;
             this.logEnabled = logEnabled;
@@ -776,7 +790,7 @@ public class HttpClientV2 implements AutoCloseable {
                 }
                 int readableBytes = content.content().readableBytes();
                 if (readableBytes > 0) {
-                    boolean offload = state.responseOffloaded || state.responseBytes + readableBytes > RESPONSE_OFFLOAD_THRESHOLD;
+                    boolean offload = state.responseOffloaded || state.responseBytes + readableBytes > state.responseOffloadThreshold;
                     state.responseBytes += readableBytes;
                     if (offload) {
                         state.responseOffloaded = true;
@@ -864,7 +878,7 @@ public class HttpClientV2 implements AutoCloseable {
 
         private void completeFuture(RequestState state, ResponseContent content) {
             if (state.cookieEnabled) {
-                cookieJar.saveFromResponse(state.uri, content.headers.getAll(HttpHeaderNames.SET_COOKIE));
+                state.cookieJar.saveFromResponse(state.uri, content.headers.getAll(HttpHeaderNames.SET_COOKIE));
             }
             if (state.logEnabled) {
                 log.info("{} -> {}", state.uri, content.getStatusCode());
@@ -913,6 +927,14 @@ public class HttpClientV2 implements AutoCloseable {
 
         public HttpHeaders responseHeaders() {
             return headers;
+        }
+
+        public int code() {
+            return statusCode;
+        }
+
+        public String header(String name) {
+            return headers.get(name);
         }
 
         @JSONField(serialize = false)
@@ -1061,9 +1083,10 @@ public class HttpClientV2 implements AutoCloseable {
     @SneakyThrows
     public ResponseContent execute(Request request) {
         ensureBlockingCallAllowed();
-        CompletableFuture<ResponseContent> future = executeAsync(request);
+        HttpClientConfig cfg = config;
+        CompletableFuture<ResponseContent> future = executeAsync(request, cfg);
         try {
-            return future.get(callTimeoutMillis(request != null ? request.timeoutMillis : 0), TimeUnit.MILLISECONDS);
+            return future.get(callTimeoutMillis(cfg, request != null ? request.timeoutMillis : 0), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
             throw e;
@@ -1071,6 +1094,10 @@ public class HttpClientV2 implements AutoCloseable {
     }
 
     public CompletableFuture<ResponseContent> executeAsync(Request request) {
+        return executeAsync(request, config);
+    }
+
+    CompletableFuture<ResponseContent> executeAsync(Request request, HttpClientConfig cfg) {
         if (request == null) {
             CompletableFuture<ResponseContent> future = new CompletableFuture<>();
             future.completeExceptionally(new IllegalArgumentException("request is null"));
@@ -1078,9 +1105,9 @@ public class HttpClientV2 implements AutoCloseable {
         }
         HttpHeaders headers = requestHeadersSnapshot();
         headers.set(request.headers);
-        Proxy requestProxy = request.proxy != null ? request.proxy : proxy;
-        boolean requestCookie = request.enableCookie != null ? request.enableCookie : enableCookie;
-        return invokeAsync(request.url, request.method, request.body, headers, requestProxy, requestCookie, request.timeoutMillis);
+        Proxy requestProxy = request.proxy != null ? request.proxy : cfg.getProxy();
+        boolean requestCookie = request.enableCookie != null ? request.enableCookie : cfg.isEnableCookie();
+        return invokeAsync(request.url, request.method, request.body, headers, cfg, requestProxy, requestCookie, request.timeoutMillis);
     }
 
     public Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
@@ -1165,9 +1192,10 @@ public class HttpClientV2 implements AutoCloseable {
     @SneakyThrows
     ResponseContent invoke(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders) {
         ensureBlockingCallAllowed();
-        CompletableFuture<ResponseContent> future = invokeAsync(url, method, content, requestHeaders, proxy, enableCookie, 0);
+        HttpClientConfig cfg = config;
+        CompletableFuture<ResponseContent> future = invokeAsync(url, method, content, requestHeaders, cfg, cfg.getProxy(), cfg.isEnableCookie(), 0);
         try {
-            return future.get(callTimeoutMillis(0), TimeUnit.MILLISECONDS);
+            return future.get(callTimeoutMillis(cfg, 0), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
             throw e;
@@ -1175,7 +1203,7 @@ public class HttpClientV2 implements AutoCloseable {
     }
 
     CompletableFuture<ResponseContent> invokeAsync(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
-                                                   Proxy requestProxy, boolean cookieEnabled, int timeoutMillis) {
+                                                   HttpClientConfig cfg, Proxy requestProxy, boolean cookieEnabled, int timeoutMillis) {
         metrics.requests.incrementAndGet();
         CompletableFuture<ResponseContent> future = new CompletableFuture<>();
         URI uri;
@@ -1194,7 +1222,7 @@ public class HttpClientV2 implements AutoCloseable {
         FixedChannelPool pool = pools.computeIfAbsent(key, this::newPool);
         AtomicReference<Channel> acquiredChannel = new AtomicReference<>();
         long startNanos = System.nanoTime();
-        int requestTimeout = timeoutMillis > 0 ? timeoutMillis : readWriteTimeoutMillis;
+        int requestTimeout = timeoutMillis > 0 ? timeoutMillis : cfg.getReadWriteTimeoutMillis();
 
         pool.acquire().addListener((io.netty.util.concurrent.Future<Channel> f) -> {
             if (!f.isSuccess()) {
@@ -1209,8 +1237,8 @@ public class HttpClientV2 implements AutoCloseable {
                 release(channel, pool, true);
                 return;
             }
-            RequestState state = new RequestState(uri, key, pool, future, requestTimeout, requestHeaders, content,
-                    metrics, startNanos, cookieEnabled, enableLog);
+            RequestState state = new RequestState(uri, key, pool, future, cfg, requestTimeout, requestHeaders, content,
+                    metrics, startNanos, cookieEnabled, cfg.isEnableLog());
             channel.attr(STATE_KEY).set(state);
             state.timeoutFuture = channel.eventLoop().schedule(() -> {
                 metrics.timeout.incrementAndGet();
@@ -1244,15 +1272,16 @@ public class HttpClientV2 implements AutoCloseable {
         }
     }
 
-    private int callTimeoutMillis(int requestTimeoutMillis) {
-        int rw = requestTimeoutMillis > 0 ? requestTimeoutMillis : readWriteTimeoutMillis;
-        return Math.max(connectTimeoutMillis + rw, rw + (rw >>> 1));
+    private int callTimeoutMillis(HttpClientConfig cfg, int requestTimeoutMillis) {
+        int rw = requestTimeoutMillis > 0 ? requestTimeoutMillis : cfg.getReadWriteTimeoutMillis();
+        return Math.max(cfg.getConnectTimeoutMillis() + rw, rw + (rw >>> 1));
     }
 
     private FixedChannelPool newPool(PoolKey key) {
-        SocketConfig config = new SocketConfig();
-        config.setConnectTimeoutMillis(connectTimeoutMillis);
-        Bootstrap bootstrap = Sockets.bootstrap(config, key.unresolvedAddress(), null)
+        HttpClientConfig cfg = config;
+        SocketConfig socketConfig = new SocketConfig();
+        socketConfig.setConnectTimeoutMillis(cfg.getConnectTimeoutMillis());
+        Bootstrap bootstrap = Sockets.bootstrap(socketConfig, key.unresolvedAddress(), null)
                 .remoteAddress(key.unresolvedAddress());
         if (key.proxyType != Proxy.Type.DIRECT) {
             // 保持目标地址 unresolved，让 HTTP CONNECT / SOCKS 交给代理端解析。
@@ -1261,25 +1290,25 @@ public class HttpClientV2 implements AutoCloseable {
         return new FixedChannelPool(bootstrap, new AbstractChannelPoolHandler() {
             @Override
             public void channelCreated(Channel ch) throws Exception {
-                initChannel(ch, key);
+                initChannel(ch, key, cfg);
             }
         }, ChannelHealthChecker.ACTIVE, FixedChannelPool.AcquireTimeoutAction.FAIL,
-                connectTimeoutMillis, maxConnectionsPerHost, maxPendingAcquires, true, true);
+                cfg.getAcquireTimeoutMillis(), cfg.getMaxConnectionsPerHost(), cfg.getMaxPendingAcquires(), true, true);
     }
 
-    private void initChannel(Channel ch, PoolKey key) throws Exception {
+    private void initChannel(Channel ch, PoolKey key, HttpClientConfig cfg) throws Exception {
         ChannelPipeline p = ch.pipeline();
         ProxyHandler proxyHandler = newProxyHandler(key);
         if (proxyHandler != null) {
-            proxyHandler.setConnectTimeoutMillis(connectTimeoutMillis);
+            proxyHandler.setConnectTimeoutMillis(cfg.getConnectTimeoutMillis());
             p.addLast(proxyHandler);
         }
         if (key.isHttps()) {
-            p.addLast(sslContext.newHandler(ch.alloc(), key.host, key.port));
+            p.addLast(cfg.getSslContext().newHandler(ch.alloc(), key.host, key.port));
         }
         DiagnosticMetrics.installNetIoHandler(p, DiagnosticMetrics.NET_HTTP_CLIENT);
-        p.addLast(new ReadTimeoutHandler(readWriteTimeoutMillis, TimeUnit.MILLISECONDS),
-                new WriteTimeoutHandler(readWriteTimeoutMillis, TimeUnit.MILLISECONDS),
+        p.addLast(new ReadTimeoutHandler(cfg.getReadWriteTimeoutMillis(), TimeUnit.MILLISECONDS),
+                new WriteTimeoutHandler(cfg.getReadWriteTimeoutMillis(), TimeUnit.MILLISECONDS),
                 new HttpClientCodec(),
                 new HttpContentDecompressor(),
                 new ChunkedWriteHandler(),
@@ -1319,7 +1348,7 @@ public class HttpClientV2 implements AutoCloseable {
             headers.set(HttpHeaderNames.ACCEPT_ENCODING, HttpHeaderValues.GZIP);
         }
         if (state.cookieEnabled) {
-            String cookie = cookieJar.loadForRequest(uri);
+            String cookie = state.cookieJar.loadForRequest(uri);
             if (!Strings.isEmpty(cookie)) {
                 headers.add(HttpHeaderNames.COOKIE, cookie);
             }
@@ -1736,6 +1765,7 @@ public class HttpClientV2 implements AutoCloseable {
         }
     }
 
+    @Getter
     public static final class StoredCookie {
         final Cookie cookie;
         final String name;

@@ -3,7 +3,9 @@ package org.rx.net.http;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import lombok.experimental.Accessors;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.core.Constants;
 import org.rx.core.RxConfig;
@@ -11,6 +13,7 @@ import org.rx.core.RxConfig;
 import java.net.Proxy;
 
 @Getter
+@Accessors(chain = true)
 public final class HttpClientConfig {
     private int connectTimeoutMillis;
     private int readWriteTimeoutMillis;
@@ -20,8 +23,11 @@ public final class HttpClientConfig {
     private int responseOffloadThreshold;
     private int uploadFlushBytes;
     private int uploadFlushChunks;
+    @Setter
     private boolean enableCookie;
+    @Setter
     private boolean enableLog;
+    @Setter
     private Proxy proxy;
     private SslContext sslContext;
     private HttpClientV2.HttpClientCookieJar cookieJar;
@@ -66,84 +72,68 @@ public final class HttpClientConfig {
         return new HttpClientConfig(this);
     }
 
-    public HttpClientConfig withFeatures(boolean enableCookie, boolean enableLog) {
-        this.enableCookie = enableCookie;
-        this.enableLog = enableLog;
-        return this;
+    public HttpClientConfig setTimeoutMillis(int timeoutMillis) {
+        return setTimeoutMillis(timeoutMillis, timeoutMillis);
     }
 
-    public HttpClientConfig withCookies(boolean enableCookie) {
-        this.enableCookie = enableCookie;
-        return this;
-    }
-
-    public HttpClientConfig withTimeoutMillis(int timeoutMillis) {
-        return withTimeoutMillis(timeoutMillis, timeoutMillis);
-    }
-
-    public HttpClientConfig withTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
+    public HttpClientConfig setTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
         this.connectTimeoutMillis = positive(connectTimeoutMillis, this.connectTimeoutMillis);
         this.readWriteTimeoutMillis = positive(readWriteTimeoutMillis, this.readWriteTimeoutMillis);
-        acquireTimeoutMillis = this.connectTimeoutMillis;
+        this.acquireTimeoutMillis = this.connectTimeoutMillis;
         return this;
     }
 
-    public HttpClientConfig withAcquireTimeoutMillis(int acquireTimeoutMillis) {
+    public HttpClientConfig setAcquireTimeoutMillis(int acquireTimeoutMillis) {
         this.acquireTimeoutMillis = positive(acquireTimeoutMillis, this.acquireTimeoutMillis);
         return this;
     }
 
-    public HttpClientConfig withMaxConnectionsPerHost(int maxConnectionsPerHost) {
+    public HttpClientConfig setMaxConnectionsPerHost(int maxConnectionsPerHost) {
         this.maxConnectionsPerHost = Math.max(1, maxConnectionsPerHost);
-        maxPendingAcquires = Math.max(16, this.maxConnectionsPerHost << 2);
+        this.maxPendingAcquires = Math.max(16, this.maxConnectionsPerHost << 2);
         return this;
     }
 
-    public HttpClientConfig withMaxPendingAcquires(int maxPendingAcquires) {
+    public HttpClientConfig setMaxPendingAcquires(int maxPendingAcquires) {
         this.maxPendingAcquires = Math.max(1, maxPendingAcquires);
         return this;
     }
 
-    public HttpClientConfig withPendingAcquireMaxCount(int pendingAcquireMaxCount) {
-        return withMaxPendingAcquires(pendingAcquireMaxCount);
+    public HttpClientConfig setPendingAcquireMaxCount(int pendingAcquireMaxCount) {
+        return setMaxPendingAcquires(pendingAcquireMaxCount);
     }
 
     public int getPendingAcquireMaxCount() {
         return maxPendingAcquires;
     }
 
-    public HttpClientConfig withPool(int maxConnectionsPerHost, int pendingAcquireMaxCount, int acquireTimeoutMillis) {
-        return withMaxConnectionsPerHost(maxConnectionsPerHost)
-                .withMaxPendingAcquires(pendingAcquireMaxCount)
-                .withAcquireTimeoutMillis(acquireTimeoutMillis);
+    public HttpClientConfig setPool(int maxConnectionsPerHost, int pendingAcquireMaxCount, int acquireTimeoutMillis) {
+        return setMaxConnectionsPerHost(maxConnectionsPerHost)
+                .setMaxPendingAcquires(pendingAcquireMaxCount)
+                .setAcquireTimeoutMillis(acquireTimeoutMillis);
     }
 
-    public HttpClientConfig withResponseOffloadThreshold(int responseOffloadThreshold) {
+    public HttpClientConfig setResponseOffloadThreshold(int responseOffloadThreshold) {
         this.responseOffloadThreshold = Math.max(0, responseOffloadThreshold);
         return this;
     }
 
-    public HttpClientConfig withUploadFlushBytes(int uploadFlushBytes) {
+    public HttpClientConfig setUploadFlushBytes(int uploadFlushBytes) {
         this.uploadFlushBytes = Math.max(1, uploadFlushBytes);
         return this;
     }
 
-    public HttpClientConfig withUploadFlushChunks(int uploadFlushChunks) {
+    public HttpClientConfig setUploadFlushChunks(int uploadFlushChunks) {
         this.uploadFlushChunks = Math.max(1, uploadFlushChunks);
         return this;
     }
 
-    public HttpClientConfig withProxy(Proxy proxy) {
-        this.proxy = proxy;
-        return this;
-    }
-
-    public HttpClientConfig withSslContext(SslContext sslContext) {
+    public HttpClientConfig setSslContext(SslContext sslContext) {
         this.sslContext = sslContext != null ? sslContext : defaultSslContext();
         return this;
     }
 
-    public HttpClientConfig withCookieJar(HttpClientV2.HttpClientCookieJar cookieJar) {
+    public HttpClientConfig setCookieJar(HttpClientV2.HttpClientCookieJar cookieJar) {
         this.cookieJar = cookieJar != null ? cookieJar : HttpClientV2.COOKIES;
         return this;
     }

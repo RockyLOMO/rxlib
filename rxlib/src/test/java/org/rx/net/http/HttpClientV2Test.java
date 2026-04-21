@@ -127,9 +127,10 @@ public class HttpClientV2Test {
     @Test
     public void testConfigConstructor() {
         HttpClientConfig config = HttpClientConfig.defaults()
-                .withFeatures(true, false)
-                .withPool(2, 3, 400)
-                .withCookieJar(new HttpClientV2.HttpClientCookieJar());
+                .setEnableCookie(true)
+                .setEnableLog(false)
+                .setPool(2, 3, 400)
+                .setCookieJar(new HttpClientV2.HttpClientCookieJar());
         try (HttpClientV2 client = new HttpClientV2(config)) {
             assertEquals(2, client.config().getMaxConnectionsPerHost());
             assertEquals(3, client.config().getPendingAcquireMaxCount());
