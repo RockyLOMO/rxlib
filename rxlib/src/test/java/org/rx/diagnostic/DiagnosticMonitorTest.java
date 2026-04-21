@@ -81,7 +81,7 @@ public class DiagnosticMonitorTest {
         store.start();
         try {
             long now = System.currentTimeMillis();
-            store.recordMetric(new DiagnosticMetric(now, "test.metric", 1D, "k=v", null));
+            store.recordMetric(new DiagnosticMetric(now, "test.metric", 1D, "k=v", null, 123L));
             store.recordStackTrace(123L, "stack", now);
             store.recordThreadCpu(new ThreadCpuSample(now, 1L, "main", "RUNNABLE", 100L, 123L, "stack"), "inc-1");
             store.recordFileIo(now, "target/a.log", DiagnosticFileOperation.WRITE, 10L, 20L, 123L, "inc-1");
@@ -90,6 +90,7 @@ public class DiagnosticMonitorTest {
 
             assertTrue(store.flush(5000L));
             assertEquals(1, count(config, "diag_metric_sample"));
+            assertEquals(1, countWhere(config, "diag_metric_sample", "stack_hash=123"));
             assertEquals(1, count(config, "diag_stack_trace"));
             assertEquals(1, count(config, "diag_thread_cpu_sample"));
             assertEquals(1, count(config, "diag_file_io_sample"));
@@ -97,6 +98,22 @@ public class DiagnosticMonitorTest {
             assertEquals(1, count(config, "diag_incident"));
         } finally {
             store.close();
+        }
+    }
+
+    @Test
+    public void diagnosticEventsRecordMetricWithStack() throws Exception {
+        DiagnosticConfig config = memConfig("diag_event");
+        config.setSampleIntervalMillis(60000L);
+        DiagnosticMonitor monitor = new DiagnosticMonitor(config);
+        monitor.start();
+        try {
+            DiagnosticEvents.record("legacy.event", "hello");
+            assertTrue(monitor.getStore().flush(5000L));
+            assertEquals(1, countWhere(config, "diag_metric_sample", "metric='legacy.event' AND stack_hash<>0"));
+            assertTrue(count(config, "diag_stack_trace") >= 1);
+        } finally {
+            monitor.close();
         }
     }
 
@@ -216,9 +233,13 @@ public class DiagnosticMonitorTest {
     }
 
     private int count(DiagnosticConfig config, String table) throws Exception {
+        return countWhere(config, table, "1=1");
+    }
+
+    private int countWhere(DiagnosticConfig config, String table, String where) throws Exception {
         try (Connection conn = DriverManager.getConnection(config.jdbcUrl());
              Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + table)) {
+             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + table + " WHERE " + where)) {
             assertTrue(rs.next());
             return rs.getInt(1);
         }

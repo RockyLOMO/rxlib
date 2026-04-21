@@ -64,19 +64,6 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         Date modifyTime;
     }
 
-    @Getter
-    @Setter
-    @ToString
-    public static class MetricsEntity implements Serializable {
-        private static final long serialVersionUID = 2049476730423563051L;
-        @DbColumn(primaryKey = true)
-        String name;
-        String message;
-        String stackTrace;
-        int occurCount;
-        Date modifyTime;
-    }
-
     public static final TraceHandler INSTANCE = new TraceHandler();
 
     public static Object[] getMessageCandidate(Object... args) {
@@ -100,7 +87,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         RxConfig conf = RxConfig.INSTANCE;
         try {
             EntityDatabase db = EntityDatabase.DEFAULT;
-            db.createMapping(ExceptionEntity.class, MethodEntity.class, MetricsEntity.class, ThreadEntity.class);
+            db.createMapping(ExceptionEntity.class, MethodEntity.class, ThreadEntity.class);
             queue.onConsume.combine((s, e) -> {
                 RxConfig.TraceConfig c = RxConfig.INSTANCE.getTrace();
                 if (c.getKeepDays() <= 0) {
@@ -330,6 +317,13 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
     }
 
     public Linq<ThreadEntity> queryThreadTrace(Long snapshotId, Date startTime, Date endTime) {
+        return queryThreadTrace(snapshotId, startTime, endTime, null);
+    }
+
+    public Linq<ThreadEntity> queryThreadTrace(Long snapshotId, Date startTime, Date endTime, Integer limit) {
+        if (limit == null) {
+            limit = 200;
+        }
         EntityQueryLambda<ThreadEntity> q = new EntityQueryLambda<>(ThreadEntity.class);
         if (snapshotId != null) {
             q.eq(ThreadEntity::getSnapshotId, snapshotId);
@@ -341,46 +335,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
             q.lt(ThreadEntity::getSnapshotTime, endTime);
         }
         EntityDatabase db = EntityDatabase.DEFAULT;
-        return Linq.from(db.findBy(q));
+        return Linq.from(db.findBy(q.orderByDescending(ThreadEntity::getSnapshotTime).limit(limit)));
     }
 
-    public void saveMetric(String name, String message) {
-        log.info("saveMetric {} {}", name, message);
-        String stackTrace = Reflects.getStackTrace(Thread.currentThread());
-        Tasks.nextPool().runSerial(() -> {
-            EntityDatabase db = EntityDatabase.DEFAULT;
-            db.begin();
-            try {
-                MetricsEntity entity = db.findById(MetricsEntity.class, name);
-                boolean doInsert = entity == null;
-                if (doInsert) {
-                    entity = new MetricsEntity();
-                    entity.setName(name);
-                }
-                entity.setMessage(message);
-                entity.setStackTrace(stackTrace);
-                entity.occurCount++;
-                entity.setModifyTime(DateTime.now());
-                db.save(entity, doInsert);
-                db.commit();
-            } catch (Throwable e) {
-                log.error("dbTrace", e);
-                db.rollback();
-            }
-            return null;
-        }, name);
-    }
-
-    public List<MetricsEntity> queryMetrics(String name, Integer limit) {
-        if (limit == null) {
-            limit = 20;
-        }
-
-        EntityQueryLambda<MetricsEntity> q = new EntityQueryLambda<>(MetricsEntity.class);
-        if (name != null) {
-            q.eq(MetricsEntity::getName, name);
-        }
-        EntityDatabase db = EntityDatabase.DEFAULT;
-        return db.findBy(q.orderByDescending(MetricsEntity::getOccurCount).limit(limit));
-    }
 }

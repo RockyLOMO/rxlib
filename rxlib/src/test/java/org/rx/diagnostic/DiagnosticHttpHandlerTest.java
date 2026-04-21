@@ -26,11 +26,11 @@ public class DiagnosticHttpHandlerTest {
             RxConfig.INSTANCE.setRtoken("secret");
             store.start();
             long now = System.currentTimeMillis();
-            store.recordMetric(new DiagnosticMetric(now, "http.metric", 42D, "k=v", "inc-http"));
+            store.recordStackTrace(456L, "stack body", now);
+            store.recordMetric(new DiagnosticMetric(now, "http.metric", 42D, "k=v", "inc-http", 456L));
             store.recordMetric(new DiagnosticMetric(now - 5000L, "disk.used.bytes", 262144D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now - 500L, "disk.used.bytes", 524288D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now, "disk.used.bytes", 1048576D, "path=/tmp", "inc-http"));
-            store.recordStackTrace(456L, "stack body", now);
             store.recordThreadCpu(new ThreadCpuSample(now, 7L, "diag-thread", "RUNNABLE", 1000000L, 456L, "stack body"), "inc-http");
             store.recordIncident("inc-http", DiagnosticIncidentType.CPU_HIGH, DiagnosticLevel.DIAG, now, now,
                     "incidentId=inc-http\nsummary=directUsedBytes=48623489\n", null);
@@ -60,6 +60,9 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("tab-link"));
                 assertTrue(html.contains("metric-chart"));
                 assertTrue(html.contains("class=\"point\""));
+                assertTrue(html.contains("class=\"y-label\""));
+                assertTrue(html.contains("Thread Trace"));
+                assertTrue(html.contains("?stack=456"));
                 assertFalse(html.contains("clob"));
 
                 HttpClient.ResponseContent filtered = client.get(url + "?limit=10&metric=disk.used.bytes&from="

@@ -81,6 +81,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
         record.d1 = metric.getValue();
         record.s2 = metric.getTags();
         record.s3 = metric.getIncidentId();
+        record.l1 = metric.getStackHash();
         offer(record);
     }
 
@@ -274,7 +275,9 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         + "metric VARCHAR(256) NOT NULL,"
                         + "metric_value DOUBLE,"
                         + "tags VARCHAR(2048),"
-                        + "incident_id VARCHAR(96))");
+                        + "incident_id VARCHAR(96),"
+                        + "stack_hash BIGINT)");
+                stmt.execute("ALTER TABLE diag_metric_sample ADD COLUMN IF NOT EXISTS stack_hash BIGINT");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_metric_ts ON diag_metric_sample(ts)");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_metric_name_ts ON diag_metric_sample(metric, ts)");
 
@@ -356,7 +359,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
     }
 
     private void writeBatch(Connection conn, List<Record> batch) throws SQLException {
-        try (PreparedStatement metricStmt = conn.prepareStatement("INSERT INTO diag_metric_sample(ts, metric, metric_value, tags, incident_id) VALUES (?, ?, ?, ?, ?)");
+        try (PreparedStatement metricStmt = conn.prepareStatement("INSERT INTO diag_metric_sample(ts, metric, metric_value, tags, incident_id, stack_hash) VALUES (?, ?, ?, ?, ?, ?)");
              PreparedStatement stackStmt = conn.prepareStatement("MERGE INTO diag_stack_trace(stack_hash, stack_text, first_seen, last_seen) KEY(stack_hash) VALUES (?, ?, ?, ?)");
              PreparedStatement threadStmt = conn.prepareStatement("INSERT INTO diag_thread_cpu_sample(ts, thread_id, thread_name, cpu_nanos_delta, state, stack_hash, incident_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
              PreparedStatement fileIoStmt = conn.prepareStatement("INSERT INTO diag_file_io_sample(ts, path_hash, path_sample, op, bytes, elapsed_nanos, stack_hash, incident_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
@@ -377,6 +380,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         metricStmt.setDouble(3, record.d1);
                         metricStmt.setString(4, limit(record.s2, 2048));
                         metricStmt.setString(5, limit(record.s3, 96));
+                        metricStmt.setLong(6, record.l1);
                         metricStmt.addBatch();
                         metric = true;
                         break;

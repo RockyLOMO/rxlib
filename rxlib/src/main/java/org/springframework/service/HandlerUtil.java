@@ -211,7 +211,7 @@ public class HandlerUtil {
             return t;
         }));
 
-        result.put("metrics", TraceHandler.INSTANCE.queryMetrics(metricsName, take));
+        result.put("metrics", Collections.emptyList());
         return result;
     }
 
