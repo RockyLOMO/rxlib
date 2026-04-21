@@ -86,6 +86,9 @@
   - 新增 `DiagnosticNetIo.recordInbound/recordOutbound(...)`。
   - 新增可插拔 Netty `DiagnosticNetIoHandler`，只统计 `ByteBuf` / `ByteBufHolder` / `FileRegion` 字节数，不改变引用计数。
   - H2 新增 `diag_net_io_sample`，页面新增 `Net I/O` tab。
+  - Netty handler 统一安装到 pipeline 头部，按 wire-level bytes 统计，避免进入协议解码链路后影响 RRP / cipher / frame decoder。
+  - 默认 `netIoSampleRate=0`，常态不抓 Net I/O stack；触发 `NET_IO_HIGH` 进入 DIAG 后才按 `netIoDiagSampleRate` 抓栈。
+  - 127.0.0.1 / ::1 loopback 读写默认不计入 Net I/O 吞吐。
 - `[已完成]` rxlib 网络核心指标接入。
   - 新增内部 `DiagnosticNetMetrics`，按 component 聚合 `transport` / `http` / `socks` / `rpc` 连接数、吞吐、pending write bytes、写水位和 EventLoop 队列积压。
   - 外部统一通过 `DiagnosticMetrics.installNetIoHandler(...)` 接入 pipeline，热点路径只更新内存计数；stacktrace 采样仍受诊断采样率控制。
@@ -96,7 +99,7 @@
   - 只在阈值持续超限或发现死锁后抓 TopN 线程栈，并落 `diag_thread_state_sample`。
   - 页面新增 `Thread State` tab 展示状态持续时间、锁、owner 和 stack hash。
 - `[已完成]` 页面和测试更新。
-  - `DiagnosticHttpHandler` 增加 Metrics Top N、Thread State、Net I/O 展示。
+  - `DiagnosticHttpHandler` 增加 Overview Memory Charts、Metrics Top N 分组、Thread State、Net I/O endpoint group 展示。
   - 已执行：`mvn -pl rxlib -DskipTests compile`，结果通过。
   - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticHttpHandlerTest,org.rx.diagnostic.DiagnosticMonitorTest" test`，结果 14 个测试通过。
 
@@ -221,7 +224,9 @@ H2AsyncWriter <-------------+
 - 网络 I/O 埋点入口：`DiagnosticNetIo.recordInbound(...)` / `DiagnosticNetIo.recordOutbound(...)`
   - 适合已有网络抽象层手动打点。
   - Netty pipeline 可通过 `DiagnosticMetrics.installNetIoHandler(pipeline, component)` 做入站/出站字节数采样。
-  - handler 只读消息大小，不释放对象、不改引用计数；热点路径仅更新 `DiagnosticNetMetrics` 内存计数，不直接写 H2。
+  - handler 安装在 pipeline 头部，统计接近网卡侧的 wire-level bytes；只读消息大小，不释放对象、不改引用计数。
+  - 127.0.0.1 / ::1 loopback 读写会跳过，不进入吞吐统计。
+  - 热点路径仅更新 `DiagnosticNetMetrics` 内存计数，不直接写 H2。
 - 网络聚合指标入口：`DiagnosticMetrics.setNetComponent(...)` / `DiagnosticMetrics.netComponent(...)`
   - 适合 transport / http / socks / rpc 统一标记核心网络指标 component。
   - 后台 `ResourceSampler` 周期性快照聚合计数并写入 H2 metric。
@@ -339,6 +344,8 @@ flowchart TD
 - 外部接入统一使用 `DiagnosticMetrics`；`DiagnosticNetMetrics` 是 diagnostic 包内部实现，不建议业务或网络模块直接依赖。
 - `DiagnosticNetMetrics` 按 component 聚合，当前 component 包含 `transport.server/client`、`http.server/client`、`socks.server/client`、`rpc.server/client`。
 - `pending write bytes`、写水位和 EventLoop pending task 由后台采样线程读取 Channel / EventLoop 状态，降低业务 I/O 路径开销。
+- `net.io.inbound.bytes.per.second` / `net.io.outbound.bytes.per.second` 由后台快照按采样间隔计算，用于 `NET_IO_HIGH` 触发。
+- 可配置 `app.diagnostic.net.ioBandwidthBytesPerSecond` 和 `app.diagnostic.net.ioBandwidthThresholdPercent`，按网卡带宽占比触发；未配置带宽时回退到 `app.diagnostic.net.ioBytesPerSecondThreshold`。
 - `SocksProxyServer` 的 UDP relay 注册、关闭、reset、claim 以及 `ProxyManageHandler` 会话流量通过 `DiagnosticMetrics.record(...)` 直接写轻量 metric。
 - `ProxyManageHandler` 与网络聚合指标只在 bytes 维度有重叠：前者是 user/remote 维度的会话关闭汇总，后者是 component 级周期快照；保留 session 指标用于账号/客户端归因。
 
@@ -571,10 +578,10 @@ flowchart TD
 
 取证流程：
 
-1. 常态只按极低采样率记录 endpoint、方向、字节数、stack hash。
-2. 超过 `app.diagnostic.net.ioBytesPerSecondThreshold` 且持续超限后触发 `NET_IO_HIGH`。
-3. 进入 `DIAG` 后提高 `netIoDiagSampleRate`，短时间记录更多调用栈。
-4. 页面通过 `Net I/O` tab 和 Metrics Top N 查询高吞吐 endpoint / stack hash。
+1. 常态只统计 component 级内存计数和 bytes/sec 聚合指标，默认不抓 stack。
+2. 超过 `app.diagnostic.net.ioBytesPerSecondThreshold`，或配置网卡带宽后超过 `app.diagnostic.net.ioBandwidthThresholdPercent`，且持续超限后触发 `NET_IO_HIGH`。
+3. 进入 `DIAG` 后按 `netIoDiagSampleRate` 记录 endpoint、方向、字节数、stack hash。
+4. 页面通过 `Net I/O` tab 按 endpoint group by 查询高吞吐 endpoint，通过 Metrics Top N 查询 component 级吞吐。
 
 注意事项：
 
@@ -1150,8 +1157,10 @@ app.diagnostic.disk.scan.timeoutMillis=5000
 app.diagnostic.fileIo.stackSampleRate=0.001
 app.diagnostic.fileIo.diagStackSampleRate=0.1
 app.diagnostic.net.ioBytesPerSecondThreshold=104857600
+app.diagnostic.net.ioBandwidthBytesPerSecond=0
+app.diagnostic.net.ioBandwidthThresholdPercent=80
 app.diagnostic.net.ioSustainMillis=30000
-app.diagnostic.netIo.stackSampleRate=0.001
+app.diagnostic.netIo.stackSampleRate=0
 app.diagnostic.netIo.diagStackSampleRate=0.1
 app.diagnostic.thread.state.enabled=true
 app.diagnostic.thread.state.sustainMillis=30000

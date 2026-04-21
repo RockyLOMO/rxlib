@@ -46,7 +46,6 @@ public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, Aut
     private final AtomicBoolean running = new AtomicBoolean();
     private final Map<DiagnosticIncidentType, TriggerState> triggerStates = new EnumMap<>(DiagnosticIncidentType.class);
     private final Object fileIoWindowLock = new Object();
-    private final Object netIoWindowLock = new Object();
     private final AtomicLong lastJfrMillis = new AtomicLong();
     private final AtomicLong lastClassHistogramMillis = new AtomicLong();
     private final AtomicLong lastHeapDumpMillis = new AtomicLong();
@@ -58,8 +57,6 @@ public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, Aut
     private volatile long[] lastDeadlockedThreadIds;
     private long fileIoWindowStartMillis;
     private long fileIoWindowBytes;
-    private long netIoWindowStartMillis;
-    private long netIoWindowBytes;
 
     public DiagnosticMonitor(DiagnosticConfig config) {
         this(config, null);
@@ -181,7 +178,6 @@ public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, Aut
         }
         long now = System.currentTimeMillis();
         long normalizedBytes = Math.max(0L, bytes);
-        updateNetIoWindow(now, normalizedBytes);
         double rate = config.effectiveNetIoSampleRate(currentLevel());
         if (rate <= 0D || (rate < 1D && ThreadLocalRandom.current().nextDouble() > rate)) {
             return;
@@ -219,6 +215,7 @@ public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, Aut
         checkCpu(snapshot, now);
         checkMemory(snapshot, now);
         checkDisk(snapshot, now);
+        checkNetIo(snapshot, now);
         checkThreadStates(now);
     }
 
@@ -291,26 +288,40 @@ public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, Aut
         }
     }
 
-    private void updateNetIoWindow(long now, long bytes) {
-        long threshold = config.getNetIoBytesPerSecondThreshold();
+    private void checkNetIo(ResourceSnapshot snapshot, long now) {
+        long threshold = config.effectiveNetIoBytesPerSecondThreshold();
         if (threshold <= 0L) {
+            updateTrigger(DiagnosticIncidentType.NET_IO_HIGH, false, now, config.getNetIoSustainMillis(), null);
             return;
         }
-        synchronized (netIoWindowLock) {
-            if (netIoWindowStartMillis == 0L) {
-                netIoWindowStartMillis = now;
+        double bytesPerSecond = 0D;
+        double maxComponentRate = 0D;
+        String maxTags = null;
+        for (DiagnosticMetric metric : snapshot.getMetrics()) {
+            String name = metric.getName();
+            if (!"net.io.inbound.bytes.per.second".equals(name)
+                    && !"net.io.outbound.bytes.per.second".equals(name)) {
+                continue;
             }
-            netIoWindowBytes += bytes;
-            long elapsed = now - netIoWindowStartMillis;
-            if (elapsed < 1000L) {
-                return;
+            double value = Math.max(0D, metric.getValue());
+            bytesPerSecond += value;
+            if (value > maxComponentRate) {
+                maxComponentRate = value;
+                maxTags = metric.getTags();
             }
-            long bytesPerSecond = elapsed <= 0L ? 0L : netIoWindowBytes * 1000L / elapsed;
-            netIoWindowStartMillis = now;
-            netIoWindowBytes = 0L;
-            updateTrigger(DiagnosticIncidentType.NET_IO_HIGH, bytesPerSecond >= threshold, now,
-                    config.getNetIoSustainMillis(), "netIoBytesPerSecond=" + formatBytes(bytesPerSecond) + "/s (" + bytesPerSecond + " bytes/s)");
         }
+
+        String summary = "netIoBytesPerSecond=" + formatBytes((long) bytesPerSecond) + "/s (" + (long) bytesPerSecond + " bytes/s)"
+                + ",threshold=" + formatBytes(threshold) + "/s (" + threshold + " bytes/s)";
+        if (config.getNetIoBandwidthBytesPerSecond() > 0L) {
+            summary += ",bandwidth=" + formatBytes(config.getNetIoBandwidthBytesPerSecond()) + "/s"
+                    + ",bandwidthPercent=" + formatPercent(bytesPerSecond * 100D / config.getNetIoBandwidthBytesPerSecond())
+                    + ",thresholdPercent=" + formatPercent(config.getNetIoBandwidthThresholdPercent());
+        }
+        if (maxTags != null) {
+            summary += ",top=" + maxTags + ":" + formatBytes((long) maxComponentRate) + "/s";
+        }
+        updateTrigger(DiagnosticIncidentType.NET_IO_HIGH, bytesPerSecond >= threshold, now, config.getNetIoSustainMillis(), summary);
     }
 
     private void checkThreadStates(long now) {
