@@ -142,7 +142,7 @@ public class HttpClientIntegrationTest {
 
     @Test
     public void cookieAndResponseCachingWork() {
-        try (HttpClient client = new HttpClient().withCookies(true)) {
+        try (HttpClient client = new HttpClient()) {
             assertEquals("set", client.get(baseUrl + "/cookie-set").toString());
             assertTrue(client.get(baseUrl + "/cookie-echo").toString().contains("sid=abc"));
 
@@ -198,7 +198,7 @@ public class HttpClientIntegrationTest {
     @Test
     public void keepAliveReusesFixedPoolChannel() {
         remotePorts.clear();
-        try (HttpClient client = new HttpClient().withMaxConnectionsPerHost(1)) {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setMaxConnectionsPerHost(1))) {
             String first = client.get(baseUrl + "/remote-port").toString();
             String second = client.get(baseUrl + "/remote-port").toString();
             assertEquals(first, second);
@@ -208,7 +208,7 @@ public class HttpClientIntegrationTest {
 
     @Test
     public void requestTimeoutCompletesExceptionally() {
-        try (HttpClient client = new HttpClient().withTimeoutMillis(1000, 1000)) {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(1000, 1000))) {
             HttpClient.Request request = HttpClient.request(HttpMethod.GET, baseUrl + "/slow")
                     .timeoutMillis(100);
             ExecutionException error = assertThrows(ExecutionException.class,
@@ -221,7 +221,7 @@ public class HttpClientIntegrationTest {
     @Test
     public void fixedPoolLimitsConcurrentAcquire() throws Exception {
         slowStarted = new CountDownLatch(1);
-        try (HttpClient client = new HttpClient().withTimeoutMillis(80, 1000).withMaxConnectionsPerHost(1)) {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(80, 1000).setMaxConnectionsPerHost(1))) {
             CompletableFuture<HttpClient.ResponseContent> first = client.executeAsync(
                     HttpClient.request(HttpMethod.GET, baseUrl + "/slow").timeoutMillis(1000));
             assertTrue(slowStarted.await(2, TimeUnit.SECONDS));

@@ -10,6 +10,7 @@ import org.rx.io.Files;
 import org.rx.net.Sockets;
 import org.rx.net.http.AuthenticProxy;
 import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpClientConfig;
 
 import java.io.File;
 import java.io.IOException;
@@ -93,7 +94,7 @@ public class GeoManager {
         if (force || !f.exists()) {
             File tmp = new File(f.getPath() + ".tmp");
             log.info("geo download file {} -> {} begin", tmp.getAbsolutePath(), f.getAbsolutePath());
-            try (HttpClient client = new HttpClient().withTimeoutMillis(timeoutMillis).withProxy(proxy)) {
+            try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(timeoutMillis).setProxy(proxy))) {
                 client.get(fileUrl).toFile(tmp.getPath());
             }
             f = Files.moveFile(tmp, f);
