@@ -15,6 +15,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
@@ -51,7 +52,7 @@ public final class HttpClientCookieJar {
                 continue;
             }
             if (stored.matches(uri)) {
-                matched.add(stored.cookie);
+                matched.add(stored.cookie());
             }
         }
         return matched.isEmpty() ? null : ClientCookieEncoder.STRICT.encode(matched);
@@ -84,13 +85,14 @@ public final class HttpClientCookieJar {
     }
 
     void save(URI uri, Cookie cookie) {
+        boolean hostOnly = Strings.isEmpty(cookie.domain());
         if (Strings.isEmpty(cookie.domain())) {
             cookie.setDomain(uri.getHost());
         }
         if (Strings.isEmpty(cookie.path())) {
             cookie.setPath("/");
         }
-        StoredCookie stored = new StoredCookie(cookie);
+        StoredCookie stored = new StoredCookie(cookie, hostOnly);
         cookies.remove(stored);
         if (stored.isExpired(System.currentTimeMillis())) {
             storage.remove(stored);
@@ -103,7 +105,7 @@ public final class HttpClientCookieJar {
     public void clearSession() {
         long now = System.currentTimeMillis();
         for (StoredCookie cookie : cookies) {
-            if (cookie.session || cookie.isExpired(now)) {
+            if (cookie.isSession() || cookie.isExpired(now)) {
                 cookies.remove(cookie);
                 storage.remove(cookie);
             }
@@ -155,19 +157,24 @@ public final class HttpClientCookieJar {
 
         public H2CookieStorage(EntityDatabase db) {
             this.db = db != null ? db : EntityDatabase.DEFAULT;
-            this.db.createMapping(CookieEntity.class);
+            this.db.createMapping(StoredCookie.class);
         }
 
         @Override
         public List<StoredCookie> loadAll() {
             long now = System.currentTimeMillis();
             List<StoredCookie> result = new ArrayList<>();
-            List<CookieEntity> entities = db.findBy(new EntityQueryLambda<>(CookieEntity.class));
-            for (CookieEntity entity : entities) {
-                StoredCookie cookie = entity.toStoredCookie(now);
-                if (cookie == null || cookie.isExpired(now)) {
-                    db.deleteById(CookieEntity.class, entity.id);
+            List<StoredCookie> entities = db.findBy(new EntityQueryLambda<>(StoredCookie.class));
+            for (StoredCookie cookie : entities) {
+                String storedId = cookie.id;
+                if (!cookie.isValid() || cookie.isExpired(now)) {
+                    db.deleteById(StoredCookie.class, storedId);
                     continue;
+                }
+                if (!Objects.equals(storedId, cookie.id)) {
+                    // 兼容旧主键格式，冷启动加载时迁移一次，避免重复持久化记录。
+                    db.deleteById(StoredCookie.class, storedId);
+                    db.save(cookie, true);
                 }
                 result.add(cookie);
             }
@@ -176,25 +183,27 @@ public final class HttpClientCookieJar {
 
         @Override
         public void save(StoredCookie cookie) {
-            if (cookie.session) {
+            if (cookie.isSession()) {
                 remove(cookie);
                 return;
             }
-            db.save(CookieEntity.from(cookie), true);
+            db.save(cookie, true);
         }
 
         @Override
         public void remove(StoredCookie cookie) {
-            db.deleteById(CookieEntity.class, CookieEntity.id(cookie.name, cookie.domain, cookie.path));
+            db.deleteById(StoredCookie.class, StoredCookie.id(cookie.name, cookie.domain, cookie.path, cookie.isSecure(), cookie.isHostOnly()));
+            db.deleteById(StoredCookie.class, StoredCookie.legacyId(cookie.name, cookie.domain, cookie.path));
         }
 
         @Override
         public void clear() {
-            db.truncateMapping(CookieEntity.class);
+            db.truncateMapping(StoredCookie.class);
         }
     }
 
-    public static final class CookieEntity implements Serializable {
+    @Getter
+    public static final class StoredCookie implements Serializable {
         private static final long serialVersionUID = -1714170629027078331L;
 
         @DbColumn(primaryKey = true, length = 512)
@@ -205,79 +214,117 @@ public final class HttpClientCookieJar {
         public String name;
         public String value;
         public Boolean secure;
+        public Boolean hostOnly;
         public Boolean httpOnly;
         @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
         public Long expiresAt;
+        public Boolean session;
+        transient Cookie cookie;
 
-        public static CookieEntity from(StoredCookie cookie) {
-            CookieEntity entity = new CookieEntity();
-            entity.id = id(cookie.name, cookie.domain, cookie.path);
-            entity.domain = cookie.domain;
-            entity.path = cookie.path;
-            entity.name = cookie.name;
-            entity.value = cookie.cookie.value();
-            entity.secure = cookie.secure;
-            entity.httpOnly = cookie.httpOnly;
-            entity.expiresAt = cookie.expiresAt;
-            return entity;
+        public static String id(String name, String domain, String path, boolean secure, boolean hostOnly) {
+            return (domain == null ? Strings.EMPTY : domain.toLowerCase(Locale.ENGLISH))
+                    + "|" + (path == null ? "/" : path)
+                    + "|" + name
+                    + "|" + (secure ? "1" : "0")
+                    + "|" + (hostOnly ? "1" : "0");
         }
 
-        public static String id(String name, String domain, String path) {
+        static String legacyId(String name, String domain, String path) {
             return (domain == null ? Strings.EMPTY : domain.toLowerCase(Locale.ENGLISH)) + "|" + (path == null ? "/" : path) + "|" + name;
         }
 
-        StoredCookie toStoredCookie(long now) {
-            if (Strings.isEmpty(name) || Strings.isEmpty(domain) || Strings.isEmpty(path) || expiresAt == null || expiresAt <= now) {
-                return null;
-            }
-            DefaultCookie cookie = new DefaultCookie(name, value != null ? value : Strings.EMPTY);
-            cookie.setDomain(domain);
-            cookie.setPath(path);
-            cookie.setSecure(Boolean.TRUE.equals(secure));
-            cookie.setHttpOnly(Boolean.TRUE.equals(httpOnly));
-            long seconds = Math.max(1L, (expiresAt - now + 999L) / 1000L);
-            cookie.setMaxAge(seconds);
-            return new StoredCookie(cookie, false, expiresAt);
+        public StoredCookie() {
         }
-    }
-
-    @Getter
-    public static final class StoredCookie {
-        final Cookie cookie;
-        final String name;
-        final String domain;
-        final String path;
-        final boolean secure;
-        final boolean httpOnly;
-        final boolean session;
-        final long expiresAt;
 
         StoredCookie(Cookie cookie) {
-            this(cookie, cookie.maxAge() == Long.MIN_VALUE,
+            this(cookie, false, cookie.maxAge() == Long.MIN_VALUE,
                     cookie.maxAge() == Long.MIN_VALUE ? Long.MAX_VALUE : System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(cookie.maxAge()));
         }
 
-        StoredCookie(Cookie cookie, boolean session, long expiresAt) {
+        StoredCookie(Cookie cookie, boolean hostOnly) {
+            this(cookie, hostOnly, cookie.maxAge() == Long.MIN_VALUE,
+                    cookie.maxAge() == Long.MIN_VALUE ? Long.MAX_VALUE : System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(cookie.maxAge()));
+        }
+
+        StoredCookie(Cookie cookie, boolean hostOnly, boolean session, long expiresAt) {
             this.cookie = cookie;
             name = cookie.name();
             domain = cookie.domain() != null ? cookie.domain().toLowerCase(Locale.ENGLISH) : Strings.EMPTY;
             path = cookie.path() != null ? cookie.path() : "/";
+            value = cookie.value();
             secure = cookie.isSecure();
+            this.hostOnly = hostOnly;
             httpOnly = cookie.isHttpOnly();
             this.session = session;
             this.expiresAt = expiresAt;
+            id = id(name, domain, path, isSecure(), isHostOnly());
+        }
+
+        Cookie cookie() {
+            Cookie c = cookie;
+            if (c != null) {
+                return c;
+            }
+            DefaultCookie dc = new DefaultCookie(name, value != null ? value : Strings.EMPTY);
+            dc.setDomain(domain);
+            dc.setPath(path);
+            dc.setSecure(Boolean.TRUE.equals(secure));
+            dc.setHttpOnly(Boolean.TRUE.equals(httpOnly));
+            if (!Boolean.TRUE.equals(session) && expiresAt != null && expiresAt != Long.MAX_VALUE) {
+                long seconds = Math.max(1L, (expiresAt - System.currentTimeMillis() + 999L) / 1000L);
+                dc.setMaxAge(seconds);
+            }
+            cookie = dc;
+            return dc;
+        }
+
+        public Cookie getCookie() {
+            return cookie();
+        }
+
+        boolean isValid() {
+            if (Strings.isEmpty(name) || Strings.isEmpty(domain) || Strings.isEmpty(path) || expiresAt == null) {
+                return false;
+            }
+            if (session == null) {
+                session = false;
+            }
+            if (secure == null) {
+                secure = false;
+            }
+            if (hostOnly == null) {
+                hostOnly = false;
+            }
+            id = id(name, domain, path, isSecure(), isHostOnly());
+            return true;
         }
 
         boolean isExpired(long now) {
             return expiresAt <= now;
         }
 
+        public boolean isSession() {
+            return Boolean.TRUE.equals(session);
+        }
+
+        public boolean isSecure() {
+            return Boolean.TRUE.equals(secure);
+        }
+
+        public boolean isHostOnly() {
+            return Boolean.TRUE.equals(hostOnly);
+        }
+
+        public boolean isHttpOnly() {
+            return Boolean.TRUE.equals(httpOnly);
+        }
+
         boolean matches(URI uri) {
-            if (secure && !"https".equalsIgnoreCase(uri.getScheme())) {
+            if (isSecure() && !"https".equalsIgnoreCase(uri.getScheme())) {
                 return false;
             }
             String host = uri.getHost().toLowerCase(Locale.ENGLISH);
-            if (!host.equals(domain) && !host.endsWith("." + domain)) {
+            if (isHostOnly() ? !host.equals(domain) : (!host.equals(domain) && !host.endsWith("." + domain))) {
                 return false;
             }
             String rawPath = uri.getRawPath();
@@ -296,7 +343,11 @@ public final class HttpClientCookieJar {
                 return false;
             }
             StoredCookie that = (StoredCookie) o;
-            return name.equals(that.name) && domain.equals(that.domain) && path.equals(that.path);
+            return name.equals(that.name)
+                    && domain.equals(that.domain)
+                    && path.equals(that.path)
+                    && isSecure() == that.isSecure()
+                    && isHostOnly() == that.isHostOnly();
         }
 
         @Override
@@ -304,6 +355,8 @@ public final class HttpClientCookieJar {
             int result = name.hashCode();
             result = 31 * result + domain.hashCode();
             result = 31 * result + path.hashCode();
+            result = 31 * result + (isSecure() ? 1 : 0);
+            result = 31 * result + (isHostOnly() ? 1 : 0);
             return result;
         }
     }

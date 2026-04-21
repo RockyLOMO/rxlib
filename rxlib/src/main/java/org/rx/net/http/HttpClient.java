@@ -67,25 +67,25 @@ import javax.servlet.http.HttpServletResponse;
 import static org.rx.core.Extends.tryClose;
 
 @Slf4j
-public class HttpClientV2 implements AutoCloseable {
+public class HttpClient implements AutoCloseable {
     public static final String FORM_TYPE = "application/x-www-form-urlencoded;charset=UTF-8";
     public static final String JSON_TYPE = "application/json; charset=UTF-8";
-    static final AttributeKey<RequestState> STATE_KEY = AttributeKey.valueOf("httpClientV2State");
+    static final AttributeKey<RequestState> STATE_KEY = AttributeKey.valueOf("HttpClientState");
 
     final Map<PoolKey, FixedChannelPool> pools = new ConcurrentHashMap<>();
     final Metrics metrics = new Metrics();
     volatile HttpClientConfig config;
     HttpHeaders reqHeaders;
 
-    public HttpClientV2() {
+    public HttpClient() {
         this(HttpClientConfig.defaults());
     }
 
-    public HttpClientV2(HttpClientCookieJar cookieJar) {
+    public HttpClient(HttpClientCookieJar cookieJar) {
         this(HttpClientConfig.defaults().setCookieJar(cookieJar));
     }
 
-    public HttpClientV2(HttpClientConfig config) {
+    public HttpClient(HttpClientConfig config) {
         this.config = config != null ? config.copy() : HttpClientConfig.defaults();
     }
 
@@ -105,66 +105,66 @@ public class HttpClientV2 implements AutoCloseable {
         return config.copy();
     }
 
-    public synchronized HttpClientV2 withConfig(HttpClientConfig config) {
+    public synchronized HttpClient withConfig(HttpClientConfig config) {
         this.config = config != null ? config.copy() : HttpClientConfig.defaults();
         close();
         return this;
     }
 
-    public HttpClientV2 withFeatures(boolean enableCookie, boolean enableLog) {
+    public HttpClient withFeatures(boolean enableCookie, boolean enableLog) {
         HttpClientConfig next = config.copy().setEnableCookie(enableCookie).setEnableLog(enableLog);
         return updateConfig(next, false);
     }
 
-    public HttpClientV2 withCookies(boolean enableCookie) {
+    public HttpClient withCookies(boolean enableCookie) {
         HttpClientConfig next = config.copy().setEnableCookie(enableCookie);
         return updateConfig(next, false);
     }
 
-    public HttpClientV2 withTimeoutMillis(int timeoutMillis) {
+    public HttpClient withTimeoutMillis(int timeoutMillis) {
         return withTimeoutMillis(timeoutMillis, timeoutMillis);
     }
 
-    public HttpClientV2 withTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
+    public HttpClient withTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
         HttpClientConfig next = config.copy().setTimeoutMillis(connectTimeoutMillis, readWriteTimeoutMillis);
         return updateConfig(next, true);
     }
 
-    public synchronized HttpClientV2 withMaxConnectionsPerHost(int maxConnectionsPerHost) {
+    public synchronized HttpClient withMaxConnectionsPerHost(int maxConnectionsPerHost) {
         HttpClientConfig next = config.copy().setMaxConnectionsPerHost(maxConnectionsPerHost);
         return updateConfig(next, true);
     }
 
-    public synchronized HttpClientV2 withPendingAcquireMaxCount(int pendingAcquireMaxCount) {
+    public synchronized HttpClient withPendingAcquireMaxCount(int pendingAcquireMaxCount) {
         HttpClientConfig next = config.copy().setPendingAcquireMaxCount(pendingAcquireMaxCount);
         return updateConfig(next, true);
     }
 
-    public synchronized HttpClientV2 withAcquireTimeoutMillis(int acquireTimeoutMillis) {
+    public synchronized HttpClient withAcquireTimeoutMillis(int acquireTimeoutMillis) {
         HttpClientConfig next = config.copy().setAcquireTimeoutMillis(acquireTimeoutMillis);
         return updateConfig(next, true);
     }
 
-    public synchronized HttpClientV2 withProxy(Proxy proxy) {
+    public synchronized HttpClient withProxy(Proxy proxy) {
         HttpClientConfig next = config.copy().setProxy(proxy);
         return updateConfig(next, true);
     }
 
-    public HttpClientV2 withProxy(AuthenticProxy proxy) {
+    public HttpClient withProxy(AuthenticProxy proxy) {
         return withProxy((Proxy) proxy);
     }
 
-    public HttpClientV2 withUserAgent() {
+    public HttpClient withUserAgent() {
         requestHeaders().set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
         return this;
     }
 
-    public HttpClientV2 withRequestCookie(String rawCookie) {
+    public HttpClient withRequestCookie(String rawCookie) {
         requestHeaders().set(HttpHeaderNames.COOKIE, rawCookie);
         return this;
     }
 
-    private synchronized HttpClientV2 updateConfig(HttpClientConfig config, boolean closePools) {
+    private synchronized HttpClient updateConfig(HttpClientConfig config, boolean closePools) {
         this.config = config;
         if (closePools) {
             close();
@@ -1258,7 +1258,7 @@ public class HttpClientV2 implements AutoCloseable {
         Thread current = Thread.currentThread();
         for (EventExecutor executor : Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true)) {
             if (executor.inEventLoop(current)) {
-                throw new IllegalStateException("HttpClientV2 sync API cannot be called from Netty EventLoop; use executeAsync instead");
+                throw new IllegalStateException("HttpClient sync API cannot be called from Netty EventLoop; use executeAsync instead");
             }
         }
     }

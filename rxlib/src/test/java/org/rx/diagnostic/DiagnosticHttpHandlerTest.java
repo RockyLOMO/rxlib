@@ -50,13 +50,13 @@ public class DiagnosticHttpHandlerTest {
             String url = "http://127.0.0.1:" + port + "/diag";
             try (HttpClient client = new HttpClient()) {
                 HttpClient.ResponseContent unauthorized = client.get(url);
-                assertEquals(401, unauthorized.getResponse().code());
-                assertNotNull(unauthorized.getResponse().header(HttpHeaderNames.WWW_AUTHENTICATE.toString()));
+                assertEquals(401, unauthorized.code());
+                assertNotNull(unauthorized.header(HttpHeaderNames.WWW_AUTHENTICATE.toString()));
 
                 client.requestHeaders().set(HttpHeaderNames.AUTHORIZATION, basic("secret"));
                 HttpClient.ResponseContent ok = client.get(url + "?limit=10");
                 String html = ok.toString();
-                assertEquals(200, ok.getResponse().code());
+                assertEquals(200, ok.code());
                 assertTrue(html.contains("RXlib Diagnostics"));
                 assertTrue(html.contains("Overview"));
                 assertTrue(html.contains("CPU Charts"));

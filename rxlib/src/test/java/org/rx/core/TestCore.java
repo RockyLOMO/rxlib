@@ -6,8 +6,6 @@ import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.ResponseBody;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.Main;
@@ -27,6 +25,7 @@ import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
 import org.rx.io.MemoryStream;
 import org.rx.net.Sockets;
+import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.*;
 import org.rx.third.open.CrcModel;
@@ -464,7 +463,6 @@ public class TestCore extends AbstractTester {
         //fastjson2
         Object[] x = {2, "b"};
         Iterable<Object> iter = new Iterable<Object>() {
-            @NotNull
             @Override
             public Iterator<Object> iterator() {
                 return Collections.singletonList(x[0]).iterator();
@@ -552,7 +550,7 @@ public class TestCore extends AbstractTester {
 
         Tuple<String, String> resolve = Reflects.resolveImpl(PersonBean::getAge);
         assert resolve.left.equals(PersonBean.class.getName()) && resolve.right.equals("age");
-        assert Reflects.getMethodMap(ResponseBody.class).get("charset") != null;
+        assert Reflects.getMethodMap(HttpClient.Response.class).get("getCharset") != null;
 
         Method defMethod = IPerson.class.getMethod("enableCompress");
         assert (Boolean) Reflects.invokeDefaultMethod(defMethod, PersonBean.YouFan);

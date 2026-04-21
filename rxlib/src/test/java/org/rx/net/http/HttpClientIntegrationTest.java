@@ -32,7 +32,7 @@ import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class HttpClientV2IntegrationTest {
+public class HttpClientIntegrationTest {
     private static HttpServer server;
     private static String baseUrl;
     private static final Set<Integer> remotePorts = Collections.newSetFromMap(new ConcurrentHashMap<Integer, Boolean>());
@@ -96,12 +96,12 @@ public class HttpClientV2IntegrationTest {
 
     @Test
     public void getHeadAndMetrics() {
-        try (HttpClientV2 client = new HttpClientV2()) {
-            HttpClientV2.Response response = client.get(baseUrl + "/get?q=ok");
+        try (HttpClient client = new HttpClient()) {
+            HttpClient.Response response = client.get(baseUrl + "/get?q=ok");
             assertEquals(200, response.getStatusCode());
             assertEquals("GET:ok", response.toString());
 
-            HttpClientV2.Response head = client.head(baseUrl + "/head");
+            HttpClient.Response head = client.head(baseUrl + "/head");
             assertEquals(200, head.getStatusCode());
             assertEquals(2, client.metrics().requests());
             assertEquals(2, client.metrics().success());
@@ -115,7 +115,7 @@ public class HttpClientV2IntegrationTest {
         Map<String, Object> json = new HashMap<>();
         json.put("hello", "world");
 
-        try (HttpClientV2 client = new HttpClientV2()) {
+        try (HttpClient client = new HttpClient()) {
             assertTrue(client.postJson(baseUrl + "/json", json).toString().contains("POST:{\"hello\":\"world\"}"));
             assertTrue(client.putJson(baseUrl + "/json", json).toString().contains("PUT:{\"hello\":\"world\"}"));
             assertTrue(client.patchJson(baseUrl + "/json", json).toString().contains("PATCH:{\"hello\":\"world\"}"));
@@ -134,7 +134,7 @@ public class HttpClientV2IntegrationTest {
         Map<String, IOStream> files = new HashMap<>();
         files.put("file", IOStream.wrap("hello.txt", "file-body".getBytes(CharsetUtil.UTF_8)));
 
-        try (HttpClientV2 client = new HttpClientV2()) {
+        try (HttpClient client = new HttpClient()) {
             assertEquals("POST:1:two words", client.post(baseUrl + "/form", forms).toString());
             assertEquals("n1:hello.txt:file-body", client.post(baseUrl + "/multipart", multipartForms, files).toString());
         }
@@ -142,11 +142,11 @@ public class HttpClientV2IntegrationTest {
 
     @Test
     public void cookieAndResponseCachingWork() {
-        try (HttpClientV2 client = new HttpClientV2().withCookies(true)) {
+        try (HttpClient client = new HttpClient().withCookies(true)) {
             assertEquals("set", client.get(baseUrl + "/cookie-set").toString());
             assertTrue(client.get(baseUrl + "/cookie-echo").toString().contains("sid=abc"));
 
-            HttpClientV2.Response response = client.get(baseUrl + "/large");
+            HttpClient.Response response = client.get(baseUrl + "/large");
             String text = response.toString();
             assertEquals(text, response.toString());
             assertTrue(text.length() > 1000);
@@ -172,8 +172,8 @@ public class HttpClientV2IntegrationTest {
     @Test
     public void requestBuilderMergesHeadersAndQueryString() {
         Map<String, Object> query = Collections.singletonMap("q", "hello world");
-        try (HttpClientV2 client = new HttpClientV2()) {
-            HttpClientV2.Request request = HttpClientV2.request(HttpMethod.GET, HttpClientV2.buildUrl(baseUrl + "/get", query))
+        try (HttpClient client = new HttpClient()) {
+            HttpClient.Request request = HttpClient.request(HttpMethod.GET, HttpClient.buildUrl(baseUrl + "/get", query))
                     .header("X-Test", "1");
             assertEquals("GET:hello world", client.execute(request).toString());
         }
@@ -181,7 +181,7 @@ public class HttpClientV2IntegrationTest {
 
     @Test
     public void syncApiRejectsEventLoopThread() throws Exception {
-        try (HttpClientV2 client = new HttpClientV2()) {
+        try (HttpClient client = new HttpClient()) {
             Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true).next()
                     .submit(() -> assertThrows(IllegalStateException.class, () -> client.get(baseUrl + "/get?q=ok")))
                     .get(5, TimeUnit.SECONDS);
@@ -190,7 +190,7 @@ public class HttpClientV2IntegrationTest {
 
     @Test
     public void gzipResponseIsDecoded() {
-        try (HttpClientV2 client = new HttpClientV2()) {
+        try (HttpClient client = new HttpClient()) {
             assertEquals("gzip-ok", client.get(baseUrl + "/gzip").toString());
         }
     }
@@ -198,7 +198,7 @@ public class HttpClientV2IntegrationTest {
     @Test
     public void keepAliveReusesFixedPoolChannel() {
         remotePorts.clear();
-        try (HttpClientV2 client = new HttpClientV2().withMaxConnectionsPerHost(1)) {
+        try (HttpClient client = new HttpClient().withMaxConnectionsPerHost(1)) {
             String first = client.get(baseUrl + "/remote-port").toString();
             String second = client.get(baseUrl + "/remote-port").toString();
             assertEquals(first, second);
@@ -208,8 +208,8 @@ public class HttpClientV2IntegrationTest {
 
     @Test
     public void requestTimeoutCompletesExceptionally() {
-        try (HttpClientV2 client = new HttpClientV2().withTimeoutMillis(1000, 1000)) {
-            HttpClientV2.Request request = HttpClientV2.request(HttpMethod.GET, baseUrl + "/slow")
+        try (HttpClient client = new HttpClient().withTimeoutMillis(1000, 1000)) {
+            HttpClient.Request request = HttpClient.request(HttpMethod.GET, baseUrl + "/slow")
                     .timeoutMillis(100);
             ExecutionException error = assertThrows(ExecutionException.class,
                     () -> client.executeAsync(request).get(2, TimeUnit.SECONDS));
@@ -221,13 +221,13 @@ public class HttpClientV2IntegrationTest {
     @Test
     public void fixedPoolLimitsConcurrentAcquire() throws Exception {
         slowStarted = new CountDownLatch(1);
-        try (HttpClientV2 client = new HttpClientV2().withTimeoutMillis(80, 1000).withMaxConnectionsPerHost(1)) {
-            CompletableFuture<HttpClientV2.ResponseContent> first = client.executeAsync(
-                    HttpClientV2.request(HttpMethod.GET, baseUrl + "/slow").timeoutMillis(1000));
+        try (HttpClient client = new HttpClient().withTimeoutMillis(80, 1000).withMaxConnectionsPerHost(1)) {
+            CompletableFuture<HttpClient.ResponseContent> first = client.executeAsync(
+                    HttpClient.request(HttpMethod.GET, baseUrl + "/slow").timeoutMillis(1000));
             assertTrue(slowStarted.await(2, TimeUnit.SECONDS));
 
-            CompletableFuture<HttpClientV2.ResponseContent> queued = client.executeAsync(
-                    HttpClientV2.request(HttpMethod.GET, baseUrl + "/get?q=queued").timeoutMillis(1000));
+            CompletableFuture<HttpClient.ResponseContent> queued = client.executeAsync(
+                    HttpClient.request(HttpMethod.GET, baseUrl + "/get?q=queued").timeoutMillis(1000));
             ExecutionException error = assertThrows(ExecutionException.class,
                     () -> queued.get(2, TimeUnit.SECONDS));
             assertTrue(hasCause(error, TimeoutException.class), error.toString());
