@@ -23,6 +23,7 @@ import org.rx.net.TransportFlags;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpClientConfig;
 import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
@@ -705,10 +706,11 @@ public final class Main implements SocksRpcContract {
         }).requestAsync("/hf", (request, response) -> {
             String url = request.getQueryString().getFirst("fu");
             Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
-            try (HttpClient client = new HttpClient()) {
-                if (tm != null) {
-                    client.withTimeoutMillis(tm);
-                }
+            HttpClientConfig hfCfg = new HttpClientConfig();
+            if (tm != null) {
+                hfCfg.setTimeoutMillis(tm);
+            }
+            try (HttpClient client = new HttpClient(hfCfg)) {
                 response.jsonBody(client.get(url).toJson());
             }
         })

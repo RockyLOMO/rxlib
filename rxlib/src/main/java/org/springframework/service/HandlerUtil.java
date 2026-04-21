@@ -19,6 +19,7 @@ import org.rx.io.IOStream;
 import org.rx.net.NetEventWait;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpClientConfig;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
 import org.springframework.http.MediaType;
@@ -71,12 +72,14 @@ public class HandlerUtil {
                 case 2:
                     String fu = request.getParameter("url");
                     if (fu != null) {
-                        HttpClient client = new HttpClient();
+                        HttpClientConfig cfg = new HttpClientConfig();
                         Integer tm = Reflects.convertQuietly(request.getParameter("timeout"), Integer.class);
                         if (tm != null) {
-                            client.withTimeoutMillis(tm);
+                            cfg.setTimeoutMillis(tm);
                         }
-                        client.forward(request, response, fu);
+                        try (HttpClient client = new HttpClient(cfg)) {
+                            client.forward(request, response, fu);
+                        }
                     }
                     break;
                 case 3:
@@ -323,7 +326,9 @@ public class HandlerUtil {
 
             b = xcha ? new String(XChaCha20Poly1305Util.decrypt(CodecUtil.convertFromBase64(b)), StandardCharsets.UTF_8) : b;
             if (Strings.startsWith(b, "https")) {
-                b = new HttpClient().get(b).toString();
+                try (HttpClient client = new HttpClient()) {
+                    b = client.get(b).toString();
+                }
             }
             return toJsonObject(b);
         } catch (Throwable e) {

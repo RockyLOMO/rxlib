@@ -1,10 +1,10 @@
-# HttpClientV2 Netty 改造计划
+# HttpClient Netty 改造计划
 
 ## 模式
 
 - 高性能模式
 - Java 8 约束
-- 目标：新增基于 Netty 的 `HttpClientV2`，覆盖现有 `HttpClient` 主要能力，逐步移除 `okhttp` 依赖，同时保持低延迟、低额外分配、可控的连接与内存生命周期。
+- 目标：基于 Netty 重建 `HttpClient`，覆盖旧 `HttpClient` 主要能力，移除 `okhttp` 依赖，同时保持低延迟、低额外分配、可控的连接与内存生命周期。
 
 ## 进度同步（2026-04-21）
 
@@ -13,34 +13,36 @@
   - 当前已具备的能力：`GET/HEAD/POST/PUT/PATCH/DELETE`、`json body`、`application/x-www-form-urlencoded`、`multipart/form-data` 文件上传、请求头透传、超时、Cookie、代理、Servlet 转发、响应转字符串/文件/JSON/流。
   - 当前 `HttpClient` 语义是“单实例仅维护一个活动响应”，重复请求会关闭上一次 `ResponseContent`，且类本身标注了 `Not thread safe`。
 - `[已完成]` 依赖边界确认
-  - 仅新增 `HttpClientV2` 还不能马上删除 `okhttp` 依赖。
+  - 仅新增 Netty 版本还不能马上删除 `okhttp` 依赖。
   - 除 `HttpClient` 外，当前还直接依赖 `okhttp` 的位置包括：
     - [`AuthenticProxy.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/AuthenticProxy.java)
     - [`CookieContainer.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/CookieContainer.java)
     - [`PersistentCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/PersistentCookieStorage.java)
     - [`VolatileCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/VolatileCookieStorage.java)
     - [`HttpTunnelClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/socks/httptunnel/HttpTunnelClient.java)
-- `[已完成]` `HttpClientV2` 核心代码实现
-  - 新增 [`HttpClientV2.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/HttpClientV2.java)。
+- `[已完成]` `HttpClient` 核心代码实现
+  - 新增 [`HttpClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/HttpClient.java)。
   - 已实现：Netty `Bootstrap` 复用、`FixedChannelPool` 按目标端点建池、HTTP/HTTPS pipeline、GET/HEAD、JSON/form/multipart body、PUT/PATCH/DELETE body、基础 Cookie、响应 `toString()/toJson()/toFile()/toStream()`、Servlet `forward(...)` 流式转发、HTTP/SOCKS 代理配置。
   - 连接池已使用 `ChannelHealthChecker.ACTIVE`，并补齐 `maxConnectionsPerHost`、`maxPendingAcquires`、pending acquire timeout，避免无上限建连。
   - 响应未使用 `HttpObjectAggregator`，按 `HttpContent` 写入 `HybridStream`；大响应超过阈值后暂停 `autoRead`，把落盘写入切到业务线程，完成后再恢复读取。
   - multipart/stream 上传按写水位、累计字节数和 chunk 数批量 flush，文件读取放到 worker 线程，避免在 Netty I/O 线程执行阻塞文件读，且不再每个 8K chunk 阻塞等待。
   - 同步 API 已增加 EventLoop 线程运行时保护，禁止在共享 TCP Reactor 内阻塞等待响应。
   - Cookie 存储已拆分为内存存储与 H2 持久化存储；H2 版本基于 [`EntityDatabase.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/io/EntityDatabase.java)，热请求匹配仍走内存快照，H2 只在加载/保存/删除时访问。
-  - 已补充 [`HttpClientV2Test.java`](/D:/projs_r/rxlib/rxlib/src/test/java/org/rx/net/http/HttpClientV2Test.java) 覆盖 GET、JSON、form、multipart、内存 Cookie、H2 Cookie、forward、SOCKS 代理认证成功与失败。
-  - 已补充 [`HttpClientV2IntegrationTest.java`](/D:/projs_r/rxlib/rxlib/src/test/java/org/rx/net/http/HttpClientV2IntegrationTest.java) 覆盖 GET/HEAD、JSON `POST/PUT/PATCH/DELETE`、form、multipart、Cookie、响应缓存、gzip 解压、keep-alive 复用、请求超时、FixedChannelPool acquire 限流、EventLoop 同步 API 保护。
+  - 已补充 [`HttpClientFeatureTest.java`](/D:/projs_r/rxlib/rxlib/src/test/java/org/rx/net/http/HttpClientFeatureTest.java) 覆盖 GET、JSON、form、multipart、内存 Cookie、H2 Cookie、forward、SOCKS 代理认证成功与失败。
+  - 已补充 [`HttpClientIntegrationTest.java`](/D:/projs_r/rxlib/rxlib/src/test/java/org/rx/net/http/HttpClientIntegrationTest.java) 覆盖 GET/HEAD、JSON `POST/PUT/PATCH/DELETE`、form、multipart、Cookie、响应缓存、gzip 解压、keep-alive 复用、请求超时、FixedChannelPool acquire 限流、EventLoop 同步 API 保护。
 - `[已完成]` 配置/测试兼容
   - `RxConfig` 当前已有 `net.http.*` 服务端配置结构。
-  - `HttpClientV2` 已接入 Netty `HttpProxyHandler` / `Socks5ProxyHandler`，连接池 key 已按代理类型、地址、用户名隔离。
-  - `AuthenticProxy` 已补充 username/password 字段供 `HttpClientV2` 复用，但旧 `okhttp3.Authenticator` 仍保留，后续旧客户端清理阶段再移除。
-  - 已执行：`mvn -pl rxlib "-Dtest=org.rx.net.http.HttpClientV2Test,org.rx.net.http.HttpClientV2IntegrationTest" test`，结果 18 个测试通过。
-- `[暂不执行]` 旧 `HttpClient` / `HttpTunnelClient` / `CookieContainer` 的 `okhttp` 引用清理
-  - 按当前要求暂不处理。
-- `[暂缓]` 调用方切换与 `okhttp` 彻底下线
-  - 按当前要求暂不处理旧客户端 okhttp 引用清理，因此该阶段只保留计划，不执行。
-  - 旧 `HttpClient`、`RestClient`、`forward(...)`、`HttpTunnelClient` 尚未切换。
-  - `okhttp` 依赖仍然保留。
+  - `HttpClient` 已接入 Netty `HttpProxyHandler` / `Socks5ProxyHandler`，连接池 key 已按代理类型、地址、用户名隔离。
+  - `AuthenticProxy` 已改为纯代理配置对象，旧 `okhttp3.Authenticator` 已清理。
+  - 已执行：`mvn -pl rxlib "-Dtest=org.rx.net.http.HttpClientFeatureTest,org.rx.net.http.HttpClientIntegrationTest" test`，结果 20 个测试通过。
+- `[已完成]` 旧 `HttpClient` / `HttpTunnelClient` / `CookieContainer` 的 `okhttp` 引用清理
+  - [`HttpClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/HttpClient.java) 已切为 Netty 原生实现，不再持有 `okhttp` 客户端。
+  - [`CookieContainer.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/CookieContainer.java)、[`PersistentCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/PersistentCookieStorage.java)、[`VolatileCookieStorage.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/cookie/VolatileCookieStorage.java) 已切到仓内 Cookie 模型。
+  - [`HttpTunnelClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/socks/httptunnel/HttpTunnelClient.java) 已切到 `HttpClient` 原始字节上传路径。
+- `[已完成]` 调用方切换与 `okhttp` 彻底下线
+  - [`RestClient.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/http/RestClient.java)、[`HandlerUtil.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/springframework/service/HandlerUtil.java)、[`RWebConfig.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/springframework/service/RWebConfig.java)、[`GeoManager.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/support/GeoManager.java)、[`GeoIPSearcher.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/support/GeoIPSearcher.java)、[`NetEventWait.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/net/NetEventWait.java)、[`Main.java`](/D:/projs_r/rxlib/rxlib/src/main/java/org/rx/Main.java) 已完成切换。
+  - `rxlib/pom.xml` 已删除 `okhttp` 依赖；源码与测试源码已无 `okhttp3.*` / `okio.*` 直接引用。
+  - 已追加验证：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticHttpHandlerTest,org.rx.net.http.HttpClientTest,org.rx.net.http.HttpServerBlockingTest,org.rx.net.http.HttpClientFeatureTest,org.rx.net.http.HttpClientIntegrationTest,org.rx.net.support.GeoIPSearcherTest" test` 与 `mvn -pl rxlib "-Dtest=org.rx.net.socks.httptunnel.HttpTunnelTest" test`，结果均通过。
 
 ## 1. 背景与目标
 
@@ -105,20 +107,20 @@
 
 ### 2.2 兼容策略
 
-用户已经明确说明 `HttpClientV2` 与原 `HttpClient` 方法名可以不同，因此兼容分两层：
+用户已经明确说明 Netty 版本与原 `HttpClient` 方法名可以不同，因此兼容分两层：
 
-- 第一层：先把 `HttpClientV2` 核心能力做完整，接口允许更现代化。
+- 第一层：先把 Netty `HttpClient` 核心能力做完整，接口允许更现代化。
 - 第二层：按需要补一个轻量兼容适配器，给 `RestClient`、`forward` 等现有调用点平滑切换。
 
-建议不要继续复制旧类的“单实例仅保留一个活动响应”限制，`HttpClientV2` 应设计为线程安全的请求执行器；如果需要兼容旧语义，再单独做 adapter。
+建议不要继续复制旧类的“单实例仅保留一个活动响应”限制，Netty `HttpClient` 应设计为线程安全的请求执行器；如果需要兼容旧语义，再单独做 adapter。
 
-## 3. `HttpClientV2` 目标设计
+## 3. `HttpClient` 目标设计
 
 ### 3.1 类分层
 
 建议新增以下核心类型：
 
-- `HttpClientV2`
+- `HttpClient`
   - 线程安全
   - 负责发起请求、维护共享连接池和公共配置
 - `HttpClientRequest`
@@ -287,7 +289,7 @@
 
 交付物：
 
-- `HttpClientV2` 对外 API 草案
+- `HttpClient` 对外 API 草案
 - `HttpClientBody`/`HttpClientResponseV2` 类型设计
 - 兼容清单和迁移顺序
 
@@ -341,9 +343,9 @@
 - 代理鉴权通过
 - `forward` 可透传 query/header/body/status/header
 
-### 阶段 5：调用方切换（暂缓）
+### 阶段 5：调用方切换（已完成）
 
-当前状态：按用户要求暂不处理旧 `HttpClient` / `HttpTunnelClient` / `CookieContainer` 的 okhttp 引用清理，因此调用方切换阶段只保留迁移计划。
+当前状态：主干调用方已切到 Netty `HttpClient`，旧 `HttpClient` 的 okhttp 实现已移除。
 
 优先迁移：
 
@@ -357,9 +359,9 @@
 - 主要调用方不再依赖 `okhttp` 类型
 - 旧功能回归通过
 
-### 阶段 6：彻底移除 `okhttp`（暂缓）
+### 阶段 6：彻底移除 `okhttp`（已完成）
 
-当前状态：等待旧客户端迁移范围重新打开后再执行。
+当前状态：`okhttp` Maven 依赖与源码直接引用均已删除。
 
 需要同时改造：
 
@@ -439,7 +441,7 @@
 
 已覆盖：
 
-- `HttpClientV2Test`
+- `HttpClientFeatureTest`
   - GET、JSON、form、multipart
   - 内存 Cookie、H2 持久化 Cookie
   - Servlet forward
@@ -451,7 +453,7 @@
 
 已覆盖：
 
-- `HttpClientV2IntegrationTest`
+- `HttpClientIntegrationTest`
   - GET、HEAD、metrics
   - JSON `POST/PUT/PATCH/DELETE`
   - form、multipart
@@ -462,7 +464,7 @@
   - FixedChannelPool 最大连接数与 pending acquire 超时
   - 同步 API 禁止在 EventLoop 调用
 
-暂缓：
+待补充：
 
 - 真实 Servlet 容器级 forward 集成测试，当前只用 mock servlet 回归。
 - HTTP 代理认证专项测试，当前已覆盖 Netty SOCKS5 代理认证成功与失败。
@@ -496,7 +498,7 @@
 
 达到以下条件，才可以删除 `okhttp` 依赖：
 
-- `HttpClientV2` 已覆盖当前主要调用场景
+- `HttpClient` 已覆盖当前主要调用场景
 - `RestClient`、`forward(...)`、JSON POST、multipart 文件上传都完成切换
 - 旧测试回归通过，新测试通过
 - 全仓没有 `okhttp3.*` / `okio.*` 直接引用

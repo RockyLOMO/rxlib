@@ -191,7 +191,9 @@ public class RWebConfig implements WebMvcConfigurer {
                 if (fts != null) {
                     String fu = fts.get(ms.getName());
                     if (fu != null) {
-                        new HttpClient().forward(ra.getRequest(), ra.getResponse(), fu);
+                        try (HttpClient client = new HttpClient()) {
+                            client.forward(ra.getRequest(), ra.getResponse(), fu);
+                        }
                         return null;
                     }
                 }

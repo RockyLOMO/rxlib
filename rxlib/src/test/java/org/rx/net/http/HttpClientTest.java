@@ -4,7 +4,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import java.io.InputStream;
-import java.io.IOException;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class HttpClientTest {
@@ -31,31 +30,33 @@ public class HttpClientTest {
     }
 
     @Test
-    public void testAutoCloseable() throws IOException {
+    public void testAutoCloseable() throws Exception {
         String url = BASE_URL + "/test";
         InputStream stream;
         try (HttpClient client = new HttpClient()) {
-            HttpClient.ResponseContent res = client.get(url);
-            stream = res.responseStream();
-            assertNotNull(stream);
-            assertTrue(stream.read() != -1);
+            try (HttpClient.ResponseContent res = client.get(url)) {
+                stream = res.responseStream();
+                assertNotNull(stream);
+                assertTrue(stream.read() != -1);
+            }
         }
         
         // After client is closed, the stream should be closed
-        assertThrows(IOException.class, () -> stream.read(), "Stream should be closed after client.close()");
+        assertThrows(Exception.class, () -> stream.read(), "Stream should be closed after response.close()");
     }
 
     @Test
     public void testMultipleConsumption() {
         String url = BASE_URL + "/test";
         try (HttpClient client = new HttpClient()) {
-            HttpClient.ResponseContent res = client.get(url);
-            String s1 = res.toString();
-            assertTrue(s1.contains("ok"));
-            
-            // Second consumption should work because of caching in 'str' field
-            String s2 = res.toString();
-            assertEquals(s1, s2);
+            try (HttpClient.ResponseContent res = client.get(url)) {
+                String s1 = res.toString();
+                assertTrue(s1.contains("ok"));
+
+                // Second consumption should work because of caching in 'str' field
+                String s2 = res.toString();
+                assertEquals(s1, s2);
+            }
         }
     }
 
@@ -63,11 +64,11 @@ public class HttpClientTest {
     public void testConsecutiveRequests() {
         String url = BASE_URL + "/test";
         try (HttpClient client = new HttpClient()) {
-            HttpClient.ResponseContent res1 = client.get(url);
-            HttpClient.ResponseContent res2 = client.get(url); // This closes res1.response and res1.stream
-            
-            // res1 should be closed now
-            assertThrows(Exception.class, () -> res1.toString(), "res1 should be closed after second get()");
+            try (HttpClient.ResponseContent res1 = client.get(url);
+                 HttpClient.ResponseContent res2 = client.get(url)) {
+                assertTrue(res1.toString().contains("ok"));
+                assertTrue(res2.toString().contains("ok"));
+            }
         }
     }
 
@@ -75,15 +76,14 @@ public class HttpClientTest {
     public void testMultipleConsumptionWithTwoMethods() {
         String url = BASE_URL + "/test";
         try (HttpClient client = new HttpClient()) {
-            HttpClient.ResponseContent res = client.get(url);
-            String s1 = res.toString();
-            assertTrue(s1.contains("ok"));
-            
-            // This should fail according to my analysis because toString() closed the stream 
-            // and toFile() will try to open it again when cachingStream is false.
-            assertDoesNotThrow(() -> {
-                res.toFile("test.tmp");
-            }, "Should be able to call toFile() after toString() even if not cachingStream");
+            try (HttpClient.ResponseContent res = client.get(url)) {
+                String s1 = res.toString();
+                assertTrue(s1.contains("ok"));
+
+                assertDoesNotThrow(() -> {
+                    res.toFile("test.tmp");
+                }, "Should be able to call toFile() after toString()");
+            }
         } finally {
             new java.io.File("test.tmp").delete();
         }

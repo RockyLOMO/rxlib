@@ -43,6 +43,29 @@ jobs:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
+      - name: Update Public Suffix List
+        run: |
+          PSL_FILE="rxlib/src/main/resources/public_suffix_list.dat"
+          TMP_FILE="$(mktemp)"
+          curl --fail --location --silent --show-error \
+            "https://publicsuffix.org/list/public_suffix_list.dat" \
+            --output "$TMP_FILE"
+
+          test -s "$TMP_FILE"
+          grep -q "^// VERSION:" "$TMP_FILE"
+          grep -q "^// COMMIT:" "$TMP_FILE"
+          grep -q "^com$" "$TMP_FILE"
+
+          mkdir -p "$(dirname "$PSL_FILE")"
+          if [[ ! -f "$PSL_FILE" ]] || ! cmp -s "$TMP_FILE" "$PSL_FILE"; then
+            cp "$TMP_FILE" "$PSL_FILE"
+            echo "Public Suffix List updated:"
+            grep -E "^// (VERSION|COMMIT):" "$PSL_FILE"
+          else
+            echo "Public Suffix List already up to date:"
+            grep -E "^// (VERSION|COMMIT):" "$PSL_FILE"
+          fi
+
       - name: Parse current version
         id: parse_version
         run: |
@@ -94,7 +117,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add pom.xml rxlib/pom.xml rxlib-x/pom.xml
+          git add pom.xml rxlib/pom.xml rxlib-x/pom.xml rxlib/src/main/resources/public_suffix_list.dat
           git pull origin "${RELEASE_BRANCH}" --rebase || true
 
           git commit -m "chore: release v$RELEASE_VERSION [skip ci]"
