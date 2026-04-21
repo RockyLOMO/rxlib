@@ -16,9 +16,11 @@ LOCAL_TIME=$(date +"%Y-%m-%d %H:%M:%S")
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd $SCRIPT_DIR
 
-PORT=9900
+PORT=${PORT:-9900}
+HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8082}
+REQUIRED_TCP_PORTS=("${PORT}" "${HTTP_SERVER_PORT}")
 MEM_OPTIONS="-Xms64m -Xmx128m -Xss256k -XX:MaxMetaspaceSize=64m -XX:MaxDirectMemorySize=640m -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+UseCompressedClassPointers -XX:+UseStringDeduplication"
-APP_OPTIONS="-Dapp.net.reactorThreadAmount=2 -Dapp.net.connectTimeoutMillis=8000 -Dapp.net.dns.outlandServers=127.0.0.1:53,1.1.1.1:53 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9"
+APP_OPTIONS="-Dapp.net.reactorThreadAmount=2 -Dapp.net.connectTimeoutMillis=8000 -Dapp.net.dns.outlandServers=127.0.0.1:53,1.1.1.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9"
 DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./heapdump-$(date +%Y%m%d_%H%M%S).hprof -XX:ErrorFile=./hs_err_pid%p.log -XX:+CreateCoredumpOnCrash"
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
@@ -73,13 +75,35 @@ rotate_latest_jar() {
 }
 
 port_in_use() {
+    local port="${1:-$PORT}"
     if command -v ss >/dev/null 2>&1; then
-        ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${PORT}$" && return 0
+        ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${port}$" && return 0
     fi
     if command -v netstat >/dev/null 2>&1; then
-        netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${PORT}$" && return 0
+        netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${port}$" && return 0
     fi
     return 1
+}
+
+any_required_port_in_use() {
+    local port
+    for port in "${REQUIRED_TCP_PORTS[@]}"; do
+        if port_in_use "${port}"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+print_required_port_status() {
+    local port state
+    for port in "${REQUIRED_TCP_PORTS[@]}"; do
+        state="free"
+        if port_in_use "${port}"; then
+            state="in-use"
+        fi
+        echo "${YELLOW}[${LOCAL_TIME}] port ${port}/tcp ${state}"
+    done
 }
 
 kill_by_pattern() {
@@ -117,7 +141,7 @@ stop_old_process() {
 
     wait_count=0
     while [ ${wait_count} -lt 15 ]; do
-        if ! port_in_use && ! process_exists; then
+        if ! any_required_port_in_use && ! process_exists; then
             echo "${GREEN}[${LOCAL_TIME}] 旧进程已完全退出"
             return 0
         fi
@@ -125,14 +149,15 @@ stop_old_process() {
         wait_count=$((wait_count + 1))
     done
 
-    if process_exists || port_in_use; then
+    if process_exists || any_required_port_in_use; then
         echo "${YELLOW}[${LOCAL_TIME}] 旧进程未在超时内退出，执行强制终止..."
         kill_by_pattern "-9"
         sleep 1
     fi
 
-    if process_exists || port_in_use; then
+    if process_exists || any_required_port_in_use; then
         echo "${RED}[${LOCAL_TIME}] 旧进程仍未退出，请检查权限或手动处理"
+        print_required_port_status
         return 1
     fi
     echo "${GREEN}[${LOCAL_TIME}] 旧进程已强制终止"
@@ -145,27 +170,28 @@ wait_for_startup() {
 
     wait_count=0
     while [ ${wait_count} -lt 30 ]; do
-        if port_in_use; then
-            PID=$(get_process_pid)
-            echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${PID}"
-            return 0
-        fi
-
         if ! process_exists; then
             echo "${RED}[${LOCAL_TIME}] 启动失败！进程已退出，请手动执行查看错误"
             return 1
         fi
 
+        if port_in_use "${PORT}" && port_in_use "${HTTP_SERVER_PORT}"; then
+            PID=$(get_process_pid)
+            echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${PID}，端口 ${PORT}/tcp 与 ${HTTP_SERVER_PORT}/tcp 均已绑定"
+            return 0
+        fi
+
         if [ ${wait_count} -eq 0 ]; then
             pid=$(get_process_pid)
-            echo "${YELLOW}[${LOCAL_TIME}] 进程已启动，等待端口 ${PORT}/tcp 完成绑定... PID: ${pid}"
+            echo "${YELLOW}[${LOCAL_TIME}] 进程已启动，等待端口 ${PORT}/tcp 与 ${HTTP_SERVER_PORT}/tcp 完成绑定... PID: ${pid}"
         fi
         sleep 1
         wait_count=$((wait_count + 1))
     done
 
     pid=$(get_process_pid)
-    echo "${RED}[${LOCAL_TIME}] 启动超时！进程仍在运行但端口 ${PORT}/tcp 未完成绑定，PID: ${pid}"
+    echo "${RED}[${LOCAL_TIME}] 启动超时！进程仍在运行但必需端口未全部绑定，PID: ${pid}"
+    print_required_port_status
     return 1
 }
 
@@ -184,7 +210,7 @@ ACTION="$1"
 
 # 根据参数决定是否 kill 端口
 if [ "$ACTION" = "publish" ]; then
-    echo "${RED}[${LOCAL_TIME}] 发布模式：正在终止端口 ${PORT}/tcp 的旧进程..."
+    echo "${RED}[${LOCAL_TIME}] 发布模式：正在终止端口 ${PORT}/tcp 与 ${HTTP_SERVER_PORT}/tcp 的旧进程..."
     stop_old_process || exit 1
 
     if [ -f "app.jar.publish" ]; then
@@ -195,17 +221,22 @@ if [ "$ACTION" = "publish" ]; then
         mv "app.jar.publish" "app.jar"
     fi
 elif [ "$ACTION" = "start" ]; then
-    echo "${RED}[${LOCAL_TIME}] 启动模式：正在检测端口 ${PORT}/tcp 的进程..."
-    if port_in_use || process_exists; then
+    echo "${RED}[${LOCAL_TIME}] 启动模式：正在检测端口 ${PORT}/tcp 与 ${HTTP_SERVER_PORT}/tcp 的进程..."
+    if any_required_port_in_use || process_exists; then
         PID=$(get_process_pid)
-        echo "${GREEN}[${LOCAL_TIME}] ${PORT}/tcp 已运行，PID: ${PID}"
-        exit 0
+        print_required_port_status
+        if [ -n "${PID}" ]; then
+            echo "${GREEN}[${LOCAL_TIME}] ${PORT}/tcp 已运行，PID: ${PID}"
+            exit 0
+        fi
+        echo "${RED}[${LOCAL_TIME}] 必需端口被占用，但未找到匹配进程，请手动检查 ${HTTP_SERVER_PORT}/${PORT} 占用者"
+        exit 1
     fi
 else
     echo "错误：无效参数 '$ACTION'"
     usage
 fi
 
-echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
+echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程，HttpServer 端口 ${HTTP_SERVER_PORT}/tcp..."
 nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 -udp2raw=1 -debug=1 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >/dev/null 2>&1 &
 wait_for_startup || exit 1
