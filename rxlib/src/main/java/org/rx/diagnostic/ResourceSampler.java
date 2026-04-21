@@ -61,6 +61,7 @@ public class ResourceSampler {
         add(metrics, now, "jvm.heap.used.bytes", heapUsed, null);
         add(metrics, now, "jvm.heap.committed.bytes", heap.getCommitted(), null);
         add(metrics, now, "jvm.heap.max.bytes", heapMax, null);
+        add(metrics, now, "jvm.heap.used.percent", percent(heapUsed, heapMax), null);
         add(metrics, now, "jvm.nonheap.used.bytes", nonHeapUsed, null);
         add(metrics, now, "jvm.nonheap.committed.bytes", nonHeap.getCommitted(), null);
 
@@ -111,7 +112,12 @@ public class ResourceSampler {
             add(metrics, now, "jvm.gc.time.millis", gc.getCollectionTime(), tags);
         }
 
-        addPhysicalMemory(metrics, now);
+        long totalPhysicalBytes = addPhysicalMemory(metrics, now);
+        if (totalPhysicalBytes > 0L) {
+            long appUsedBytes = Math.max(0L, heapUsed) + Math.max(0L, nonHeapUsed)
+                    + Math.max(0L, directUsed) + Math.max(0L, mappedUsed);
+            add(metrics, now, "jvm.app.memory.used.percent", percent(appUsedBytes, totalPhysicalBytes), null);
+        }
 
         List<ResourceSnapshot.DiskUsage> disks = new ArrayList<>();
         File[] roots = File.listRoots();
@@ -126,6 +132,7 @@ public class ResourceSampler {
                 add(metrics, now, "disk.free.bytes", free, tags);
                 add(metrics, now, "disk.used.bytes", Math.max(0L, total - free), tags);
                 add(metrics, now, "disk.free.percent", total <= 0L ? 100D : (double) free * 100D / (double) total, tags);
+                add(metrics, now, "disk.used.percent", total <= 0L ? 0D : (double) (total - free) * 100D / (double) total, tags);
             }
         }
         metrics.addAll(DiagnosticNetMetrics.snapshot(now));
@@ -194,7 +201,7 @@ public class ResourceSampler {
         return samples;
     }
 
-    private void addPhysicalMemory(List<DiagnosticMetric> metrics, long now) {
+    private long addPhysicalMemory(List<DiagnosticMetric> metrics, long now) {
         long freePhysical = -1L;
         long totalPhysical = -1L;
         long openFd = -1L;
@@ -227,12 +234,17 @@ public class ResourceSampler {
         if (totalPhysical >= 0L) {
             add(metrics, now, "system.physical.total.bytes", totalPhysical, null);
         }
+        if (freePhysical >= 0L && totalPhysical > 0L) {
+            add(metrics, now, "system.physical.used.percent",
+                    (double) (totalPhysical - freePhysical) * 100D / (double) totalPhysical, null);
+        }
         if (openFd >= 0L) {
             add(metrics, now, "process.fd.open.count", openFd, null);
         }
         if (maxFd >= 0L) {
             add(metrics, now, "process.fd.max.count", maxFd, null);
         }
+        return totalPhysical;
     }
 
     private long safeThreadCpu(long threadId) {

@@ -99,7 +99,10 @@
   - 只在阈值持续超限或发现死锁后抓 TopN 线程栈，并落 `diag_thread_state_sample`。
   - 页面新增 `Thread State` tab 展示状态持续时间、锁、owner 和 stack hash。
 - `[已完成]` 页面和测试更新。
-  - `DiagnosticHttpHandler` 增加 Overview Memory Charts、Metrics Top N 分组、Thread State、Net I/O endpoint group 展示。
+  - `DiagnosticHttpHandler` 的 Overview 改为 CPU / Memory / Disk 百分比图表，并补 Net 1s 读写量图表。
+  - Memory Charts 增加宿主机物理内存使用率 `system.physical.used.percent`、Java 应用估算使用率 `jvm.app.memory.used.percent` 和 Java Heap 使用率 `jvm.heap.used.percent`。
+  - Metrics 图表和 Top N 按 metric 前缀分组展示，Top N 只保留 min / avg / max。
+  - Thread Trace tab 已从诊断页移除，线程诊断入口统一收敛到 Thread State 和 Thread CPU。
   - 已执行：`mvn -pl rxlib -DskipTests compile`，结果通过。
   - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticHttpHandlerTest,org.rx.diagnostic.DiagnosticMonitorTest" test`，结果 14 个测试通过。
 
