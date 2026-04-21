@@ -11,6 +11,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.rx.bean.*;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
@@ -148,7 +149,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (c > 0) {
                 availableSlots.release();
             } else {
-                TraceHandler.INSTANCE.saveMetric(Constants.MetricName.THREAD_QUEUE_SIZE_ERROR.name(), "FIX SIZE < 0");
+                DiagnosticMetrics.record(Constants.MetricName.THREAD_QUEUE_SIZE_ERROR.name(), 1D, "message=FIX SIZE < 0");
             }
         }
     }
@@ -934,5 +935,25 @@ public class ThreadPool extends ThreadPoolExecutor {
             getTask(runnable, true);
         }
         return queued;
+    }
+
+    void recordDiagnosticMetrics() {
+        if (!DiagnosticMetrics.isEnabled()) {
+            return;
+        }
+        String tags = "pool=" + sanitizeMetricTag(poolName);
+        DiagnosticMetrics.record("rx.thread_pool.core.count", getCorePoolSize(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.size.count", getPoolSize(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.active.count", getActiveCount(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.queue.count", getQueue().size(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.completed.count", getCompletedTaskCount(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.largest.count", getLargestPoolSize(), tags);
+    }
+
+    private static String sanitizeMetricTag(String value) {
+        if (value == null || value.length() == 0) {
+            return "unknown";
+        }
+        return value.replace(',', '_').replace('\r', ' ').replace('\n', ' ');
     }
 }

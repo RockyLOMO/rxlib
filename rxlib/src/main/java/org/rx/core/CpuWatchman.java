@@ -190,6 +190,9 @@ public class CpuWatchman implements TimerTask {
     }
 
     private void thread(Decimal cpuLoad, ThreadPoolExecutor pool, Tuple<IntWaterMark, int[]> tuple) {
+        if (pool instanceof ThreadPool) {
+            ((ThreadPool) pool).recordDiagnosticMetrics();
+        }
         IntWaterMark waterMark = tuple.left;
         int[] counter = tuple.right;
         int decrementCounter = counter[0];

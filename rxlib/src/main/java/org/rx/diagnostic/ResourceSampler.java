@@ -37,9 +37,18 @@ public class ResourceSampler {
 
         double processCpu = percentCpu(readDouble(osBean, "getProcessCpuLoad"));
         double systemCpu = percentCpu(readDouble(osBean, "getSystemCpuLoad"));
+        double systemLoadAverage = osBean.getSystemLoadAverage();
+        long processCpuTime = readLong(osBean, "getProcessCpuTime");
         int threadCount = threadBean.getThreadCount();
         add(metrics, now, "process.cpu.percent", processCpu, null);
         add(metrics, now, "system.cpu.percent", systemCpu, null);
+        if (systemLoadAverage >= 0D) {
+            add(metrics, now, "system.cpu.load.average", systemLoadAverage, null);
+        }
+        if (processCpuTime >= 0L) {
+            add(metrics, now, "process.cpu.time.nanos", processCpuTime, null);
+        }
+        add(metrics, now, "system.cpu.available.count", Runtime.getRuntime().availableProcessors(), null);
         add(metrics, now, "jvm.thread.count", threadCount, null);
         add(metrics, now, "jvm.thread.daemon.count", threadBean.getDaemonThreadCount(), null);
         add(metrics, now, "jvm.thread.peak.count", threadBean.getPeakThreadCount(), null);
@@ -119,6 +128,7 @@ public class ResourceSampler {
                 add(metrics, now, "disk.free.percent", total <= 0L ? 100D : (double) free * 100D / (double) total, tags);
             }
         }
+        metrics.addAll(DiagnosticNetMetrics.snapshot(now));
 
         return new ResourceSnapshot(now, processCpu, systemCpu, threadCount, heapUsed, heapMax, nonHeapUsed,
                 directUsed, directCapacity, DIRECT_MEMORY_MAX_BYTES,

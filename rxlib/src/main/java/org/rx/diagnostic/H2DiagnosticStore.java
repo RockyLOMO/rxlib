@@ -26,6 +26,8 @@ public class H2DiagnosticStore implements DiagnosticStore {
     private static final int TYPE_FILE_SIZE = 5;
     private static final int TYPE_INCIDENT = 6;
     private static final int TYPE_FLUSH = 7;
+    private static final int TYPE_NET_IO = 8;
+    private static final int TYPE_THREAD_STATE = 9;
 
     private final DiagnosticConfig config;
     private final EntityDatabase db;
@@ -81,6 +83,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
         record.d1 = metric.getValue();
         record.s2 = metric.getTags();
         record.s3 = metric.getIncidentId();
+        record.l1 = metric.getStackHash();
         offer(record);
     }
 
@@ -127,6 +130,44 @@ public class H2DiagnosticStore implements DiagnosticStore {
         record.l3 = elapsedNanos;
         record.l4 = stackHash;
         record.s3 = incidentId;
+        offer(record);
+    }
+
+    @Override
+    public void recordNetIo(long timestampMillis, String endpoint, DiagnosticNetOperation operation, long bytes,
+                            long stackHash, String incidentId) {
+        if (endpoint == null || operation == null) {
+            return;
+        }
+        Record record = new Record(TYPE_NET_IO);
+        record.ts = timestampMillis;
+        record.s1 = endpoint;
+        record.l1 = StackTraceCodec.hash(endpoint);
+        record.s2 = operation.name();
+        record.l2 = bytes;
+        record.l3 = stackHash;
+        record.s3 = incidentId;
+        offer(record);
+    }
+
+    @Override
+    public void recordThreadState(ThreadStateSample sample, String incidentId) {
+        if (sample == null) {
+            return;
+        }
+        Record record = new Record(TYPE_THREAD_STATE);
+        record.ts = sample.getTimestampMillis();
+        record.l1 = sample.getThreadId();
+        record.s1 = sample.getThreadName();
+        record.s2 = sample.getThreadState();
+        record.l2 = sample.getBlockedMillis();
+        record.l3 = sample.getWaitedMillis();
+        record.l4 = sample.getStateDurationMillis();
+        record.s3 = sample.getLockName();
+        record.l5 = sample.getLockOwnerId();
+        record.s4 = sample.getLockOwnerName();
+        record.l6 = sample.getStackHash();
+        record.s5 = incidentId;
         offer(record);
     }
 
@@ -274,7 +315,9 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         + "metric VARCHAR(256) NOT NULL,"
                         + "metric_value DOUBLE,"
                         + "tags VARCHAR(2048),"
-                        + "incident_id VARCHAR(96))");
+                        + "incident_id VARCHAR(96),"
+                        + "stack_hash BIGINT)");
+                stmt.execute("ALTER TABLE diag_metric_sample ADD COLUMN IF NOT EXISTS stack_hash BIGINT");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_metric_ts ON diag_metric_sample(ts)");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_metric_name_ts ON diag_metric_sample(metric, ts)");
 
@@ -308,6 +351,35 @@ public class H2DiagnosticStore implements DiagnosticStore {
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_file_io_incident ON diag_file_io_sample(incident_id, bytes)");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_file_io_path ON diag_file_io_sample(path_hash, ts)");
 
+                stmt.execute("CREATE TABLE IF NOT EXISTS diag_net_io_sample ("
+                        + "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                        + "ts BIGINT NOT NULL,"
+                        + "endpoint_hash BIGINT NOT NULL,"
+                        + "endpoint_sample VARCHAR(2048),"
+                        + "op VARCHAR(16) NOT NULL,"
+                        + "bytes BIGINT,"
+                        + "stack_hash BIGINT,"
+                        + "incident_id VARCHAR(96))");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_net_io_incident ON diag_net_io_sample(incident_id, bytes)");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_net_io_endpoint ON diag_net_io_sample(endpoint_hash, ts)");
+
+                stmt.execute("CREATE TABLE IF NOT EXISTS diag_thread_state_sample ("
+                        + "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                        + "ts BIGINT NOT NULL,"
+                        + "thread_id BIGINT NOT NULL,"
+                        + "thread_name VARCHAR(512),"
+                        + "state VARCHAR(64),"
+                        + "blocked_millis BIGINT,"
+                        + "waited_millis BIGINT,"
+                        + "state_duration_millis BIGINT,"
+                        + "lock_name VARCHAR(512),"
+                        + "lock_owner_id BIGINT,"
+                        + "lock_owner_name VARCHAR(512),"
+                        + "stack_hash BIGINT,"
+                        + "incident_id VARCHAR(96))");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_thread_state_incident ON diag_thread_state_sample(incident_id, state_duration_millis)");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_thread_state_ts ON diag_thread_state_sample(ts)");
+
                 stmt.execute("CREATE TABLE IF NOT EXISTS diag_file_size_sample ("
                         + "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
                         + "ts BIGINT NOT NULL,"
@@ -331,6 +403,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
     }
 
     private void writeBatch(List<Record> batch) throws SQLException {
+        boolean suppressed = DiagnosticMetrics.enterSuppressed();
         try {
             db.withConnection(conn -> {
                 boolean autoCommit = conn.getAutoCommit();
@@ -351,21 +424,26 @@ public class H2DiagnosticStore implements DiagnosticStore {
                 }
             });
         } finally {
+            DiagnosticMetrics.exitSuppressed(suppressed);
             releaseFlushRecords(batch);
         }
     }
 
     private void writeBatch(Connection conn, List<Record> batch) throws SQLException {
-        try (PreparedStatement metricStmt = conn.prepareStatement("INSERT INTO diag_metric_sample(ts, metric, metric_value, tags, incident_id) VALUES (?, ?, ?, ?, ?)");
+        try (PreparedStatement metricStmt = conn.prepareStatement("INSERT INTO diag_metric_sample(ts, metric, metric_value, tags, incident_id, stack_hash) VALUES (?, ?, ?, ?, ?, ?)");
              PreparedStatement stackStmt = conn.prepareStatement("MERGE INTO diag_stack_trace(stack_hash, stack_text, first_seen, last_seen) KEY(stack_hash) VALUES (?, ?, ?, ?)");
              PreparedStatement threadStmt = conn.prepareStatement("INSERT INTO diag_thread_cpu_sample(ts, thread_id, thread_name, cpu_nanos_delta, state, stack_hash, incident_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
              PreparedStatement fileIoStmt = conn.prepareStatement("INSERT INTO diag_file_io_sample(ts, path_hash, path_sample, op, bytes, elapsed_nanos, stack_hash, incident_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+             PreparedStatement netIoStmt = conn.prepareStatement("INSERT INTO diag_net_io_sample(ts, endpoint_hash, endpoint_sample, op, bytes, stack_hash, incident_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
+             PreparedStatement threadStateStmt = conn.prepareStatement("INSERT INTO diag_thread_state_sample(ts, thread_id, thread_name, state, blocked_millis, waited_millis, state_duration_millis, lock_name, lock_owner_id, lock_owner_name, stack_hash, incident_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
              PreparedStatement fileSizeStmt = conn.prepareStatement("INSERT INTO diag_file_size_sample(ts, path_hash, path_sample, size_bytes, last_modified, incident_id) VALUES (?, ?, ?, ?, ?, ?)");
              PreparedStatement incidentStmt = conn.prepareStatement("MERGE INTO diag_incident(incident_id, type, level, start_ts, end_ts, summary, bundle_path) KEY(incident_id) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             boolean metric = false;
             boolean stack = false;
             boolean thread = false;
             boolean fileIo = false;
+            boolean netIo = false;
+            boolean threadState = false;
             boolean fileSize = false;
             boolean incident = false;
 
@@ -377,6 +455,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         metricStmt.setDouble(3, record.d1);
                         metricStmt.setString(4, limit(record.s2, 2048));
                         metricStmt.setString(5, limit(record.s3, 96));
+                        metricStmt.setLong(6, record.l1);
                         metricStmt.addBatch();
                         metric = true;
                         break;
@@ -410,6 +489,33 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         fileIoStmt.setString(8, limit(record.s3, 96));
                         fileIoStmt.addBatch();
                         fileIo = true;
+                        break;
+                    case TYPE_NET_IO:
+                        netIoStmt.setLong(1, record.ts);
+                        netIoStmt.setLong(2, record.l1);
+                        netIoStmt.setString(3, limit(record.s1, 2048));
+                        netIoStmt.setString(4, limit(record.s2, 16));
+                        netIoStmt.setLong(5, record.l2);
+                        netIoStmt.setLong(6, record.l3);
+                        netIoStmt.setString(7, limit(record.s3, 96));
+                        netIoStmt.addBatch();
+                        netIo = true;
+                        break;
+                    case TYPE_THREAD_STATE:
+                        threadStateStmt.setLong(1, record.ts);
+                        threadStateStmt.setLong(2, record.l1);
+                        threadStateStmt.setString(3, limit(record.s1, 512));
+                        threadStateStmt.setString(4, limit(record.s2, 64));
+                        threadStateStmt.setLong(5, record.l2);
+                        threadStateStmt.setLong(6, record.l3);
+                        threadStateStmt.setLong(7, record.l4);
+                        threadStateStmt.setString(8, limit(record.s3, 512));
+                        threadStateStmt.setLong(9, record.l5);
+                        threadStateStmt.setString(10, limit(record.s4, 512));
+                        threadStateStmt.setLong(11, record.l6);
+                        threadStateStmt.setString(12, limit(record.s5, 96));
+                        threadStateStmt.addBatch();
+                        threadState = true;
                         break;
                     case TYPE_FILE_SIZE:
                         fileSizeStmt.setLong(1, record.ts);
@@ -451,6 +557,12 @@ public class H2DiagnosticStore implements DiagnosticStore {
             if (fileIo) {
                 fileIoStmt.executeBatch();
             }
+            if (netIo) {
+                netIoStmt.executeBatch();
+            }
+            if (threadState) {
+                threadStateStmt.executeBatch();
+            }
             if (fileSize) {
                 fileSizeStmt.executeBatch();
             }
@@ -470,6 +582,8 @@ public class H2DiagnosticStore implements DiagnosticStore {
         try (PreparedStatement metric = conn.prepareStatement("DELETE FROM diag_metric_sample WHERE ts < ?");
              PreparedStatement thread = conn.prepareStatement("DELETE FROM diag_thread_cpu_sample WHERE ts < ?");
              PreparedStatement fileIo = conn.prepareStatement("DELETE FROM diag_file_io_sample WHERE ts < ?");
+             PreparedStatement netIo = conn.prepareStatement("DELETE FROM diag_net_io_sample WHERE ts < ?");
+             PreparedStatement threadState = conn.prepareStatement("DELETE FROM diag_thread_state_sample WHERE ts < ?");
              PreparedStatement fileSize = conn.prepareStatement("DELETE FROM diag_file_size_sample WHERE ts < ?")) {
             metric.setLong(1, expireBefore);
             metric.executeUpdate();
@@ -477,6 +591,10 @@ public class H2DiagnosticStore implements DiagnosticStore {
             thread.executeUpdate();
             fileIo.setLong(1, expireBefore);
             fileIo.executeUpdate();
+            netIo.setLong(1, expireBefore);
+            netIo.executeUpdate();
+            threadState.setLong(1, expireBefore);
+            threadState.executeUpdate();
             fileSize.setLong(1, expireBefore);
             fileSize.executeUpdate();
         }
@@ -494,7 +612,9 @@ public class H2DiagnosticStore implements DiagnosticStore {
         int limit = Math.max(config.getH2BatchSize() * 16, 1024);
         purgeOldRows(conn, "diag_metric_sample", "id", "ts", limit);
         purgeOldRows(conn, "diag_file_io_sample", "id", "ts", limit);
+        purgeOldRows(conn, "diag_net_io_sample", "id", "ts", limit);
         purgeOldRows(conn, "diag_thread_cpu_sample", "id", "ts", limit);
+        purgeOldRows(conn, "diag_thread_state_sample", "id", "ts", limit);
         purgeOldRows(conn, "diag_file_size_sample", "id", "ts", limit);
         purgeOldRows(conn, "diag_stack_trace", "stack_hash", "last_seen", limit);
         try (Statement stmt = conn.createStatement()) {
@@ -570,6 +690,8 @@ public class H2DiagnosticStore implements DiagnosticStore {
         long l2;
         long l3;
         long l4;
+        long l5;
+        long l6;
         double d1;
         String s1;
         String s2;

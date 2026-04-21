@@ -26,12 +26,19 @@ public class DiagnosticHttpHandlerTest {
             RxConfig.INSTANCE.setRtoken("secret");
             store.start();
             long now = System.currentTimeMillis();
-            store.recordMetric(new DiagnosticMetric(now, "http.metric", 42D, "k=v", "inc-http"));
+            store.recordStackTrace(456L, "stack body", now);
+            store.recordMetric(new DiagnosticMetric(now, "http.metric", 42D, "k=v", "inc-http", 456L));
+            store.recordMetric(new DiagnosticMetric(now - 5000L, "process.cpu.percent", 12D, null, null));
+            store.recordMetric(new DiagnosticMetric(now, "process.cpu.percent", 34D, null, null));
+            store.recordMetric(new DiagnosticMetric(now, "system.cpu.percent", 56D, null, null));
             store.recordMetric(new DiagnosticMetric(now - 5000L, "disk.used.bytes", 262144D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now - 500L, "disk.used.bytes", 524288D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now, "disk.used.bytes", 1048576D, "path=/tmp", "inc-http"));
-            store.recordStackTrace(456L, "stack body", now);
+            store.recordMetric(new DiagnosticMetric(now, "disk.free.percent", 38D, "path=/tmp", null));
             store.recordThreadCpu(new ThreadCpuSample(now, 7L, "diag-thread", "RUNNABLE", 1000000L, 456L, "stack body"), "inc-http");
+            store.recordThreadState(new ThreadStateSample(now, 7L, "blocked-thread", "BLOCKED", 10L, 0L, 30000L,
+                    "lock", 8L, "owner-thread", 456L, "stack body"), "inc-http");
+            store.recordNetIo(now, "127.0.0.1:8080", DiagnosticNetOperation.INBOUND, 2048L, 456L, "inc-http");
             store.recordIncident("inc-http", DiagnosticIncidentType.CPU_HIGH, DiagnosticLevel.DIAG, now, now,
                     "incidentId=inc-http\nsummary=directUsedBytes=48623489\n", null);
             store.recordIncident("inc-human", DiagnosticIncidentType.DIRECT_MEMORY_HIGH, DiagnosticLevel.DIAG, now + 1L, now + 1L,
@@ -51,8 +58,13 @@ public class DiagnosticHttpHandlerTest {
                 String html = ok.toString();
                 assertEquals(200, ok.getResponse().code());
                 assertTrue(html.contains("RXlib Diagnostics"));
+                assertTrue(html.contains("Overview"));
+                assertTrue(html.contains("CPU Charts"));
+                assertTrue(html.contains("Disk Charts"));
                 assertTrue(html.contains("inc-http"));
                 assertTrue(html.contains("http.metric"));
+                assertTrue(html.contains("process.cpu.percent"));
+                assertTrue(html.contains("disk.free.percent"));
                 assertTrue(html.contains("1.00 MB"));
                 assertTrue(html.contains("directUsedBytes=48623489 (46.37 MB)"));
                 assertTrue(html.contains("directUsedBytes=97.52 MB (102253591 bytes)"));
@@ -60,6 +72,14 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("tab-link"));
                 assertTrue(html.contains("metric-chart"));
                 assertTrue(html.contains("class=\"point\""));
+                assertTrue(html.contains("class=\"y-label\""));
+                assertTrue(html.contains("Top N"));
+                assertTrue(html.contains("Thread State"));
+                assertTrue(html.contains("Thread Trace"));
+                assertTrue(html.contains("Net I/O"));
+                assertTrue(html.contains("blocked-thread"));
+                assertTrue(html.contains("127.0.0.1:8080"));
+                assertTrue(html.contains("?stack=456"));
                 assertFalse(html.contains("clob"));
 
                 HttpClient.ResponseContent filtered = client.get(url + "?limit=10&metric=disk.used.bytes&from="

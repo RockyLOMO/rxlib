@@ -4,7 +4,7 @@ import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.exception.TraceHandler;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.*;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.support.EndpointTracer;
@@ -198,7 +198,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         SocksContext.markCtx(inbound, connectFuture, e);
         connectFuture.addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                TraceHandler.INSTANCE.saveMetric("TCP_WARM_FALLBACK", upstream.warmPoolKey().toString());
+                DiagnosticMetrics.record("socks.tcp.warm.fallback.count", 1D, "key=" + upstream.warmPoolKey());
                 Sockets.closeOnFlushed(outbound);
                 connectSlow(inbound, dstAddrType, e, null);
                 return;

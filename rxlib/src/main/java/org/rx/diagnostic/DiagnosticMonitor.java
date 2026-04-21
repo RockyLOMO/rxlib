@@ -2,6 +2,10 @@ package org.rx.diagnostic;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.bean.FlagsEnum;
+import org.rx.core.Constants;
+import org.rx.core.Delegate;
+import org.rx.core.EventPublisher;
 import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
 
@@ -24,14 +28,17 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
-public class DiagnosticMonitor implements AutoCloseable {
+public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, AutoCloseable {
     private static volatile DiagnosticMonitor DEFAULT;
+
+    public final Delegate<DiagnosticMonitor, DiagnosticIncidentEvent> onIncident = Delegate.create();
 
     @Getter
     private final DiagnosticConfig config;
     @Getter
     private final DiagnosticStore store;
     private final ResourceSampler sampler;
+    private final ThreadStateSampler threadStateSampler;
     private final IncidentBundleWriter bundleWriter;
     private final ResourceSnapshot[] ring;
     private final AtomicLong sampleSeq = new AtomicLong();
@@ -39,6 +46,7 @@ public class DiagnosticMonitor implements AutoCloseable {
     private final AtomicBoolean running = new AtomicBoolean();
     private final Map<DiagnosticIncidentType, TriggerState> triggerStates = new EnumMap<>(DiagnosticIncidentType.class);
     private final Object fileIoWindowLock = new Object();
+    private final Object netIoWindowLock = new Object();
     private final AtomicLong lastJfrMillis = new AtomicLong();
     private final AtomicLong lastClassHistogramMillis = new AtomicLong();
     private final AtomicLong lastHeapDumpMillis = new AtomicLong();
@@ -47,8 +55,11 @@ public class DiagnosticMonitor implements AutoCloseable {
     private ScheduledExecutorService scheduler;
     private ExecutorService evidenceExecutor;
     private volatile long diagUntilMillis;
+    private volatile long[] lastDeadlockedThreadIds;
     private long fileIoWindowStartMillis;
     private long fileIoWindowBytes;
+    private long netIoWindowStartMillis;
+    private long netIoWindowBytes;
 
     public DiagnosticMonitor(DiagnosticConfig config) {
         this(config, null);
@@ -59,6 +70,7 @@ public class DiagnosticMonitor implements AutoCloseable {
         this.config.normalize();
         this.store = store == null ? (this.config.isH2Enabled() ? new H2DiagnosticStore(this.config) : NoopDiagnosticStore.INSTANCE) : store;
         this.sampler = new ResourceSampler();
+        this.threadStateSampler = new ThreadStateSampler();
         this.bundleWriter = new IncidentBundleWriter(this.config);
         this.ring = new ResourceSnapshot[this.config.getRingBufferMaxSamples()];
         for (DiagnosticIncidentType type : DiagnosticIncidentType.values()) {
@@ -101,6 +113,11 @@ public class DiagnosticMonitor implements AutoCloseable {
 
     public boolean isRunning() {
         return running.get();
+    }
+
+    @Override
+    public FlagsEnum<EventPublisher.EventFlags> eventFlags() {
+        return Constants.EVENT_ALL_FLAG;
     }
 
     public DiagnosticLevel currentLevel() {
@@ -158,6 +175,30 @@ public class DiagnosticMonitor implements AutoCloseable {
         store.recordFileIo(now, path, operation, bytes, elapsedNanos, stackHash, null);
     }
 
+    void recordNetIo(String endpoint, DiagnosticNetOperation operation, long bytes) {
+        if (!running.get() || endpoint == null || operation == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long normalizedBytes = Math.max(0L, bytes);
+        updateNetIoWindow(now, normalizedBytes);
+        double rate = config.effectiveNetIoSampleRate(currentLevel());
+        if (rate <= 0D || (rate < 1D && ThreadLocalRandom.current().nextDouble() > rate)) {
+            return;
+        }
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+        long stackHash = StackTraceCodec.hash(stackTrace, config.getMaxStackFrames());
+        String stackText = StackTraceCodec.format(stackTrace, config.getMaxStackFrames());
+        String tags = "endpoint=" + endpoint + ",op=" + operation.name();
+        store.recordStackTrace(stackHash, stackText, now);
+        store.recordMetric(new DiagnosticMetric(now, "net.io.bytes", normalizedBytes, tags, null, stackHash));
+        store.recordNetIo(now, endpoint, operation, normalizedBytes, stackHash, null);
+    }
+
+    boolean isNetIoSamplingEnabled() {
+        return running.get() && config.effectiveNetIoSampleRate(currentLevel()) > 0D;
+    }
+
     @Override
     public void close() {
         running.set(false);
@@ -178,6 +219,7 @@ public class DiagnosticMonitor implements AutoCloseable {
         checkCpu(snapshot, now);
         checkMemory(snapshot, now);
         checkDisk(snapshot, now);
+        checkThreadStates(now);
     }
 
     private void cleanupBundles(long now) {
@@ -249,6 +291,51 @@ public class DiagnosticMonitor implements AutoCloseable {
         }
     }
 
+    private void updateNetIoWindow(long now, long bytes) {
+        long threshold = config.getNetIoBytesPerSecondThreshold();
+        if (threshold <= 0L) {
+            return;
+        }
+        synchronized (netIoWindowLock) {
+            if (netIoWindowStartMillis == 0L) {
+                netIoWindowStartMillis = now;
+            }
+            netIoWindowBytes += bytes;
+            long elapsed = now - netIoWindowStartMillis;
+            if (elapsed < 1000L) {
+                return;
+            }
+            long bytesPerSecond = elapsed <= 0L ? 0L : netIoWindowBytes * 1000L / elapsed;
+            netIoWindowStartMillis = now;
+            netIoWindowBytes = 0L;
+            updateTrigger(DiagnosticIncidentType.NET_IO_HIGH, bytesPerSecond >= threshold, now,
+                    config.getNetIoSustainMillis(), "netIoBytesPerSecond=" + formatBytes(bytesPerSecond) + "/s (" + bytesPerSecond + " bytes/s)");
+        }
+    }
+
+    private void checkThreadStates(long now) {
+        if (!config.isThreadStateEnabled()) {
+            return;
+        }
+        ThreadStateSampler.StateCounters counters = threadStateSampler.sampleCounters(now);
+        lastDeadlockedThreadIds = counters.deadlockedIds;
+        boolean deadlocked = counters.deadlockedIds != null && counters.deadlockedIds.length != 0;
+        updateTrigger(DiagnosticIncidentType.THREAD_DEADLOCK, deadlocked, now, 0L,
+                deadlocked ? "deadlockedThreads=" + counters.deadlockedIds.length : null);
+
+        int blockedThreshold = config.getThreadBlockedThresholdCount();
+        updateTrigger(DiagnosticIncidentType.THREAD_BLOCKED_HIGH,
+                blockedThreshold > 0 && counters.blockedCount >= blockedThreshold,
+                now, config.getThreadStateSustainMillis(),
+                "blockedThreads=" + counters.blockedCount + ",maxBlockedDurationMillis=" + counters.maxBlockedDurationMillis);
+
+        int waitingThreshold = config.getThreadWaitingThresholdCount();
+        updateTrigger(DiagnosticIncidentType.THREAD_WAITING_HIGH,
+                waitingThreshold > 0 && counters.waitingCount >= waitingThreshold,
+                now, config.getThreadStateSustainMillis(),
+                "waitingThreads=" + counters.waitingCount + ",maxWaitingDurationMillis=" + counters.maxWaitingDurationMillis);
+    }
+
     private void updateTrigger(DiagnosticIncidentType type, boolean high, long now, long sustainMillis, String summary) {
         TriggerState state = triggerStates.get(type);
         if (state == null) {
@@ -275,16 +362,24 @@ public class DiagnosticMonitor implements AutoCloseable {
         final String incidentId = now + "-" + type.name().toLowerCase() + "-" + incidentSeq.incrementAndGet();
         diagUntilMillis = Math.max(diagUntilMillis, now + config.getDiagDurationMillis());
         final File bundleDir = bundleWriter.createBundleDir(incidentId, type);
-        store.recordIncident(incidentId, type, level, now, 0L, summary, bundleDir == null ? null : bundleDir.getAbsolutePath());
+        final String bundlePath = bundleDir == null ? null : bundleDir.getAbsolutePath();
+        store.recordIncident(incidentId, type, level, now, 0L, summary, bundlePath);
+        raiseEventAsync(onIncident, new DiagnosticIncidentEvent(incidentId, type, level, now, summary, bundlePath));
         if (evidenceExecutor == null) {
             return;
         }
-        evidenceExecutor.execute(new Runnable() {
-            @Override
-            public void run() {
-                collectEvidence(incidentId, type, level, now, summary, bundleDir);
+        try {
+            evidenceExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    collectEvidence(incidentId, type, level, now, summary, bundleDir);
+                }
+            });
+        } catch (RuntimeException e) {
+            if (running.get()) {
+                log.warn("diagnostic evidence task rejected, incidentId={}", incidentId, e);
             }
-        });
+        }
     }
 
     private void collectEvidence(String incidentId, DiagnosticIncidentType type, DiagnosticLevel level,
@@ -310,6 +405,12 @@ public class DiagnosticMonitor implements AutoCloseable {
             collectDiskEvidence(incidentId, incidentSummary);
         } else if (type == DiagnosticIncidentType.DISK_IO_HIGH) {
             incidentSummary.append("diskIoEvidence=file-io-samples").append('\n');
+        } else if (type == DiagnosticIncidentType.NET_IO_HIGH) {
+            incidentSummary.append("netIoEvidence=net-io-samples").append('\n');
+        } else if (type == DiagnosticIncidentType.THREAD_DEADLOCK
+                || type == DiagnosticIncidentType.THREAD_BLOCKED_HIGH
+                || type == DiagnosticIncidentType.THREAD_WAITING_HIGH) {
+            collectThreadStateEvidence(incidentId, type, incidentSummary, bundleDir);
         } else {
             collectJvmEvidence(incidentId, type, level, incidentSummary, bundleDir);
         }
@@ -344,6 +445,32 @@ public class DiagnosticMonitor implements AutoCloseable {
         bundleWriter.writeText(bundleDir, "cpu-stacks.txt", stacks.toString());
         String threadDump = JvmDiagnosticSupport.threadPrint();
         bundleWriter.writeText(bundleDir, "thread-dump.txt", threadDump);
+    }
+
+    private void collectThreadStateEvidence(String incidentId, DiagnosticIncidentType type,
+                                            StringBuilder incidentSummary, File bundleDir) {
+        long now = System.currentTimeMillis();
+        List<ThreadStateSample> samples;
+        if (type == DiagnosticIncidentType.THREAD_DEADLOCK) {
+            samples = threadStateSampler.sampleDeadlocked(lastDeadlockedThreadIds, config.getMaxStackFrames(), now);
+        } else if (type == DiagnosticIncidentType.THREAD_BLOCKED_HIGH) {
+            samples = threadStateSampler.sampleBlocked(config.getThreadStateTopThreads(), config.getMaxStackFrames(), now);
+        } else {
+            samples = threadStateSampler.sampleWaiting(config.getThreadStateTopThreads(), config.getMaxStackFrames(), now);
+        }
+        StringBuilder stacks = new StringBuilder(4096);
+        for (ThreadStateSample sample : samples) {
+            store.recordStackTrace(sample.getStackHash(), sample.getStackTrace(), sample.getTimestampMillis());
+            store.recordThreadState(sample, incidentId);
+            stacks.append("state=").append(sample.getThreadState())
+                    .append(" durationMillis=").append(sample.getStateDurationMillis())
+                    .append(" thread=").append(sample.getThreadName())
+                    .append(" id=").append(sample.getThreadId()).append('\n')
+                    .append(sample.getStackTrace()).append('\n');
+        }
+        incidentSummary.append("threadStateSamples=").append(samples.size()).append('\n');
+        bundleWriter.writeText(bundleDir, "thread-state.txt", stacks.toString());
+        bundleWriter.writeText(bundleDir, "thread-dump.txt", JvmDiagnosticSupport.threadPrint());
     }
 
     private void collectJvmEvidence(String incidentId, DiagnosticIncidentType type, DiagnosticLevel level,

@@ -6,7 +6,7 @@ import lombok.NonNull;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.Func;
 import org.rx.util.function.PredicateFunc;
@@ -102,6 +102,9 @@ public class ObjectPool<T> extends Disposable {
     final AtomicInteger totalCount = new AtomicInteger();
     final AtomicInteger sharedIdleCount = new AtomicInteger();
     final AtomicInteger waitingBorrowers = new AtomicInteger();
+    final LongAdder createdCount = new LongAdder();
+    final LongAdder retiredCount = new LongAdder();
+    final LongAdder borrowTimeoutCount = new LongAdder();
     final ReentrantLock idleLock = new ReentrantLock();
     final Condition idleAvailable = idleLock.newCondition();
     final Object liveLock = new Object();
@@ -416,8 +419,7 @@ public class ObjectPool<T> extends Disposable {
             }
             if (c.isBorrowed()) {
                 if (c.isLeaked(localLeakThreshold)) {
-                    TraceHandler.INSTANCE.saveMetric(Constants.MetricName.OBJECT_POOL_LEAK.name(),
-                            String.format("Pool %s owned Object '%s' leaked.\n%s", this, c.wrapper, Reflects.getStackTrace(c.t)));
+                    DiagnosticMetrics.record(Constants.MetricName.OBJECT_POOL_LEAK.name(), 1D, diagnosticTags());
                     doRetire(c.wrapper, 4);
                 }
                 continue;
@@ -453,6 +455,7 @@ public class ObjectPool<T> extends Disposable {
         log.debug("ObjPool adaptive refill: totalBorrows={}, avgPerPeriod={}, targetSize={}", totalBorrows, avgPerPeriod, targetSize);
         insureTargetSize(targetSize);
         insureMinIdle();
+        recordDiagnosticMetrics(totalBorrows, targetSize);
         } finally {
             validating.set(false);
         }
@@ -519,6 +522,7 @@ public class ObjectPool<T> extends Disposable {
             if (!disposing) {
                 triggerMinIdleMaintain();
             }
+            retiredCount.increment();
             return true;
         }
         return false;
@@ -551,6 +555,7 @@ public class ObjectPool<T> extends Disposable {
                 activateHandler.accept(wrapper.instance);
             }
             c.setBorrowed(true);
+            createdCount.increment();
             return c;
         } catch (Throwable e) {
             if (c != null && wrapper != null) {
@@ -689,6 +694,7 @@ public class ObjectPool<T> extends Disposable {
         if (lastError != null) {
             msg += ": " + lastError.getMessage();
         }
+        borrowTimeoutCount.increment();
         throw new TimeoutException(msg);
     }
 
@@ -743,5 +749,32 @@ public class ObjectPool<T> extends Disposable {
             }
             throw new InvalidException("Object '{}' has already in this pool", c.wrapper);
         }
+    }
+
+    void recordDiagnosticMetrics(long borrowsInWindow, int targetSize) {
+        if (!DiagnosticMetrics.isEnabled()) {
+            return;
+        }
+        String tags = diagnosticTags();
+        DiagnosticMetrics.record("rx.object_pool.size.count", size(), tags);
+        DiagnosticMetrics.record("rx.object_pool.idle.count", idleSize(), tags);
+        DiagnosticMetrics.record("rx.object_pool.waiting.count", waitingBorrowers.get(), tags);
+        DiagnosticMetrics.record("rx.object_pool.borrow.window.count", borrowsInWindow, tags);
+        DiagnosticMetrics.record("rx.object_pool.target.count", targetSize, tags);
+        DiagnosticMetrics.record("rx.object_pool.created.count", createdCount.sum(), tags);
+        DiagnosticMetrics.record("rx.object_pool.retired.count", retiredCount.sum(), tags);
+        DiagnosticMetrics.record("rx.object_pool.borrow.timeout.count", borrowTimeoutCount.sum(), tags);
+    }
+
+    private String diagnosticTags() {
+        return "pool=" + Integer.toHexString(System.identityHashCode(this))
+                + ",handler=" + sanitizeMetricTag(createHandler.getClass().getName());
+    }
+
+    private static String sanitizeMetricTag(String value) {
+        if (value == null || value.length() == 0) {
+            return "unknown";
+        }
+        return value.replace(',', '_').replace('\r', ' ').replace('\n', ' ');
     }
 }

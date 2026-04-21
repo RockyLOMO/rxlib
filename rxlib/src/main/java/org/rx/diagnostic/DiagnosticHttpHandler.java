@@ -6,6 +6,8 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
 import org.rx.core.Strings;
+import org.rx.core.ThreadEntity;
+import org.rx.exception.TraceHandler;
 import org.rx.io.EntityDatabase;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
@@ -37,7 +39,14 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
     private static final int MAX_CHART_SERIES = 8;
+    private static final int MAX_OVERVIEW_CHART_SERIES = 16;
     private static final int MAX_CHART_POINTS_PER_SERIES = 240;
+    private static final String[] CPU_CHART_METRICS = {
+            "process.cpu.percent", "system.cpu.percent", "system.cpu.load.average"
+    };
+    private static final String[] DISK_CHART_METRICS = {
+            "disk.used.bytes", "disk.free.bytes", "disk.free.percent"
+    };
     private static final Pattern SUMMARY_BYTES_PATTERN = Pattern.compile("([A-Za-z0-9_.-]*(?:BytesPerSecond|bytesPerSecond|Bytes|bytes))(=)(\\d+)");
 
     private final DiagnosticConfig config;
@@ -91,17 +100,30 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendHeader(body, config, filter);
             appendStack(body, db, stackHash);
             appendTabsStart(body);
-            appendTabPanelStart(body, "incidents", true);
+            appendTabPanelStart(body, "overview", true);
+            appendOverview(body, queryNamedMetricChartRows(db, filter, CPU_CHART_METRICS),
+                    queryNamedMetricChartRows(db, filter, DISK_CHART_METRICS), filter);
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "incidents", false);
             appendIncidents(body, query(db, "SELECT incident_id,type,level,start_ts,end_ts,summary,bundle_path FROM diag_incident ORDER BY start_ts DESC LIMIT ?", filter.limit));
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "metrics", false);
-            appendMetrics(body, queryMetrics(db, filter), queryMetricChartRows(db, filter), filter);
+            appendMetrics(body, queryMetrics(db, filter), queryMetricChartRows(db, filter), queryMetricTop(db, filter), filter);
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "thread-cpu", false);
             appendThreadCpu(body, query(db, "SELECT ts,thread_id,thread_name,cpu_nanos_delta,state,stack_hash,incident_id FROM diag_thread_cpu_sample ORDER BY ts DESC,cpu_nanos_delta DESC LIMIT ?", filter.limit));
             appendTabPanelEnd(body);
+            appendTabPanelStart(body, "thread-state", false);
+            appendThreadState(body, queryOptional(db, "SELECT ts,thread_id,thread_name,state,blocked_millis,waited_millis,state_duration_millis,lock_name,lock_owner_id,lock_owner_name,stack_hash,incident_id FROM diag_thread_state_sample ORDER BY ts DESC,state_duration_millis DESC LIMIT ?", filter.limit));
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "thread-trace", false);
+            appendThreadTrace(body, queryThreadTrace(filter), filter);
+            appendTabPanelEnd(body);
             appendTabPanelStart(body, "file-io", false);
             appendFileIo(body, query(db, "SELECT ts,path_sample,op,bytes,elapsed_nanos,stack_hash,incident_id FROM diag_file_io_sample ORDER BY ts DESC,id DESC LIMIT ?", filter.limit));
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "net-io", false);
+            appendNetIo(body, queryOptional(db, "SELECT ts,endpoint_sample,op,bytes,stack_hash,incident_id FROM diag_net_io_sample ORDER BY ts DESC,id DESC LIMIT ?", filter.limit));
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "file-size", false);
             appendFileSize(body, query(db, "SELECT ts,path_sample,size_bytes,last_modified,incident_id FROM diag_file_size_sample ORDER BY size_bytes DESC,ts DESC LIMIT ?", filter.limit));
@@ -128,10 +150,14 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private void appendTabsStart(StringBuilder out) {
         out.append("<nav class=\"tabs\">")
-                .append("<a class=\"tab-link active\" href=\"#incidents\" data-tab=\"incidents\">Incidents</a>")
+                .append("<a class=\"tab-link active\" href=\"#overview\" data-tab=\"overview\">Overview</a>")
+                .append("<a class=\"tab-link\" href=\"#incidents\" data-tab=\"incidents\">Incidents</a>")
                 .append("<a class=\"tab-link\" href=\"#metrics\" data-tab=\"metrics\">Metrics</a>")
                 .append("<a class=\"tab-link\" href=\"#thread-cpu\" data-tab=\"thread-cpu\">Thread CPU</a>")
+                .append("<a class=\"tab-link\" href=\"#thread-state\" data-tab=\"thread-state\">Thread State</a>")
+                .append("<a class=\"tab-link\" href=\"#thread-trace\" data-tab=\"thread-trace\">Thread Trace</a>")
                 .append("<a class=\"tab-link\" href=\"#file-io\" data-tab=\"file-io\">File I/O</a>")
+                .append("<a class=\"tab-link\" href=\"#net-io\" data-tab=\"net-io\">Net I/O</a>")
                 .append("<a class=\"tab-link\" href=\"#file-size\" data-tab=\"file-size\">File Size</a>")
                 .append("</nav><div class=\"tab-panels\">");
     }
@@ -150,6 +176,37 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private void appendTabsEnd(StringBuilder out) {
         out.append("</div>");
+    }
+
+    private void appendOverview(StringBuilder out, List<Map<String, Object>> cpuRows,
+                                List<Map<String, Object>> diskRows, Query filter) {
+        out.append("<section class=\"card\"><h2>Overview</h2>");
+        appendOverviewFilter(out, filter);
+        appendChartGroup(out, "CPU Charts", cpuRows, "No CPU metric found in the selected range.");
+        appendChartGroup(out, "Disk Charts", diskRows, "No disk metric found in the selected range.");
+        out.append("</section>");
+    }
+
+    private void appendOverviewFilter(StringBuilder out, Query filter) {
+        out.append("<form class=\"filters\" method=\"get\" action=\"#overview\">")
+                .append("<label>From<input type=\"datetime-local\" name=\"from\" value=\"")
+                .append(escape(formatInputMillis(filter.fromMillis))).append("\"></label>")
+                .append("<label>To<input type=\"datetime-local\" name=\"to\" value=\"")
+                .append(escape(formatInputMillis(filter.toMillis))).append("\"></label>")
+                .append("<label>Limit<input type=\"number\" min=\"1\" max=\"")
+                .append(MAX_LIMIT).append("\" name=\"limit\" value=\"").append(filter.limit).append("\"></label>")
+                .append("<button type=\"submit\">Search</button>")
+                .append("<a class=\"button\" href=\"?limit=").append(DEFAULT_LIMIT).append("#overview\">Reset</a>")
+                .append("</form>");
+    }
+
+    private void appendChartGroup(StringBuilder out, String title, List<Map<String, Object>> rows, String emptyText) {
+        out.append("<h3 class=\"chart-group-title\">").append(escape(title)).append("</h3>");
+        if (rows.isEmpty()) {
+            out.append("<p class=\"empty\">").append(escape(emptyText)).append("</p>");
+            return;
+        }
+        appendMetricCharts(out, rows);
     }
 
     private void appendStack(StringBuilder out, EntityDatabase db, String stackHash) {
@@ -205,6 +262,84 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</tbody></table></section>");
     }
 
+    private void appendThreadState(StringBuilder out, List<Map<String, Object>> rows) {
+        out.append("<section class=\"card\"><h2>Thread State</h2><table><thead><tr><th>Time</th><th>Thread</th><th>State</th><th>Duration</th><th>Blocked</th><th>Waited</th><th>Lock</th><th>Owner</th><th>Stack</th></tr></thead><tbody>");
+        if (rows.isEmpty()) {
+            appendEmptyRow(out, 9, "No thread state evidence yet. It is collected after BLOCKED/WAITING/DEADLOCK incident is triggered.");
+        }
+        for (Map<String, Object> row : rows) {
+            out.append("<tr><td>").append(formatMillis(row.get("ts"))).append("</td><td>")
+                    .append(escape(value(row, "thread_name"))).append("<div class=\"meta\">id ")
+                    .append(escape(value(row, "thread_id"))).append("</div></td><td>")
+                    .append(escape(value(row, "state"))).append("</td><td>")
+                    .append(formatMillisDuration(row.get("state_duration_millis"))).append("</td><td>")
+                    .append(formatMillisDuration(row.get("blocked_millis"))).append("</td><td>")
+                    .append(formatMillisDuration(row.get("waited_millis"))).append("</td><td>")
+                    .append(escape(value(row, "lock_name"))).append("</td><td>")
+                    .append(escape(value(row, "lock_owner_name"))).append("<div class=\"meta\">")
+                    .append(escape(value(row, "lock_owner_id"))).append("</div></td><td>")
+                    .append(stackLink(row.get("stack_hash"))).append("</td></tr>");
+        }
+        out.append("</tbody></table></section>");
+    }
+
+    private void appendThreadTrace(StringBuilder out, List<ThreadEntity> rows, Query filter) {
+        out.append("<section class=\"card\"><h2>Thread Trace</h2>");
+        appendThreadTraceFilter(out, filter);
+        out.append("<table><thead><tr><th>Snapshot</th><th>Time</th><th>Thread</th><th>State</th><th>CPU</th><th>Blocked</th><th>Waited</th><th>Stack</th></tr></thead><tbody>");
+        if (rows.isEmpty()) {
+            appendEmptyRow(out, 8, "No thread trace found. It is collected by CpuWatchman when app.trace.keepDays > 0.");
+        }
+        for (ThreadEntity row : rows) {
+            out.append("<tr><td>").append(row.getSnapshotId()).append("</td><td>")
+                    .append(formatMillis(row.getSnapshotTime())).append("</td><td>")
+                    .append(escape(row.getThreadName())).append("<div class=\"meta\">id ").append(row.getThreadId()).append("</div></td><td>")
+                    .append(escape(String.valueOf(row.getThreadState()))).append("</td><td>")
+                    .append(formatNanos(Long.valueOf(row.getCpuNanos()))).append("</td><td>")
+                    .append(formatMillisDuration(row.getBlockedTime())).append("</td><td>")
+                    .append(formatMillisDuration(row.getWaitedTime())).append("</td><td><pre>")
+                    .append(escape(formatThreadTrace(row))).append("</pre></td></tr>");
+        }
+        out.append("</tbody></table></section>");
+    }
+
+    private String formatThreadTrace(ThreadEntity row) {
+        if (row.getStackTrace() == null) {
+            return "";
+        }
+        try {
+            return row.toString(12);
+        } catch (Throwable e) {
+            StringBuilder text = new StringBuilder(512);
+            text.append('"').append(row.getThreadName()).append("\" Id=").append(row.getThreadId())
+                    .append(' ').append(row.getThreadState()).append('\n');
+            int count = 0;
+            for (StackTraceElement item : row.getStackTrace()) {
+                if (count++ >= 12) {
+                    text.append("\t...\n");
+                    break;
+                }
+                text.append("\tat ").append(item).append('\n');
+            }
+            return text.toString();
+        }
+    }
+
+    private void appendThreadTraceFilter(StringBuilder out, Query filter) {
+        out.append("<form class=\"filters\" method=\"get\" action=\"#thread-trace\">")
+                .append("<label>Snapshot<input type=\"number\" name=\"snapshot\" value=\"")
+                .append(filter.snapshotId == null ? "" : filter.snapshotId).append("\"></label>")
+                .append("<label>From<input type=\"datetime-local\" name=\"from\" value=\"")
+                .append(escape(formatInputMillis(filter.fromMillis))).append("\"></label>")
+                .append("<label>To<input type=\"datetime-local\" name=\"to\" value=\"")
+                .append(escape(formatInputMillis(filter.toMillis))).append("\"></label>")
+                .append("<label>Limit<input type=\"number\" min=\"1\" max=\"")
+                .append(MAX_LIMIT).append("\" name=\"limit\" value=\"").append(filter.limit).append("\"></label>")
+                .append("<button type=\"submit\">Search</button>")
+                .append("<a class=\"button\" href=\"?limit=").append(DEFAULT_LIMIT).append("#thread-trace\">Reset</a>")
+                .append("</form>");
+    }
+
     private void appendFileIo(StringBuilder out, List<Map<String, Object>> rows) {
         out.append("<section class=\"card\"><h2>File I/O</h2><table><thead><tr><th>Time</th><th>Path</th><th>Op</th><th>Bytes</th><th>Elapsed</th><th>Stack</th></tr></thead><tbody>");
         if (rows.isEmpty()) {
@@ -217,6 +352,22 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                     .append(formatBytes(row.get("bytes"))).append("</td><td>")
                     .append(formatNanos(row.get("elapsed_nanos"))).append("</td><td>")
                     .append(stackLink(row.get("stack_hash"))).append("</td></tr>");
+        }
+        out.append("</tbody></table></section>");
+    }
+
+    private void appendNetIo(StringBuilder out, List<Map<String, Object>> rows) {
+        out.append("<section class=\"card\"><h2>Net I/O</h2><table><thead><tr><th>Time</th><th>Endpoint</th><th>Op</th><th>Bytes</th><th>Stack</th><th>Incident</th></tr></thead><tbody>");
+        if (rows.isEmpty()) {
+            appendEmptyRow(out, 6, "No net I/O sample yet. Add DiagnosticNetIoHandler to Netty pipelines or call DiagnosticNetIo directly.");
+        }
+        for (Map<String, Object> row : rows) {
+            out.append("<tr><td>").append(formatMillis(row.get("ts"))).append("</td><td>")
+                    .append(escape(value(row, "endpoint_sample"))).append("</td><td>")
+                    .append(escape(value(row, "op"))).append("</td><td>")
+                    .append(formatBytes(row.get("bytes"))).append("</td><td>")
+                    .append(stackLink(row.get("stack_hash"))).append("</td><td>")
+                    .append(escape(value(row, "incident_id"))).append("</td></tr>");
         }
         out.append("</tbody></table></section>");
     }
@@ -237,22 +388,41 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private void appendMetrics(StringBuilder out, List<Map<String, Object>> rows,
-                               List<Map<String, Object>> chartRows, Query filter) {
+                               List<Map<String, Object>> chartRows, List<Map<String, Object>> topRows, Query filter) {
         out.append("<section class=\"card\"><h2>Metrics</h2>");
         appendMetricFilter(out, filter);
         appendMetricCharts(out, chartRows);
-        out.append("<table><thead><tr><th>Time</th><th>Metric</th><th>Value</th><th>Tags</th><th>Incident</th></tr></thead><tbody>");
+        appendMetricTop(out, topRows);
+        out.append("<table><thead><tr><th>Time</th><th>Metric</th><th>Value</th><th>Tags</th><th>Incident</th><th>Stack</th></tr></thead><tbody>");
         if (rows.isEmpty()) {
-            appendEmptyRow(out, 5, "No metric found in the selected range.");
+            appendEmptyRow(out, 6, "No metric found in the selected range.");
         }
         for (Map<String, Object> row : rows) {
             out.append("<tr><td>").append(formatMillis(row.get("ts"))).append("</td><td>")
                     .append(escape(value(row, "metric"))).append("</td><td>")
                     .append(escape(formatMetricValue(row.get("metric"), row.get("metric_value")))).append("</td><td>")
                     .append(escape(value(row, "tags"))).append("</td><td>")
-                    .append(escape(value(row, "incident_id"))).append("</td></tr>");
+                    .append(escape(value(row, "incident_id"))).append("</td><td>")
+                    .append(stackLink(row.get("stack_hash"))).append("</td></tr>");
         }
         out.append("</tbody></table></section>");
+    }
+
+    private void appendMetricTop(StringBuilder out, List<Map<String, Object>> rows) {
+        out.append("<h3 class=\"chart-group-title\">Top N</h3><table><thead><tr><th>Metric</th><th>Max</th><th>Avg</th><th>Sum</th><th>Samples</th><th>Tags</th></tr></thead><tbody>");
+        if (rows.isEmpty()) {
+            appendEmptyRow(out, 6, "No metric top data in the selected range.");
+        }
+        for (Map<String, Object> row : rows) {
+            Object metric = row.get("metric");
+            out.append("<tr><td>").append(escape(value(row, "metric"))).append("</td><td>")
+                    .append(escape(formatMetricValue(metric, row.get("max_value")))).append("</td><td>")
+                    .append(escape(formatMetricValue(metric, row.get("avg_value")))).append("</td><td>")
+                    .append(escape(formatMetricValue(metric, row.get("sum_value")))).append("</td><td>")
+                    .append(escape(value(row, "sample_count"))).append("</td><td>")
+                    .append(escape(value(row, "tags"))).append("</td></tr>");
+        }
+        out.append("</tbody></table>");
     }
 
     private void appendMetricFilter(StringBuilder out, Query filter) {
@@ -340,7 +510,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             out.append("<div class=\"meta\">").append(escape(tags)).append("</div>");
         }
         out.append("<svg class=\"metric-chart\" viewBox=\"0 0 ").append(width).append(' ').append(height)
-                .append("\" preserveAspectRatio=\"none\"><line class=\"axis\" x1=\"")
+                .append("\" preserveAspectRatio=\"none\">");
+        appendChartYAxis(out, metric, min, max, width, height, pad);
+        out.append("<line class=\"axis\" x1=\"")
                 .append(pad).append("\" y1=\"").append(height - pad).append("\" x2=\"")
                 .append(width - pad).append("\" y2=\"").append(height - pad)
                 .append("\"/><polyline class=\"series\" points=\"").append(points).append("\"/>");
@@ -352,6 +524,23 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append(" · min ").append(escape(formatMetricValue(metric, Double.valueOf(min))))
                 .append(" · max ").append(escape(formatMetricValue(metric, Double.valueOf(max))))
                 .append("</div></article>");
+    }
+
+    private void appendChartYAxis(StringBuilder out, String metric, double min, double max, int width, int height, int pad) {
+        double mid = min + (max - min) / 2D;
+        appendChartYAxisLine(out, metric, max, pad, width, pad);
+        appendChartYAxisLine(out, metric, mid, height / 2D, width, pad);
+        appendChartYAxisLine(out, metric, min, height - pad, width, pad);
+    }
+
+    private void appendChartYAxisLine(StringBuilder out, String metric, double value, double y, int width, int pad) {
+        out.append("<line class=\"grid-line\" x1=\"").append(pad).append("\" y1=\"")
+                .append(String.format(Locale.ENGLISH, "%.1f", y)).append("\" x2=\"")
+                .append(width - pad).append("\" y2=\"")
+                .append(String.format(Locale.ENGLISH, "%.1f", y)).append("\"/>")
+                .append("<text class=\"y-label\" x=\"2\" y=\"")
+                .append(String.format(Locale.ENGLISH, "%.1f", Math.max(10D, y - 3D))).append("\">")
+                .append(escape(formatMetricValue(metric, Double.valueOf(value)))).append("</text>");
     }
 
     private void appendChartPoints(StringBuilder out, List<Map<String, Object>> rows, long minTs, long maxTs,
@@ -389,7 +578,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private List<Map<String, Object>> queryMetrics(EntityDatabase db, Query filter) {
-        StringBuilder sql = new StringBuilder("SELECT ts,metric,metric_value,tags,incident_id FROM diag_metric_sample WHERE 1=1");
+        StringBuilder sql = new StringBuilder("SELECT ts,metric,metric_value,tags,incident_id,stack_hash FROM diag_metric_sample WHERE 1=1");
         List<Object> args = new ArrayList<>();
         appendMetricWhere(sql, args, filter);
         if (!Strings.isEmpty(filter.metric)) {
@@ -397,6 +586,21 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             args.add(filter.metric);
         }
         sql.append(" ORDER BY ts DESC,id DESC LIMIT ?");
+        args.add(Integer.valueOf(filter.limit));
+        return query(db, sql.toString(), args.toArray());
+    }
+
+    private List<Map<String, Object>> queryMetricTop(EntityDatabase db, Query filter) {
+        StringBuilder sql = new StringBuilder("SELECT metric,COALESCE(tags,'') tags,MAX(metric_value) max_value,"
+                + "AVG(metric_value) avg_value,SUM(metric_value) sum_value,COUNT(*) sample_count"
+                + " FROM diag_metric_sample WHERE 1=1");
+        List<Object> args = new ArrayList<>();
+        appendMetricWhere(sql, args, filter);
+        if (!Strings.isEmpty(filter.metric)) {
+            sql.append(" AND metric = ?");
+            args.add(filter.metric);
+        }
+        sql.append(" GROUP BY metric,COALESCE(tags,'') ORDER BY max_value DESC,sample_count DESC LIMIT ?");
         args.add(Integer.valueOf(filter.limit));
         return query(db, sql.toString(), args.toArray());
     }
@@ -410,7 +614,30 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         for (Map<String, Object> item : series) {
             String metric = value(item, "metric");
             String tags = value(item, "tags");
-            StringBuilder sql = new StringBuilder("SELECT * FROM (SELECT ts,metric,metric_value,COALESCE(tags,'') tags,incident_id"
+            StringBuilder sql = new StringBuilder("SELECT * FROM (SELECT ts,metric,metric_value,COALESCE(tags,'') tags,incident_id,stack_hash"
+                    + " FROM diag_metric_sample WHERE 1=1");
+            List<Object> args = new ArrayList<>();
+            appendMetricWhere(sql, args, filter);
+            sql.append(" AND metric = ? AND COALESCE(tags,'') = ? ORDER BY ts DESC,id DESC LIMIT ?)"
+                    + " ORDER BY ts ASC");
+            args.add(metric);
+            args.add(tags);
+            args.add(Integer.valueOf(MAX_CHART_POINTS_PER_SERIES));
+            rows.addAll(query(db, sql.toString(), args.toArray()));
+        }
+        return rows;
+    }
+
+    private List<Map<String, Object>> queryNamedMetricChartRows(EntityDatabase db, Query filter, String[] metrics) {
+        List<Map<String, Object>> series = queryNamedMetricSeries(db, filter, metrics);
+        if (series.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Map<String, Object>> rows = new ArrayList<>(series.size() * MAX_CHART_POINTS_PER_SERIES);
+        for (Map<String, Object> item : series) {
+            String metric = value(item, "metric");
+            String tags = value(item, "tags");
+            StringBuilder sql = new StringBuilder("SELECT * FROM (SELECT ts,metric,metric_value,COALESCE(tags,'') tags,incident_id,stack_hash"
                     + " FROM diag_metric_sample WHERE 1=1");
             List<Object> args = new ArrayList<>();
             appendMetricWhere(sql, args, filter);
@@ -438,6 +665,23 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         return query(db, sql.toString(), args.toArray());
     }
 
+    private List<Map<String, Object>> queryNamedMetricSeries(EntityDatabase db, Query filter, String[] metrics) {
+        StringBuilder sql = new StringBuilder("SELECT metric,COALESCE(tags,'') tags,MAX(ts) last_ts,COUNT(*) sample_count"
+                + " FROM diag_metric_sample WHERE 1=1");
+        List<Object> args = new ArrayList<>();
+        appendMetricWhere(sql, args, filter);
+        appendMetricNamesWhere(sql, args, metrics);
+        sql.append(" GROUP BY metric,COALESCE(tags,'') ORDER BY metric,COALESCE(tags,'') LIMIT ?");
+        args.add(Integer.valueOf(MAX_OVERVIEW_CHART_SERIES));
+        return query(db, sql.toString(), args.toArray());
+    }
+
+    private List<ThreadEntity> queryThreadTrace(Query filter) {
+        Date from = filter.fromMillis == null ? null : new Date(filter.fromMillis.longValue());
+        Date to = filter.toMillis == null ? null : new Date(filter.toMillis.longValue());
+        return TraceHandler.INSTANCE.queryThreadTrace(filter.snapshotId, from, to, Integer.valueOf(filter.limit)).toList();
+    }
+
     private void appendMetricWhere(StringBuilder sql, List<Object> args, Query filter) {
         if (filter.fromMillis != null) {
             sql.append(" AND ts >= ?");
@@ -449,6 +693,21 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         }
     }
 
+    private void appendMetricNamesWhere(StringBuilder sql, List<Object> args, String[] metrics) {
+        if (metrics == null || metrics.length == 0) {
+            return;
+        }
+        sql.append(" AND metric IN (");
+        for (int i = 0; i < metrics.length; i++) {
+            if (i != 0) {
+                sql.append(',');
+            }
+            sql.append('?');
+            args.add(metrics[i]);
+        }
+        sql.append(')');
+    }
+
     private List<Map<String, Object>> query(EntityDatabase db, String sql, Object... args) {
         return db.withConnection(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -456,6 +715,14 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 return readRows(stmt.executeQuery());
             }
         });
+    }
+
+    private List<Map<String, Object>> queryOptional(EntityDatabase db, String sql, Object... args) {
+        try {
+            return query(db, sql, args);
+        } catch (Throwable e) {
+            return Collections.emptyList();
+        }
     }
 
     private List<Map<String, Object>> queryOne(EntityDatabase db, String sql, long arg) {
@@ -529,6 +796,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         query.fromMillis = parseTimeMillis(request.getQueryString().getFirst("from"));
         query.toMillis = parseTimeMillis(request.getQueryString().getFirst("to"));
         query.metric = Strings.trim(request.getQueryString().getFirst("metric"));
+        query.snapshotId = parseLong(request.getQueryString().getFirst("snapshot"));
         return query;
     }
 
@@ -596,6 +864,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         }
         if (metric.endsWith(".percent")) {
             return String.format(Locale.ENGLISH, "%.2f %%", number);
+        }
+        if (metric.endsWith(".nanos")) {
+            return formatNanos(Long.valueOf(number.longValue()));
         }
         if (metric.endsWith(".count")) {
             return String.format(Locale.ENGLISH, "%.0f", number);
@@ -669,6 +940,18 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         return String.format(Locale.ENGLISH, "%.3f ms", nanos / 1000000D);
     }
 
+    private static String formatMillisDuration(long millis) {
+        return String.format(Locale.ENGLISH, "%d ms", millis);
+    }
+
+    private static String formatMillisDuration(Object value) {
+        Long millis = toLong(value);
+        if (millis == null) {
+            return "";
+        }
+        return formatMillisDuration(millis.longValue());
+    }
+
     private static String value(Map<String, Object> row, String key) {
         Object value = row.get(key);
         return value == null ? "" : String.valueOf(value);
@@ -713,6 +996,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private static Long toLong(Object value) {
         if (value instanceof Number) {
             return ((Number) value).longValue();
+        }
+        if (value instanceof Date) {
+            return Long.valueOf(((Date) value).getTime());
         }
         return parseLong(value == null ? null : String.valueOf(value));
     }
@@ -764,5 +1050,6 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         Long fromMillis;
         Long toMillis;
         String metric;
+        Long snapshotId;
     }
 }

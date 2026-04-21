@@ -38,6 +38,14 @@
             margin: 0 0 14px;
         }
 
+        .chart-group-title {
+            color: var(--muted);
+            font-size: 15px;
+            letter-spacing: .04em;
+            margin: 16px 0 10px;
+            text-transform: uppercase;
+        }
+
         .hero {
             display: flex;
             gap: 16px;
@@ -216,6 +224,17 @@
             stroke-width: 2;
         }
 
+        .grid-line {
+            stroke: #e5dccd;
+            stroke-width: 1;
+        }
+
+        .y-label {
+            fill: var(--muted);
+            font-size: 11px;
+            font-family: Georgia, "Times New Roman", serif;
+        }
+
         .series {
             fill: none;
             stroke: var(--accent);
@@ -323,7 +342,7 @@
 
         function activate(id) {
             if (!id || !document.getElementById(id)) {
-                id = 'incidents';
+                id = 'overview';
             }
             for (var i = 0; i < panels.length; i++) {
                 panels[i].classList.toggle('active', panels[i].id === id);

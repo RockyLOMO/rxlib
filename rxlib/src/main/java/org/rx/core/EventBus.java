@@ -7,8 +7,8 @@ import org.apache.commons.lang3.ClassUtils;
 import org.rx.annotation.Metadata;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.Tuple;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
 import org.rx.util.function.BiAction;
 
 import java.io.Serializable;
@@ -120,11 +120,13 @@ public class EventBus {
         Linq<Class<?>> q = Linq.from(eventTypes);
         Set<Tuple<Object, Method>> eventSubscribers = topic == null ? q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).values()).selectMany(p -> p).toSet() : q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).getOrDefault(topic, Collections.emptySet())).toSet();
         if (eventSubscribers.isEmpty()) {
-            TraceHandler.INSTANCE.saveMetric(Constants.MetricName.DEAD_EVENT.name(), String.format("The event %s[%s] had no subscribers", event, topic));
+            DiagnosticMetrics.record(Constants.MetricName.DEAD_EVENT.name(), 1D, "event=" + event + ",topic=" + topic);
             onDeadEvent.accept(event);
             return;
         }
 
         Extends.eachQuietly(eventSubscribers, p -> Reflects.invokeMethod(p.right, p.left, event));
     }
+
+
 }

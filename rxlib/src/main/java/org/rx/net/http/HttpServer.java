@@ -18,6 +18,7 @@ import org.rx.core.RxConfig;
 import org.rx.core.Tasks;
 import org.rx.core.Strings;
 import org.rx.diagnostic.DiagnosticHttpHandler;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 
@@ -361,6 +362,7 @@ public class HttpServer extends Disposable {
             if (tls) {
                 p.addLast(sslContext.newHandler(ch.alloc()));
             }
+            DiagnosticMetrics.installNetIoHandler(p, DiagnosticMetrics.NET_HTTP_SERVER);
             p.addLast(new HttpServerCodec(),
                     new HttpServerExpectContinueHandler(),
                     new HttpContentCompressor(),
