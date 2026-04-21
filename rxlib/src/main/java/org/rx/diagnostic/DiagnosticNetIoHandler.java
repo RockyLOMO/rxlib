@@ -61,11 +61,13 @@ public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         long bytes = readableBytes(msg);
-        SocketAddress endpoint = endpointAddress(ctx, msg, true);
-        if (bytes > 0L && !isLoopback(endpoint)) {
-            DiagnosticNetMetrics.recordInbound(component, bytes);
-            if (DiagnosticNetIo.isEnabled()) {
-                DiagnosticNetIo.recordInbound(endpoint(ctx, endpoint), bytes);
+        if (bytes > 0L && DiagnosticMetrics.isEnabled()) {
+            SocketAddress endpoint = endpointAddress(ctx, msg, true);
+            if (!isLoopback(endpoint)) {
+                DiagnosticNetMetrics.recordInbound(component, bytes);
+                if (DiagnosticNetIo.isEnabled()) {
+                    DiagnosticNetIo.recordInbound(endpoint(ctx, endpoint), bytes);
+                }
             }
         }
         super.channelRead(ctx, msg);
@@ -74,11 +76,13 @@ public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         long bytes = readableBytes(msg);
-        SocketAddress endpoint = endpointAddress(ctx, msg, false);
-        if (bytes > 0L && !isLoopback(endpoint)) {
-            DiagnosticNetMetrics.recordOutbound(component, bytes);
-            if (DiagnosticNetIo.isEnabled()) {
-                DiagnosticNetIo.recordOutbound(endpoint(ctx, endpoint), bytes);
+        if (bytes > 0L && DiagnosticMetrics.isEnabled()) {
+            SocketAddress endpoint = endpointAddress(ctx, msg, false);
+            if (!isLoopback(endpoint)) {
+                DiagnosticNetMetrics.recordOutbound(component, bytes);
+                if (DiagnosticNetIo.isEnabled()) {
+                    DiagnosticNetIo.recordOutbound(endpoint(ctx, endpoint), bytes);
+                }
             }
         }
         super.write(ctx, msg, promise);

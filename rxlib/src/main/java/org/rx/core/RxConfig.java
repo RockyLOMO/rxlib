@@ -228,7 +228,7 @@ public final class RxConfig {
     public static class DiagnosticConfig {
         boolean enabled = true;
         DiagnosticLevel level = DiagnosticLevel.LIGHT;
-        long sampleIntervalMillis = 10000L;
+        long sampleIntervalMillis = 15000L;
         int ringBufferMaxSamples = 4096;
 
         boolean h2Enabled = true;
@@ -295,7 +295,7 @@ public final class RxConfig {
         boolean nativeMemoryTrackingEnabled = true;
 
         public void normalize() {
-            sampleIntervalMillis = positive(sampleIntervalMillis, 10000L);
+            sampleIntervalMillis = positive(sampleIntervalMillis, 15000L);
             ringBufferMaxSamples = Math.max(16, ringBufferMaxSamples);
             h2BatchSize = Math.max(1, h2BatchSize);
             h2QueueSize = Math.max(h2BatchSize, h2QueueSize);

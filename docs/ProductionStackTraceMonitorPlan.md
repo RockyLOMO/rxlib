@@ -1139,7 +1139,7 @@ diagnostics/
 ```text
 app.diagnostic.enabled=true
 app.diagnostic.level=LIGHT
-app.diagnostic.sample.intervalMillis=10000
+app.diagnostic.sample.intervalMillis=15000
 app.diagnostic.ringBuffer.maxSamples=4096
 app.diagnostic.h2.enabled=true
 app.diagnostic.h2.path=./rx-diagnostic
