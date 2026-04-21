@@ -105,6 +105,8 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("jvm.*"));
                 assertFalse(html.contains("<th>Sum</th>"));
                 assertTrue(html.contains("RXlib"));
+                assertTrue(html.contains("thread_pool.*"));
+                assertTrue(html.contains("wheel_timer.*"));
                 assertTrue(html.contains("rx.thread_pool.active.count"));
                 assertTrue(html.contains("rx.wheel_timer.holder.count"));
                 assertTrue(html.contains("rx.object_pool.size.count"));

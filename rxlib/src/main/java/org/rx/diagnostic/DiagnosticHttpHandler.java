@@ -435,7 +435,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         if (chartRows.isEmpty()) {
             out.append("<p class=\"empty\">No RXlib metric found in the selected range.</p>");
         } else {
-            appendMetricCharts(out, chartRows, MAX_RXLIB_CHART_SERIES);
+            appendRxlibMetricCharts(out, chartRows);
         }
         out.append("</section>");
     }
@@ -479,13 +479,21 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private void appendMetricCharts(StringBuilder out, List<Map<String, Object>> rows, int maxSeries) {
+        appendMetricCharts(out, rows, maxSeries, false);
+    }
+
+    private void appendRxlibMetricCharts(StringBuilder out, List<Map<String, Object>> rows) {
+        appendMetricCharts(out, rows, MAX_RXLIB_CHART_SERIES, true);
+    }
+
+    private void appendMetricCharts(StringBuilder out, List<Map<String, Object>> rows, int maxSeries, boolean rxlibGroup) {
         Map<String, Map<String, List<Map<String, Object>>>> groups = new LinkedHashMap<>();
         int seriesCount = 0;
         for (Map<String, Object> row : rows) {
             if (toLong(row.get("ts")) == null || toDouble(row.get("metric_value")) == null) {
                 continue;
             }
-            String group = metricGroup(value(row, "metric"));
+            String group = rxlibGroup ? rxlibMetricGroup(value(row, "metric")) : metricGroup(value(row, "metric"));
             Map<String, List<Map<String, Object>>> series = groups.get(group);
             if (series == null) {
                 series = new LinkedHashMap<>();
@@ -1213,6 +1221,18 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         }
         int index = metric.indexOf('.');
         return index <= 0 ? "other" : metric.substring(0, index) + ".*";
+    }
+
+    private static String rxlibMetricGroup(String metric) {
+        if (metric == null || metric.length() == 0) {
+            return "other";
+        }
+        if (!metric.startsWith("rx.")) {
+            return metricGroup(metric);
+        }
+        int start = 3;
+        int end = metric.indexOf('.', start);
+        return end <= start ? "rx.*" : metric.substring(start, end) + ".*";
     }
 
     private static Long parseLong(String value) {
