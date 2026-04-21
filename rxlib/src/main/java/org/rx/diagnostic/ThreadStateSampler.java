@@ -67,6 +67,52 @@ final class ThreadStateSampler {
         return samples;
     }
 
+    List<ThreadStateSample> sampleAll(int topN, int maxFrames, final long now) {
+        if (topN <= 0) {
+            return Collections.emptyList();
+        }
+        long[] ids = threadMxBean.getAllThreadIds();
+        ThreadInfo[] infos = threadMxBean.getThreadInfo(ids, 0);
+        Set<Long> alive = new HashSet<>(ids.length * 2);
+        List<StateTrack> candidates = new ArrayList<>(infos.length);
+        for (ThreadInfo info : infos) {
+            if (info == null) {
+                continue;
+            }
+            long id = info.getThreadId();
+            alive.add(Long.valueOf(id));
+            candidates.add(track(id, info.getThreadState(), now));
+        }
+        removeDeadTracks(alive);
+        Collections.sort(candidates, new Comparator<StateTrack>() {
+            @Override
+            public int compare(StateTrack o1, StateTrack o2) {
+                int severity = Integer.compare(severity(o2.state), severity(o1.state));
+                if (severity != 0) {
+                    return severity;
+                }
+                int duration = Long.compare(now - o2.sinceMillis, now - o1.sinceMillis);
+                if (duration != 0) {
+                    return duration;
+                }
+                return Long.compare(o1.threadId, o2.threadId);
+            }
+        });
+        int len = Math.min(topN, candidates.size());
+        long[] topIds = new long[len];
+        for (int i = 0; i < len; i++) {
+            topIds[i] = candidates.get(i).threadId;
+        }
+        ThreadInfo[] topInfos = threadMxBean.getThreadInfo(topIds, Math.max(1, maxFrames));
+        List<ThreadStateSample> samples = new ArrayList<>(len);
+        for (ThreadInfo info : topInfos) {
+            if (info != null) {
+                samples.add(toSample(info, now, maxFrames));
+            }
+        }
+        return samples;
+    }
+
     private List<ThreadStateSample> sampleTop(final Thread.State state, int topN, int maxFrames, final long now) {
         if (topN <= 0) {
             return Collections.emptyList();
@@ -153,6 +199,19 @@ final class ThreadStateSampler {
 
     private static boolean isWaiting(Thread.State state) {
         return state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING;
+    }
+
+    private static int severity(Thread.State state) {
+        if (state == Thread.State.BLOCKED) {
+            return 4;
+        }
+        if (isWaiting(state)) {
+            return 3;
+        }
+        if (state == Thread.State.RUNNABLE) {
+            return 2;
+        }
+        return 1;
     }
 
     static final class StateCounters {

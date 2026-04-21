@@ -36,6 +36,10 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private static final String REALM = "rxlib-diagnostic";
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
+    private static final int DEFAULT_CAPTURE_SECONDS = 5;
+    private static final int MAX_CAPTURE_SECONDS = 60;
+    private static final int DEFAULT_CAPTURE_TOP_N = 16;
+    private static final int MAX_CAPTURE_TOP_N = 100;
     private static final int MAX_CHART_SERIES = 8;
     private static final int MAX_OVERVIEW_CHART_SERIES = 16;
     private static final int MAX_CHART_POINTS_PER_SERIES = 240;
@@ -89,20 +93,26 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         }
 
         int limit = limit(request);
+        Query filter = parseQuery(request, limit);
+        String actionMessage = handleManualCapture(request, filter);
         String stackHash = request.getQueryString().getFirst("stack");
-        response.htmlBody(render(parseQuery(request, limit), stackHash));
+        response.htmlBody(render(filter, stackHash, actionMessage));
     }
 
-    private String render(Query filter, String stackHash) {
+    private String render(Query filter, String stackHash, String actionMessage) {
         DiagnosticConfig config = currentConfig();
         if (config.isFileH2Storage() && DiagnosticFileSupport.h2StorageBytes(config.getH2File()) <= 0L) {
-            return page("RXlib Diagnostics", "<section class=\"card\"><h2>No H2 data</h2><p>Diagnostic H2 file was not found.</p></section>");
+            StringBuilder body = new StringBuilder(256);
+            appendActionMessage(body, actionMessage);
+            body.append("<section class=\"card\"><h2>No H2 data</h2><p>Diagnostic H2 file was not found.</p></section>");
+            return page("RXlib Diagnostics", body.toString());
         }
 
         EntityDatabase db = H2DiagnosticStore.createDatabase(config);
         try {
             StringBuilder body = new StringBuilder(16384);
             appendHeader(body, config, filter);
+            appendActionMessage(body, actionMessage);
             appendStack(body, db, stackHash);
             appendTabsStart(body);
             appendTabPanelStart(body, "overview", true);
@@ -118,10 +128,10 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendMetrics(body, queryMetrics(db, filter), queryMetricChartRows(db, filter), queryMetricTop(db, filter), filter);
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "thread-cpu", false);
-            appendThreadCpu(body, query(db, "SELECT ts,thread_id,thread_name,cpu_nanos_delta,state,stack_hash,incident_id FROM diag_thread_cpu_sample ORDER BY ts DESC,cpu_nanos_delta DESC LIMIT ?", filter.limit));
+            appendThreadCpu(body, query(db, "SELECT ts,thread_id,thread_name,cpu_nanos_delta,state,stack_hash,incident_id FROM diag_thread_cpu_sample ORDER BY ts DESC,cpu_nanos_delta DESC LIMIT ?", filter.limit), filter);
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "thread-state", false);
-            appendThreadState(body, queryOptional(db, "SELECT ts,thread_id,thread_name,state,blocked_millis,waited_millis,state_duration_millis,lock_name,lock_owner_id,lock_owner_name,stack_hash,incident_id FROM diag_thread_state_sample ORDER BY ts DESC,state_duration_millis DESC LIMIT ?", filter.limit));
+            appendThreadState(body, queryOptional(db, "SELECT ts,thread_id,thread_name,state,blocked_millis,waited_millis,state_duration_millis,lock_name,lock_owner_id,lock_owner_name,stack_hash,incident_id FROM diag_thread_state_sample ORDER BY ts DESC,state_duration_millis DESC LIMIT ?", filter.limit), filter);
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "file-io", false);
             appendFileIo(body, query(db, "SELECT ts,path_sample,op,bytes,elapsed_nanos,stack_hash,incident_id FROM diag_file_io_sample ORDER BY ts DESC,id DESC LIMIT ?", filter.limit));
@@ -151,6 +161,15 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append(filter.limit).append(" rows per section.</p></div><div class=\"pill\">")
                 .append(escape(config.isFileH2Storage() ? config.getH2File().getPath() : "memory H2"))
                 .append("</div></section>");
+    }
+
+    private void appendActionMessage(StringBuilder out, String message) {
+        if (Strings.isEmpty(message)) {
+            return;
+        }
+        out.append("<section class=\"card notice\"><strong>")
+                .append(escape(message))
+                .append("</strong></section>");
     }
 
     private void appendTabsStart(StringBuilder out) {
@@ -255,10 +274,13 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</div></section>");
     }
 
-    private void appendThreadCpu(StringBuilder out, List<Map<String, Object>> rows) {
-        out.append("<section class=\"card\"><h2>Thread CPU</h2><table><thead><tr><th>Time</th><th>Thread</th><th>CPU</th><th>State</th><th>Stack</th></tr></thead><tbody>");
+    private void appendThreadCpu(StringBuilder out, List<Map<String, Object>> rows, Query filter) {
+        out.append("<section class=\"card\"><h2>Thread CPU</h2>")
+                .append("<p class=\"meta\">Automatic evidence is written after CPU_HIGH. Manual capture below records TopN thread CPU delta immediately without waiting for a threshold.</p>");
+        appendManualCaptureForm(out, "thread-cpu", "thread-cpu", filter);
+        out.append("<table><thead><tr><th>Time</th><th>Thread</th><th>CPU</th><th>State</th><th>Stack</th></tr></thead><tbody>");
         if (rows.isEmpty()) {
-            appendEmptyRow(out, 5, "No CPU evidence yet. It is collected after CPU_HIGH is triggered.");
+            appendEmptyRow(out, 5, "No CPU evidence yet. It is collected after CPU_HIGH is triggered or by manual capture.");
         }
         for (Map<String, Object> row : rows) {
             out.append("<tr><td>").append(formatMillis(row.get("ts"))).append("</td><td>")
@@ -270,10 +292,13 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</tbody></table></section>");
     }
 
-    private void appendThreadState(StringBuilder out, List<Map<String, Object>> rows) {
-        out.append("<section class=\"card\"><h2>Thread State</h2><table><thead><tr><th>Time</th><th>Thread</th><th>State</th><th>Duration</th><th>Blocked</th><th>Waited</th><th>Lock</th><th>Owner</th><th>Stack</th></tr></thead><tbody>");
+    private void appendThreadState(StringBuilder out, List<Map<String, Object>> rows, Query filter) {
+        out.append("<section class=\"card\"><h2>Thread State</h2>")
+                .append("<p class=\"meta\">Automatic evidence is written after BLOCKED/WAITING/DEADLOCK incidents. Manual capture samples thread states once per second without waiting for a threshold.</p>");
+        appendManualCaptureForm(out, "thread-state", "thread-state", filter);
+        out.append("<table><thead><tr><th>Time</th><th>Thread</th><th>State</th><th>Duration</th><th>Blocked</th><th>Waited</th><th>Lock</th><th>Owner</th><th>Stack</th></tr></thead><tbody>");
         if (rows.isEmpty()) {
-            appendEmptyRow(out, 9, "No thread state evidence yet. It is collected after BLOCKED/WAITING/DEADLOCK incident is triggered.");
+            appendEmptyRow(out, 9, "No thread state evidence yet. It is collected after BLOCKED/WAITING/DEADLOCK incident is triggered or by manual capture.");
         }
         for (Map<String, Object> row : rows) {
             out.append("<tr><td>").append(formatMillis(row.get("ts"))).append("</td><td>")
@@ -289,6 +314,20 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                     .append(stackLink(row.get("stack_hash"))).append("</td></tr>");
         }
         out.append("</tbody></table></section>");
+    }
+
+    private void appendManualCaptureForm(StringBuilder out, String capture, String anchor, Query filter) {
+        out.append("<form class=\"filters capture-form\" method=\"get\" action=\"#").append(anchor).append("\">")
+                .append("<input type=\"hidden\" name=\"capture\" value=\"").append(capture).append("\">")
+                .append("<input type=\"hidden\" name=\"limit\" value=\"").append(filter.limit).append("\">")
+                .append("<label>Seconds<input type=\"number\" min=\"1\" max=\"")
+                .append(MAX_CAPTURE_SECONDS).append("\" name=\"captureSeconds\" value=\"")
+                .append(filter.captureSeconds).append("\"></label>")
+                .append("<label>Top N<input type=\"number\" min=\"1\" max=\"")
+                .append(MAX_CAPTURE_TOP_N).append("\" name=\"captureTopN\" value=\"")
+                .append(filter.captureTopN).append("\"></label>")
+                .append("<button type=\"submit\">Capture Now</button>")
+                .append("</form>");
     }
 
     private void appendFileIo(StringBuilder out, List<Map<String, Object>> rows) {
@@ -563,6 +602,37 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append(escape(message)).append("</td></tr>");
     }
 
+    private String handleManualCapture(ServerRequest request, Query filter) {
+        String capture = request.getQueryString().getFirst("capture");
+        if (Strings.isEmpty(capture)) {
+            return null;
+        }
+        DiagnosticMonitor monitor = DiagnosticMonitor.getDefault();
+        if (monitor == null || !monitor.isRunning()) {
+            return "Manual capture skipped: DiagnosticMonitor is not running.";
+        }
+        long started = System.currentTimeMillis();
+        try {
+            int count;
+            if ("thread-cpu".equals(capture)) {
+                count = monitor.captureThreadCpu(filter.captureSeconds, filter.captureTopN);
+            } else if ("thread-state".equals(capture)) {
+                count = monitor.captureThreadState(filter.captureSeconds, filter.captureTopN);
+            } else {
+                return null;
+            }
+            monitor.getStore().flush(Math.min(10000L, Math.max(1000L, filter.captureSeconds * 1000L + 1000L)));
+            return "Manual " + capture + " capture completed: seconds=" + filter.captureSeconds
+                    + ", topN=" + filter.captureTopN + ", samples=" + count
+                    + ", elapsed=" + (System.currentTimeMillis() - started) + " ms.";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Manual " + capture + " capture interrupted.";
+        } catch (Throwable e) {
+            return "Manual " + capture + " capture failed: " + e.toString();
+        }
+    }
+
     private boolean authorize(ServerRequest request) {
         String header = request.getHeaders().get(HttpHeaderNames.AUTHORIZATION);
         if (header == null || !header.regionMatches(true, 0, "Basic ", 0, 6)) {
@@ -801,6 +871,10 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         query.fromMillis = parseTimeMillis(request.getQueryString().getFirst("from"));
         query.toMillis = parseTimeMillis(request.getQueryString().getFirst("to"));
         query.metric = Strings.trim(request.getQueryString().getFirst("metric"));
+        query.captureSeconds = boundedInt(request.getQueryString().getFirst("captureSeconds"),
+                DEFAULT_CAPTURE_SECONDS, 1, MAX_CAPTURE_SECONDS);
+        query.captureTopN = boundedInt(request.getQueryString().getFirst("captureTopN"),
+                DEFAULT_CAPTURE_TOP_N, 1, MAX_CAPTURE_TOP_N);
         return query;
     }
 
@@ -985,6 +1059,12 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         }
     }
 
+    private static int boundedInt(String value, int defaultValue, int min, int max) {
+        Integer parsed = parseInt(value);
+        int result = parsed == null ? defaultValue : parsed.intValue();
+        return Math.max(min, Math.min(max, result));
+    }
+
     private static Long parseTimeMillis(String value) {
         if (value == null || value.trim().length() == 0) {
             return null;
@@ -1062,5 +1142,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         Long fromMillis;
         Long toMillis;
         String metric;
+        int captureSeconds;
+        int captureTopN;
     }
 }

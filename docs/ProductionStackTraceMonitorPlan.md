@@ -98,6 +98,7 @@
   - 常态只通过 `ThreadMXBean#getThreadInfo(ids, 0)` 读取线程状态，不抓栈。
   - 只在阈值持续超限或发现死锁后抓 TopN 线程栈，并落 `diag_thread_state_sample`。
   - 页面新增 `Thread State` tab 展示状态持续时间、锁、owner 和 stack hash。
+  - `Thread CPU` / `Thread State` tab 新增手动抓取入口，可输入秒数和 TopN，不等待阈值触发，适合线上临时观察。
 - `[已完成]` 页面和测试更新。
   - `DiagnosticHttpHandler` 的 Overview 改为 CPU / Memory / Disk 百分比图表，并补 Net 1s 读写量图表。
   - Memory Charts 增加宿主机物理内存使用率 `system.physical.used.percent`、Java 应用估算使用率 `jvm.app.memory.used.percent` 和 Java Heap 使用率 `jvm.heap.used.percent`。
@@ -477,11 +478,19 @@ flowchart TD
 
 ### 5.2 CPU StackTrace 取证
 
-触发条件示例：
+自动触发条件：
 
-- 进程 CPU 使用率大于 80%，持续 30 秒。
-- 单线程 CPU 增量持续进入 TopN。
+- `CPU_HIGH`：`process.cpu.percent >= app.diagnostic.cpu.thresholdPercent`，默认 `80`。
+- 持续时间：需持续 `app.diagnostic.cpu.sustainMillis`，默认 `30000ms`。
+- 取证数量：触发后采集 `app.diagnostic.cpu.evidenceSamples` 轮，默认 `5` 轮；每轮间隔 `app.diagnostic.cpu.evidenceIntervalMillis`，默认 `300ms`。
+- 单轮 TopN：每轮按 `ThreadMXBean#getThreadCpuTime()` 计算线程 CPU delta，取 `app.diagnostic.cpu.topThreads`，默认 `10`。
 - 系统 CPU 高但进程 CPU 低时，只记录系统维度，不做深度 JVM 取证。
+
+手动触发条件：
+
+- 诊断页 `Thread CPU` tab 支持输入 `Seconds` 和 `Top N` 后立即抓取。
+- 手动抓取不需要满足 `CPU_HIGH` 阈值，不创建 incident，不启动 JFR / heap dump，只把 TopN 线程 CPU delta 和 stacktrace 写入 H2。
+- 页面请求通过 `HttpServer.requestAsync` 执行，等待输入秒数期间不占用 Netty EventLoop。
 
 取证流程：
 
@@ -602,14 +611,20 @@ flowchart TD
 
 触发条件示例：
 
-- BLOCKED 线程数超过 `app.diagnostic.thread.blocked.thresholdCount` 并持续 `thread.state.sustainMillis`。
-- WAITING/TIMED_WAITING 线程数超过 `app.diagnostic.thread.waiting.thresholdCount` 并持续超限。
-- 任意死锁立即触发 `THREAD_DEADLOCK`。
+- `THREAD_BLOCKED_HIGH`：`BLOCKED` 线程数 `>= app.diagnostic.thread.blocked.thresholdCount`，默认 `8`，并持续 `app.diagnostic.thread.state.sustainMillis`，默认 `30000ms`。
+- `THREAD_WAITING_HIGH`：`WAITING + TIMED_WAITING` 线程数 `>= app.diagnostic.thread.waiting.thresholdCount`，默认 `128`，并持续 `app.diagnostic.thread.state.sustainMillis`。
+- `THREAD_DEADLOCK`：`ThreadMXBean#findDeadlockedThreads()` 或降级的 `findMonitorDeadlockedThreads()` 发现任意死锁，立即触发。
+
+手动触发条件：
+
+- 诊断页 `Thread State` tab 支持输入 `Seconds` 和 `Top N` 后立即抓取。
+- 手动抓取不需要满足 BLOCKED / WAITING / DEADLOCK 阈值，不创建 incident；采样期间每秒抓一次线程状态 TopN 和 stacktrace，写入 `diag_thread_state_sample`。
+- TopN 排序优先级为 `BLOCKED`、`WAITING/TIMED_WAITING`、`RUNNABLE`、其他状态；同优先级按当前状态持续时间倒序。
 
 注意事项：
 
 - WAITING 线程在服务端程序中常常是正常空闲状态，默认阈值必须偏保守。
-- 不建议周期性全量线程 dump；只有触发阈值或死锁时才抓 TopN 栈。
+- 不建议周期性全量线程 dump；只有触发阈值、死锁或人工手动抓取时才抓 TopN 栈。
 - 线程池/连接池可以后续补充更精准的队列长度、活跃数、拒绝数指标，避免单靠 WAITING 数误判。
 
 ## 6. JFR 策略

@@ -13,6 +13,8 @@ import java.sql.Statement;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -119,6 +121,48 @@ public class DiagnosticMonitorTest {
             assertTrue(monitor.getStore().flush(5000L));
             assertEquals(1, countWhere(config, "diag_metric_sample", "metric='bridge.metric' AND tags='k=v'"));
         } finally {
+            monitor.close();
+        }
+    }
+
+    @Test
+    public void manualThreadCapturePersistsSamples() throws Exception {
+        DiagnosticConfig config = memConfig("diag_manual_thread_capture");
+        config.setSampleIntervalMillis(60000L);
+        config.setCpuThresholdPercent(10000D);
+        final AtomicBoolean running = new AtomicBoolean(true);
+        final AtomicLong sink = new AtomicLong();
+        final CountDownLatch started = new CountDownLatch(1);
+        Thread busyThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                started.countDown();
+                long value = 0L;
+                while (running.get()) {
+                    value++;
+                    if ((value & 4095L) == 0L) {
+                        sink.lazySet(value);
+                    }
+                }
+                sink.set(value);
+            }
+        }, "rx-diagnostic-busy-test");
+        busyThread.setDaemon(true);
+
+        DiagnosticMonitor monitor = new DiagnosticMonitor(config);
+        monitor.start();
+        busyThread.start();
+        try {
+            assertTrue(started.await(1000L, TimeUnit.MILLISECONDS));
+            assertTrue(monitor.captureThreadCpu(1L, 32) >= 1);
+            assertTrue(monitor.captureThreadState(1L, 32) >= 1);
+            assertTrue(monitor.getStore().flush(5000L));
+            assertTrue(count(config, "diag_thread_cpu_sample") >= 1);
+            assertTrue(count(config, "diag_thread_state_sample") >= 1);
+            assertTrue(count(config, "diag_stack_trace") >= 1);
+        } finally {
+            running.set(false);
+            busyThread.join(2000L);
             monitor.close();
         }
     }
