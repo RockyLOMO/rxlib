@@ -76,15 +76,12 @@ public final class Main implements SocksRpcContract {
                 return;
             }
 
-            int httpPort = Reflects.convertQuietly(options.get("httpPort"), Integer.class, 8082);
-            RxConfig.INSTANCE.getNet().getHttp().setServerPort(httpPort);
-            RxConfig.INSTANCE.getNet().getHttp().setServerTls(true);
             String mode = options.get("shadowMode");
             if (eq(mode, "1")) {
-                launchServer(options, port, httpPort);
+                launchServer(options, port);
                 return;
             }
-            launchClient(options, port, httpPort);
+            launchClient(options, port);
         } catch (Throwable e) {
             log.error("Main error", e);
             System.exit(-1);
@@ -169,7 +166,7 @@ public final class Main implements SocksRpcContract {
     static RSSConf rssConf;
 
     @SneakyThrows
-    static void launchClient(Map<String, String> options, int port, int httpPort) {
+    static void launchClient(Map<String, String> options, int port) {
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
         int udp2rawPort = port + 10;
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
@@ -420,7 +417,7 @@ public final class Main implements SocksRpcContract {
             });
         }
 
-        clientInit(httpPort, authenticator);
+        clientInit(authenticator);
         log.info("Server started..");
         app.await();
     }
@@ -527,7 +524,7 @@ public final class Main implements SocksRpcContract {
 
     static RrpServer rrpServer;
 
-    static void clientInit(int httpPort, DefaultSocksAuthenticator authenticator) {
+    static void clientInit(DefaultSocksAuthenticator authenticator) {
         httpServer = HttpServer.getDefault().requestAsync("/traces", (request, response) -> {
             Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
             Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
@@ -653,7 +650,7 @@ public final class Main implements SocksRpcContract {
 
     static HttpServer httpServer;
 
-    static void launchServer(Map<String, String> options, int port, int httpPort) {
+    static void launchServer(Map<String, String> options, int port) {
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
         int udp2rawPort = port + 10;
         boolean debugFlag = "1".equals(options.get("debug"));
@@ -693,11 +690,11 @@ public final class Main implements SocksRpcContract {
         // rpcConf.getTcpConfig().setTransportFlags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH.flags(TransportFlags.SERVER_CIPHER_BOTH));
         Main app = new Main(outSvr);
         Remoting.register(app, rpcConf);
-        serverInit(httpPort);
+        serverInit();
         app.await();
     }
 
-    static void serverInit(int httpPort) {
+    static void serverInit() {
         httpServer = HttpServer.getDefault().requestAsync("/traces", (request, response) -> {
             Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
             Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
