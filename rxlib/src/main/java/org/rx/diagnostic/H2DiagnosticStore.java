@@ -337,6 +337,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                         + "stack_hash BIGINT,"
                         + "incident_id VARCHAR(96))");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_thread_cpu_incident ON diag_thread_cpu_sample(incident_id, cpu_nanos_delta)");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_diag_thread_cpu_ts ON diag_thread_cpu_sample(ts)");
 
                 stmt.execute("CREATE TABLE IF NOT EXISTS diag_file_io_sample ("
                         + "id BIGINT AUTO_INCREMENT PRIMARY KEY,"
