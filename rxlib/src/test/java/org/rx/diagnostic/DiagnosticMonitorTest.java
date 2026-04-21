@@ -11,6 +11,8 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -85,6 +87,9 @@ public class DiagnosticMonitorTest {
             store.recordStackTrace(123L, "stack", now);
             store.recordThreadCpu(new ThreadCpuSample(now, 1L, "main", "RUNNABLE", 100L, 123L, "stack"), "inc-1");
             store.recordFileIo(now, "target/a.log", DiagnosticFileOperation.WRITE, 10L, 20L, 123L, "inc-1");
+            store.recordNetIo(now, "127.0.0.1:8080", DiagnosticNetOperation.OUTBOUND, 11L, 123L, "inc-1");
+            store.recordThreadState(new ThreadStateSample(now, 1L, "main", "BLOCKED", 2L, 3L, 4L,
+                    "lock", 2L, "owner", 123L, "stack"), "inc-1");
             store.recordFileSize(now, "target/a.log", 10L, now, "inc-1");
             store.recordIncident("inc-1", DiagnosticIncidentType.CPU_HIGH, DiagnosticLevel.DIAG, now, now, "summary", "bundle");
 
@@ -94,6 +99,8 @@ public class DiagnosticMonitorTest {
             assertEquals(1, count(config, "diag_stack_trace"));
             assertEquals(1, count(config, "diag_thread_cpu_sample"));
             assertEquals(1, count(config, "diag_file_io_sample"));
+            assertEquals(1, count(config, "diag_net_io_sample"));
+            assertEquals(1, count(config, "diag_thread_state_sample"));
             assertEquals(1, count(config, "diag_file_size_sample"));
             assertEquals(1, count(config, "diag_incident"));
         } finally {
@@ -234,6 +241,52 @@ public class DiagnosticMonitorTest {
 
     private int count(DiagnosticConfig config, String table) throws Exception {
         return countWhere(config, table, "1=1");
+    }
+
+    @Test
+    public void netIoFacadePersistsSampleWhenEnabled() throws Exception {
+        DiagnosticConfig config = memConfig("diag_net_io");
+        config.setSampleIntervalMillis(60000L);
+        config.setNetIoSampleRate(1D);
+        config.setNetIoDiagSampleRate(1D);
+        config.setNetIoBytesPerSecondThreshold(0L);
+        DiagnosticMonitor monitor = new DiagnosticMonitor(config);
+        monitor.start();
+        try {
+            DiagnosticNetIo.recordInbound("127.0.0.1:8080", 512L);
+            assertTrue(monitor.getStore().flush(5000L));
+            assertTrue(count(config, "diag_net_io_sample") >= 1);
+            assertTrue(countWhere(config, "diag_metric_sample", "metric='net.io.bytes'") >= 1);
+            assertTrue(count(config, "diag_stack_trace") >= 1);
+        } finally {
+            monitor.close();
+        }
+    }
+
+    @Test
+    public void incidentAsyncEventRaised() throws Exception {
+        DiagnosticConfig config = memConfig("diag_incident_event");
+        config.setSampleIntervalMillis(60000L);
+        config.setCpuThresholdPercent(-1D);
+        config.setCpuSustainMillis(0L);
+        config.setIncidentCooldownMillis(0L);
+        config.setCpuEvidenceSamples(1);
+        config.setCpuEvidenceIntervalMillis(1L);
+        config.setJfrMode("off");
+        CountDownLatch latch = new CountDownLatch(1);
+        DiagnosticMonitor monitor = new DiagnosticMonitor(config);
+        monitor.onIncident.combine((sender, event) -> {
+            if (event.getType() == DiagnosticIncidentType.CPU_HIGH) {
+                latch.countDown();
+            }
+        });
+        monitor.start();
+        try {
+            monitor.sampleOnce();
+            assertTrue(latch.await(5000L, TimeUnit.MILLISECONDS));
+        } finally {
+            monitor.close();
+        }
     }
 
     private int countWhere(DiagnosticConfig config, String table, String where) throws Exception {

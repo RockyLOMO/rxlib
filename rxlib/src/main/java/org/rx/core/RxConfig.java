@@ -106,6 +106,15 @@ public final class RxConfig {
         String DIAGNOSTIC_DISK_SCAN_ROOTS = "app.diagnostic.disk.scan.roots";
         String DIAGNOSTIC_FILE_IO_STACK_SAMPLE_RATE = "app.diagnostic.fileIo.stackSampleRate";
         String DIAGNOSTIC_FILE_IO_DIAG_STACK_SAMPLE_RATE = "app.diagnostic.fileIo.diagStackSampleRate";
+        String DIAGNOSTIC_NET_IO_BYTES_PER_SECOND_THRESHOLD = "app.diagnostic.net.ioBytesPerSecondThreshold";
+        String DIAGNOSTIC_NET_IO_SUSTAIN_MILLIS = "app.diagnostic.net.ioSustainMillis";
+        String DIAGNOSTIC_NET_IO_STACK_SAMPLE_RATE = "app.diagnostic.netIo.stackSampleRate";
+        String DIAGNOSTIC_NET_IO_DIAG_STACK_SAMPLE_RATE = "app.diagnostic.netIo.diagStackSampleRate";
+        String DIAGNOSTIC_THREAD_STATE_ENABLED = "app.diagnostic.thread.state.enabled";
+        String DIAGNOSTIC_THREAD_STATE_SUSTAIN_MILLIS = "app.diagnostic.thread.state.sustainMillis";
+        String DIAGNOSTIC_THREAD_BLOCKED_THRESHOLD_COUNT = "app.diagnostic.thread.blocked.thresholdCount";
+        String DIAGNOSTIC_THREAD_WAITING_THRESHOLD_COUNT = "app.diagnostic.thread.waiting.thresholdCount";
+        String DIAGNOSTIC_THREAD_STATE_TOP_THREADS = "app.diagnostic.thread.state.topThreads";
         String DIAGNOSTIC_HEAP_DUMP_ENABLED = "app.diagnostic.heapDump.enabled";
         String DIAGNOSTIC_HEAP_DUMP_MIN_FREE_BYTES = "app.diagnostic.heapDump.minFreeBytes";
         String DIAGNOSTIC_JFR_MODE = "app.diagnostic.jfr.mode";
@@ -264,6 +273,16 @@ public final class RxConfig {
 
         double fileIoSampleRate = 0.001D;
         double fileIoDiagSampleRate = 0.1D;
+        long netIoBytesPerSecondThreshold = 100L * 1024L * 1024L;
+        long netIoSustainMillis = 30000L;
+        double netIoSampleRate = 0.001D;
+        double netIoDiagSampleRate = 0.1D;
+
+        boolean threadStateEnabled = true;
+        long threadStateSustainMillis = 30000L;
+        int threadBlockedThresholdCount = 8;
+        int threadWaitingThresholdCount = 128;
+        int threadStateTopThreads = 16;
 
         boolean heapDumpEnabled;
         String jfrMode = "auto";
@@ -305,6 +324,14 @@ public final class RxConfig {
             diskScanTimeoutMillis = positive(diskScanTimeoutMillis, 5000L);
             fileIoSampleRate = clampRate(fileIoSampleRate);
             fileIoDiagSampleRate = clampRate(fileIoDiagSampleRate);
+            netIoBytesPerSecondThreshold = Math.max(0L, netIoBytesPerSecondThreshold);
+            netIoSustainMillis = Math.max(0L, netIoSustainMillis);
+            netIoSampleRate = clampRate(netIoSampleRate);
+            netIoDiagSampleRate = clampRate(netIoDiagSampleRate);
+            threadStateSustainMillis = Math.max(0L, threadStateSustainMillis);
+            threadBlockedThresholdCount = Math.max(0, threadBlockedThresholdCount);
+            threadWaitingThresholdCount = Math.max(0, threadWaitingThresholdCount);
+            threadStateTopThreads = Math.max(1, threadStateTopThreads);
         }
 
         public String jdbcUrl() {
@@ -326,6 +353,10 @@ public final class RxConfig {
 
         public double effectiveFileIoSampleRate(DiagnosticLevel currentLevel) {
             return currentLevel != null && currentLevel.atLeast(DiagnosticLevel.DIAG) ? fileIoDiagSampleRate : fileIoSampleRate;
+        }
+
+        public double effectiveNetIoSampleRate(DiagnosticLevel currentLevel) {
+            return currentLevel != null && currentLevel.atLeast(DiagnosticLevel.DIAG) ? netIoDiagSampleRate : netIoSampleRate;
         }
 
         private static long positive(long value, long def) {
@@ -628,6 +659,15 @@ public final class RxConfig {
         resetFiles(diagnostic.diskScanRoots, ConfigNames.DIAGNOSTIC_DISK_SCAN_ROOTS);
         diagnostic.fileIoSampleRate = getDouble(ConfigNames.DIAGNOSTIC_FILE_IO_STACK_SAMPLE_RATE, diagnostic.fileIoSampleRate);
         diagnostic.fileIoDiagSampleRate = getDouble(ConfigNames.DIAGNOSTIC_FILE_IO_DIAG_STACK_SAMPLE_RATE, diagnostic.fileIoDiagSampleRate);
+        diagnostic.netIoBytesPerSecondThreshold = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_NET_IO_BYTES_PER_SECOND_THRESHOLD, diagnostic.netIoBytesPerSecondThreshold);
+        diagnostic.netIoSustainMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_NET_IO_SUSTAIN_MILLIS, diagnostic.netIoSustainMillis);
+        diagnostic.netIoSampleRate = getDouble(ConfigNames.DIAGNOSTIC_NET_IO_STACK_SAMPLE_RATE, diagnostic.netIoSampleRate);
+        diagnostic.netIoDiagSampleRate = getDouble(ConfigNames.DIAGNOSTIC_NET_IO_DIAG_STACK_SAMPLE_RATE, diagnostic.netIoDiagSampleRate);
+        diagnostic.threadStateEnabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_THREAD_STATE_ENABLED, diagnostic.threadStateEnabled);
+        diagnostic.threadStateSustainMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_THREAD_STATE_SUSTAIN_MILLIS, diagnostic.threadStateSustainMillis);
+        diagnostic.threadBlockedThresholdCount = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_THREAD_BLOCKED_THRESHOLD_COUNT, diagnostic.threadBlockedThresholdCount);
+        diagnostic.threadWaitingThresholdCount = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_THREAD_WAITING_THRESHOLD_COUNT, diagnostic.threadWaitingThresholdCount);
+        diagnostic.threadStateTopThreads = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_THREAD_STATE_TOP_THREADS, diagnostic.threadStateTopThreads);
         diagnostic.heapDumpEnabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_HEAP_DUMP_ENABLED, diagnostic.heapDumpEnabled);
         diagnostic.heapDumpMinFreeBytes = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_HEAP_DUMP_MIN_FREE_BYTES, diagnostic.heapDumpMinFreeBytes);
         diagnostic.jfrMode = SystemPropertyUtil.get(ConfigNames.DIAGNOSTIC_JFR_MODE, diagnostic.jfrMode);

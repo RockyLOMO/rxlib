@@ -50,9 +50,10 @@
   - 新增 `DiagnosticMonitorTest`。
   - 已验证 stack hash 稳定性、默认诊断目录、EntityDatabase 底层批处理、H2 异步落库、文件 I/O 采样落库、磁盘 I/O 高触发 incident。
   - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticMonitorTest" test`，当前结果 8 个测试通过。
-- `[未完成]` Netty / rxlib 网络运行指标接入
-  - 当前还没有接入连接数、吞吐、延迟、Channel 写水位、pending write bytes、EventLoop 队列积压。
-  - 后续需要从 `transport` / `socks` / `rpc` / `http` 等网络模块按低侵入方式补指标。
+- `[进行中]` Netty / rxlib 网络运行指标接入
+  - 已补 Net I/O 采样门面与可插拔 Netty handler，可记录入站/出站吞吐样本和 stack hash。
+  - 仍需接入连接数、延迟、Channel 写水位、pending write bytes、EventLoop 队列积压。
+  - 后续需要从 `transport` / `socks` / `rpc` / `http` 等网络模块按低侵入方式补聚合指标。
 - `[已完成]` 生产级磁盘保护 MVP
   - 已避免磁盘容量 incident 时启动 JFR，避免加剧磁盘满。
   - 已补 H2 最大体积限制、证据目录最大体积限制、证据写文件前可用空间预算。
@@ -71,14 +72,38 @@
   - `H2DiagnosticStore` 复用 `EntityDatabase` 连接池和连接生命周期，但仍保留自有 prepared batch、单事务提交、容量裁剪和失败降级逻辑。
   - 仍不复用 `EntityDatabase.save()` / entity mapping，避免诊断事故路径引入反射映射、逐行保存和额外对象分配。
 
+## 进度同步（2026-04-21）
+
+- `[已完成]` 监控模型拆分为“埋点 Metrics”和“异常 Incidents”两层。
+  - Metrics 覆盖 CPU、memory、disk size，并补齐应用层 file I/O、net I/O 采样入口。
+  - Incidents 覆盖高 CPU、高 Heap/Direct/Metaspace、高 disk size、高 disk I/O、高 net I/O、线程 BLOCKED/WAITING 数量异常、死锁。
+  - Metrics 页面增加 Top N 汇总，默认可按时间范围和 metric 名查询最大值、平均值、累计值和样本数。
+- `[已完成]` Incident 异步通知入口。
+  - `DiagnosticMonitor` 实现 `EventPublisher<DiagnosticMonitor>`。
+  - 新增 `onIncident` Delegate 和 `DiagnosticIncidentEvent`，触发 incident 后异步通知订阅方，不阻塞采样线程。
+- `[已完成]` Net I/O 低侵入采样基础。
+  - 新增 `DiagnosticNetIo.recordInbound/recordOutbound(...)`。
+  - 新增可插拔 Netty `DiagnosticNetIoHandler`，只统计 `ByteBuf` / `ByteBufHolder` / `FileRegion` 字节数，不改变引用计数。
+  - H2 新增 `diag_net_io_sample`，页面新增 `Net I/O` tab。
+- `[已完成]` Thread WAITING / BLOCKED / 死锁高效检测基础。
+  - 常态只通过 `ThreadMXBean#getThreadInfo(ids, 0)` 读取线程状态，不抓栈。
+  - 只在阈值持续超限或发现死锁后抓 TopN 线程栈，并落 `diag_thread_state_sample`。
+  - 页面新增 `Thread State` tab 展示状态持续时间、锁、owner 和 stack hash。
+- `[已完成]` 页面和测试更新。
+  - `DiagnosticHttpHandler` 增加 Metrics Top N、Thread State、Net I/O 展示。
+  - 已执行：`mvn -pl rxlib -DskipTests compile`，结果通过。
+  - 已执行：`mvn -pl rxlib "-Dtest=org.rx.diagnostic.DiagnosticHttpHandlerTest,org.rx.diagnostic.DiagnosticMonitorTest" test`，结果 14 个测试通过。
+
 ## 1. 背景与目标
 
-生产环境常见资源异常可以分为四类：
+生产环境常见资源异常可以分为六类：
 
 - CPU 占用高：需要快速定位高 CPU 线程与热点调用栈。
 - 内存占用高：需要定位 Heap、Old Gen、Metaspace、Direct Buffer、Mapped Buffer、Native Memory 的异常增长来源。
 - 磁盘容量占用高：需要定位哪些目录/文件增长异常，以及尽可能还原写入来源调用栈。
 - 磁盘读写高：需要定位高频读写文件、读写字节数、读写延迟，以及尽可能关联调用栈。
+- 网络读写高：需要定位高入站/出站吞吐的 endpoint、方向、字节数，以及尽可能关联调用栈。
+- 线程等待/阻塞/死锁：需要快速判断是正常空闲等待、锁竞争异常，还是真实死锁。
 
 模块目标不是替代专业 APM，而是在业务进程内部提供一套可控、低依赖、低侵入的本地诊断能力：
 
@@ -184,6 +209,13 @@ H2AsyncWriter <-------------+
 - 文件 I/O 埋点入口：`DiagnosticFileIo.recordRead(...)` / `DiagnosticFileIo.recordWrite(...)`
   - 适合文件读写封装层、日志/缓存/导出等关键文件路径。
   - 默认按采样率记录 stacktrace，异常升档时提高采样率。
+- 网络 I/O 埋点入口：`DiagnosticNetIo.recordInbound(...)` / `DiagnosticNetIo.recordOutbound(...)`
+  - 适合已有网络抽象层手动打点。
+  - Netty pipeline 可插入 `DiagnosticNetIoHandler.INSTANCE` 做入站/出站字节数采样。
+  - handler 只读消息大小，不释放对象、不改引用计数、不做 H2 写入。
+- Incident 异步通知入口：`DiagnosticMonitor.onIncident`
+  - 订阅方通过 `Delegate` 接收 `DiagnosticIncidentEvent`。
+  - 通知异步执行，异常默认静默记录，不影响采样线程。
 - 关闭入口：`DiagnosticMonitor.close()`
   - 停止采样线程、取证线程和 H2 写线程。
 
@@ -194,6 +226,8 @@ H2AsyncWriter <-------------+
 - `ResourceSampler`：采集 MXBean、BufferPool、GC、磁盘分区、TopN 线程 CPU。
 - `H2DiagnosticStore`：有界队列、单写线程、批量 H2 落库、TTL、容量保护、失败降级。
 - `DiagnosticFileIo`：应用层文件读写采样入口，解决磁盘容量/读写问题的 stacktrace 归因。
+- `DiagnosticNetIo` / `DiagnosticNetIoHandler`：应用层和 Netty pipeline 网络读写采样入口，解决 net I/O stacktrace 归因。
+- `ThreadStateSampler`：常态低成本统计 BLOCKED/WAITING/死锁，触发后抓 TopN 线程栈。
 - `DiagnosticHttpHandler`：基于 `HttpServer` 的只读 H2 查看页面，负责 Basic Auth、HTML 渲染、Metrics 过滤/走势图和移动端布局。
 - `IncidentBundleWriter`：incident 证据目录创建、文本证据写入、目录容量保护。
 - `JvmDiagnosticSupport`：JFR、thread dump、class histogram、NMT、heap dump 的能力探测与调用。
@@ -215,7 +249,8 @@ flowchart TD
     J --> K{"阈值持续超限?"}
     K -->|否| E
     K -->|是| L["openIncident()"]
-    L --> M["取证线程 rx-diagnostic-evidence"]
+    L --> M["onIncident Delegate 异步通知"]
+    L --> N["取证线程 rx-diagnostic-evidence"]
 ```
 
 ### 3.1.4 异常取证交互图
@@ -230,14 +265,20 @@ flowchart TD
     E --> G["MEMORY_HIGH: classHistogram / NMT / heapDump"]
     E --> H["DISK_SPACE_HIGH: 限速目录扫描"]
     E --> I["DISK_IO_HIGH: 复用 DiagnosticFileIo 样本"]
+    E --> O["NET_IO_HIGH: 复用 DiagnosticNetIo 样本"]
+    E --> P["THREAD_*: ThreadStateSampler TopN 栈"]
     F --> J["H2DiagnosticStore.recordThreadCpu()"]
     G --> K["IncidentBundleWriter.writeText()"]
     H --> L["H2DiagnosticStore.recordFileSize()"]
     I --> M["H2DiagnosticStore.recordFileIo()"]
+    O --> Q["H2DiagnosticStore.recordNetIo()"]
+    P --> R["H2DiagnosticStore.recordThreadState()"]
     J --> N["H2 batch writer"]
     K --> N
     L --> N
     M --> N
+    Q --> N
+    R --> N
 ```
 
 ### 3.1.5 文件 I/O 采样交互图
@@ -475,6 +516,47 @@ flowchart TD
 - Java 8 标准 MXBean 对进程磁盘 I/O 的跨平台支持不足。
 - 最可靠的 stacktrace 来源是 JFR 或提前埋点。
 - 文件路径可能包含敏感信息，H2 中建议保存 hash 和脱敏摘要。
+
+### 5.6 网络读写取证
+
+触发条件示例：
+
+- 应用层 Net I/O 采样显示入站/出站 bytes/sec 超过阈值。
+- 某 endpoint 持续高吞吐或异常突增。
+- JFR Socket Read / Socket Write 可用时，异常期间辅助抓取 socket 事件。
+
+取证流程：
+
+1. 常态只按极低采样率记录 endpoint、方向、字节数、stack hash。
+2. 超过 `app.diagnostic.net.ioBytesPerSecondThreshold` 且持续超限后触发 `NET_IO_HIGH`。
+3. 进入 `DIAG` 后提高 `netIoDiagSampleRate`，短时间记录更多调用栈。
+4. 页面通过 `Net I/O` tab 和 Metrics Top N 查询高吞吐 endpoint / stack hash。
+
+注意事项：
+
+- Netty 热点路径中 handler 只能读取消息大小并调用轻量门面，不能做 H2 写入或阻塞逻辑。
+- `ByteBuf` / `ByteBufHolder` 只读 `readableBytes()`，不改变 reader index 和引用计数。
+- 当前是可插拔 handler，后续再按 `transport` / `socks` / `rpc` / `http` 分层接入聚合计数。
+
+### 5.7 线程 WAITING / BLOCKED / 死锁检测
+
+高效检测方式：
+
+- 死锁：周期调用 `ThreadMXBean#findDeadlockedThreads()`，不支持 ownable synchronizer 时降级 `findMonitorDeadlockedThreads()`。
+- BLOCKED / WAITING：常态调用 `ThreadMXBean#getThreadInfo(threadIds, 0)`，只读取状态，不抓 stack。
+- 持续时间：模块内维护 thread id 到 state/since 的轻量状态表，避免依赖 JVM contention monitoring。
+
+触发条件示例：
+
+- BLOCKED 线程数超过 `app.diagnostic.thread.blocked.thresholdCount` 并持续 `thread.state.sustainMillis`。
+- WAITING/TIMED_WAITING 线程数超过 `app.diagnostic.thread.waiting.thresholdCount` 并持续超限。
+- 任意死锁立即触发 `THREAD_DEADLOCK`。
+
+注意事项：
+
+- WAITING 线程在服务端程序中常常是正常空闲状态，默认阈值必须偏保守。
+- 不建议周期性全量线程 dump；只有触发阈值或死锁时才抓 TopN 栈。
+- 线程池/连接池可以后续补充更精准的队列长度、活跃数、拒绝数指标，避免单靠 WAITING 数误判。
 
 ## 6. JFR 策略
 
@@ -916,8 +998,12 @@ diagnostics/
 
 ### 下一步 3：接入 rxlib 网络核心指标
 
+当前状态：`Net I/O 采样入口已完成，核心 pipeline 聚合接入待完成`
+
 目标：让诊断模块满足 rxlib 高性能网络项目的核心观测要求。
 
+- `[已完成]` 新增 `DiagnosticNetIo` 和 `DiagnosticNetIoHandler`，可在 Netty pipeline 中采样入站/出站字节数。
+- `[已完成]` H2 增加 `diag_net_io_sample`，页面增加 `Net I/O` tab。
 - `transport` 层接入连接数、入站/出站字节数、连接生命周期事件。
 - `BackpressureHandler` 或 Channel 写路径接入 pending write bytes、写水位状态、限流事件。
 - `SocksProxyServer` / `SocksContext` 接入会话数、上游连接数、异常断开原因。
@@ -955,6 +1041,9 @@ diagnostics/
 - H2 队列满丢弃策略。
 - TTL 清理。
 - 磁盘低空间降级策略。
+- Net I/O 采样落库。
+- Thread State 证据落库。
+- Incident Delegate 异步通知。
 
 集成测试：
 
@@ -963,6 +1052,8 @@ diagnostics/
 - Direct Buffer 分配触发 Direct incident。
 - 临时目录快速写入触发容量 incident。
 - 高频文件读写触发 I/O incident。
+- 高频网络读写触发 Net I/O incident。
+- 人造死锁触发 `THREAD_DEADLOCK`，并验证只在触发后抓线程栈。
 - H2 慢写或异常时业务线程不阻塞。
 
 压测：
@@ -1013,6 +1104,15 @@ app.diagnostic.disk.scan.maxFiles=10000
 app.diagnostic.disk.scan.timeoutMillis=5000
 app.diagnostic.fileIo.stackSampleRate=0.001
 app.diagnostic.fileIo.diagStackSampleRate=0.1
+app.diagnostic.net.ioBytesPerSecondThreshold=104857600
+app.diagnostic.net.ioSustainMillis=30000
+app.diagnostic.netIo.stackSampleRate=0.001
+app.diagnostic.netIo.diagStackSampleRate=0.1
+app.diagnostic.thread.state.enabled=true
+app.diagnostic.thread.state.sustainMillis=30000
+app.diagnostic.thread.blocked.thresholdCount=8
+app.diagnostic.thread.waiting.thresholdCount=128
+app.diagnostic.thread.state.topThreads=16
 app.diagnostic.heapDump.enabled=false
 app.diagnostic.heapDump.minFreeBytes=2147483648
 app.diagnostic.jfr.mode=auto

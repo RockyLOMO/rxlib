@@ -33,6 +33,15 @@ public final class NoopDiagnosticStore implements DiagnosticStore {
     }
 
     @Override
+    public void recordNetIo(long timestampMillis, String endpoint, DiagnosticNetOperation operation, long bytes,
+                            long stackHash, String incidentId) {
+    }
+
+    @Override
+    public void recordThreadState(ThreadStateSample sample, String incidentId) {
+    }
+
+    @Override
     public void recordFileSize(long timestampMillis, String path, long sizeBytes, long lastModifiedMillis, String incidentId) {
     }
 
