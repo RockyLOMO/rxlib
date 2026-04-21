@@ -334,6 +334,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
     }
 
     private void writeBatch(List<Record> batch) throws SQLException {
+        boolean suppressed = DiagnosticMetrics.enterSuppressed();
         try {
             db.withConnection(conn -> {
                 boolean autoCommit = conn.getAutoCommit();
@@ -354,6 +355,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                 }
             });
         } finally {
+            DiagnosticMetrics.exitSuppressed(suppressed);
             releaseFlushRecords(batch);
         }
     }

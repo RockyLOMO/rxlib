@@ -16,6 +16,7 @@ import org.rx.annotation.DbColumn;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.StringBuilder;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
@@ -32,6 +33,7 @@ import java.util.AbstractMap;
 import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.ifNull;
@@ -228,6 +230,12 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     boolean autoRollbackOnError;
     @Setter
     int slowSqlElapsed = 200;
+    final AtomicLong diagnosticSqlCount = new AtomicLong();
+    final AtomicLong diagnosticSlowSqlCount = new AtomicLong();
+    final AtomicLong diagnosticPoolCreatedCount = new AtomicLong();
+    final AtomicLong diagnosticTxBeginCount = new AtomicLong();
+    final AtomicLong diagnosticTxCommitCount = new AtomicLong();
+    final AtomicLong diagnosticTxRollbackCount = new AtomicLong();
     String curFilePath;
     volatile JdbcConnectionPool connPool;
 
@@ -255,6 +263,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         JdbcConnectionPool pool = JdbcConnectionPool.create(jdbcUrl, null, null);
         pool.setMaxConnections(maxConnections);
         connPool = pool;
+        recordPoolCreated();
         if (!mappedEntityTypes.isEmpty()) {
             createMapping(Linq.from(mappedEntityTypes).toArray());
         }
@@ -943,7 +952,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     public void begin(int transactionIsolation) {
         Connection conn = TL_CONN.getIfExists();
         if (conn == null) {
+            long waitStart = diagnosticStartNanos();
             TL_CONN.set(conn = getConnectionPool().getConnection());
+            recordConnectionWait(waitStart);
         }
         Integer txDepth = TL_TX.getIfExists();
         if (txDepth == null) {
@@ -957,6 +968,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             conn.setTransactionIsolation(transactionIsolation);
         }
         conn.setAutoCommit(false);
+        recordTxBegin(txDepth);
     }
 
     @Override
@@ -972,6 +984,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
 
         conn.commit();
+        recordTxCommit(txDepth);
         if (--txDepth >= 1) {
             TL_TX.set(txDepth);
             return;
@@ -997,6 +1010,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
 
         conn.rollback();
+        recordTxRollback(txDepth);
         if (--txDepth >= 1) {
             TL_TX.set(txDepth);
             return;
@@ -1011,15 +1025,17 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     private void invoke(BiAction<Connection> fn, String sql, List<Object> params) {
         Connection conn = preInvoke(sql, params);
         long startTime = System.nanoTime();
+        boolean success = false;
         try {
             fn.invoke(conn);
+            success = true;
         } catch (Throwable e) {
             if (isInTransaction() && autoRollbackOnError) {
                 rollback();
             }
             throw e;
         } finally {
-            postInvoke(sql, params, conn, startTime);
+            postInvoke(sql, params, conn, startTime, success);
         }
     }
 
@@ -1027,21 +1043,25 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     private <T> T invoke(BiFunc<Connection, T> fn, String sql, List<Object> params) {
         Connection conn = preInvoke(sql, params);
         long startTime = System.nanoTime();
+        boolean success = false;
         try {
-            return fn.invoke(conn);
+            T result = fn.invoke(conn);
+            success = true;
+            return result;
         } catch (Throwable e) {
             if (isInTransaction() && autoRollbackOnError) {
                 rollback();
             }
             throw e;
         } finally {
-            postInvoke(sql, params, conn, startTime);
+            postInvoke(sql, params, conn, startTime, success);
         }
     }
 
     private Connection preInvoke(String sql, List<Object> params) throws SQLException {
         Connection conn = TL_CONN.getIfExists();
         if (conn == null) {
+            long waitStart = diagnosticStartNanos();
             try {
                 TL_CONN.set(conn = getConnectionPool().getConnection());
             } catch (SQLNonTransientConnectionException e) {
@@ -1055,11 +1075,12 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     throw e;
                 }
             }
+            recordConnectionWait(waitStart);
         }
         return conn;
     }
 
-    private void postInvoke(String sql, List<Object> params, Connection conn, long startTime) throws SQLException {
+    private void postInvoke(String sql, List<Object> params, Connection conn, long startTime, boolean success) throws SQLException {
         long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
         if (elapsed > slowSqlElapsed) {
             log.warn("slowSql: {} -> {}ms", sql, elapsed);
@@ -1068,10 +1089,110 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 log.debug("executeQuery {}\n{}", sql, toJsonString(params));
             }
         }
+        recordSqlDiagnostic(sql, elapsed, success);
         if (!isInTransaction()) {
             conn.close();
             TL_CONN.remove();
         }
+    }
+
+    private long diagnosticStartNanos() {
+        return DiagnosticMetrics.isEnabled() ? System.nanoTime() : 0L;
+    }
+
+    private void recordConnectionWait(long startNanos) {
+        if (startNanos == 0L) {
+            return;
+        }
+        DiagnosticMetrics.record("rx.entity_db.connection.wait.millis",
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos), diagnosticDbTags());
+    }
+
+    private void recordPoolCreated() {
+        if (!DiagnosticMetrics.isEnabled()) {
+            return;
+        }
+        String tags = diagnosticDbTags();
+        DiagnosticMetrics.record("rx.entity_db.pool.max.count", maxConnections, tags);
+        DiagnosticMetrics.record("rx.entity_db.pool.created.count", diagnosticPoolCreatedCount.incrementAndGet(), tags);
+    }
+
+    private void recordSqlDiagnostic(String sql, long elapsedMillis, boolean success) {
+        if (!DiagnosticMetrics.isEnabled()) {
+            return;
+        }
+        String dbTags = diagnosticDbTags();
+        String opTags = dbTags + ",op=" + sqlOperation(sql) + ",tx=" + isInTransaction() + ",success=" + success;
+        DiagnosticMetrics.record("rx.entity_db.sql.elapsed.millis", elapsedMillis, opTags);
+        DiagnosticMetrics.record("rx.entity_db.sql.count", diagnosticSqlCount.incrementAndGet(), dbTags);
+        if (elapsedMillis > slowSqlElapsed) {
+            DiagnosticMetrics.record("rx.entity_db.slow_sql.count", diagnosticSlowSqlCount.incrementAndGet(), opTags);
+        }
+    }
+
+    private void recordTxBegin(int txDepth) {
+        if (!DiagnosticMetrics.isEnabled()) {
+            return;
+        }
+        String tags = diagnosticDbTags();
+        DiagnosticMetrics.record("rx.entity_db.tx.begin.count", diagnosticTxBeginCount.incrementAndGet(), tags);
+        DiagnosticMetrics.record("rx.entity_db.tx.depth.count", txDepth, tags);
+    }
+
+    private void recordTxCommit(int txDepth) {
+        if (!DiagnosticMetrics.isEnabled()) {
+            return;
+        }
+        String tags = diagnosticDbTags();
+        DiagnosticMetrics.record("rx.entity_db.tx.commit.count", diagnosticTxCommitCount.incrementAndGet(), tags);
+        DiagnosticMetrics.record("rx.entity_db.tx.depth.count", txDepth - 1, tags);
+    }
+
+    private void recordTxRollback(int txDepth) {
+        if (!DiagnosticMetrics.isEnabled()) {
+            return;
+        }
+        String tags = diagnosticDbTags();
+        DiagnosticMetrics.record("rx.entity_db.tx.rollback.count", diagnosticTxRollbackCount.incrementAndGet(), tags);
+        DiagnosticMetrics.record("rx.entity_db.tx.depth.count", txDepth - 1, tags);
+    }
+
+    private String diagnosticDbTags() {
+        if (jdbcUrlMode) {
+            return "db=jdbc";
+        }
+        String path = curFilePath != null ? curFilePath : filePath;
+        if (path == null || path.length() == 0) {
+            return "db=unknown";
+        }
+        int split = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        return "db=" + sanitizeMetricTag(split >= 0 ? path.substring(split + 1) : path);
+    }
+
+    private static String sqlOperation(String sql) {
+        if (sql == null) {
+            return "UNKNOWN";
+        }
+        int len = sql.length();
+        int start = 0;
+        while (start < len && Character.isWhitespace(sql.charAt(start))) {
+            start++;
+        }
+        int end = start;
+        while (end < len && Character.isLetter(sql.charAt(end))) {
+            end++;
+        }
+        if (end <= start) {
+            return "UNKNOWN";
+        }
+        return sql.substring(start, end).toUpperCase(Locale.ENGLISH);
+    }
+
+    private static String sanitizeMetricTag(String value) {
+        if (value == null || value.length() == 0) {
+            return "unknown";
+        }
+        return value.replace(',', '_').replace('=', '_').replace('\r', ' ').replace('\n', ' ');
     }
     //endregion
 }
