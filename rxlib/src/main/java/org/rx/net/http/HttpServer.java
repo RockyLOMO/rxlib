@@ -153,7 +153,7 @@ public class HttpServer extends Disposable {
                             }
                         }
                     } catch (HttpPostRequestDecoder.EndOfDataDecoderException e) {
-                        log.debug("EndOfData", e);
+                        // hasNext() 到达尾部会抛出 EndOfData，属于正常结束信号，不记录异常栈。
                     }
                 } else {
                     ByteBuf buf = req.getContent();

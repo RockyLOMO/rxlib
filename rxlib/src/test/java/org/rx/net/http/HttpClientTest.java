@@ -1,5 +1,7 @@
 package org.rx.net.http;
 
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.netty.handler.codec.http.cookie.CookieHeaderNames;
 import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.multipart.FileUpload;
@@ -13,6 +15,7 @@ import org.rx.net.socks.DefaultSocksAuthenticator;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksUser;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -486,6 +489,25 @@ public class HttpClientTest {
             }
         } finally {
             proxyServer.close();
+        }
+    }
+
+    @Test
+    public void testEnableLogFormat() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HttpClient.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setEnableLog(true).setCookieJar(null))) {
+            try (HttpClient.Response response = client.get(BASE_URL + "/get")) {
+                assertEquals(200, response.code());
+                assertTrue(response.bodyAsString().contains("ok-v2"));
+            }
+            assertTrue(appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                    .anyMatch(p -> p.contains("HTTP GET " + BASE_URL + "/get req=") && p.contains("-> 200") && p.contains("res=ok-v2")));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
         }
     }
 
