@@ -72,6 +72,8 @@ public class HttpClient implements AutoCloseable {
     public static final String FORM_TYPE = "application/x-www-form-urlencoded;charset=UTF-8";
     public static final String JSON_TYPE = "application/json; charset=UTF-8";
     static final AttributeKey<RequestState> STATE_KEY = AttributeKey.valueOf("HttpClientState");
+    static final int LOG_PREVIEW_BYTES = 512;
+    static final int LOG_PREVIEW_CHARS = 512;
     private static final AtomicLongFieldUpdater<HttpClient> REQUESTS_UPDATER =
             AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricRequests");
     private static final AtomicLongFieldUpdater<HttpClient> SUCCESS_UPDATER =
@@ -208,6 +210,128 @@ public class HttpClient implements AutoCloseable {
         snapshot.enableCookie = cookieEnabled;
         snapshot.headers = mergeRequestHeaders(request.headers);
         return snapshot;
+    }
+
+    private static String requestLogText(Request request) {
+        if (request == null) {
+            return Strings.EMPTY;
+        }
+        RequestContent content = request.body();
+        if (content == null || content == RequestContent.EMPTY) {
+            return Strings.EMPTY;
+        }
+        if (content instanceof JsonContent) {
+            return previewText(Sys.toJsonString(((JsonContent) content).getJson()));
+        }
+        if (content instanceof FormContent) {
+            return previewText(Sys.toJsonString(((FormContent) content).getForms()));
+        }
+        if (content instanceof MultipartContent) {
+            MultipartContent multipart = (MultipartContent) content;
+            return previewText(String.format("{\"forms\":%s,\"files\":%s}",
+                    Sys.toJsonString(multipart.forms), Sys.toJsonString(multipart.files.keySet())));
+        }
+        if (content instanceof ByteBufContent) {
+            ByteBufContent byteBufContent = (ByteBufContent) content;
+            String contentType = byteBufContent.contentType();
+            int readableBytes = byteBufContent.data.readableBytes();
+            if (!isTextualContentType(contentType)) {
+                return "<" + (contentType == null ? "binary" : contentType) + ", " + readableBytes + " bytes>";
+            }
+            ByteBuf buf = byteBufContent.data.duplicate();
+            int length = Math.min(buf.readableBytes(), LOG_PREVIEW_BYTES);
+            String text = buf.toString(buf.readerIndex(), length, parseCharset(contentType));
+            if (buf.readableBytes() > length) {
+                text += "...";
+            }
+            return previewText(text);
+        }
+        if (content instanceof StreamContent) {
+            return "<stream " + (content.contentType() == null ? "binary" : content.contentType()) + ">";
+        }
+        return "<" + content.getClass().getSimpleName() + ">";
+    }
+
+    private static String responseLogText(Response response) {
+        if (response == null) {
+            return Strings.EMPTY;
+        }
+        String contentType = response.header(HttpHeaderNames.CONTENT_TYPE.toString());
+        long contentLength;
+        try {
+            contentLength = response.body.getLength();
+        } catch (Throwable e) {
+            contentLength = -1L;
+        }
+        if (!isTextualContentType(contentType)) {
+            return "<" + (contentType == null ? "binary" : contentType) + (contentLength >= 0 ? ", " + contentLength + " bytes" : Strings.EMPTY) + ">";
+        }
+        InputStream in = null;
+        try {
+            in = response.bodyStream().asInputStream();
+            byte[] bytes = new byte[LOG_PREVIEW_BYTES];
+            int read = in.read(bytes);
+            if (read <= 0) {
+                return Strings.EMPTY;
+            }
+            String text = new String(bytes, 0, read, response.charset());
+            if (read == LOG_PREVIEW_BYTES && in.read() != Constants.IO_EOF) {
+                text += "...";
+            }
+            return previewText(text);
+        } catch (Throwable e) {
+            return "<preview " + throwableSummary(e) + ">";
+        } finally {
+            tryClose(in);
+        }
+    }
+
+    private static boolean isTextualContentType(String contentType) {
+        if (Strings.isEmpty(contentType)) {
+            return true;
+        }
+        String lower = contentType.toLowerCase(Locale.ROOT);
+        return lower.startsWith("text/")
+                || lower.contains("json")
+                || lower.contains("xml")
+                || lower.contains("form-urlencoded")
+                || lower.contains("javascript")
+                || lower.contains("html");
+    }
+
+    private static Charset parseCharset(String contentType) {
+        if (!Strings.isEmpty(contentType)) {
+            String[] parts = contentType.split(";");
+            for (String part : parts) {
+                String value = part.trim();
+                if (Strings.startsWithIgnoreCase(value, "charset=")) {
+                    try {
+                        return Charset.forName(value.substring("charset=".length()));
+                    } catch (Throwable e) {
+                        break;
+                    }
+                }
+            }
+        }
+        return StandardCharsets.UTF_8;
+    }
+
+    private static String previewText(String text) {
+        if (Strings.isEmpty(text)) {
+            return Strings.EMPTY;
+        }
+        String normalized = text.replace("\r", "\\r").replace("\n", "\\n");
+        return normalized.length() <= LOG_PREVIEW_CHARS ? normalized : normalized.substring(0, LOG_PREVIEW_CHARS) + "...";
+    }
+
+    private static String throwableSummary(Throwable e) {
+        Throwable root = org.apache.commons.lang3.exception.ExceptionUtils.getRootCause(e);
+        Throwable actual = root == null ? e : root;
+        if (actual == null) {
+            return "unknown";
+        }
+        String message = actual.getMessage();
+        return Strings.isEmpty(message) ? actual.getClass().getSimpleName() : actual.getClass().getSimpleName() + ": " + message;
     }
 
     @Override
@@ -761,6 +885,7 @@ public class HttpClient implements AutoCloseable {
         final long startNanos;
         final boolean cookieEnabled;
         final boolean logEnabled;
+        final String requestLogText;
         final AtomicBoolean completed = new AtomicBoolean();
         final AtomicBoolean contentClosed = new AtomicBoolean();
         CompletableFuture<Void> responseWriteTail = CompletableFuture.completedFuture(null);
@@ -793,6 +918,7 @@ public class HttpClient implements AutoCloseable {
             this.startNanos = startNanos;
             this.cookieEnabled = cookieEnabled;
             this.logEnabled = logEnabled;
+            requestLogText = logEnabled ? HttpClient.requestLogText(currentRequest) : null;
         }
 
         void closeContent() {
@@ -966,7 +1092,9 @@ public class HttpClient implements AutoCloseable {
                 if (redirect != null) {
                     tryClose(state.body);
                     if (state.logEnabled) {
-                        log.info("{} -> {} {}", state.uri, state.response.status().code(), redirect.url);
+                        log.info("HTTP {} {} req={} -> {} location={}",
+                                state.currentRequest.method(), state.uri, state.requestLogText,
+                                state.response.status().code(), redirect.url);
                     }
                     state.client.executeAsync0(state.request, redirectRequest(state, redirect),
                             state.config, state.future, state.startNanos, state.redirectCount + 1);
@@ -985,7 +1113,10 @@ public class HttpClient implements AutoCloseable {
                     }
                 }
                 if (state.logEnabled) {
-                    log.info("{} -> {}", state.uri, content.code());
+                    log.info("HTTP {} {} req={} -> {} {}ms res={}",
+                            state.currentRequest.method(), state.request.url(),
+                            state.requestLogText, content.code(),
+                            TimeUnit.NANOSECONDS.toMillis(elapsedNanos), responseLogText(content));
                 }
                 state.future.complete(content);
             } catch (Throwable e) {
@@ -1597,6 +1728,10 @@ public class HttpClient implements AutoCloseable {
         state.closeContent();
         tryClose(state.body);
         FAILED_UPDATER.incrementAndGet(state.client);
+        if (state.logEnabled) {
+            log.warn("HTTP {} {} req={} fail {}",
+                    state.currentRequest.method(), state.uri, state.requestLogText, throwableSummary(cause));
+        }
         release(channel, state, false);
         state.future.completeExceptionally(cause);
     }
