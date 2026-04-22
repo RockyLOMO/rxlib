@@ -20,7 +20,7 @@ import java.nio.file.attribute.UserDefinedFileAttributeView;
 import static org.rx.core.Extends.tryClose;
 
 @Slf4j
-public class FileStream extends IOStream implements Serializable {
+public class FileStream extends DuplexStream implements Serializable {
     private static final long serialVersionUID = 8857792573177348449L;
 
     @RequiredArgsConstructor
@@ -43,8 +43,6 @@ public class FileStream extends IOStream implements Serializable {
     @Getter(AccessLevel.PROTECTED)
     private transient BufferedRandomAccessFile randomAccessFile;
     private transient final Lazy<CompositeLock> lock = new Lazy<>(() -> new CompositeLock(this, lockFlags));
-    private transient InputStream reader;
-    private transient OutputStream writer;
 
     public CompositeLock getLock() {
         return lock.getValue();
@@ -90,52 +88,6 @@ public class FileStream extends IOStream implements Serializable {
     public String getContentType() {
         MimetypesFileTypeMap mimeTypesMap = new MimetypesFileTypeMap();
         return mimeTypesMap.getContentType(getPath());
-    }
-
-    @Override
-    public InputStream getReader() {
-        if (reader == null) {
-            reader = new InputStream() {
-                @Override
-                public int available() {
-                    return safeRemaining(FileStream.this.available());
-                }
-
-                @Override
-                public int read(byte[] b, int off, int len) throws IOException {
-                    return randomAccessFile.read(b, off, len);
-                }
-
-                @Override
-                public int read() throws IOException {
-                    return randomAccessFile.read();
-                }
-            };
-        }
-        return reader;
-    }
-
-    @Override
-    public OutputStream getWriter() {
-        if (writer == null) {
-            writer = new OutputStream() {
-                @Override
-                public void write(byte[] b, int off, int len) throws IOException {
-                    randomAccessFile.write(b, off, len);
-                }
-
-                @Override
-                public void write(int b) throws IOException {
-                    randomAccessFile.write(b);
-                }
-
-                @Override
-                public void flush() {
-                    FileStream.this.flush();
-                }
-            };
-        }
-        return writer;
     }
 
     public synchronized boolean canWrite() {
@@ -229,13 +181,47 @@ public class FileStream extends IOStream implements Serializable {
 
     @SneakyThrows
     @Override
-    public synchronized long available() {
+    public synchronized long availableBytes() {
         return randomAccessFile.bytesRemaining();
     }
 
     @SneakyThrows
     @Override
+    public synchronized int read(byte[] b, int off, int len) {
+        checkNotClosed();
+        return randomAccessFile.read(b, off, len);
+    }
+
+    @SneakyThrows
+    @Override
+    public synchronized int read() {
+        checkNotClosed();
+        return randomAccessFile.read();
+    }
+
+    @SneakyThrows
+    @Override
+    public synchronized void write(byte[] b, int off, int len) {
+        checkNotClosed();
+        randomAccessFile.write(b, off, len);
+    }
+
+    @SneakyThrows
+    @Override
+    public synchronized void write(int b) {
+        checkNotClosed();
+        randomAccessFile.write(b);
+    }
+
+    @SneakyThrows
+    @Override
     public synchronized int read(ByteBuf dst, int length) {
+        checkNotClosed();
+        checkLength(length);
+        if (length == 0) {
+            return 0;
+        }
+
         long pos = getPosition();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
@@ -271,30 +257,43 @@ public class FileStream extends IOStream implements Serializable {
 
     @SneakyThrows
     public synchronized long write0(ByteBuf src, int length) {
+        checkNotClosed();
+        checkLength(length);
+        if (length > src.readableBytes()) {
+            throw new IndexOutOfBoundsException();
+        }
+        if (length == 0) {
+            return 0;
+        }
+
         long pos = getPosition();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
 
-        int rIndex = src.readerIndex(), rEndIndex = rIndex + length;
-        ByteBuf buf = src;
-        if (buf.readableBytes() != length) {
-            buf = buf.slice(rIndex, rEndIndex);
-        }
-        long w;
-        switch (buf.nioBufferCount()) {
-            case 0:
-                w = ch.write(ByteBuffer.wrap(Bytes.toBytes(buf)));
+        int rIndex = src.readerIndex();
+        int written = 0;
+        while (written < length) {
+            ByteBuf buf = src.slice(rIndex + written, length - written);
+            long w;
+            switch (buf.nioBufferCount()) {
+                case 0:
+                    w = ch.write(ByteBuffer.wrap(Bytes.toBytes(buf)));
+                    break;
+                case 1:
+                    w = ch.write(buf.nioBuffer());
+                    break;
+                default:
+                    w = ch.write(buf.nioBuffers());
+                    break;
+            }
+            if (w <= 0) {
                 break;
-            case 1:
-                w = ch.write(buf.nioBuffer());
-                break;
-            default:
-                w = ch.write(buf.nioBuffers());
-                break;
+            }
+            written += w;
         }
 
-        src.readerIndex(rEndIndex);
-        setPosition(pos + w);
+        src.readerIndex(rIndex + written);
+        setPosition(pos + written);
 //        switch (fileMode) {
 //            case READ_WRITE_AND_SYNC_CONTENT:
 //                ch.force(false);
@@ -303,7 +302,7 @@ public class FileStream extends IOStream implements Serializable {
 //                ch.force(true);
 //                break;
 //        }
-        return w;
+        return written;
     }
 
     @Override

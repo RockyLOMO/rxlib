@@ -44,7 +44,7 @@
 //        private final FileStream main;
 //        private final CompositeLock lock;
 //        private long _wroteBytes = HEADER_SIZE;
-//        private IOStream writer, reader;
+//        private DuplexStream writer, reader;
 //
 //        Slot(HashKeyIndexer<?> owner, File indexFile) {
 //            this.owner = owner;
@@ -208,7 +208,7 @@
 //        slot.lock.writeInvoke(() -> {
 //            slot.ensureGrow();
 //
-//            IOStream out = slot.writer;
+//            DuplexStream out = slot.writer;
 //            long pos = key.position == Constants.IO_EOF ? slot.getWroteBytes() : key.position;
 //            out.setPosition(pos);
 //
@@ -244,7 +244,7 @@
 //            Slot slot = slot(hashId);
 //
 //            return slot.lock.readInvoke(() -> {
-//                IOStream in = slot.reader;
+//                DuplexStream in = slot.reader;
 //
 //                in.setPosition(HEADER_SIZE);
 //                long pos = in.getPosition();

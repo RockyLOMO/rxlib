@@ -10,14 +10,13 @@ import org.rx.util.Snowflake;
 
 import java.io.*;
 
-public final class MemoryStream extends IOStream implements Serializable {
+public final class MemoryStream extends DuplexStream implements Serializable {
     private static final long serialVersionUID = 6209361024929311435L;
     @Setter
     private String name;
     private boolean directBuffer;
     private transient ByteBuf buffer;
-    private transient InputStream reader;
-    private transient OutputStream writer;
+    private transient int mark;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
         out.defaultWriteObject();
@@ -46,78 +45,6 @@ public final class MemoryStream extends IOStream implements Serializable {
     }
 
     @Override
-    public InputStream getReader() {
-        if (reader == null) {
-            reader = new InputStream() {
-                int mark;
-
-                @Override
-                public boolean markSupported() {
-                    return true;
-                }
-
-                @Override
-                public synchronized void mark(int readlimit) {
-                    mark = buffer.readerIndex();
-                }
-
-                @Override
-                public synchronized void reset() throws IOException {
-                    buffer.readerIndex(mark);
-                }
-
-                @Override
-                public int available() {
-                    return buffer.readableBytes();
-                }
-
-                @Override
-                public int read(byte[] b, int off, int len) {
-                    int readableBytes = buffer.readableBytes();
-                    if (readableBytes == 0) {
-                        return -1;
-                    }
-                    int len0 = Math.min(readableBytes, len);
-                    buffer.readBytes(b, off, len0);
-                    return len0;
-                }
-
-                @Override
-                public int read() {
-                    if (buffer.readableBytes() == 0) {
-                        return -1;
-                    }
-                    // java has no unsigned byte
-                    return buffer.readByte() & 0xff;
-                }
-            };
-        }
-        return reader;
-    }
-
-    @Override
-    public OutputStream getWriter() {
-        if (writer == null) {
-            writer = new OutputStream() {
-                @Override
-                public void write(byte[] b, int off, int len) {
-                    buffer.writerIndex(buffer.readerIndex());
-                    buffer.writeBytes(b, off, len);
-                    buffer.readerIndex(buffer.writerIndex());
-                }
-
-                @Override
-                public void write(int b) {
-                    buffer.writerIndex(buffer.readerIndex());
-                    buffer.writeByte(b);
-                    buffer.readerIndex(buffer.writerIndex());
-                }
-            };
-        }
-        return writer;
-    }
-
-    @Override
     public boolean canSeek() {
         return true;
     }
@@ -139,6 +66,68 @@ public final class MemoryStream extends IOStream implements Serializable {
     @Override
     public long getLength() {
         return buffer.writerIndex();
+    }
+
+    @Override
+    public boolean markSupported() {
+        return true;
+    }
+
+    @Override
+    public synchronized void mark(int readlimit) {
+        mark = buffer.readerIndex();
+    }
+
+    @Override
+    public synchronized void reset() {
+        buffer.readerIndex(mark);
+    }
+
+    @Override
+    public int read(byte[] b, int off, int len) {
+        checkNotClosed();
+        checkArrayRange(b, off, len);
+        if (len == 0) {
+            return 0;
+        }
+
+        int readableBytes = buffer.readableBytes();
+        if (readableBytes == 0) {
+            return Constants.IO_EOF;
+        }
+        int len0 = Math.min(readableBytes, len);
+        buffer.readBytes(b, off, len0);
+        return len0;
+    }
+
+    @Override
+    public int read() {
+        checkNotClosed();
+        if (buffer.readableBytes() == 0) {
+            return Constants.IO_EOF;
+        }
+        return buffer.readByte() & 0xff;
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) {
+        checkNotClosed();
+        checkArrayRange(b, off, len);
+        if (len == 0) {
+            return;
+        }
+
+        buffer.writerIndex(buffer.readerIndex());
+        buffer.writeBytes(b, off, len);
+        buffer.readerIndex(buffer.writerIndex());
+    }
+
+    @Override
+    public void write(int b) {
+        checkNotClosed();
+        buffer.writerIndex(buffer.readerIndex());
+        buffer.writeByte(b);
+        buffer.readerIndex(buffer.writerIndex());
     }
 
     public void setLength(int length) {
@@ -182,20 +171,45 @@ public final class MemoryStream extends IOStream implements Serializable {
 
     @Override
     public int read(ByteBuf dst, int length) {
-        buffer.readBytes(dst, length);
-        return length;
+        checkNotClosed();
+        checkLength(length);
+        if (length == 0) {
+            return 0;
+        }
+
+        int readableBytes = buffer.readableBytes();
+        if (readableBytes == 0) {
+            return Constants.IO_EOF;
+        }
+
+        int len = Math.min(readableBytes, length);
+        buffer.readBytes(dst, len);
+        return len;
     }
 
     public void read(ByteBuf dst, int dstIndex, int length) {
+        checkNotClosed();
+        checkLength(length);
         buffer.readBytes(dst, dstIndex, length);
     }
 
     @Override
     public void write(ByteBuf src, int length) {
+        checkNotClosed();
+        checkLength(length);
+        if (length > src.readableBytes()) {
+            throw new IndexOutOfBoundsException();
+        }
+        if (length == 0) {
+            return;
+        }
+
         buffer.writeBytes(src, length);
     }
 
     public void write(ByteBuf src, int srcIndex, int length) {
+        checkNotClosed();
+        checkLength(length);
         buffer.writeBytes(src, srcIndex, length);
     }
 }

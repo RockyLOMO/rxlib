@@ -33,7 +33,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
@@ -824,8 +824,8 @@ public class TestSocks extends AbstractTester {
         f.put("a", "1");
         f.put("b", "乐之");
 
-        Map<String, IOStream> fi = new HashMap<>();
-        fi.put("a", IOStream.wrap("1.dat", new byte[]{1, 2, 3, 4, 5, 6, 7, 8}));
+        Map<String, DuplexStream> fi = new HashMap<>();
+        fi.put("a", DuplexStream.wrap("1.dat", new byte[]{1, 2, 3, 4, 5, 6, 7, 8}));
 
         String j = "{\"a\":1,\"b\":\"乐之\"}";
 
@@ -845,7 +845,7 @@ public class TestSocks extends AbstractTester {
             }
 
             MultiValueMap<String, FileUpload> files = request.getFiles();
-            for (Map.Entry<String, IOStream> entry : fi.entrySet()) {
+            for (Map.Entry<String, DuplexStream> entry : fi.entrySet()) {
                 FileUpload fileUpload = files.getFirst(entry.getKey());
                 try {
                     Arrays.equals(fileUpload.get(), entry.getValue().toArray());
@@ -911,7 +911,7 @@ public class TestSocks extends AbstractTester {
         assert client.listFiles(dir, false).any(p -> p.getName().equals("1.txt"));
         HybridStream stream = new HybridStream();
         client.downloadFile(Files.concatPath(dir, "1.txt"), stream);
-        System.out.println(IOStream.readString(stream.rewind().getReader(), StandardCharsets.UTF_8));
+        System.out.println(DuplexStream.readString(stream.rewind().getReader(), StandardCharsets.UTF_8));
 
 //        for (SftpFile dir : client.listDirectories("/home", true)) {
 //            System.out.println(dir.getPath());

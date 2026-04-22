@@ -176,7 +176,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     continue;
                 }
                 if (val.getClass().isArray()) {
-                    try (IOStream stream = SERIALIZER.serialize(val)) {
+                    try (DuplexStream stream = SERIALIZER.serialize(val)) {
                         stmt.setBinaryStream(i, stream.getReader());
                     }
                     continue;
@@ -202,7 +202,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 //                if (blob.length() == 0) {
 //                    arr = Arrays.EMPTY_OBJECT_ARRAY;
 //                } else {
-//                    arr = SERIALIZER.deserialize(IOStream.wrap(null, blob.getBinaryStream()));
+//                    arr = SERIALIZER.deserialize(DuplexStream.wrap(null, blob.getBinaryStream()));
 //                }
 //                return arr;
 //            }
@@ -210,7 +210,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             if (blob.length() == 0) {
                 return null;
             }
-            return SERIALIZER.deserialize(IOStream.wrap(null, blob.getBinaryStream()));
+            return SERIALIZER.deserialize(DuplexStream.wrap(null, blob.getBinaryStream()));
         }
         return Reflects.changeType(cell, type);
     }

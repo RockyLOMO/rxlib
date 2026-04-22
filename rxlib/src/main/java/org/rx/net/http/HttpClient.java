@@ -36,7 +36,7 @@ import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
@@ -138,6 +138,12 @@ public class HttpClient implements AutoCloseable {
 
     public Metrics getMetrics() {
         return ensureMetrics();
+    }
+
+    public HttpClient withFeatures(boolean cookieEnabled, boolean logEnabled) {
+        config.setCookieJar(cookieEnabled ? HttpClientCookieJar.DEFAULT : null);
+        config.setEnableLog(logEnabled);
+        return this;
     }
 
     private Metrics ensureMetrics() {
@@ -310,7 +316,7 @@ public class HttpClient implements AutoCloseable {
             return body(new FormContent(forms));
         }
 
-        public Request multipart(Map<String, Object> forms, Map<String, IOStream> files) {
+        public Request multipart(Map<String, Object> forms, Map<String, DuplexStream> files) {
             return body(new MultipartContent(forms, files));
         }
 
@@ -351,6 +357,31 @@ public class HttpClient implements AutoCloseable {
 
         @Override
         default void close() {
+        }
+    }
+
+    public static final class HttpClientBody {
+        private HttpClientBody() {
+        }
+
+        public static RequestContent bytes(byte[] bytes, CharSequence contentType) {
+            return new ByteBufContent(contentType == null ? null : contentType.toString(), newContentBuffer(bytes));
+        }
+
+        public static RequestContent bytes(ByteBuf bytes, CharSequence contentType) {
+            return new ByteBufContent(contentType == null ? null : contentType.toString(), bytes);
+        }
+
+        public static RequestContent json(Object json) {
+            return new JsonContent(json);
+        }
+
+        public static RequestContent form(Map<String, Object> forms) {
+            return new FormContent(forms);
+        }
+
+        public static RequestContent multipart(Map<String, Object> forms, Map<String, DuplexStream> files) {
+            return new MultipartContent(forms, files);
         }
     }
 
@@ -471,12 +502,12 @@ public class HttpClient implements AutoCloseable {
                 .writeByte('\n')).asReadOnly();
 
         final Map<String, Object> forms;
-        final Map<String, IOStream> files;
+        final Map<String, DuplexStream> files;
         final String boundary;
         final String contentType;
         final StringBuilder partPrefixBuilder = new StringBuilder(128);
 
-        MultipartContent(Map<String, Object> forms, Map<String, IOStream> files) {
+        MultipartContent(Map<String, Object> forms, Map<String, DuplexStream> files) {
             this.forms = forms != null ? forms : Collections.emptyMap();
             this.files = files != null ? files : Collections.emptyMap();
             boundary = "----RxNettyBoundary" + Long.toHexString(System.nanoTime()) + Long.toHexString(ThreadLocalRandom.current().nextLong());
@@ -510,8 +541,8 @@ public class HttpClient implements AutoCloseable {
                 writeAscii(writer, value.toString());
                 writeBytes(writer, CRLF);
             }
-            for (Map.Entry<String, IOStream> entry : files.entrySet()) {
-                IOStream stream = entry.getValue();
+            for (Map.Entry<String, DuplexStream> entry : files.entrySet()) {
+                DuplexStream stream = entry.getValue();
                 if (stream == null) {
                     continue;
                 }
@@ -557,7 +588,7 @@ public class HttpClient implements AutoCloseable {
             writer.write(buf, buf.readableBytes());
         }
 
-        private void writeStream(UploadWriter writer, IOStream in) throws Exception {
+        private void writeStream(UploadWriter writer, DuplexStream in) throws Exception {
             int read;
             while (true) {
                 if (!writer.channel.isActive()) {
@@ -985,7 +1016,7 @@ public class HttpClient implements AutoCloseable {
         }
 
         public synchronized InputStream responseStream() {
-            return stream.rewind().getReader();
+            return stream.rewind().asInputStream();
         }
 
         public synchronized HybridStream toStream() {
@@ -995,7 +1026,7 @@ public class HttpClient implements AutoCloseable {
         @SneakyThrows
         public synchronized File toFile(String filePath) {
             if (file == null) {
-                Files.saveFile(filePath, stream.rewind().getReader());
+                Files.saveFile(filePath, stream.rewind().asInputStream());
                 file = new File(filePath);
             }
             return file;
@@ -1007,13 +1038,13 @@ public class HttpClient implements AutoCloseable {
 
         @SneakyThrows
         public synchronized <T> T handle(BiFunc<InputStream, T> fn) {
-            return fn.invoke(stream.rewind().getReader());
+            return fn.invoke(stream.rewind().asInputStream());
         }
 
         @Override
         public synchronized String toString() {
             if (str == null) {
-                str = IOStream.readString(stream.rewind().getReader(), getCharset());
+                str = DuplexStream.readString(stream.rewind().asInputStream(), getCharset());
             }
             return str;
         }
@@ -1035,7 +1066,7 @@ public class HttpClient implements AutoCloseable {
 
         @SneakyThrows
         public synchronized <T> T handle(BiFunc<InputStream, T> fn) {
-            return fn.invoke(stream.rewind().getReader());
+            return fn.invoke(stream.rewind().asInputStream());
         }
     }
 
@@ -1051,7 +1082,7 @@ public class HttpClient implements AutoCloseable {
         return post(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent post(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
+    public ResponseContent post(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
         if (MapUtils.isEmpty(files)) {
             return invoke(url, HttpMethod.POST, new FormContent(forms));
         }
@@ -1066,7 +1097,7 @@ public class HttpClient implements AutoCloseable {
         return put(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent put(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
+    public ResponseContent put(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
         if (MapUtils.isEmpty(files)) {
             return invoke(url, HttpMethod.PUT, new FormContent(forms));
         }
@@ -1081,7 +1112,7 @@ public class HttpClient implements AutoCloseable {
         return patch(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent patch(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
+    public ResponseContent patch(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
         if (MapUtils.isEmpty(files)) {
             return invoke(url, HttpMethod.PATCH, new FormContent(forms));
         }
@@ -1096,7 +1127,7 @@ public class HttpClient implements AutoCloseable {
         return delete(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent delete(@NonNull String url, Map<String, Object> forms, Map<String, IOStream> files) {
+    public ResponseContent delete(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
         if (MapUtils.isEmpty(files)) {
             return invoke(url, HttpMethod.DELETE, new FormContent(forms));
         }
@@ -1191,7 +1222,7 @@ public class HttpClient implements AutoCloseable {
             servletResponse.setContentType(contentType);
         }
         ServletOutputStream out = servletResponse.getOutputStream();
-        IOStream.copy(response.responseStream(), IOStream.NON_READ_FULLY, out);
+        DuplexStream.copy(response.responseStream(), DuplexStream.NON_READ_FULLY, out);
         return Tuple.of(content, response);
     }
 

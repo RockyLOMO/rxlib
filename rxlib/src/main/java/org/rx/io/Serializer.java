@@ -19,12 +19,12 @@ public interface Serializer {
     }
 
     default <T> byte[] serializeToBytes(T obj) {
-        try (IOStream stream = serialize(obj)) {
+        try (DuplexStream stream = serialize(obj)) {
             return stream.toArray();
         }
     }
 
-    default <T> IOStream serialize(T obj) {
+    default <T> DuplexStream serialize(T obj) {
         return serialize(obj, Constants.MAX_HEAP_BUF_SIZE, false);
     }
 
@@ -34,15 +34,15 @@ public interface Serializer {
         return stream.rewind();
     }
 
-    <T> void serialize(T obj, IOStream stream);
+    <T> void serialize(T obj, DuplexStream stream);
 
     default <T> T deserializeFromBytes(byte[] data) {
-        return deserialize(IOStream.wrap("", data));
+        return deserialize(DuplexStream.wrap("", data));
     }
 
-    default <T> T deserialize(IOStream stream) {
+    default <T> T deserialize(DuplexStream stream) {
         return deserialize(stream, false);
     }
 
-    <T> T deserialize(IOStream stream, boolean leveOpen);
+    <T> T deserialize(DuplexStream stream, boolean leveOpen);
 }

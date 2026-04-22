@@ -192,7 +192,7 @@
 - 文本字段
 - 单文件/多文件
 - 文件名与媒体类型
-- `IOStream` 直接上传
+- `DuplexStream` 直接上传
 
 建议分阶段实现：
 
@@ -390,7 +390,7 @@
 处理要求：
 
 - 所有入站 `HttpContent` 在消费后立即释放
-- `MultipartBody` 内部持有的 `IOStream` 必须成对关闭
+- `MultipartBody` 内部持有的 `DuplexStream` 必须成对关闭
 - 单测与集成测试开启 Netty leak detection 做回归
 
 ### 7.2 背压风险

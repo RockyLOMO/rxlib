@@ -8,32 +8,30 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 
 @RequiredArgsConstructor
-public class BinaryStream extends IOStream {
+public class BinaryStream extends DuplexStream {
     private static final long serialVersionUID = 7204373912624988890L;
     @Getter
-    private final IOStream baseStream;
+    private final DuplexStream baseStream;
     private final boolean leaveOpen;
     private transient DataInputStream reader;
     private transient DataOutputStream writer;
-    private transient BufferedReader reader2;
+    private transient BufferedReader lineReader;
 
     @Override
     public String getName() {
         return baseStream.getName();
     }
 
-    @Override
-    public DataInputStream getReader() {
+    private DataInputStream reader() {
         if (reader == null) {
-            reader = new DataInputStream(baseStream.getReader());
+            reader = new DataInputStream(baseStream);
         }
         return reader;
     }
 
-    @Override
-    public DataOutputStream getWriter() {
+    private DataOutputStream writer() {
         if (writer == null) {
-            writer = new DataOutputStream(baseStream.getWriter());
+            writer = new DataOutputStream(baseStream.asOutputStream());
         }
         return writer;
     }
@@ -58,7 +56,7 @@ public class BinaryStream extends IOStream {
         return baseStream.getLength();
     }
 
-    public BinaryStream(IOStream stream) {
+    public BinaryStream(DuplexStream stream) {
         this(stream, false);
     }
 
@@ -70,58 +68,95 @@ public class BinaryStream extends IOStream {
     }
 
     @SneakyThrows
+    @Override
+    public int read() {
+        checkNotClosed();
+        return reader().read();
+    }
+
+    @SneakyThrows
+    @Override
+    public int read(byte[] b, int off, int len) {
+        checkNotClosed();
+        return reader().read(b, off, len);
+    }
+
+    @SneakyThrows
+    @Override
+    public void write(int b) {
+        checkNotClosed();
+        writer().write(b);
+    }
+
+    @SneakyThrows
+    @Override
+    public void write(byte[] b, int off, int len) {
+        checkNotClosed();
+        writer().write(b, off, len);
+    }
+
+    @SneakyThrows
+    @Override
+    public void flush() {
+        checkNotClosed();
+        if (writer != null) {
+            writer.flush();
+        }
+    }
+
+    @SneakyThrows
     public boolean readBoolean() {
-        return getReader().readBoolean();
+        return reader().readBoolean();
     }
 
     @SneakyThrows
     public byte readByte() {
-        return getReader().readByte();
+        return reader().readByte();
     }
 
     @SneakyThrows
     @Override
     public short readShort() {
-        return getReader().readShort();
+        return reader().readShort();
     }
 
     @SneakyThrows
     @Override
     public int readInt() {
-        return getReader().readInt();
+        return reader().readInt();
     }
 
     @SneakyThrows
     public long readLong() {
-        return getReader().readLong();
+        return reader().readLong();
     }
 
     @SneakyThrows
     public float readFloat() {
-        return getReader().readFloat();
+        return reader().readFloat();
     }
 
     @SneakyThrows
     public double readDouble() {
-        return getReader().readDouble();
+        return reader().readDouble();
     }
 
     @SneakyThrows
     public char readChar() {
-        return getReader().readChar();
+        return reader().readChar();
     }
 
     @SneakyThrows
     public String readString() {
-        return getReader().readUTF();
+        return reader().readUTF();
     }
 
     @SneakyThrows
     public String readLine() {
-        if (reader2 == null) {
-            reader2 = new BufferedReader(new InputStreamReader(getReader()));
+        if (lineReader == null) {
+            lineReader = new BufferedReader(new InputStreamReader(this));
         }
-        return reader2.readLine();
+        return lineReader.readLine();
     }
 
     public <T extends Serializable> T readObject() {
@@ -133,50 +168,50 @@ public class BinaryStream extends IOStream {
 
     @SneakyThrows
     public void writeBoolean(boolean value) {
-        getWriter().writeBoolean(value);
+        writer().writeBoolean(value);
     }
 
     @SneakyThrows
     public void writeByte(byte value) {
-        getWriter().writeByte(value);
+        writer().writeByte(value);
     }
 
     @SneakyThrows
     @Override
     public void writeShort(short value) {
-        getWriter().writeShort(value);
+        writer().writeShort(value);
     }
 
     @SneakyThrows
     @Override
     public void writeInt(int value) {
-        getWriter().writeInt(value);
+        writer().writeInt(value);
     }
 
     @SneakyThrows
     public void writeLong(long value) {
-        getWriter().writeLong(value);
+        writer().writeLong(value);
     }
 
     @SneakyThrows
     public void writeFloat(float value) {
-        getWriter().writeFloat(value);
+        writer().writeFloat(value);
     }
 
     @SneakyThrows
     public void writeDouble(double value) {
-        getWriter().writeDouble(value);
+        writer().writeDouble(value);
     }
 
     @SneakyThrows
     public void writeChar(char value) {
-        getWriter().writeChar(value);
+        writer().writeChar(value);
     }
 
     @SneakyThrows
     @Override
     public void writeString(String value) {
-        getWriter().writeUTF(value);
+        writer().writeUTF(value);
     }
 
     public void writeLine(String value) {
@@ -184,7 +219,7 @@ public class BinaryStream extends IOStream {
     }
 
     public <T extends Serializable> void writeObject(T value) {
-        try (IOStream stream = Serializer.DEFAULT.serialize(value)) {
+        try (DuplexStream stream = Serializer.DEFAULT.serialize(value)) {
             writeLong(stream.getLength());
             write(stream);
         }

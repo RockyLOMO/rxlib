@@ -10,7 +10,7 @@ import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.net.http.HttpClient;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -82,12 +82,12 @@ public class Servlets extends ServletRequestUtils {
         }
     }
 
-    public static void responseFile(IOStream stream) {
+    public static void responseFile(DuplexStream stream) {
         responseFile(stream, MediaType.APPLICATION_OCTET_STREAM_VALUE);
     }
 
     @SneakyThrows
-    public static void responseFile(@NonNull IOStream stream, String contentType) {
+    public static void responseFile(@NonNull DuplexStream stream, String contentType) {
         HttpServletResponse response = currentRequest().right;
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(contentType);
@@ -103,7 +103,7 @@ public class Servlets extends ServletRequestUtils {
         response.setHeader(HttpHeaders.EXPIRES, new Date(DateTime.now().addSeconds(cacheSeconds).getTime()).toString());
         response.setContentType(contentType);
         if (in != null) {
-            IOStream.copy(in, IOStream.NON_READ_FULLY, response.getOutputStream());
+            DuplexStream.copy(in, DuplexStream.NON_READ_FULLY, response.getOutputStream());
         }
     }
 

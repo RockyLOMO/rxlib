@@ -10,7 +10,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.rx.io.HybridStream;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.net.Sockets;
 
 import java.io.ByteArrayOutputStream;
@@ -131,8 +131,8 @@ public class HttpClientIntegrationTest {
 
         Map<String, Object> multipartForms = new HashMap<>();
         multipartForms.put("name", "n1");
-        Map<String, IOStream> files = new HashMap<>();
-        files.put("file", IOStream.wrap("hello.txt", "file-body".getBytes(CharsetUtil.UTF_8)));
+        Map<String, DuplexStream> files = new HashMap<>();
+        files.put("file", DuplexStream.wrap("hello.txt", "file-body".getBytes(CharsetUtil.UTF_8)));
 
         try (HttpClient client = new HttpClient()) {
             assertEquals("POST:1:two words", client.post(baseUrl + "/form", forms).toString());

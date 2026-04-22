@@ -7,7 +7,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.rx.io.EntityDatabaseImpl;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.net.Sockets;
 import org.rx.net.socks.DefaultSocksAuthenticator;
 import org.rx.net.socks.SocksConfig;
@@ -114,7 +114,7 @@ public class HttpClientFeatureTest {
     public void testMultipartUpload() {
         Map<String, Object> form = new HashMap<>();
         form.put("name", "rx");
-        Map<String, IOStream> files = Collections.singletonMap("file", IOStream.wrap("upload.txt", "hello-v2".getBytes()));
+        Map<String, DuplexStream> files = Collections.singletonMap("file", DuplexStream.wrap("upload.txt", "hello-v2".getBytes()));
         try (HttpClient client = clientNoCookieNoLog()) {
             HttpClient.ResponseContent response = client.post(BASE_URL + "/upload", form, files);
             assertTrue(response.toString().contains("rx:upload.txt:hello-v2"));

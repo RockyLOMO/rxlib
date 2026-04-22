@@ -15,7 +15,7 @@ import org.rx.core.Arrays;
 import org.rx.diagnostic.DiagnosticMonitor;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.OptimalSettings;
 import org.rx.net.Sockets;
@@ -626,7 +626,7 @@ public final class Main implements SocksRpcContract {
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
             }
-            return IOStream.readString(conn.getInputStream(), StandardCharsets.UTF_8);
+            return DuplexStream.readString(conn.getInputStream(), StandardCharsets.UTF_8);
         } finally {
             conn.disconnect();
         }

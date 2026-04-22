@@ -35,19 +35,19 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
 
     static final String GZIP_HEX = String.format("%04X%04X", Compressible.STREAM_MAGIC, Compressible.STREAM_VERSION);
 
-    public <T> IOStream serialize(@NonNull T obj, @NonNull Type type) {
+    public <T> DuplexStream serialize(@NonNull T obj, @NonNull Type type) {
         HybridStream stream = new HybridStream();
         serialize(obj, type, stream);
         return stream.rewind();
     }
 
     @Override
-    public <T> void serialize(@NonNull T obj, IOStream stream) {
+    public <T> void serialize(@NonNull T obj, DuplexStream stream) {
         serialize(obj, obj.getClass(), stream);
     }
 
     @SneakyThrows
-    public <T> void serialize(@NonNull T obj, @NonNull Type type, @NonNull IOStream stream) {
+    public <T> void serialize(@NonNull T obj, @NonNull Type type, @NonNull DuplexStream stream) {
         Cache<String, Object> cache = Cache.getInstance(MemoryCache.class);
         Class<?> objKls = obj.getClass();
         String skipNS = fastCacheKey(Constants.CACHE_REGION_SKIP_SERIALIZE, objKls);
@@ -59,14 +59,14 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
             stream.writeShort(Compressible.STREAM_VERSION);
 //            log.debug("switch gzip serialize {}", obj0);
             try (GZIPStream gzip = new GZIPStream(stream, true)) {
-                ObjectOutputStream out = new ObjectOutputStream(gzip.getWriter());
+                ObjectOutputStream out = new ObjectOutputStream(gzip.asOutputStream());
                 out.writeObject(obj0);
             }
             return;
         }
 
         long pos = stream.canSeek() ? stream.getPosition() : -1;
-        ObjectOutputStream out = new ObjectOutputStream(stream.getWriter());
+        ObjectOutputStream out = new ObjectOutputStream(stream.asOutputStream());
         try {
             out.writeObject(obj0);
         } catch (NotSerializableException e) {
@@ -78,14 +78,14 @@ public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
             cache.put(skipNS, this);
 
             stream.setPosition(pos);
-            out = new ObjectOutputStream(stream.getWriter());
+            out = new ObjectOutputStream(stream.asOutputStream());
             out.writeObject(new JsonWrapper(type, obj));
         }
     }
 
     @SneakyThrows
     @Override
-    public <T> T deserialize(@NonNull IOStream stream, boolean leveOpen) {
+    public <T> T deserialize(@NonNull DuplexStream stream, boolean leveOpen) {
         try {
             Object obj0;
 

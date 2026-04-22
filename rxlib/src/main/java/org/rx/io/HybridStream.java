@@ -2,66 +2,87 @@ package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import lombok.Setter;
-import lombok.extern.slf4j.Slf4j;
+import lombok.SneakyThrows;
 import org.rx.core.Constants;
+import org.rx.exception.InvalidException;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.Serializable;
 
 import static org.rx.core.Extends.tryClose;
 
-@Slf4j
-public final class HybridStream extends IOStream implements Serializable {
+public final class HybridStream extends DuplexStream implements Serializable {
     private static final long serialVersionUID = 2137331266386948293L;
 
     public static final int NON_MEMORY_SIZE = 0;
     private final int maxMemorySize;
     private final String tempFilePath;
-    private IOStream stream;
+    private MemoryStream memoryStream;
+    private FileStream fileStream;
+    private boolean deleteFileOnClose;
+    private long position;
+    private long length;
+    private transient long mark;
     @Setter
     private String name;
 
     @Override
-    public String getName() {
-        if (name == null) {
-            return stream.getName();
+    public synchronized String getName() {
+        if (name != null) {
+            return name;
         }
-        return name;
+        if (memoryStream != null) {
+            return memoryStream.getName();
+        }
+        return ensureFileStream().getName();
     }
 
     @Override
-    public synchronized InputStream getReader() {
-        return stream.getReader();
-    }
-
-    @Override
-    public synchronized OutputStream getWriter() {
-        checkCapacity(0);
-        return stream.getWriter();
-    }
-
-    @Override
-    public synchronized boolean canSeek() {
-        return stream.canSeek();
+    public boolean canSeek() {
+        return true;
     }
 
     @Override
     public synchronized long getPosition() {
-        return stream.getPosition();
+        return position;
     }
 
     @Override
     public synchronized void setPosition(long position) {
-        checkCapacity();
-        stream.setPosition(position);
+        checkNotClosed();
+        if (position < 0 || position > length) {
+            throw new InvalidException("Position out of range");
+        }
+        this.position = position;
     }
 
     @Override
     public synchronized long getLength() {
-        return stream.getLength();
+        return length;
+    }
+
+    @Override
+    public synchronized long availableBytes() {
+        if (isClosed()) {
+            return 0;
+        }
+        return length - position;
+    }
+
+    @Override
+    public boolean markSupported() {
+        return true;
+    }
+
+    @Override
+    public synchronized void mark(int readlimit) {
+        mark = position;
+    }
+
+    @Override
+    public synchronized void reset() {
+        setPosition(mark);
     }
 
     public HybridStream() {
@@ -73,96 +94,340 @@ public final class HybridStream extends IOStream implements Serializable {
     }
 
     public HybridStream(int maxMemorySize, boolean directMemory, String tempFilePath) {
-        this.maxMemorySize = Math.min(maxMemorySize, Constants.MAX_HEAP_BUF_SIZE);
+        this.maxMemorySize = maxMemorySize <= NON_MEMORY_SIZE ? NON_MEMORY_SIZE : Math.min(maxMemorySize, Constants.MAX_HEAP_BUF_SIZE);
         this.tempFilePath = tempFilePath;
-        //todo when memStream write len > MAX_HEAP_BUF_SIZE
-        stream = maxMemorySize <= NON_MEMORY_SIZE ? newFileStream() : new MemoryStream(maxMemorySize, directMemory);
+        if (this.maxMemorySize == NON_MEMORY_SIZE) {
+            fileStream = newFileStream();
+        } else {
+            memoryStream = new MemoryStream(this.maxMemorySize, directMemory);
+        }
     }
 
     @Override
-    protected void dispose() {
-        tryClose(stream);
+    protected synchronized void dispose() {
+        String filePath = deleteFileOnClose && fileStream != null ? fileStream.getPath() : null;
+        tryClose(memoryStream);
+        tryClose(fileStream);
+        if (filePath != null) {
+            new File(filePath).delete();
+        }
     }
 
     FileStream newFileStream() {
-        if (tempFilePath != null) {
-            return new FileStream(tempFilePath);
+        FileStream stream = tempFilePath == null ? new FileStream() : new FileStream(tempFilePath);
+        if (tempFilePath == null) {
+            deleteFileOnClose = true;
         }
-        final File tempFile = FileStream.createTempFile();
-        return new FileStream(tempFile) {
-            @Override
-            protected void dispose() throws Throwable {
-                try {
-                    super.dispose();
-                } finally {
-                    if (tempFile.exists() && !tempFile.delete()) {
-                        log.warn("Delete temp file {} fail", tempFile);
-                    }
-                }
-            }
-        };
+        return stream;
     }
 
     synchronized void checkCapacity() {
-        checkCapacity(0);
-    }
-
-    synchronized void checkCapacity(long appendBytes) {
-        if (stream instanceof FileStream) {
-            return;
-        }
-        if (maxMemorySize <= NON_MEMORY_SIZE || stream.getLength() + appendBytes > maxMemorySize) {
-            switchToFileStream();
+        if (maxMemorySize == NON_MEMORY_SIZE || length > maxMemorySize || position >= maxMemorySize) {
+            ensureFileStream();
         }
     }
 
-    private void switchToFileStream() {
-        log.info("Arrival MaxMemorySize[{}] threshold, switch FileStream", maxMemorySize);
-        FileStream fs = newFileStream();
-        fs.write(stream.rewind());
-        stream.close();
-        stream = fs;
+    synchronized boolean hasFileStream() {
+        return fileStream != null;
+    }
+
+    synchronized long getMemoryLength() {
+        return memoryStream == null ? 0 : Math.min(length, maxMemorySize);
+    }
+
+    synchronized long getFileLength() {
+        return fileStream == null ? 0 : fileStream.getLength();
+    }
+
+    synchronized String getFilePath() {
+        return fileStream == null ? null : fileStream.getPath();
+    }
+
+    @Override
+    public synchronized int read() {
+        checkNotClosed();
+        if (position >= length) {
+            return Constants.IO_EOF;
+        }
+        if (isMemoryPosition(position)) {
+            memoryStream.setPosition(position);
+            int value = memoryStream.read();
+            if (value != Constants.IO_EOF) {
+                position++;
+            }
+            return value;
+        }
+
+        fileStream.setPosition(filePosition(position));
+        int value = fileStream.read();
+        if (value != Constants.IO_EOF) {
+            position++;
+        }
+        return value;
+    }
+
+    @Override
+    public synchronized int read(byte[] buffer, int offset, int length) {
+        checkNotClosed();
+        checkArrayRange(buffer, offset, length);
+        if (length == 0) {
+            return 0;
+        }
+        if (position >= this.length) {
+            return Constants.IO_EOF;
+        }
+
+        int total = 0;
+        int remaining = (int) Math.min(length, this.length - position);
+        while (remaining > 0) {
+            int read;
+            if (isMemoryPosition(position)) {
+                read = readMemory(buffer, offset + total, remaining);
+            } else {
+                read = readFile(buffer, offset + total, remaining);
+            }
+            if (read <= 0) {
+                break;
+            }
+            total += read;
+            remaining -= read;
+            position += read;
+        }
+        return total == 0 ? Constants.IO_EOF : total;
+    }
+
+    @Override
+    public synchronized int read(ByteBuf dst, int length) {
+        checkNotClosed();
+        checkLength(length);
+        if (length == 0 || position >= this.length) {
+            return 0;
+        }
+
+        int total = 0;
+        int remaining = (int) Math.min(length, this.length - position);
+        while (remaining > 0) {
+            int read;
+            if (isMemoryPosition(position)) {
+                read = readMemory(dst, remaining);
+            } else {
+                read = readFile(dst, remaining);
+            }
+            if (read <= 0) {
+                break;
+            }
+            total += read;
+            remaining -= read;
+            position += read;
+        }
+        return total;
     }
 
     @Override
     public synchronized void write(int b) {
-        checkCapacity(1);
-        stream.write(b);
+        checkNotClosed();
+        truncateBeforeWrite();
+        if (isMemoryPosition(position)) {
+            memoryStream.setPosition(position);
+            memoryStream.write(b);
+        } else {
+            FileStream fs = ensureFileStream();
+            fs.setPosition(filePosition(position));
+            fs.write(b);
+        }
+        position++;
+        updateLength();
     }
 
     @Override
     public synchronized void write(byte[] buffer, int offset, int length) {
         checkNotClosed();
-        checkCapacity(length);
-        stream.write(buffer, offset, length);
+        checkArrayRange(buffer, offset, length);
+        if (length == 0) {
+            return;
+        }
+
+        truncateBeforeWrite();
+        int total = 0;
+        int remaining = length;
+        while (remaining > 0) {
+            int write;
+            if (isMemoryPosition(position)) {
+                write = writeMemory(buffer, offset + total, remaining);
+            } else {
+                write = writeFile(buffer, offset + total, remaining);
+            }
+            total += write;
+            remaining -= write;
+            position += write;
+            updateLength();
+        }
     }
 
+    @SneakyThrows
     @Override
     public synchronized long write(InputStream in, long length) {
         checkNotClosed();
 
-        byte[] buffer = Bytes.arrayBuffer();
+        byte[] buffer = new byte[Constants.MEDIUM_BUF];
         boolean readFully = length != NON_READ_FULLY;
         long copyLen = 0;
         int read;
-        try {
-            while ((!readFully || copyLen < length)
-                    && (read = in.read(buffer, 0, readFully ? (int) Math.min(buffer.length, length - copyLen) : buffer.length)) != Constants.IO_EOF) {
-                checkCapacity(read);
-                stream.write(buffer, 0, read);
-                copyLen += read;
-            }
-            stream.flush();
-            return copyLen;
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        while ((!readFully || copyLen < length)
+                && (read = in.read(buffer, 0, readFully ? Math.min(buffer.length, safeRemaining(length - copyLen)) : buffer.length)) != Constants.IO_EOF) {
+            write(buffer, 0, read);
+            copyLen += read;
         }
+        flush();
+        return copyLen;
     }
 
     @Override
     public synchronized void write(ByteBuf src, int length) {
         checkNotClosed();
-        checkCapacity(length);
-        stream.write(src, length);
+        checkLength(length);
+        if (length > src.readableBytes()) {
+            throw new IndexOutOfBoundsException();
+        }
+        if (length == 0) {
+            return;
+        }
+
+        truncateBeforeWrite();
+        int remaining = length;
+        while (remaining > 0) {
+            int write;
+            if (isMemoryPosition(position)) {
+                write = writeMemory(src, remaining);
+            } else {
+                write = writeFile(src, remaining);
+            }
+            remaining -= write;
+            position += write;
+            updateLength();
+        }
+    }
+
+    @Override
+    public synchronized void flush() {
+        checkNotClosed();
+        if (fileStream != null) {
+            fileStream.flush();
+        }
+    }
+
+    private boolean isMemoryPosition(long p) {
+        return memoryStream != null && p < maxMemorySize;
+    }
+
+    private long filePosition(long p) {
+        return p - maxMemorySize;
+    }
+
+    private FileStream ensureFileStream() {
+        if (fileStream == null) {
+            fileStream = newFileStream();
+        }
+        return fileStream;
+    }
+
+    private int readMemory(byte[] buffer, int offset, int length) {
+        int read = (int) Math.min(length, Math.min(this.length, maxMemorySize) - position);
+        memoryStream.setPosition(position);
+        return memoryStream.read(buffer, offset, read);
+    }
+
+    private int readFile(byte[] buffer, int offset, int length) {
+        if (fileStream == null) {
+            return Constants.IO_EOF;
+        }
+
+        int read = (int) Math.min(length, this.length - position);
+        fileStream.setPosition(filePosition(position));
+        return fileStream.read(buffer, offset, read);
+    }
+
+    private int readMemory(ByteBuf dst, int length) {
+        int read = (int) Math.min(length, Math.min(this.length, maxMemorySize) - position);
+        memoryStream.setPosition(position);
+        return memoryStream.read(dst, read);
+    }
+
+    private int readFile(ByteBuf dst, int length) {
+        if (fileStream == null) {
+            return 0;
+        }
+
+        int read = (int) Math.min(length, this.length - position);
+        fileStream.setPosition(filePosition(position));
+        return fileStream.read(dst, read);
+    }
+
+    private int writeMemory(byte[] buffer, int offset, int length) {
+        int write = (int) Math.min(length, maxMemorySize - position);
+        memoryStream.setPosition(position);
+        memoryStream.write(buffer, offset, write);
+        return write;
+    }
+
+    private int writeFile(byte[] buffer, int offset, int length) {
+        FileStream fs = ensureFileStream();
+        fs.setPosition(filePosition(position));
+        fs.write(buffer, offset, length);
+        return length;
+    }
+
+    private int writeMemory(ByteBuf src, int length) {
+        int write = (int) Math.min(length, maxMemorySize - position);
+        memoryStream.setPosition(position);
+        memoryStream.write(src, write);
+        return write;
+    }
+
+    private int writeFile(ByteBuf src, int length) {
+        FileStream fs = ensureFileStream();
+        fs.setPosition(filePosition(position));
+        long write = fs.write0(src, length);
+        if (write <= 0) {
+            throw new InvalidException("Write file failed");
+        }
+        return (int) write;
+    }
+
+    private void truncateBeforeWrite() {
+        if (position >= length) {
+            return;
+        }
+
+        length = position;
+        if (memoryStream != null && length < maxMemorySize) {
+            memoryStream.setPosition(length);
+            memoryStream.setLength((int) length);
+            if (fileStream != null) {
+                fileStream.setLength(0);
+            }
+            return;
+        }
+        if (fileStream != null) {
+            fileStream.setLength(filePosition(length));
+        }
+    }
+
+    private void updateLength() {
+        if (position > length) {
+            length = position;
+        }
+    }
+
+    protected static void checkArrayRange(byte[] buffer, int offset, int length) {
+        if ((offset | length) < 0 || length > buffer.length - offset) {
+            throw new IndexOutOfBoundsException();
+        }
+    }
+
+    protected static void checkLength(int length) {
+        if (length < 0) {
+            throw new IndexOutOfBoundsException();
+        }
     }
 }

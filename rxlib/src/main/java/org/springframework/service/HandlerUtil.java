@@ -15,7 +15,7 @@ import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.net.NetEventWait;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
@@ -317,7 +317,7 @@ public class HandlerUtil {
         try {
             String b = request.getParameter(PARAMS_NAME);
             if (b == null) {
-                b = IOStream.readString(request.getInputStream(), StandardCharsets.UTF_8);
+                b = DuplexStream.readString(request.getInputStream(), StandardCharsets.UTF_8);
             }
 //            log.info("rauth body:{}", b);
             if (Strings.isBlank(b)) {

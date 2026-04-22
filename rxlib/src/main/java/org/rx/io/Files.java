@@ -251,12 +251,12 @@ public class Files extends FilenameUtils {
     //     zip(new File(zipFile), null, Collections.singletonList(new File(srcPath)), Collections.emptyList());
     // }
 
-    // public static void zip(String zipFile, IOStream srcStream) {
+    // public static void zip(String zipFile, DuplexStream srcStream) {
     //     zip(new File(zipFile), null, Collections.emptyList(), Collections.singletonList(srcStream));
     // }
 
     // @SneakyThrows
-    // public static <T extends IOStream> void zip(File zipFile, String password, List<File> srcPaths, List<T> srcStreams) {
+    // public static <T extends DuplexStream> void zip(File zipFile, String password, List<File> srcPaths, List<T> srcStreams) {
     //     try (ZipFile zip = new ZipFile(zipFile, password == null ? null : password.toCharArray())) {
     //         ZipParameters zipParameters = new ZipParameters();
     //         zipParameters.setCompressionLevel(CompressionLevel.HIGHER);
@@ -276,7 +276,7 @@ public class Files extends FilenameUtils {
     //         }
 
     //         if (!CollectionUtils.isEmpty(srcStreams)) {
-    //             for (IOStream srcStream : srcStreams) {
+    //             for (DuplexStream srcStream : srcStreams) {
     //                 zipParameters.setFileNameInZip(srcStream.getName());
     //                 zip.addStream(srcStream.getReader(), zipParameters);
     //             }
@@ -340,7 +340,7 @@ public class Files extends FilenameUtils {
 
         // 保存为 PNG
         MemoryStream s = new MemoryStream();
-        ImageIO.write(image, "png", s.getWriter());
+        ImageIO.write(image, "png", s.asOutputStream());
         g2d.dispose();
         return s;
     }

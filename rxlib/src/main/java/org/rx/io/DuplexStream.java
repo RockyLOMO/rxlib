@@ -3,10 +3,8 @@ package org.rx.io;
 import io.netty.buffer.ByteBuf;
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.ErrorCode;
 import org.rx.core.Constants;
-import org.rx.core.Disposable;
 import org.rx.core.Extends;
 import org.rx.core.Strings;
 import org.rx.exception.ApplicationException;
@@ -19,27 +17,29 @@ import java.util.zip.CheckedInputStream;
 
 import static org.rx.core.Extends.*;
 
-@Slf4j
-public abstract class IOStream extends Disposable implements Closeable, Flushable, Extends {
-    private static final long serialVersionUID = 3204673656139586437L;
+public abstract class DuplexStream extends InputStream implements Flushable, Extends {
     public static final int NON_READ_FULLY = -1;
 
-    public static IOStream wrap(String filePath) {
+    private volatile boolean closed;
+    private transient InputStream inputStream;
+    private transient OutputStream outputStream;
+
+    public static DuplexStream wrap(String filePath) {
         return wrap(new File(filePath));
     }
 
-    public static IOStream wrap(@NonNull File file) {
+    public static DuplexStream wrap(@NonNull File file) {
         return new FileStream(file);
     }
 
-    public static IOStream wrap(String name, byte[] data) {
+    public static DuplexStream wrap(String name, byte[] data) {
         HybridStream stream = new HybridStream();
         stream.setName(ifNull(name, Strings.EMPTY));
         stream.write(data);
         return stream.rewind();
     }
 
-    public static IOStream wrap(String name, InputStream in) {
+    public static DuplexStream wrap(String name, InputStream in) {
         HybridStream stream = new HybridStream();
         stream.setName(ifNull(name, Strings.EMPTY));
         stream.write(in);
@@ -48,11 +48,12 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
 
     @SneakyThrows
     public static long copy(@NonNull InputStream in, long length, @NonNull OutputStream out) {
-        byte[] buffer = Bytes.arrayBuffer();
+        byte[] buffer = new byte[Constants.MEDIUM_BUF];
         boolean readFully = length != NON_READ_FULLY;
         long copyLen = 0;
         int read;
-        while ((!readFully || copyLen < length) && (read = in.read(buffer, 0, buffer.length)) != Constants.IO_EOF) {
+        while ((!readFully || copyLen < length)
+                && (read = in.read(buffer, 0, readFully ? Math.min(buffer.length, safeRemaining(length - copyLen)) : buffer.length)) != Constants.IO_EOF) {
             out.write(buffer, 0, read);
             copyLen += read;
         }
@@ -87,24 +88,13 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
 
         ByteBuf buf = Bytes.heapBuffer();
         try {
-//            buf.writeBytes(in, in.available());
             int chunkSize = Constants.KB;
             while (buf.writeBytes(in, chunkSize) != Constants.IO_EOF) {
-
             }
             return buf.toString(charset);
         } finally {
             buf.release();
         }
-        //截断会出现乱码
-//        StringBuilder result = new StringBuilder();
-//        byte[] buffer = Bytes.arrayBuffer();
-//        int read;
-//        while ((read = in.read(buffer)) > 0) {
-//            String s = new String(buffer, 0, read, charset);
-//            result.append(s);
-//        }
-//        return result.toString();
     }
 
     @SneakyThrows
@@ -120,11 +110,114 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         return remaining >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) remaining;
     }
 
-    public abstract InputStream getReader();
+    public final InputStream getReader() {
+        return this;
+    }
 
-    public abstract OutputStream getWriter();
+    public final synchronized InputStream asInputStream() {
+        if (inputStream == null) {
+            inputStream = new InputStream() {
+                @Override
+                public int available() {
+                    return DuplexStream.this.available();
+                }
+
+                @Override
+                public int read(byte[] b, int off, int len) {
+                    return DuplexStream.this.read(b, off, len);
+                }
+
+                @Override
+                public int read() {
+                    return DuplexStream.this.read();
+                }
+
+                @Override
+                public boolean markSupported() {
+                    return DuplexStream.this.markSupported();
+                }
+
+                @Override
+                public synchronized void mark(int readlimit) {
+                    DuplexStream.this.mark(readlimit);
+                }
+
+                @Override
+                public synchronized void reset() throws IOException {
+                    DuplexStream.this.reset();
+                }
+
+                @Override
+                public void close() {
+                    // Borrowed view: callers may close it without owning the stream.
+                }
+            };
+        }
+        return inputStream;
+    }
+
+    public final synchronized OutputStream asOutputStream() {
+        if (outputStream == null) {
+            outputStream = new OutputStream() {
+                @Override
+                public void write(byte[] b, int off, int len) {
+                    DuplexStream.this.write(b, off, len);
+                }
+
+                @Override
+                public void write(int b) {
+                    DuplexStream.this.write(b);
+                }
+
+                @Override
+                public void flush() {
+                    DuplexStream.this.flush();
+                }
+
+                @Override
+                public void close() {
+                    if (!DuplexStream.this.isClosed()) {
+                        DuplexStream.this.flush();
+                    }
+                }
+            };
+        }
+        return outputStream;
+    }
 
     public abstract String getName();
+
+    @Override
+    public abstract int read();
+
+    public final boolean isClosed() {
+        return closed;
+    }
+
+    protected void dispose() throws Throwable {
+        flush();
+    }
+
+    @ErrorCode
+    protected final void checkNotClosed() {
+        if (closed) {
+            throw new ApplicationException(values(this.getClass().getSimpleName()));
+        }
+    }
+
+    @Override
+    public synchronized void close() {
+        if (closed) {
+            return;
+        }
+        try {
+            dispose();
+        } catch (Throwable e) {
+            // keep the historical stream close() behavior: close quietly.
+        } finally {
+            closed = true;
+        }
+    }
 
     public boolean canSeek() {
         return false;
@@ -145,54 +238,58 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         throw new ApplicationException(values(this.getClass().getSimpleName()));
     }
 
-    @Override
-    protected void dispose() throws Throwable {
-        flush();
-        tryClose(getWriter());
-        tryClose(getReader());
-    }
-
-    @Override
-    public void close() {
-        quietly(super::close);
-    }
-
-    @SneakyThrows
-    public long available() {
+    public long availableBytes() {
         if (isClosed()) {
             return 0;
         }
-
-        return getReader().available();
+        if (!canSeek()) {
+            return 0;
+        }
+        return Math.max(0, getLength() - getPosition());
     }
 
-    @SneakyThrows
-    public int read() {
-        checkNotClosed();
-
-        return getReader().read();
+    @Override
+    public int available() {
+        return safeRemaining(availableBytes());
     }
 
+    @Override
     public int read(@NonNull byte[] buffer) {
         checkNotClosed();
 
         return read(buffer, 0, buffer.length);
     }
 
-    @SneakyThrows
+    @Override
     public int read(@NonNull byte[] buffer, int offset, int length) {
         checkNotClosed();
-        require(offset, offset >= 0);
+        checkArrayRange(buffer, offset, length);
+        if (length == 0) {
+            return 0;
+        }
 
-        return getReader().read(buffer, offset, length);
+        int value = read();
+        if (value == Constants.IO_EOF) {
+            return Constants.IO_EOF;
+        }
+        buffer[offset] = (byte) value;
+        int read = 1;
+        for (; read < length; read++) {
+            value = read();
+            if (value == Constants.IO_EOF) {
+                break;
+            }
+            buffer[offset + read] = (byte) value;
+        }
+        return read;
     }
 
-    public long read(IOStream stream) {
+    public long read(DuplexStream stream) {
         return read(stream, NON_READ_FULLY);
     }
 
-    public long read(@NonNull IOStream stream, long length) {
-        return read(stream.getWriter(), length);
+    public long read(@NonNull DuplexStream stream, long length) {
+        return read(stream.asOutputStream(), length);
     }
 
     public long read(OutputStream out) {
@@ -202,11 +299,10 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
     public long read(OutputStream out, long length) {
         checkNotClosed();
 
-        return copy(getReader(), length, out);
+        return copy(this, length, out);
     }
 
     public int read(ByteBuf dst) {
-        //available() may be not right
         int total = 0, read;
         while ((read = read(dst, Constants.HEAP_BUF_SIZE)) > 0) {
             total += read;
@@ -216,7 +312,12 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
 
     @SneakyThrows
     public int read(ByteBuf dst, int length) {
-        return dst.writeBytes(getReader(), length);
+        checkNotClosed();
+        checkLength(length);
+        if (length == 0) {
+            return 0;
+        }
+        return dst.writeBytes(this, length);
     }
 
     @SneakyThrows
@@ -255,11 +356,9 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         }
     }
 
-    @SneakyThrows
+    @ErrorCode
     public void write(int b) {
-        checkNotClosed();
-
-        getWriter().write(b);
+        throw new ApplicationException(values(this.getClass().getSimpleName()));
     }
 
     public void write(@NonNull byte[] buffer) {
@@ -268,20 +367,20 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         write(buffer, 0, buffer.length);
     }
 
-    @SneakyThrows
     public void write(@NonNull byte[] buffer, int offset, int length) {
         checkNotClosed();
-        require(offset, offset >= 0);
-
-        getWriter().write(buffer, offset, length);
+        checkArrayRange(buffer, offset, length);
+        for (int i = 0; i < length; i++) {
+            write(buffer[offset + i] & 0xff);
+        }
     }
 
-    public long write(IOStream stream) {
+    public long write(DuplexStream stream) {
         return write(stream, NON_READ_FULLY);
     }
 
-    public long write(@NonNull IOStream stream, long length) {
-        return write(stream.getReader(), length);
+    public long write(@NonNull DuplexStream stream, long length) {
+        return write((InputStream) stream, length);
     }
 
     public long write(InputStream in) {
@@ -291,7 +390,7 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
     public long write(InputStream in, long length) {
         checkNotClosed();
 
-        return copy(in, length, getWriter());
+        return copy(in, length, asOutputStream());
     }
 
     public void write(ByteBuf src) {
@@ -300,7 +399,9 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
 
     @SneakyThrows
     public void write(ByteBuf src, int length) {
-        src.readBytes(getWriter(), length);
+        checkNotClosed();
+        checkLength(length);
+        src.readBytes(asOutputStream(), length);
     }
 
     public void writeShort(short n) {
@@ -323,12 +424,9 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         write(str.getBytes(charset));
     }
 
-    @SneakyThrows
     @Override
     public void flush() {
         checkNotClosed();
-
-        getWriter().flush();
     }
 
     public byte[] toArray() {
@@ -342,8 +440,20 @@ public abstract class IOStream extends Disposable implements Closeable, Flushabl
         return data;
     }
 
-    public final <T extends IOStream> T rewind() {
+    public final <T extends DuplexStream> T rewind() {
         setPosition(0);
         return (T) this;
+    }
+
+    protected static void checkArrayRange(byte[] buffer, int offset, int length) {
+        if ((offset | length) < 0 || length > buffer.length - offset) {
+            throw new IndexOutOfBoundsException();
+        }
+    }
+
+    protected static void checkLength(int length) {
+        if (length < 0) {
+            throw new IndexOutOfBoundsException();
+        }
     }
 }

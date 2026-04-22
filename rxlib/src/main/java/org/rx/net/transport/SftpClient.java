@@ -12,7 +12,7 @@ import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.io.CrudFile;
 import org.rx.io.Files;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.net.AuthenticEndpoint;
 
 import java.io.IOException;
@@ -99,7 +99,7 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
 
     @Override
     public void saveFile(String remotePath, InputStream in) {
-        try (IOStream stream = IOStream.wrap(Files.getName(remotePath), in)) {
+        try (DuplexStream stream = DuplexStream.wrap(Files.getName(remotePath), in)) {
             uploadFile(stream, remotePath);
         }
     }
@@ -148,11 +148,11 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     }
 
     public void uploadFile(String localPath, String remotePath) {
-        uploadFile(IOStream.wrap(localPath), remotePath);
+        uploadFile(DuplexStream.wrap(localPath), remotePath);
     }
 
     @SneakyThrows
-    public void uploadFile(@NonNull IOStream stream, @NonNull String remotePath) {
+    public void uploadFile(@NonNull DuplexStream stream, @NonNull String remotePath) {
         if (Files.isDirectory(remotePath)) {
             if (Strings.isEmpty(stream.getName())) {
                 throw new InvalidException("Empty stream name");
@@ -167,11 +167,11 @@ public class SftpClient extends Disposable implements CrudFile<SftpFile> {
     public void downloadFile(String remotePath, String localPath) {
         Files.createDirectory(localPath);
 
-        downloadFile(remotePath, IOStream.wrap(localPath));
+        downloadFile(remotePath, DuplexStream.wrap(localPath));
     }
 
     @SneakyThrows
-    public void downloadFile(@NonNull String remotePath, @NonNull IOStream stream) {
+    public void downloadFile(@NonNull String remotePath, @NonNull DuplexStream stream) {
         stream.write(channel.read(remotePath));
     }
 }
