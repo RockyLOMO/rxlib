@@ -28,7 +28,6 @@
         <netty.version>4.1.128.Final</netty.version>
         <!--1.78.1有问题-->
         <bcprov.version>1.78</bcprov.version>
-        <okhttp.version>4.12.0</okhttp.version>
         <sshd.version>2.16.0</sshd.version>
         <geoip2.version>4.4.0</geoip2.version>
 
@@ -164,11 +163,6 @@
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
             <version>${bcprov.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.squareup.okhttp3</groupId>
-            <artifactId>okhttp</artifactId>
-            <version>${okhttp.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.sshd</groupId>

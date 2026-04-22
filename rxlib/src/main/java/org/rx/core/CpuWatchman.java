@@ -16,110 +16,42 @@ import org.rx.bean.Decimal;
 import org.rx.bean.IntWaterMark;
 import org.rx.bean.Tuple;
 import org.rx.exception.InvalidException;
-import org.rx.exception.TraceHandler;
 import org.rx.util.BeanMapper;
-import org.rx.util.Snowflake;
 
 import java.lang.management.ManagementFactory;
 import java.util.Collections;
-import java.util.Date;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class CpuWatchman implements TimerTask {
-    @Getter
-    @RequiredArgsConstructor
-    public static class ThreadUsageView {
-        final ThreadEntity begin;
-        final ThreadEntity end;
-
-        public long getCpuNanosElapsed() {
-            if (end.cpuNanos == -1 || begin.cpuNanos == -1) {
-                return -1;
-            }
-            return end.cpuNanos - begin.cpuNanos;
-        }
-
-        public long getUserNanosElapsed() {
-            if (end.userNanos == -1 || begin.userNanos == -1) {
-                return -1;
-            }
-            return end.userNanos - begin.userNanos;
-        }
-
-        public long getBlockedElapsed() {
-            return end.blockedTime - begin.blockedTime;
-        }
-
-        public long getWaitedElapsed() {
-            return end.waitedTime - begin.waitedTime;
-        }
-
-        @Override
-        public String toString() {
-            return String.format("begin: %s\nend: %s\ncpuNanosElapsed=%s, userNanosElapsed=%s, blockedElapsed=%s, waitedElapsed=%s", begin, end,
-                    Sys.formatNanosElapsed(getCpuNanosElapsed()), Sys.formatNanosElapsed(getUserNanosElapsed()),
-                    Sys.formatNanosElapsed(getBlockedElapsed()), Sys.formatNanosElapsed(getWaitedElapsed()));
-        }
-    }
-
     static final OperatingSystemMXBean osMx = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
-    static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+    // static final ThreadMXBean threadMx = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     //    static final HotspotThreadMBean internalThreadMx = ManagementFactoryHelper.getHotspotThreadMBean();
     static final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("timer", Thread.MAX_PRIORITY), 800L, TimeUnit.MILLISECONDS, 8);
     //place after timer
     static final CpuWatchman INSTANCE = new CpuWatchman();
-    static long latestSnapshotId;
 
-    public static synchronized Linq<ThreadEntity> getLatestSnapshot() {
-        if (latestSnapshotId == 0) {
-            return Linq.empty();
-        }
-        return TraceHandler.INSTANCE.queryThreadTrace(latestSnapshotId, null, null);
-    }
+//     public static synchronized Linq<ThreadEntity> dumpAllThreads(boolean findDeadlock) {
+// //        internalThreadMx.getInternalThreadCpuTimes()
+//         RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
+//         boolean watchLock = (conf.watchThreadFlags & 1) == 1;
+//         boolean watchUserTime = (conf.watchThreadFlags & 2) == 2;
 
-    public static Linq<ThreadUsageView> findTopUsage(Date startTime, Date endTime) {
-        return TraceHandler.INSTANCE.queryThreadTrace(null, startTime, endTime).groupBy(p -> p.threadId, (p, x) -> {
-            if (x.count() <= 1) {
-                return null;
-            }
-            ThreadEntity first = x.first();
-            ThreadEntity last = x.last();
-            return new ThreadUsageView(first, last);
-        }).where(Objects::nonNull);
-    }
-
-    public static void stopWatch() {
-        threadMx.setThreadCpuTimeEnabled(false);
-        threadMx.setThreadContentionMonitoringEnabled(false);
-    }
-
-    public static synchronized Linq<ThreadEntity> dumpAllThreads(boolean findDeadlock) {
-//        internalThreadMx.getInternalThreadCpuTimes()
-        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
-        boolean watchLock = (conf.watchThreadFlags & 1) == 1;
-        boolean watchUserTime = (conf.watchThreadFlags & 2) == 2;
-
-        Linq<ThreadEntity> allThreads = Linq.from(threadMx.dumpAllThreads(watchLock, watchLock)).select(p -> BeanMapper.DEFAULT.map(p, new ThreadEntity()));
-        long[] deadlockedTids = findDeadlock ? Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads()) : null;
-        DateTime st = DateTime.now();
-        long[] tids = Arrays.toPrimitive(allThreads.select(ThreadEntity::getThreadId).toArray());
-        long[] threadUserTime = watchUserTime ? threadMx.getThreadUserTime(tids) : null;
-        long[] threadCpuTime = threadMx.getThreadCpuTime(tids);
-        latestSnapshotId = Snowflake.DEFAULT.nextId();
-        return allThreads.select((p, i) -> {
-            p.setUserNanos(watchUserTime ? threadUserTime[i] : -1);
-            p.setCpuNanos(threadCpuTime[i]);
-            p.setDeadlocked(Arrays.contains(deadlockedTids, p.threadId));
-            p.setSnapshotId(latestSnapshotId);
-            p.setSnapshotTime(st);
-            return p;
-        });
-    }
+//         Linq<ThreadEntity> allThreads = Linq.from(threadMx.dumpAllThreads(watchLock, watchLock)).select(p -> BeanMapper.DEFAULT.map(p, new ThreadEntity()));
+//         long[] deadlockedTids = findDeadlock ? Arrays.addAll(threadMx.findDeadlockedThreads(), threadMx.findMonitorDeadlockedThreads()) : null;
+//         long[] tids = Arrays.toPrimitive(allThreads.select(ThreadEntity::getThreadId).toArray());
+//         long[] threadUserTime = watchUserTime ? threadMx.getThreadUserTime(tids) : null;
+//         long[] threadCpuTime = threadMx.getThreadCpuTime(tids);
+//         return allThreads.select((p, i) -> {
+//             p.setUserNanos(watchUserTime ? threadUserTime[i] : -1);
+//             p.setCpuNanos(threadCpuTime[i]);
+//             p.setDeadlocked(Arrays.contains(deadlockedTids, p.threadId));
+//             return p;
+//         });
+//     }
 
     static int incrSize(ThreadPoolExecutor pool) {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;

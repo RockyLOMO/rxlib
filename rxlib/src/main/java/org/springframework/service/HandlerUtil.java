@@ -15,10 +15,11 @@ import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.Bytes;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.net.NetEventWait;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpClientConfig;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
 import org.springframework.http.MediaType;
@@ -71,12 +72,14 @@ public class HandlerUtil {
                 case 2:
                     String fu = request.getParameter("url");
                     if (fu != null) {
-                        HttpClient client = new HttpClient();
+                        HttpClientConfig cfg = new HttpClientConfig();
                         Integer tm = Reflects.convertQuietly(request.getParameter("timeout"), Integer.class);
                         if (tm != null) {
-                            client.withTimeoutMillis(tm);
+                            cfg.setTimeoutMillis(tm);
                         }
-                        client.forward(request, response, fu);
+                        try (HttpClient client = new HttpClient(cfg)) {
+                            client.forward(request, response, fu);
+                        }
                     }
                     break;
                 case 3:
@@ -114,11 +117,7 @@ public class HandlerUtil {
                     Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
                     resText = queryTraces(st, et, level, kw, newest, methodOccurMost, methodNamePrefix, metricsName, take);
                     break;
-                case 11:
-                    DateTime begin = Reflects.changeType(request.getParameter("begin"), DateTime.class);
-                    DateTime end = Reflects.changeType(request.getParameter("end"), DateTime.class);
-                    resText = findTopUsage(begin, end);
-                    break;
+
                 case 12:
                     resText = invokeEx(params.getString("expr"), params.getJSONArray("args"));
                     break;
@@ -183,13 +182,12 @@ public class HandlerUtil {
 
         Map<String, Object> threadInfo = new LinkedHashMap<>(5);
         j.put("threadInfo", threadInfo);
-        Linq<ThreadEntity> ts = CpuWatchman.getLatestSnapshot();
         int take = Reflects.convertQuietly(request.getParameter("take"), Integer.class, 5);
-        threadInfo.put("deadlocked", ts.where(ThreadEntity::isDeadlocked).select(p -> p.toString()));
-        threadInfo.put("topUserTime", ts.orderByDescending(ThreadEntity::getUserNanos).take(take).select(p -> p.toString()));
-        threadInfo.put("topCpuTime", ts.orderByDescending(ThreadEntity::getCpuNanos).take(take).select(p -> p.toString()));
-        threadInfo.put("topBlockedTime", ts.orderByDescending(ThreadEntity::getBlockedTime).take(take).select(p -> p.toString()));
-        threadInfo.put("topWaitedTime", ts.orderByDescending(ThreadEntity::getWaitedTime).take(take).select(p -> p.toString()));
+        threadInfo.put("deadlocked", Collections.emptyList());
+        threadInfo.put("topUserTime", Collections.emptyList());
+        threadInfo.put("topCpuTime", Collections.emptyList());
+        threadInfo.put("topBlockedTime", Collections.emptyList());
+        threadInfo.put("topWaitedTime", Collections.emptyList());
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames())).select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
         j.put("requestBody", params);
         j.putAll(queryTraces(null, null, null, null, null, null, null, null, take));
@@ -215,20 +213,7 @@ public class HandlerUtil {
         return result;
     }
 
-    Map<String, Object> findTopUsage(Date begin, Date end) {
-        Map<String, Object> result = new LinkedHashMap<>(5);
-        Linq<CpuWatchman.ThreadUsageView> topUsage = CpuWatchman.findTopUsage(begin, end);
-        result.put("deadlocked", topUsage.where(p -> p.getBegin().isDeadlocked() || p.getEnd().isDeadlocked()).select(CpuWatchman.ThreadUsageView::toString));
 
-        result.put("topCpuTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getCpuNanosElapsed).select(CpuWatchman.ThreadUsageView::toString));
-
-        result.put("topUserTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getUserNanosElapsed).select(CpuWatchman.ThreadUsageView::toString));
-
-        result.put("topBlockedTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getBlockedElapsed).select(CpuWatchman.ThreadUsageView::toString));
-
-        result.put("topWaitedTime", topUsage.orderByDescending(CpuWatchman.ThreadUsageView::getWaitedElapsed).select(CpuWatchman.ThreadUsageView::toString));
-        return result;
-    }
 
     @SneakyThrows
     Object invokeEx(String expr, List<Object> args) {
@@ -314,7 +299,7 @@ public class HandlerUtil {
         try {
             String b = request.getParameter(PARAMS_NAME);
             if (b == null) {
-                b = IOStream.readString(request.getInputStream(), StandardCharsets.UTF_8);
+                b = DuplexStream.readString(request.getInputStream(), StandardCharsets.UTF_8);
             }
 //            log.info("rauth body:{}", b);
             if (Strings.isBlank(b)) {
@@ -323,7 +308,9 @@ public class HandlerUtil {
 
             b = xcha ? new String(XChaCha20Poly1305Util.decrypt(CodecUtil.convertFromBase64(b)), StandardCharsets.UTF_8) : b;
             if (Strings.startsWith(b, "https")) {
-                b = new HttpClient().get(b).toString();
+                try (HttpClient client = new HttpClient()) {
+                    b = client.get(b).toString();
+                }
             }
             return toJsonObject(b);
         } catch (Throwable e) {

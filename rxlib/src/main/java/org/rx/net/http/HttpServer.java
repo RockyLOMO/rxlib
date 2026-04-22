@@ -20,9 +20,9 @@ import org.rx.core.Strings;
 import org.rx.diagnostic.DiagnosticHttpHandler;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
+import org.rx.io.DuplexStream;
 import org.rx.net.Sockets;
 
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -153,7 +153,7 @@ public class HttpServer extends Disposable {
                             }
                         }
                     } catch (HttpPostRequestDecoder.EndOfDataDecoderException e) {
-                        log.debug("EndOfData", e);
+                        // hasNext() 到达尾部会抛出 EndOfData，属于正常结束信号，不记录异常栈。
                     }
                 } else {
                     ByteBuf buf = req.getContent();
@@ -203,7 +203,8 @@ public class HttpServer extends Disposable {
             ServerResponse res = new ServerResponse();
             state.mapping.handler.handle(state.req, res);
             if (res.getHeaders().contains(HttpHeaderNames.LOCATION)) {
-                FullHttpResponse response = new DefaultFullHttpResponse(state.request.protocolVersion(), FOUND, Unpooled.EMPTY_BUFFER);
+                FullHttpResponse response = new DefaultFullHttpResponse(state.request.protocolVersion(),
+                        ifNull(res.getStatus(), FOUND), Unpooled.EMPTY_BUFFER);
                 response.headers().setAll(res.getHeaders());
                 return response;
             }
@@ -445,13 +446,7 @@ public class HttpServer extends Disposable {
             throw new IllegalArgumentException("Template not found: " + resourcePath);
         }
         try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
-            byte[] buf = new byte[4096];
-            int len;
-            while ((len = in.read(buf)) != -1) {
-                out.write(buf, 0, len);
-            }
-            return renderTemplate(new String(out.toByteArray(), StandardCharsets.UTF_8), vars);
+            return renderTemplate(DuplexStream.readString(in, StandardCharsets.UTF_8), vars);
         } finally {
             in.close();
         }

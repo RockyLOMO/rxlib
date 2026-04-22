@@ -7,14 +7,13 @@ import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
 import org.rx.core.Constants;
 import org.rx.core.Linq;
-import org.rx.util.Lazy;
 
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 
-public final class CompositeMmap extends IOStream {
+public final class CompositeMmap extends DuplexStream {
     private static final long serialVersionUID = -3293392999599916L;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
@@ -30,89 +29,10 @@ public final class CompositeMmap extends IOStream {
     final FileStream.Block block;
     final Tuple<MappedByteBuffer, DataRange<Long>>[] buffers;
     long position;
-    private transient InputStream reader;
-    private transient OutputStream writer;
 
     @Override
     public String getName() {
         return owner.getName();
-    }
-
-    @Override
-    public InputStream getReader() {
-        if (reader == null) {
-            reader = new InputStream() {
-                @Override
-                public int available() {
-                    return safeRemaining(CompositeMmap.this.available());
-                }
-
-                @Override
-                public int read(byte[] b, int off, int len) {
-                    ByteBuf buf = Bytes.wrap(b, off, len);
-                    buf.clear();
-                    try {
-                        int read = CompositeMmap.this.read(position, buf);
-                        if (read > -1) {
-                            position += read;
-                        }
-                        return read;
-                    } finally {
-                        buf.release();
-                    }
-                }
-
-                @Override
-                public int read() {
-                    ByteBuf buf = Bytes.directBuffer(1);
-                    try {
-                        int read = CompositeMmap.this.read(position, buf, 1);
-                        if (read == Constants.IO_EOF) {
-                            return read;
-                        }
-                        position += read;
-                        return buf.readByte() & 0xff;
-                    } finally {
-                        buf.release();
-                    }
-                }
-            };
-        }
-        return reader;
-    }
-
-    @Override
-    public OutputStream getWriter() {
-        if (writer == null) {
-            writer = new OutputStream() {
-                @Override
-                public void write(byte[] b, int off, int len) {
-                    ByteBuf buf = Bytes.wrap(b, off, len);
-                    try {
-                        position += CompositeMmap.this.write(position, buf);
-                    } finally {
-                        buf.release();
-                    }
-                }
-
-                @Override
-                public void write(int b) {
-                    ByteBuf buf = Bytes.directBuffer(1);
-                    try {
-                        buf.writeByte(b);
-                        position += CompositeMmap.this.write(position, buf);
-                    } finally {
-                        buf.release();
-                    }
-                }
-
-                @Override
-                public void flush() {
-                    CompositeMmap.this.flush();
-                }
-            };
-        }
-        return writer;
     }
 
     @Override
@@ -166,8 +86,73 @@ public final class CompositeMmap extends IOStream {
     }
 
     @Override
-    public long available() {
+    public long availableBytes() {
         return remaining(position);
+    }
+
+    @Override
+    public int read(byte[] b, int off, int len) {
+        checkNotClosed();
+        checkArrayRange(b, off, len);
+        if (len == 0) {
+            return 0;
+        }
+
+        ByteBuf buf = Bytes.wrap(b, off, len);
+        buf.clear();
+        try {
+            int read = read(position, buf);
+            if (read > Constants.IO_EOF) {
+                position += read;
+            }
+            return read;
+        } finally {
+            buf.release();
+        }
+    }
+
+    @Override
+    public int read() {
+        checkNotClosed();
+        ByteBuf buf = Bytes.directBuffer(1);
+        try {
+            int read = read(position, buf, 1);
+            if (read == Constants.IO_EOF) {
+                return read;
+            }
+            position += read;
+            return buf.readByte() & 0xff;
+        } finally {
+            buf.release();
+        }
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) {
+        checkNotClosed();
+        checkArrayRange(b, off, len);
+        if (len == 0) {
+            return;
+        }
+
+        ByteBuf buf = Bytes.wrap(b, off, len);
+        try {
+            position += write(position, buf);
+        } finally {
+            buf.release();
+        }
+    }
+
+    @Override
+    public void write(int b) {
+        checkNotClosed();
+        ByteBuf buf = Bytes.directBuffer(1);
+        try {
+            buf.writeByte(b);
+            position += write(position, buf);
+        } finally {
+            buf.release();
+        }
     }
 
     public synchronized long remaining(long position) {
@@ -183,21 +168,60 @@ public final class CompositeMmap extends IOStream {
 
     @Override
     public int read(ByteBuf dst, int length) {
-        int read = read(position, dst, length);
-        position += read;
-        return read;
+        checkNotClosed();
+        checkLength(length);
+        if (length == 0) {
+            return 0;
+        }
+
+        dst.ensureWritable((int) Math.min(length, remaining(position)));
+        int writerIndex = dst.writerIndex();
+        int read = read(position, dst, writerIndex, length);
+        if (read > 0) {
+            dst.writerIndex(writerIndex + read);
+            position += read;
+            return read;
+        }
+        return Constants.IO_EOF;
+    }
+
+    @Override
+    public int read(ByteBuf dst, int dstIndex, int length) {
+        checkNotClosed();
+        checkByteBufRange(dst, dstIndex, length);
+        if (length == 0) {
+            return 0;
+        }
+
+        int read = read(position, dst, dstIndex, length);
+        if (read > 0) {
+            position += read;
+            return read;
+        }
+        return Constants.IO_EOF;
     }
 
     public int read(long position, ByteBuf byteBuf) {
         return read(position, byteBuf, byteBuf.writableBytes());
     }
 
-    public synchronized int read(long position, ByteBuf byteBuf, int readCount) {
-        checkNotClosed();
-
+    public int read(long position, ByteBuf byteBuf, int readCount) {
         int writerIndex = byteBuf.writerIndex();
-        int finalReadCount = readCount;
-        Lazy<byte[]> buffer = new Lazy<>(() -> new byte[Math.min(finalReadCount, Constants.MEDIUM_BUF)]);
+        int read = read(position, byteBuf, writerIndex, readCount);
+        if (read > 0) {
+            byteBuf.writerIndex(writerIndex + read);
+        }
+        return read;
+    }
+
+    public synchronized int read(long position, ByteBuf byteBuf, int dstIndex, int readCount) {
+        checkNotClosed();
+        checkByteBufRange(byteBuf, dstIndex, readCount);
+        if (readCount == 0) {
+            return 0;
+        }
+
+        int total = 0;
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             DataRange<Long> range = tuple.right;
             if (!range.has(position)) {
@@ -211,33 +235,67 @@ public final class CompositeMmap extends IOStream {
             if (limit < count) {
                 count = limit;
             }
-            int read = Math.min(count, buffer.getValue().length);
-            mbuf.get(buffer.getValue(), 0, read);
-            byteBuf.writeBytes(buffer.getValue(), 0, read);
-
-            position += count;
-            readCount -= count;
+            if (count > 0) {
+                ByteBuffer src = mbuf.slice();
+                src.limit(count);
+                byteBuf.setBytes(dstIndex + total, src);
+                total += count;
+                position += count;
+                readCount -= count;
+            }
             if (readCount == 0) {
                 break;
             }
         }
-        int read = byteBuf.writerIndex() - writerIndex;
-        return read == 0 ? -1 : read;
+        return total == 0 ? Constants.IO_EOF : total;
     }
 
     @Override
     public void write(ByteBuf src, int length) {
-        position += write(position, src, length);
+        checkNotClosed();
+        checkLength(length);
+        if (length > src.readableBytes()) {
+            throw new IndexOutOfBoundsException();
+        }
+        if (length == 0) {
+            return;
+        }
+
+        int readerIndex = src.readerIndex();
+        position += write(position, src, readerIndex, length);
+        src.readerIndex(readerIndex + length);
+    }
+
+    @Override
+    public void write(ByteBuf src, int srcIndex, int length) {
+        checkNotClosed();
+        checkByteBufReadableRange(src, srcIndex, length);
+        if (length == 0) {
+            return;
+        }
+
+        position += write(position, src, srcIndex, length);
     }
 
     public int write(long position, ByteBuf byteBuf) {
         return write(position, byteBuf, byteBuf.readableBytes());
     }
 
-    public synchronized int write(long position, ByteBuf byteBuf, int writeCount) {
-        checkNotClosed();
-
+    public int write(long position, ByteBuf byteBuf, int writeCount) {
         int readerIndex = byteBuf.readerIndex();
+        int write = write(position, byteBuf, readerIndex, writeCount);
+        byteBuf.readerIndex(readerIndex + write);
+        return write;
+    }
+
+    public synchronized int write(long position, ByteBuf byteBuf, int srcIndex, int writeCount) {
+        checkNotClosed();
+        checkByteBufReadableRange(byteBuf, srcIndex, writeCount);
+        if (writeCount == 0) {
+            return 0;
+        }
+
+        int written = 0;
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             DataRange<Long> range = tuple.right;
             if (!range.has(position)) {
@@ -248,34 +306,24 @@ public final class CompositeMmap extends IOStream {
             int pos = (int) (position - range.start);
             mbuf.position(mbuf.reset().position() + pos);
             int count = writeCount, limit = mbuf.remaining();
-            int rIndex = byteBuf.readerIndex(), rEndIndex = rIndex + count;
-            ByteBuf buf = byteBuf;
             if (limit < count) {
-                rEndIndex = rIndex + (count = limit);
-                buf = buf.slice(rIndex, rEndIndex);
+                count = limit;
             }
-            switch (buf.nioBufferCount()) {
-                case 0:
-                    mbuf.put(ByteBuffer.wrap(Bytes.toBytes(buf)));
-                    break;
-                case 1:
-                    mbuf.put(buf.nioBuffer());
-                    break;
-                default:
-                    for (ByteBuffer byteBuffer : buf.nioBuffers()) {
-                        mbuf.put(byteBuffer);
-                    }
-                    break;
+            if (count == 0) {
+                continue;
             }
-            byteBuf.readerIndex(rEndIndex);
+            ByteBuffer dst = mbuf.slice();
+            dst.limit(count);
+            byteBuf.getBytes(srcIndex + written, dst);
 
+            written += count;
             position += count;
             writeCount -= count;
             if (writeCount == 0) {
                 break;
             }
         }
-        return byteBuf.readerIndex() - readerIndex;
+        return written;
     }
 
     @Override

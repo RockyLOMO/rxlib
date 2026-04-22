@@ -137,7 +137,9 @@ public class ObjectChangeTracker {
         Class<?> type = val.getClass();
         if (!Reflects.isBasicType(type)) {
             if (++recursionDepth > 128) {
-                DiagnosticMetrics.record(Constants.MetricName.OBJECT_TRACK_OVERFLOW.name(), 1D, "type=" + type.getName());
+                if (DiagnosticMetrics.isEnabled()) {
+                    DiagnosticMetrics.record(Constants.MetricName.OBJECT_TRACK_OVERFLOW.name(), 1D, "type=" + type.getName());
+                }
                 return val;
             }
             log.debug("recursion {} -> {}", type, recursionDepth);

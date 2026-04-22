@@ -1,0 +1,418 @@
+package org.rx.net.http;
+
+import com.alibaba.fastjson2.JSONObject;
+import io.netty.buffer.Unpooled;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaderValues;
+import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.multipart.FileUpload;
+import io.netty.util.CharsetUtil;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.rx.io.HybridStream;
+import org.rx.io.DuplexStream;
+import org.rx.net.Sockets;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.InputStream;
+import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.zip.GZIPOutputStream;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+public class HttpClientIntegrationTest {
+    private static HttpServer server;
+    private static String baseUrl;
+    private static final Set<Integer> remotePorts = Collections.newSetFromMap(new ConcurrentHashMap<Integer, Boolean>());
+    private static volatile CountDownLatch slowStarted;
+
+    @BeforeAll
+    public static void setup() throws Exception {
+        int port = freePort();
+        baseUrl = "http://127.0.0.1:" + port;
+        server = new HttpServer(port, false);
+        server.requestMapping("/get", (req, res) ->
+                res.htmlBody(req.getMethod().name() + ":" + req.getQueryString().getFirst("q")));
+        server.requestMapping("/head", (req, res) -> res.setStatus(io.netty.handler.codec.http.HttpResponseStatus.OK));
+        server.requestMapping("/json", (req, res) ->
+                res.htmlBody(req.getMethod().name() + ":" + req.jsonBody()));
+        server.requestMapping("/form", (req, res) ->
+                res.htmlBody(req.getMethod().name() + ":" + req.getForm().getFirst("a") + ":" + req.getForm().getFirst("b")));
+        server.requestMapping("/multipart", (req, res) -> {
+            FileUpload upload = req.getFiles().getFirst("file");
+            res.htmlBody(req.getForm().getFirst("name") + ":" + upload.getFilename() + ":" + upload.getString(CharsetUtil.UTF_8));
+        });
+        server.requestMapping("/cookie-set", (req, res) -> {
+            res.getHeaders().set(HttpHeaderNames.SET_COOKIE, "sid=abc; Path=/");
+            res.htmlBody("set");
+        });
+        server.requestMapping("/cookie-echo", (req, res) ->
+                res.htmlBody(String.valueOf(req.getHeaders().get(HttpHeaderNames.COOKIE))));
+        server.requestMapping("/redirect-301", (req, res) -> {
+            res.setStatus(HttpResponseStatus.MOVED_PERMANENTLY);
+            res.getHeaders().set(HttpHeaderNames.LOCATION, baseUrl + "/get?q=redirect");
+        });
+        server.requestMapping("/redirect-relative", (req, res) -> {
+            res.setStatus(HttpResponseStatus.MOVED_PERMANENTLY);
+            res.getHeaders().set(HttpHeaderNames.LOCATION, "/get?q=relative");
+        });
+        server.requestMapping("/large", (req, res) -> {
+            StringBuilder sb = new StringBuilder(16384);
+            for (int i = 0; i < 2048; i++) {
+                sb.append("rxlib");
+            }
+            res.htmlBody(sb.toString());
+        });
+        server.requestMapping("/gzip", (req, res) -> {
+            res.getHeaders().set(HttpHeaderNames.CONTENT_ENCODING, HttpHeaderValues.GZIP);
+            res.setContentType(ServerResponse.TEXT_HTML.toString());
+            res.setContent(Unpooled.wrappedBuffer(gzip("gzip-ok")));
+        });
+        server.requestMapping("/remote-port", (req, res) -> {
+            int portValue = req.getRemoteEndpoint().getPort();
+            remotePorts.add(portValue);
+            res.htmlBody(String.valueOf(portValue));
+        });
+        server.requestAsync("/slow", (req, res) -> {
+            CountDownLatch latch = slowStarted;
+            if (latch != null) {
+                latch.countDown();
+            }
+            Thread.sleep(300L);
+            res.htmlBody("slow");
+        });
+        // migrated from TestSocks.httpServer: query via buildUrl + JSON POST (multipart: formAndMultipartBodiesAreDecodedByServer)
+        server.requestMapping("/socks-query-check", (request, response) -> {
+            assertEquals("1", request.getQueryString().getFirst("a"));
+            assertEquals("乐之", request.getQueryString().getFirst("b"));
+            response.htmlBody("qs-ok");
+        });
+        server.requestMapping("/socks-json", (request, response) -> {
+            assertEquals("{\"a\":1,\"b\":\"乐之\"}", request.jsonBody());
+            response.jsonBody("{\"code\":0,\"msg\":\"hello world\"}");
+        });
+    }
+
+    @AfterAll
+    public static void tearDown() {
+        if (server != null) {
+            server.close();
+        }
+    }
+
+    @Test
+    public void getHeadAndMetrics() {
+        try (HttpClient client = new HttpClient()) {
+            try (HttpClient.Response response = client.get(baseUrl + "/get?q=ok");
+                 HttpClient.Response head = client.head(baseUrl + "/head")) {
+                assertEquals(200, response.code());
+                assertEquals("GET:ok", response.bodyAsString());
+                assertEquals(200, head.code());
+                assertEquals(2, client.getMetrics().requests());
+                assertEquals(2, client.getMetrics().success());
+                assertTrue(client.getMetrics().maxLatencyNanos() > 0);
+                assertTrue(client.getMetrics().usedDirectMemory() >= 0);
+            }
+        }
+    }
+
+    @Test
+    public void jsonBodyWorksForPostPutPatchDelete() {
+        Map<String, Object> json = new HashMap<>();
+        json.put("hello", "world");
+
+        try (HttpClient client = new HttpClient()) {
+            assertTrue(client.postJson(baseUrl + "/json", json).bodyAsString().contains("POST:{\"hello\":\"world\"}"));
+            assertTrue(client.putJson(baseUrl + "/json", json).bodyAsString().contains("PUT:{\"hello\":\"world\"}"));
+            assertTrue(client.patchJson(baseUrl + "/json", json).bodyAsString().contains("PATCH:{\"hello\":\"world\"}"));
+            assertTrue(client.deleteJson(baseUrl + "/json", json).bodyAsString().contains("DELETE:{\"hello\":\"world\"}"));
+        }
+    }
+
+    @Test
+    public void formAndMultipartBodiesAreDecodedByServer() {
+        Map<String, Object> forms = new HashMap<>();
+        forms.put("a", "1");
+        forms.put("b", "two words");
+
+        Map<String, Object> multipartForms = new HashMap<>();
+        multipartForms.put("name", "n1");
+        Map<String, DuplexStream> files = new HashMap<>();
+        files.put("file", DuplexStream.wrap("hello.txt", "file-body".getBytes(CharsetUtil.UTF_8)));
+
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(60000))) {
+            assertEquals("POST:1:two words", client.post(baseUrl + "/form", forms).bodyAsString());
+            assertEquals("n1:hello.txt:file-body", client.post(baseUrl + "/multipart", multipartForms, files).bodyAsString());
+        }
+    }
+
+    @Test
+    public void serverAndClientRoundTripCoversCommonBodies() {
+        Map<String, Object> json = new HashMap<>();
+        json.put("hello", "world");
+
+        Map<String, Object> forms = new HashMap<>();
+        forms.put("a", "1");
+        forms.put("b", "two words");
+
+        Map<String, Object> multipartForms = new HashMap<>();
+        multipartForms.put("name", "n1");
+        Map<String, DuplexStream> files = new HashMap<>();
+        files.put("file", DuplexStream.wrap("hello.txt", "file-body".getBytes(CharsetUtil.UTF_8)));
+
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(60000))) {
+            try (HttpClient.Response get = client.get(baseUrl + "/get?q=ok");
+                 HttpClient.Response postJson = client.postJson(baseUrl + "/json", json);
+                 HttpClient.Response postForm = client.post(baseUrl + "/form", forms);
+                 HttpClient.Response postFile = client.post(baseUrl + "/multipart", multipartForms, files)) {
+                assertEquals("GET:ok", get.bodyAsString());
+                assertTrue(postJson.bodyAsString().contains("POST:{\"hello\":\"world\"}"));
+                assertEquals("POST:1:two words", postForm.bodyAsString());
+                assertEquals("n1:hello.txt:file-body", postFile.bodyAsString());
+            }
+        }
+    }
+
+    @Test
+    public void cookieAndResponseCachingWork() {
+        try (HttpClient client = new HttpClient()) {
+            assertEquals("set", client.get(baseUrl + "/cookie-set").bodyAsString());
+            assertTrue(client.get(baseUrl + "/cookie-echo").bodyAsString().contains("sid=abc"));
+
+            try (HttpClient.Response response = client.get(baseUrl + "/large")) {
+                String text = response.bodyAsString();
+                assertEquals(text, response.bodyAsString());
+                assertTrue(text.length() > 1000);
+
+                HybridStream stream = response.bodyStream();
+                assertTrue(stream.getLength() > 1000);
+                try (InputStream in = response.bodyStream().asInputStream()) {
+                    assertTrue(in.read() != -1);
+                } catch (Exception e) {
+                    fail(e);
+                }
+
+                File file = response.bodyAsFile("http-client-v2-large.tmp");
+                try {
+                    assertTrue(file.exists());
+                    assertTrue(file.length() > 1000);
+                } finally {
+                    file.delete();
+                }
+            }
+        }
+    }
+
+    @Test
+    public void requestBuilderMergesHeadersAndQueryString() {
+        Map<String, Object> query = Collections.singletonMap("q", "hello world");
+        try (HttpClient client = new HttpClient()) {
+            HttpClient.Request request = HttpClient.request(HttpMethod.GET, HttpClient.buildUrl(baseUrl + "/get", query))
+                    .header("X-Test", "1");
+            try (HttpClient.Response response = client.execute(request)) {
+                assertEquals("GET:hello world", response.bodyAsString());
+            }
+        }
+    }
+
+    @Test
+    public void syncApiRejectsEventLoopThread() throws Exception {
+        try (HttpClient client = new HttpClient()) {
+            Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true).next()
+                    .submit(() -> assertThrows(IllegalStateException.class, () -> client.get(baseUrl + "/get?q=ok")))
+                    .get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    public void gzipResponseIsDecoded() {
+        try (HttpClient client = new HttpClient()) {
+            assertEquals("gzip-ok", client.get(baseUrl + "/gzip").bodyAsString());
+        }
+    }
+
+    @Test
+    public void redirectsAreFollowedByDefault() {
+        try (HttpClient client = new HttpClient()) {
+            try (HttpClient.Response absolute = client.get(baseUrl + "/redirect-301");
+                 HttpClient.Response relative = client.get(baseUrl + "/redirect-relative")) {
+                assertEquals(200, absolute.code());
+                assertEquals("GET:redirect", absolute.bodyAsString());
+                assertEquals(baseUrl + "/redirect-301", absolute.request().url());
+                assertEquals(baseUrl + "/get?q=redirect", absolute.url());
+                assertEquals(200, relative.code());
+                assertEquals("GET:relative", relative.bodyAsString());
+                assertEquals(baseUrl + "/redirect-relative", relative.request().url());
+                assertEquals(baseUrl + "/get?q=relative", relative.url());
+            }
+        }
+    }
+
+    @Test
+    public void redirectsCanBeDisabled() {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(false))) {
+            try (HttpClient.Response response = client.get(baseUrl + "/redirect-301")) {
+                assertEquals(301, response.code());
+                assertEquals(baseUrl + "/redirect-301", response.request().url());
+                assertEquals(baseUrl + "/redirect-301", response.url());
+                assertEquals(baseUrl + "/get?q=redirect", response.header(HttpHeaderNames.LOCATION.toString()));
+            }
+        }
+    }
+
+    @Test
+    public void requestRedirectOverridesClientConfig() {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(false))) {
+            HttpClient.Request follow = HttpClient.request(HttpMethod.GET, baseUrl + "/redirect-301")
+                    .followRedirects(true);
+            try (HttpClient.Response response = client.execute(follow)) {
+                assertEquals(200, response.code());
+                assertEquals(baseUrl + "/redirect-301", response.request().url());
+                assertEquals(baseUrl + "/get?q=redirect", response.url());
+                assertEquals("GET:redirect", response.bodyAsString());
+            }
+        }
+
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(true))) {
+            HttpClient.Request noFollow = HttpClient.request(HttpMethod.GET, baseUrl + "/redirect-301")
+                    .followRedirects(false);
+            try (HttpClient.Response response = client.execute(noFollow)) {
+                assertEquals(301, response.code());
+                assertEquals(baseUrl + "/redirect-301", response.request().url());
+                assertEquals(baseUrl + "/redirect-301", response.url());
+            }
+        }
+    }
+
+    @Test
+    public void requestMaxRedirectsOverridesClientConfig() {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(true).setMaxRedirects(3))) {
+            HttpClient.Request request = HttpClient.request(HttpMethod.GET, baseUrl + "/redirect-301")
+                    .maxRedirects(0);
+            try (HttpClient.Response response = client.execute(request)) {
+                assertEquals(301, response.code());
+                assertEquals(baseUrl + "/redirect-301", response.request().url());
+                assertEquals(baseUrl + "/redirect-301", response.url());
+            }
+        }
+    }
+
+    @Test
+    public void keepAliveReusesFixedPoolChannel() {
+        remotePorts.clear();
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setMaxConnectionsPerHost(1))) {
+            String first = client.get(baseUrl + "/remote-port").bodyAsString();
+            String second = client.get(baseUrl + "/remote-port").bodyAsString();
+            assertEquals(first, second);
+            assertEquals(1, remotePorts.size());
+        }
+    }
+
+    @Test
+    public void requestTimeoutCompletesExceptionally() {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(1000))) {
+            HttpClient.Request request = HttpClient.request(HttpMethod.GET, baseUrl + "/slow")
+                    .timeoutMillis(100);
+            ExecutionException error = assertThrows(ExecutionException.class,
+                    () -> client.executeAsync(request).get(2, TimeUnit.SECONDS));
+            assertTrue(hasCause(error, TimeoutException.class), error.toString());
+            assertEquals(1, client.getMetrics().timeout());
+        }
+    }
+
+    @Test
+    public void queryBuildUrlGetAndPostJson_fromTestSocks() throws Exception {
+        Map<String, Object> qs = new HashMap<>();
+        qs.put("a", "1");
+        qs.put("b", "乐之");
+        String j = "{\"a\":1,\"b\":\"乐之\"}";
+        String jbody = "{\"code\":0,\"msg\":\"hello world\"}";
+
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setCookieJar(null).setEnableLog(false))) {
+            assertEquals("qs-ok", client.get(HttpClient.buildUrl(baseUrl + "/socks-query-check", qs)).bodyAsString());
+            assertEquals(jbody, client.postJson(baseUrl + "/socks-json", j).bodyAsString());
+            JSONObject jobj = client.postJson(baseUrl + "/socks-json", j).bodyAsJson();
+            assertEquals(0, jobj.getIntValue("code"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void decodeQueryStringLastWinsAndBuildUrl() {
+        String url = "http://x.cn/blog/1.html?userId=rx&type=1&userId=ft";
+        Map<String, Object> map = (Map<String, Object>) (Map<?, ?>) HttpClient.decodeQueryString(url);
+        assertEquals("ft", map.get("userId"));
+        assertEquals("1", map.get("type"));
+        map.put("userId", "newId");
+        map.put("ok", "1");
+        String built = HttpClient.buildUrl(url, map);
+        assertTrue(built.contains("userId=newId"), built);
+        assertTrue(built.contains("ok=1"), built);
+    }
+
+    @Test
+    public void fixedPoolLimitsConcurrentAcquire() throws Exception {
+        slowStarted = new CountDownLatch(1);
+        try (HttpClient client = new HttpClient(new HttpClientConfig()
+                .setConnectTimeoutMillis(80)
+                .setReadWriteTimeoutMillis(1000)
+                .setMaxConnectionsPerHost(1))) {
+            CompletableFuture<HttpClient.Response> first = client.executeAsync(
+                    HttpClient.request(HttpMethod.GET, baseUrl + "/slow").timeoutMillis(1000));
+            assertTrue(slowStarted.await(2, TimeUnit.SECONDS));
+
+            CompletableFuture<HttpClient.Response> queued = client.executeAsync(
+                    HttpClient.request(HttpMethod.GET, baseUrl + "/get?q=queued").timeoutMillis(1000));
+            ExecutionException error = assertThrows(ExecutionException.class,
+                    () -> queued.get(2, TimeUnit.SECONDS));
+            assertTrue(hasCause(error, TimeoutException.class), error.toString());
+            try (HttpClient.Response response = first.get(2, TimeUnit.SECONDS)) {
+                assertEquals(200, response.code());
+            }
+            assertTrue(client.getMetrics().failed() >= 1);
+        } finally {
+            slowStarted = null;
+        }
+    }
+
+    private static int freePort() throws Exception {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        }
+    }
+
+    private static byte[] gzip(String value) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        GZIPOutputStream gzip = new GZIPOutputStream(out);
+        try {
+            gzip.write(value.getBytes(StandardCharsets.UTF_8));
+        } finally {
+            gzip.close();
+        }
+        return out.toByteArray();
+    }
+
+    private static boolean hasCause(Throwable error, Class<? extends Throwable> type) {
+        for (int i = 0; error != null && i < 16; i++) {
+            if (type.isInstance(error)) {
+                return true;
+            }
+            error = error.getCause();
+        }
+        return false;
+    }
+}

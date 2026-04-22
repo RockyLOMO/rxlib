@@ -5,18 +5,19 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
+import io.netty.handler.codec.http.HttpMethod;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
+import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpClientConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
-
-import okhttp3.*;
 
 /**
  * HTTP 隧道客户端
@@ -53,20 +54,18 @@ public class HttpTunnelClient extends Disposable {
     final HttpTunnelConfig config;
     final ServerBootstrap serverBootstrap;
     final Channel serverChannel;
-    final OkHttpClient httpClient;
+    final HttpClient httpClient;
     final java.util.concurrent.ExecutorService clientExecutor = java.util.concurrent.Executors.newCachedThreadPool();
     final ConcurrentHashMap<Integer, TunnelConnection> connections = new ConcurrentHashMap<>();
-    final MediaType OCTET_STREAM = MediaType.parse("application/octet-stream");
 
     public HttpTunnelClient(@NonNull HttpTunnelConfig config) {
         this.config = config;
 
-        this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(config.getConnectTimeoutMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
-                .readTimeout(config.getPollTimeoutSeconds() + 5, java.util.concurrent.TimeUnit.SECONDS)
-                .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .retryOnConnectionFailure(true)
-                .build();
+        this.httpClient = new HttpClient(new HttpClientConfig()
+                .setCookieJar(null)
+                .setEnableLog(false)
+                .setConnectTimeoutMillis(config.getConnectTimeoutMillis())
+                .setReadWriteTimeoutMillis((config.getPollTimeoutSeconds() + 5) * 1000));
 
         // 自建 SOCKS5 服务端，不使用 SocksProxyServer (避免其 connect 到真实远程目标)
         serverBootstrap = Sockets.serverBootstrap(channel -> {
@@ -94,8 +93,7 @@ public class HttpTunnelClient extends Disposable {
         }
         connections.clear();
         clientExecutor.shutdownNow();
-        httpClient.dispatcher().executorService().shutdown();
-        httpClient.connectionPool().evictAll();
+        httpClient.close();
     }
 
     // ---- SOCKS5 握手 ----
@@ -315,17 +313,13 @@ public class HttpTunnelClient extends Disposable {
 
     byte[] doPost(String url, byte[] data) {
         try {
-            Request.Builder builder = new Request.Builder()
-                    .url(url)
-                    .post(RequestBody.create(OCTET_STREAM, data));
+            HttpClient.Request request = HttpClient.request(HttpMethod.POST, url)
+                    .bytes(data, "application/octet-stream");
             if (config.getToken() != null) {
-                builder.addHeader("X-Tunnel-Token", config.getToken());
+                request.header("X-Tunnel-Token", config.getToken());
             }
-            try (Response response = httpClient.newCall(builder.build()).execute()) {
-                ResponseBody body = response.body();
-                if (body != null) {
-                    return body.bytes();
-                }
+            try (HttpClient.Response response = httpClient.execute(request)) {
+                return response.bodyStream().toArray();
             }
         } catch (Exception e) {
             log.debug("HttpTunnel POST {} error: {}", url, e.getMessage());

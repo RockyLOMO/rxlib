@@ -3,7 +3,7 @@ package org.rx.crawler;
 import org.rx.core.FluentWait;
 import org.rx.core.Linq;
 import org.rx.core.Reflects;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeoutException;
@@ -12,7 +12,7 @@ public interface Browser extends AutoCloseable {
     String BLANK_URL = "about:blank", BODY_SELECTOR = "body";
 
     static String readResourceJs(String resourcePath) {
-        return IOStream.readString(Reflects.getResource(resourcePath), StandardCharsets.UTF_8);
+        return DuplexStream.readString(Reflects.getResource(resourcePath), StandardCharsets.UTF_8);
     }
 
     BrowserType getType();

@@ -33,7 +33,7 @@ import static org.rx.core.Extends.require;
  * This leads to the 'real world' answer: If your app is like 99% out there, set the cache size to 8192 and move on (even better, choose encapsulation over performance and use BufferedInputStream to hide the details). If you are in the 1% of apps that are highly dependent on disk throughput, craft your implementation so you can swap out different disk interaction strategies, and provide the knobs and dials to allow your users to test and optimize (or come up with some self optimizing system).
  */
 @Slf4j
-public final class WALFileStream extends IOStream implements EventPublisher<WALFileStream> {
+public final class WALFileStream extends DuplexStream implements EventPublisher<WALFileStream> {
     private static final long serialVersionUID = 1414441456982833443L;
 
     private void writeObject(ObjectOutputStream out) throws IOException {
@@ -70,63 +70,15 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     final long growSize;
     final int readerCount;
     private CompositeMmap writer;
-    private final LinkedTransferQueue<IOStream> readers = new LinkedTransferQueue<>();
+    private final LinkedTransferQueue<DuplexStream> readers = new LinkedTransferQueue<>();
     private final Serializer serializer;
     private final MetaHeader meta;
     @Setter
     long flushDelayMillis = 1000;
-    private transient InputStream _reader;
-    private transient OutputStream _writer;
 
     @Override
     public String getName() {
         return file.getName();
-    }
-
-    @Override
-    public InputStream getReader() {
-        if (_reader == null) {
-            _reader = new InputStream() {
-                @Override
-                public int available() {
-                    return safeRemaining(WALFileStream.this.available());
-                }
-
-                @Override
-                public int read(byte[] b, int off, int len) {
-                    return ensureRead(reader -> reader.read(b, off, len));
-                }
-
-                @Override
-                public int read() {
-                    return ensureRead(IOStream::read);
-                }
-            };
-        }
-        return _reader;
-    }
-
-    @Override
-    public OutputStream getWriter() {
-        if (_writer == null) {
-            _writer = new OutputStream() {
-                @Override
-                public void write(byte[] b, int off, int len) {
-                    ensureWrite(writer -> writer.write(b, off, len));
-                }
-
-                @Override
-                public void write(int b) {
-                    ensureWrite(writer -> writer.write(b));
-                }
-
-                @Override
-                public void flush() {
-                    WALFileStream.this.flush();
-                }
-            };
-        }
-        return _writer;
     }
 
     public long getReaderPosition() {
@@ -222,7 +174,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
 
     @SneakyThrows
     private MetaHeader loadMeta() {
-        IOStream reader = readers.take();
+        DuplexStream reader = readers.take();
         try {
             return lock.readInvoke(() -> {
                 reader.setPosition(0);
@@ -262,7 +214,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
                 writer.close();
             }
 
-            IOStream tmp;
+            DuplexStream tmp;
             while ((tmp = readers.poll()) != null) {
                 tmp.close();
             }
@@ -292,13 +244,23 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
 
     @SneakyThrows
     @Override
-    public long available() {
-        IOStream reader = readers.take();
+    public long availableBytes() {
+        DuplexStream reader = readers.take();
         try {
-            return lock.readInvoke(reader::available);
+            return lock.readInvoke(reader::availableBytes);
         } finally {
             readers.offer(reader);
         }
+    }
+
+    @Override
+    public int read(byte[] b, int off, int len) {
+        return ensureRead(reader -> reader.read(b, off, len));
+    }
+
+    @Override
+    public int read() {
+        return ensureRead(DuplexStream::read);
     }
 
     @Override
@@ -306,9 +268,14 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         return ensureRead(reader -> reader.read(dst, length));
     }
 
+    @Override
+    public int read(ByteBuf dst, int dstIndex, int length) {
+        return ensureRead(reader -> reader.read(dst, dstIndex, length));
+    }
+
     @SneakyThrows
-    private int ensureRead(BiFunc<IOStream, Integer> action) {
-        IOStream reader = readers.take();
+    private int ensureRead(BiFunc<DuplexStream, Integer> action) {
+        DuplexStream reader = readers.take();
         try {
             long readerPosition = getReaderPosition();
             return lock.readInvoke(() -> {
@@ -323,8 +290,8 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
     }
 
     @SneakyThrows
-    public <T> T readObjectBackwards(BiFunc<IOStream, T> action) {
-        IOStream reader = readers.take();
+    public <T> T readObjectBackwards(BiFunc<DuplexStream, T> action) {
+        DuplexStream reader = readers.take();
         try {
             long readerPosition = getReaderPosition();
             return lock.readInvoke(() -> {
@@ -343,7 +310,22 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         ensureWrite(writer -> writer.write(src, length));
     }
 
-    private void ensureWrite(BiAction<IOStream> action) {
+    @Override
+    public void write(ByteBuf src, int srcIndex, int length) {
+        ensureWrite(writer -> writer.write(src, srcIndex, length));
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) {
+        ensureWrite(writer -> writer.write(b, off, len));
+    }
+
+    @Override
+    public void write(int b) {
+        ensureWrite(writer -> writer.write(b));
+    }
+
+    private void ensureWrite(BiAction<DuplexStream> action) {
         long logPos = meta.logPos;
         lock.writeInvoke(() -> {
             if (logPos != meta.logPos) {
@@ -357,7 +339,7 @@ public final class WALFileStream extends IOStream implements EventPublisher<WALF
         }, logPos);
     }
 
-    void innerWrite(long logPosition, BiAction<IOStream> action) {
+    void innerWrite(long logPosition, BiAction<DuplexStream> action) {
         ensureGrow();
 
         writer.setPosition(logPosition);

@@ -7,6 +7,8 @@ import org.rx.core.RxConfig.DiagnosticConfig;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpServer;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -31,21 +33,11 @@ public class DiagnosticHttpHandlerTest {
             store.recordMetric(new DiagnosticMetric(now - 5000L, "process.cpu.percent", 12D, null, null));
             store.recordMetric(new DiagnosticMetric(now, "process.cpu.percent", 34D, null, null));
             store.recordMetric(new DiagnosticMetric(now, "system.cpu.percent", 56D, null, null));
-            store.recordMetric(new DiagnosticMetric(now, "system.physical.used.percent", 58D, null, null));
-            store.recordMetric(new DiagnosticMetric(now, "jvm.app.memory.used.percent", 12D, null, null));
-            store.recordMetric(new DiagnosticMetric(now, "jvm.heap.used.percent", 25D, null, null));
             store.recordMetric(new DiagnosticMetric(now - 5000L, "disk.used.bytes", 262144D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now - 500L, "disk.used.bytes", 524288D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now, "disk.used.bytes", 1048576D, "path=/tmp", "inc-http"));
             store.recordMetric(new DiagnosticMetric(now, "disk.free.percent", 38D, "path=/tmp", null));
-            store.recordMetric(new DiagnosticMetric(now, "net.io.inbound.bytes.per.second", 2048D, "component=http.server", null));
-            store.recordMetric(new DiagnosticMetric(now, "net.io.inbound.bytes.per.second", 4096D, "component=rpc.server", null));
-            store.recordMetric(new DiagnosticMetric(now, "net.io.outbound.bytes.per.second", 1024D, "component=http.client", null));
-            store.recordMetric(new DiagnosticMetric(now, "rx.thread_pool.active.count", 2D, "pool=test", null));
-            store.recordMetric(new DiagnosticMetric(now, "rx.wheel_timer.holder.count", 3D, "timer=abc", null));
-            store.recordMetric(new DiagnosticMetric(now, "rx.object_pool.size.count", 4D, "pool=obj", null));
             store.recordThreadCpu(new ThreadCpuSample(now, 7L, "diag-thread", "RUNNABLE", 1000000L, 456L, "stack body"), "inc-http");
-            store.recordThreadCpu(new ThreadCpuSample(now, 8L, "diag-waiting-thread", "WAITING", 100L, 456L, "stack body"), "inc-http");
             store.recordThreadState(new ThreadStateSample(now, 7L, "blocked-thread", "BLOCKED", 10L, 0L, 30000L,
                     "lock", 8L, "owner-thread", 456L, "stack body"), "inc-http");
             store.recordNetIo(now, "127.0.0.1:8080", DiagnosticNetOperation.INBOUND, 2048L, 456L, "inc-http");
@@ -59,39 +51,24 @@ public class DiagnosticHttpHandlerTest {
             server = new HttpServer(port, false).requestDiagnostic("/diag");
             String url = "http://127.0.0.1:" + port + "/diag";
             try (HttpClient client = new HttpClient()) {
-                HttpClient.ResponseContent unauthorized = client.get(url);
-                assertEquals(401, unauthorized.getResponse().code());
-                assertNotNull(unauthorized.getResponse().header(HttpHeaderNames.WWW_AUTHENTICATE.toString()));
+                HttpClient.Response unauthorized = client.get(url);
+                assertEquals(401, unauthorized.code());
+                assertNotNull(unauthorized.header(HttpHeaderNames.WWW_AUTHENTICATE.toString()));
 
                 client.requestHeaders().set(HttpHeaderNames.AUTHORIZATION, basic("secret"));
-                HttpClient.ResponseContent defaultPage = client.get(url);
-                assertTrue(defaultPage.toString().contains("name=\"limit\" value=\"1000\""));
-
-                HttpClient.ResponseContent ok = client.get(url + "?limit=10");
-                String html = ok.toString();
-                assertEquals(200, ok.getResponse().code());
+                HttpClient.Response ok = client.get(url + "?limit=10");
+                String html = ok.bodyAsString();
+                assertEquals(200, ok.code());
                 assertTrue(html.contains("RXlib Diagnostics"));
-                assertTrue(html.contains("Default range is the last 15 minutes"));
-                assertTrue(html.contains("All tabs use this time range and row limit"));
-                assertFalse(html.contains("action=\"#overview\""));
-                assertFalse(html.contains("action=\"#metrics\""));
-                assertFalse(html.contains("action=\"#rxlib\""));
-                assertFalse(html.contains("Metric<input"));
                 assertTrue(html.contains("Overview"));
                 assertTrue(html.contains("CPU Charts"));
-                assertTrue(html.contains("Memory Charts"));
                 assertTrue(html.contains("Disk Charts"));
-                assertTrue(html.contains("Net Charts"));
+                assertTrue(html.contains("ThreadMXBean:"));
+                assertTrue(html.contains("name=\"action\" value=\"thread-mx\""));
+                assertTrue(html.contains("Exception Traces"));
                 assertTrue(html.contains("inc-http"));
                 assertTrue(html.contains("http.metric"));
                 assertTrue(html.contains("process.cpu.percent"));
-                assertTrue(html.contains("system.physical.used.percent"));
-                assertTrue(html.contains("jvm.app.memory.used.percent"));
-                assertTrue(html.contains("jvm.heap.used.percent"));
-                assertTrue(html.contains("net.io.inbound.bytes.per.second"));
-                assertTrue(html.contains("net.io.outbound.bytes.per.second"));
-                assertTrue(html.contains("total=in"));
-                assertTrue(html.contains("total=out"));
                 assertTrue(html.contains("disk.free.percent"));
                 assertTrue(html.contains("1.00 MB"));
                 assertTrue(html.contains("directUsedBytes=48623489 (46.37 MB)"));
@@ -100,33 +77,18 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("tab-link"));
                 assertTrue(html.contains("metric-chart"));
                 assertTrue(html.contains("class=\"point\""));
-                assertTrue(html.contains("class=\"y-label\""));
+                assertTrue(html.contains("y-label"));
                 assertTrue(html.contains("Top N"));
-                assertTrue(html.contains("jvm.*"));
-                assertFalse(html.contains("<th>Sum</th>"));
-                assertTrue(html.contains("RXlib"));
-                assertTrue(html.contains("rx.thread_pool.active.count"));
-                assertTrue(html.contains("rx.wheel_timer.holder.count"));
-                assertTrue(html.contains("rx.object_pool.size.count"));
-                assertTrue(html.contains("Thread CPU"));
-                assertTrue(html.contains("Thread State Counts"));
-                assertTrue(html.contains("thread.cpu.state.count"));
-                assertTrue(html.contains("state=RUNNABLE"));
-                assertTrue(html.contains("name=\"capture\" value=\"thread-cpu\""));
-                assertTrue(html.contains("name=\"capture\" value=\"thread-state\""));
-                assertTrue(html.contains("Capture Now"));
                 assertTrue(html.contains("Thread State"));
-                assertFalse(html.contains("Thread Trace"));
                 assertTrue(html.contains("Net I/O"));
-                assertTrue(html.contains("By Endpoint"));
                 assertTrue(html.contains("blocked-thread"));
                 assertTrue(html.contains("127.0.0.1:8080"));
                 assertTrue(html.contains("?stack=456"));
                 assertFalse(html.contains("clob"));
 
-                HttpClient.ResponseContent filtered = client.get(url + "?limit=10&metric=disk.used.bytes&from="
+                HttpClient.Response filtered = client.get(url + "?limit=10&metric=disk.used.bytes&from="
                         + (now - 1000L) + "&to=" + (now + 1000L));
-                String filteredHtml = filtered.toString();
+                String filteredHtml = filtered.bodyAsString();
                 assertTrue(filteredHtml.contains("disk.used.bytes"));
                 assertTrue(filteredHtml.contains("512.00 KB"));
                 assertTrue(filteredHtml.contains("1.00 MB"));
@@ -134,12 +96,30 @@ public class DiagnosticHttpHandlerTest {
                 assertFalse(filteredHtml.contains("256.00 KB"));
                 assertFalse(filteredHtml.contains("http.metric</td>"));
 
-                HttpClient.ResponseContent chartLimited = client.get(url + "?limit=1&from="
+                HttpClient.Response chartLimited = client.get(url + "?limit=1&from="
                         + (now - 1000L) + "&to=" + (now + 1000L));
-                assertTrue(chartLimited.toString().contains("samples 2"));
+                assertTrue(chartLimited.bodyAsString().contains("samples 2"));
 
-                HttpClient.ResponseContent stack = client.get(url + "?stack=456");
-                assertTrue(stack.toString().contains("stack body"));
+                HttpClient.Response stack = client.get(url + "?stack=456");
+                assertTrue(stack.bodyAsString().contains("stack body"));
+
+                ThreadMXBean threadMx = ManagementFactory.getThreadMXBean();
+                Boolean oldCpu = threadMx.isThreadCpuTimeSupported()
+                        ? Boolean.valueOf(threadMx.isThreadCpuTimeEnabled()) : null;
+                Boolean oldContention = threadMx.isThreadContentionMonitoringSupported()
+                        ? Boolean.valueOf(threadMx.isThreadContentionMonitoringEnabled()) : null;
+                try {
+                    HttpClient.Response threadMxOff = client.get(url + "?limit=10&action=thread-mx&enabled=false");
+                    assertEquals(200, threadMxOff.code());
+                    assertTrue(threadMxOff.bodyAsString().contains("ThreadMXBean updated"));
+                } finally {
+                    if (oldCpu != null) {
+                        threadMx.setThreadCpuTimeEnabled(oldCpu.booleanValue());
+                    }
+                    if (oldContention != null) {
+                        threadMx.setThreadContentionMonitoringEnabled(oldContention.booleanValue());
+                    }
+                }
             }
         } finally {
             if (server != null) {

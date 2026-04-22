@@ -419,7 +419,9 @@ public class ObjectPool<T> extends Disposable {
             }
             if (c.isBorrowed()) {
                 if (c.isLeaked(localLeakThreshold)) {
-                    DiagnosticMetrics.record(Constants.MetricName.OBJECT_POOL_LEAK.name(), 1D, diagnosticTags());
+                    if (DiagnosticMetrics.isEnabled()) {
+                        DiagnosticMetrics.record(Constants.MetricName.OBJECT_POOL_LEAK.name(), 1D, diagnosticTags());
+                    }
                     doRetire(c.wrapper, 4);
                 }
                 continue;

@@ -14,6 +14,7 @@ import org.rx.core.cache.MemoryCache;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpClientConfig;
 
 import java.io.Closeable;
 import java.io.File;
@@ -119,7 +120,7 @@ public class GeoIPSearcher implements Closeable {
     }
 
     HttpClient createPublicIpClient() {
-        return new HttpClient().withTimeoutMillis(5000);
+        return new HttpClient(new HttpClientConfig().setTimeoutMillis(5000));
     }
 
     String[] publicIpServices() {
@@ -129,7 +130,9 @@ public class GeoIPSearcher implements Closeable {
     }
 
     String queryPublicIp(HttpClient client, String service) {
-        return client.get(service).toString();
+        try (HttpClient.Response response = client.get(service)) {
+            return response.bodyAsString();
+        }
     }
 
     static String trimAscii(String value) {

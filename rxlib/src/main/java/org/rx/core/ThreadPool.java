@@ -148,7 +148,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             int c = counter.getAndUpdate(v -> Math.max(0, v - 1));
             if (c > 0) {
                 availableSlots.release();
-            } else {
+            } else if (DiagnosticMetrics.isEnabled()) {
                 DiagnosticMetrics.record(Constants.MetricName.THREAD_QUEUE_SIZE_ERROR.name(), 1D, "message=FIX SIZE < 0");
             }
         }

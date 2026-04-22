@@ -11,7 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.rx.codec.CodecUtil;
 import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.io.Serializer;
 
 import java.io.Serializable;
@@ -65,7 +65,7 @@ public final class ULID implements Serializable, Comparable<ULID> {
         if (name instanceof Long) {
             return newULID(Bytes.toBytes((Long) name), timestamp);
         }
-        try (IOStream stream = Serializer.DEFAULT.serialize(name)) {
+        try (DuplexStream stream = Serializer.DEFAULT.serialize(name)) {
             return newULID(stream.toArray(), timestamp);
         }
     }

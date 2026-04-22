@@ -74,7 +74,7 @@ app:
     - org.springframework.core.io.InputStreamSource
     - org.springframework.ui.Model
     - org.springframework.validation.BindingResult
-    - org.rx.io.IOStream
+    - org.rx.io.DuplexStream
   logStrategy: WRITE_ON_ERROR
 
 #ErrorCode
@@ -104,7 +104,8 @@ org:
         exceptionHandle: Test error code, value={0}
         exceptionHandle<IllegalArgumentException>: Test IAException, value={0}
     io:
-      IOStream:
+      DuplexStream:
+        checkNotClosed: Cannot access a closed {0}
         getPosition: The stream does not support seeking
         setPosition: The stream does not support seeking
         getLength: A class derived from {0} does not support seeking

@@ -19,13 +19,8 @@ import java.net.SocketAddress;
 @ChannelHandler.Sharable
 public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
     private static final String HANDLER_NAME = "rx-diagnostic-net-io";
-    public static final DiagnosticNetIoHandler INSTANCE = new DiagnosticNetIoHandler();
 
     private final String component;
-
-    private DiagnosticNetIoHandler() {
-        this("net");
-    }
 
     public DiagnosticNetIoHandler(String component) {
         this.component = component == null || component.length() == 0 ? "net" : component;

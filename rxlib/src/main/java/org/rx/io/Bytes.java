@@ -255,7 +255,7 @@ public class Bytes {
     }
 
     public static byte[] toBytes(InputStream in) {
-        return toBytes(in, IOStream.NON_READ_FULLY);
+        return toBytes(in, DuplexStream.NON_READ_FULLY);
     }
 
     public static byte[] toBytes(InputStream in, int length) {

@@ -15,7 +15,6 @@ import org.rx.annotation.DbColumn;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.exception.TraceHandler;
-import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.GirlBean;
 import org.rx.test.PersonBean;
@@ -379,13 +378,13 @@ public class TestIO extends AbstractTester {
         testSeekStream(stream);
 
         InputStream reader = stream.getReader();
-        OutputStream writer = stream.getWriter();
+        OutputStream writer = stream.asOutputStream();
 
         long len = stream.getLength();
         writer.write(bytes_content);
         writer.flush();
         stream.setPosition(0L);
-        System.out.println(IOStream.readString(reader, StandardCharsets.UTF_8));
+        System.out.println(DuplexStream.readString(reader, StandardCharsets.UTF_8));
         assert stream.getLength() > len;
 
         stream.setPosition(1L);
@@ -433,7 +432,7 @@ public class TestIO extends AbstractTester {
         assert buf.readInt() == 512;
     }
 
-    private void testMmapStream(IOStream stream) {
+    private void testMmapStream(DuplexStream stream) {
         stream.write(bytes_content);
         assert stream.getPosition() == bytes_content.length;
         stream.setPosition(0L);
@@ -444,7 +443,7 @@ public class TestIO extends AbstractTester {
         assert Arrays.equals(bytes_content, data);
 
 //        long pos = stream.getPosition();
-//        IOStream newStream = App.deepClone(stream);
+//        DuplexStream newStream = App.deepClone(stream);
 //        assert pos == newStream.getPosition();
     }
 
@@ -494,7 +493,7 @@ public class TestIO extends AbstractTester {
         stream.setPosition(0L);
         System.out.println(stream.read());
 
-        IOStream serializeStream = Serializer.DEFAULT.serialize(stream);
+        DuplexStream serializeStream = Serializer.DEFAULT.serialize(stream);
         MemoryStream newStream = Serializer.DEFAULT.deserialize(serializeStream);
         newStream.setPosition(0L);
         byte[] bytes = newStream.toArray();
@@ -503,7 +502,7 @@ public class TestIO extends AbstractTester {
         }
     }
 
-    private void testSeekStream(IOStream stream) {
+    private void testSeekStream(DuplexStream stream) {
         stream.write(bytes_content);
         assert stream.getPosition() == bytes_content.length && stream.getLength() == bytes_content.length;
         stream.setPosition(0L);
@@ -515,7 +514,7 @@ public class TestIO extends AbstractTester {
 
         long pos = stream.getPosition();
         long len = stream.getLength();
-        IOStream newStream = Sys.deepClone(stream);
+        DuplexStream newStream = Sys.deepClone(stream);
         assert pos == newStream.getPosition() && len == newStream.getLength();
     }
 
@@ -527,7 +526,7 @@ public class TestIO extends AbstractTester {
         GirlBean girlBean = new GirlBean();
         girlBean.setName(str_name_wyf);
         girlBean.setAge(8);
-        IOStream serialize = serializer.serialize(girlBean);
+        DuplexStream serialize = serializer.serialize(girlBean);
         GirlBean deGirl = serializer.deserialize(serialize);
         assert girlBean.equals(deGirl);
 
@@ -535,14 +534,14 @@ public class TestIO extends AbstractTester {
         }.getType();
 
         Tuple<GirlBean, Map<Integer, List<String>>> param = Tuple.of(girlBean, Collections.singletonMap(1024, Collections.singletonList("abc")));
-        IOStream stream = serializer.serialize(param);
+        DuplexStream stream = serializer.serialize(param);
         JsonTypeInvoker.JSON_TYPE.set(type);
         Tuple<GirlBean, Integer> result = serializer.deserialize(stream);
         JsonTypeInvoker.JSON_TYPE.set(null);
         System.out.println(result);
 
 //        Tasks.setTimeout(() -> {
-        IOStream s = serializer.serialize(param, type);
+        DuplexStream s = serializer.serialize(param, type);
         Tuple<GirlBean, Integer> r = serializer.deserialize(s);
         System.out.println(r);
 //        }, 1000).get();

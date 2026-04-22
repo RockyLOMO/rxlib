@@ -92,7 +92,7 @@
 - `[已完成]` rxlib 网络核心指标接入。
   - 新增内部 `DiagnosticNetMetrics`，按 component 聚合 `transport` / `http` / `socks` / `rpc` 连接数、吞吐、pending write bytes、写水位和 EventLoop 队列积压。
   - 外部统一通过 `DiagnosticMetrics.installNetIoHandler(...)` 接入 pipeline，热点路径只更新内存计数；stacktrace 采样仍受诊断采样率控制。
-  - `Sockets`、`HttpServer`、`HttpClientV2`、`Remoting` 已接入关键 pipeline；`SocksProxyServer` 补 UDP relay 与 session 相关 metric。
+  - `Sockets`、`HttpServer`、`HttpClient`、`Remoting` 已接入关键 pipeline；`SocksProxyServer` 补 UDP relay 与 session 相关 metric。
   - `EventBus`、`ObjectChangeTracker` 已移除 `DiagnosticEvents` 依赖，改为通过 `DiagnosticMetrics.record(...)` 写轻量 metric；`DiagnosticEvents` 已删除。
 - `[已完成]` Thread WAITING / BLOCKED / 死锁高效检测基础。
   - 常态只通过 `ThreadMXBean#getThreadInfo(ids, 0)` 读取线程状态，不抓栈。

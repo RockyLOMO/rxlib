@@ -397,7 +397,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     private <T> T apiDeserialize(JSONObject reqJson, String typeField, Object obj) {
         if (obj instanceof byte[]) {
             byte[] bytes = (byte[]) obj;
-            return serializer.deserialize(IOStream.wrap(null, bytes));
+            return serializer.deserialize(DuplexStream.wrap(null, bytes));
         }
         String type = reqJson.getString(typeField);
         return type == null ? (T) obj : fromJson(obj, Reflects.loadClass(type, false));

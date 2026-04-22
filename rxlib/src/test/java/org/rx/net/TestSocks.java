@@ -1,14 +1,12 @@
 package org.rx.net;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.nio.NioDatagramChannel;
-import io.netty.handler.codec.http.multipart.FileUpload;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -33,11 +31,9 @@ import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
-import org.rx.io.IOStream;
+import org.rx.io.DuplexStream;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.http.HttpClient;
-import org.rx.net.http.HttpServer;
 import org.rx.net.http.RestClient;
 import org.rx.net.nameserver.NameserverClient;
 import org.rx.net.nameserver.NameserverConfig;
@@ -62,7 +58,6 @@ import org.rx.test.*;
 //import org.rx.third.apache.ntp.*;
 import org.rx.util.function.TripleAction;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.net.Inet4Address;
@@ -813,84 +808,8 @@ public class TestSocks extends AbstractTester {
 //        fn.invoke(Sockets.loopbackAddress().getHostAddress());
     }
 
-    @SneakyThrows
-    @Test
-    public void httpServer() {
-        Map<String, Object> qs = new HashMap<>();
-        qs.put("a", "1");
-        qs.put("b", "乐之");
-
-        Map<String, Object> f = new HashMap<>();
-        f.put("a", "1");
-        f.put("b", "乐之");
-
-        Map<String, IOStream> fi = new HashMap<>();
-        fi.put("a", IOStream.wrap("1.dat", new byte[]{1, 2, 3, 4, 5, 6, 7, 8}));
-
-        String j = "{\"a\":1,\"b\":\"乐之\"}";
-
-        String hbody = "<html><body>hello world</body></html>";
-        String jbody = "{\"code\":0,\"msg\":\"hello world\"}";
-
-        HttpServer server = new HttpServer(8081, true);
-        server.requestMapping("/api", (request, response) -> {
-            MultiValueMap<String, String> queryString = request.getQueryString();
-            for (Map.Entry<String, Object> entry : qs.entrySet()) {
-                assert entry.getValue().equals(queryString.getFirst(entry.getKey()));
-            }
-
-            MultiValueMap<String, String> form = request.getForm();
-            for (Map.Entry<String, Object> entry : f.entrySet()) {
-                assert entry.getValue().equals(form.getFirst(entry.getKey()));
-            }
-
-            MultiValueMap<String, FileUpload> files = request.getFiles();
-            for (Map.Entry<String, IOStream> entry : fi.entrySet()) {
-                FileUpload fileUpload = files.getFirst(entry.getKey());
-                try {
-                    Arrays.equals(fileUpload.get(), entry.getValue().toArray());
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-
-            response.htmlBody(hbody);
-        }).requestMapping("/json", (request, response) -> {
-            String json = request.jsonBody();
-            assert j.equals(json);
-
-            response.jsonBody(jbody);
-
-            wait.set();
-            System.out.println("set..");
-        });
-
-        RxConfig.INSTANCE.setLogStrategy(LogStrategy.ALWAYS);
-        HttpClient client = new HttpClient().withFeatures(false, true);
-        assert hbody.equals(client.post(HttpClient.buildUrl("https://127.0.0.1:8081/api", qs), f, fi).toString());
-
-        String resJson = client.postJson("https://127.0.0.1:8081/json", j).toString();
-        JSONObject jobj = client.postJson("https://127.0.0.1:8081/json", j).toJson();
-        System.out.println(jobj);
-
-        System.out.println(resJson);
-        assert jbody.equals(resJson);
-
-        wait.waitOne();
-        System.out.println("wait..");
-        System.in.read();
-    }
-
     @Test
     public void restfulRpc() {
-        String url = "http://x.cn/blog/1.html?userId=rx&type=1&userId=ft";
-        Map<String, Object> map = (Map) HttpClient.decodeQueryString(url);
-        assert map.get("userId").equals("ft");
-        assert map.get("type").equals("1");
-        map.put("userId", "newId");
-        map.put("ok", "1");
-        System.out.println(HttpClient.buildUrl(url, map));
-
         HttpUserManager facade = RestClient.facade(HttpUserManager.class, "https://ifconfig.co/", null);
         System.out.println(facade.queryIp());
     }
@@ -911,7 +830,7 @@ public class TestSocks extends AbstractTester {
         assert client.listFiles(dir, false).any(p -> p.getName().equals("1.txt"));
         HybridStream stream = new HybridStream();
         client.downloadFile(Files.concatPath(dir, "1.txt"), stream);
-        System.out.println(IOStream.readString(stream.rewind().getReader(), StandardCharsets.UTF_8));
+        System.out.println(DuplexStream.readString(stream.rewind().getReader(), StandardCharsets.UTF_8));
 
 //        for (SftpFile dir : client.listDirectories("/home", true)) {
 //            System.out.println(dir.getPath());

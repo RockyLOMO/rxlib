@@ -9,9 +9,9 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 @RequiredArgsConstructor
-public class GZIPStream extends IOStream {
+public class GZIPStream extends DuplexStream {
     private static final long serialVersionUID = 5949731591101041212L;
-    private final IOStream baseStream;
+    private final DuplexStream baseStream;
     private final boolean leaveOpen;
     private transient GZIPInputStream reader;
     private transient GZIPOutputStream writer;
@@ -22,19 +22,17 @@ public class GZIPStream extends IOStream {
     }
 
     @SneakyThrows
-    @Override
-    public GZIPInputStream getReader() {
+    private GZIPInputStream reader() {
         if (reader == null) {
-            reader = new GZIPInputStream(baseStream.getReader(), Constants.HEAP_BUF_SIZE);
+            reader = new GZIPInputStream(baseStream, Constants.HEAP_BUF_SIZE);
         }
         return reader;
     }
 
     @SneakyThrows
-    @Override
-    public GZIPOutputStream getWriter() {
+    private GZIPOutputStream writer() {
         if (writer == null) {
-            writer = new GZIPOutputStream(baseStream.getWriter(), Constants.HEAP_BUF_SIZE);
+            writer = new GZIPOutputStream(baseStream.asOutputStream(), Constants.HEAP_BUF_SIZE);
         }
         return writer;
     }
@@ -59,7 +57,7 @@ public class GZIPStream extends IOStream {
         return baseStream.getLength();
     }
 
-    public GZIPStream(IOStream stream) {
+    public GZIPStream(DuplexStream stream) {
         this(stream, false);
     }
 
@@ -77,9 +75,46 @@ public class GZIPStream extends IOStream {
     }
 
     @SneakyThrows
+    @Override
+    public int read() {
+        checkNotClosed();
+        return reader().read();
+    }
+
+    @SneakyThrows
+    @Override
+    public int read(byte[] b, int off, int len) {
+        checkNotClosed();
+        return reader().read(b, off, len);
+    }
+
+    @SneakyThrows
+    @Override
+    public void write(int b) {
+        checkNotClosed();
+        writer().write(b);
+    }
+
+    @SneakyThrows
+    @Override
+    public void write(byte[] b, int off, int len) {
+        checkNotClosed();
+        writer().write(b, off, len);
+    }
+
+    @SneakyThrows
     public void finish() {
         if (writer != null) {
             writer.finish();
+        }
+    }
+
+    @SneakyThrows
+    @Override
+    public void flush() {
+        checkNotClosed();
+        if (writer != null) {
+            writer.flush();
         }
     }
 
