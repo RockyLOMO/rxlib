@@ -84,8 +84,8 @@ public class HttpClientFeatureTest {
     public void testGet() {
         try (HttpClient client = clientNoCookieNoLog()) {
             HttpClient.Response response = client.get(BASE_URL + "/get");
-            assertEquals(200, response.getStatusCode());
-            assertTrue(response.toString().contains("ok-v2"));
+            assertEquals(200, response.code());
+            assertTrue(response.bodyAsString().contains("ok-v2"));
         }
     }
 
@@ -95,7 +95,7 @@ public class HttpClientFeatureTest {
         body.put("name", "alpha");
         try (HttpClient client = clientNoCookieNoLog()) {
             HttpClient.Response response = client.postJson(BASE_URL + "/json", body);
-            assertTrue(response.toString().contains("json-ok"));
+            assertTrue(response.bodyAsString().contains("json-ok"));
         }
     }
 
@@ -106,7 +106,7 @@ public class HttpClientFeatureTest {
         form.put("age", 8);
         try (HttpClient client = clientNoCookieNoLog()) {
             HttpClient.Response response = client.post(BASE_URL + "/form", form);
-            assertTrue(response.toString().contains("rx:8"));
+            assertTrue(response.bodyAsString().contains("rx:8"));
         }
     }
 
@@ -117,7 +117,7 @@ public class HttpClientFeatureTest {
         Map<String, DuplexStream> files = Collections.singletonMap("file", DuplexStream.wrap("upload.txt", "hello-v2".getBytes()));
         try (HttpClient client = clientNoCookieNoLog()) {
             HttpClient.Response response = client.post(BASE_URL + "/upload", form, files);
-            assertTrue(response.toString().contains("rx:upload.txt:hello-v2"));
+            assertTrue(response.bodyAsString().contains("rx:upload.txt:hello-v2"));
         }
     }
 
@@ -125,8 +125,8 @@ public class HttpClientFeatureTest {
     public void testCookieRoundTrip() {
         HttpClientCookieJar jar = new HttpClientCookieJar();
         try (HttpClient client = new HttpClient(new HttpClientConfig().setCookieJar(jar).setEnableLog(false))) {
-            assertTrue(client.get(BASE_URL + "/cookie-set").toString().contains("cookie-set"));
-            assertTrue(client.get(BASE_URL + "/cookie-check").toString().contains("v2"));
+            assertTrue(client.get(BASE_URL + "/cookie-set").bodyAsString().contains("cookie-set"));
+            assertTrue(client.get(BASE_URL + "/cookie-check").bodyAsString().contains("v2"));
         }
     }
 
@@ -140,8 +140,8 @@ public class HttpClientFeatureTest {
             assertEquals(2, client.config().getMaxConnectionsPerHost());
             assertEquals(3, client.config().getPendingAcquireMaxCount());
             assertEquals(400, client.config().getAcquireTimeoutMillis());
-            assertTrue(client.get(BASE_URL + "/cookie-set").toString().contains("cookie-set"));
-            assertTrue(client.get(BASE_URL + "/cookie-check").toString().contains("v2"));
+            assertTrue(client.get(BASE_URL + "/cookie-set").bodyAsString().contains("cookie-set"));
+            assertTrue(client.get(BASE_URL + "/cookie-check").bodyAsString().contains("v2"));
         }
     }
 
@@ -338,12 +338,12 @@ public class HttpClientFeatureTest {
         try {
             HttpClientCookieJar jar = HttpClientCookieJar.storage(db);
             try (HttpClient client = new HttpClient(new HttpClientConfig().setCookieJar(jar).setEnableLog(false))) {
-                assertTrue(client.get(BASE_URL + "/cookie-persistent-set").toString().contains("cookie-persistent-set"));
+                assertTrue(client.get(BASE_URL + "/cookie-persistent-set").bodyAsString().contains("cookie-persistent-set"));
             }
 
             HttpClientCookieJar reloaded = HttpClientCookieJar.storage(db);
             try (HttpClient client = new HttpClient(new HttpClientConfig().setCookieJar(reloaded).setEnableLog(false))) {
-                assertTrue(client.get(BASE_URL + "/cookie-check").toString().contains("persist-v2"));
+                assertTrue(client.get(BASE_URL + "/cookie-check").bodyAsString().contains("persist-v2"));
             }
         } finally {
             db.close();
@@ -380,8 +380,8 @@ public class HttpClientFeatureTest {
             AuthenticProxy proxy = new AuthenticProxy(Proxy.Type.SOCKS, Sockets.newLoopbackEndpoint(proxyPort), "u1", "p1");
             try (HttpClient client = new HttpClient(new HttpClientConfig().setProxy(proxy).setCookieJar(null).setEnableLog(false))) {
                 HttpClient.Response response = client.get(BASE_URL + "/get");
-                assertEquals(200, response.getStatusCode());
-                assertTrue(response.toString().contains("ok-v2"));
+                assertEquals(200, response.code());
+                assertTrue(response.bodyAsString().contains("ok-v2"));
             }
 
             AuthenticProxy badProxy = new AuthenticProxy(Proxy.Type.SOCKS, Sockets.newLoopbackEndpoint(proxyPort), "u1", "bad");

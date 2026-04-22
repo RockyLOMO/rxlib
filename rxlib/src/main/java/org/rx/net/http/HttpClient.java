@@ -168,11 +168,7 @@ public class HttpClient implements AutoCloseable {
         return reqHeaders;
     }
 
-    HttpHeaders requestHeadersSnapshot() {
-        return copyHeaders(reqHeaders);
-    }
-
-    HttpHeaders requestHeadersSnapshot(HttpHeaders requestHeaders) {
+    private HttpHeaders mergeRequestHeaders(HttpHeaders requestHeaders) {
         boolean hasDefaults = !reqHeaders.isEmpty();
         boolean hasRequestHeaders = requestHeaders != null && !requestHeaders.isEmpty();
         if (!hasDefaults) {
@@ -204,13 +200,13 @@ public class HttpClient implements AutoCloseable {
         return copy;
     }
 
-    private static Request snapshotRequest(Request request, HttpHeaders requestHeaders, Proxy requestProxy, boolean cookieEnabled) {
+    private Request snapshotRequest(Request request, Proxy requestProxy, boolean cookieEnabled) {
         Request snapshot = new Request(request.method, request.url);
         snapshot.body = request.body != null ? request.body : RequestContent.EMPTY;
         snapshot.timeoutMillis = request.timeoutMillis;
         snapshot.proxy = requestProxy;
         snapshot.enableCookie = cookieEnabled;
-        snapshot.headers = requestHeaders;
+        snapshot.headers = mergeRequestHeaders(request.headers);
         return snapshot;
     }
 
@@ -276,12 +272,9 @@ public class HttpClient implements AutoCloseable {
     }
 
     public static final class Request {
-        @Getter
         private final HttpMethod method;
-        @Getter
         private final String url;
         private HttpHeaders headers;
-        @Getter
         private RequestContent body = RequestContent.EMPTY;
         private int timeoutMillis;
         private Proxy proxy;
@@ -290,6 +283,14 @@ public class HttpClient implements AutoCloseable {
         Request(HttpMethod method, String url) {
             this.method = method;
             this.url = url;
+        }
+
+        public HttpMethod method() {
+            return method;
+        }
+
+        public String url() {
+            return url;
         }
 
         public HttpHeaders headers() {
@@ -305,11 +306,15 @@ public class HttpClient implements AutoCloseable {
             return this;
         }
 
-        public Request headers(HttpHeaders headers) {
-            if (headers != null && !headers.isEmpty()) {
-                headers().set(headers);
+        public Request headers(HttpHeaders requestHeaders) {
+            if (requestHeaders != null && !requestHeaders.isEmpty()) {
+                headers().set(requestHeaders);
             }
             return this;
+        }
+
+        public RequestContent body() {
+            return body;
         }
 
         public Request body(RequestContent body) {
@@ -350,6 +355,18 @@ public class HttpClient implements AutoCloseable {
         public Request enableCookie(boolean enableCookie) {
             this.enableCookie = enableCookie;
             return this;
+        }
+
+        public int timeoutMillis() {
+            return timeoutMillis;
+        }
+
+        public Proxy proxy() {
+            return proxy;
+        }
+
+        public Boolean enableCookie() {
+            return enableCookie;
         }
     }
 
@@ -725,6 +742,7 @@ public class HttpClient implements AutoCloseable {
 
     static final class RequestState {
         final Request request;
+        final Request currentRequest;
         final URI uri;
         final PoolKey key;
         final FixedChannelPool pool;
@@ -752,10 +770,11 @@ public class HttpClient implements AutoCloseable {
         long responseBytes;
         boolean responseOffloaded;
 
-        RequestState(Request request, URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<Response> future, HttpClientConfig config,
+        RequestState(Request request, Request currentRequest, URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<Response> future, HttpClientConfig config,
                      Proxy proxy, int redirectCount, int readWriteTimeoutMillis, HttpHeaders requestHeaders, RequestContent content, HttpClient client,
                      long startNanos, boolean cookieEnabled, boolean logEnabled) {
             this.request = request;
+            this.currentRequest = currentRequest;
             this.uri = uri;
             this.key = key;
             this.pool = pool;
@@ -949,12 +968,13 @@ public class HttpClient implements AutoCloseable {
                     if (state.logEnabled) {
                         log.info("{} -> {} {}", state.uri, state.response.status().code(), redirect.url);
                     }
-                    state.client.executeAsync0(redirectRequest(state, redirect), redirect.headers,
+                    state.client.executeAsync0(state.request, redirectRequest(state, redirect),
                             state.config, state.future, state.startNanos, state.redirectCount + 1);
                     return;
                 }
                 long elapsedNanos = System.nanoTime() - state.startNanos;
-                Response content = new Response(state.client, state.request, state.response, state.body, elapsedNanos);
+                String responseUrl = state.redirectCount == 0 ? state.request.url() : state.uri.toString();
+                Response content = new Response(state.client, state.request, responseUrl, state.response, state.body, elapsedNanos);
                 state.client.activeResponses.add(content);
                 SUCCESS_UPDATER.incrementAndGet(state.client);
                 TOTAL_LATENCY_UPDATER.addAndGet(state.client, elapsedNanos);
@@ -965,7 +985,7 @@ public class HttpClient implements AutoCloseable {
                     }
                 }
                 if (state.logEnabled) {
-                    log.info("{} -> {}", state.uri, content.getStatusCode());
+                    log.info("{} -> {}", state.uri, content.code());
                 }
                 state.future.complete(content);
             } catch (Throwable e) {
@@ -984,7 +1004,7 @@ public class HttpClient implements AutoCloseable {
             if (Strings.isEmpty(location)) {
                 return null;
             }
-            HttpMethod redirectMethod = redirectMethod(response.status().code(), state.request.getMethod());
+            HttpMethod redirectMethod = redirectMethod(response.status().code(), state.currentRequest.method());
             if (redirectMethod == null) {
                 return null;
             }
@@ -1015,9 +1035,10 @@ public class HttpClient implements AutoCloseable {
         private Request redirectRequest(RequestState state, RedirectPlan redirect) {
             Request request = new Request(redirect.method, redirect.url);
             request.body = RequestContent.EMPTY;
-            request.timeoutMillis = state.request.timeoutMillis;
-            request.proxy = state.request.proxy;
-            request.enableCookie = state.request.enableCookie;
+            request.timeoutMillis = state.currentRequest.timeoutMillis;
+            request.proxy = state.currentRequest.proxy;
+            request.enableCookie = state.currentRequest.enableCookie;
+            request.headers = redirect.headers;
             return request;
         }
 
@@ -1064,16 +1085,18 @@ public class HttpClient implements AutoCloseable {
     public static class Response implements AutoCloseable {
         final HttpClient owner;
         final Request request;
+        final String url;
         final HttpResponse response;
         final HybridStream body;
         final long elapsedNanos;
         String str;
         File file;
 
-        Response(HttpClient owner, Request request, HttpResponse response, HybridStream body, long elapsedNanos) {
+        Response(HttpClient owner, Request request, String url, HttpResponse response, HybridStream body, long elapsedNanos) {
             this.owner = owner;
-            this.request = request;
-            this.response = response;
+            this.request = Objects.requireNonNull(request, "request");
+            this.url = Objects.requireNonNull(url, "url");
+            this.response = Objects.requireNonNull(response, "response");
             this.body = Objects.requireNonNull(body, "body");
             this.elapsedNanos = elapsedNanos;
         }
@@ -1082,51 +1105,27 @@ public class HttpClient implements AutoCloseable {
             return request;
         }
 
-        public String getRequestUrl() {
-            return request != null ? request.getUrl() : null;
-        }
-
-        public String getResponseUrl() {
-            return getRequestUrl();
-        }
-
-        public HttpResponse getResponse() {
-            return response;
+        public String url() {
+            return url;
         }
 
         public HttpResponseStatus status() {
-            return response != null ? response.status() : HttpResponseStatus.OK;
-        }
-
-        public HttpResponseStatus getStatus() {
-            return status();
-        }
-
-        public int getStatusCode() {
-            return code();
-        }
-
-        public long getElapsedNanos() {
-            return elapsedNanos;
+            return response.status();
         }
 
         public HttpHeaders headers() {
-            return response != null ? response.headers() : EmptyHttpHeaders.INSTANCE;
-        }
-
-        public HttpHeaders responseHeaders() {
-            return headers();
+            return response.headers();
         }
 
         public int code() {
-            return status().code();
+            return response.status().code();
         }
 
         public String header(String name) {
             return headers().get(name);
         }
 
-        public Charset getCharset() {
+        public Charset charset() {
             String contentType = headers().get(HttpHeaderNames.CONTENT_TYPE);
             if (Strings.isEmpty(contentType)) {
                 return StandardCharsets.UTF_8;
@@ -1145,20 +1144,12 @@ public class HttpClient implements AutoCloseable {
             return StandardCharsets.UTF_8;
         }
 
-        public synchronized InputStream responseStream() {
-            return body.rewind().asInputStream();
-        }
-
-        public synchronized HybridStream body() {
+        public HybridStream bodyStream() {
             return body.rewind();
         }
 
-        public synchronized HybridStream toStream() {
-            return body();
-        }
-
         @SneakyThrows
-        public synchronized File toFile(String filePath) {
+        public File bodyAsFile(String filePath) {
             if (file == null) {
                 Files.saveFile(filePath, body.rewind().asInputStream());
                 file = new File(filePath);
@@ -1166,19 +1157,13 @@ public class HttpClient implements AutoCloseable {
             return file;
         }
 
-        public <T extends Serializable> T toJson() {
-            return (T) JSON.parse(toString());
+        public <T extends Serializable> T bodyAsJson() {
+            return (T) JSON.parse(bodyAsString());
         }
 
-        @SneakyThrows
-        public synchronized <T> T handle(BiFunc<InputStream, T> fn) {
-            return fn.invoke(body.rewind().asInputStream());
-        }
-
-        @Override
-        public synchronized String toString() {
+        public String bodyAsString() {
             if (str == null) {
-                str = DuplexStream.readString(body.rewind().asInputStream(), getCharset());
+                str = DuplexStream.readString(body.rewind().asInputStream(), charset());
             }
             return str;
         }
@@ -1190,39 +1175,35 @@ public class HttpClient implements AutoCloseable {
             }
             tryClose(body);
         }
-
-        public String getResponseText() {
-            return toString();
-        }
     }
 
     public String getText(@NonNull String url) {
         try (Response response = get(url)) {
-            return response.toString();
+            return response.bodyAsString();
         }
     }
 
     public String postText(String url, Map<String, Object> forms) {
         try (Response response = post(url, forms)) {
-            return response.toString();
+            return response.bodyAsString();
         }
     }
 
     public String postText(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
         try (Response response = post(url, forms, files)) {
-            return response.toString();
+            return response.bodyAsString();
         }
     }
 
     public String postJsonText(@NonNull String url, @NonNull Object json) {
         try (Response response = postJson(url, json)) {
-            return response.toString();
+            return response.bodyAsString();
         }
     }
 
     public String executeText(Request request) {
         try (Response response = execute(request)) {
-            return response.toString();
+            return response.bodyAsString();
         }
     }
 
@@ -1296,11 +1277,12 @@ public class HttpClient implements AutoCloseable {
 
     @SneakyThrows
     public Response execute(Request request) {
+        Objects.requireNonNull(request, "request");
         ensureBlockingCallAllowed();
         HttpClientConfig cfg = config;
         CompletableFuture<Response> future = executeAsync(request, cfg);
         try {
-            return future.get(callTimeoutMillis(cfg, request != null ? request.timeoutMillis : 0), TimeUnit.MILLISECONDS);
+            return future.get(callTimeoutMillis(cfg, request.timeoutMillis), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
             throw e;
@@ -1320,9 +1302,9 @@ public class HttpClient implements AutoCloseable {
         Proxy requestProxy = request.proxy != null ? request.proxy : cfg.getProxy();
         boolean requestCookie = cfg.getCookieJar() != null
                 && (request.enableCookie == null || request.enableCookie);
-        HttpHeaders headers = requestHeadersSnapshot(request.headers);
+        Request snapshot = snapshotRequest(request, requestProxy, requestCookie);
         CompletableFuture<Response> future = new CompletableFuture<>();
-        executeAsync0(snapshotRequest(request, headers, requestProxy, requestCookie), headers, cfg, future, System.nanoTime(), 0);
+        executeAsync0(snapshot, snapshot, cfg, future, System.nanoTime(), 0);
         return future;
     }
 
@@ -1363,8 +1345,8 @@ public class HttpClient implements AutoCloseable {
         }
 
         Response response = execute(forwardUrl, method, content, headers);
-        servletResponse.setStatus(response.getStatusCode());
-        for (Map.Entry<String, String> header : response.responseHeaders()) {
+        servletResponse.setStatus(response.code());
+        for (Map.Entry<String, String> header : response.headers()) {
             if (Strings.equalsIgnoreCase(header.getKey(), HttpHeaderNames.SET_COOKIE)) {
                 servletResponse.addHeader(header.getKey(), header.getValue());
             } else {
@@ -1375,17 +1357,17 @@ public class HttpClient implements AutoCloseable {
         if (length != null && length <= Integer.MAX_VALUE) {
             servletResponse.setContentLength(length.intValue());
         }
-        String contentType = response.responseHeaders().get(HttpHeaderNames.CONTENT_TYPE);
+        String contentType = response.headers().get(HttpHeaderNames.CONTENT_TYPE);
         if (!Strings.isEmpty(contentType)) {
             servletResponse.setContentType(contentType);
         }
         ServletOutputStream out = servletResponse.getOutputStream();
-        DuplexStream.copy(response.responseStream(), DuplexStream.NON_READ_FULLY, out);
+        DuplexStream.copy(response.bodyStream().asInputStream(), DuplexStream.NON_READ_FULLY, out);
         return Tuple.of(content, response);
     }
 
     private Long responseLength(Response response) {
-        String value = response.responseHeaders().get(HttpHeaderNames.CONTENT_LENGTH);
+        String value = response.headers().get(HttpHeaderNames.CONTENT_LENGTH);
         if (!Strings.isEmpty(value)) {
             try {
                 return Long.parseLong(value);
@@ -1402,52 +1384,28 @@ public class HttpClient implements AutoCloseable {
 
     @SneakyThrows
     Response execute(String url, HttpMethod method, RequestContent content) {
-        return execute(url, method, content, requestHeadersSnapshot());
+        return execute(request(method, url).body(content));
     }
 
     @SneakyThrows
     Response execute(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders) {
-        ensureBlockingCallAllowed();
-        HttpClientConfig cfg = config;
-        CompletableFuture<Response> future = executeAsync(url, method, content, copyHeaders(requestHeaders), cfg, cfg.getProxy(), cfg.getCookieJar() != null, 0);
-        try {
-            return future.get(callTimeoutMillis(cfg, 0), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            throw e;
-        }
-    }
-
-    CompletableFuture<Response> executeAsync(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
-                                             HttpClientConfig cfg, Proxy requestProxy, boolean cookieEnabled, int timeoutMillis) {
-        CompletableFuture<Response> future = new CompletableFuture<>();
-        executeAsync0(url, method, content, requestHeaders, cfg, requestProxy, cookieEnabled, timeoutMillis, future, System.nanoTime(), 0);
-        return future;
-    }
-
-    void executeAsync0(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
-                       HttpClientConfig cfg, Proxy requestProxy, boolean cookieEnabled, int timeoutMillis,
-                       CompletableFuture<Response> future, long startNanos, int redirectCount) {
         Request request = new Request(method, url);
         request.body = content != null ? content : RequestContent.EMPTY;
-        request.timeoutMillis = timeoutMillis;
-        request.proxy = requestProxy;
-        request.enableCookie = cookieEnabled;
         request.headers = requestHeaders;
-        executeAsync0(request, requestHeaders, cfg, future, startNanos, redirectCount);
+        return execute(request);
     }
 
-    void executeAsync0(Request request, HttpHeaders requestHeaders, HttpClientConfig cfg,
+    void executeAsync0(Request request, Request currentRequest, HttpClientConfig cfg,
                        CompletableFuture<Response> future, long startNanos, int redirectCount) {
         if (redirectCount == 0) {
             REQUESTS_UPDATER.incrementAndGet(this);
         }
-        request.headers = requestHeaders;
-        String url = request.url;
-        Proxy requestProxy = request.proxy;
-        RequestContent content = request.body;
-        boolean cookieEnabled = request.enableCookie != null && request.enableCookie;
-        int timeoutMillis = request.timeoutMillis;
+        String url = currentRequest.url;
+        Proxy requestProxy = currentRequest.proxy;
+        RequestContent content = currentRequest.body;
+        boolean cookieEnabled = currentRequest.enableCookie != null && currentRequest.enableCookie;
+        int timeoutMillis = currentRequest.timeoutMillis;
+        HttpHeaders requestHeaders = currentRequest.headers;
         URI uri;
         try {
             uri = URI.create(url);
@@ -1479,7 +1437,7 @@ public class HttpClient implements AutoCloseable {
                 release(channel, pool, true);
                 return;
             }
-            RequestState state = new RequestState(request, uri, key, pool, future, cfg, requestProxy, redirectCount, requestTimeout, requestHeaders, content,
+            RequestState state = new RequestState(request, currentRequest, uri, key, pool, future, cfg, requestProxy, redirectCount, requestTimeout, requestHeaders, content,
                     this, startNanos, cookieEnabled, cfg.isEnableLog());
             channel.attr(STATE_KEY).set(state);
             state.timeoutFuture = channel.eventLoop().schedule(() -> {
@@ -1487,7 +1445,7 @@ public class HttpClient implements AutoCloseable {
                 fail(channel, new TimeoutException("HTTP request timeout " + requestTimeout + "ms: " + url));
             }, requestTimeout, TimeUnit.MILLISECONDS);
             try {
-                writeRequest(channel, uri, method, content, state);
+                writeRequest(channel, uri, currentRequest.method, content, state);
             } catch (Throwable e) {
                 fail(channel, e);
             }

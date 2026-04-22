@@ -55,7 +55,7 @@ public class DiagnosticHttpHandlerTest {
 
                 client.requestHeaders().set(HttpHeaderNames.AUTHORIZATION, basic("secret"));
                 HttpClient.Response ok = client.get(url + "?limit=10");
-                String html = ok.toString();
+                String html = ok.bodyAsString();
                 assertEquals(200, ok.code());
                 assertTrue(html.contains("RXlib Diagnostics"));
                 assertTrue(html.contains("Overview"));
@@ -83,7 +83,7 @@ public class DiagnosticHttpHandlerTest {
 
                 HttpClient.Response filtered = client.get(url + "?limit=10&metric=disk.used.bytes&from="
                         + (now - 1000L) + "&to=" + (now + 1000L));
-                String filteredHtml = filtered.toString();
+                String filteredHtml = filtered.bodyAsString();
                 assertTrue(filteredHtml.contains("disk.used.bytes"));
                 assertTrue(filteredHtml.contains("512.00 KB"));
                 assertTrue(filteredHtml.contains("1.00 MB"));
@@ -93,10 +93,10 @@ public class DiagnosticHttpHandlerTest {
 
                 HttpClient.Response chartLimited = client.get(url + "?limit=1&from="
                         + (now - 1000L) + "&to=" + (now + 1000L));
-                assertTrue(chartLimited.toString().contains("samples 2"));
+                assertTrue(chartLimited.bodyAsString().contains("samples 2"));
 
                 HttpClient.Response stack = client.get(url + "?stack=456");
-                assertTrue(stack.toString().contains("stack body"));
+                assertTrue(stack.bodyAsString().contains("stack body"));
             }
         } finally {
             if (server != null) {

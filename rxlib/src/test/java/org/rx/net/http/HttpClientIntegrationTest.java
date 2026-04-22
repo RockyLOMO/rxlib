@@ -117,16 +117,16 @@ public class HttpClientIntegrationTest {
     @Test
     public void getHeadAndMetrics() {
         try (HttpClient client = new HttpClient()) {
-            HttpClient.Response response = client.get(baseUrl + "/get?q=ok");
-            assertEquals(200, response.getStatusCode());
-            assertEquals("GET:ok", response.toString());
-
-            HttpClient.Response head = client.head(baseUrl + "/head");
-            assertEquals(200, head.getStatusCode());
-            assertEquals(2, client.getMetrics().requests());
-            assertEquals(2, client.getMetrics().success());
-            assertTrue(client.getMetrics().maxLatencyNanos() > 0);
-            assertTrue(client.getMetrics().usedDirectMemory() >= 0);
+            try (HttpClient.Response response = client.get(baseUrl + "/get?q=ok");
+                 HttpClient.Response head = client.head(baseUrl + "/head")) {
+                assertEquals(200, response.code());
+                assertEquals("GET:ok", response.bodyAsString());
+                assertEquals(200, head.code());
+                assertEquals(2, client.getMetrics().requests());
+                assertEquals(2, client.getMetrics().success());
+                assertTrue(client.getMetrics().maxLatencyNanos() > 0);
+                assertTrue(client.getMetrics().usedDirectMemory() >= 0);
+            }
         }
     }
 
@@ -136,10 +136,10 @@ public class HttpClientIntegrationTest {
         json.put("hello", "world");
 
         try (HttpClient client = new HttpClient()) {
-            assertTrue(client.postJson(baseUrl + "/json", json).toString().contains("POST:{\"hello\":\"world\"}"));
-            assertTrue(client.putJson(baseUrl + "/json", json).toString().contains("PUT:{\"hello\":\"world\"}"));
-            assertTrue(client.patchJson(baseUrl + "/json", json).toString().contains("PATCH:{\"hello\":\"world\"}"));
-            assertTrue(client.deleteJson(baseUrl + "/json", json).toString().contains("DELETE:{\"hello\":\"world\"}"));
+            assertTrue(client.postJson(baseUrl + "/json", json).bodyAsString().contains("POST:{\"hello\":\"world\"}"));
+            assertTrue(client.putJson(baseUrl + "/json", json).bodyAsString().contains("PUT:{\"hello\":\"world\"}"));
+            assertTrue(client.patchJson(baseUrl + "/json", json).bodyAsString().contains("PATCH:{\"hello\":\"world\"}"));
+            assertTrue(client.deleteJson(baseUrl + "/json", json).bodyAsString().contains("DELETE:{\"hello\":\"world\"}"));
         }
     }
 
@@ -155,31 +155,31 @@ public class HttpClientIntegrationTest {
         files.put("file", DuplexStream.wrap("hello.txt", "file-body".getBytes(CharsetUtil.UTF_8)));
 
         try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(60000))) {
-            assertEquals("POST:1:two words", client.post(baseUrl + "/form", forms).toString());
-            assertEquals("n1:hello.txt:file-body", client.post(baseUrl + "/multipart", multipartForms, files).toString());
+            assertEquals("POST:1:two words", client.post(baseUrl + "/form", forms).bodyAsString());
+            assertEquals("n1:hello.txt:file-body", client.post(baseUrl + "/multipart", multipartForms, files).bodyAsString());
         }
     }
 
     @Test
     public void cookieAndResponseCachingWork() {
         try (HttpClient client = new HttpClient()) {
-            assertEquals("set", client.get(baseUrl + "/cookie-set").toString());
-            assertTrue(client.get(baseUrl + "/cookie-echo").toString().contains("sid=abc"));
+            assertEquals("set", client.get(baseUrl + "/cookie-set").bodyAsString());
+            assertTrue(client.get(baseUrl + "/cookie-echo").bodyAsString().contains("sid=abc"));
 
             try (HttpClient.Response response = client.get(baseUrl + "/large")) {
-                String text = response.toString();
-                assertEquals(text, response.toString());
+                String text = response.bodyAsString();
+                assertEquals(text, response.bodyAsString());
                 assertTrue(text.length() > 1000);
 
-                HybridStream stream = response.toStream();
+                HybridStream stream = response.bodyStream();
                 assertTrue(stream.getLength() > 1000);
-                try (InputStream in = response.responseStream()) {
+                try (InputStream in = response.bodyStream().asInputStream()) {
                     assertTrue(in.read() != -1);
                 } catch (Exception e) {
                     fail(e);
                 }
 
-                File file = response.toFile("http-client-v2-large.tmp");
+                File file = response.bodyAsFile("http-client-v2-large.tmp");
                 try {
                     assertTrue(file.exists());
                     assertTrue(file.length() > 1000);
@@ -196,7 +196,9 @@ public class HttpClientIntegrationTest {
         try (HttpClient client = new HttpClient()) {
             HttpClient.Request request = HttpClient.request(HttpMethod.GET, HttpClient.buildUrl(baseUrl + "/get", query))
                     .header("X-Test", "1");
-            assertEquals("GET:hello world", client.execute(request).toString());
+            try (HttpClient.Response response = client.execute(request)) {
+                assertEquals("GET:hello world", response.bodyAsString());
+            }
         }
     }
 
@@ -212,7 +214,7 @@ public class HttpClientIntegrationTest {
     @Test
     public void gzipResponseIsDecoded() {
         try (HttpClient client = new HttpClient()) {
-            assertEquals("gzip-ok", client.get(baseUrl + "/gzip").toString());
+            assertEquals("gzip-ok", client.get(baseUrl + "/gzip").bodyAsString());
         }
     }
 
@@ -221,10 +223,14 @@ public class HttpClientIntegrationTest {
         try (HttpClient client = new HttpClient()) {
             try (HttpClient.Response absolute = client.get(baseUrl + "/redirect-301");
                  HttpClient.Response relative = client.get(baseUrl + "/redirect-relative")) {
-                assertEquals(200, absolute.getStatusCode());
-                assertEquals("GET:redirect", absolute.toString());
-                assertEquals(200, relative.getStatusCode());
-                assertEquals("GET:relative", relative.toString());
+                assertEquals(200, absolute.code());
+                assertEquals("GET:redirect", absolute.bodyAsString());
+                assertEquals(baseUrl + "/redirect-301", absolute.request().url());
+                assertEquals(baseUrl + "/get?q=redirect", absolute.url());
+                assertEquals(200, relative.code());
+                assertEquals("GET:relative", relative.bodyAsString());
+                assertEquals(baseUrl + "/redirect-relative", relative.request().url());
+                assertEquals(baseUrl + "/get?q=relative", relative.url());
             }
         }
     }
@@ -233,7 +239,9 @@ public class HttpClientIntegrationTest {
     public void redirectsCanBeDisabled() {
         try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(false))) {
             try (HttpClient.Response response = client.get(baseUrl + "/redirect-301")) {
-                assertEquals(301, response.getStatusCode());
+                assertEquals(301, response.code());
+                assertEquals(baseUrl + "/redirect-301", response.request().url());
+                assertEquals(baseUrl + "/redirect-301", response.url());
                 assertEquals(baseUrl + "/get?q=redirect", response.header(HttpHeaderNames.LOCATION.toString()));
             }
         }
@@ -243,8 +251,8 @@ public class HttpClientIntegrationTest {
     public void keepAliveReusesFixedPoolChannel() {
         remotePorts.clear();
         try (HttpClient client = new HttpClient(new HttpClientConfig().setMaxConnectionsPerHost(1))) {
-            String first = client.get(baseUrl + "/remote-port").toString();
-            String second = client.get(baseUrl + "/remote-port").toString();
+            String first = client.get(baseUrl + "/remote-port").bodyAsString();
+            String second = client.get(baseUrl + "/remote-port").bodyAsString();
             assertEquals(first, second);
             assertEquals(1, remotePorts.size());
         }
@@ -271,9 +279,9 @@ public class HttpClientIntegrationTest {
         String jbody = "{\"code\":0,\"msg\":\"hello world\"}";
 
         try (HttpClient client = new HttpClient(new HttpClientConfig().setCookieJar(null).setEnableLog(false))) {
-            assertEquals("qs-ok", client.get(HttpClient.buildUrl(baseUrl + "/socks-query-check", qs)).toString());
-            assertEquals(jbody, client.postJson(baseUrl + "/socks-json", j).toString());
-            JSONObject jobj = client.postJson(baseUrl + "/socks-json", j).toJson();
+            assertEquals("qs-ok", client.get(HttpClient.buildUrl(baseUrl + "/socks-query-check", qs)).bodyAsString());
+            assertEquals(jbody, client.postJson(baseUrl + "/socks-json", j).bodyAsString());
+            JSONObject jobj = client.postJson(baseUrl + "/socks-json", j).bodyAsJson();
             assertEquals(0, jobj.getIntValue("code"));
         }
     }
@@ -308,7 +316,9 @@ public class HttpClientIntegrationTest {
             ExecutionException error = assertThrows(ExecutionException.class,
                     () -> queued.get(2, TimeUnit.SECONDS));
             assertTrue(hasCause(error, TimeoutException.class), error.toString());
-            assertEquals(200, first.get(2, TimeUnit.SECONDS).getStatusCode());
+            try (HttpClient.Response response = first.get(2, TimeUnit.SECONDS)) {
+                assertEquals(200, response.code());
+            }
             assertTrue(client.getMetrics().failed() >= 1);
         } finally {
             slowStarted = null;

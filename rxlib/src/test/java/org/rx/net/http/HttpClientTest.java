@@ -36,7 +36,7 @@ public class HttpClientTest {
         InputStream stream;
         try (HttpClient client = new HttpClient()) {
             try (HttpClient.Response res = client.get(url)) {
-                stream = res.responseStream();
+                stream = res.bodyStream().asInputStream();
                 assertNotNull(stream);
                 assertTrue(stream.read() != -1);
             }
@@ -64,11 +64,11 @@ public class HttpClientTest {
         String url = BASE_URL + "/test";
         try (HttpClient client = new HttpClient()) {
             try (HttpClient.Response res = client.get(url)) {
-                String s1 = res.toString();
+                String s1 = res.bodyAsString();
                 assertTrue(s1.contains("ok"));
 
                 // Second consumption should work because of caching in 'str' field
-                String s2 = res.toString();
+                String s2 = res.bodyAsString();
                 assertEquals(s1, s2);
             }
         }
@@ -80,8 +80,8 @@ public class HttpClientTest {
         try (HttpClient client = new HttpClient()) {
             try (HttpClient.Response res1 = client.get(url);
                  HttpClient.Response res2 = client.get(url)) {
-                assertTrue(res1.toString().contains("ok"));
-                assertTrue(res2.toString().contains("ok"));
+                assertTrue(res1.bodyAsString().contains("ok"));
+                assertTrue(res2.bodyAsString().contains("ok"));
             }
         }
     }
@@ -91,12 +91,12 @@ public class HttpClientTest {
         String url = BASE_URL + "/test";
         try (HttpClient client = new HttpClient()) {
             try (HttpClient.Response res = client.get(url)) {
-                String s1 = res.toString();
+                String s1 = res.bodyAsString();
                 assertTrue(s1.contains("ok"));
 
                 assertDoesNotThrow(() -> {
-                    res.toFile("test.tmp");
-                }, "Should be able to call toFile() after toString()");
+                    res.bodyAsFile("test.tmp");
+                }, "Should be able to call bodyAsFile() after bodyAsString()");
             }
         } finally {
             new java.io.File("test.tmp").delete();
