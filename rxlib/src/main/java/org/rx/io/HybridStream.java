@@ -1,9 +1,12 @@
 package org.rx.io;
 
+import io.netty.buffer.ByteBuf;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
@@ -36,7 +39,7 @@ public final class HybridStream extends IOStream implements Serializable {
 
     @Override
     public synchronized OutputStream getWriter() {
-        checkCapacity();
+        checkCapacity(0);
         return stream.getWriter();
     }
 
@@ -82,19 +85,84 @@ public final class HybridStream extends IOStream implements Serializable {
     }
 
     FileStream newFileStream() {
-        return tempFilePath == null ? new FileStream() : new FileStream(tempFilePath);
+        if (tempFilePath != null) {
+            return new FileStream(tempFilePath);
+        }
+        final File tempFile = FileStream.createTempFile();
+        return new FileStream(tempFile) {
+            @Override
+            protected void dispose() throws Throwable {
+                try {
+                    super.dispose();
+                } finally {
+                    if (tempFile.exists() && !tempFile.delete()) {
+                        log.warn("Delete temp file {} fail", tempFile);
+                    }
+                }
+            }
+        };
     }
 
     synchronized void checkCapacity() {
+        checkCapacity(0);
+    }
+
+    synchronized void checkCapacity(long appendBytes) {
         if (stream instanceof FileStream) {
             return;
         }
-        if (stream.getLength() > maxMemorySize) {
-            log.info("Arrival MaxMemorySize[{}] threshold, switch FileStream", maxMemorySize);
-            FileStream fs = newFileStream();
-            fs.write(stream.rewind());
-            stream.close();
-            stream = fs;
+        if (maxMemorySize <= NON_MEMORY_SIZE || stream.getLength() + appendBytes > maxMemorySize) {
+            switchToFileStream();
         }
+    }
+
+    private void switchToFileStream() {
+        log.info("Arrival MaxMemorySize[{}] threshold, switch FileStream", maxMemorySize);
+        FileStream fs = newFileStream();
+        fs.write(stream.rewind());
+        stream.close();
+        stream = fs;
+    }
+
+    @Override
+    public synchronized void write(int b) {
+        checkCapacity(1);
+        stream.write(b);
+    }
+
+    @Override
+    public synchronized void write(byte[] buffer, int offset, int length) {
+        checkNotClosed();
+        checkCapacity(length);
+        stream.write(buffer, offset, length);
+    }
+
+    @Override
+    public synchronized long write(InputStream in, long length) {
+        checkNotClosed();
+
+        byte[] buffer = Bytes.arrayBuffer();
+        boolean readFully = length != NON_READ_FULLY;
+        long copyLen = 0;
+        int read;
+        try {
+            while ((!readFully || copyLen < length)
+                    && (read = in.read(buffer, 0, readFully ? (int) Math.min(buffer.length, length - copyLen) : buffer.length)) != Constants.IO_EOF) {
+                checkCapacity(read);
+                stream.write(buffer, 0, read);
+                copyLen += read;
+            }
+            stream.flush();
+            return copyLen;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public synchronized void write(ByteBuf src, int length) {
+        checkNotClosed();
+        checkCapacity(length);
+        stream.write(src, length);
     }
 }

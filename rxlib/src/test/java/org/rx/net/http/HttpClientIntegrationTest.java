@@ -146,25 +146,26 @@ public class HttpClientIntegrationTest {
             assertEquals("set", client.get(baseUrl + "/cookie-set").toString());
             assertTrue(client.get(baseUrl + "/cookie-echo").toString().contains("sid=abc"));
 
-            HttpClient.Response response = client.get(baseUrl + "/large");
-            String text = response.toString();
-            assertEquals(text, response.toString());
-            assertTrue(text.length() > 1000);
+            try (HttpClient.Response response = client.get(baseUrl + "/large")) {
+                String text = response.toString();
+                assertEquals(text, response.toString());
+                assertTrue(text.length() > 1000);
 
-            HybridStream stream = response.toStream();
-            assertTrue(stream.getLength() > 1000);
-            try (InputStream in = response.responseStream()) {
-                assertTrue(in.read() != -1);
-            } catch (Exception e) {
-                fail(e);
-            }
+                HybridStream stream = response.toStream();
+                assertTrue(stream.getLength() > 1000);
+                try (InputStream in = response.responseStream()) {
+                    assertTrue(in.read() != -1);
+                } catch (Exception e) {
+                    fail(e);
+                }
 
-            File file = response.toFile("http-client-v2-large.tmp");
-            try {
-                assertTrue(file.exists());
-                assertTrue(file.length() > 1000);
-            } finally {
-                file.delete();
+                File file = response.toFile("http-client-v2-large.tmp");
+                try {
+                    assertTrue(file.exists());
+                    assertTrue(file.length() > 1000);
+                } finally {
+                    file.delete();
+                }
             }
         }
     }
