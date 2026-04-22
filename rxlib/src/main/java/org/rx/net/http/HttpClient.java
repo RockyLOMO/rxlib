@@ -1177,36 +1177,6 @@ public class HttpClient implements AutoCloseable {
         }
     }
 
-    public String getText(@NonNull String url) {
-        try (Response response = get(url)) {
-            return response.bodyAsString();
-        }
-    }
-
-    public String postText(String url, Map<String, Object> forms) {
-        try (Response response = post(url, forms)) {
-            return response.bodyAsString();
-        }
-    }
-
-    public String postText(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
-        try (Response response = post(url, forms, files)) {
-            return response.bodyAsString();
-        }
-    }
-
-    public String postJsonText(@NonNull String url, @NonNull Object json) {
-        try (Response response = postJson(url, json)) {
-            return response.bodyAsString();
-        }
-    }
-
-    public String executeText(Request request) {
-        try (Response response = execute(request)) {
-            return response.bodyAsString();
-        }
-    }
-
     public Response head(@NonNull String url) {
         return execute(url, HttpMethod.HEAD, RequestContent.EMPTY);
     }

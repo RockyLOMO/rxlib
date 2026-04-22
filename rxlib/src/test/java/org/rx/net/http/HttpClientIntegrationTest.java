@@ -161,6 +161,33 @@ public class HttpClientIntegrationTest {
     }
 
     @Test
+    public void serverAndClientRoundTripCoversCommonBodies() {
+        Map<String, Object> json = new HashMap<>();
+        json.put("hello", "world");
+
+        Map<String, Object> forms = new HashMap<>();
+        forms.put("a", "1");
+        forms.put("b", "two words");
+
+        Map<String, Object> multipartForms = new HashMap<>();
+        multipartForms.put("name", "n1");
+        Map<String, DuplexStream> files = new HashMap<>();
+        files.put("file", DuplexStream.wrap("hello.txt", "file-body".getBytes(CharsetUtil.UTF_8)));
+
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(60000))) {
+            try (HttpClient.Response get = client.get(baseUrl + "/get?q=ok");
+                 HttpClient.Response postJson = client.postJson(baseUrl + "/json", json);
+                 HttpClient.Response postForm = client.post(baseUrl + "/form", forms);
+                 HttpClient.Response postFile = client.post(baseUrl + "/multipart", multipartForms, files)) {
+                assertEquals("GET:ok", get.bodyAsString());
+                assertTrue(postJson.bodyAsString().contains("POST:{\"hello\":\"world\"}"));
+                assertEquals("POST:1:two words", postForm.bodyAsString());
+                assertEquals("n1:hello.txt:file-body", postFile.bodyAsString());
+            }
+        }
+    }
+
+    @Test
     public void cookieAndResponseCachingWork() {
         try (HttpClient client = new HttpClient()) {
             assertEquals("set", client.get(baseUrl + "/cookie-set").bodyAsString());

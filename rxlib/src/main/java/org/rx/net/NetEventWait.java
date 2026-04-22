@@ -176,7 +176,11 @@ public final class NetEventWait extends Disposable implements WaitHandle {
                     params.put("group", group);
                     params.put("mcId", mcId);
                     HttpClient client = HttpClient.getDefault();
-                    eachQuietly(urls, u -> client.get(HttpClient.buildUrl(u, params)));
+                    eachQuietly(urls, u -> {
+                        try (HttpClient.Response ignored = client.get(HttpClient.buildUrl(u, params))) {
+                            // close eagerly to avoid retaining response spill buffers/files
+                        }
+                    });
                 });
             }
         }

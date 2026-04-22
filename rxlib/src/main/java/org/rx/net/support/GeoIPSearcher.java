@@ -130,7 +130,9 @@ public class GeoIPSearcher implements Closeable {
     }
 
     String queryPublicIp(HttpClient client, String service) {
-        return client.get(service).toString();
+        try (HttpClient.Response response = client.get(service)) {
+            return response.bodyAsString();
+        }
     }
 
     static String trimAscii(String value) {
