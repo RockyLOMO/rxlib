@@ -1,9 +1,11 @@
 package org.rx.net.http;
 
+import com.alibaba.fastjson2.JSONObject;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.multipart.FileUpload;
 import io.netty.util.CharsetUtil;
 import org.junit.jupiter.api.AfterAll;
@@ -60,6 +62,14 @@ public class HttpClientIntegrationTest {
         });
         server.requestMapping("/cookie-echo", (req, res) ->
                 res.htmlBody(String.valueOf(req.getHeaders().get(HttpHeaderNames.COOKIE))));
+        server.requestMapping("/redirect-301", (req, res) -> {
+            res.setStatus(HttpResponseStatus.MOVED_PERMANENTLY);
+            res.getHeaders().set(HttpHeaderNames.LOCATION, baseUrl + "/get?q=redirect");
+        });
+        server.requestMapping("/redirect-relative", (req, res) -> {
+            res.setStatus(HttpResponseStatus.MOVED_PERMANENTLY);
+            res.getHeaders().set(HttpHeaderNames.LOCATION, "/get?q=relative");
+        });
         server.requestMapping("/large", (req, res) -> {
             StringBuilder sb = new StringBuilder(16384);
             for (int i = 0; i < 2048; i++) {
@@ -84,6 +94,16 @@ public class HttpClientIntegrationTest {
             }
             Thread.sleep(300L);
             res.htmlBody("slow");
+        });
+        // migrated from TestSocks.httpServer: query via buildUrl + JSON POST (multipart: formAndMultipartBodiesAreDecodedByServer)
+        server.requestMapping("/socks-query-check", (request, response) -> {
+            assertEquals("1", request.getQueryString().getFirst("a"));
+            assertEquals("乐之", request.getQueryString().getFirst("b"));
+            response.htmlBody("qs-ok");
+        });
+        server.requestMapping("/socks-json", (request, response) -> {
+            assertEquals("{\"a\":1,\"b\":\"乐之\"}", request.jsonBody());
+            response.jsonBody("{\"code\":0,\"msg\":\"hello world\"}");
         });
     }
 
@@ -134,7 +154,7 @@ public class HttpClientIntegrationTest {
         Map<String, DuplexStream> files = new HashMap<>();
         files.put("file", DuplexStream.wrap("hello.txt", "file-body".getBytes(CharsetUtil.UTF_8)));
 
-        try (HttpClient client = new HttpClient()) {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(60000))) {
             assertEquals("POST:1:two words", client.post(baseUrl + "/form", forms).toString());
             assertEquals("n1:hello.txt:file-body", client.post(baseUrl + "/multipart", multipartForms, files).toString());
         }
@@ -197,6 +217,29 @@ public class HttpClientIntegrationTest {
     }
 
     @Test
+    public void redirectsAreFollowedByDefault() {
+        try (HttpClient client = new HttpClient()) {
+            try (HttpClient.ResponseContent absolute = client.get(baseUrl + "/redirect-301");
+                 HttpClient.ResponseContent relative = client.get(baseUrl + "/redirect-relative")) {
+                assertEquals(200, absolute.getStatusCode());
+                assertEquals("GET:redirect", absolute.toString());
+                assertEquals(200, relative.getStatusCode());
+                assertEquals("GET:relative", relative.toString());
+            }
+        }
+    }
+
+    @Test
+    public void redirectsCanBeDisabled() {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(false))) {
+            try (HttpClient.ResponseContent response = client.get(baseUrl + "/redirect-301")) {
+                assertEquals(301, response.getStatusCode());
+                assertEquals(baseUrl + "/get?q=redirect", response.header(HttpHeaderNames.LOCATION.toString()));
+            }
+        }
+    }
+
+    @Test
     public void keepAliveReusesFixedPoolChannel() {
         remotePorts.clear();
         try (HttpClient client = new HttpClient(new HttpClientConfig().setMaxConnectionsPerHost(1))) {
@@ -217,6 +260,36 @@ public class HttpClientIntegrationTest {
             assertTrue(hasCause(error, TimeoutException.class), error.toString());
             assertEquals(1, client.getMetrics().timeout());
         }
+    }
+
+    @Test
+    public void queryBuildUrlGetAndPostJson_fromTestSocks() throws Exception {
+        Map<String, Object> qs = new HashMap<>();
+        qs.put("a", "1");
+        qs.put("b", "乐之");
+        String j = "{\"a\":1,\"b\":\"乐之\"}";
+        String jbody = "{\"code\":0,\"msg\":\"hello world\"}";
+
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setCookieJar(null).setEnableLog(false))) {
+            assertEquals("qs-ok", client.get(HttpClient.buildUrl(baseUrl + "/socks-query-check", qs)).toString());
+            assertEquals(jbody, client.postJson(baseUrl + "/socks-json", j).toString());
+            JSONObject jobj = client.postJson(baseUrl + "/socks-json", j).toJson();
+            assertEquals(0, jobj.getIntValue("code"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void decodeQueryStringLastWinsAndBuildUrl() {
+        String url = "http://x.cn/blog/1.html?userId=rx&type=1&userId=ft";
+        Map<String, Object> map = (Map<String, Object>) (Map<?, ?>) HttpClient.decodeQueryString(url);
+        assertEquals("ft", map.get("userId"));
+        assertEquals("1", map.get("type"));
+        map.put("userId", "newId");
+        map.put("ok", "1");
+        String built = HttpClient.buildUrl(url, map);
+        assertTrue(built.contains("userId=newId"), built);
+        assertTrue(built.contains("ok=1"), built);
     }
 
     @Test

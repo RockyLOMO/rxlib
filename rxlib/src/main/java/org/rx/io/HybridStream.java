@@ -131,6 +131,10 @@ public final class HybridStream extends DuplexStream implements Serializable {
         return fileStream != null;
     }
 
+    public synchronized boolean isFileBacked() {
+        return fileStream != null;
+    }
+
     synchronized long getMemoryLength() {
         return memoryStream == null ? 0 : Math.min(length, maxMemorySize);
     }
@@ -200,8 +204,11 @@ public final class HybridStream extends DuplexStream implements Serializable {
     public synchronized int read(ByteBuf dst, int length) {
         checkNotClosed();
         checkLength(length);
-        if (length == 0 || position >= this.length) {
+        if (length == 0) {
             return 0;
+        }
+        if (position >= this.length) {
+            return Constants.IO_EOF;
         }
 
         int total = 0;
@@ -220,7 +227,7 @@ public final class HybridStream extends DuplexStream implements Serializable {
             remaining -= read;
             position += read;
         }
-        return total;
+        return total == 0 ? Constants.IO_EOF : total;
     }
 
     @Override

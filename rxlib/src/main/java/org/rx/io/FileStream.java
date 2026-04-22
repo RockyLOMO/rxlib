@@ -243,7 +243,7 @@ public class FileStream extends DuplexStream implements Serializable {
             totalRead += r;
         }
         setPosition(pos + totalRead);
-        return totalRead;
+        return totalRead == 0 ? Constants.IO_EOF : totalRead;
     }
 
     @Override

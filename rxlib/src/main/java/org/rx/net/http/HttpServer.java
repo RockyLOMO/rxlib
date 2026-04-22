@@ -203,7 +203,8 @@ public class HttpServer extends Disposable {
             ServerResponse res = new ServerResponse();
             state.mapping.handler.handle(state.req, res);
             if (res.getHeaders().contains(HttpHeaderNames.LOCATION)) {
-                FullHttpResponse response = new DefaultFullHttpResponse(state.request.protocolVersion(), FOUND, Unpooled.EMPTY_BUFFER);
+                FullHttpResponse response = new DefaultFullHttpResponse(state.request.protocolVersion(),
+                        ifNull(res.getStatus(), FOUND), Unpooled.EMPTY_BUFFER);
                 response.headers().setAll(res.getHeaders());
                 return response;
             }

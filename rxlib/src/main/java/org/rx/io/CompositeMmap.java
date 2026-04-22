@@ -178,8 +178,9 @@ public final class CompositeMmap extends DuplexStream {
         int read = read(position, dst, length);
         if (read > 0) {
             position += read;
+            return read;
         }
-        return read;
+        return Constants.IO_EOF;
     }
 
     public int read(long position, ByteBuf byteBuf) {
