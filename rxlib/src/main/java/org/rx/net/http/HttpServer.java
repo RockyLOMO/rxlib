@@ -20,9 +20,9 @@ import org.rx.core.Strings;
 import org.rx.diagnostic.DiagnosticHttpHandler;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
+import org.rx.io.DuplexStream;
 import org.rx.net.Sockets;
 
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -446,13 +446,7 @@ public class HttpServer extends Disposable {
             throw new IllegalArgumentException("Template not found: " + resourcePath);
         }
         try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
-            byte[] buf = new byte[4096];
-            int len;
-            while ((len = in.read(buf)) != -1) {
-                out.write(buf, 0, len);
-            }
-            return renderTemplate(new String(out.toByteArray(), StandardCharsets.UTF_8), vars);
+            return renderTemplate(DuplexStream.readString(in, StandardCharsets.UTF_8), vars);
         } finally {
             in.close();
         }

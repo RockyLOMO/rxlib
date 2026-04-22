@@ -1,5 +1,6 @@
 package org.rx.io;
 
+import io.netty.buffer.ByteBuf;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -71,28 +72,52 @@ public class BinaryStream extends DuplexStream {
     @Override
     public int read() {
         checkNotClosed();
-        return reader().read();
+        return baseStream.read();
     }
 
     @SneakyThrows
     @Override
     public int read(byte[] b, int off, int len) {
         checkNotClosed();
-        return reader().read(b, off, len);
+        return baseStream.read(b, off, len);
+    }
+
+    @Override
+    public int read(ByteBuf dst, int length) {
+        checkNotClosed();
+        return baseStream.read(dst, length);
+    }
+
+    @Override
+    public int read(ByteBuf dst, int dstIndex, int length) {
+        checkNotClosed();
+        return baseStream.read(dst, dstIndex, length);
     }
 
     @SneakyThrows
     @Override
     public void write(int b) {
         checkNotClosed();
-        writer().write(b);
+        baseStream.write(b);
     }
 
     @SneakyThrows
     @Override
     public void write(byte[] b, int off, int len) {
         checkNotClosed();
-        writer().write(b, off, len);
+        baseStream.write(b, off, len);
+    }
+
+    @Override
+    public void write(ByteBuf src, int length) {
+        checkNotClosed();
+        baseStream.write(src, length);
+    }
+
+    @Override
+    public void write(ByteBuf src, int srcIndex, int length) {
+        checkNotClosed();
+        baseStream.write(src, srcIndex, length);
     }
 
     @SneakyThrows
@@ -101,49 +126,59 @@ public class BinaryStream extends DuplexStream {
         checkNotClosed();
         if (writer != null) {
             writer.flush();
+        } else {
+            baseStream.flush();
         }
     }
 
     @SneakyThrows
     public boolean readBoolean() {
-        return reader().readBoolean();
+        int value = read();
+        if (value < 0) {
+            throw new EOFException();
+        }
+        return value != 0;
     }
 
     @SneakyThrows
     public byte readByte() {
-        return reader().readByte();
+        int value = read();
+        if (value < 0) {
+            throw new EOFException();
+        }
+        return (byte) value;
     }
 
     @SneakyThrows
     @Override
     public short readShort() {
-        return reader().readShort();
+        return super.readShort();
     }
 
     @SneakyThrows
     @Override
     public int readInt() {
-        return reader().readInt();
+        return super.readInt();
     }
 
     @SneakyThrows
     public long readLong() {
-        return reader().readLong();
+        return ((long) readInt() << 32) + (readInt() & 0xffffffffL);
     }
 
     @SneakyThrows
     public float readFloat() {
-        return reader().readFloat();
+        return Float.intBitsToFloat(readInt());
     }
 
     @SneakyThrows
     public double readDouble() {
-        return reader().readDouble();
+        return Double.longBitsToDouble(readLong());
     }
 
     @SneakyThrows
     public char readChar() {
-        return reader().readChar();
+        return (char) readShort();
     }
 
     @SneakyThrows
@@ -168,44 +203,45 @@ public class BinaryStream extends DuplexStream {
 
     @SneakyThrows
     public void writeBoolean(boolean value) {
-        writer().writeBoolean(value);
+        write(value ? 1 : 0);
     }
 
     @SneakyThrows
     public void writeByte(byte value) {
-        writer().writeByte(value);
+        write(value);
     }
 
     @SneakyThrows
     @Override
     public void writeShort(short value) {
-        writer().writeShort(value);
+        super.writeShort(value);
     }
 
     @SneakyThrows
     @Override
     public void writeInt(int value) {
-        writer().writeInt(value);
+        super.writeInt(value);
     }
 
     @SneakyThrows
     public void writeLong(long value) {
-        writer().writeLong(value);
+        writeInt((int) (value >>> 32));
+        writeInt((int) value);
     }
 
     @SneakyThrows
     public void writeFloat(float value) {
-        writer().writeFloat(value);
+        writeInt(Float.floatToIntBits(value));
     }
 
     @SneakyThrows
     public void writeDouble(double value) {
-        writer().writeDouble(value);
+        writeLong(Double.doubleToLongBits(value));
     }
 
     @SneakyThrows
     public void writeChar(char value) {
-        writer().writeChar(value);
+        writeShort((short) value);
     }
 
     @SneakyThrows

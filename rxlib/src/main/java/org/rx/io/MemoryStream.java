@@ -187,10 +187,21 @@ public final class MemoryStream extends DuplexStream implements Serializable {
         return len;
     }
 
-    public void read(ByteBuf dst, int dstIndex, int length) {
+    @Override
+    public int read(ByteBuf dst, int dstIndex, int length) {
         checkNotClosed();
-        checkLength(length);
-        buffer.readBytes(dst, dstIndex, length);
+        checkByteBufRange(dst, dstIndex, length);
+        if (length == 0) {
+            return 0;
+        }
+
+        int readableBytes = buffer.readableBytes();
+        if (readableBytes == 0) {
+            return Constants.IO_EOF;
+        }
+        int len = Math.min(readableBytes, length);
+        buffer.readBytes(dst, dstIndex, len);
+        return len;
     }
 
     @Override
@@ -204,12 +215,21 @@ public final class MemoryStream extends DuplexStream implements Serializable {
             return;
         }
 
+        buffer.writerIndex(buffer.readerIndex());
         buffer.writeBytes(src, length);
+        buffer.readerIndex(buffer.writerIndex());
     }
 
+    @Override
     public void write(ByteBuf src, int srcIndex, int length) {
         checkNotClosed();
-        checkLength(length);
+        checkByteBufReadableRange(src, srcIndex, length);
+        if (length == 0) {
+            return;
+        }
+
+        buffer.writerIndex(buffer.readerIndex());
         buffer.writeBytes(src, srcIndex, length);
+        buffer.readerIndex(buffer.writerIndex());
     }
 }

@@ -268,6 +268,11 @@ public final class WALFileStream extends DuplexStream implements EventPublisher<
         return ensureRead(reader -> reader.read(dst, length));
     }
 
+    @Override
+    public int read(ByteBuf dst, int dstIndex, int length) {
+        return ensureRead(reader -> reader.read(dst, dstIndex, length));
+    }
+
     @SneakyThrows
     private int ensureRead(BiFunc<DuplexStream, Integer> action) {
         DuplexStream reader = readers.take();
@@ -303,6 +308,11 @@ public final class WALFileStream extends DuplexStream implements EventPublisher<
     @Override
     public void write(ByteBuf src, int length) {
         ensureWrite(writer -> writer.write(src, length));
+    }
+
+    @Override
+    public void write(ByteBuf src, int srcIndex, int length) {
+        ensureWrite(writer -> writer.write(src, srcIndex, length));
     }
 
     @Override

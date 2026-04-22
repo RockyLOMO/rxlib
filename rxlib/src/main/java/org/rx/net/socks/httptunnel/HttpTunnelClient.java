@@ -319,7 +319,7 @@ public class HttpTunnelClient extends Disposable {
                 request.header("X-Tunnel-Token", config.getToken());
             }
             try (HttpClient.Response response = httpClient.execute(request)) {
-                return Bytes.toBytes(response.bodyStream().asInputStream());
+                return response.bodyStream().toArray();
             }
         } catch (Exception e) {
             log.debug("HttpTunnel POST {} error: {}", url, e.getMessage());

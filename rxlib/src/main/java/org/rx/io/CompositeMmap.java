@@ -7,7 +7,6 @@ import org.rx.bean.DataRange;
 import org.rx.bean.Tuple;
 import org.rx.core.Constants;
 import org.rx.core.Linq;
-import org.rx.util.Lazy;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -175,7 +174,26 @@ public final class CompositeMmap extends DuplexStream {
             return 0;
         }
 
-        int read = read(position, dst, length);
+        dst.ensureWritable((int) Math.min(length, remaining(position)));
+        int writerIndex = dst.writerIndex();
+        int read = read(position, dst, writerIndex, length);
+        if (read > 0) {
+            dst.writerIndex(writerIndex + read);
+            position += read;
+            return read;
+        }
+        return Constants.IO_EOF;
+    }
+
+    @Override
+    public int read(ByteBuf dst, int dstIndex, int length) {
+        checkNotClosed();
+        checkByteBufRange(dst, dstIndex, length);
+        if (length == 0) {
+            return 0;
+        }
+
+        int read = read(position, dst, dstIndex, length);
         if (read > 0) {
             position += read;
             return read;
@@ -187,16 +205,23 @@ public final class CompositeMmap extends DuplexStream {
         return read(position, byteBuf, byteBuf.writableBytes());
     }
 
-    public synchronized int read(long position, ByteBuf byteBuf, int readCount) {
+    public int read(long position, ByteBuf byteBuf, int readCount) {
+        int writerIndex = byteBuf.writerIndex();
+        int read = read(position, byteBuf, writerIndex, readCount);
+        if (read > 0) {
+            byteBuf.writerIndex(writerIndex + read);
+        }
+        return read;
+    }
+
+    public synchronized int read(long position, ByteBuf byteBuf, int dstIndex, int readCount) {
         checkNotClosed();
-        checkLength(readCount);
+        checkByteBufRange(byteBuf, dstIndex, readCount);
         if (readCount == 0) {
             return 0;
         }
 
-        int writerIndex = byteBuf.writerIndex();
-        int finalReadCount = readCount;
-        Lazy<byte[]> buffer = new Lazy<>(() -> new byte[Math.min(finalReadCount, Constants.MEDIUM_BUF)]);
+        int total = 0;
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             DataRange<Long> range = tuple.right;
             if (!range.has(position)) {
@@ -210,21 +235,19 @@ public final class CompositeMmap extends DuplexStream {
             if (limit < count) {
                 count = limit;
             }
-            while (count > 0) {
-                int read = Math.min(count, buffer.getValue().length);
-                mbuf.get(buffer.getValue(), 0, read);
-                byteBuf.writeBytes(buffer.getValue(), 0, read);
-
-                position += read;
-                readCount -= read;
-                count -= read;
-                if (readCount == 0) {
-                    break;
-                }
+            if (count > 0) {
+                ByteBuffer src = mbuf.slice();
+                src.limit(count);
+                byteBuf.setBytes(dstIndex + total, src);
+                total += count;
+                position += count;
+                readCount -= count;
+            }
+            if (readCount == 0) {
+                break;
             }
         }
-        int read = byteBuf.writerIndex() - writerIndex;
-        return read == 0 ? -1 : read;
+        return total == 0 ? Constants.IO_EOF : total;
     }
 
     @Override
@@ -238,24 +261,41 @@ public final class CompositeMmap extends DuplexStream {
             return;
         }
 
-        position += write(position, src, length);
+        int readerIndex = src.readerIndex();
+        position += write(position, src, readerIndex, length);
+        src.readerIndex(readerIndex + length);
+    }
+
+    @Override
+    public void write(ByteBuf src, int srcIndex, int length) {
+        checkNotClosed();
+        checkByteBufReadableRange(src, srcIndex, length);
+        if (length == 0) {
+            return;
+        }
+
+        position += write(position, src, srcIndex, length);
     }
 
     public int write(long position, ByteBuf byteBuf) {
         return write(position, byteBuf, byteBuf.readableBytes());
     }
 
-    public synchronized int write(long position, ByteBuf byteBuf, int writeCount) {
+    public int write(long position, ByteBuf byteBuf, int writeCount) {
+        int readerIndex = byteBuf.readerIndex();
+        int write = write(position, byteBuf, readerIndex, writeCount);
+        byteBuf.readerIndex(readerIndex + write);
+        return write;
+    }
+
+    public synchronized int write(long position, ByteBuf byteBuf, int srcIndex, int writeCount) {
         checkNotClosed();
-        checkLength(writeCount);
-        if (writeCount > byteBuf.readableBytes()) {
-            throw new IndexOutOfBoundsException();
-        }
+        checkByteBufReadableRange(byteBuf, srcIndex, writeCount);
         if (writeCount == 0) {
             return 0;
         }
 
-        int readerIndex = byteBuf.readerIndex();
+        int written = 0;
         for (Tuple<MappedByteBuffer, DataRange<Long>> tuple : buffers) {
             DataRange<Long> range = tuple.right;
             if (!range.has(position)) {
@@ -272,30 +312,18 @@ public final class CompositeMmap extends DuplexStream {
             if (count == 0) {
                 continue;
             }
-            int rIndex = byteBuf.readerIndex();
-            ByteBuf buf = byteBuf.slice(rIndex, count);
-            switch (buf.nioBufferCount()) {
-                case 0:
-                    mbuf.put(ByteBuffer.wrap(Bytes.toBytes(buf)));
-                    break;
-                case 1:
-                    mbuf.put(buf.nioBuffer());
-                    break;
-                default:
-                    for (ByteBuffer byteBuffer : buf.nioBuffers()) {
-                        mbuf.put(byteBuffer);
-                    }
-                    break;
-            }
-            byteBuf.readerIndex(rIndex + count);
+            ByteBuffer dst = mbuf.slice();
+            dst.limit(count);
+            byteBuf.getBytes(srcIndex + written, dst);
 
+            written += count;
             position += count;
             writeCount -= count;
             if (writeCount == 0) {
                 break;
             }
         }
-        return byteBuf.readerIndex() - readerIndex;
+        return written;
     }
 
     @Override

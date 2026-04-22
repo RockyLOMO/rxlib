@@ -33,9 +33,10 @@ import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.core.Sys;
 import org.rx.core.Tasks;
+import org.rx.io.Bytes;
+import org.rx.io.DuplexStream;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
-import org.rx.io.DuplexStream;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
@@ -276,23 +277,22 @@ public class HttpClient implements AutoCloseable {
         if (!isTextualContentType(contentType)) {
             return "<" + (contentType == null ? "binary" : contentType) + (contentLength >= 0 ? ", " + contentLength + " bytes" : Strings.EMPTY) + ">";
         }
-        InputStream in = null;
+        DuplexStream stream = response.bodyStream();
+        ByteBuf buf = Bytes.heapBuffer(LOG_PREVIEW_BYTES);
         try {
-            in = response.bodyStream().asInputStream();
-            byte[] bytes = new byte[LOG_PREVIEW_BYTES];
-            int read = in.read(bytes);
+            int read = stream.read(buf, LOG_PREVIEW_BYTES);
             if (read <= 0) {
                 return Strings.EMPTY;
             }
-            String text = new String(bytes, 0, read, response.charset());
-            if (read == LOG_PREVIEW_BYTES && in.read() != Constants.IO_EOF) {
+            String text = buf.toString(buf.readerIndex(), read, response.charset());
+            if (read == LOG_PREVIEW_BYTES && stream.read() != Constants.IO_EOF) {
                 text += "...";
             }
             return previewText(text);
         } catch (Throwable e) {
             return "<preview " + throwableSummary(e) + ">";
         } finally {
-            tryClose(in);
+            buf.release();
         }
     }
 
@@ -1331,7 +1331,7 @@ public class HttpClient implements AutoCloseable {
         @SneakyThrows
         public File bodyAsFile(String filePath) {
             if (file == null) {
-                Files.saveFile(filePath, body.rewind().asInputStream());
+                Files.saveFile(filePath, body.rewind());
                 file = new File(filePath);
             }
             return file;
@@ -1343,7 +1343,7 @@ public class HttpClient implements AutoCloseable {
 
         public String bodyAsString() {
             if (str == null) {
-                str = DuplexStream.readString(body.rewind().asInputStream(), charset());
+                str = DuplexStream.readString(body.rewind(), charset());
             }
             return str;
         }
@@ -1509,7 +1509,7 @@ public class HttpClient implements AutoCloseable {
             servletResponse.setContentType(contentType);
         }
         ServletOutputStream out = servletResponse.getOutputStream();
-        DuplexStream.copy(response.bodyStream().asInputStream(), DuplexStream.NON_READ_FULLY, out);
+        DuplexStream.copy(response.bodyStream(), DuplexStream.NON_READ_FULLY, out);
         return Tuple.of(content, response);
     }
 

@@ -211,14 +211,34 @@ public final class HybridStream extends DuplexStream implements Serializable {
             return Constants.IO_EOF;
         }
 
+        dst.ensureWritable((int) Math.min(length, this.length - position));
+        int writerIndex = dst.writerIndex();
+        int total = read(dst, writerIndex, length);
+        if (total > 0) {
+            dst.writerIndex(writerIndex + total);
+        }
+        return total;
+    }
+
+    @Override
+    public synchronized int read(ByteBuf dst, int dstIndex, int length) {
+        checkNotClosed();
+        checkByteBufRange(dst, dstIndex, length);
+        if (length == 0) {
+            return 0;
+        }
+        if (position >= this.length) {
+            return Constants.IO_EOF;
+        }
+
         int total = 0;
         int remaining = (int) Math.min(length, this.length - position);
         while (remaining > 0) {
             int read;
             if (isMemoryPosition(position)) {
-                read = readMemory(dst, remaining);
+                read = readMemory(dst, dstIndex + total, remaining);
             } else {
-                read = readFile(dst, remaining);
+                read = readFile(dst, dstIndex + total, remaining);
             }
             if (read <= 0) {
                 break;
@@ -274,19 +294,7 @@ public final class HybridStream extends DuplexStream implements Serializable {
     @SneakyThrows
     @Override
     public synchronized long write(InputStream in, long length) {
-        checkNotClosed();
-
-        byte[] buffer = new byte[Constants.MEDIUM_BUF];
-        boolean readFully = length != NON_READ_FULLY;
-        long copyLen = 0;
-        int read;
-        while ((!readFully || copyLen < length)
-                && (read = in.read(buffer, 0, readFully ? Math.min(buffer.length, safeRemaining(length - copyLen)) : buffer.length)) != Constants.IO_EOF) {
-            write(buffer, 0, read);
-            copyLen += read;
-        }
-        flush();
-        return copyLen;
+        return super.write(in, length);
     }
 
     @Override
@@ -300,15 +308,30 @@ public final class HybridStream extends DuplexStream implements Serializable {
             return;
         }
 
+        int readerIndex = src.readerIndex();
+        write(src, readerIndex, length);
+        src.readerIndex(readerIndex + length);
+    }
+
+    @Override
+    public synchronized void write(ByteBuf src, int srcIndex, int length) {
+        checkNotClosed();
+        checkByteBufReadableRange(src, srcIndex, length);
+        if (length == 0) {
+            return;
+        }
+
         truncateBeforeWrite();
+        int total = 0;
         int remaining = length;
         while (remaining > 0) {
             int write;
             if (isMemoryPosition(position)) {
-                write = writeMemory(src, remaining);
+                write = writeMemory(src, srcIndex + total, remaining);
             } else {
-                write = writeFile(src, remaining);
+                write = writeFile(src, srcIndex + total, remaining);
             }
+            total += write;
             remaining -= write;
             position += write;
             updateLength();
@@ -354,20 +377,20 @@ public final class HybridStream extends DuplexStream implements Serializable {
         return fileStream.read(buffer, offset, read);
     }
 
-    private int readMemory(ByteBuf dst, int length) {
+    private int readMemory(ByteBuf dst, int dstIndex, int length) {
         int read = (int) Math.min(length, Math.min(this.length, maxMemorySize) - position);
         memoryStream.setPosition(position);
-        return memoryStream.read(dst, read);
+        return memoryStream.read(dst, dstIndex, read);
     }
 
-    private int readFile(ByteBuf dst, int length) {
+    private int readFile(ByteBuf dst, int dstIndex, int length) {
         if (fileStream == null) {
             return 0;
         }
 
         int read = (int) Math.min(length, this.length - position);
         fileStream.setPosition(filePosition(position));
-        return fileStream.read(dst, read);
+        return fileStream.read(dst, dstIndex, read);
     }
 
     private int writeMemory(byte[] buffer, int offset, int length) {
@@ -384,17 +407,17 @@ public final class HybridStream extends DuplexStream implements Serializable {
         return length;
     }
 
-    private int writeMemory(ByteBuf src, int length) {
+    private int writeMemory(ByteBuf src, int srcIndex, int length) {
         int write = (int) Math.min(length, maxMemorySize - position);
         memoryStream.setPosition(position);
-        memoryStream.write(src, write);
+        memoryStream.write(src, srcIndex, write);
         return write;
     }
 
-    private int writeFile(ByteBuf src, int length) {
+    private int writeFile(ByteBuf src, int srcIndex, int length) {
         FileStream fs = ensureFileStream();
         fs.setPosition(filePosition(position));
-        long write = fs.write0(src, length);
+        long write = fs.write0(src, srcIndex, length);
         if (write <= 0) {
             throw new InvalidException("Write file failed");
         }

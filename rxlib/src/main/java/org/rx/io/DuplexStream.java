@@ -13,7 +13,6 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.CRC32;
-import java.util.zip.CheckedInputStream;
 
 import static org.rx.core.Extends.*;
 
@@ -48,14 +47,22 @@ public abstract class DuplexStream extends InputStream implements Flushable, Ext
 
     @SneakyThrows
     public static long copy(@NonNull InputStream in, long length, @NonNull OutputStream out) {
-        byte[] buffer = new byte[Constants.MEDIUM_BUF];
+        ByteBuf buffer = Bytes.heapBuffer(Constants.MEDIUM_BUF);
         boolean readFully = length != NON_READ_FULLY;
         long copyLen = 0;
-        int read;
-        while ((!readFully || copyLen < length)
-                && (read = in.read(buffer, 0, readFully ? Math.min(buffer.length, safeRemaining(length - copyLen)) : buffer.length)) != Constants.IO_EOF) {
-            out.write(buffer, 0, read);
-            copyLen += read;
+        try {
+            int read;
+            while (!readFully || copyLen < length) {
+                buffer.clear();
+                int readLength = readFully ? Math.min(buffer.writableBytes(), safeRemaining(length - copyLen)) : buffer.writableBytes();
+                if ((read = buffer.writeBytes(in, readLength)) <= 0) {
+                    break;
+                }
+                buffer.readBytes(out, read);
+                copyLen += read;
+            }
+        } finally {
+            buffer.release();
         }
         out.flush();
         return copyLen;
@@ -73,11 +80,27 @@ public abstract class DuplexStream extends InputStream implements Flushable, Ext
 
     @SneakyThrows
     public static long checksum(InputStream stream, int bufferSize) {
-        CheckedInputStream checkedInputStream = new CheckedInputStream(stream, new CRC32());
-        byte[] buffer = new byte[bufferSize];
-        while (checkedInputStream.read(buffer, 0, buffer.length) >= 0) {
+        CRC32 crc32 = new CRC32();
+        ByteBuf buffer = Bytes.heapBuffer(bufferSize);
+        try {
+            int read;
+            while (true) {
+                buffer.clear();
+                if ((read = buffer.writeBytes(stream, buffer.writableBytes())) <= 0) {
+                    break;
+                }
+                if (buffer.hasArray()) {
+                    crc32.update(buffer.array(), buffer.arrayOffset() + buffer.readerIndex(), read);
+                } else {
+                    for (int i = 0; i < read; i++) {
+                        crc32.update(buffer.readByte() & 0xff);
+                    }
+                }
+            }
+            return crc32.getValue();
+        } finally {
+            buffer.release();
         }
-        return checkedInputStream.getChecksum().getValue();
     }
 
     @SneakyThrows
@@ -289,7 +312,9 @@ public abstract class DuplexStream extends InputStream implements Flushable, Ext
     }
 
     public long read(@NonNull DuplexStream stream, long length) {
-        return read(stream.asOutputStream(), length);
+        checkNotClosed();
+
+        return stream.write(this, length);
     }
 
     public long read(OutputStream out) {
@@ -318,6 +343,16 @@ public abstract class DuplexStream extends InputStream implements Flushable, Ext
             return 0;
         }
         return dst.writeBytes(this, length);
+    }
+
+    @SneakyThrows
+    public int read(@NonNull ByteBuf dst, int dstIndex, int length) {
+        checkNotClosed();
+        checkByteBufRange(dst, dstIndex, length);
+        if (length == 0) {
+            return 0;
+        }
+        return dst.setBytes(dstIndex, this, length);
     }
 
     @SneakyThrows
@@ -380,17 +415,56 @@ public abstract class DuplexStream extends InputStream implements Flushable, Ext
     }
 
     public long write(@NonNull DuplexStream stream, long length) {
-        return write((InputStream) stream, length);
+        checkNotClosed();
+
+        ByteBuf buffer = Bytes.heapBuffer(Constants.MEDIUM_BUF);
+        boolean readFully = length != NON_READ_FULLY;
+        long copyLen = 0;
+        try {
+            int read;
+            while (!readFully || copyLen < length) {
+                buffer.clear();
+                int readLength = readFully ? Math.min(buffer.writableBytes(), safeRemaining(length - copyLen)) : buffer.writableBytes();
+                if ((read = stream.read(buffer, readLength)) <= 0) {
+                    break;
+                }
+                write(buffer, read);
+                copyLen += read;
+            }
+        } finally {
+            buffer.release();
+        }
+        flush();
+        return copyLen;
     }
 
     public long write(InputStream in) {
         return write(in, NON_READ_FULLY);
     }
 
+    @SneakyThrows
     public long write(InputStream in, long length) {
         checkNotClosed();
 
-        return copy(in, length, asOutputStream());
+        ByteBuf buffer = Bytes.heapBuffer(Constants.MEDIUM_BUF);
+        boolean readFully = length != NON_READ_FULLY;
+        long copyLen = 0;
+        try {
+            int read;
+            while (!readFully || copyLen < length) {
+                buffer.clear();
+                int readLength = readFully ? Math.min(buffer.writableBytes(), safeRemaining(length - copyLen)) : buffer.writableBytes();
+                if ((read = buffer.writeBytes(in, readLength)) <= 0) {
+                    break;
+                }
+                write(buffer, read);
+                copyLen += read;
+            }
+        } finally {
+            buffer.release();
+        }
+        flush();
+        return copyLen;
     }
 
     public void write(ByteBuf src) {
@@ -398,10 +472,51 @@ public abstract class DuplexStream extends InputStream implements Flushable, Ext
     }
 
     @SneakyThrows
-    public void write(ByteBuf src, int length) {
+    public void write(@NonNull ByteBuf src, int length) {
         checkNotClosed();
         checkLength(length);
-        src.readBytes(asOutputStream(), length);
+        if (length > src.readableBytes()) {
+            throw new IndexOutOfBoundsException();
+        }
+        if (length == 0) {
+            return;
+        }
+
+        int readerIndex = src.readerIndex();
+        write(src, readerIndex, length);
+        src.readerIndex(readerIndex + length);
+    }
+
+    public void write(@NonNull ByteBuf src, int srcIndex, int length) {
+        checkNotClosed();
+        checkByteBufReadableRange(src, srcIndex, length);
+        if (length == 0) {
+            return;
+        }
+        if (src.hasArray()) {
+            write(src.array(), src.arrayOffset() + srcIndex, length);
+            return;
+        }
+
+        ByteBuf buffer = Bytes.heapBuffer(Math.min(length, Constants.MEDIUM_BUF));
+        try {
+            int written = 0;
+            while (written < length) {
+                buffer.clear();
+                int chunk = Math.min(buffer.writableBytes(), length - written);
+                buffer.writeBytes(src, srcIndex + written, chunk);
+                if (buffer.hasArray()) {
+                    write(buffer.array(), buffer.arrayOffset() + buffer.readerIndex(), chunk);
+                } else {
+                    for (int i = 0; i < chunk; i++) {
+                        write(buffer.readByte() & 0xff);
+                    }
+                }
+                written += chunk;
+            }
+        } finally {
+            buffer.release();
+        }
     }
 
     public void writeShort(short n) {
@@ -453,6 +568,18 @@ public abstract class DuplexStream extends InputStream implements Flushable, Ext
 
     protected static void checkLength(int length) {
         if (length < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+    }
+
+    protected static void checkByteBufRange(ByteBuf buffer, int index, int length) {
+        if ((index | length) < 0 || length > buffer.capacity() - index) {
+            throw new IndexOutOfBoundsException();
+        }
+    }
+
+    protected static void checkByteBufReadableRange(ByteBuf buffer, int index, int length) {
+        if ((index | length) < 0 || length > buffer.writerIndex() - index) {
             throw new IndexOutOfBoundsException();
         }
     }

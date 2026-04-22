@@ -80,6 +80,38 @@ public class HybridStreamTest {
     }
 
     @Test
+    public void absoluteByteBufOverloadsKeepIndexes() {
+        byte[] data = range(24);
+        ByteBuf src = Bytes.directBuffer(32);
+        ByteBuf dst = Bytes.directBuffer(32);
+        try (HybridStream stream = new HybridStream(8, false)) {
+            src.writeZero(4);
+            src.writeBytes(data);
+            int srcReaderIndex = src.readerIndex();
+
+            stream.write(src, 4, data.length);
+
+            assertEquals(srcReaderIndex, src.readerIndex());
+            assertEquals(data.length, stream.getLength());
+            assertTrue(stream.hasFileStream());
+
+            stream.setPosition(0);
+            dst.writerIndex(4);
+            int dstWriterIndex = dst.writerIndex();
+
+            assertEquals(data.length, stream.read(dst, 4, data.length));
+            assertEquals(dstWriterIndex, dst.writerIndex());
+
+            byte[] actual = new byte[data.length];
+            dst.getBytes(4, actual);
+            assertArrayEquals(data, actual);
+        } finally {
+            Bytes.release(src);
+            Bytes.release(dst);
+        }
+    }
+
+    @Test
     public void boundedInputStreamWriteDoesNotOverRead() {
         byte[] data = range(24);
         ByteArrayInputStream in = new ByteArrayInputStream(data);

@@ -7,7 +7,6 @@ import org.rx.bean.FlagsEnum;
 import org.rx.core.Constants;
 import org.rx.util.Lazy;
 import org.rx.util.Snowflake;
-import org.rx.util.function.TripleFunc;
 
 import javax.activation.MimetypesFileTypeMap;
 import java.io.*;
@@ -222,23 +221,34 @@ public class FileStream extends DuplexStream implements Serializable {
             return 0;
         }
 
+        dst.ensureWritable(length);
+        int writerIndex = dst.writerIndex();
+        int totalRead = read(dst, writerIndex, length);
+        if (totalRead > 0) {
+            dst.writerIndex(writerIndex + totalRead);
+        }
+        return totalRead;
+    }
+
+    @SneakyThrows
+    @Override
+    public synchronized int read(ByteBuf dst, int dstIndex, int length) {
+        checkNotClosed();
+        checkByteBufRange(dst, dstIndex, length);
+        if (length == 0) {
+            return 0;
+        }
+
         long pos = getPosition();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
 
         int totalRead = 0;
-        ByteBuffer buffer = ByteBuffer.allocateDirect(Math.min(length, Constants.MEDIUM_BUF));
-        TripleFunc<ByteBuffer, Integer, ByteBuffer> resetFunc = (b, c) -> {
-            b.clear();
-            if (c < b.limit()) {
-                b.limit(c);
+        while (length > 0) {
+            int r = dst.setBytes(dstIndex + totalRead, ch, length);
+            if (r <= 0) {
+                break;
             }
-            return b;
-        };
-        int r;
-        while ((r = ch.read(resetFunc.invoke(buffer, length))) > 0) {
-            buffer.flip();
-            dst.writeBytes(buffer);
             length -= r;
             totalRead += r;
         }
@@ -255,6 +265,11 @@ public class FileStream extends DuplexStream implements Serializable {
         return write0(src, src.readableBytes());
     }
 
+    @Override
+    public void write(ByteBuf src, int srcIndex, int length) {
+        write0(src, srcIndex, length);
+    }
+
     @SneakyThrows
     public synchronized long write0(ByteBuf src, int length) {
         checkNotClosed();
@@ -266,33 +281,33 @@ public class FileStream extends DuplexStream implements Serializable {
             return 0;
         }
 
+        int readerIndex = src.readerIndex();
+        long written = write0(src, readerIndex, length);
+        src.readerIndex(readerIndex + (int) written);
+        return written;
+    }
+
+    @SneakyThrows
+    public synchronized long write0(ByteBuf src, int srcIndex, int length) {
+        checkNotClosed();
+        checkByteBufReadableRange(src, srcIndex, length);
+        if (length == 0) {
+            return 0;
+        }
+
         long pos = getPosition();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
 
-        int rIndex = src.readerIndex();
         int written = 0;
         while (written < length) {
-            ByteBuf buf = src.slice(rIndex + written, length - written);
-            long w;
-            switch (buf.nioBufferCount()) {
-                case 0:
-                    w = ch.write(ByteBuffer.wrap(Bytes.toBytes(buf)));
-                    break;
-                case 1:
-                    w = ch.write(buf.nioBuffer());
-                    break;
-                default:
-                    w = ch.write(buf.nioBuffers());
-                    break;
-            }
+            int w = src.getBytes(srcIndex + written, ch, length - written);
             if (w <= 0) {
                 break;
             }
             written += w;
         }
 
-        src.readerIndex(rIndex + written);
         setPosition(pos + written);
 //        switch (fileMode) {
 //            case READ_WRITE_AND_SYNC_CONTENT:
