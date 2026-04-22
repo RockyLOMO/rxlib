@@ -32,6 +32,7 @@ public final class HttpClientConfig {
     private Proxy proxy;
     private SslContext sslContext;
     private HttpClientCookieJar cookieJar;
+    private HttpClientCache cache;
 
     public HttpClientConfig() {
         RxConfig.NetConfig conf = RxConfig.INSTANCE.getNet();
@@ -48,6 +49,7 @@ public final class HttpClientConfig {
         enableLog = conf.isEnableLog();
         cookieJar = HttpClientCookieJar.DEFAULT;
         sslContext = defaultSslContext();
+        cache = null;
     }
 
     public HttpClientConfig(HttpClientConfig source) {
@@ -66,6 +68,7 @@ public final class HttpClientConfig {
         proxy = src.proxy;
         sslContext = src.sslContext;
         cookieJar = src.cookieJar;
+        cache = src.cache != null ? new HttpClientCache(src.cache) : null;
     }
 
     public HttpClientConfig setTimeoutMillis(int timeoutMillis) {
@@ -144,6 +147,11 @@ public final class HttpClientConfig {
 
     public HttpClientConfig setCookieJar(HttpClientCookieJar cookieJar) {
         this.cookieJar = cookieJar;
+        return this;
+    }
+
+    public HttpClientConfig setCache(HttpClientCache cache) {
+        this.cache = cache;
         return this;
     }
 

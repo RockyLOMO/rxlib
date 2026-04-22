@@ -30,6 +30,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -39,6 +40,8 @@ public class HttpClientIntegrationTest {
     private static String baseUrl;
     private static final Set<Integer> remotePorts = Collections.newSetFromMap(new ConcurrentHashMap<Integer, Boolean>());
     private static volatile CountDownLatch slowStarted;
+    private static final AtomicInteger staticCacheHits = new AtomicInteger();
+    private static final AtomicInteger revalidateCacheHits = new AtomicInteger();
 
     @BeforeAll
     public static void setup() throws Exception {
@@ -81,6 +84,33 @@ public class HttpClientIntegrationTest {
             res.getHeaders().set(HttpHeaderNames.CONTENT_ENCODING, HttpHeaderValues.GZIP);
             res.setContentType(ServerResponse.TEXT_HTML.toString());
             res.setContent(Unpooled.wrappedBuffer(gzip("gzip-ok")));
+        });
+        server.requestMapping("/cache-static", (req, res) -> {
+            staticCacheHits.incrementAndGet();
+            res.getHeaders().set(HttpHeaderNames.CACHE_CONTROL, "public, max-age=60");
+            res.setContentType(ServerResponse.TEXT_HTML.toString());
+            res.htmlBody("cache-static-v1");
+        });
+        server.requestMapping("/cache-revalidate", (req, res) -> {
+            revalidateCacheHits.incrementAndGet();
+            res.getHeaders().set(HttpHeaderNames.ETAG, "\"cache-v1\"");
+            String ifNoneMatch = req.getHeaders().get(HttpHeaderNames.IF_NONE_MATCH);
+            if ("\"cache-v1\"".equals(ifNoneMatch)) {
+                res.setStatus(HttpResponseStatus.NOT_MODIFIED);
+                return;
+            }
+            res.setContentType(ServerResponse.TEXT_HTML.toString());
+            res.htmlBody("cache-revalidate-v1");
+        });
+        server.requestMapping("/cache-trim-a", (req, res) -> {
+            res.getHeaders().set(HttpHeaderNames.CACHE_CONTROL, "public, max-age=60");
+            res.setContentType(ServerResponse.TEXT_HTML.toString());
+            res.htmlBody(repeat('a', 1024));
+        });
+        server.requestMapping("/cache-trim-b", (req, res) -> {
+            res.getHeaders().set(HttpHeaderNames.CACHE_CONTROL, "public, max-age=60");
+            res.setContentType(ServerResponse.TEXT_HTML.toString());
+            res.htmlBody(repeat('b', 1024));
         });
         server.requestMapping("/remote-port", (req, res) -> {
             int portValue = req.getRemoteEndpoint().getPort();
@@ -242,6 +272,71 @@ public class HttpClientIntegrationTest {
     public void gzipResponseIsDecoded() {
         try (HttpClient client = new HttpClient()) {
             assertEquals("gzip-ok", client.get(baseUrl + "/gzip").bodyAsString());
+        }
+    }
+
+    @Test
+    public void staticFilesCanHitDiskCacheWithoutNetworkRoundTrip() throws Exception {
+        staticCacheHits.set(0);
+        File cacheDir = java.nio.file.Files.createTempDirectory("http-client-cache-hit").toFile();
+        try (HttpClient client = new HttpClient(new HttpClientConfig()
+                .setCookieJar(null)
+                .setEnableLog(false)
+                .setCache(new HttpClientCache().setDirectory(cacheDir).setMaxBytes(4L * 1024L)))) {
+            try (HttpClient.Response first = client.get(baseUrl + "/cache-static");
+                 HttpClient.Response second = client.get(baseUrl + "/cache-static")) {
+                assertEquals("cache-static-v1", first.bodyAsString());
+                assertEquals("cache-static-v1", second.bodyAsString());
+            }
+            assertEquals(1, staticCacheHits.get());
+            assertTrue(cacheDir.isDirectory());
+            File[] entries = cacheDir.listFiles(File::isDirectory);
+            assertNotNull(entries);
+            assertEquals(1, entries.length);
+        } finally {
+            org.rx.io.Files.delete(cacheDir.getAbsolutePath());
+        }
+    }
+
+    @Test
+    public void staleCacheCanRevalidateWithEtagAndReuseBody() throws Exception {
+        revalidateCacheHits.set(0);
+        File cacheDir = java.nio.file.Files.createTempDirectory("http-client-cache-304").toFile();
+        try (HttpClient client = new HttpClient(new HttpClientConfig()
+                .setCookieJar(null)
+                .setEnableLog(false)
+                .setCache(new HttpClientCache().setDirectory(cacheDir).setMaxBytes(4L * 1024L)))) {
+            try (HttpClient.Response first = client.get(baseUrl + "/cache-revalidate");
+                 HttpClient.Response second = client.get(baseUrl + "/cache-revalidate")) {
+                assertEquals("cache-revalidate-v1", first.bodyAsString());
+                assertEquals("cache-revalidate-v1", second.bodyAsString());
+            }
+            assertEquals(2, revalidateCacheHits.get());
+        } finally {
+            org.rx.io.Files.delete(cacheDir.getAbsolutePath());
+        }
+    }
+
+    @Test
+    public void cacheDirectoryTrimsOldestEntriesWhenSizeExceeded() throws Exception {
+        File cacheDir = java.nio.file.Files.createTempDirectory("http-client-cache-trim").toFile();
+        try (HttpClient client = new HttpClient(new HttpClientConfig()
+                .setCookieJar(null)
+                .setEnableLog(false)
+                .setCache(new HttpClientCache().setDirectory(cacheDir).setMaxBytes(1500L)))) {
+            try (HttpClient.Response first = client.get(baseUrl + "/cache-trim-a")) {
+                assertEquals(repeat('a', 1024), first.bodyAsString());
+            }
+            Thread.sleep(20L);
+            try (HttpClient.Response second = client.get(baseUrl + "/cache-trim-b")) {
+                assertEquals(repeat('b', 1024), second.bodyAsString());
+            }
+            File[] entries = cacheDir.listFiles(File::isDirectory);
+            assertNotNull(entries);
+            assertEquals(1, entries.length);
+            assertTrue(directoryBytes(cacheDir) <= 1500L);
+        } finally {
+            org.rx.io.Files.delete(cacheDir.getAbsolutePath());
         }
     }
 
@@ -414,5 +509,29 @@ public class HttpClientIntegrationTest {
             error = error.getCause();
         }
         return false;
+    }
+
+    private static String repeat(char value, int count) {
+        char[] chars = new char[count];
+        java.util.Arrays.fill(chars, value);
+        return new String(chars);
+    }
+
+    private static long directoryBytes(File file) {
+        if (file == null || !file.exists()) {
+            return 0L;
+        }
+        if (file.isFile()) {
+            return file.length();
+        }
+        File[] children = file.listFiles();
+        if (children == null) {
+            return 0L;
+        }
+        long total = 0L;
+        for (File child : children) {
+            total += directoryBytes(child);
+        }
+        return total;
     }
 }

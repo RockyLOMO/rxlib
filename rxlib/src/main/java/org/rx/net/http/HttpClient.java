@@ -203,6 +203,63 @@ public class HttpClient implements AutoCloseable {
         return copy;
     }
 
+    private static HttpHeaders ensureMutableHeaders(Request request) {
+        HttpHeaders headers = request.headers;
+        if (headers == null || headers == EmptyHttpHeaders.INSTANCE) {
+            request.headers = headers = new DefaultHttpHeaders(false);
+        }
+        return headers;
+    }
+
+    private static boolean cacheLookupAllowed(Request request, boolean cookieEnabled) {
+        if (request == null || !HttpMethod.GET.equals(request.method()) || cookieEnabled) {
+            return false;
+        }
+        HttpHeaders headers = request.headers;
+        if (headers == null || headers.isEmpty()) {
+            return true;
+        }
+        return !headers.contains(HttpHeaderNames.AUTHORIZATION)
+                && !headers.contains(HttpHeaderNames.PROXY_AUTHORIZATION)
+                && !headers.contains(HttpHeaderNames.COOKIE);
+    }
+
+    private static boolean cacheStoreAllowed(Request request) {
+        HttpHeaders headers = request != null ? request.headers : null;
+        return headers == null || !hasCacheDirective(headers.get(HttpHeaderNames.CACHE_CONTROL), "no-store");
+    }
+
+    private static boolean cacheBypass(HttpHeaders headers) {
+        if (headers == null || headers.isEmpty()) {
+            return false;
+        }
+        return hasCacheDirective(headers.get(HttpHeaderNames.CACHE_CONTROL), "no-store");
+    }
+
+    private static boolean forceCacheRevalidate(HttpHeaders headers) {
+        if (headers == null || headers.isEmpty()) {
+            return false;
+        }
+        String cacheControl = headers.get(HttpHeaderNames.CACHE_CONTROL);
+        return hasCacheDirective(cacheControl, "no-cache")
+                || hasCacheDirective(cacheControl, "max-age=0")
+                || Strings.equalsIgnoreCase(headers.get(HttpHeaderNames.PRAGMA), "no-cache");
+    }
+
+    private static boolean hasCacheDirective(String cacheControl, String directive) {
+        if (Strings.isEmpty(cacheControl) || Strings.isEmpty(directive)) {
+            return false;
+        }
+        String[] tokens = cacheControl.split(",");
+        for (String token : tokens) {
+            String value = token.trim();
+            if (Strings.equalsIgnoreCase(value, directive) || Strings.startsWithIgnoreCase(value, directive)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private Request snapshotRequest(Request request, HttpClientConfig cfg) {
         Proxy requestProxy = request.proxy != null ? request.proxy : cfg.getProxy();
         int timeoutMillis = request.timeoutMillis > 0 ? request.timeoutMillis : cfg.getReadWriteTimeoutMillis();
@@ -922,8 +979,11 @@ public class HttpClient implements AutoCloseable {
         final RequestContent content;
         final HttpClient client;
         final HttpClientCookieJar cookieJar;
+        final HttpClientCache cache;
+        final HttpClientCache.CacheEntry cacheEntry;
         final long startNanos;
         final boolean cookieEnabled;
+        final boolean cacheStoreAllowed;
         final boolean followRedirects;
         final int maxRedirects;
         final boolean logEnabled;
@@ -938,10 +998,10 @@ public class HttpClient implements AutoCloseable {
         boolean responseOffloaded;
 
         RequestState(Request request, Request currentRequest, URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<Response> future, HttpClientConfig config,
-                     HttpClientCookieJar cookieJar,
+                     HttpClientCookieJar cookieJar, HttpClientCache cache, HttpClientCache.CacheEntry cacheEntry,
                      Proxy proxy, int redirectCount, int readWriteTimeoutMillis, HttpHeaders requestHeaders, RequestContent content, HttpClient client,
                      int responseOffloadThreshold, int uploadFlushBytes, int uploadFlushChunks,
-                     long startNanos, boolean cookieEnabled, boolean followRedirects, int maxRedirects, boolean logEnabled) {
+                     long startNanos, boolean cookieEnabled, boolean cacheStoreAllowed, boolean followRedirects, int maxRedirects, boolean logEnabled) {
             this.request = request;
             this.currentRequest = currentRequest;
             this.uri = uri;
@@ -959,8 +1019,11 @@ public class HttpClient implements AutoCloseable {
             this.content = content;
             this.client = client;
             this.cookieJar = cookieJar;
+            this.cache = cache;
+            this.cacheEntry = cacheEntry;
             this.startNanos = startNanos;
             this.cookieEnabled = cookieEnabled;
+            this.cacheStoreAllowed = cacheStoreAllowed;
             this.followRedirects = followRedirects;
             this.maxRedirects = maxRedirects;
             this.logEnabled = logEnabled;
@@ -1148,28 +1211,45 @@ public class HttpClient implements AutoCloseable {
                 }
                 long elapsedNanos = System.nanoTime() - state.startNanos;
                 String responseUrl = state.redirectCount == 0 ? state.request.url() : state.uri.toString();
-                Response content = new Response(state.client, state.request, responseUrl, state.response, state.body, elapsedNanos);
-                state.client.activeResponses.add(content);
-                SUCCESS_UPDATER.incrementAndGet(state.client);
-                TOTAL_LATENCY_UPDATER.addAndGet(state.client, elapsedNanos);
-                for (; ; ) {
-                    long old = state.client.metricMaxLatencyNanos;
-                    if (elapsedNanos <= old || MAX_LATENCY_UPDATER.compareAndSet(state.client, old, elapsedNanos)) {
-                        break;
+                if (state.cache != null && state.cacheEntry != null && state.response != null
+                        && state.response.status().code() == HttpResponseStatus.NOT_MODIFIED.code()) {
+                    tryClose(state.body);
+                    state.cache.revalidate(state.cacheEntry, state.response);
+                    Response cached = state.cache.createCachedResponse(state.client, state.request, responseUrl, state.cacheEntry, state.response, elapsedNanos);
+                    if (cached != null) {
+                        completeResponse(state, cached, elapsedNanos, true);
+                        return;
                     }
                 }
-                if (state.logEnabled) {
-                    log.info("HTTP {} {} -> {} {}\nreq={}\nres={}",
-                            state.currentRequest.method(), state.request.url(),
-                            content.code(), Sys.formatNanosElapsed(elapsedNanos),
-                            state.requestLogText, responseLogText(content));
+                if (state.cache != null && state.cacheStoreAllowed && state.cache.storeable(responseUrl, state.response)) {
+                    state.cache.store(responseUrl, state.response, state.body);
                 }
-                state.future.complete(content);
+                Response content = new Response(state.client, state.request, responseUrl, state.response, state.body, elapsedNanos);
+                completeResponse(state, content, elapsedNanos, false);
             } catch (Throwable e) {
                 tryClose(state.body);
                 FAILED_UPDATER.incrementAndGet(state.client);
                 state.future.completeExceptionally(e);
             }
+        }
+
+        private void completeResponse(RequestState state, Response content, long elapsedNanos, boolean cacheHit) {
+            state.client.activeResponses.add(content);
+            SUCCESS_UPDATER.incrementAndGet(state.client);
+            TOTAL_LATENCY_UPDATER.addAndGet(state.client, elapsedNanos);
+            for (; ; ) {
+                long old = state.client.metricMaxLatencyNanos;
+                if (elapsedNanos <= old || MAX_LATENCY_UPDATER.compareAndSet(state.client, old, elapsedNanos)) {
+                    break;
+                }
+            }
+            if (state.logEnabled) {
+                log.info("HTTP {} {} -> {} {}{}\nreq={}\nres={}",
+                        state.currentRequest.method(), state.request.url(),
+                        content.code(), Sys.formatNanosElapsed(elapsedNanos), cacheHit ? " cache-hit" : Strings.EMPTY,
+                        state.requestLogText, responseLogText(content));
+            }
+            state.future.complete(content);
         }
 
         private RedirectPlan buildRedirectPlan(RequestState state) {
@@ -1542,6 +1622,35 @@ public class HttpClient implements AutoCloseable {
         return execute(request);
     }
 
+    private void completeCacheHit(Request request, Request currentRequest, URI uri, CompletableFuture<Response> future,
+                                  HttpClientCache cache, HttpClientCache.CacheEntry cacheEntry, long startNanos, int redirectCount) {
+        if (future.isDone()) {
+            return;
+        }
+        long elapsedNanos = System.nanoTime() - startNanos;
+        String responseUrl = redirectCount == 0 ? request.url() : uri.toString();
+        Response response = cache.createCachedResponse(this, request, responseUrl, cacheEntry, null, elapsedNanos);
+        if (response == null) {
+            return;
+        }
+        activeResponses.add(response);
+        SUCCESS_UPDATER.incrementAndGet(this);
+        TOTAL_LATENCY_UPDATER.addAndGet(this, elapsedNanos);
+        for (; ; ) {
+            long old = metricMaxLatencyNanos;
+            if (elapsedNanos <= old || MAX_LATENCY_UPDATER.compareAndSet(this, old, elapsedNanos)) {
+                break;
+            }
+        }
+        if (Boolean.TRUE.equals(currentRequest.enableLog)) {
+            log.info("HTTP {} {} -> {} {} cache-hit\nreq={}\nres={}",
+                    currentRequest.method(), request.url(),
+                    response.code(), Sys.formatNanosElapsed(elapsedNanos),
+                    requestLogText(currentRequest), responseLogText(response));
+        }
+        future.complete(response);
+    }
+
     void executeAsync0(Request request, Request currentRequest, HttpClientConfig cfg,
                        CompletableFuture<Response> future, long startNanos, int redirectCount) {
         if (redirectCount == 0) {
@@ -1565,10 +1674,36 @@ public class HttpClient implements AutoCloseable {
             tryClose(content);
             return;
         }
+        HttpClientCache cache = cfg.getCache();
+        HttpClientCache.CacheEntry cacheEntry = null;
+        boolean cacheStoreAllowed = cacheStoreAllowed(currentRequest);
+        if (cache != null && cacheLookupAllowed(currentRequest, cookieEnabled) && !cacheBypass(requestHeaders)) {
+            cacheEntry = cache.get(uri.toString());
+            if (cacheEntry != null) {
+                boolean forceRevalidate = forceCacheRevalidate(requestHeaders);
+                if (!forceRevalidate && cacheEntry.isFresh(System.currentTimeMillis())) {
+                    completeCacheHit(request, currentRequest, uri, future, cache, cacheEntry, startNanos, redirectCount);
+                    tryClose(content);
+                    return;
+                }
+                if (cacheEntry.canRevalidate()) {
+                    cache.applyValidators(ensureMutableHeaders(currentRequest), cacheEntry);
+                    requestHeaders = currentRequest.headers;
+                } else if (forceRevalidate) {
+                    cacheEntry = null;
+                }
+            }
+        } else {
+            cacheStoreAllowed = false;
+        }
         PoolKey key = new PoolKey(uri, requestProxy);
         FixedChannelPool pool = pools.computeIfAbsent(key, this::newPool);
         AtomicReference<Channel> acquiredChannel = new AtomicReference<>();
         int requestTimeout = timeoutMillis;
+        final Request requestSnapshot = currentRequest;
+        final HttpHeaders requestHeadersSnapshot = requestHeaders;
+        final HttpClientCache.CacheEntry requestCacheEntry = cacheEntry;
+        final boolean requestCacheStoreAllowed = cacheStoreAllowed;
 
         pool.acquire().addListener((io.netty.util.concurrent.Future<Channel> f) -> {
             if (!f.isSuccess()) {
@@ -1584,17 +1719,17 @@ public class HttpClient implements AutoCloseable {
                 release(channel, pool, true);
                 return;
             }
-            RequestState state = new RequestState(request, currentRequest, uri, key, pool, future, cfg, cfg.getCookieJar(), requestProxy, redirectCount, requestTimeout,
-                    requestHeaders, content, this, cfg.getResponseOffloadThreshold(), cfg.getUploadFlushBytes(), cfg.getUploadFlushChunks(),
-                    startNanos, cookieEnabled, Boolean.TRUE.equals(currentRequest.followRedirects), currentRequest.maxRedirects != null ? currentRequest.maxRedirects : 0,
-                    Boolean.TRUE.equals(currentRequest.enableLog));
+            RequestState state = new RequestState(request, requestSnapshot, uri, key, pool, future, cfg, cfg.getCookieJar(), cache, requestCacheEntry, requestProxy, redirectCount, requestTimeout,
+                    requestHeadersSnapshot, content, this, cfg.getResponseOffloadThreshold(), cfg.getUploadFlushBytes(), cfg.getUploadFlushChunks(),
+                    startNanos, cookieEnabled, requestCacheStoreAllowed, Boolean.TRUE.equals(requestSnapshot.followRedirects), requestSnapshot.maxRedirects != null ? requestSnapshot.maxRedirects : 0,
+                    Boolean.TRUE.equals(requestSnapshot.enableLog));
             channel.attr(STATE_KEY).set(state);
             state.timeoutFuture = channel.eventLoop().schedule(() -> {
                 TIMEOUT_UPDATER.incrementAndGet(this);
                 fail(channel, new TimeoutException("HTTP request timeout " + requestTimeout + "ms: " + url));
             }, requestTimeout, TimeUnit.MILLISECONDS);
             try {
-                writeRequest(channel, uri, currentRequest.method, content, state);
+                writeRequest(channel, uri, requestSnapshot.method, content, state);
             } catch (Throwable e) {
                 fail(channel, e);
             }

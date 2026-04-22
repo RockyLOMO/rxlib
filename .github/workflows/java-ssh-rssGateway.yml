@@ -3,7 +3,7 @@ name: Build & Push to ssh - rssGateway
 on:
   workflow_dispatch:    # 支持手动触发
 #  push:
-#    branches: [ rss-11 ]
+#    branches: [ rss-17 ]
 
 jobs:
   build-and-push:
@@ -14,7 +14,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: rss-11
+          ref: rss-17
       - name: 显示当前分支
         run: git branch --show-current
 

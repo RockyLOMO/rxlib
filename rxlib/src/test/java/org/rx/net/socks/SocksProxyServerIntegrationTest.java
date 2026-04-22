@@ -1026,8 +1026,10 @@ class SocksProxyServerIntegrationTest {
 
         try {
             Thread.sleep(300);
-            InetAddress bindAddr = Sockets.getLocalAddress();
-            DatagramSocket clientSock = new DatagramSocket(new InetSocketAddress(bindAddr, 0));
+            // LocalAddress SOCKS 控制面为 loopback，UDP relay 上 ATTR_CLIENT_ORIGIN_ADDR 与 TCP 控制端一致；
+            // 若绑定 LAN IP 则与上游 SS 看到的 sender 不一致，断言会失败。
+            InetAddress loop = InetAddress.getLoopbackAddress();
+            DatagramSocket clientSock = new DatagramSocket(new InetSocketAddress(loop, 0));
             clientSock.setSoTimeout(4000);
             try {
                 org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword(), true);
@@ -1037,7 +1039,7 @@ class SocksProxyServerIntegrationTest {
                 addrBuf.writeBytes(payload);
                 byte[] encrypted = toBytes(crypto.encrypt(addrBuf));
 
-                clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length, bindAddr, ssPort));
+                clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length, loop, ssPort));
                 byte[] respBuf = new byte[1024];
                 java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
                 clientSock.receive(p);
