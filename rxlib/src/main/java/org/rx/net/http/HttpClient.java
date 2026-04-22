@@ -138,16 +138,6 @@ public class HttpClient implements AutoCloseable {
         return ensureMetrics();
     }
 
-    public Metrics metrics() {
-        return getMetrics();
-    }
-
-    public HttpClient withFeatures(boolean cookieEnabled, boolean logEnabled) {
-        config.setCookieJar(cookieEnabled ? HttpClientCookieJar.DEFAULT : null);
-        config.setEnableLog(logEnabled);
-        return this;
-    }
-
     private Metrics ensureMetrics() {
         Metrics m = metrics;
         if (m != null) {
@@ -212,9 +202,31 @@ public class HttpClient implements AutoCloseable {
     }
 
     HttpHeaders requestHeadersSnapshot() {
+        return copyHeaders(reqHeaders);
+    }
+
+    HttpHeaders requestHeadersSnapshot(HttpHeaders requestHeaders) {
+        boolean hasDefaults = !reqHeaders.isEmpty();
+        boolean hasRequestHeaders = requestHeaders != null && !requestHeaders.isEmpty();
+        if (!hasDefaults) {
+            return copyHeaders(requestHeaders);
+        }
+        if (!hasRequestHeaders) {
+            return copyHeaders(reqHeaders);
+        }
         HttpHeaders headers = new DefaultHttpHeaders(false);
         headers.set(reqHeaders);
+        headers.set(requestHeaders);
         return headers;
+    }
+
+    private static HttpHeaders copyHeaders(HttpHeaders headers) {
+        if (headers == null || headers.isEmpty()) {
+            return EmptyHttpHeaders.INSTANCE;
+        }
+        HttpHeaders copy = new DefaultHttpHeaders(false);
+        copy.set(headers);
+        return copy;
     }
 
     @Override
@@ -308,6 +320,22 @@ public class HttpClient implements AutoCloseable {
             return this;
         }
 
+        public Request bytes(byte[] bytes, CharSequence contentType) {
+            return body(new BytesContent(contentType == null ? null : contentType.toString(), bytes));
+        }
+
+        public Request json(Object json) {
+            return body(new JsonContent(json));
+        }
+
+        public Request form(Map<String, Object> forms) {
+            return body(new FormContent(forms));
+        }
+
+        public Request multipart(Map<String, Object> forms, Map<String, IOStream> files) {
+            return body(new MultipartContent(forms, files));
+        }
+
         public Request timeoutMillis(int timeoutMillis) {
             this.timeoutMillis = timeoutMillis;
             return this;
@@ -335,27 +363,6 @@ public class HttpClient implements AutoCloseable {
 
         @Override
         default void close() {
-        }
-    }
-
-    public static final class HttpClientBody {
-        private HttpClientBody() {
-        }
-
-        public static RequestContent bytes(byte[] bytes, CharSequence contentType) {
-            return new BytesContent(contentType == null ? null : contentType.toString(), bytes);
-        }
-
-        public static RequestContent json(Object json) {
-            return new JsonContent(json);
-        }
-
-        public static RequestContent form(Map<String, Object> forms) {
-            return new FormContent(forms);
-        }
-
-        public static RequestContent multipart(Map<String, Object> forms, Map<String, IOStream> files) {
-            return new MultipartContent(forms, files);
         }
     }
 
@@ -388,7 +395,7 @@ public class HttpClient implements AutoCloseable {
 
         BytesContent(String contentType, byte[] data) {
             this.contentType = contentType;
-            this.data = data != null ? data : new byte[0];
+            this.data = data != null ? data : org.rx.core.Arrays.EMPTY_BYTE_ARRAY;
         }
 
         @Override
@@ -1137,8 +1144,7 @@ public class HttpClient implements AutoCloseable {
         Proxy requestProxy = request.proxy != null ? request.proxy : cfg.getProxy();
         boolean requestCookie = cfg.getCookieJar() != null
                 && (request.enableCookie == null || request.enableCookie);
-        HttpHeaders headers = requestHeadersSnapshot();
-        headers.set(request.headers);
+        HttpHeaders headers = requestHeadersSnapshot(request.headers);
         return invokeAsync(request.url, request.method, request.body, headers, cfg, requestProxy, requestCookie, request.timeoutMillis);
     }
 
@@ -1225,7 +1231,7 @@ public class HttpClient implements AutoCloseable {
     ResponseContent invoke(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders) {
         ensureBlockingCallAllowed();
         HttpClientConfig cfg = config;
-        CompletableFuture<ResponseContent> future = invokeAsync(url, method, content, requestHeaders, cfg, cfg.getProxy(), cfg.getCookieJar() != null, 0);
+        CompletableFuture<ResponseContent> future = invokeAsync(url, method, content, copyHeaders(requestHeaders), cfg, cfg.getProxy(), cfg.getCookieJar() != null, 0);
         try {
             return future.get(callTimeoutMillis(cfg, 0), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {

@@ -387,7 +387,7 @@ public class HttpClientFeatureTest {
             AuthenticProxy badProxy = new AuthenticProxy(Proxy.Type.SOCKS, Sockets.newLoopbackEndpoint(proxyPort), "u1", "bad");
             try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(500).setProxy(badProxy).setCookieJar(null).setEnableLog(false))) {
                 assertThrows(Exception.class, () -> client.get(BASE_URL + "/get"));
-                assertTrue(client.metrics().failed() > 0);
+                assertTrue(client.getMetrics().failed() > 0);
             }
         } finally {
             proxyServer.close();

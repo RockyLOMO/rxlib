@@ -313,7 +313,7 @@ public class HttpTunnelClient extends Disposable {
     byte[] doPost(String url, byte[] data) {
         try {
             HttpClient.Request request = HttpClient.request(HttpMethod.POST, url)
-                    .body(HttpClient.HttpClientBody.bytes(data, "application/octet-stream"));
+                    .bytes(data, "application/octet-stream");
             if (config.getToken() != null) {
                 request.header("X-Tunnel-Token", config.getToken());
             }

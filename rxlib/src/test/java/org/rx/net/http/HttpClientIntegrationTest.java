@@ -103,10 +103,10 @@ public class HttpClientIntegrationTest {
 
             HttpClient.Response head = client.head(baseUrl + "/head");
             assertEquals(200, head.getStatusCode());
-            assertEquals(2, client.metrics().requests());
-            assertEquals(2, client.metrics().success());
-            assertTrue(client.metrics().maxLatencyNanos() > 0);
-            assertTrue(client.metrics().usedDirectMemory() >= 0);
+            assertEquals(2, client.getMetrics().requests());
+            assertEquals(2, client.getMetrics().success());
+            assertTrue(client.getMetrics().maxLatencyNanos() > 0);
+            assertTrue(client.getMetrics().usedDirectMemory() >= 0);
         }
     }
 
@@ -214,7 +214,7 @@ public class HttpClientIntegrationTest {
             ExecutionException error = assertThrows(ExecutionException.class,
                     () -> client.executeAsync(request).get(2, TimeUnit.SECONDS));
             assertTrue(hasCause(error, TimeoutException.class), error.toString());
-            assertEquals(1, client.metrics().timeout());
+            assertEquals(1, client.getMetrics().timeout());
         }
     }
 
@@ -232,7 +232,7 @@ public class HttpClientIntegrationTest {
                     () -> queued.get(2, TimeUnit.SECONDS));
             assertTrue(hasCause(error, TimeoutException.class), error.toString());
             assertEquals(200, first.get(2, TimeUnit.SECONDS).getStatusCode());
-            assertTrue(client.metrics().failed() >= 1);
+            assertTrue(client.getMetrics().failed() >= 1);
         } finally {
             slowStarted = null;
         }
