@@ -35,7 +35,7 @@ public class HttpClientTest {
         String url = BASE_URL + "/test";
         InputStream stream;
         try (HttpClient client = new HttpClient()) {
-            try (HttpClient.ResponseContent res = client.get(url)) {
+            try (HttpClient.Response res = client.get(url)) {
                 stream = res.responseStream();
                 assertNotNull(stream);
                 assertTrue(stream.read() != -1);
@@ -63,7 +63,7 @@ public class HttpClientTest {
     public void testMultipleConsumption() {
         String url = BASE_URL + "/test";
         try (HttpClient client = new HttpClient()) {
-            try (HttpClient.ResponseContent res = client.get(url)) {
+            try (HttpClient.Response res = client.get(url)) {
                 String s1 = res.toString();
                 assertTrue(s1.contains("ok"));
 
@@ -78,8 +78,8 @@ public class HttpClientTest {
     public void testConsecutiveRequests() {
         String url = BASE_URL + "/test";
         try (HttpClient client = new HttpClient()) {
-            try (HttpClient.ResponseContent res1 = client.get(url);
-                 HttpClient.ResponseContent res2 = client.get(url)) {
+            try (HttpClient.Response res1 = client.get(url);
+                 HttpClient.Response res2 = client.get(url)) {
                 assertTrue(res1.toString().contains("ok"));
                 assertTrue(res2.toString().contains("ok"));
             }
@@ -90,7 +90,7 @@ public class HttpClientTest {
     public void testMultipleConsumptionWithTwoMethods() {
         String url = BASE_URL + "/test";
         try (HttpClient client = new HttpClient()) {
-            try (HttpClient.ResponseContent res = client.get(url)) {
+            try (HttpClient.Response res = client.get(url)) {
                 String s1 = res.toString();
                 assertTrue(s1.contains("ok"));
 

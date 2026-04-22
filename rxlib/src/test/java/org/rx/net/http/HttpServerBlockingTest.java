@@ -54,8 +54,8 @@ public class HttpServerBlockingTest {
     @Test
     public void asyncHandler_offloadsFromEventLoop() {
         try (HttpClient client = new HttpClient()) {
-            try (HttpClient.ResponseContent normal = client.get(BASE_URL + "/normal");
-                 HttpClient.ResponseContent response = client.get(BASE_URL + "/async")) {
+            try (HttpClient.Response normal = client.get(BASE_URL + "/normal");
+                 HttpClient.Response response = client.get(BASE_URL + "/async")) {
                 assertTrue(normal.toString().contains("ok"));
                 assertTrue(response.toString().contains("ok"));
                 assertEquals("1", response.responseHeaders().get(HttpServer.ASYNC_HANDLER_HEADER));
@@ -72,8 +72,8 @@ public class HttpServerBlockingTest {
     @Test
     public void asyncHandler_canServeConsecutiveRequests() {
         try (HttpClient client = new HttpClient()) {
-            try (HttpClient.ResponseContent async = client.get(BASE_URL + "/async");
-                 HttpClient.ResponseContent normal = client.get(BASE_URL + "/normal")) {
+            try (HttpClient.Response async = client.get(BASE_URL + "/async");
+                 HttpClient.Response normal = client.get(BASE_URL + "/normal")) {
                 assertTrue(async.toString().contains("ok"));
                 assertTrue(normal.toString().contains("ok"));
             }

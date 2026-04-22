@@ -83,7 +83,7 @@ public class HttpClientFeatureTest {
     @Test
     public void testGet() {
         try (HttpClient client = clientNoCookieNoLog()) {
-            HttpClient.ResponseContent response = client.get(BASE_URL + "/get");
+            HttpClient.Response response = client.get(BASE_URL + "/get");
             assertEquals(200, response.getStatusCode());
             assertTrue(response.toString().contains("ok-v2"));
         }
@@ -94,7 +94,7 @@ public class HttpClientFeatureTest {
         Map<String, Object> body = new HashMap<>();
         body.put("name", "alpha");
         try (HttpClient client = clientNoCookieNoLog()) {
-            HttpClient.ResponseContent response = client.postJson(BASE_URL + "/json", body);
+            HttpClient.Response response = client.postJson(BASE_URL + "/json", body);
             assertTrue(response.toString().contains("json-ok"));
         }
     }
@@ -105,7 +105,7 @@ public class HttpClientFeatureTest {
         form.put("name", "rx");
         form.put("age", 8);
         try (HttpClient client = clientNoCookieNoLog()) {
-            HttpClient.ResponseContent response = client.post(BASE_URL + "/form", form);
+            HttpClient.Response response = client.post(BASE_URL + "/form", form);
             assertTrue(response.toString().contains("rx:8"));
         }
     }
@@ -116,7 +116,7 @@ public class HttpClientFeatureTest {
         form.put("name", "rx");
         Map<String, DuplexStream> files = Collections.singletonMap("file", DuplexStream.wrap("upload.txt", "hello-v2".getBytes()));
         try (HttpClient client = clientNoCookieNoLog()) {
-            HttpClient.ResponseContent response = client.post(BASE_URL + "/upload", form, files);
+            HttpClient.Response response = client.post(BASE_URL + "/upload", form, files);
             assertTrue(response.toString().contains("rx:upload.txt:hello-v2"));
         }
     }
@@ -379,7 +379,7 @@ public class HttpClientFeatureTest {
             waitProxy(proxyServer);
             AuthenticProxy proxy = new AuthenticProxy(Proxy.Type.SOCKS, Sockets.newLoopbackEndpoint(proxyPort), "u1", "p1");
             try (HttpClient client = new HttpClient(new HttpClientConfig().setProxy(proxy).setCookieJar(null).setEnableLog(false))) {
-                HttpClient.ResponseContent response = client.get(BASE_URL + "/get");
+                HttpClient.Response response = client.get(BASE_URL + "/get");
                 assertEquals(200, response.getStatusCode());
                 assertTrue(response.toString().contains("ok-v2"));
             }

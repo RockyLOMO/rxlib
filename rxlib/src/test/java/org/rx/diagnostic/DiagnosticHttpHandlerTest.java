@@ -49,12 +49,12 @@ public class DiagnosticHttpHandlerTest {
             server = new HttpServer(port, false).requestDiagnostic("/diag");
             String url = "http://127.0.0.1:" + port + "/diag";
             try (HttpClient client = new HttpClient()) {
-                HttpClient.ResponseContent unauthorized = client.get(url);
+                HttpClient.Response unauthorized = client.get(url);
                 assertEquals(401, unauthorized.code());
                 assertNotNull(unauthorized.header(HttpHeaderNames.WWW_AUTHENTICATE.toString()));
 
                 client.requestHeaders().set(HttpHeaderNames.AUTHORIZATION, basic("secret"));
-                HttpClient.ResponseContent ok = client.get(url + "?limit=10");
+                HttpClient.Response ok = client.get(url + "?limit=10");
                 String html = ok.toString();
                 assertEquals(200, ok.code());
                 assertTrue(html.contains("RXlib Diagnostics"));
@@ -81,7 +81,7 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("?stack=456"));
                 assertFalse(html.contains("clob"));
 
-                HttpClient.ResponseContent filtered = client.get(url + "?limit=10&metric=disk.used.bytes&from="
+                HttpClient.Response filtered = client.get(url + "?limit=10&metric=disk.used.bytes&from="
                         + (now - 1000L) + "&to=" + (now + 1000L));
                 String filteredHtml = filtered.toString();
                 assertTrue(filteredHtml.contains("disk.used.bytes"));
@@ -91,11 +91,11 @@ public class DiagnosticHttpHandlerTest {
                 assertFalse(filteredHtml.contains("256.00 KB"));
                 assertFalse(filteredHtml.contains("http.metric</td>"));
 
-                HttpClient.ResponseContent chartLimited = client.get(url + "?limit=1&from="
+                HttpClient.Response chartLimited = client.get(url + "?limit=1&from="
                         + (now - 1000L) + "&to=" + (now + 1000L));
                 assertTrue(chartLimited.toString().contains("samples 2"));
 
-                HttpClient.ResponseContent stack = client.get(url + "?stack=456");
+                HttpClient.Response stack = client.get(url + "?stack=456");
                 assertTrue(stack.toString().contains("stack body"));
             }
         } finally {

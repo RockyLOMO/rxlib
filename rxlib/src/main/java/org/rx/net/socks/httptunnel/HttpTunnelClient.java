@@ -318,7 +318,7 @@ public class HttpTunnelClient extends Disposable {
             if (config.getToken() != null) {
                 request.header("X-Tunnel-Token", config.getToken());
             }
-            try (HttpClient.ResponseContent response = httpClient.execute(request)) {
+            try (HttpClient.Response response = httpClient.execute(request)) {
                 return response.handle(Bytes::toBytes);
             }
         } catch (Exception e) {

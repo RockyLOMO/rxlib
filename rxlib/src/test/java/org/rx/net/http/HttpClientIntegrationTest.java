@@ -219,8 +219,8 @@ public class HttpClientIntegrationTest {
     @Test
     public void redirectsAreFollowedByDefault() {
         try (HttpClient client = new HttpClient()) {
-            try (HttpClient.ResponseContent absolute = client.get(baseUrl + "/redirect-301");
-                 HttpClient.ResponseContent relative = client.get(baseUrl + "/redirect-relative")) {
+            try (HttpClient.Response absolute = client.get(baseUrl + "/redirect-301");
+                 HttpClient.Response relative = client.get(baseUrl + "/redirect-relative")) {
                 assertEquals(200, absolute.getStatusCode());
                 assertEquals("GET:redirect", absolute.toString());
                 assertEquals(200, relative.getStatusCode());
@@ -232,7 +232,7 @@ public class HttpClientIntegrationTest {
     @Test
     public void redirectsCanBeDisabled() {
         try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(false))) {
-            try (HttpClient.ResponseContent response = client.get(baseUrl + "/redirect-301")) {
+            try (HttpClient.Response response = client.get(baseUrl + "/redirect-301")) {
                 assertEquals(301, response.getStatusCode());
                 assertEquals(baseUrl + "/get?q=redirect", response.header(HttpHeaderNames.LOCATION.toString()));
             }
@@ -299,11 +299,11 @@ public class HttpClientIntegrationTest {
                 .setConnectTimeoutMillis(80)
                 .setReadWriteTimeoutMillis(1000)
                 .setMaxConnectionsPerHost(1))) {
-            CompletableFuture<HttpClient.ResponseContent> first = client.executeAsync(
+            CompletableFuture<HttpClient.Response> first = client.executeAsync(
                     HttpClient.request(HttpMethod.GET, baseUrl + "/slow").timeoutMillis(1000));
             assertTrue(slowStarted.await(2, TimeUnit.SECONDS));
 
-            CompletableFuture<HttpClient.ResponseContent> queued = client.executeAsync(
+            CompletableFuture<HttpClient.Response> queued = client.executeAsync(
                     HttpClient.request(HttpMethod.GET, baseUrl + "/get?q=queued").timeoutMillis(1000));
             ExecutionException error = assertThrows(ExecutionException.class,
                     () -> queued.get(2, TimeUnit.SECONDS));

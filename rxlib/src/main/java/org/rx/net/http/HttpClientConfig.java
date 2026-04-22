@@ -23,6 +23,7 @@ public final class HttpClientConfig {
     private int responseOffloadThreshold;
     private int uploadFlushBytes;
     private int uploadFlushChunks;
+    private int maxRedirects;
     @Setter
     private boolean followRedirects;
     @Setter
@@ -42,6 +43,7 @@ public final class HttpClientConfig {
         responseOffloadThreshold = Constants.MAX_HEAP_BUF_SIZE;
         uploadFlushBytes = Constants.HEAP_BUF_SIZE << 4;
         uploadFlushChunks = 16;
+        maxRedirects = 10;
         followRedirects = true;
         enableLog = conf.isEnableLog();
         cookieJar = HttpClientCookieJar.DEFAULT;
@@ -58,6 +60,7 @@ public final class HttpClientConfig {
         responseOffloadThreshold = src.responseOffloadThreshold;
         uploadFlushBytes = src.uploadFlushBytes;
         uploadFlushChunks = src.uploadFlushChunks;
+        maxRedirects = src.maxRedirects;
         followRedirects = src.followRedirects;
         enableLog = src.enableLog;
         proxy = src.proxy;
@@ -126,6 +129,11 @@ public final class HttpClientConfig {
 
     public HttpClientConfig setUploadFlushChunks(int uploadFlushChunks) {
         this.uploadFlushChunks = Math.max(1, uploadFlushChunks);
+        return this;
+    }
+
+    public HttpClientConfig setMaxRedirects(int maxRedirects) {
+        this.maxRedirects = Math.max(0, maxRedirects);
         return this;
     }
 

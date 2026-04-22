@@ -89,7 +89,6 @@ public class HttpClient implements AutoCloseable {
             AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricTotalLatencyNanos");
     private static final AtomicLongFieldUpdater<HttpClient> MAX_LATENCY_UPDATER =
             AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricMaxLatencyNanos");
-    private static final int MAX_REDIRECTS = 10;
 
     /** 与 {@link #getDefault()} 为同一实例，双检锁懒初始化 */
     private static volatile HttpClient DEFAULT;
@@ -139,12 +138,6 @@ public class HttpClient implements AutoCloseable {
 
     public Metrics getMetrics() {
         return ensureMetrics();
-    }
-
-    public HttpClient withFeatures(boolean cookieEnabled, boolean logEnabled) {
-        config.setCookieJar(cookieEnabled ? HttpClientCookieJar.DEFAULT : null);
-        config.setEnableLog(logEnabled);
-        return this;
     }
 
     private Metrics ensureMetrics() {
@@ -366,31 +359,6 @@ public class HttpClient implements AutoCloseable {
 
         @Override
         default void close() {
-        }
-    }
-
-    public static final class HttpClientBody {
-        private HttpClientBody() {
-        }
-
-        public static RequestContent bytes(byte[] bytes, CharSequence contentType) {
-            return new ByteBufContent(contentType == null ? null : contentType.toString(), newContentBuffer(bytes));
-        }
-
-        public static RequestContent bytes(ByteBuf bytes, CharSequence contentType) {
-            return new ByteBufContent(contentType == null ? null : contentType.toString(), bytes);
-        }
-
-        public static RequestContent json(Object json) {
-            return new JsonContent(json);
-        }
-
-        public static RequestContent form(Map<String, Object> forms) {
-            return new FormContent(forms);
-        }
-
-        public static RequestContent multipart(Map<String, Object> forms, Map<String, DuplexStream> files) {
-            return new MultipartContent(forms, files);
         }
     }
 
@@ -745,7 +713,7 @@ public class HttpClient implements AutoCloseable {
         final HttpMethod method;
         final PoolKey key;
         final FixedChannelPool pool;
-        final CompletableFuture<ResponseContent> future;
+        final CompletableFuture<Response> future;
         final HttpClientConfig config;
         final Proxy proxy;
         final int redirectCount;
@@ -769,7 +737,7 @@ public class HttpClient implements AutoCloseable {
         long responseBytes;
         boolean responseOffloaded;
 
-        RequestState(URI uri, HttpMethod method, PoolKey key, FixedChannelPool pool, CompletableFuture<ResponseContent> future, HttpClientConfig config,
+        RequestState(URI uri, HttpMethod method, PoolKey key, FixedChannelPool pool, CompletableFuture<Response> future, HttpClientConfig config,
                      Proxy proxy, int redirectCount, int readWriteTimeoutMillis, HttpHeaders requestHeaders, RequestContent content, HttpClient client,
                      long startNanos, boolean cookieEnabled, boolean logEnabled) {
             this.uri = uri;
@@ -972,7 +940,7 @@ public class HttpClient implements AutoCloseable {
                     return;
                 }
                 long elapsedNanos = System.nanoTime() - state.startNanos;
-                ResponseContent content = new ResponseContent(state.uri.toString(), state.response, state.stream, elapsedNanos);
+                Response content = new Response(state.uri.toString(), state.response, state.stream, elapsedNanos);
                 SUCCESS_UPDATER.incrementAndGet(state.client);
                 TOTAL_LATENCY_UPDATER.addAndGet(state.client, elapsedNanos);
                 for (; ; ) {
@@ -994,7 +962,7 @@ public class HttpClient implements AutoCloseable {
 
         private RedirectPlan buildRedirectPlan(RequestState state) {
             HttpResponse response = state.response;
-            if (response == null || !state.config.isFollowRedirects() || state.redirectCount >= MAX_REDIRECTS) {
+            if (response == null || !state.config.isFollowRedirects() || state.redirectCount >= state.config.getMaxRedirects()) {
                 return null;
             }
             String location = response.headers().get(HttpHeaderNames.LOCATION);
@@ -1167,126 +1135,115 @@ public class HttpClient implements AutoCloseable {
         public void close() {
             tryClose(stream);
         }
-    }
-
-    public static final class ResponseContent extends Response {
-        ResponseContent(String responseUrl, HttpResponse response, HybridStream stream, long elapsedNanos) {
-            super(responseUrl, response, stream, elapsedNanos);
-        }
 
         public String getResponseText() {
             return toString();
         }
-
-        @SneakyThrows
-        public synchronized <T> T handle(BiFunc<InputStream, T> fn) {
-            return fn.invoke(stream.rewind().asInputStream());
-        }
     }
 
     public String getText(@NonNull String url) {
-        try (ResponseContent response = get(url)) {
+        try (Response response = get(url)) {
             return response.toString();
         }
     }
 
     public String postText(String url, Map<String, Object> forms) {
-        try (ResponseContent response = post(url, forms)) {
+        try (Response response = post(url, forms)) {
             return response.toString();
         }
     }
 
     public String postText(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
-        try (ResponseContent response = post(url, forms, files)) {
+        try (Response response = post(url, forms, files)) {
             return response.toString();
         }
     }
 
     public String postJsonText(@NonNull String url, @NonNull Object json) {
-        try (ResponseContent response = postJson(url, json)) {
+        try (Response response = postJson(url, json)) {
             return response.toString();
         }
     }
 
     public String executeText(Request request) {
-        try (ResponseContent response = execute(request)) {
+        try (Response response = execute(request)) {
             return response.toString();
         }
     }
 
-    public ResponseContent head(@NonNull String url) {
+    public Response head(@NonNull String url) {
         return invoke(url, HttpMethod.HEAD, RequestContent.EMPTY);
     }
 
-    public ResponseContent get(@NonNull String url) {
+    public Response get(@NonNull String url) {
         return invoke(url, HttpMethod.GET, RequestContent.EMPTY);
     }
 
-    public ResponseContent post(String url, Map<String, Object> forms) {
+    public Response post(String url, Map<String, Object> forms) {
         return post(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent post(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
+    public Response post(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
         if (MapUtils.isEmpty(files)) {
             return invoke(url, HttpMethod.POST, new FormContent(forms));
         }
         return invoke(url, HttpMethod.POST, new MultipartContent(forms, files));
     }
 
-    public ResponseContent postJson(@NonNull String url, @NonNull Object json) {
+    public Response postJson(@NonNull String url, @NonNull Object json) {
         return invoke(url, HttpMethod.POST, new JsonContent(json));
     }
 
-    public ResponseContent put(String url, Map<String, Object> forms) {
+    public Response put(String url, Map<String, Object> forms) {
         return put(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent put(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
+    public Response put(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
         if (MapUtils.isEmpty(files)) {
             return invoke(url, HttpMethod.PUT, new FormContent(forms));
         }
         return invoke(url, HttpMethod.PUT, new MultipartContent(forms, files));
     }
 
-    public ResponseContent putJson(@NonNull String url, @NonNull Object json) {
+    public Response putJson(@NonNull String url, @NonNull Object json) {
         return invoke(url, HttpMethod.PUT, new JsonContent(json));
     }
 
-    public ResponseContent patch(String url, Map<String, Object> forms) {
+    public Response patch(String url, Map<String, Object> forms) {
         return patch(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent patch(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
+    public Response patch(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
         if (MapUtils.isEmpty(files)) {
             return invoke(url, HttpMethod.PATCH, new FormContent(forms));
         }
         return invoke(url, HttpMethod.PATCH, new MultipartContent(forms, files));
     }
 
-    public ResponseContent patchJson(@NonNull String url, @NonNull Object json) {
+    public Response patchJson(@NonNull String url, @NonNull Object json) {
         return invoke(url, HttpMethod.PATCH, new JsonContent(json));
     }
 
-    public ResponseContent delete(String url, Map<String, Object> forms) {
+    public Response delete(String url, Map<String, Object> forms) {
         return delete(url, forms, Collections.emptyMap());
     }
 
-    public ResponseContent delete(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
+    public Response delete(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
         if (MapUtils.isEmpty(files)) {
             return invoke(url, HttpMethod.DELETE, new FormContent(forms));
         }
         return invoke(url, HttpMethod.DELETE, new MultipartContent(forms, files));
     }
 
-    public ResponseContent deleteJson(@NonNull String url, @NonNull Object json) {
+    public Response deleteJson(@NonNull String url, @NonNull Object json) {
         return invoke(url, HttpMethod.DELETE, new JsonContent(json));
     }
 
     @SneakyThrows
-    public ResponseContent execute(Request request) {
+    public Response execute(Request request) {
         ensureBlockingCallAllowed();
         HttpClientConfig cfg = config;
-        CompletableFuture<ResponseContent> future = executeAsync(request, cfg);
+        CompletableFuture<Response> future = executeAsync(request, cfg);
         try {
             return future.get(callTimeoutMillis(cfg, request != null ? request.timeoutMillis : 0), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
@@ -1295,13 +1252,13 @@ public class HttpClient implements AutoCloseable {
         }
     }
 
-    public CompletableFuture<ResponseContent> executeAsync(Request request) {
+    public CompletableFuture<Response> executeAsync(Request request) {
         return executeAsync(request, config);
     }
 
-    CompletableFuture<ResponseContent> executeAsync(Request request, HttpClientConfig cfg) {
+    CompletableFuture<Response> executeAsync(Request request, HttpClientConfig cfg) {
         if (request == null) {
-            CompletableFuture<ResponseContent> future = new CompletableFuture<>();
+            CompletableFuture<Response> future = new CompletableFuture<>();
             future.completeExceptionally(new IllegalArgumentException("request is null"));
             return future;
         }
@@ -1312,13 +1269,13 @@ public class HttpClient implements AutoCloseable {
         return invokeAsync(request.url, request.method, request.body, headers, cfg, requestProxy, requestCookie, request.timeoutMillis);
     }
 
-    public Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
+    public Tuple<RequestContent, Response> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl) {
         return forward(servletRequest, servletResponse, forwardUrl, null);
     }
 
     @SneakyThrows
-    public Tuple<RequestContent, ResponseContent> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl,
-                                                          BiFunc<RequestContent, RequestContent> requestInterceptor) {
+    public Tuple<RequestContent, Response> forward(HttpServletRequest servletRequest, HttpServletResponse servletResponse, String forwardUrl,
+                                                   BiFunc<RequestContent, RequestContent> requestInterceptor) {
         HttpHeaders headers = new DefaultHttpHeaders();
         for (String name : Collections.list(servletRequest.getHeaderNames())) {
             if (Strings.equalsIgnoreCase(name, HttpHeaderNames.HOST)
@@ -1348,7 +1305,7 @@ public class HttpClient implements AutoCloseable {
             }
         }
 
-        ResponseContent response = invoke(forwardUrl, method, content, headers);
+        Response response = invoke(forwardUrl, method, content, headers);
         servletResponse.setStatus(response.getStatusCode());
         for (Map.Entry<String, String> header : response.responseHeaders()) {
             if (Strings.equalsIgnoreCase(header.getKey(), HttpHeaderNames.SET_COOKIE)) {
@@ -1370,7 +1327,7 @@ public class HttpClient implements AutoCloseable {
         return Tuple.of(content, response);
     }
 
-    private Long responseLength(ResponseContent response) {
+    private Long responseLength(Response response) {
         String value = response.responseHeaders().get(HttpHeaderNames.CONTENT_LENGTH);
         if (!Strings.isEmpty(value)) {
             try {
@@ -1387,15 +1344,15 @@ public class HttpClient implements AutoCloseable {
     }
 
     @SneakyThrows
-    ResponseContent invoke(String url, HttpMethod method, RequestContent content) {
+    Response invoke(String url, HttpMethod method, RequestContent content) {
         return invoke(url, method, content, requestHeadersSnapshot());
     }
 
     @SneakyThrows
-    ResponseContent invoke(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders) {
+    Response invoke(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders) {
         ensureBlockingCallAllowed();
         HttpClientConfig cfg = config;
-        CompletableFuture<ResponseContent> future = invokeAsync(url, method, content, copyHeaders(requestHeaders), cfg, cfg.getProxy(), cfg.getCookieJar() != null, 0);
+        CompletableFuture<Response> future = invokeAsync(url, method, content, copyHeaders(requestHeaders), cfg, cfg.getProxy(), cfg.getCookieJar() != null, 0);
         try {
             return future.get(callTimeoutMillis(cfg, 0), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
@@ -1404,16 +1361,16 @@ public class HttpClient implements AutoCloseable {
         }
     }
 
-    CompletableFuture<ResponseContent> invokeAsync(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
-                                                   HttpClientConfig cfg, Proxy requestProxy, boolean cookieEnabled, int timeoutMillis) {
-        CompletableFuture<ResponseContent> future = new CompletableFuture<>();
+    CompletableFuture<Response> invokeAsync(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
+                                            HttpClientConfig cfg, Proxy requestProxy, boolean cookieEnabled, int timeoutMillis) {
+        CompletableFuture<Response> future = new CompletableFuture<>();
         invokeAsync0(url, method, content, requestHeaders, cfg, requestProxy, cookieEnabled, timeoutMillis, future, System.nanoTime(), 0);
         return future;
     }
 
     void invokeAsync0(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
                       HttpClientConfig cfg, Proxy requestProxy, boolean cookieEnabled, int timeoutMillis,
-                      CompletableFuture<ResponseContent> future, long startNanos, int redirectCount) {
+                      CompletableFuture<Response> future, long startNanos, int redirectCount) {
         if (redirectCount == 0) {
             REQUESTS_UPDATER.incrementAndGet(this);
         }
