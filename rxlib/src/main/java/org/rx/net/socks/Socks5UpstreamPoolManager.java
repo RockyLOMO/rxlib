@@ -44,7 +44,9 @@ public final class Socks5UpstreamPoolManager extends Disposable {
             for (; ; ) {
                 Channel channel = readyChannels.pollFirst();
                 if (channel == null) {
-                    DiagnosticMetrics.record("socks.tcp.warm.miss.count", 1D, "key=" + key);
+                    if (DiagnosticMetrics.isEnabled()) {
+                        DiagnosticMetrics.record("socks.tcp.warm.miss.count", 1D, "key=" + key);
+                    }
                     return null;
                 }
                 Socks5WarmupHandler handler = channel.pipeline().get(Socks5WarmupHandler.class);
@@ -57,7 +59,9 @@ public final class Socks5UpstreamPoolManager extends Disposable {
                     retire(channel, "stale-age");
                     continue;
                 }
-                DiagnosticMetrics.record("socks.tcp.warm.hit.count", 1D, "key=" + key);
+                if (DiagnosticMetrics.isEnabled()) {
+                    DiagnosticMetrics.record("socks.tcp.warm.hit.count", 1D, "key=" + key);
+                }
                 return channel;
             }
         }
@@ -76,7 +80,9 @@ public final class Socks5UpstreamPoolManager extends Disposable {
                     int failures = Math.min(createFailures.incrementAndGet(), 10);
                     long delay = Math.min(config.getTcpWarmPoolRefillIntervalMillis() * (1L << failures), 30_000L);
                     nextRefillAt = now + delay;
-                    DiagnosticMetrics.record("socks.tcp.warm.create.backoff.count", 1D, "key=" + key + ",delay=" + delay);
+                    if (DiagnosticMetrics.isEnabled()) {
+                        DiagnosticMetrics.record("socks.tcp.warm.create.backoff.count", 1D, "key=" + key + ",delay=" + delay);
+                    }
                     break;
                 }
                 createFailures.set(0);
@@ -112,7 +118,9 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         }
 
         void retire(Channel channel, String reason) {
-            DiagnosticMetrics.record("socks.tcp.warm.retire.count", 1D, "key=" + key + ",reason=" + reason);
+            if (DiagnosticMetrics.isEnabled()) {
+                DiagnosticMetrics.record("socks.tcp.warm.retire.count", 1D, "key=" + key + ",reason=" + reason);
+            }
             Sockets.closeOnFlushed(channel);
         }
 
@@ -183,7 +191,9 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         }
         long idleHint = upstream.resolveRelayIdleHintMillis();
         if (idleHint > 0 && idleHint < 1000L) {
-            DiagnosticMetrics.record("socks.udp.lease.disabled.count", 1D, "key=" + upstream.poolKey() + ",reason=remote-idle");
+            if (DiagnosticMetrics.isEnabled()) {
+                DiagnosticMetrics.record("socks.udp.lease.disabled.count", 1D, "key=" + upstream.poolKey() + ",reason=remote-idle");
+            }
             return null;
         }
         long effectiveIdle = idleHint > 0 ? Math.min(config.getUdpLeasePoolMaxIdleMillis(), idleHint) : config.getUdpLeasePoolMaxIdleMillis();
@@ -214,12 +224,16 @@ public final class Socks5UpstreamPoolManager extends Disposable {
     public void onUdpRpcFailure(UdpLeasePoolKey key, SocksConfig config, String phase, Throwable cause) {
         AtomicInteger failures = udpRpcFailures.computeIfAbsent(key, k -> new AtomicInteger());
         int count = failures.incrementAndGet();
-        DiagnosticMetrics.record("socks.udp.lease.rpc.fail.count", 1D, "key=" + key + ",phase=" + phase + ",count=" + count);
+        if (DiagnosticMetrics.isEnabled()) {
+            DiagnosticMetrics.record("socks.udp.lease.rpc.fail.count", 1D, "key=" + key + ",phase=" + phase + ",count=" + count);
+        }
         if (count >= config.getUdpLeaseRpcBreakerThreshold()) {
             breakerCache.put(key, Boolean.TRUE,
                     CachePolicy.absolute(config.getUdpLeaseRpcBreakerOpenSeconds()));
             failures.set(0);
-            DiagnosticMetrics.record("socks.udp.lease.breaker.open.count", 1D, "key=" + key);
+            if (DiagnosticMetrics.isEnabled()) {
+                DiagnosticMetrics.record("socks.udp.lease.breaker.open.count", 1D, "key=" + key);
+            }
         }
         if (cause != null) {
             log.warn("udp lease rpc {} fail {}", phase, key, cause);

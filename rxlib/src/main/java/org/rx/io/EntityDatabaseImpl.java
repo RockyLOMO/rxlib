@@ -1104,6 +1104,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (startNanos == 0L) {
             return;
         }
+        if (!DiagnosticMetrics.isEnabled()) {
+            return;
+        }
         DiagnosticMetrics.record("rx.entity_db.connection.wait.millis",
                 TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos), diagnosticDbTags());
     }

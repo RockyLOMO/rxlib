@@ -198,7 +198,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         SocksContext.markCtx(inbound, connectFuture, e);
         connectFuture.addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                DiagnosticMetrics.record("socks.tcp.warm.fallback.count", 1D, "key=" + upstream.warmPoolKey());
+                if (DiagnosticMetrics.isEnabled()) {
+                    DiagnosticMetrics.record("socks.tcp.warm.fallback.count", 1D, "key=" + upstream.warmPoolKey());
+                }
                 Sockets.closeOnFlushed(outbound);
                 connectSlow(inbound, dstAddrType, e, null);
                 return;

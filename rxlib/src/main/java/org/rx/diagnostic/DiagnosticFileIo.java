@@ -7,7 +7,7 @@ public final class DiagnosticFileIo {
     }
 
     public static void recordRead(File file, long bytes, long elapsedNanos) {
-        if (file != null) {
+        if (file != null && isEnabled()) {
             recordRead(file.getAbsolutePath(), bytes, elapsedNanos);
         }
     }
@@ -17,7 +17,7 @@ public final class DiagnosticFileIo {
     }
 
     public static void recordWrite(File file, long bytes, long elapsedNanos) {
-        if (file != null) {
+        if (file != null && isEnabled()) {
             recordWrite(file.getAbsolutePath(), bytes, elapsedNanos);
         }
     }
@@ -27,11 +27,19 @@ public final class DiagnosticFileIo {
     }
 
     public static long begin() {
-        return System.nanoTime();
+        return isEnabled() ? System.nanoTime() : 0L;
     }
 
     public static long elapsedNanos(long beginNanos) {
+        if (beginNanos <= 0L) {
+            return 0L;
+        }
         return System.nanoTime() - beginNanos;
+    }
+
+    public static boolean isEnabled() {
+        DiagnosticMonitor monitor = DiagnosticMonitor.getDefault();
+        return monitor != null && monitor.isRunning();
     }
 
     private static void record(String path, DiagnosticFileOperation operation, long bytes, long elapsedNanos) {

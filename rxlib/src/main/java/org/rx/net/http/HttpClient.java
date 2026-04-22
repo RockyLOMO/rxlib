@@ -58,7 +58,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
@@ -71,13 +71,36 @@ public class HttpClient implements AutoCloseable {
     public static final String FORM_TYPE = "application/x-www-form-urlencoded;charset=UTF-8";
     public static final String JSON_TYPE = "application/json; charset=UTF-8";
     static final AttributeKey<RequestState> STATE_KEY = AttributeKey.valueOf("HttpClientState");
+    private static final AtomicLongFieldUpdater<HttpClient> REQUESTS_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricRequests");
+    private static final AtomicLongFieldUpdater<HttpClient> SUCCESS_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricSuccess");
+    private static final AtomicLongFieldUpdater<HttpClient> FAILED_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricFailed");
+    private static final AtomicLongFieldUpdater<HttpClient> TIMEOUT_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricTimeout");
+    private static final AtomicLongFieldUpdater<HttpClient> UPLOAD_BYTES_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricUploadBytes");
+    private static final AtomicLongFieldUpdater<HttpClient> DOWNLOAD_BYTES_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricDownloadBytes");
+    private static final AtomicLongFieldUpdater<HttpClient> TOTAL_LATENCY_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricTotalLatencyNanos");
+    private static final AtomicLongFieldUpdater<HttpClient> MAX_LATENCY_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricMaxLatencyNanos");
 
     /** 与 {@link #getDefault()} 为同一实例，双检锁懒初始化 */
     private static volatile HttpClient DEFAULT;
 
     final Map<PoolKey, FixedChannelPool> pools = new ConcurrentHashMap<>();
-    @Getter
-    final Metrics metrics = new Metrics();
+    private volatile Metrics metrics;
+    private volatile long metricRequests;
+    private volatile long metricSuccess;
+    private volatile long metricFailed;
+    private volatile long metricTimeout;
+    private volatile long metricUploadBytes;
+    private volatile long metricDownloadBytes;
+    private volatile long metricTotalLatencyNanos;
+    private volatile long metricMaxLatencyNanos;
     final HttpClientConfig config;
     final HttpHeaders reqHeaders = new DefaultHttpHeaders();
 
@@ -111,6 +134,69 @@ public class HttpClient implements AutoCloseable {
         return config;
     }
 
+    public Metrics getMetrics() {
+        return ensureMetrics();
+    }
+
+    public Metrics metrics() {
+        return getMetrics();
+    }
+
+    public HttpClient withFeatures(boolean cookieEnabled, boolean logEnabled) {
+        config.setCookieJar(cookieEnabled ? HttpClientCookieJar.DEFAULT : null);
+        config.setEnableLog(logEnabled);
+        return this;
+    }
+
+    private Metrics ensureMetrics() {
+        Metrics m = metrics;
+        if (m != null) {
+            return m;
+        }
+        synchronized (this) {
+            m = metrics;
+            if (m == null) {
+                metrics = m = new Metrics(this);
+            }
+            return m;
+        }
+    }
+
+    private void recordRequest() {
+        REQUESTS_UPDATER.incrementAndGet(this);
+    }
+
+    private void recordSuccess(long elapsedNanos) {
+        SUCCESS_UPDATER.incrementAndGet(this);
+        TOTAL_LATENCY_UPDATER.addAndGet(this, elapsedNanos);
+        for (; ; ) {
+            long old = metricMaxLatencyNanos;
+            if (elapsedNanos <= old || MAX_LATENCY_UPDATER.compareAndSet(this, old, elapsedNanos)) {
+                return;
+            }
+        }
+    }
+
+    private void recordFailed() {
+        FAILED_UPDATER.incrementAndGet(this);
+    }
+
+    private void recordTimeout() {
+        TIMEOUT_UPDATER.incrementAndGet(this);
+    }
+
+    private void recordUploadBytes(long bytes) {
+        if (bytes > 0L) {
+            UPLOAD_BYTES_UPDATER.addAndGet(this, bytes);
+        }
+    }
+
+    private void recordDownloadBytes(long bytes) {
+        if (bytes > 0L) {
+            DOWNLOAD_BYTES_UPDATER.addAndGet(this, bytes);
+        }
+    }
+
     public HttpClient requestUserAgent() {
         requestHeaders().set(HttpHeaderNames.USER_AGENT, RxConfig.INSTANCE.getNet().getUserAgent());
         return this;
@@ -140,59 +226,46 @@ public class HttpClient implements AutoCloseable {
     }
 
     public static final class Metrics {
-        private final AtomicLong requests = new AtomicLong();
-        private final AtomicLong success = new AtomicLong();
-        private final AtomicLong failed = new AtomicLong();
-        private final AtomicLong timeout = new AtomicLong();
-        private final AtomicLong uploadBytes = new AtomicLong();
-        private final AtomicLong downloadBytes = new AtomicLong();
-        private final AtomicLong totalLatencyNanos = new AtomicLong();
-        private final AtomicLong maxLatencyNanos = new AtomicLong();
+        private final HttpClient owner;
+
+        Metrics(HttpClient owner) {
+            this.owner = owner;
+        }
 
         public long requests() {
-            return requests.get();
+            return owner.metricRequests;
         }
 
         public long success() {
-            return success.get();
+            return owner.metricSuccess;
         }
 
         public long failed() {
-            return failed.get();
+            return owner.metricFailed;
         }
 
         public long timeout() {
-            return timeout.get();
+            return owner.metricTimeout;
         }
 
         public long uploadBytes() {
-            return uploadBytes.get();
+            return owner.metricUploadBytes;
         }
 
         public long downloadBytes() {
-            return downloadBytes.get();
+            return owner.metricDownloadBytes;
         }
 
         public long totalLatencyNanos() {
-            return totalLatencyNanos.get();
+            return owner.metricTotalLatencyNanos;
         }
 
         public long maxLatencyNanos() {
-            return maxLatencyNanos.get();
+            return owner.metricMaxLatencyNanos;
         }
 
         public long usedDirectMemory() {
             return PooledByteBufAllocator.DEFAULT.metric().usedDirectMemory();
-        }
-
-        void recordLatency(long elapsedNanos) {
-            totalLatencyNanos.addAndGet(elapsedNanos);
-            for (; ; ) {
-                long old = maxLatencyNanos.get();
-                if (elapsedNanos <= old || maxLatencyNanos.compareAndSet(old, elapsedNanos)) {
-                    return;
-                }
-            }
         }
     }
     
@@ -532,7 +605,7 @@ public class HttpClient implements AutoCloseable {
                 ReferenceCountUtil.release(buf);
                 throw e;
             }
-            state.metrics.uploadBytes.addAndGet(bytes);
+            state.recordUploadBytes(bytes);
             pendingBytes += bytes;
             pendingChunks++;
             if (pendingBytes >= state.uploadFlushBytes || pendingChunks >= state.uploadFlushChunks || !channel.isWritable()) {
@@ -639,7 +712,7 @@ public class HttpClient implements AutoCloseable {
         final int uploadFlushChunks;
         final HttpHeaders requestHeaders;
         final RequestContent content;
-        final Metrics metrics;
+        final HttpClient client;
         final HttpClientCookieJar cookieJar;
         final long startNanos;
         final boolean cookieEnabled;
@@ -655,7 +728,7 @@ public class HttpClient implements AutoCloseable {
         boolean responseOffloaded;
 
         RequestState(URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<ResponseContent> future, HttpClientConfig config,
-                     int readWriteTimeoutMillis, HttpHeaders requestHeaders, RequestContent content, Metrics metrics,
+                     int readWriteTimeoutMillis, HttpHeaders requestHeaders, RequestContent content, HttpClient client,
                      long startNanos, boolean cookieEnabled, boolean logEnabled) {
             this.uri = uri;
             this.key = key;
@@ -667,7 +740,7 @@ public class HttpClient implements AutoCloseable {
             uploadFlushChunks = config.getUploadFlushChunks();
             this.requestHeaders = requestHeaders != null ? requestHeaders : EmptyHttpHeaders.INSTANCE;
             this.content = content;
-            this.metrics = metrics;
+            this.client = client;
             cookieJar = config.getCookieJar();
             this.startNanos = startNanos;
             this.cookieEnabled = cookieEnabled;
@@ -692,7 +765,7 @@ public class HttpClient implements AutoCloseable {
                 responseWriteTail = responseWriteTail.thenRunAsync(() -> {
                     try {
                         stream.write(retained, retained.readableBytes());
-                        metrics.downloadBytes.addAndGet(readableBytes);
+                        recordDownloadBytes(readableBytes);
                     } finally {
                         ReferenceCountUtil.release(retained);
                     }
@@ -705,6 +778,26 @@ public class HttpClient implements AutoCloseable {
             synchronized (responseWriteLock) {
                 return responseWriteTail;
             }
+        }
+
+        void recordUploadBytes(long bytes) {
+            client.recordUploadBytes(bytes);
+        }
+
+        void recordDownloadBytes(long bytes) {
+            client.recordDownloadBytes(bytes);
+        }
+
+        void recordSuccess(long elapsedNanos) {
+            client.recordSuccess(elapsedNanos);
+        }
+
+        void recordFailed() {
+            client.recordFailed();
+        }
+
+        void recordTimeout() {
+            client.recordTimeout();
         }
     }
 
@@ -753,7 +846,7 @@ public class HttpClient implements AutoCloseable {
                         return;
                     }
                     state.stream.write(content.content(), readableBytes);
-                    state.metrics.downloadBytes.addAndGet(readableBytes);
+                    state.recordDownloadBytes(readableBytes);
                 }
                 if (msg instanceof LastHttpContent) {
                     completeAfterWrites(ctx.channel(), state);
@@ -802,8 +895,7 @@ public class HttpClient implements AutoCloseable {
             boolean keepAlive = response != null && HttpUtil.isKeepAlive(response) && channel.isActive();
             long elapsedNanos = System.nanoTime() - state.startNanos;
             ResponseContent content = new ResponseContent(state.uri.toString(), response, state.stream, elapsedNanos);
-            state.metrics.success.incrementAndGet();
-            state.metrics.recordLatency(elapsedNanos);
+            state.recordSuccess(elapsedNanos);
             if (channel.isActive()) {
                 channel.config().setAutoRead(true);
             }
@@ -1144,7 +1236,7 @@ public class HttpClient implements AutoCloseable {
 
     CompletableFuture<ResponseContent> invokeAsync(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
                                                    HttpClientConfig cfg, Proxy requestProxy, boolean cookieEnabled, int timeoutMillis) {
-        metrics.requests.incrementAndGet();
+        recordRequest();
         CompletableFuture<ResponseContent> future = new CompletableFuture<>();
         URI uri;
         try {
@@ -1153,7 +1245,7 @@ public class HttpClient implements AutoCloseable {
                 throw new IllegalArgumentException("Invalid http url " + url);
             }
         } catch (Throwable e) {
-            metrics.failed.incrementAndGet();
+            recordFailed();
             future.completeExceptionally(e);
             tryClose(content);
             return future;
@@ -1166,7 +1258,7 @@ public class HttpClient implements AutoCloseable {
 
         pool.acquire().addListener((io.netty.util.concurrent.Future<Channel> f) -> {
             if (!f.isSuccess()) {
-                metrics.failed.incrementAndGet();
+                recordFailed();
                 future.completeExceptionally(f.cause());
                 tryClose(content);
                 return;
@@ -1178,10 +1270,10 @@ public class HttpClient implements AutoCloseable {
                 return;
             }
             RequestState state = new RequestState(uri, key, pool, future, cfg, requestTimeout, requestHeaders, content,
-                    metrics, startNanos, cookieEnabled, cfg.isEnableLog());
+                    this, startNanos, cookieEnabled, cfg.isEnableLog());
             channel.attr(STATE_KEY).set(state);
             state.timeoutFuture = channel.eventLoop().schedule(() -> {
-                metrics.timeout.incrementAndGet();
+                state.recordTimeout();
                 fail(channel, new TimeoutException("HTTP request timeout " + requestTimeout + "ms: " + url));
             }, requestTimeout, TimeUnit.MILLISECONDS);
             try {
@@ -1303,7 +1395,7 @@ public class HttpClient implements AutoCloseable {
             DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, method, requestUri, body);
             request.headers().set(headers);
             HttpUtil.setContentLength(request, body.readableBytes());
-            state.metrics.uploadBytes.addAndGet(body.readableBytes());
+            state.recordUploadBytes(body.readableBytes());
             channel.writeAndFlush(request).addListener(f -> {
                 state.closeContent();
                 if (!f.isSuccess()) {
@@ -1360,7 +1452,7 @@ public class HttpClient implements AutoCloseable {
         }
         state.cancelTimeout();
         state.closeContent();
-        state.metrics.failed.incrementAndGet();
+        state.recordFailed();
         release(channel, state, false);
         state.future.completeExceptionally(cause);
     }

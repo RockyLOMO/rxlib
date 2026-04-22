@@ -120,7 +120,9 @@ public class EventBus {
         Linq<Class<?>> q = Linq.from(eventTypes);
         Set<Tuple<Object, Method>> eventSubscribers = topic == null ? q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).values()).selectMany(p -> p).toSet() : q.selectMany(p -> subscribers.getOrDefault(p, Collections.emptyMap()).getOrDefault(topic, Collections.emptySet())).toSet();
         if (eventSubscribers.isEmpty()) {
-            DiagnosticMetrics.record(Constants.MetricName.DEAD_EVENT.name(), 1D, "event=" + event + ",topic=" + topic);
+            if (DiagnosticMetrics.isEnabled()) {
+                DiagnosticMetrics.record(Constants.MetricName.DEAD_EVENT.name(), 1D, "event=" + event + ",topic=" + topic);
+            }
             onDeadEvent.accept(event);
             return;
         }

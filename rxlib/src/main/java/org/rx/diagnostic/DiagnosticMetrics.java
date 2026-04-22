@@ -63,7 +63,9 @@ public final class DiagnosticMetrics {
     }
 
     public static void installNetIoHandler(ChannelPipeline pipeline, String component) {
-        DiagnosticNetIoHandler.install(pipeline, component);
+        if (isEnabled()) {
+            DiagnosticNetIoHandler.install(pipeline, component);
+        }
     }
 
     public static boolean enterSuppressed() {

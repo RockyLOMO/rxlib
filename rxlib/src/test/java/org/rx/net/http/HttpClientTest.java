@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class HttpClientTest {
@@ -43,6 +44,19 @@ public class HttpClientTest {
         
         // After client is closed, the stream should be closed
         assertThrows(Exception.class, () -> stream.read(), "Stream should be closed after response.close()");
+    }
+
+    @Test
+    public void metricsShouldBeLazyUntilRequested() throws Exception {
+        try (HttpClient client = new HttpClient()) {
+            Field field = HttpClient.class.getDeclaredField("metrics");
+            field.setAccessible(true);
+            assertNull(field.get(client));
+
+            HttpClient.Metrics metrics = client.getMetrics();
+            assertNotNull(metrics);
+            assertSame(metrics, field.get(client));
+        }
     }
 
     @Test
