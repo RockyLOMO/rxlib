@@ -64,7 +64,8 @@ public class HttpTunnelClient extends Disposable {
         this.httpClient = new HttpClient(new HttpClientConfig()
                 .setCookieJar(null)
                 .setEnableLog(false)
-                .setTimeoutMillis(config.getConnectTimeoutMillis(), (config.getPollTimeoutSeconds() + 5) * 1000));
+                .setConnectTimeoutMillis(config.getConnectTimeoutMillis())
+                .setReadWriteTimeoutMillis((config.getPollTimeoutSeconds() + 5) * 1000));
 
         // 自建 SOCKS5 服务端，不使用 SocksProxyServer (避免其 connect 到真实远程目标)
         serverBootstrap = Sockets.serverBootstrap(channel -> {

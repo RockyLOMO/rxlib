@@ -171,11 +171,11 @@ public final class NetEventWait extends Disposable implements WaitHandle {
                     return;
                 }
                 Tasks.run(() -> {
-                    HttpClient client = new HttpClient();
                     Map<String, Object> params = new HashMap<>();
                     params.put("multicast", Sockets.toString(multicastEndpoint));
                     params.put("group", group);
                     params.put("mcId", mcId);
+                    HttpClient client = HttpClient.getDefault();
                     eachQuietly(urls, u -> client.get(HttpClient.buildUrl(u, params)));
                 });
             }

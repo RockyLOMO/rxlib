@@ -208,7 +208,7 @@ public class HttpClientIntegrationTest {
 
     @Test
     public void requestTimeoutCompletesExceptionally() {
-        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(1000, 1000))) {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(1000))) {
             HttpClient.Request request = HttpClient.request(HttpMethod.GET, baseUrl + "/slow")
                     .timeoutMillis(100);
             ExecutionException error = assertThrows(ExecutionException.class,
@@ -221,7 +221,10 @@ public class HttpClientIntegrationTest {
     @Test
     public void fixedPoolLimitsConcurrentAcquire() throws Exception {
         slowStarted = new CountDownLatch(1);
-        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(80, 1000).setMaxConnectionsPerHost(1))) {
+        try (HttpClient client = new HttpClient(new HttpClientConfig()
+                .setConnectTimeoutMillis(80)
+                .setReadWriteTimeoutMillis(1000)
+                .setMaxConnectionsPerHost(1))) {
             CompletableFuture<HttpClient.ResponseContent> first = client.executeAsync(
                     HttpClient.request(HttpMethod.GET, baseUrl + "/slow").timeoutMillis(1000));
             assertTrue(slowStarted.await(2, TimeUnit.SECONDS));

@@ -65,7 +65,15 @@ public final class HttpClientConfig {
         return setTimeoutMillis(timeoutMillis, timeoutMillis);
     }
 
-    public HttpClientConfig setTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
+    public HttpClientConfig setConnectTimeoutMillis(int connectTimeoutMillis) {
+        return setTimeoutMillis(connectTimeoutMillis, 0);
+    }
+
+    public HttpClientConfig setReadWriteTimeoutMillis(int readWriteTimeoutMillis) {
+        return setTimeoutMillis(0, readWriteTimeoutMillis);
+    }
+
+    private HttpClientConfig setTimeoutMillis(int connectTimeoutMillis, int readWriteTimeoutMillis) {
         this.connectTimeoutMillis = positive(connectTimeoutMillis, this.connectTimeoutMillis);
         this.readWriteTimeoutMillis = positive(readWriteTimeoutMillis, this.readWriteTimeoutMillis);
         this.acquireTimeoutMillis = this.connectTimeoutMillis;
