@@ -50,7 +50,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
         <maven.test.skip>true</maven.test.skip>
-        <java.version>1.8</java.version>
+        <java.version>17</java.version>
+        <shallow>true</shallow>
         <gpg.skip>false</gpg.skip>
 
         <lombok.version>1.18.30</lombok.version>
