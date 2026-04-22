@@ -4,7 +4,9 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.annotation.JSONField;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.pool.AbstractChannelPoolHandler;
 import io.netty.channel.pool.ChannelHealthChecker;
@@ -290,10 +292,9 @@ public class HttpClient implements AutoCloseable {
         private final HttpMethod method;
         @Getter
         private final String url;
+        private HttpHeaders headers;
         @Getter
-        private final HttpHeaders headers = new DefaultHttpHeaders(false);
-        @Getter
-        private RequestContent body = EmptyContent.INSTANCE;
+        private RequestContent body = RequestContent.EMPTY;
         private int timeoutMillis;
         private Proxy proxy;
         private Boolean enableCookie;
@@ -303,25 +304,37 @@ public class HttpClient implements AutoCloseable {
             this.url = url;
         }
 
+        public HttpHeaders getHeaders() {
+            HttpHeaders h = headers;
+            if (h == null) {
+                headers = h = new DefaultHttpHeaders(false);
+            }
+            return h;
+        }
+
         public Request header(CharSequence name, Object value) {
-            headers.set(name, value);
+            getHeaders().set(name, value);
             return this;
         }
 
         public Request headers(HttpHeaders headers) {
-            if (headers != null) {
-                this.headers.set(headers);
+            if (headers != null && !headers.isEmpty()) {
+                getHeaders().set(headers);
             }
             return this;
         }
 
         public Request body(RequestContent body) {
-            this.body = body != null ? body : EmptyContent.INSTANCE;
+            this.body = body != null ? body : RequestContent.EMPTY;
             return this;
         }
 
         public Request bytes(byte[] bytes, CharSequence contentType) {
-            return body(new BytesContent(contentType == null ? null : contentType.toString(), bytes));
+            return body(new ByteBufContent(contentType == null ? null : contentType.toString(), newContentBuffer(bytes)));
+        }
+
+        public Request bytes(ByteBuf bytes, CharSequence contentType) {
+            return body(new ByteBufContent(contentType == null ? null : contentType.toString(), bytes));
         }
 
         public Request json(Object json) {
@@ -353,49 +366,49 @@ public class HttpClient implements AutoCloseable {
     }
 
     public interface RequestContent extends AutoCloseable {
-        String contentType();
+        RequestContent EMPTY = new RequestContent() {
+        };
 
-        boolean streaming();
+        default String contentType() {
+            return null;
+        }
 
-        ByteBuf toFullContent(Channel channel);
+        default boolean streaming() {
+            return false;
+        }
 
-        void writeStreaming(Channel channel, RequestState state) throws Exception;
+        default ByteBuf toFullContent(Channel channel) {
+            return channel.alloc().buffer(0, 0);
+        }
+
+        default void writeStreaming(Channel channel, RequestState state) throws Exception {
+        }
 
         @Override
         default void close() {
         }
     }
 
-    static final class EmptyContent implements RequestContent {
-        static final EmptyContent INSTANCE = new EmptyContent();
-
-        @Override
-        public String contentType() {
-            return null;
-        }
-
-        @Override
-        public boolean streaming() {
-            return false;
-        }
-
-        @Override
-        public ByteBuf toFullContent(Channel channel) {
-            return channel.alloc().buffer(0, 0);
-        }
-
-        @Override
-        public void writeStreaming(Channel channel, RequestState state) {
-        }
+    private static ByteBuf newUtf8Buffer(String value) {
+        return Strings.isEmpty(value) ? Unpooled.EMPTY_BUFFER : ByteBufUtil.writeUtf8(PooledByteBufAllocator.DEFAULT, value);
     }
 
-    static class BytesContent implements RequestContent {
-        final String contentType;
-        final byte[] data;
+    private static ByteBuf newContentBuffer(byte[] value) {
+        if (value == null || value.length == 0) {
+            return Unpooled.EMPTY_BUFFER;
+        }
+        ByteBuf buf = PooledByteBufAllocator.DEFAULT.ioBuffer(value.length, value.length);
+        buf.writeBytes(value);
+        return buf;
+    }
 
-        BytesContent(String contentType, byte[] data) {
+    static class ByteBufContent implements RequestContent {
+        final String contentType;
+        final ByteBuf data;
+
+        ByteBufContent(String contentType, ByteBuf data) {
             this.contentType = contentType;
-            this.data = data != null ? data : org.rx.core.Arrays.EMPTY_BYTE_ARRAY;
+            this.data = data != null ? data : Unpooled.EMPTY_BUFFER;
         }
 
         @Override
@@ -410,13 +423,16 @@ public class HttpClient implements AutoCloseable {
 
         @Override
         public ByteBuf toFullContent(Channel channel) {
-            ByteBuf buf = channel.alloc().buffer(data.length, data.length);
-            buf.writeBytes(data);
-            return buf;
+            return data.retainedDuplicate();
         }
 
         @Override
         public void writeStreaming(Channel channel, RequestState state) {
+        }
+
+        @Override
+        public void close() {
+            ReferenceCountUtil.release(data);
         }
     }
 
@@ -447,51 +463,53 @@ public class HttpClient implements AutoCloseable {
         @Override
         public void writeStreaming(Channel channel, RequestState state) throws Exception {
             UploadWriter writer = new UploadWriter(channel, state);
-            byte[] buffer = new byte[Constants.HEAP_BUF_SIZE];
             int read;
-            while ((read = in.read(buffer)) != Constants.IO_EOF) {
+            while (true) {
                 if (!channel.isActive()) {
                     throw new IllegalStateException("Channel closed");
                 }
-                ByteBuf buf = channel.alloc().buffer(read, read);
-                buf.writeBytes(buffer, 0, read);
+                ByteBuf buf = channel.alloc().ioBuffer(Constants.HEAP_BUF_SIZE, Constants.HEAP_BUF_SIZE);
+                read = buf.writeBytes(in, Constants.HEAP_BUF_SIZE);
+                if (read == Constants.IO_EOF) {
+                    buf.release();
+                    break;
+                }
                 writer.write(buf, read);
             }
             writer.finish();
         }
     }
 
-    public static final class JsonContent extends BytesContent {
+    public static final class JsonContent extends ByteBufContent {
         @Getter
         final Object json;
 
         JsonContent(Object json) {
-            super(JSON_TYPE, Sys.toJsonString(json).getBytes(StandardCharsets.UTF_8));
+            super(JSON_TYPE, newUtf8Buffer(Sys.toJsonString(json)));
             this.json = json;
         }
     }
 
-    public static final class FormContent extends BytesContent {
-        FormContent(Map<String, Object> forms) {
-            super(FORM_TYPE, formBytes(forms));
-        }
+    public static final class FormContent extends ByteBufContent {
+        @Getter
+        final Map<String, Object> forms;
 
-        private static byte[] formBytes(Map<String, Object> forms) {
-            String formString = buildUrl(null, forms);
-            if (!Strings.isEmpty(formString)) {
-                formString = formString.substring(1);
-            }
-            return formString.getBytes(StandardCharsets.UTF_8);
+        FormContent(Map<String, Object> forms) {
+            super(FORM_TYPE, newUtf8Buffer(buildUrl(null, forms, false)));
+            this.forms = forms != null ? forms : Collections.emptyMap();
         }
     }
 
     public static final class MultipartContent implements RequestContent {
-        static final byte[] CRLF = "\r\n".getBytes(StandardCharsets.UTF_8);
+        static final ByteBuf CRLF = Unpooled.unreleasableBuffer(Unpooled.directBuffer(2, 2)
+                .writeByte('\r')
+                .writeByte('\n')).asReadOnly();
 
         final Map<String, Object> forms;
         final Map<String, IOStream> files;
         final String boundary;
         final String contentType;
+        final StringBuilder partPrefixBuilder = new StringBuilder(128);
 
         MultipartContent(Map<String, Object> forms, Map<String, IOStream> files) {
             this.forms = forms != null ? forms : Collections.emptyMap();
@@ -534,7 +552,7 @@ public class HttpClient implements AutoCloseable {
                 }
                 String fileName = Strings.isEmpty(stream.getName()) ? entry.getKey() : stream.getName();
                 writeAscii(writer, partPrefix(entry.getKey(), fileName, Files.getMediaTypeFromName(fileName)));
-                writeStream(writer, stream.rewind().getReader());
+                writeStream(writer, stream.rewind());
                 writeBytes(writer, CRLF);
             }
             writeAscii(writer, "--" + boundary + "--\r\n");
@@ -542,7 +560,8 @@ public class HttpClient implements AutoCloseable {
         }
 
         private String partPrefix(String name, String fileName, String mediaType) {
-            StringBuilder sb = new StringBuilder(128);
+            StringBuilder sb = partPrefixBuilder;
+            sb.setLength(0);
             sb.append("--").append(boundary).append("\r\n");
             sb.append("Content-Disposition: form-data; name=\"").append(escapeHeader(name)).append("\"");
             if (fileName != null) {
@@ -561,24 +580,30 @@ public class HttpClient implements AutoCloseable {
         }
 
         private void writeAscii(UploadWriter writer, String value) throws Exception {
-            writeBytes(writer, value.getBytes(StandardCharsets.UTF_8));
+            if (Strings.isEmpty(value)) {
+                return;
+            }
+            ByteBuf buf = ByteBufUtil.writeUtf8(writer.channel.alloc(), value);
+            writer.write(buf, buf.readableBytes());
         }
 
-        private void writeBytes(UploadWriter writer, byte[] bytes) throws Exception {
-            ByteBuf buf = writer.channel.alloc().buffer(bytes.length, bytes.length);
-            buf.writeBytes(bytes);
-            writer.write(buf, bytes.length);
+        private void writeBytes(UploadWriter writer, ByteBuf bytes) throws Exception {
+            ByteBuf buf = bytes.retainedDuplicate();
+            writer.write(buf, buf.readableBytes());
         }
 
-        private void writeStream(UploadWriter writer, InputStream in) throws Exception {
-            byte[] buffer = new byte[Constants.HEAP_BUF_SIZE];
+        private void writeStream(UploadWriter writer, IOStream in) throws Exception {
             int read;
-            while ((read = in.read(buffer)) != Constants.IO_EOF) {
+            while (true) {
                 if (!writer.channel.isActive()) {
                     throw new IllegalStateException("Channel closed");
                 }
-                ByteBuf buf = writer.channel.alloc().buffer(read, read);
-                buf.writeBytes(buffer, 0, read);
+                ByteBuf buf = writer.channel.alloc().ioBuffer(Constants.HEAP_BUF_SIZE, Constants.HEAP_BUF_SIZE);
+                read = in.read(buf, Constants.HEAP_BUF_SIZE);
+                if (read == Constants.IO_EOF) {
+                    buf.release();
+                    break;
+                }
                 writer.write(buf, read);
             }
         }
@@ -1051,11 +1076,11 @@ public class HttpClient implements AutoCloseable {
     }
 
     public ResponseContent head(@NonNull String url) {
-        return invoke(url, HttpMethod.HEAD, EmptyContent.INSTANCE);
+        return invoke(url, HttpMethod.HEAD, RequestContent.EMPTY);
     }
 
     public ResponseContent get(@NonNull String url) {
-        return invoke(url, HttpMethod.GET, EmptyContent.INSTANCE);
+        return invoke(url, HttpMethod.GET, RequestContent.EMPTY);
     }
 
     public ResponseContent post(String url, Map<String, Object> forms) {
@@ -1173,7 +1198,7 @@ public class HttpClient implements AutoCloseable {
         HttpMethod method = HttpMethod.valueOf(servletRequest.getMethod());
         RequestContent content;
         if (HttpMethod.GET.equals(method) || HttpMethod.HEAD.equals(method)) {
-            content = EmptyContent.INSTANCE;
+            content = RequestContent.EMPTY;
         } else {
             content = new StreamContent(servletRequest.getContentType(), servletRequest.getInputStream());
         }
@@ -1492,6 +1517,10 @@ public class HttpClient implements AutoCloseable {
     }
 
     public static String buildUrl(String url, Map<String, Object> queryString) {
+        return buildUrl(url, queryString, true);
+    }
+
+    public static String buildUrl(String url, Map<String, Object> queryString, boolean includeLeadingQuestionMark) {
         if (url == null) {
             url = Strings.EMPTY;
         }
@@ -1506,12 +1535,21 @@ public class HttpClient implements AutoCloseable {
             url = url.substring(0, i);
         }
         StringBuilder sb = new StringBuilder(url);
+        boolean first = true;
         for (Map.Entry<String, Object> entry : query.entrySet()) {
             Object val = entry.getValue();
             if (val == null) {
                 continue;
             }
-            sb.append(sb.length() == url.length() ? "?" : "&").append(encodeUrl(entry.getKey())).append("=").append(encodeUrl(val.toString()));
+            if (first) {
+                if (includeLeadingQuestionMark) {
+                    sb.append("?");
+                }
+                first = false;
+            } else {
+                sb.append("&");
+            }
+            sb.append(encodeUrl(entry.getKey())).append("=").append(encodeUrl(val.toString()));
         }
         return sb.toString();
     }
