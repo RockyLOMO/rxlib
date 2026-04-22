@@ -98,6 +98,7 @@ public final class HybridStream extends DuplexStream implements Serializable {
         this.tempFilePath = tempFilePath;
         if (this.maxMemorySize == NON_MEMORY_SIZE) {
             fileStream = newFileStream();
+            length = fileStream.getLength();
         } else {
             memoryStream = new MemoryStream(this.maxMemorySize, directMemory);
         }
