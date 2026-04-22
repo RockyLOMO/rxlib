@@ -667,7 +667,7 @@ public final class Sys extends SystemUtils {
     public static Info mxInfo() {
         File bd = new File("/");
         OperatingSystemMXBean osMx = CpuWatchman.osMx;
-        return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), CpuWatchman.threadMx.getThreadCount(),
+        return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), ManagementFactory.getThreadMXBean().getThreadCount(),
                 osMx.getFreePhysicalMemorySize(), osMx.getTotalPhysicalMemorySize(),
                 Linq.from(File.listRoots()).select(p -> new DiskInfo(p.getName(), p.getAbsolutePath(), p.getFreeSpace(), p.getTotalSpace(), bd.getAbsolutePath().equals(p.getAbsolutePath()))));
     }
