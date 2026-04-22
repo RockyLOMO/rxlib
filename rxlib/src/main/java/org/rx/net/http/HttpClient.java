@@ -89,6 +89,7 @@ public class HttpClient implements AutoCloseable {
             AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricTotalLatencyNanos");
     private static final AtomicLongFieldUpdater<HttpClient> MAX_LATENCY_UPDATER =
             AtomicLongFieldUpdater.newUpdater(HttpClient.class, "metricMaxLatencyNanos");
+    private static final int MAX_REDIRECTS = 10;
 
     /** 与 {@link #getDefault()} 为同一实例，双检锁懒初始化 */
     private static volatile HttpClient DEFAULT;
@@ -199,6 +200,14 @@ public class HttpClient implements AutoCloseable {
         }
         HttpHeaders copy = new DefaultHttpHeaders(false);
         copy.set(headers);
+        return copy;
+    }
+
+    private static HttpHeaders mutableHeaders(HttpHeaders headers) {
+        HttpHeaders copy = new DefaultHttpHeaders(false);
+        if (headers != null && !headers.isEmpty()) {
+            copy.set(headers);
+        }
         return copy;
     }
 
@@ -733,9 +742,13 @@ public class HttpClient implements AutoCloseable {
 
     static final class RequestState {
         final URI uri;
+        final HttpMethod method;
         final PoolKey key;
         final FixedChannelPool pool;
         final CompletableFuture<ResponseContent> future;
+        final HttpClientConfig config;
+        final Proxy proxy;
+        final int redirectCount;
         final int readWriteTimeoutMillis;
         final int responseOffloadThreshold;
         final int uploadFlushBytes;
@@ -756,13 +769,17 @@ public class HttpClient implements AutoCloseable {
         long responseBytes;
         boolean responseOffloaded;
 
-        RequestState(URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<ResponseContent> future, HttpClientConfig config,
-                     int readWriteTimeoutMillis, HttpHeaders requestHeaders, RequestContent content, HttpClient client,
+        RequestState(URI uri, HttpMethod method, PoolKey key, FixedChannelPool pool, CompletableFuture<ResponseContent> future, HttpClientConfig config,
+                     Proxy proxy, int redirectCount, int readWriteTimeoutMillis, HttpHeaders requestHeaders, RequestContent content, HttpClient client,
                      long startNanos, boolean cookieEnabled, boolean logEnabled) {
             this.uri = uri;
+            this.method = method;
             this.key = key;
             this.pool = pool;
             this.future = future;
+            this.config = config;
+            this.proxy = proxy;
+            this.redirectCount = redirectCount;
             this.readWriteTimeoutMillis = readWriteTimeoutMillis;
             responseOffloadThreshold = config.getResponseOffloadThreshold();
             uploadFlushBytes = config.getUploadFlushBytes();
@@ -812,6 +829,18 @@ public class HttpClient implements AutoCloseable {
         }
     }
 
+    static final class RedirectPlan {
+        final String url;
+        final HttpMethod method;
+        final HttpHeaders headers;
+
+        RedirectPlan(String url, HttpMethod method, HttpHeaders headers) {
+            this.url = url;
+            this.method = method;
+            this.headers = headers;
+        }
+    }
+
     final class ClientInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, HttpObject msg) {
@@ -824,12 +853,14 @@ public class HttpClient implements AutoCloseable {
                 state.response = (HttpResponse) msg;
                 Long len = parseLong(state.response.headers().get(HttpHeaderNames.CONTENT_LENGTH));
                 state.stream = newResponseStream(state, len);
+                state.responseOffloaded = state.stream.isFileBacked();
             }
 
             if (msg instanceof HttpContent) {
                 HttpContent content = (HttpContent) msg;
                 if (state.stream == null) {
                     state.stream = newResponseStream(state, null);
+                    state.responseOffloaded = state.stream.isFileBacked();
                 }
                 int readableBytes = content.content().readableBytes();
                 if (readableBytes > 0) {
@@ -913,35 +944,118 @@ public class HttpClient implements AutoCloseable {
             state.closeContent();
             HttpResponse response = state.response;
             boolean keepAlive = response != null && HttpUtil.isKeepAlive(response) && channel.isActive();
-            long elapsedNanos = System.nanoTime() - state.startNanos;
-            ResponseContent content = new ResponseContent(state.uri.toString(), response, state.stream, elapsedNanos);
-            SUCCESS_UPDATER.incrementAndGet(state.client);
-            TOTAL_LATENCY_UPDATER.addAndGet(state.client, elapsedNanos);
-            for (; ; ) {
-                long old = state.client.metricMaxLatencyNanos;
-                if (elapsedNanos <= old || MAX_LATENCY_UPDATER.compareAndSet(state.client, old, elapsedNanos)) {
-                    break;
-                }
-            }
             if (channel.isActive()) {
                 channel.config().setAutoRead(true);
             }
             release(channel, state, keepAlive);
             if (state.cookieEnabled) {
-                Tasks.run(() -> completeFuture(state, content));
+                Tasks.run(() -> completeFuture(state));
             } else {
-                completeFuture(state, content);
+                completeFuture(state);
             }
         }
 
-        private void completeFuture(RequestState state, ResponseContent content) {
-            if (state.cookieEnabled && state.cookieJar != null) {
-                state.cookieJar.saveFromResponse(state.uri, content.headers.getAll(HttpHeaderNames.SET_COOKIE));
+        private void completeFuture(RequestState state) {
+            try {
+                if (state.cookieEnabled && state.cookieJar != null && state.response != null) {
+                    state.cookieJar.saveFromResponse(state.uri, state.response.headers().getAll(HttpHeaderNames.SET_COOKIE));
+                }
+                RedirectPlan redirect = buildRedirectPlan(state);
+                if (redirect != null) {
+                    tryClose(state.stream);
+                    if (state.logEnabled) {
+                        log.info("{} -> {} {}", state.uri, state.response.status().code(), redirect.url);
+                    }
+                    state.client.invokeAsync0(redirect.url, redirect.method, RequestContent.EMPTY, redirect.headers,
+                            state.config, state.proxy, state.cookieEnabled, state.readWriteTimeoutMillis,
+                            state.future, state.startNanos, state.redirectCount + 1);
+                    return;
+                }
+                long elapsedNanos = System.nanoTime() - state.startNanos;
+                ResponseContent content = new ResponseContent(state.uri.toString(), state.response, state.stream, elapsedNanos);
+                SUCCESS_UPDATER.incrementAndGet(state.client);
+                TOTAL_LATENCY_UPDATER.addAndGet(state.client, elapsedNanos);
+                for (; ; ) {
+                    long old = state.client.metricMaxLatencyNanos;
+                    if (elapsedNanos <= old || MAX_LATENCY_UPDATER.compareAndSet(state.client, old, elapsedNanos)) {
+                        break;
+                    }
+                }
+                if (state.logEnabled) {
+                    log.info("{} -> {}", state.uri, content.getStatusCode());
+                }
+                state.future.complete(content);
+            } catch (Throwable e) {
+                tryClose(state.stream);
+                FAILED_UPDATER.incrementAndGet(state.client);
+                state.future.completeExceptionally(e);
             }
-            if (state.logEnabled) {
-                log.info("{} -> {}", state.uri, content.getStatusCode());
+        }
+
+        private RedirectPlan buildRedirectPlan(RequestState state) {
+            HttpResponse response = state.response;
+            if (response == null || !state.config.isFollowRedirects() || state.redirectCount >= MAX_REDIRECTS) {
+                return null;
             }
-            state.future.complete(content);
+            String location = response.headers().get(HttpHeaderNames.LOCATION);
+            if (Strings.isEmpty(location)) {
+                return null;
+            }
+            HttpMethod redirectMethod = redirectMethod(response.status().code(), state.method);
+            if (redirectMethod == null) {
+                return null;
+            }
+            URI redirectUri;
+            try {
+                redirectUri = state.uri.resolve(location);
+            } catch (Throwable e) {
+                return null;
+            }
+            if (redirectUri == null || Strings.isEmpty(redirectUri.getScheme()) || Strings.isEmpty(redirectUri.getHost())) {
+                return null;
+            }
+            HttpHeaders redirectHeaders = mutableHeaders(state.requestHeaders);
+            redirectHeaders.remove(HttpHeaderNames.HOST);
+            redirectHeaders.remove(HttpHeaderNames.CONTENT_LENGTH);
+            redirectHeaders.remove(HttpHeaderNames.TRANSFER_ENCODING);
+            redirectHeaders.remove(HttpHeaderNames.COOKIE);
+            if (!sameAuthority(state.uri, redirectUri)) {
+                redirectHeaders.remove(HttpHeaderNames.AUTHORIZATION);
+                redirectHeaders.remove(HttpHeaderNames.PROXY_AUTHORIZATION);
+            }
+            if (HttpMethod.GET.equals(redirectMethod) || HttpMethod.HEAD.equals(redirectMethod)) {
+                redirectHeaders.remove(HttpHeaderNames.CONTENT_TYPE);
+            }
+            return new RedirectPlan(redirectUri.toString(), redirectMethod, redirectHeaders);
+        }
+
+        private HttpMethod redirectMethod(int statusCode, HttpMethod currentMethod) {
+            switch (statusCode) {
+                case 301:
+                case 302:
+                    return HttpMethod.GET.equals(currentMethod) || HttpMethod.HEAD.equals(currentMethod) ? currentMethod : HttpMethod.GET;
+                case 303:
+                    return HttpMethod.HEAD.equals(currentMethod) ? HttpMethod.HEAD : HttpMethod.GET;
+                case 307:
+                case 308:
+                    return HttpMethod.GET.equals(currentMethod) || HttpMethod.HEAD.equals(currentMethod) ? currentMethod : null;
+                default:
+                    return null;
+            }
+        }
+
+        private boolean sameAuthority(URI left, URI right) {
+            return Strings.equalsIgnoreCase(left.getScheme(), right.getScheme())
+                    && Strings.equalsIgnoreCase(left.getHost(), right.getHost())
+                    && defaultPort(left) == defaultPort(right);
+        }
+
+        private int defaultPort(URI uri) {
+            int port = uri.getPort();
+            if (port > 0) {
+                return port;
+            }
+            return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
         }
 
         @Override
@@ -1067,6 +1181,36 @@ public class HttpClient implements AutoCloseable {
         @SneakyThrows
         public synchronized <T> T handle(BiFunc<InputStream, T> fn) {
             return fn.invoke(stream.rewind().asInputStream());
+        }
+    }
+
+    public String getText(@NonNull String url) {
+        try (ResponseContent response = get(url)) {
+            return response.toString();
+        }
+    }
+
+    public String postText(String url, Map<String, Object> forms) {
+        try (ResponseContent response = post(url, forms)) {
+            return response.toString();
+        }
+    }
+
+    public String postText(@NonNull String url, Map<String, Object> forms, Map<String, DuplexStream> files) {
+        try (ResponseContent response = post(url, forms, files)) {
+            return response.toString();
+        }
+    }
+
+    public String postJsonText(@NonNull String url, @NonNull Object json) {
+        try (ResponseContent response = postJson(url, json)) {
+            return response.toString();
+        }
+    }
+
+    public String executeText(Request request) {
+        try (ResponseContent response = execute(request)) {
+            return response.toString();
         }
     }
 
@@ -1262,8 +1406,17 @@ public class HttpClient implements AutoCloseable {
 
     CompletableFuture<ResponseContent> invokeAsync(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
                                                    HttpClientConfig cfg, Proxy requestProxy, boolean cookieEnabled, int timeoutMillis) {
-        REQUESTS_UPDATER.incrementAndGet(this);
         CompletableFuture<ResponseContent> future = new CompletableFuture<>();
+        invokeAsync0(url, method, content, requestHeaders, cfg, requestProxy, cookieEnabled, timeoutMillis, future, System.nanoTime(), 0);
+        return future;
+    }
+
+    void invokeAsync0(String url, HttpMethod method, RequestContent content, HttpHeaders requestHeaders,
+                      HttpClientConfig cfg, Proxy requestProxy, boolean cookieEnabled, int timeoutMillis,
+                      CompletableFuture<ResponseContent> future, long startNanos, int redirectCount) {
+        if (redirectCount == 0) {
+            REQUESTS_UPDATER.incrementAndGet(this);
+        }
         URI uri;
         try {
             uri = URI.create(url);
@@ -1274,12 +1427,11 @@ public class HttpClient implements AutoCloseable {
             FAILED_UPDATER.incrementAndGet(this);
             future.completeExceptionally(e);
             tryClose(content);
-            return future;
+            return;
         }
         PoolKey key = new PoolKey(uri, requestProxy);
         FixedChannelPool pool = pools.computeIfAbsent(key, this::newPool);
         AtomicReference<Channel> acquiredChannel = new AtomicReference<>();
-        long startNanos = System.nanoTime();
         int requestTimeout = timeoutMillis > 0 ? timeoutMillis : cfg.getReadWriteTimeoutMillis();
 
         pool.acquire().addListener((io.netty.util.concurrent.Future<Channel> f) -> {
@@ -1295,7 +1447,7 @@ public class HttpClient implements AutoCloseable {
                 release(channel, pool, true);
                 return;
             }
-            RequestState state = new RequestState(uri, key, pool, future, cfg, requestTimeout, requestHeaders, content,
+            RequestState state = new RequestState(uri, method, key, pool, future, cfg, requestProxy, redirectCount, requestTimeout, requestHeaders, content,
                     this, startNanos, cookieEnabled, cfg.isEnableLog());
             channel.attr(STATE_KEY).set(state);
             state.timeoutFuture = channel.eventLoop().schedule(() -> {
@@ -1315,10 +1467,13 @@ public class HttpClient implements AutoCloseable {
             }
             Channel channel = acquiredChannel.get();
             if (channel != null) {
+                RequestState state = channel.attr(STATE_KEY).get();
+                if (state == null || state.future != future) {
+                    return;
+                }
                 fail(channel, new TimeoutException("HTTP request cancelled: " + url));
             }
         });
-        return future;
     }
 
     private void ensureBlockingCallAllowed() {
@@ -1480,6 +1635,7 @@ public class HttpClient implements AutoCloseable {
         }
         state.cancelTimeout();
         state.closeContent();
+        tryClose(state.stream);
         FAILED_UPDATER.incrementAndGet(state.client);
         release(channel, state, false);
         state.future.completeExceptionally(cause);
@@ -1559,8 +1715,12 @@ public class HttpClient implements AutoCloseable {
         }
 
         int i = url.indexOf("?");
-        if (i != -1) {
-            url = url.substring(i + 1);
+        if (i == -1) {
+            return params;
+        }
+        url = url.substring(i + 1);
+        if (Strings.isEmpty(url)) {
+            return params;
         }
         String[] pairs = Strings.split(url, "&");
         for (String pair : pairs) {
