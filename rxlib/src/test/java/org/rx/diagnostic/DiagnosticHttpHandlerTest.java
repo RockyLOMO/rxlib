@@ -7,6 +7,8 @@ import org.rx.core.RxConfig.DiagnosticConfig;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpServer;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -61,6 +63,9 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("Overview"));
                 assertTrue(html.contains("CPU Charts"));
                 assertTrue(html.contains("Disk Charts"));
+                assertTrue(html.contains("ThreadMXBean:"));
+                assertTrue(html.contains("name=\"action\" value=\"thread-mx\""));
+                assertTrue(html.contains("Exception Traces"));
                 assertTrue(html.contains("inc-http"));
                 assertTrue(html.contains("http.metric"));
                 assertTrue(html.contains("process.cpu.percent"));
@@ -97,6 +102,24 @@ public class DiagnosticHttpHandlerTest {
 
                 HttpClient.Response stack = client.get(url + "?stack=456");
                 assertTrue(stack.bodyAsString().contains("stack body"));
+
+                ThreadMXBean threadMx = ManagementFactory.getThreadMXBean();
+                Boolean oldCpu = threadMx.isThreadCpuTimeSupported()
+                        ? Boolean.valueOf(threadMx.isThreadCpuTimeEnabled()) : null;
+                Boolean oldContention = threadMx.isThreadContentionMonitoringSupported()
+                        ? Boolean.valueOf(threadMx.isThreadContentionMonitoringEnabled()) : null;
+                try {
+                    HttpClient.Response threadMxOff = client.get(url + "?limit=10&action=thread-mx&enabled=false");
+                    assertEquals(200, threadMxOff.code());
+                    assertTrue(threadMxOff.bodyAsString().contains("ThreadMXBean updated"));
+                } finally {
+                    if (oldCpu != null) {
+                        threadMx.setThreadCpuTimeEnabled(oldCpu.booleanValue());
+                    }
+                    if (oldContention != null) {
+                        threadMx.setThreadContentionMonitoringEnabled(oldContention.booleanValue());
+                    }
+                }
             }
         } finally {
             if (server != null) {

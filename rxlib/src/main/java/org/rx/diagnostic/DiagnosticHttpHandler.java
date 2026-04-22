@@ -6,11 +6,15 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
 import org.rx.core.Strings;
+import org.rx.exception.TraceHandler;
+import org.rx.exception.TraceHandler.ExceptionEntity;
 import org.rx.io.EntityDatabase;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.Clob;
@@ -99,7 +103,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
         int limit = limit(request);
         Query filter = parseQuery(request, limit);
-        String actionMessage = handleManualCapture(request, filter);
+        String actionMessage = handleAction(request, filter);
         String stackHash = request.getQueryString().getFirst("stack");
         response.htmlBody(render(filter, stackHash, actionMessage));
     }
@@ -129,6 +133,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "incidents", false);
             appendIncidents(body, queryIncidents(db, filter));
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "exceptions", false);
+            appendExceptionTraces(body, filter);
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "metrics", false);
             appendMetrics(body, queryMetrics(db, filter), queryMetricChartRows(db, filter), queryMetricTop(db, filter));
@@ -186,6 +193,15 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append(MAX_LIMIT).append("\" name=\"limit\" value=\"").append(filter.limit).append("\"></label>")
                 .append("<button type=\"submit\">Search</button>")
                 .append("<a class=\"button\" href=\"?\">Reset</a>")
+                .append("</form>")
+                .append("<div class=\"meta\">ThreadMXBean: ")
+                .append(escape(threadMxStatus()))
+                .append("</div>")
+                .append("<form class=\"filters global-filter\" method=\"get\">");
+        appendQueryHiddenFields(out, filter);
+        out.append("<input type=\"hidden\" name=\"action\" value=\"thread-mx\">")
+                .append("<button type=\"submit\" name=\"enabled\" value=\"true\">Enable Thread CPU/Contention</button>")
+                .append("<button type=\"submit\" name=\"enabled\" value=\"false\">Disable Thread CPU/Contention</button>")
                 .append("</form></section>");
     }
 
@@ -202,6 +218,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("<nav class=\"tabs\">")
                 .append("<a class=\"tab-link active\" href=\"#overview\" data-tab=\"overview\">Overview</a>")
                 .append("<a class=\"tab-link\" href=\"#incidents\" data-tab=\"incidents\">Incidents</a>")
+                .append("<a class=\"tab-link\" href=\"#exceptions\" data-tab=\"exceptions\">Exception Traces</a>")
                 .append("<a class=\"tab-link\" href=\"#metrics\" data-tab=\"metrics\">Metrics</a>")
                 .append("<a class=\"tab-link\" href=\"#rxlib\" data-tab=\"rxlib\">RXlib</a>")
                 .append("<a class=\"tab-link\" href=\"#thread-cpu\" data-tab=\"thread-cpu\">Thread CPU</a>")
@@ -287,6 +304,38 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</div></section>");
     }
 
+    private void appendExceptionTraces(StringBuilder out, Query filter) {
+        out.append("<section class=\"card\"><h2>Exception Traces</h2>")
+                .append("<p class=\"meta\">Source: TraceHandler.queryExceptionTraces. It uses the global time range and limit.</p>");
+        List<ExceptionEntity> rows;
+        try {
+            Date start = filter.fromMillis == null ? null : new Date(filter.fromMillis.longValue());
+            Date end = filter.toMillis == null ? null : new Date(filter.toMillis.longValue());
+            rows = TraceHandler.INSTANCE.queryExceptionTraces(start, end, null, null, Boolean.TRUE, Integer.valueOf(filter.limit));
+        } catch (Throwable e) {
+            out.append("<p class=\"empty\">Read exception traces failed: ")
+                    .append(escape(e.toString()))
+                    .append("</p></section>");
+            return;
+        }
+        out.append("<table><thead><tr><th>Modified</th><th>Level</th><th>Count</th><th>App</th><th>Thread</th><th>Messages</th><th>Stack</th></tr></thead><tbody>");
+        if (rows.isEmpty()) {
+            appendEmptyRow(out, 7, "No exception trace found in the selected range.");
+        }
+        for (ExceptionEntity row : rows) {
+            out.append("<tr><td>").append(formatMillis(row.getModifyTime())).append("</td><td>")
+                    .append(escape(String.valueOf(row.getLevel()))).append("</td><td>")
+                    .append(row.getOccurCount()).append("</td><td>")
+                    .append(escape(row.getAppName())).append("</td><td>")
+                    .append(escape(row.getThreadName())).append("</td><td>")
+                    .append(formatExceptionMessages(row.getMessages())).append("</td><td>")
+                    .append("<details><summary>Stack</summary><pre>")
+                    .append(escape(row.getStackTrace()))
+                    .append("</pre></details></td></tr>");
+        }
+        out.append("</tbody></table></section>");
+    }
+
     private void appendThreadCpu(StringBuilder out, List<Map<String, Object>> rows,
                                  List<Map<String, Object>> stateChartRows, Query filter) {
         out.append("<section class=\"card\"><h2>Thread CPU</h2>")
@@ -333,9 +382,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private void appendManualCaptureForm(StringBuilder out, String capture, String anchor, Query filter) {
         out.append("<form class=\"filters capture-form\" method=\"get\" action=\"#").append(anchor).append("\">")
-                .append("<input type=\"hidden\" name=\"capture\" value=\"").append(capture).append("\">")
-                .append("<input type=\"hidden\" name=\"limit\" value=\"").append(filter.limit).append("\">")
-                .append("<label>Seconds<input type=\"number\" min=\"1\" max=\"")
+                .append("<input type=\"hidden\" name=\"capture\" value=\"").append(capture).append("\">");
+        appendQueryHiddenFields(out, filter);
+        out.append("<label>Seconds<input type=\"number\" min=\"1\" max=\"")
                 .append(MAX_CAPTURE_SECONDS).append("\" name=\"captureSeconds\" value=\"")
                 .append(filter.captureSeconds).append("\"></label>")
                 .append("<label>Top N<input type=\"number\" min=\"1\" max=\"")
@@ -343,6 +392,19 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append(filter.captureTopN).append("\"></label>")
                 .append("<button type=\"submit\">Capture Now</button>")
                 .append("</form>");
+    }
+
+    private void appendQueryHiddenFields(StringBuilder out, Query filter) {
+        out.append("<input type=\"hidden\" name=\"from\" value=\"")
+                .append(escape(formatInputMillis(filter.fromMillis))).append("\">")
+                .append("<input type=\"hidden\" name=\"to\" value=\"")
+                .append(escape(formatInputMillis(filter.toMillis))).append("\">")
+                .append("<input type=\"hidden\" name=\"limit\" value=\"")
+                .append(filter.limit).append("\">");
+        if (!Strings.isEmpty(filter.metric)) {
+            out.append("<input type=\"hidden\" name=\"metric\" value=\"")
+                    .append(escape(filter.metric)).append("\">");
+        }
     }
 
     private void appendFileIo(StringBuilder out, List<Map<String, Object>> rows) {
@@ -624,6 +686,14 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append(escape(message)).append("</td></tr>");
     }
 
+    private String handleAction(ServerRequest request, Query filter) {
+        String action = request.getQueryString().getFirst("action");
+        if ("thread-mx".equals(action)) {
+            return setThreadMxEnabled(Boolean.parseBoolean(request.getQueryString().getFirst("enabled")));
+        }
+        return handleManualCapture(request, filter);
+    }
+
     private String handleManualCapture(ServerRequest request, Query filter) {
         String capture = request.getQueryString().getFirst("capture");
         if (Strings.isEmpty(capture)) {
@@ -653,6 +723,36 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         } catch (Throwable e) {
             return "Manual " + capture + " capture failed: " + e.toString();
         }
+    }
+
+    private String setThreadMxEnabled(boolean enabled) {
+        ThreadMXBean threadMx = ManagementFactory.getThreadMXBean();
+        List<String> states = new ArrayList<>(2);
+        try {
+            if (threadMx.isThreadCpuTimeSupported()) {
+                threadMx.setThreadCpuTimeEnabled(enabled);
+                states.add("threadCpuTime=" + threadMx.isThreadCpuTimeEnabled());
+            } else {
+                states.add("threadCpuTime=unsupported");
+            }
+            if (threadMx.isThreadContentionMonitoringSupported()) {
+                threadMx.setThreadContentionMonitoringEnabled(enabled);
+                states.add("threadContention=" + threadMx.isThreadContentionMonitoringEnabled());
+            } else {
+                states.add("threadContention=unsupported");
+            }
+            return "ThreadMXBean updated: " + states.toString();
+        } catch (Throwable e) {
+            return "ThreadMXBean update failed: " + e.toString();
+        }
+    }
+
+    private String threadMxStatus() {
+        ThreadMXBean threadMx = ManagementFactory.getThreadMXBean();
+        String cpu = threadMx.isThreadCpuTimeSupported() ? String.valueOf(threadMx.isThreadCpuTimeEnabled()) : "unsupported";
+        String contention = threadMx.isThreadContentionMonitoringSupported()
+                ? String.valueOf(threadMx.isThreadContentionMonitoringEnabled()) : "unsupported";
+        return "threadCpuTime=" + cpu + ", threadContention=" + contention;
     }
 
     private boolean authorize(ServerRequest request) {
@@ -1208,6 +1308,27 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             return "";
         }
         return formatMillisDuration(millis.longValue());
+    }
+
+    private static String formatExceptionMessages(java.util.Queue<Map<String, Object>> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(128);
+        int count = 0;
+        for (Map<String, Object> message : messages) {
+            if (count >= 5) {
+                out.append("<div class=\"meta\">... ").append(messages.size() - count).append(" more</div>");
+                break;
+            }
+            if (count != 0) {
+                out.append("<br>");
+            }
+            Object text = message == null ? null : message.get("message");
+            out.append(escape(text == null ? String.valueOf(message) : String.valueOf(text)));
+            count++;
+        }
+        return out.toString();
     }
 
     private static String value(Map<String, Object> row, String key) {

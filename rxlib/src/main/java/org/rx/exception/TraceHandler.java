@@ -87,7 +87,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         RxConfig conf = RxConfig.INSTANCE;
         try {
             EntityDatabase db = EntityDatabase.DEFAULT;
-            db.createMapping(ExceptionEntity.class, MethodEntity.class, ThreadEntity.class);
+            db.createMapping(ExceptionEntity.class, MethodEntity.class);
             queue.onConsume.combine((s, e) -> {
                 RxConfig.TraceConfig c = RxConfig.INSTANCE.getTrace();
                 if (c.getKeepDays() <= 0) {
@@ -121,8 +121,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
                             .lt(ExceptionEntity::getModifyTime, d));
                     db.delete(new EntityQueryLambda<>(MethodEntity.class)
                             .lt(MethodEntity::getModifyTime, d));
-                    db.delete(new EntityQueryLambda<>(ThreadEntity.class)
-                            .lt(ThreadEntity::getSnapshotTime, d));
+
                     db.compact();
                 }, Time.valueOf("3:00:00"));
             }
@@ -295,47 +294,6 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         return db.findBy(q);
     }
 
-    public void saveThreadTrace(Linq<ThreadEntity> snapshot) {
-        RxConfig.TraceConfig conf = RxConfig.INSTANCE.getTrace();
-        if (conf.getKeepDays() <= 0) {
-            return;
-        }
 
-        Tasks.run(() -> {
-            EntityDatabase db = EntityDatabase.DEFAULT;
-            db.begin();
-            try {
-                for (ThreadEntity t : snapshot) {
-                    db.save(t, true);
-                }
-                db.commit();
-            } catch (Throwable ex) {
-                log.error("dbTrace", ex);
-                db.rollback();
-            }
-        });
-    }
-
-    public Linq<ThreadEntity> queryThreadTrace(Long snapshotId, Date startTime, Date endTime) {
-        return queryThreadTrace(snapshotId, startTime, endTime, null);
-    }
-
-    public Linq<ThreadEntity> queryThreadTrace(Long snapshotId, Date startTime, Date endTime, Integer limit) {
-        if (limit == null) {
-            limit = 200;
-        }
-        EntityQueryLambda<ThreadEntity> q = new EntityQueryLambda<>(ThreadEntity.class);
-        if (snapshotId != null) {
-            q.eq(ThreadEntity::getSnapshotId, snapshotId);
-        }
-        if (startTime != null) {
-            q.ge(ThreadEntity::getSnapshotTime, startTime);
-        }
-        if (endTime != null) {
-            q.lt(ThreadEntity::getSnapshotTime, endTime);
-        }
-        EntityDatabase db = EntityDatabase.DEFAULT;
-        return Linq.from(db.findBy(q.orderByDescending(ThreadEntity::getSnapshotTime).limit(limit)));
-    }
 
 }
