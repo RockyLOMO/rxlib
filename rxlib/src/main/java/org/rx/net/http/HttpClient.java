@@ -202,12 +202,22 @@ public class HttpClient implements AutoCloseable {
         return copy;
     }
 
-    private Request snapshotRequest(Request request, Proxy requestProxy, boolean cookieEnabled) {
+    private Request snapshotRequest(Request request, HttpClientConfig cfg) {
+        Proxy requestProxy = request.proxy != null ? request.proxy : cfg.getProxy();
+        int timeoutMillis = request.timeoutMillis > 0 ? request.timeoutMillis : cfg.getReadWriteTimeoutMillis();
+        boolean cookieEnabled = cfg.getCookieJar() != null
+                && (request.enableCookie == null || request.enableCookie);
+        boolean followRedirects = request.followRedirects != null ? request.followRedirects : cfg.isFollowRedirects();
+        int maxRedirects = request.maxRedirects != null ? Math.max(0, request.maxRedirects) : cfg.getMaxRedirects();
+        boolean enableLog = request.enableLog != null ? request.enableLog : cfg.isEnableLog();
         Request snapshot = new Request(request.method, request.url);
         snapshot.body = request.body != null ? request.body : RequestContent.EMPTY;
-        snapshot.timeoutMillis = request.timeoutMillis;
+        snapshot.timeoutMillis = timeoutMillis;
         snapshot.proxy = requestProxy;
         snapshot.enableCookie = cookieEnabled;
+        snapshot.followRedirects = followRedirects;
+        snapshot.maxRedirects = maxRedirects;
+        snapshot.enableLog = enableLog;
         snapshot.headers = mergeRequestHeaders(request.headers);
         return snapshot;
     }
@@ -403,6 +413,9 @@ public class HttpClient implements AutoCloseable {
         private int timeoutMillis;
         private Proxy proxy;
         private Boolean enableCookie;
+        private Boolean followRedirects;
+        private Integer maxRedirects;
+        private Boolean enableLog;
 
         Request(HttpMethod method, String url) {
             this.method = method;
@@ -481,6 +494,21 @@ public class HttpClient implements AutoCloseable {
             return this;
         }
 
+        public Request followRedirects(boolean followRedirects) {
+            this.followRedirects = followRedirects;
+            return this;
+        }
+
+        public Request maxRedirects(int maxRedirects) {
+            this.maxRedirects = maxRedirects;
+            return this;
+        }
+
+        public Request enableLog(boolean enableLog) {
+            this.enableLog = enableLog;
+            return this;
+        }
+
         public int timeoutMillis() {
             return timeoutMillis;
         }
@@ -491,6 +519,18 @@ public class HttpClient implements AutoCloseable {
 
         public Boolean enableCookie() {
             return enableCookie;
+        }
+
+        public Boolean followRedirects() {
+            return followRedirects;
+        }
+
+        public Integer maxRedirects() {
+            return maxRedirects;
+        }
+
+        public Boolean enableLog() {
+            return enableLog;
         }
     }
 
@@ -884,6 +924,8 @@ public class HttpClient implements AutoCloseable {
         final HttpClientCookieJar cookieJar;
         final long startNanos;
         final boolean cookieEnabled;
+        final boolean followRedirects;
+        final int maxRedirects;
         final boolean logEnabled;
         final String requestLogText;
         final AtomicBoolean completed = new AtomicBoolean();
@@ -896,8 +938,10 @@ public class HttpClient implements AutoCloseable {
         boolean responseOffloaded;
 
         RequestState(Request request, Request currentRequest, URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<Response> future, HttpClientConfig config,
+                     HttpClientCookieJar cookieJar,
                      Proxy proxy, int redirectCount, int readWriteTimeoutMillis, HttpHeaders requestHeaders, RequestContent content, HttpClient client,
-                     long startNanos, boolean cookieEnabled, boolean logEnabled) {
+                     int responseOffloadThreshold, int uploadFlushBytes, int uploadFlushChunks,
+                     long startNanos, boolean cookieEnabled, boolean followRedirects, int maxRedirects, boolean logEnabled) {
             this.request = request;
             this.currentRequest = currentRequest;
             this.uri = uri;
@@ -908,15 +952,17 @@ public class HttpClient implements AutoCloseable {
             this.proxy = proxy;
             this.redirectCount = redirectCount;
             this.readWriteTimeoutMillis = readWriteTimeoutMillis;
-            responseOffloadThreshold = config.getResponseOffloadThreshold();
-            uploadFlushBytes = config.getUploadFlushBytes();
-            uploadFlushChunks = config.getUploadFlushChunks();
+            this.responseOffloadThreshold = responseOffloadThreshold;
+            this.uploadFlushBytes = uploadFlushBytes;
+            this.uploadFlushChunks = uploadFlushChunks;
             this.requestHeaders = requestHeaders != null ? requestHeaders : EmptyHttpHeaders.INSTANCE;
             this.content = content;
             this.client = client;
-            cookieJar = config.getCookieJar();
+            this.cookieJar = cookieJar;
             this.startNanos = startNanos;
             this.cookieEnabled = cookieEnabled;
+            this.followRedirects = followRedirects;
+            this.maxRedirects = maxRedirects;
             this.logEnabled = logEnabled;
             requestLogText = logEnabled ? HttpClient.requestLogText(currentRequest) : null;
         }
@@ -1113,10 +1159,10 @@ public class HttpClient implements AutoCloseable {
                     }
                 }
                 if (state.logEnabled) {
-                    log.info("HTTP {} {} req={} -> {} {}ms res={}",
+                    log.info("HTTP {} {} -> {} {}\nreq={}\nres={}",
                             state.currentRequest.method(), state.request.url(),
-                            state.requestLogText, content.code(),
-                            TimeUnit.NANOSECONDS.toMillis(elapsedNanos), responseLogText(content));
+                            content.code(), Sys.formatNanosElapsed(elapsedNanos),
+                            state.requestLogText, responseLogText(content));
                 }
                 state.future.complete(content);
             } catch (Throwable e) {
@@ -1128,7 +1174,7 @@ public class HttpClient implements AutoCloseable {
 
         private RedirectPlan buildRedirectPlan(RequestState state) {
             HttpResponse response = state.response;
-            if (response == null || !state.config.isFollowRedirects() || state.redirectCount >= state.config.getMaxRedirects()) {
+            if (response == null || !state.followRedirects || state.redirectCount >= state.maxRedirects) {
                 return null;
             }
             String location = response.headers().get(HttpHeaderNames.LOCATION);
@@ -1169,6 +1215,9 @@ public class HttpClient implements AutoCloseable {
             request.timeoutMillis = state.currentRequest.timeoutMillis;
             request.proxy = state.currentRequest.proxy;
             request.enableCookie = state.currentRequest.enableCookie;
+            request.followRedirects = state.currentRequest.followRedirects;
+            request.maxRedirects = state.currentRequest.maxRedirects;
+            request.enableLog = state.currentRequest.enableLog;
             request.headers = redirect.headers;
             return request;
         }
@@ -1400,10 +1449,7 @@ public class HttpClient implements AutoCloseable {
             future.completeExceptionally(new IllegalArgumentException("request is null"));
             return future;
         }
-        Proxy requestProxy = request.proxy != null ? request.proxy : cfg.getProxy();
-        boolean requestCookie = cfg.getCookieJar() != null
-                && (request.enableCookie == null || request.enableCookie);
-        Request snapshot = snapshotRequest(request, requestProxy, requestCookie);
+        Request snapshot = snapshotRequest(request, cfg);
         CompletableFuture<Response> future = new CompletableFuture<>();
         executeAsync0(snapshot, snapshot, cfg, future, System.nanoTime(), 0);
         return future;
@@ -1522,7 +1568,7 @@ public class HttpClient implements AutoCloseable {
         PoolKey key = new PoolKey(uri, requestProxy);
         FixedChannelPool pool = pools.computeIfAbsent(key, this::newPool);
         AtomicReference<Channel> acquiredChannel = new AtomicReference<>();
-        int requestTimeout = timeoutMillis > 0 ? timeoutMillis : cfg.getReadWriteTimeoutMillis();
+        int requestTimeout = timeoutMillis;
 
         pool.acquire().addListener((io.netty.util.concurrent.Future<Channel> f) -> {
             if (!f.isSuccess()) {
@@ -1538,8 +1584,10 @@ public class HttpClient implements AutoCloseable {
                 release(channel, pool, true);
                 return;
             }
-            RequestState state = new RequestState(request, currentRequest, uri, key, pool, future, cfg, requestProxy, redirectCount, requestTimeout, requestHeaders, content,
-                    this, startNanos, cookieEnabled, cfg.isEnableLog());
+            RequestState state = new RequestState(request, currentRequest, uri, key, pool, future, cfg, cfg.getCookieJar(), requestProxy, redirectCount, requestTimeout,
+                    requestHeaders, content, this, cfg.getResponseOffloadThreshold(), cfg.getUploadFlushBytes(), cfg.getUploadFlushChunks(),
+                    startNanos, cookieEnabled, Boolean.TRUE.equals(currentRequest.followRedirects), currentRequest.maxRedirects != null ? currentRequest.maxRedirects : 0,
+                    Boolean.TRUE.equals(currentRequest.enableLog));
             channel.attr(STATE_KEY).set(state);
             state.timeoutFuture = channel.eventLoop().schedule(() -> {
                 TIMEOUT_UPDATER.incrementAndGet(this);

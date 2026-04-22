@@ -51,7 +51,6 @@ public final class RestClient {
             String responseText;
             Object[] args = new Object[1];
             boolean isVoid = m.getReturnType().equals(void.class);
-            HttpClient client = new HttpClient();
             ProceedFunc<String> proceed;
             if (doPost) {
                 if (parameters.length == 1 && parameters[0].isAnnotationPresent(RequestBody.class)) {
@@ -64,7 +63,10 @@ public final class RestClient {
 
                         @Override
                         public String invoke() {
-                            return client.postJson(reqUrl, args[0]).toString();
+                            HttpClient client = HttpClient.getDefault();
+                            try (HttpClient.Response response = client.postJson(reqUrl, args[0])) {
+                                return response.bodyAsString();
+                            }
                         }
                     };
                 } else {
@@ -78,7 +80,10 @@ public final class RestClient {
 
                         @Override
                         public String invoke() {
-                            return client.post(reqUrl, data).toString();
+                            HttpClient client = HttpClient.getDefault();
+                            try (HttpClient.Response response = client.post(reqUrl, data)) {
+                                return response.bodyAsString();
+                            }
                         }
                     };
                 }
@@ -92,9 +97,12 @@ public final class RestClient {
                     }
 
                     @Override
-                    public String invoke() {
-                        return client.get(HttpClient.buildUrl(reqUrl, data)).toString();
-                    }
+                        public String invoke() {
+                            HttpClient client = HttpClient.getDefault();
+                            try (HttpClient.Response response = client.get(HttpClient.buildUrl(reqUrl, data))) {
+                                return response.bodyAsString();
+                            }
+                        }
                 };
             }
             responseText = Sys.callLog(contract, String.format("%s %s", doPost ? "POST" : "GET", reqUrl), args, proceed, Sys.HTTP_LOG_BUILDER, null);

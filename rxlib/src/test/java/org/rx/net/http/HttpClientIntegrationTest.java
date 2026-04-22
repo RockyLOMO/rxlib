@@ -275,6 +275,43 @@ public class HttpClientIntegrationTest {
     }
 
     @Test
+    public void requestRedirectOverridesClientConfig() {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(false))) {
+            HttpClient.Request follow = HttpClient.request(HttpMethod.GET, baseUrl + "/redirect-301")
+                    .followRedirects(true);
+            try (HttpClient.Response response = client.execute(follow)) {
+                assertEquals(200, response.code());
+                assertEquals(baseUrl + "/redirect-301", response.request().url());
+                assertEquals(baseUrl + "/get?q=redirect", response.url());
+                assertEquals("GET:redirect", response.bodyAsString());
+            }
+        }
+
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(true))) {
+            HttpClient.Request noFollow = HttpClient.request(HttpMethod.GET, baseUrl + "/redirect-301")
+                    .followRedirects(false);
+            try (HttpClient.Response response = client.execute(noFollow)) {
+                assertEquals(301, response.code());
+                assertEquals(baseUrl + "/redirect-301", response.request().url());
+                assertEquals(baseUrl + "/redirect-301", response.url());
+            }
+        }
+    }
+
+    @Test
+    public void requestMaxRedirectsOverridesClientConfig() {
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setFollowRedirects(true).setMaxRedirects(3))) {
+            HttpClient.Request request = HttpClient.request(HttpMethod.GET, baseUrl + "/redirect-301")
+                    .maxRedirects(0);
+            try (HttpClient.Response response = client.execute(request)) {
+                assertEquals(301, response.code());
+                assertEquals(baseUrl + "/redirect-301", response.request().url());
+                assertEquals(baseUrl + "/redirect-301", response.url());
+            }
+        }
+    }
+
+    @Test
     public void keepAliveReusesFixedPoolChannel() {
         remotePorts.clear();
         try (HttpClient client = new HttpClient(new HttpClientConfig().setMaxConnectionsPerHost(1))) {

@@ -504,7 +504,28 @@ public class HttpClientTest {
                 assertTrue(response.bodyAsString().contains("ok-v2"));
             }
             assertTrue(appender.list.stream().map(ILoggingEvent::getFormattedMessage)
-                    .anyMatch(p -> p.contains("HTTP GET " + BASE_URL + "/get req=") && p.contains("-> 200") && p.contains("res=ok-v2")));
+                    .anyMatch(p -> p.contains("HTTP GET " + BASE_URL + "/get -> 200") && p.contains("req=") && p.contains("res=ok-v2")));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    @Test
+    public void testRequestEnableLogOverridesClientConfig() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HttpClient.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setEnableLog(false).setCookieJar(null))) {
+            HttpClient.Request request = HttpClient.request(io.netty.handler.codec.http.HttpMethod.GET, BASE_URL + "/get")
+                    .enableLog(true);
+            try (HttpClient.Response response = client.execute(request)) {
+                assertEquals(200, response.code());
+                assertTrue(response.bodyAsString().contains("ok-v2"));
+            }
+            assertTrue(appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                    .anyMatch(p -> p.contains("HTTP GET " + BASE_URL + "/get -> 200") && p.contains("req=") && p.contains("res=ok-v2")));
         } finally {
             logger.detachAppender(appender);
             appender.stop();

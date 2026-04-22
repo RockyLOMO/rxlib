@@ -3,6 +3,8 @@ package org.rx;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.netty.channel.local.LocalAddress;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpMethod;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -23,7 +25,6 @@ import org.rx.net.TransportFlags;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
-import org.rx.net.http.HttpClientConfig;
 import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
@@ -634,11 +635,12 @@ public final class Main implements SocksRpcContract {
 
     static JSONObject getDDns(String apiKey, String domain) {
         String url = "https://api.dynadot.com/restful/v1/domains/" + domain + "/records";
-        try (HttpClient client = new HttpClient()) {
-            client.requestHeaders().set("Accept", "application/json");
-            client.requestHeaders().set("Authorization", "Bearer " + apiKey);
-            client.requestHeaders().set("X-Signature", dynadotSign(apiKey, url, ""));
-            return client.get(url).toJson();
+        HttpClient.Request req = HttpClient.request(HttpMethod.GET, url)
+                .header(HttpHeaderNames.ACCEPT, "application/json")
+                .header(HttpHeaderNames.AUTHORIZATION, "Bearer " + apiKey)
+                .header("X-Signature", dynadotSign(apiKey, url, ""));
+        try (HttpClient.Response response = MAIN_HTTP_CLIENT.execute(req)) {
+            return response.bodyAsJson();
         }
     }
 
@@ -650,6 +652,9 @@ public final class Main implements SocksRpcContract {
     }
 
     static HttpServer httpServer;
+
+    /** Dynadot、/hf 等复用，避免每次 new HttpClient */
+    private static final HttpClient MAIN_HTTP_CLIENT = new HttpClient();
 
     static void launchServer(Map<String, String> options, int port) {
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
@@ -706,12 +711,12 @@ public final class Main implements SocksRpcContract {
         }).requestAsync("/hf", (request, response) -> {
             String url = request.getQueryString().getFirst("fu");
             Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
-            HttpClientConfig hfCfg = new HttpClientConfig();
+            HttpClient.Request req = HttpClient.request(HttpMethod.GET, url);
             if (tm != null) {
-                hfCfg.setTimeoutMillis(tm);
+                req.timeoutMillis(tm);
             }
-            try (HttpClient client = new HttpClient(hfCfg)) {
-                response.jsonBody(client.get(url).toJson());
+            try (HttpClient.Response remote = MAIN_HTTP_CLIENT.execute(req)) {
+                response.jsonBody(remote.bodyAsJson());
             }
         })
         // .requestMapping("/geo", (request, response) -> {
