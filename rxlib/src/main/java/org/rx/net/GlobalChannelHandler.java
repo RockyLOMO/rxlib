@@ -11,7 +11,9 @@ import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.NoRouteToHostException;
 import java.net.SocketAddress;
+import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.UnresolvedAddressException;
 
@@ -85,6 +87,31 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
         return actualCause.getClass().getSimpleName() + ": " + message;
     }
 
+    static boolean isExpectedChannelException(Throwable cause) {
+        Throwable rootCause = ExceptionUtils.getRootCause(cause);
+        Throwable actualCause = rootCause == null ? cause : rootCause;
+        if (actualCause instanceof ClosedChannelException || actualCause instanceof SocketException) {
+            return true;
+        }
+        if (actualCause instanceof Errors.NativeIoException) {
+            Errors.NativeIoException nativeIoException = (Errors.NativeIoException) actualCause;
+            return nativeIoException.expectedErr() == Errors.ERRNO_EPIPE_NEGATIVE
+                    || nativeIoException.expectedErr() == Errors.ERRNO_ECONNRESET_NEGATIVE;
+        }
+        if (actualCause instanceof IOException) {
+            String message = actualCause.getMessage();
+            if (message == null) {
+                return true;
+            }
+            String lowerMessage = message.toLowerCase();
+            return lowerMessage.contains("connection reset")
+                    || lowerMessage.contains("broken pipe")
+                    || lowerMessage.contains("forcibly closed")
+                    || lowerMessage.contains("aborted by the software");
+        }
+        return false;
+    }
+
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         super.write(ctx, msg, promise);
@@ -120,7 +147,14 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        if (isExpectedChannelException(cause)) {
+            if (log.isDebugEnabled()) {
+                log.debug("Channel[{}] expected close {}", ctx.channel().id(), connectFailureSummary(cause));
+            }
+            ctx.close();
+            return;
+        }
         log.error("Channel error", cause);
-//        super.exceptionCaught(ctx, cause);
+        ctx.close();
     }
 }
