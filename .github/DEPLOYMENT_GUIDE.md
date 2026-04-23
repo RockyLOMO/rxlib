@@ -1,100 +1,93 @@
+# Maven Central 发布与部署说明
 
-## 📋 核心功能
-
-**自动版本管理 + GPG 签名发布**
-
-- ✅ **手动触发**: GitHub Actions 页面启动
-- ✅ **自动标签**: 工作流内部创建 `v{版本号}` 标签
-- ✅ **版本管理**: `2.21.11-SNAPSHOT` → `2.21.11` → `2.21.12-SNAPSHOT`
-- ✅ **GPG 签名**: 所有构件加密签名
-- ✅ **一键发布**: 到 Maven Central
+本文档合并了原「快速开始」与部署要点：**GPG 与 Secrets 一次性配置**、**手动触发发布**、**验证与排错**。
 
 ---
 
-## ⚡ 快速开始 (5 分钟)
+## 核心能力
 
-### 1. 生成 GPG 密钥 (Kleopatra 推荐)
-
-**Windows 用户**:
-1. 下载 [GPG4Win](https://gpg4win.org/) 并安装
-2. 启动 Kleopatra
-3. File → New Certificate → Create personal OpenPGP key pair
-4. 填写姓名、邮箱，选择 RSA 4096 bits
-5. 设置密码并创建
-6. 右键密钥 → Publish on Server (选择 keys.openpgp.org)
-7. File → Export Secret Keys (保存为 `private-key.asc`)
-8. 转换为 Base64:
-   ```powershell
-   $content = Get-Content private-key.asc -Raw
-   [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($content)) | Out-File private-key-base64.txt
-   ```
-
-### 2. 配置 GitHub Secrets
-
-进入 GitHub → 仓库 → Settings → Secrets and variables → Actions
-
-添加 4 个 Secrets:
-- `OSSRH_USERNAME`: Sonatype 用户名
-- `OSSRH_TOKEN`: Sonatype token
-- `GPG_PRIVATE_KEY`: 上面生成的 Base64 私钥
-- `GPG_PASSPHRASE`: GPG 密钥密码
-
-### 3. 发布版本
-
-**新方式**: 手动触发 + 自动标签
-
-1. 确保 `pom.xml` 版本是 SNAPSHOT 格式 (如 `2.21.11-SNAPSHOT`)
-2. 进入 GitHub → Actions
-3. 选择 "Publish Release to Maven Central (with GPG Sign & Auto Version Management)"
-4. 点击 "Run workflow"
-5. 参数设置:
-   - `version`: 留空 (自动检测)
-   - `create_tag`: `true` (自动创建标签)
-6. 点击 "Run workflow"
-
-**工作流自动执行**:
-- ✅ 解析版本号
-- ✅ 创建 `v2.21.11` 标签并推送
-- ✅ 更新版本: `2.21.11-SNAPSHOT` → `2.21.11`
-- ✅ 发布到 Maven Central (带 GPG 签名)
-- ✅ 创建 GitHub Release
-- ✅ 递增版本: `2.21.11` → `2.21.12-SNAPSHOT`
+- 在 GitHub Actions 中**手动触发**（不再依赖推送 tag 触发）
+- **自动**创建并推送 `v{版本号}` 标签（`create_tag=true` 时）
+- 版本流：`x.y.z-SNAPSHOT` → 发布 `x.y.z` → 下一开发版 `x.y.(z+1)-SNAPSHOT`
+- 构件经 **GPG 签名** 后发布至 Maven Central，并创建 GitHub Release
 
 ---
 
-## 🔧 配置要求
+## 一、一次性配置
 
-### POM 文件必填字段
-```xml
-<project>
-    <name>项目名称</name>
-    <description>项目描述</description>
-    <url>https://github.com/user/repo</url>
+### 1. GPG 密钥（推荐 Kleopatra / GPG4Win）
 
-    <licenses>
-        <license>
-            <name>The Apache Software License, Version 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-        </license>
-    </licenses>
+1. 安装 [GPG4Win](https://gpg4win.org/)，打开 **Kleopatra**
+2. **File → New Certificate → Create personal OpenPGP key pair**，RSA **4096**，填姓名/邮箱/密码
+3. 右键密钥 → **Publish on Server**（如 `keys.openpgp.org` 或 `keyserver.ubuntu.com`）
+4. **File → Export Secret Keys** → 保存为 `private-key.asc`（ASCII armor）
+5. 转为 Base64（供 `GPG_PRIVATE_KEY` 使用）：
 
-    <scm>
-        <url>https://github.com/user/repo</url>
-        <connection>scm:git:https://github.com/user/repo.git</connection>
-    </scm>
+**Windows (PowerShell)**
 
-    <developers>
-        <developer>
-            <name>开发者姓名</name>
-            <email>email@example.com</email>
-        </developer>
-    </developers>
-</project>
+```powershell
+$content = Get-Content private-key.asc -Raw
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($content)) | Out-File private-key-base64.txt -Encoding utf8
 ```
 
-### 本地验证
+**Linux / macOS**
+
 ```bash
-# Linux/macOS
+gpg --armor --export-secret-keys KEY_ID > private-key.asc
+base64 -w 0 < private-key.asc > private-key-base64.txt
+```
+
+**命令行生成密钥（不装图形界面时）**
+
+```bash
+gpg --gen-key   # RSA 4096，设好邮箱与密码
+gpg --list-secret-keys --keyid-format=short
+gpg --send-keys KEY_ID --keyserver keyserver.ubuntu.com
+```
+
+将 `KEY_ID` 记好；私钥导出与 Base64 步骤同上。
+
+### 2. GitHub Secrets
+
+**Settings → Secrets and variables → Actions** 中新增 4 项：
+
+| Secret | 说明 |
+|--------|------|
+| `OSSRH_USERNAME` | Sonatype / JIRA 账号 |
+| `OSSRH_TOKEN` | Sonatype 用户 **Token**（比密码更安全） |
+| `GPG_PRIVATE_KEY` | 上面 Base64 的**整段**私钥内容 |
+| `GPG_PASSPHRASE` | 创建 GPG 密钥时的密码，须完全一致 |
+
+### 3. `pom.xml` 发布元数据
+
+需含 `name`、`description`、`url`、`licenses`、`scm`、`developers`（按仓库与 Central 要求填写）：
+
+```xml
+<name>项目名称</name>
+<description>项目描述</description>
+<url>https://github.com/user/repo</url>
+<licenses>
+  <license>
+    <name>The Apache Software License, Version 2.0</name>
+    <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+  </license>
+</licenses>
+<scm>
+  <url>https://github.com/user/repo</url>
+  <connection>scm:git:https://github.com/user/repo.git</connection>
+</scm>
+<developers>
+  <developer>
+    <name>开发者</name>
+    <email>email@example.com</email>
+  </developer>
+</developers>
+```
+
+### 4. 本地校验（发布前建议执行）
+
+```bash
+# Linux / macOS
 bash .github/scripts/verify-release.sh
 
 # Windows
@@ -103,106 +96,87 @@ powershell .github/scripts/verify-release.ps1
 
 ---
 
-## 📊 版本管理示例
+## 二、发布操作
 
-| 当前版本 | 发布版本 | 标签 | 下一个开发版本 |
-|----------|----------|------|----------------|
-| 2.21.11-SNAPSHOT | 2.21.11 | v2.21.11 | 2.21.12-SNAPSHOT |
-| 2.21.12-SNAPSHOT | 2.21.12 | v2.21.12 | 2.21.13-SNAPSHOT |
+1. 确保 `pom.xml` 中版本为 **SNAPSHOT**（如 `2.21.11-SNAPSHOT`），代码已提交
+2. **GitHub → Actions** → 选择 **Publish Release to Maven Central (with GPG Sign & Auto Version Management)**
+3. **Run workflow**
+4. 建议参数：
+   - **`version`**：留空 → 从 `pom.xml` 读出版本并去掉 `-SNAPSHOT`
+   - **`create_tag`**：`true` → 自动创建并推送 `v2.21.11` 等标签
+5. 运行后工作流会大致完成：解析版本 → 创建/使用 tag → 置为 Release 版本 → `mvn deploy`（GPG 签名）→ 生成 Release 说明与 GitHub Release → 将版本递增至下一 **SNAPSHOT** 并提交
 
----
+**GitHub CLI（可选）**
 
-## 🐛 常见问题
-
-### GPG 签名失败
-```
-原因: 私钥格式错误或密码不对
-解决: 检查 GPG_PRIVATE_KEY 和 GPG_PASSPHRASE
-```
-
-### 版本号错误
-```
-原因: 不是 SNAPSHOT 格式
-解决: 确保版本格式为 x.y.z-SNAPSHOT
-```
-
-### 发布失败
-```
-原因: Sonatype 认证失败
-解决: 检查 OSSRH_USERNAME 和 OSSRH_TOKEN
-```
-
-### 标签创建失败
-```
-原因: 权限不足
-解决: 检查 GITHUB_TOKEN 权限设置
-```
-
----
-
-## 📈 验证发布成功
-
-### GitHub Actions
-- 工作流状态: ✅ 所有步骤通过
-- 标签创建: `v{版本号}` 已推送
-
-### Maven Central
 ```bash
-# 5-30 分钟后搜索
-https://central.sonatype.com/search?q=com.github.rockylomo
+gh workflow run "Publish Release to Maven Central (with GPG Sign & Auto Version Management)" \
+  -f version="" \
+  -f create_tag=true
 ```
 
-### GitHub Release
-- 自动创建 Release: `v{版本号}`
-- 包含依赖信息和发布说明
+**说明**
+
+- 现以**手动 Run workflow** 为主；旧版「仅推送 tag 即发布」若已弃用，以本仓库工作流为准。
+- `GITHUB_TOKEN` 需具备创建/推送 tag 的权限（仓库 **Settings → Actions → General** 中确认）。
+- 若 tag 已存在，工作流通常会**复用**该 tag，不强制覆盖。
 
 ---
 
-## 🔗 重要链接
+## 三、版本与参数
 
-- **Maven Central 搜索**: https://central.sonatype.com/search?q=com.github.rockylomo
-- **Sonatype OSSRH**: https://oss.sonatype.org/
-- **GPG4Win 下载**: https://gpg4win.org/
-- **发布指南**: https://central.sonatype.org/publish/publish-guide/
+| 当前 pom 版本 | `version` 留空时发布 | 下一开发版（典型） |
+|---------------|----------------------|--------------------|
+| 2.21.11-SNAPSHOT | 2.21.11 | 2.21.12-SNAPSHOT |
 
----
+也可在触发时**手动填** `version`（如 `2.21.15`），以指定发布号；下一 SNAPSHOT 会随工作流逻辑递增。
 
-## 📋 检查清单
+`create_tag=false` 时跳过自动打 tag，仍可按工作流做版本与部署（视具体 workflow 是否支持）。
 
-发布前检查:
-- [ ] GPG 密钥已生成 (Kleopatra)
-- [ ] 公钥已上传到 keyserver
-- [ ] GitHub Secrets 已配置 (4 个)
-- [ ] POM 文件配置完整
-- [ ] 当前版本是 SNAPSHOT 格式
-- [ ] 本地验证通过
+当前版本可本地查看：
 
-发布执行:
-- [ ] 手动触发 GitHub Action
-- [ ] 参数设置正确
-- [ ] 工作流运行成功
-
-发布验证:
-- [ ] Git 标签自动创建
-- [ ] GitHub Release 创建
-- [ ] Maven Central 可见
+```bash
+mvn help:evaluate -Dexpression=project.version -q -DforceStdout
+```
 
 ---
 
-## 🎯 核心优势
+## 四、发布成功如何确认
 
-1. **自动化**: 一键发布，自动处理版本和标签
-2. **安全**: GPG 签名 + Secrets 加密
-3. **灵活**: 支持手动指定版本号
-4. **可靠**: 完善的错误处理和验证
-5. **用户友好**: 图形界面 + 详细文档
-
----
-
-**现在就开始发布你的第一个版本吧！** 🚀
+- **Actions**：各步骤通过，无失败
+- **Tags**：出现 `v{版本号}` 并曾推送成功
+- **Releases**：对应 Release 与说明已生成
+- **Maven Central**：约 **5–30 分钟** 后可在 [Central 搜索](https://central.sonatype.com/) 中检索到坐标（以本仓库 `groupId` / `artifactId` 为准）
 
 ---
 
-*最后更新: 2026-04-03*
-*版本: 1.0*
-*状态: ✅ 精简版*
+## 五、常见问题
+
+| 现象 | 处理方向 |
+|------|----------|
+| GPG 签名失败 | 核对 `GPG_PRIVATE_KEY` 是否完整、Base64 是否正确；`GPG_PASSPHRASE` 是否与建钥时一致 |
+| 版本不对 | 确认 pom 为 `x.y.z-SNAPSHOT`；或检查手动填的 `version` |
+| 发布 / 认证失败 | 检查 `OSSRH_USERNAME`、`OSSRH_TOKEN` |
+| 打 tag 失败 | 查 Actions 权限、是否已有冲突 tag、默认分支是否可写 |
+
+---
+
+## 六、检查清单
+
+**发布前**  
+- [ ] GPG 已生成，公钥已上 key server  
+- [ ] 上述 4 个 Secrets 已配置  
+- [ ] pom 元数据完整，当前为 SNAPSHOT  
+- [ ] `verify-release` 脚本通过  
+
+**发布后**  
+- [ ] 工作流成功、tag 与（如有）Release 正常  
+- [ ] Central 可搜到新版本（耐心等待同步）  
+
+---
+
+## 七、相关链接
+
+- [Central 发布总览](https://central.sonatype.org/publish/publish-guide/)
+- [GPG4Win](https://gpg4win.org/)
+- Sonatype OSSRH / JIRA 账户与 Token 在官网个人资料中维护
+

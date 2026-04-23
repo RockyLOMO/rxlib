@@ -3,6 +3,7 @@ package org.rx.diagnostic;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import com.sun.management.VMOption;
 import org.rx.core.Reflects;
 import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
@@ -13,6 +14,7 @@ import org.rx.exception.ExceptionLevel;
 import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.exception.TraceHandler.ExceptionEntity;
+import org.rx.exception.TraceHandler.MethodEntity;
 import org.rx.io.EntityDatabase;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
@@ -24,7 +26,6 @@ import org.springframework.service.SpringContext;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -148,6 +149,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendTabPanelStart(body, "exceptions", false);
             appendExceptionTraces(body, filter);
             appendTabPanelEnd(body);
+            appendTabPanelStart(body, "method-traces", false);
+            appendMethodTraces(body, filter);
+            appendTabPanelEnd(body);
             appendTabPanelStart(body, "metrics", false);
             appendMetrics(body, queryMetrics(db, filter), queryMetricChartRows(db, filter), queryMetricTop(db, filter));
             appendTabPanelEnd(body);
@@ -172,6 +176,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "tools", false);
             appendTools(body, filter);
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "vm-options", false);
+            appendVmOptions(body, filter);
             appendTabPanelEnd(body);
             appendTabsEnd(body);
             return page("RXlib Diagnostics", body.toString());
@@ -207,6 +214,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append(MAX_LIMIT).append("\" name=\"limit\" value=\"").append(filter.limit).append("\"></label>")
                 .append("<div class=\"filters context-filter\" data-context-tab=\"exceptions\">");
         appendExceptionFilterControls(out, filter);
+        out.append("</div><div class=\"filters context-filter\" data-context-tab=\"method-traces\">");
+        appendMethodFilterControls(out, filter);
         out.append("</div><button type=\"submit\">Search</button>")
                 .append("<a class=\"button\" href=\"?\">Reset</a>")
                 .append("</form>")
@@ -235,6 +244,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append("<a class=\"tab-link active\" href=\"#overview\" data-tab=\"overview\">Overview</a>")
                 .append("<a class=\"tab-link\" href=\"#incidents\" data-tab=\"incidents\">Incidents</a>")
                 .append("<a class=\"tab-link\" href=\"#exceptions\" data-tab=\"exceptions\">Exception Traces</a>")
+                .append("<a class=\"tab-link\" href=\"#method-traces\" data-tab=\"method-traces\">Method Traces</a>")
                 .append("<a class=\"tab-link\" href=\"#metrics\" data-tab=\"metrics\">Metrics</a>")
                 .append("<a class=\"tab-link\" href=\"#rxlib\" data-tab=\"rxlib\">Rx metrics</a>")
                 .append("<a class=\"tab-link\" href=\"#thread-cpu\" data-tab=\"thread-cpu\">Thread CPU</a>")
@@ -243,6 +253,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append("<a class=\"tab-link\" href=\"#net-io\" data-tab=\"net-io\">Net I/O</a>")
                 .append("<a class=\"tab-link\" href=\"#file-size\" data-tab=\"file-size\">File Size</a>")
                 .append("<a class=\"tab-link\" href=\"#tools\" data-tab=\"tools\">Tools</a>")
+                .append("<a class=\"tab-link\" href=\"#vm-options\" data-tab=\"vm-options\">VM Options</a>")
                 .append("</nav><div class=\"tab-panels\">");
     }
 
@@ -352,6 +363,37 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-exceptions.html", vars));
     }
 
+    private void appendMethodTraces(StringBuilder out, Query filter) {
+        Map<String, Object> vars = new HashMap<>();
+        List<MethodEntity> rows;
+        try {
+            rows = TraceHandler.INSTANCE.queryMethodTraces(filter.methodNamePrefix,
+                    Boolean.valueOf(filter.methodOccurMost), Integer.valueOf(filter.limit));
+        } catch (Throwable e) {
+            vars.put("error", e.toString());
+            out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-methods.html", vars));
+            return;
+        }
+        List<Map<String, Object>> viewRows = new ArrayList<>(rows.size());
+        for (MethodEntity row : rows) {
+            Map<String, Object> view = new HashMap<>();
+            view.put("modified", formatMillis(row.getModifyTime()));
+            view.put("id", Long.valueOf(row.getId()));
+            view.put("methodName", row.getMethodName());
+            view.put("elapsed", Sys.formatNanosElapsed(row.getElapsedMicros(), 1));
+            view.put("elapsedMicros", Long.valueOf(row.getElapsedMicros()));
+            view.put("count", Integer.valueOf(row.getOccurCount()));
+            view.put("app", row.getAppName());
+            view.put("thread", row.getThreadName());
+            view.put("parameters", row.getParameters());
+            view.put("returnValue", row.getReturnValue());
+            viewRows.add(view);
+        }
+        vars.put("rows", viewRows);
+        vars.put("empty", Boolean.valueOf(viewRows.isEmpty()));
+        out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-methods.html", vars));
+    }
+
     private void appendThreadCpu(StringBuilder out, List<Map<String, Object>> rows,
                                  List<Map<String, Object>> stateChartRows, Query filter) {
         out.append("<section class=\"card\"><h2>Thread CPU</h2>")
@@ -413,6 +455,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private void appendQueryHiddenFields(StringBuilder out, Query filter) {
         appendBaseQueryHiddenFields(out, filter);
         appendExceptionFilterHiddenFields(out, filter);
+        appendMethodFilterHiddenFields(out, filter);
     }
 
     private void appendExceptionFilterControls(StringBuilder out, Query filter) {
@@ -450,6 +493,30 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         }
         out.append("<input type=\"hidden\" name=\"exceptionNewest\" value=\"")
                 .append(filter.exceptionNewest).append("\">");
+    }
+
+    private void appendMethodFilterControls(StringBuilder out, Query filter) {
+        out.append("<label>Method Prefix<input type=\"search\" name=\"methodNamePrefix\" value=\"")
+                .append(escape(filter.methodNamePrefix)).append("\" placeholder=\"org.example.Service\"></label>")
+                .append("<label>Order<select name=\"methodOccurMost\">")
+                .append("<option value=\"false\"");
+        if (!filter.methodOccurMost) {
+            out.append(" selected");
+        }
+        out.append(">Slowest</option><option value=\"true\"");
+        if (filter.methodOccurMost) {
+            out.append(" selected");
+        }
+        out.append(">Most Occurred</option></select></label>");
+    }
+
+    private void appendMethodFilterHiddenFields(StringBuilder out, Query filter) {
+        if (!Strings.isEmpty(filter.methodNamePrefix)) {
+            out.append("<input type=\"hidden\" name=\"methodNamePrefix\" value=\"")
+                    .append(escape(filter.methodNamePrefix)).append("\">");
+        }
+        out.append("<input type=\"hidden\" name=\"methodOccurMost\" value=\"")
+                .append(filter.methodOccurMost).append("\">");
     }
 
     private void appendBaseQueryHiddenFields(StringBuilder out, Query filter) {
@@ -557,6 +624,37 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         vars.put("execTimedOut", Boolean.valueOf(filter.toolExecTimedOut));
         vars.put("execElapsedMillis", filter.toolExecElapsedMillis == null ? "" : filter.toolExecElapsedMillis);
         out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-tools.html", vars));
+    }
+
+    private void appendVmOptions(StringBuilder out, Query filter) {
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("vmOptionName", filter.vmOptionName);
+        vars.put("vmOptionValue", filter.vmOptionValue);
+        vars.put("vmOptionResult", filter.vmOptionResult);
+        vars.put("vmOptionError", filter.vmOptionError);
+        List<Map<String, Object>> writableRows = new ArrayList<>();
+        List<Map<String, Object>> readonlyRows = new ArrayList<>();
+        try {
+            for (VMOption option : Sys.diagnosticMx.getDiagnosticOptions()) {
+                Map<String, Object> view = new HashMap<>();
+                view.put("name", option.getName());
+                view.put("value", option.getValue());
+                view.put("origin", option.getOrigin() == null ? "" : option.getOrigin().name());
+                view.put("writeable", Boolean.valueOf(option.isWriteable()));
+                if (option.isWriteable()) {
+                    writableRows.add(view);
+                } else {
+                    readonlyRows.add(view);
+                }
+            }
+        } catch (Throwable e) {
+            vars.put("vmOptionError", e.toString());
+        }
+        vars.put("writableOptions", writableRows);
+        vars.put("readonlyOptions", readonlyRows);
+        vars.put("noWritableOptions", Boolean.valueOf(writableRows.isEmpty()));
+        vars.put("noReadonlyOptions", Boolean.valueOf(readonlyRows.isEmpty()));
+        out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-vm-options.html", vars));
     }
 
     private void appendMetrics(StringBuilder out, List<Map<String, Object>> rows,
@@ -779,6 +877,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         if ("thread-mx".equals(action)) {
             return setThreadMxEnabled(Boolean.parseBoolean(request.getQueryString().getFirst("enabled")));
         }
+        if ("vm-option".equals(action)) {
+            return setVmOption(filter);
+        }
         if ("tool-dns".equals(action) || "5".equals(action)) {
             resolveToolDns(filter);
             return "DNS resolve completed.";
@@ -922,88 +1023,12 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         try {
             List<Object> args = Strings.isBlank(filter.toolInvokeArgs)
                     ? Collections.emptyList() : Sys.toJsonArray(filter.toolInvokeArgs);
-            Object result = invokeExpression(filter.toolInvokeExpr, args);
+            Object result = Reflects.invokeExpression(filter.toolInvokeExpr, args,
+                    p -> SpringContext.isInitiated() ? SpringContext.getBean(p, false) : null);
             filter.toolInvokeResult = Sys.toJsonString(result);
         } catch (Throwable e) {
             filter.toolInvokeError = e.toString();
         }
-    }
-
-    private Object invokeExpression(String expr, List<Object> args) throws Exception {
-        if (Strings.isBlank(expr)) {
-            throw new InvalidException("expr is empty.");
-        }
-        int methodSeparator = expr.lastIndexOf('.');
-        if (methodSeparator == -1) {
-            throw new InvalidException("Class name not found");
-        }
-
-        String methodName = expr.substring(methodSeparator + 1);
-        String className = expr.substring(0, methodSeparator);
-        int classSeparator = methodSeparator;
-        Class<?> type;
-        while (true) {
-            try {
-                type = Class.forName(className);
-                break;
-            } catch (ClassNotFoundException e) {
-                classSeparator = className.lastIndexOf('.');
-                if (classSeparator == -1) {
-                    throw e;
-                }
-                className = className.substring(0, classSeparator);
-            }
-        }
-
-        Object instance = SpringContext.isInitiated() ? SpringContext.getBean(type, false) : null;
-        Object target = instance == null ? type : instance;
-        Object member = null;
-        if (classSeparator != methodSeparator) {
-            String fieldExpr = expr.substring(classSeparator + 1, methodSeparator);
-            member = readMemberChain(target, fieldExpr);
-        }
-
-        Object invokeTarget = member != null ? member : target;
-        Class<?> invokeType = invokeTarget instanceof Class ? (Class<?>) invokeTarget : invokeTarget.getClass();
-        Method method = findMethod(invokeType, methodName, args.size());
-        Class<?>[] parameterTypes = method.getParameterTypes();
-        Object[] converted = new Object[args.size()];
-        for (int i = 0; i < converted.length; i++) {
-            Object arg = args.get(i);
-            try {
-                converted[i] = Sys.fromJson(arg, method.getGenericParameterTypes()[i]);
-            } catch (Throwable e) {
-                converted[i] = Reflects.changeType(arg, parameterTypes[i]);
-            }
-        }
-        return Reflects.invokeMethod(method, invokeTarget, converted);
-    }
-
-    private Object readMemberChain(Object target, String fieldExpr) {
-        Object member = null;
-        String path = fieldExpr;
-        while (true) {
-            int index = path.indexOf('.');
-            boolean end = index == -1;
-            String fieldName = end ? path : path.substring(0, index);
-            if (member == null) {
-                member = target instanceof Class ? Reflects.readStaticField((Class<?>) target, fieldName) : Reflects.readField(target, fieldName);
-            } else {
-                member = Reflects.readField(member, fieldName);
-            }
-            if (end) {
-                return member;
-            }
-            path = path.substring(index + 1);
-        }
-    }
-
-    private Method findMethod(Class<?> type, String methodName, int parameterCount) {
-        org.rx.core.Linq<Method> methods = Reflects.getMethodMap(type).get(methodName);
-        if (methods == null) {
-            throw new InvalidException("Method {} not found on {}", methodName, type.getName());
-        }
-        return methods.where(p -> p.getParameterCount() == parameterCount).first();
     }
 
     private String handleManualCapture(ServerRequest request, Query filter) {
@@ -1065,6 +1090,24 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         String contention = threadMx.isThreadContentionMonitoringSupported()
                 ? String.valueOf(threadMx.isThreadContentionMonitoringEnabled()) : "unsupported";
         return "threadCpuTime=" + cpu + ", threadContention=" + contention;
+    }
+
+    private String setVmOption(Query filter) {
+        filter.vmOptionResult = null;
+        filter.vmOptionError = null;
+        if (Strings.isBlank(filter.vmOptionName)) {
+            filter.vmOptionError = "VM option name is empty.";
+            return "VM option update skipped: name is empty.";
+        }
+        try {
+            Sys.diagnosticMx.setVMOption(filter.vmOptionName, filter.vmOptionValue == null ? "" : filter.vmOptionValue);
+            VMOption option = Sys.diagnosticMx.getVMOption(filter.vmOptionName);
+            filter.vmOptionResult = filter.vmOptionName + "=" + option.getValue() + " (" + option.getOrigin() + ")";
+            return "VM option updated: " + filter.vmOptionResult;
+        } catch (Throwable e) {
+            filter.vmOptionError = e.toString();
+            return "VM option update failed: " + e.toString();
+        }
     }
 
     private boolean authorize(ServerRequest request) {
@@ -1466,6 +1509,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         query.exceptionLevel = parseExceptionLevel(firstQueryValue(request, "exceptionLevel", "level"));
         query.exceptionKeyword = Strings.trim(firstQueryValue(request, "exceptionKeyword", "keyword"));
         query.exceptionNewest = "true".equalsIgnoreCase(firstQueryValue(request, "exceptionNewest", "newest"));
+        query.methodNamePrefix = Strings.trim(request.getQueryString().getFirst("methodNamePrefix"));
+        query.methodOccurMost = "true".equalsIgnoreCase(request.getQueryString().getFirst("methodOccurMost"));
         query.toolHost = Strings.trim(firstQueryValue(request, "toolHost", "host"));
         query.toolCmd = Strings.trim(firstQueryValue(request, "toolCmd", "cmd"));
         query.toolWorkspace = Strings.trim(firstQueryValue(request, "toolWorkspace", "workspace"));
@@ -1474,6 +1519,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         query.toolBeanJson = Strings.trim(firstQueryValue(request, "toolBeanJson", "jsonVal"));
         query.toolInvokeExpr = Strings.trim(firstQueryValue(request, "toolInvokeExpr", "expr"));
         query.toolInvokeArgs = Strings.trim(firstQueryValue(request, "toolInvokeArgs", "args"));
+        query.vmOptionName = Strings.trim(request.getQueryString().getFirst("vmOptionName"));
+        query.vmOptionValue = Strings.trim(request.getQueryString().getFirst("vmOptionValue"));
         query.captureSeconds = boundedInt(request.getQueryString().getFirst("captureSeconds"),
                 DEFAULT_CAPTURE_SECONDS, 1, MAX_CAPTURE_SECONDS);
         query.captureTopN = boundedInt(request.getQueryString().getFirst("captureTopN"),
@@ -1797,6 +1844,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         ExceptionLevel exceptionLevel;
         String exceptionKeyword;
         boolean exceptionNewest;
+        String methodNamePrefix;
+        boolean methodOccurMost;
         String toolHost;
         String toolCmd;
         String toolWorkspace;
@@ -1809,6 +1858,10 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         String toolInvokeArgs;
         String toolInvokeResult;
         String toolInvokeError;
+        String vmOptionName;
+        String vmOptionValue;
+        String vmOptionResult;
+        String vmOptionError;
         List<String> toolDnsAddresses;
         String toolDnsError;
         String toolExecOutput;

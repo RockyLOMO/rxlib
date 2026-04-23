@@ -366,6 +366,7 @@ rxlib/src/main/java/org/rx/net/socks/
 1. **回程是否始终多倍**：实现为双向往返一致；若仅需 client→server，需在架构上再裁剪。
 2. **与 FEC 同 pipeline**：无硬互斥，由部署策略避免叠用。
 3. **ShadowSocks UDP（如 `SSUdpProxyHandler`）**：当前未接入同一套 Handler。
+4. **配套 UDP 压缩**：计划单独见 [UdpCompress-Plan.md](./UdpCompress-Plan.md)，用于与多倍发包联用以回收带宽开销。
 
 ---
 
