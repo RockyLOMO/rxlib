@@ -294,7 +294,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
     private static void writeRoutePacket(SocksContext context, InetSocketAddress srcEp, UnresolvedEndpoint dstEp,
                                          ByteBuf payload, boolean debug) {
-        if (context.outboundActive) {
+        if (context.isOutboundReady()) {
             writeWhenReady(context, dstEp, payload, srcEp, debug);
             return;
         }
@@ -338,10 +338,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
     private static void bindRouteContext(Channel inbound, ChannelFuture outboundFuture, SocksContext context) {
         context.inbound = inbound;
-        context.outbound = outboundFuture.addListener(f -> context.outboundActive = f.isSuccess());
-        if (outboundFuture.isDone()) {
-            context.outboundActive = outboundFuture.isSuccess();
-        }
+        context.outbound = outboundFuture;
     }
 
     private static void bindOutbound(Channel outbound, Channel inbound, InetSocketAddress srcEp, Upstream upstream) {

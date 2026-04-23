@@ -4,9 +4,7 @@ import com.alibaba.fastjson2.TypeReference;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.AttributeKey;
-import io.netty.util.concurrent.FastThreadLocal;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory;
@@ -21,8 +19,6 @@ import org.rx.core.IOC;
 import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
-import org.rx.net.AuthenticEndpoint;
-import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -32,47 +28,24 @@ import java.util.Collections;
 
 import static org.rx.core.Sys.fromJson;
 
-@RequiredArgsConstructor
 public final class SocksContext extends EventArgs {
     private static final long serialVersionUID = 323020524764860674L;
-    static final boolean USE_FAST_THREAD_LOCAL = false;
-    private static final FastThreadLocal<SocksContext> THREAD_CTX = new FastThreadLocal<>();
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
     public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
-        if (!USE_FAST_THREAD_LOCAL) {
-            return new SocksContext(srcEp, dstEp);
-        }
-        SocksContext sc = THREAD_CTX.getIfExists();
-        if (sc == null) {
-            sc = new SocksContext(srcEp, dstEp);
-        } else {
-            THREAD_CTX.remove();
-            sc.reset(srcEp, dstEp);
-        }
-        return sc;
+        return new SocksContext(srcEp, dstEp);
     }
 
     public static void markCtx(Channel inbound, ChannelFuture outbound, SocksContext sc) {
-        Channel outCh = outbound.channel();
-        SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
-        if (prevSc != null && prevSc != sc) {
-            if (USE_FAST_THREAD_LOCAL) {
-                prevSc.upstream = null;
-                THREAD_CTX.set(prevSc);
-            }
-        }
-
         sc.inbound = inbound;
-        sc.outbound = outbound.addListener(f -> sc.outboundActive = f.isSuccess());
+        sc.outbound = outbound;
         inbound.attr(SOCKS_CTX).set(sc);
-        outCh.attr(SOCKS_CTX).set(sc);
+        outbound.channel().attr(SOCKS_CTX).set(sc);
     }
 
     public static void markCtx(Channel inbound, Channel outbound, SocksContext sc) {
         markCtx(inbound, outbound.newSucceededFuture(), sc);
-        sc.outboundActive = true;
     }
 
     public static SocksContext ctx(Channel channel) {
@@ -131,19 +104,13 @@ public final class SocksContext extends EventArgs {
 
     transient Channel inbound;
     transient ChannelFuture outbound;
-    transient volatile boolean outboundActive;
 
     private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         this.source = srcEp;
         this.firstDestination = dstEp;
     }
 
-    private void reset(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
-        source = srcEp;
-        firstDestination = dstEp;
-        upstream = null;
-        inbound = null;
-        outbound = null;
-        outboundActive = false;
+    boolean isOutboundReady() {
+        return outbound != null && outbound.isSuccess() && outbound.channel().isActive();
     }
 }
