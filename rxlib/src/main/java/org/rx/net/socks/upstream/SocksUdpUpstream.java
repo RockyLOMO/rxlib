@@ -17,8 +17,10 @@ import org.rx.net.socks.UdpLeasePoolKey;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
+import java.nio.channels.ClosedChannelException;
 import java.net.InetSocketAddress;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Extends.tryClose;
@@ -27,6 +29,8 @@ import static org.rx.core.Extends.tryClose;
 public class SocksUdpUpstream extends Upstream {
     private static final AttributeKey<SessionHolder> ATTR_UDP_SESSION =
             AttributeKey.valueOf("socksUdpUpstreamSession");
+    private static final AttributeKey<CompletableFuture<SessionHolder>> ATTR_UDP_SESSION_INIT =
+            AttributeKey.valueOf("socksUdpUpstreamSessionInit");
 
     private final UpstreamSupport next;
 
@@ -68,33 +72,29 @@ public class SocksUdpUpstream extends Upstream {
 
     @Override
     public void initChannel(Channel channel) {
+        initChannelAsync(channel);
+    }
+
+    @Override
+    public CompletableFuture<Void> initChannelAsync(Channel channel) {
         SessionHolder holder = channel.attr(ATTR_UDP_SESSION).get();
         if (holder != null && holder.isValid()) {
-            return;
+            return CompletableFuture.completedFuture(null);
         }
 
-        if (holder != null) {
-            channel.attr(ATTR_UDP_SESSION).set(null);
+        CompletableFuture<SessionHolder> initFuture = channel.attr(ATTR_UDP_SESSION_INIT).get();
+        if (initFuture != null) {
+            return initFuture.thenApply(v -> null);
         }
 
-        SocksConfig socksConfig = (SocksConfig) config;
-        SocksRpcContract facade = next.getFacade();
-        Socks5UpstreamPoolManager poolManager = Socks5UpstreamPoolManager.INSTANCE;
-        if (socksConfig.isUdpLeasePoolEnabled() && facade != null && !poolManager.isUdpBreakerOpen(poolKey())) {
-            Socks5UpstreamPoolManager.UdpLeasePool pool = poolManager.udpPool(this);
-            if (pool != null) {
-                Socks5UdpLease lease = pool.borrow();
-                if (lease != null) {
-                    if (claimRelay(channel, lease, facade, poolManager, socksConfig)) {
-                        bindHolder(channel, SessionHolder.pooled(pool, lease));
-                        return;
-                    }
-                    tryClose(lease);
-                }
-            }
+        CompletableFuture<SessionHolder> created = new CompletableFuture<>();
+        CompletableFuture<SessionHolder> existing = channel.attr(ATTR_UDP_SESSION_INIT).setIfAbsent(created);
+        if (existing != null) {
+            return existing.thenApply(v -> null);
         }
 
-        initSlowPath(channel);
+        Tasks.runAsync(() -> initializeSessionOffLoop(channel, created));
+        return created.thenApply(v -> null);
     }
 
     private boolean claimRelay(Channel channel, Socks5UdpLease lease, SocksRpcContract facade,
@@ -134,18 +134,106 @@ public class SocksUdpUpstream extends Upstream {
         return udpLocalAddr;
     }
 
-    private void initSlowPath(Channel channel) {
+    private SessionHolder acquireHolder(Channel channel) {
+        SessionHolder holder = channel.attr(ATTR_UDP_SESSION).get();
+        if (holder != null && holder.isValid()) {
+            return holder;
+        }
+        if (holder != null) {
+            channel.attr(ATTR_UDP_SESSION).set(null);
+        }
+
+        SocksConfig socksConfig = (SocksConfig) config;
+        SocksRpcContract facade = next.getFacade();
+        Socks5UpstreamPoolManager poolManager = Socks5UpstreamPoolManager.INSTANCE;
+        if (socksConfig.isUdpLeasePoolEnabled() && facade != null && !poolManager.isUdpBreakerOpen(poolKey())) {
+            Socks5UpstreamPoolManager.UdpLeasePool pool = poolManager.udpPool(this);
+            if (pool != null) {
+                Socks5UdpLease lease = pool.borrow();
+                if (lease != null) {
+                    if (claimRelay(channel, lease, facade, poolManager, socksConfig)) {
+                        return SessionHolder.pooled(pool, lease);
+                    }
+                    tryClose(lease);
+                }
+            }
+        }
+
+        return initSlowPath(channel);
+    }
+
+    private void initializeSessionOffLoop(Channel channel, CompletableFuture<SessionHolder> future) {
+        SessionHolder holder = null;
+        Throwable error = null;
+        try {
+            holder = acquireHolder(channel);
+        } catch (Throwable e) {
+            error = e;
+        }
+
+        final SessionHolder finalHolder = holder;
+        final Throwable finalError = error;
+        channel.eventLoop().execute(() -> completeSessionInit(channel, future, finalHolder, finalError));
+    }
+
+    private SessionHolder initSlowPath(Channel channel) {
         AuthenticEndpoint svrEp = next.getEndpoint();
         Socks5Client client = new Socks5Client(svrEp, config);
         try {
             long timeout = config != null && config.getConnectTimeoutMillis() > 0
                     ? config.getConnectTimeoutMillis() : 10000L;
             Socks5UdpSession session = client.udpAssociateAsync(channel).get(timeout, TimeUnit.MILLISECONDS);
-            bindHolder(channel, SessionHolder.session(client, session));
+            return SessionHolder.session(client, session);
         } catch (Exception e) {
-            log.error("Failed to establish UDP upstream session with {}", svrEp, e);
             tryClose(client);
+            throw new IllegalStateException("Failed to establish UDP upstream session with " + svrEp, e);
         }
+    }
+
+    private void completeSessionInit(Channel channel, CompletableFuture<SessionHolder> future,
+                                     SessionHolder holder, Throwable error) {
+        CompletableFuture<SessionHolder> activeInit = channel.attr(ATTR_UDP_SESSION_INIT).get();
+        if (activeInit != future) {
+            closeHolder(holder);
+            return;
+        }
+        channel.attr(ATTR_UDP_SESSION_INIT).set(null);
+
+        SessionHolder activeHolder = channel.attr(ATTR_UDP_SESSION).get();
+        if (activeHolder != null && activeHolder.isValid()) {
+            closeHolder(holder);
+            future.complete(activeHolder);
+            return;
+        }
+
+        if (error != null) {
+            log.error("Failed to establish UDP upstream session with {}", next.getEndpoint(), error);
+            future.completeExceptionally(error);
+            return;
+        }
+        if (holder == null) {
+            future.completeExceptionally(new IllegalStateException("UDP upstream session holder is null"));
+            return;
+        }
+        if (!channel.isActive()) {
+            closeHolder(holder);
+            future.completeExceptionally(new ClosedChannelException());
+            return;
+        }
+        bindHolder(channel, holder);
+        future.complete(holder);
+    }
+
+    private void closeHolder(SessionHolder holder) {
+        if (holder == null) {
+            return;
+        }
+        if (holder.pooled) {
+            tryClose(holder.lease);
+            return;
+        }
+        tryClose(holder.session);
+        tryClose(holder.client);
     }
 
     private void bindHolder(Channel channel, SessionHolder holder) {

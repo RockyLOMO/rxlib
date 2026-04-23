@@ -12,25 +12,30 @@
 
 - `[已完成]` 需求确认
   - UDP 压缩的首要目标是与多倍发包联用，先支撑试用和灰度，不单独做大范围协议改造。
-  - 当前阶段只输出计划文档，不开始代码实现。
+  - 初始要求是先产出计划文档，再推进代码实现；当前已按该顺序完成实现与定向回归。
 - `[已完成]` 现状盘点
   - 已有 [`UdpRedundantEncoder`](../rxlib/src/main/java/org/rx/net/socks/UdpRedundantEncoder.java) / [`UdpRedundantDecoder`](../rxlib/src/main/java/org/rx/net/socks/UdpRedundantDecoder.java) / [`UdpRedundantStats`](../rxlib/src/main/java/org/rx/net/socks/UdpRedundantStats.java)。
   - [`TransportFlags`](../rxlib/src/main/java/org/rx/net/TransportFlags.java) 中已有 `COMPRESS_READ/WRITE`，但当前只用于 TCP stream pipeline 上的 `zlib`，不适合直接套用到 UDP 数据报。
-  - 当前仓库没有 `UdpCompress*` 组件、没有 UDP 压缩头、也没有针对 UDP 的压缩统计与旁路机制。
+  - 立项时仓库没有 `UdpCompress*` 组件、没有 UDP 压缩头，也没有针对 UDP 的压缩统计与旁路机制；当前这些基础设施已补齐。
 - `[已完成]` 方案初稿
   - 采用“单包无状态压缩 + 可选静态字典 + 自适应旁路”。
   - 出站顺序固定为“先压缩，后多倍发送”；入站顺序固定为“先去重，后解压”。
-  - 初版默认算法倾向 `LZ4 fast`，不默认采用 `zlib/gzip`。
+  - 初版默认算法已落地为 `LZ4`，当前编码侧默认 `compressionLevel = 0` 即 `fast compressor`，`1..17` 可切到 `high compressor`。
 - `[已完成]` 文档初稿
   - 已输出协议头、Pipeline 顺序、配置建议、实施拆分、测试与监控方案。
 - `[已完成]` 代码实现
   - 已新增 `UdpCompressConfig`、`UdpCompressEncoder`、`UdpCompressDecoder`、`UdpCompressStats`。
   - 已在 `Sockets` 中统一接入 UDP 压缩与多倍发包，顺序为“入站先去重后解压，出站先压缩后多发”。
+  - 已在 `SocksConfig` 与 `Main.applyUdpCompressionTrial(...)` 暴露试用参数，当前默认试用值为 `LZ4_FAST + compressionLevel=0 + minPayloadBytes=96 + minSavingsBytes=24 + minSavingsRatio=0.12 + adaptiveBypassWindow=30s`。
   - 当前实现阶段仅支持 `dictionaryId = 0`，静态字典仍留待下一阶段。
 - `[已完成]` 自动化验证
   - 已补充 `UdpCompressTest` 单元测试，覆盖压缩头、透传、去重后解压、引用计数释放、非法字典包丢弃。
   - 已补充 `SocksProxyServerIntegrationTest#socks5UdpRelay_chained_withUdpCompressAndRedundant_e2e`。
-  - 已执行 `UdpCompressTest`、`UdpRedundantTest`、`SocksProxyServerIntegrationTest`、`Socks5ClientIntegrationTest`、`Udp2rawHandlerTest` 定向回归。
+  - 已执行 `ShadowsocksServerIntegrationTest#shadowsocksTcpConnect_e2e`、`ShadowsocksServerIntegrationTest#shadowsocksUdpRelay_e2e`、`SocksProxyServerIntegrationTest#socks5TcpConnect_withPasswordAuth_e2e`、`SocksProxyServerIntegrationTest#socks5UdpRelay_chained_withUdpCompressAndRedundant_e2e` 等定向回归。
+- `[已完成]` 最新修复同步（2026-04-23 18:21:57 +08:00）
+  - `master` 最新提交为 `1403bbd5ab568dd35c5cb6ef2de1d4315275e8f5`，提交说明为 `bug fix udp compress`。
+  - 该提交修正了 [`SSUdpProxyHandler`](../rxlib/src/main/java/org/rx/net/socks/SSUdpProxyHandler.java) 的回程解码链：Shadowsocks -> Socks 链式场景下，本地回包路径现在会同时补 `UdpRedundantDecoder` 与 `UdpCompressDecoder`，确保 `RDNT / UCMP` 头能正确剥离，但仍不安装 encoder，避免把本地跳也放大。
+  - 同时新增 [`SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withUdpCompressAndRedundantOnProxyAB_e2e`](../rxlib/src/test/java/org/rx/net/socks/SocksProxyServerIntegrationTest.java)，覆盖 “SS -> ProxyA -> ProxyB -> UDP Echo” 的压缩 + 多倍发包链路。
 
 ## 1. 背景与目标
 
@@ -154,7 +159,14 @@ wire -> UdpRedundantDecoder -> UdpCompressDecoder -> 业务 payload
 - 单包压缩和解压延迟低
 - 适合小包和实时路径
 - 更符合“低尾延迟优先”而非“极限压缩率优先”的目标
-- 当前仓库尚未引入现成的 `LZ4` 依赖，实现阶段需要先完成压缩库选型，优先纯 Java、低分配实现
+- 当前仓库已切换到 `at.yawk.lz4:lz4-java:1.11.0`，沿用 `net.jpountz.lz4` 包名，兼容 Java 8
+
+当前实现细节：
+
+- `UdpCompressCodec` 仍然收口为 `LZ4_FAST`
+- `compressionLevel = 0` 时使用 `LZ4.fastCompressor()`
+- `compressionLevel = 1..17` 时切到 `LZ4.highCompressor(level)`
+- 解压统一使用 `LZ4.safeDecompressor()`
 
 初版不建议默认使用 `zlib/gzip`：
 
@@ -237,6 +249,14 @@ UdpCompressEncoder
 2. 新增 `addUdpOptimizationHandlers(...)`，内部按配置决定是否挂接压缩与冗余。
 3. 逐步让现有调用方切到统一入口，减少不同路径手工拼 pipeline 的分叉。
 
+### 6.4 已落地的链式回程补丁
+
+最新 `1403bbd` 提交之后，除 SOCKS5 UDP relay / Udp2raw 公共入口外，还额外补齐了 Shadowsocks 链式场景的本地回程 decoder：
+
+- `SSUdpProxyHandler` 在识别上游为 `SocksUdpUpstream` 时，会为本地回包路径补 `UdpRedundantDecoder`
+- 同时补 `UdpCompressDecoder`，保证来自 ProxyA/ProxyB 的 `UCMP` 头能够被正确剥离
+- 明确不安装对应 encoder，避免 Shadowsocks 本地跳被误做冗余放大或二次压缩
+
 ## 7. 配置设计建议
 
 建议新增独立配置对象：`UdpCompressConfig`
@@ -245,6 +265,7 @@ UdpCompressEncoder
 |------|------|--------|------|
 | `enabled` | boolean | false | 是否启用 UDP 压缩 |
 | `codec` | enum/string | `LZ4_FAST` | 初版默认算法 |
+| `compressionLevel` | int | 0 | `0 = LZ4 fast`，`1..17 = high compressor(level)` |
 | `minPayloadBytes` | int | 96 | 小包直接旁路 |
 | `minSavingsBytes` | int | 24 | 压缩收益门槛 |
 | `minSavingsRatio` | double | 0.12 | 压缩收益比例门槛 |
@@ -258,6 +279,28 @@ UdpCompressEncoder
 - 二者解耦，分别建模，避免把压缩和冗余耦合进一个超大配置类。
 - 在 `SocksConfig` 上允许同时挂 `udpCompressConfig` 与 `udpRedundantConfig`。
 - 当两者都启用时，统一由一个入口按固定顺序装配 pipeline。
+
+### 7.1 当前试用配置（`Main.java`）
+
+[`Main.applyUdpCompressionTrial(...)`](../rxlib/src/main/java/org/rx/Main.java) 当前统一下发的试用参数为：
+
+- `udpCompressEnabled = true`
+- `udpCompressCodec = LZ4_FAST`
+- `udpCompressCompressionLevel = 0`
+- `udpCompressMinPayloadBytes = 96`
+- `udpCompressMinSavingsBytes = 24`
+- `udpCompressMinSavingsRatio = 0.12`
+- `udpCompressAdaptiveBypass = true`
+- `udpCompressAdaptiveBypassWindowSeconds = 30`
+
+当前这些试用参数已经挂到：
+
+- `inConf`
+- `inTunConf`
+- `outConf`
+- `outTunConf`
+
+并与 `udpRedundantMultiplier = 2` 联用，形成当前默认试用链路。
 
 ## 8. 统计与自适应旁路
 
@@ -339,6 +382,7 @@ UdpCompressEncoder
 
 - SOCKS5 UDP associate：压缩 + 多倍发包联用
 - Udp2raw：压缩 + 多倍发包联用
+- Shadowsocks -> Socks 链式回程：压缩 + 多倍发包联用
 - 双端都启用压缩时互通正常
 - 一端启用一端未启用时，按预期视为不兼容部署，不允许误判为普通 UDP
 
@@ -407,9 +451,10 @@ UdpCompressEncoder
 
 当前已落地路线如下：
 
-1. 已实现 **无字典 LZ4 fast + 强旁路**。
-2. 已覆盖 **SOCKS5 UDP relay** 与 **Udp2raw** 的公共 UDP pipeline。
-3. 已支持与 **UdpRedundant** 联用，不扩散到其他 UDP 协议路径。
-4. 下一阶段重点转向 **静态字典**、更细粒度监控指标和 `tc netem` 压测数据沉淀。
+1. 已实现 **无字典 LZ4 + 强旁路**，其中 `compressionLevel=0` 走 fast，`1..17` 可切 high compressor。
+2. 已覆盖 **SOCKS5 UDP relay**、**Udp2raw**，以及 **Shadowsocks -> Socks 链式回程 decoder 补齐**。
+3. 已支持与 **UdpRedundant** 联用，`Main.java` 默认试用组合为“`udpRedundantMultiplier = 2` + `applyUdpCompressionTrial(...)`”。
+4. `master` 最新 `1403bbd` 已修正 SS 链式回程缺少 `UCMP` 解码的问题，说明当前 UDP 压缩的重点风险不在基础编解码，而在不同代理路径的 decoder 补齐与顺序一致性。
+5. 下一阶段重点转向 **静态字典**、更细粒度监控指标和 `tc netem` 压测数据沉淀。
 
 该路线对当前仓库最稳妥，能最大化复用现有 `UdpRedundant` 架构，同时把协议、性能和内存风险控制在可回退范围内。

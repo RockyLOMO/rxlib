@@ -5,8 +5,9 @@ import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Tasks;
 import org.rx.core.cache.MemoryCache;
-import org.rx.net.AuthenticEndpoint;
+import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -15,8 +16,9 @@ import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayDeque;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Per-client UDP relay handler, installed on a dedicated UDP channel created by
@@ -55,8 +57,36 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
      */
     public static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
             AttributeKey.valueOf("udpRouteMap");
+    static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, RouteInitState>> ATTR_ROUTE_INIT_MAP =
+            AttributeKey.valueOf("udpRouteInitMap");
+    static final int MAX_PENDING_ROUTE_PACKETS = 32;
+    static final int MAX_PENDING_ROUTE_BYTES = 256 * 1024;
 
     public static final SocksUdpRelayHandler DEFAULT = new SocksUdpRelayHandler();
+
+    static final class PendingPacket {
+        final ByteBuf content;
+        final InetSocketAddress sender;
+        final InetSocketAddress clientOriginAddr;
+        final UnresolvedEndpoint destination;
+
+        PendingPacket(ByteBuf content, InetSocketAddress sender, InetSocketAddress clientOriginAddr, UnresolvedEndpoint destination) {
+            this.content = content;
+            this.sender = sender;
+            this.clientOriginAddr = clientOriginAddr;
+            this.destination = destination;
+        }
+    }
+
+    static final class RouteInitState {
+        final ArrayDeque<PendingPacket> pendingPackets = new ArrayDeque<>();
+        SocksContext context;
+        int pendingBytes;
+
+        RouteInitState(SocksContext context) {
+            this.context = context;
+        }
+    }
 
     /**
      * https://datatracker.ietf.org/doc/html/rfc1928
@@ -75,8 +105,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         // Use exact InetSocketAddress (IP+port) matching so localhost client vs localhost
         // destination are correctly distinguished.
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
-        if (ctxMap != null && ctxMap.containsKey(sender)) {
-            handleDestResponse(relay, in, sender, ctxMap);
+        SocksContext upstreamCtx = ctxMap != null ? ctxMap.get(sender) : null;
+        if (upstreamCtx != null) {
+            handleDestResponse(relay, in, sender, upstreamCtx);
         } else {
             handleClientPacket(relay, in, sender);
         }
@@ -133,63 +164,47 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             UdpRelayAttributes.addRedundantPeer(relay, sender);
         }
 
-        // Ensure per-relay context map exists
-        ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
-        if (ctxMap == null) {
-            relay.attr(ATTR_CTX_MAP).set(ctxMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap());
-        }
-        
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
-        if (routeMap == null) {
-            relay.attr(ATTR_ROUTE_MAP).set(routeMap = MemoryCache.<UnresolvedEndpoint, SocksContext>rootBuilder().maximumSize(256).build().asMap());
-        }
+        ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = ctxMap(relay);
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = routeMap(relay);
+        ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap = routeInitMap(relay);
 
         inBuf.markReaderIndex();
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
-        
+
         SocksContext e = routeMap.get(dstEp);
-        if (e == null) {
-            e = SocksContext.getCtx(clientOriginAddr, dstEp);
-            server.raiseEvent(server.onUdpRoute, e);
-            Upstream upstream = e.getUpstream();
-            upstream.initChannel(relay);
-            
-            InetSocketAddress udpRelayAddr = upstream instanceof SocksUdpUpstream
-                    ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
-            InetSocketAddress upDstAddr = udpRelayAddr != null ? udpRelayAddr : upstream.getDestination().socketAddress();
-            ctxMap.put(upDstAddr, e);
-            routeMap.put(dstEp, e);
+        if (e != null && isRouteReady(relay, e)) {
+            writeClientPacket(relay, inBuf, sender, clientOriginAddr, dstEp, e, false);
+            return;
         }
 
-        Upstream upstream = e.getUpstream();
-        boolean keepSocksHeader = upstream instanceof SocksUdpUpstream && ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) != null;
-        if (keepSocksHeader) {
-            inBuf.resetReaderIndex();
+        RouteInitState initState = routeInitMap.get(dstEp);
+        boolean created = false;
+        if (initState == null) {
+            RouteInitState newState = new RouteInitState(e);
+            RouteInitState oldState = routeInitMap.putIfAbsent(dstEp, newState);
+            initState = oldState != null ? oldState : newState;
+            created = oldState == null;
         }
-        InetSocketAddress upDstAddr = keepSocksHeader
-                ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay)
-                : upstream.getDestination().socketAddress();
-
-        EndpointTracer.UDP.link(clientOriginAddr, relay);
-
-        inBuf.retain();
-        if (config.isDebug()) {
-            log.info("socks5[{}] UDP OUT {}bytes {} => {}[{}]",
-                    config.getListenPort(), inBuf.readableBytes(), sender, upDstAddr, dstEp);
+        if (initState.context == null) {
+            initState.context = e;
         }
-        relay.writeAndFlush(new DatagramPacket(inBuf, upDstAddr));
+        if (!enqueuePendingPacket(initState, inBuf, sender, clientOriginAddr, dstEp, config)) {
+            return;
+        }
+        if (created) {
+            beginRouteInit(relay, server, clientOriginAddr, dstEp, initState, ctxMap, routeMap, routeInitMap);
+        }
     }
 
     /** Upstream response → Client */
     private void handleDestResponse(Channel relay, DatagramPacket in,
                                     InetSocketAddress sender,
-                                    ConcurrentMap<InetSocketAddress, SocksContext> ctxMap) {
+                                    SocksContext sc) {
         InetSocketAddress clientAddr = relay.attr(ATTR_CLIENT_ADDR).get();
         if (clientAddr == null) {
             return; // no established session yet
         }
 
-        SocksContext sc = ctxMap.get(sender);
         SocksProxyServer server = Sockets.getAttr(relay, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
         ByteBuf outBuf = in.content();
@@ -207,5 +222,176 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                     config.getListenPort(), outBuf.readableBytes(), sender, clientAddr);
         }
         relay.writeAndFlush(new DatagramPacket(outBuf, clientAddr));
+    }
+
+    private static ConcurrentMap<InetSocketAddress, SocksContext> ctxMap(Channel relay) {
+        ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+        if (ctxMap != null) {
+            return ctxMap;
+        }
+        ConcurrentMap<InetSocketAddress, SocksContext> newMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap();
+        ConcurrentMap<InetSocketAddress, SocksContext> oldMap = relay.attr(ATTR_CTX_MAP).setIfAbsent(newMap);
+        return oldMap != null ? oldMap : newMap;
+    }
+
+    private static ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap(Channel relay) {
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        if (routeMap != null) {
+            return routeMap;
+        }
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> newMap = MemoryCache.<UnresolvedEndpoint, SocksContext>rootBuilder().maximumSize(256).build().asMap();
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> oldMap = relay.attr(ATTR_ROUTE_MAP).setIfAbsent(newMap);
+        return oldMap != null ? oldMap : newMap;
+    }
+
+    private static ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap(Channel relay) {
+        ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap = relay.attr(ATTR_ROUTE_INIT_MAP).get();
+        if (routeInitMap != null) {
+            return routeInitMap;
+        }
+        ConcurrentMap<UnresolvedEndpoint, RouteInitState> newMap = MemoryCache.<UnresolvedEndpoint, RouteInitState>rootBuilder().maximumSize(256).build().asMap();
+        ConcurrentMap<UnresolvedEndpoint, RouteInitState> oldMap = relay.attr(ATTR_ROUTE_INIT_MAP).setIfAbsent(newMap);
+        return oldMap != null ? oldMap : newMap;
+    }
+
+    private static boolean isRouteReady(Channel relay, SocksContext context) {
+        Upstream upstream = context.getUpstream();
+        if (!(upstream instanceof SocksUdpUpstream)) {
+            return true;
+        }
+        return ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) != null;
+    }
+
+    private static InetSocketAddress resolveUpstreamTarget(Channel relay, Upstream upstream) {
+        if (upstream instanceof SocksUdpUpstream) {
+            return ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay);
+        }
+        return upstream.getDestination().socketAddress();
+    }
+
+    private void beginRouteInit(Channel relay, SocksProxyServer server, InetSocketAddress clientOriginAddr,
+                                UnresolvedEndpoint dstEp, RouteInitState initState,
+                                ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
+                                ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
+                                ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
+        Tasks.runAsync(() -> {
+            try {
+                SocksContext context = initState.context;
+                if (context == null) {
+                    context = SocksContext.getCtx(clientOriginAddr, dstEp);
+                    server.raiseEvent(server.onUdpRoute, context);
+                }
+                Upstream upstream = context.getUpstream();
+                if (upstream == null) {
+                    throw new IllegalStateException("UDP route upstream is null for " + dstEp);
+                }
+                final SocksContext finalContext = context;
+                CompletableFuture<Void> readyFuture = upstream.initChannelAsync(relay);
+                readyFuture.whenComplete((v, error) -> relay.eventLoop().execute(() -> {
+                    if (error != null) {
+                        onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, error);
+                        return;
+                    }
+                    onRouteInitSuccess(relay, dstEp, finalContext, initState, ctxMap, routeMap, routeInitMap);
+                }));
+            } catch (Throwable e) {
+                relay.eventLoop().execute(() -> onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, e));
+            }
+        });
+    }
+
+    private void onRouteInitSuccess(Channel relay, UnresolvedEndpoint dstEp, SocksContext context, RouteInitState initState,
+                                    ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
+                                    ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
+                                    ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
+        if (!routeInitMap.remove(dstEp, initState)) {
+            releasePending(initState);
+            return;
+        }
+
+        InetSocketAddress upDstAddr = resolveUpstreamTarget(relay, context.getUpstream());
+        if (upDstAddr == null) {
+            releasePending(initState);
+            log.warn("socks5[{}] UDP route not ready after async init for {}", Sockets.getAttr(relay, SocksContext.SOCKS_SVR).config.getListenPort(), dstEp);
+            return;
+        }
+
+        ctxMap.put(upDstAddr, context);
+        routeMap.put(dstEp, context);
+        flushPending(relay, context, initState);
+    }
+
+    private void onRouteInitFailure(Channel relay, UnresolvedEndpoint dstEp, RouteInitState initState,
+                                    ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
+                                    ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap,
+                                    Throwable error) {
+        routeInitMap.remove(dstEp, initState);
+        if (initState.context != null) {
+            routeMap.remove(dstEp, initState.context);
+        }
+        releasePending(initState);
+        SocksConfig config = Sockets.getAttr(relay, SocksContext.SOCKS_SVR).config;
+        log.warn("socks5[{}] UDP async route init fail for {}", config.getListenPort(), dstEp, error);
+    }
+
+    private boolean enqueuePendingPacket(RouteInitState initState, ByteBuf inBuf, InetSocketAddress sender,
+                                         InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
+                                         SocksConfig config) {
+        int bytes = inBuf.readableBytes();
+        if (initState.pendingPackets.size() >= MAX_PENDING_ROUTE_PACKETS
+                || initState.pendingBytes + bytes > MAX_PENDING_ROUTE_BYTES) {
+            log.warn("socks5[{}] UDP pending route overflow for {} sender={}, pendingPackets={}, pendingBytes={}",
+                    config.getListenPort(), dstEp, sender, initState.pendingPackets.size(), initState.pendingBytes);
+            return false;
+        }
+        initState.pendingPackets.addLast(new PendingPacket(inBuf.retain(), sender, clientOriginAddr, dstEp));
+        initState.pendingBytes += bytes;
+        return true;
+    }
+
+    private void flushPending(Channel relay, SocksContext context, RouteInitState initState) {
+        PendingPacket packet;
+        while ((packet = initState.pendingPackets.pollFirst()) != null) {
+            initState.pendingBytes -= packet.content.readableBytes();
+            writeClientPacket(relay, packet.content, packet.sender, packet.clientOriginAddr, packet.destination, context, true);
+        }
+        initState.pendingBytes = 0;
+    }
+
+    private void releasePending(RouteInitState initState) {
+        PendingPacket packet;
+        while ((packet = initState.pendingPackets.pollFirst()) != null) {
+            Bytes.release(packet.content);
+        }
+        initState.pendingBytes = 0;
+    }
+
+    private void writeClientPacket(Channel relay, ByteBuf inBuf, InetSocketAddress sender,
+                                   InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
+                                   SocksContext context, boolean retained) {
+        Upstream upstream = context.getUpstream();
+        InetSocketAddress upDstAddr = resolveUpstreamTarget(relay, upstream);
+        if (upDstAddr == null) {
+            if (retained) {
+                Bytes.release(inBuf);
+            }
+            log.warn("socks5[{}] UDP relay not ready for {}, drop packet from {}",
+                    Sockets.getAttr(relay, SocksContext.SOCKS_SVR).config.getListenPort(), dstEp, sender);
+            return;
+        }
+
+        if (upstream instanceof SocksUdpUpstream) {
+            inBuf.resetReaderIndex();
+        }
+        EndpointTracer.UDP.link(clientOriginAddr, relay);
+        if (!retained) {
+            inBuf.retain();
+        }
+        SocksConfig config = Sockets.getAttr(relay, SocksContext.SOCKS_SVR).config;
+        if (config.isDebug()) {
+            log.info("socks5[{}] UDP OUT {}bytes {} => {}[{}]",
+                    config.getListenPort(), inBuf.readableBytes(), sender, upDstAddr, dstEp);
+        }
+        relay.writeAndFlush(new DatagramPacket(inBuf, upDstAddr));
     }
 }
