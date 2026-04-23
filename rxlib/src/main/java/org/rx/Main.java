@@ -15,7 +15,6 @@ import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.core.Arrays;
 import org.rx.diagnostic.DiagnosticMonitor;
-import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.io.DuplexStream;
 import org.rx.net.AuthenticEndpoint;
@@ -178,16 +177,31 @@ public final class Main implements SocksRpcContract {
         GeoManager geoMgr = GeoManager.INSTANCE;
 
         List<Object> svrRefs = new ArrayList<>();
-        YamlConfiguration watcher = new YamlConfiguration("conf.yml").enableWatch();
+        YamlConfiguration watcher = new YamlConfiguration("conf.yml")
+                .setWatchValidator(conf -> {
+                    RSSConf changed = conf.readAs(RSSConf.class);
+                    if (changed == null || CollectionUtils.isEmpty(changed.socksServers)) {
+                        return false;
+                    }
+                    for (AuthenticEndpoint socksServer : changed.socksServers) {
+                        if (socksServer == null || socksServer.getInetEndpoint() == null) {
+                            continue;
+                        }
+                        int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
+                        if (weight > 0) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }).enableWatch();
         watcher.onChanged.combine((s, e) -> {
             RSSConf changed = s.readAs(RSSConf.class);
             if (changed == null) {
                 return;
             }
-            if (CollectionUtils.isEmpty(changed.socksServers)) {
-                throw new InvalidException("Invalid shadowServer arg");
+            if (changed.udp2rawSocksServers == null) {
+                changed.udp2rawSocksServers = Collections.emptyList();
             }
-
             rssConf = changed;
             List<AuthenticEndpoint> svrs = rssConf.socksServers;
             log.info("rssConf load socksServers: {}", toJsonString(svrs));

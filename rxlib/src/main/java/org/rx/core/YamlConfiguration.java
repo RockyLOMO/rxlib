@@ -14,6 +14,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.FileStream;
 import org.rx.io.FileWatcher;
 import org.rx.io.Files;
+import org.rx.util.function.PredicateFunc;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 
@@ -24,11 +25,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.rx.core.Extends.as;
-import static org.rx.core.Extends.values;
+import static org.rx.core.Extends.*;
 
 @Slf4j
 public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
+    static final int DEFAULT_WATCH_RETRY_TIMES = 3;
+    static final long DEFAULT_WATCH_RETRY_INTERVAL_MILLIS = 80L;
+
     @RequiredArgsConstructor
     @Getter
     public static class ChangedEventArgs extends EventArgs {
@@ -90,6 +93,9 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
     final Map<String, Object> yaml;
     String outputFile;
     FileWatcher watcher;
+    PredicateFunc<YamlConfiguration> watchValidator;
+    int watchRetryTimes = DEFAULT_WATCH_RETRY_TIMES;
+    long watchRetryIntervalMillis = DEFAULT_WATCH_RETRY_INTERVAL_MILLIS;
 
     public YamlConfiguration(@NonNull String... fileNames) {
         yaml = loadYaml(this.fileNames = fileNames);
@@ -100,6 +106,23 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
             throw new InvalidException("Empty loaded fileNames");
         }
         return enableWatch(fileNames[fileNames.length - 1]);
+    }
+
+    public synchronized YamlConfiguration setWatchValidator(PredicateFunc<YamlConfiguration> watchValidator) {
+        this.watchValidator = watchValidator;
+        return this;
+    }
+
+    public synchronized YamlConfiguration setWatchRetry(int retryTimes, long retryIntervalMillis) {
+        if (retryTimes < 0) {
+            throw new InvalidException("retryTimes < 0");
+        }
+        if (retryIntervalMillis < 0) {
+            throw new InvalidException("retryIntervalMillis < 0");
+        }
+        watchRetryTimes = retryTimes;
+        watchRetryIntervalMillis = retryIntervalMillis;
+        return this;
     }
 
     public synchronized YamlConfiguration enableWatch(@NonNull String outputFile) {
@@ -117,11 +140,9 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         watcher.onChanged.combine((s, e) -> {
             String filePath = e.getPath().toString();
             log.info("Config changing {} {} -> {}", e.isCreate(), filePath, yaml);
-            synchronized (this) {
-                yaml.clear();
-                if (!e.isDelete()) {
-                    write(filePath);
-                }
+            if (!reloadWatchedYaml(filePath, e.isDelete(), false)) {
+                log.warn("Config change skipped {} {}", e.isCreate(), filePath);
+                return;
             }
             log.info("Config changed {} {} -> {}", e.isCreate(), filePath, yaml);
             raiseEvent(onChanged, new ChangedEventArgs(filePath));
@@ -144,15 +165,62 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
             return;
         }
 
-        write(filePath);
+        if (!reloadWatchedYaml(filePath, false, true)) {
+            log.warn("Config change skipped {}", filePath);
+            return;
+        }
         log.info("Config changed {} -> {}", filePath, yaml);
         raiseEvent(onChanged, new ChangedEventArgs(filePath));
     }
 
     public synchronized YamlConfiguration write(@NonNull String fileName) {
-        String[] clone = fileNames.clone();
-        yaml.putAll(loadYaml(Arrays.add(clone, fileName)));
+        replaceYaml(loadYamlSnapshot(fileName, true));
         return this;
+    }
+
+    protected Map<String, Object> loadYamlSnapshot(String fileName, boolean includeOutputFile) {
+        String[] clone = fileNames.clone();
+        return includeOutputFile ? loadYaml(Arrays.add(clone, fileName)) : loadYaml(clone);
+    }
+
+    private synchronized boolean reloadWatchedYaml(String filePath, boolean isDelete, boolean throwOnFailure) {
+        Map<String, Object> snapshot = new LinkedHashMap<>(yaml);
+        boolean acceptedSnapshot = validateCurrentYaml();
+        Throwable lastError = null;
+        for (int i = 0; i <= watchRetryTimes; i++) {
+            if (i > 0 && watchRetryIntervalMillis > 0) {
+                sleep(watchRetryIntervalMillis);
+            }
+            try {
+                replaceYaml(loadYamlSnapshot(filePath, !isDelete));
+                if (validateCurrentYaml()) {
+                    return true;
+                }
+                log.warn("Config validate failed {}/{} {}", i + 1, watchRetryTimes + 1, filePath);
+            } catch (Throwable e) {
+                lastError = e;
+                log.warn("Config reload failed {}/{} {}", i + 1, watchRetryTimes + 1, filePath, e);
+            }
+        }
+        replaceYaml(snapshot);
+        if (throwOnFailure && !acceptedSnapshot) {
+            if (lastError != null) {
+                throw InvalidException.sneaky(lastError);
+            }
+            throw new InvalidException("Invalid config {}", filePath);
+        }
+        return false;
+    }
+
+    private void replaceYaml(Map<String, Object> next) {
+        yaml.clear();
+        if (next != null) {
+            yaml.putAll(next);
+        }
+    }
+
+    private boolean validateCurrentYaml() {
+        return watchValidator == null || watchValidator.test(this);
     }
 
     public String dump() {
