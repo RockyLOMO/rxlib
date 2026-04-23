@@ -51,7 +51,7 @@ import java.util.stream.Collectors;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Sys.logCtx;
 
-//WebMvcConfigurationSupport
+// WebMvcConfigurationSupport
 @Slf4j
 @RequiredArgsConstructor
 @Configuration
@@ -101,7 +101,7 @@ public class RWebConfig implements WebMvcConfigurer {
 
     @Order(Ordered.LOWEST_PRECEDENCE)
     @ControllerAdvice
-//    @Component
+    // @Component
     public static class ExceptionAdvice {
         @ExceptionHandler({Throwable.class})
         @ResponseStatus(HttpStatus.OK)
@@ -137,7 +137,7 @@ public class RWebConfig implements WebMvcConfigurer {
         }
     }
 
-    //@within class level, @annotation method level
+    // @within class level, @annotation method level
     @Aspect
     @RequiredArgsConstructor
     @Component
@@ -191,9 +191,7 @@ public class RWebConfig implements WebMvcConfigurer {
                 if (fts != null) {
                     String fu = fts.get(ms.getName());
                     if (fu != null) {
-                        try (HttpClient client = new HttpClient()) {
-                            client.forward(ra.getRequest(), ra.getResponse(), fu);
-                        }
+                        HttpClient.getDefault().forward(ra.getRequest(), ra.getResponse(), fu);
                         return null;
                     }
                 }
@@ -232,13 +230,13 @@ public class RWebConfig implements WebMvcConfigurer {
                 return false;
             }
 
-//            beginTrace(request, response);
+            // beginTrace(request, response);
             return true;
         }
 
         @Override
         public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
-//            endTrace(request, response);
+            // endTrace(request, response);
         }
     }
 

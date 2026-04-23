@@ -28,6 +28,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -189,6 +190,22 @@ public class Files extends FilenameUtils {
 
     //MimeTypeUtils
     //https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
+    public static String getContentType(String filePath) {
+        String contentType = null;
+        Path path = Paths.get(filePath);
+        try {
+            contentType = java.nio.file.Files.probeContentType(path);
+        } catch (IOException ignored) {
+        }
+        if (Strings.isEmpty(contentType)) {
+            contentType = URLConnection.guessContentTypeFromName(getName(filePath));
+        }
+        if (Strings.isEmpty(contentType)) {
+            contentType = getMediaTypeFromName(filePath);
+        }
+        return Strings.isEmpty(contentType) ? MediaType.APPLICATION_OCTET_STREAM_VALUE : contentType;
+    }
+
     public static String getMediaTypeFromName(String fileName) {
         String ext = getExtension(fileName);
         if (Strings.isEmpty(ext)) {
@@ -207,10 +224,10 @@ public class Files extends FilenameUtils {
             return MediaType.APPLICATION_PDF_VALUE;
         }
         if (Strings.equalsIgnoreCase(ext, "txt")) {
-            return MediaType.TEXT_MARKDOWN_VALUE;
+            return MediaType.TEXT_PLAIN_VALUE;
         }
         if (Strings.equalsIgnoreCase(ext, "md")) {
-            return MediaType.TEXT_PLAIN_VALUE;
+            return MediaType.TEXT_MARKDOWN_VALUE;
         }
         return MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }

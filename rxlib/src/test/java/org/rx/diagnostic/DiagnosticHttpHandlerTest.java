@@ -81,6 +81,13 @@ public class DiagnosticHttpHandlerTest {
                 assertEquals(200, ok.code());
                 assertTrue(html.contains("RXlib Diagnostics"));
                 assertTrue(html.contains("Overview"));
+                assertTrue(html.contains("Runtime State"));
+                assertTrue(html.contains("Input Arguments"));
+                assertTrue(html.contains("System Properties"));
+                assertTrue(html.contains("System Environment"));
+                assertTrue(html.contains("Request Headers"));
+                assertTrue(html.contains("&quot;rtoken&quot;:&quot;***&quot;"));
+                assertFalse(html.contains("&quot;rtoken&quot;:&quot;secret&quot;"));
                 assertTrue(html.contains("CPU Charts"));
                 assertTrue(html.contains("Disk Charts"));
                 assertTrue(html.contains("ThreadMXBean"));
