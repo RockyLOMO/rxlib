@@ -2,6 +2,15 @@
     <p class="meta">Source: HotSpotDiagnosticMXBean.getDiagnosticOptions(). Only options marked writeable can be changed at runtime.</p>
     {{#if vmOptionResult}}<p class="meta">{{vmOptionResult}}</p>{{/if}}
     {{#if vmOptionError}}<p class="empty">{{vmOptionError}}</p>{{/if}}
+    <h3 class="chart-group-title">ThreadMXBean</h3>
+    <p class="meta">Current: {{threadMxStatus}}</p>
+    <form class="filters" method="get" action="#vm-options">
+        {{{baseQueryHidden}}}
+        <input type="hidden" name="action" value="thread-mx">
+        <button type="submit" name="enabled" value="true">Enable Thread CPU/Contention</button>
+        <button type="submit" name="enabled" value="false">Disable Thread CPU/Contention</button>
+    </form>
+    <h3 class="chart-group-title">Set VM Option</h3>
     <form class="filters" method="get" action="#vm-options">
         <input type="hidden" name="action" value="vm-option">
         <label>Option Name<input type="search" name="vmOptionName" value="{{vmOptionName}}" placeholder="UnlockCommercialFeatures"></label>
