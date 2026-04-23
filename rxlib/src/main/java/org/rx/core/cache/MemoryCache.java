@@ -2,8 +2,6 @@ package org.rx.core.cache;
 
 import com.github.benmanes.caffeine.cache.*;
 import lombok.RequiredArgsConstructor;
-import org.checkerframework.checker.index.qual.NonNegative;
-import org.checkerframework.checker.nullness.qual.NonNull;
 import org.rx.core.*;
 import org.rx.core.Cache;
 import org.rx.util.function.BiAction;
@@ -48,19 +46,19 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
         //currentTime = System.nanoTime()
         @Override
-        public long expireAfterCreate(@NonNull Object key, @NonNull Object value, long currentTime) {
+        public long expireAfterCreate(Object key, Object value, long currentTime) {
 //        System.out.println("expireAfterCreate[-1]: " + key + "=" + value);
             return computeNanos(key, value, -1);
         }
 
         @Override
-        public long expireAfterUpdate(@NonNull Object key, @NonNull Object value, long currentTime, @NonNegative long currentDuration) {
+        public long expireAfterUpdate(Object key, Object value, long currentTime, long currentDuration) {
 //        System.out.println("expireAfterUpdate[" + currentDuration + "]: " + key + "=" + value);
             return computeNanos(key, value, currentDuration);
         }
 
         @Override
-        public long expireAfterRead(@NonNull Object key, @NonNull Object value, long currentTime, @NonNegative long currentDuration) {
+        public long expireAfterRead(Object key, Object value, long currentTime, long currentDuration) {
 //        System.out.println("expireAfterRead[" + currentDuration + "]: " + key + "=" + value);
             return computeNanos(key, value, currentDuration);
         }
