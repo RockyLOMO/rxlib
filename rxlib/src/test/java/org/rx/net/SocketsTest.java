@@ -214,7 +214,9 @@ public class SocketsTest {
         EmbeddedChannel channel = new EmbeddedChannel();
         Sockets.addTcpClientHandler(channel, config);
 
+        assertTrue(Sockets.hasTcpCompressionHandlers(channel));
         assertTrue(Sockets.removeTcpCompressionHandlers(channel));
+        assertFalse(Sockets.hasTcpCompressionHandlers(channel));
         assertNull(channel.pipeline().get(Sockets.ZIP_DECODER));
         assertNull(channel.pipeline().get(Sockets.ZIP_ENCODER));
     }
