@@ -22,6 +22,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     public static final AttributeKey<ConcurrentMap<RouteKey, SocksContext>> ATTR_ROUTE_MAP =
             AttributeKey.valueOf("ssUdpRouteMap");
     static final String REDUNDANT_DECODER_NAME = "SS_UDP_REDUNDANT_DECODER";
+    static final String COMPRESS_DECODER_NAME = "SS_UDP_COMPRESS_DECODER";
 
     static final class RouteKey {
         final InetSocketAddress source;
@@ -60,12 +61,14 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         if (!(upstream instanceof SocksUdpUpstream)) {
             return;
         }
-        if (pipeline.get(REDUNDANT_DECODER_NAME) != null || pipeline.get(UdpRedundantDecoder.class) != null) {
-            return;
+        // SS -> socks a 不需要做冗余/压缩发送，但 socks a -> 本地 relay 的回包可能带 RDNT / UCMP 头；
+        // 这里只补回程 decoder，负责去重、解压、剥头，不安装 encoder 避免把本地跳也放大。
+        if (pipeline.get(REDUNDANT_DECODER_NAME) == null && pipeline.get(UdpRedundantDecoder.class) == null) {
+            pipeline.addLast(REDUNDANT_DECODER_NAME, new UdpRedundantDecoder());
         }
-        // SS -> socks a 不需要做冗余发送，但 socks a -> 本地 relay 的回包可能带 RDNT 头；
-        // 这里仅补一个 decoder，负责去重/剥头，不安装 encoder 避免把本地跳也放大。
-        pipeline.addLast(REDUNDANT_DECODER_NAME, new UdpRedundantDecoder());
+        if (pipeline.get(COMPRESS_DECODER_NAME) == null && pipeline.get(UdpCompressDecoder.class) == null) {
+            pipeline.addLast(COMPRESS_DECODER_NAME, new UdpCompressDecoder());
+        }
     }
 
     private static DatagramPacket buildOutboundPacket(SocksContext sc, Channel outbound, UnresolvedEndpoint dstEp, ByteBuf payload) {

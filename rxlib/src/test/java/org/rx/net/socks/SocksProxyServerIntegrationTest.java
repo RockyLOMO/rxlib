@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -1007,6 +1008,92 @@ class SocksProxyServerIntegrationTest {
                     }
                 }
                 assertTrue(ok, "redundant proxyA Shadowsocks chain should receive UDP echo");
+            } finally {
+                clientSock.close();
+            }
+        } finally {
+            ssServer.close();
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 20)
+    void shadowsocksUdpRelay_socks5_chained_withUdpCompressAndRedundantOnProxyAB_e2e() {
+        int proxyBPort = 15317;
+        int proxyAPort = 15318;
+        int ssPort = 15319;
+
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        configB.setUdpRedundantMultiplier(2);
+        configB.setUdpCompressEnabled(true);
+        configB.setUdpCompressMinPayloadBytes(1);
+        configB.setUdpCompressMinSavingsBytes(1);
+        configB.setUdpCompressMinSavingsRatio(0.01D);
+        SocksProxyServer proxyB = new SocksProxyServer(configB);
+
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        configA.setUdpRedundantMultiplier(2);
+        configA.setUdpCompressEnabled(true);
+        configA.setUdpCompressMinPayloadBytes(1);
+        configA.setUdpCompressMinSavingsBytes(1);
+        configA.setUdpCompressMinSavingsRatio(0.01D);
+        SocksProxyServer proxyA = new SocksProxyServer(configA);
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
+                org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "testpwd");
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+
+        UpstreamSupport supportA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyAPort), null, null), null);
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+
+        ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyAPort), supportA)));
+        proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), configA, supportB)));
+
+        try {
+            Thread.sleep(1000);
+            DatagramSocket clientSock = new DatagramSocket();
+            clientSock.setSoTimeout(5000);
+            try {
+                org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword(), true);
+                boolean ok = false;
+                for (int i = 0; i < 15; i++) {
+                    ByteBuf addrBuf = Unpooled.buffer(512);
+                    UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
+                    byte[] payload = new byte[320];
+                    Arrays.fill(payload, (byte) 'C');
+                    addrBuf.writeBytes(payload);
+
+                    byte[] encrypted = toBytes(crypto.encrypt(addrBuf));
+                    clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length,
+                            InetAddress.getByName("127.0.0.1"), ssPort));
+
+                    byte[] respBuf = new byte[1024];
+                    java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
+                    try {
+                        clientSock.receive(p);
+                    } catch (SocketTimeoutException e) {
+                        continue;
+                    }
+
+                    ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
+                    try {
+                        UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+                        byte[] echoed = new byte[decBuf.readableBytes()];
+                        decBuf.readBytes(echoed);
+                        assertArrayEquals(payload, echoed);
+                        assertEquals(UDP_ECHO_PORT, srcEp.getPort());
+                        ok = true;
+                        break;
+                    } finally {
+                        decBuf.release();
+                    }
+                }
+                assertTrue(ok, "udp compress + redundant Shadowsocks chain should receive UDP echo");
             } finally {
                 clientSock.close();
             }
