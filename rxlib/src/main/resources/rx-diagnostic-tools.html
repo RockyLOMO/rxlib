@@ -1,0 +1,33 @@
+<section class="card"><h2>Tools</h2>
+    <p class="meta">Manual tools migrated from HandlerUtil case 5 and case 13. They run only when you click the button.</p>
+    <div class="tool-grid">
+        <article class="item">
+            <strong>DNS Resolve</strong>
+            <p class="meta">Uses InetAddress.getAllByName(host). This is a blocking local resolver call, so keep it manual.</p>
+            <form class="filters capture-form" method="get" action="#tools">
+                {{{baseQueryHidden}}}
+                <label>Host<input type="text" name="toolHost" value="{{toolHost}}" placeholder="example.com"></label>
+                <button type="submit" name="action" value="tool-dns">Resolve DNS</button>
+            </form>
+            {{#if dnsError}}<p class="empty">{{dnsError}}</p>{{/if}}
+            {{#if dnsAddresses}}
+            <h3 class="metric-group-title">DNS Results</h3>
+            <table><tbody>{{#each dnsAddresses}}<tr><td>{{.}}</td></tr>{{/each}}</tbody></table>
+            {{/if}}
+        </article>
+        <article class="item danger">
+            <strong>Command Exec</strong>
+            <p class="meta">Runs ShellCommand(cmd, workspace) and waits up to 30 seconds. Use only for trusted production diagnostics.</p>
+            <form class="filters capture-form" method="get" action="#tools">
+                {{{baseQueryHidden}}}
+                <label>Workspace<input type="text" name="toolWorkspace" value="{{toolWorkspace}}" placeholder="./"></label>
+                <label class="wide">Command<textarea name="toolCmd" placeholder="cmd /c dir or bash -c 'ls -la'">{{toolCmd}}</textarea></label>
+                <button type="submit" name="action" value="tool-exec">Run Command</button>
+            </form>
+            {{#if execError}}<p class="empty">{{execError}}</p>{{/if}}
+            {{#if execTimedOut}}<p class="empty">Command timed out and was killed.</p>{{/if}}
+            {{#if execElapsedMillis}}<div class="meta">elapsed {{execElapsedMillis}} ms</div>{{/if}}
+            {{#if execOutput}}<pre class="tool-output">{{execOutput}}</pre>{{/if}}
+        </article>
+    </div>
+</section>

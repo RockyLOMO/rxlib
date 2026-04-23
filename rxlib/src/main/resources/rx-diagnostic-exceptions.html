@@ -1,0 +1,23 @@
+<section class="card"><h2>Exception Traces</h2>
+    <p class="meta">Source: HandlerUtil case 10 / TraceHandler.queryExceptionTraces. Time range and take use the global query.</p>
+    <form class="filters capture-form" method="get" action="#exceptions">
+        {{{baseQueryHidden}}}
+        <label>Level<select name="exceptionLevel">
+            <option value=""{{#if levelAll}} selected{{/if}}>All</option>
+            {{#each levels}}<option value="{{name}}"{{#if selected}} selected{{/if}}>{{name}}</option>{{/each}}
+        </select></label>
+        <label>Keyword<input type="search" name="exceptionKeyword" value="{{exceptionKeyword}}" placeholder="stack keyword"></label>
+        <label>Order<select name="exceptionNewest">
+            <option value="false"{{#unless exceptionNewest}} selected{{/unless}}>Most Occurred</option>
+            <option value="true"{{#if exceptionNewest}} selected{{/if}}>Newest</option>
+        </select></label>
+        <button type="submit">Search Exceptions</button>
+    </form>
+    {{#if error}}<p class="empty">Read exception traces failed: {{error}}</p>{{/if}}
+    {{#unless error}}
+    <table><thead><tr><th>Modified</th><th>Id</th><th>Level</th><th>Count</th><th>App</th><th>Thread</th><th>Messages</th><th>Stack</th></tr></thead><tbody>
+        {{#if empty}}<tr><td class="empty" colspan="8">No exception trace found in the selected range.</td></tr>{{/if}}
+        {{#each rows}}<tr><td>{{modified}}</td><td>{{id}}</td><td>{{level}}</td><td>{{count}}</td><td>{{app}}</td><td>{{thread}}</td><td>{{{messagesHtml}}}</td><td><details><summary>Stack</summary><pre>{{stackTrace}}</pre></details></td></tr>{{/each}}
+    </tbody></table>
+    {{/unless}}
+</section>

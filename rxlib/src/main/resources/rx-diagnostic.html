@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>${title}</title>
+    <title>{{title}}</title>
     <style>
         :root {
             color-scheme: light;
@@ -135,11 +135,22 @@
             gap: 12px;
         }
 
+        .tool-grid {
+            display: grid;
+            grid-template-columns: minmax(240px, .8fr) minmax(320px, 1.2fr);
+            gap: 12px;
+        }
+
         .item {
             border: 1px solid var(--line);
             border-radius: 16px;
             padding: 12px;
             background: #fffdf7;
+        }
+
+        .danger {
+            border-color: #c57b57;
+            background: #fff8f2;
         }
 
         .item strong {
@@ -177,7 +188,9 @@
             font-size: 12px;
         }
 
-        .filters input {
+        .filters input,
+        .filters select,
+        .filters textarea {
             box-sizing: border-box;
             width: 100%;
             margin-top: 5px;
@@ -187,6 +200,15 @@
             color: var(--ink);
             padding: 9px 10px;
             font: inherit;
+        }
+
+        .filters textarea {
+            min-height: 86px;
+            resize: vertical;
+        }
+
+        .filters .wide {
+            grid-column: 1 / -1;
         }
 
         button,
@@ -300,6 +322,10 @@
             overflow: auto;
         }
 
+        .tool-output {
+            max-height: 420px;
+        }
+
         .empty {
             color: var(--muted);
         }
@@ -310,6 +336,10 @@
             }
 
             .hero {
+                display: block;
+            }
+
+            .tool-grid {
                 display: block;
             }
 
@@ -346,7 +376,7 @@
     </style>
 </head>
 <body>
-<main>${body}</main>
+<main>{{{body}}}</main>
 <script>
     (function () {
         var links = document.querySelectorAll('.tab-link');

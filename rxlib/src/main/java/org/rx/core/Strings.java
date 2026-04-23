@@ -6,8 +6,12 @@ import org.apache.commons.lang3.StringUtils;
 import org.rx.exception.InvalidException;
 
 import java.awt.*;
+import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -111,6 +115,327 @@ public class Strings extends StringUtils {
             buf.append(c);
         }
         return buf.toString();
+    }
+
+    /**
+     * 简易模板渲染，适合后台/诊断 HTML，不用于高频热点路径。
+     *
+     * <pre>
+     * {{name}}                 HTML 转义输出
+     * {{{html}}} 或 {{& html}}  原样输出
+     * {{#if name}}...{{/if}}
+     * {{#unless name}}...{{/unless}}
+     * {{#each rows}}...{{/each}}，循环内支持 {{.}}、{{this}}、{{@index}}、{{@first}}、{{@last}}
+     * ${name}                  兼容旧的原样变量语法
+     * </pre>
+     */
+    public static String renderTemplate(@NonNull CharSequence template, Map<String, Object> vars) {
+        return renderTemplateBlock(template, 0, template.length(),
+                new TemplateContext(vars == null ? Collections.emptyMap() : vars, null));
+    }
+
+    public static String escapeHtml(Object value) {
+        if (value == null) {
+            return EMPTY;
+        }
+        String text = String.valueOf(value);
+        if (text.length() == 0) {
+            return EMPTY;
+        }
+        StringBuilder out = new StringBuilder(text.length() + 16);
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '&':
+                    out.append("&amp;");
+                    break;
+                case '<':
+                    out.append("&lt;");
+                    break;
+                case '>':
+                    out.append("&gt;");
+                    break;
+                case '"':
+                    out.append("&quot;");
+                    break;
+                case '\'':
+                    out.append("&#39;");
+                    break;
+                default:
+                    out.append(c);
+                    break;
+            }
+        }
+        return out.toString();
+    }
+
+    private static String renderTemplateBlock(CharSequence template, int start, int end, TemplateContext context) {
+        StringBuilder out = new StringBuilder(end - start);
+        int pos = start;
+        while (pos < end) {
+            int varStart = indexOf(template, "${", pos, end);
+            int tagStart = indexOf(template, "{{", pos, end);
+            int next = minPositive(varStart, tagStart);
+            if (next < 0) {
+                out.append(template.subSequence(pos, end));
+                break;
+            }
+            out.append(template.subSequence(pos, next));
+            if (next == varStart) {
+                int close = indexOf(template, "}", next + 2, end);
+                if (close < 0) {
+                    throw new InvalidException("Invalid template variable at index {}", next);
+                }
+                Object value = context.resolve(template.subSequence(next + 2, close).toString().trim());
+                if (value != null) {
+                    out.append(value);
+                }
+                pos = close + 1;
+                continue;
+            }
+
+            boolean raw = startsWith(template, "{{{", next, end);
+            String closeToken = raw ? "}}}" : "}}";
+            int tagBodyStart = next + (raw ? 3 : 2);
+            int close = indexOf(template, closeToken, tagBodyStart, end);
+            if (close < 0) {
+                throw new InvalidException("Invalid template tag at index {}", next);
+            }
+            String token = template.subSequence(tagBodyStart, close).toString().trim();
+            int afterTag = close + closeToken.length();
+            if (token.startsWith("#each ")) {
+                String name = token.substring(6).trim();
+                Section section = findSection(template, afterTag, end, "each");
+                appendEach(out, template, section, context.resolve(name), context);
+                pos = section.afterEnd;
+            } else if (token.startsWith("#if ")) {
+                String name = token.substring(4).trim();
+                Section section = findSection(template, afterTag, end, "if");
+                if (isTruthy(context.resolve(name))) {
+                    out.append(renderTemplateBlock(template, section.bodyStart, section.bodyEnd, context));
+                }
+                pos = section.afterEnd;
+            } else if (token.startsWith("#unless ")) {
+                String name = token.substring(8).trim();
+                Section section = findSection(template, afterTag, end, "unless");
+                if (!isTruthy(context.resolve(name))) {
+                    out.append(renderTemplateBlock(template, section.bodyStart, section.bodyEnd, context));
+                }
+                pos = section.afterEnd;
+            } else if (token.startsWith("/")) {
+                pos = afterTag;
+            } else {
+                if (token.startsWith("&")) {
+                    raw = true;
+                    token = token.substring(1).trim();
+                }
+                Object value = context.resolve(token);
+                if (value != null) {
+                    out.append(raw ? String.valueOf(value) : escapeHtml(value));
+                }
+                pos = afterTag;
+            }
+        }
+        return out.toString();
+    }
+
+    private static void appendEach(StringBuilder out, CharSequence template, Section section, Object value, TemplateContext context) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Map) {
+            appendIterator(out, template, section, ((Map<?, ?>) value).entrySet().iterator(), ((Map<?, ?>) value).size(), context);
+            return;
+        }
+        if (value instanceof Iterable) {
+            int size = value instanceof Collection ? ((Collection<?>) value).size() : -1;
+            appendIterator(out, template, section, ((Iterable<?>) value).iterator(), size, context);
+            return;
+        }
+        if (value instanceof Iterator) {
+            appendIterator(out, template, section, (Iterator<?>) value, -1, context);
+            return;
+        }
+        if (value.getClass().isArray()) {
+            int len = Array.getLength(value);
+            for (int i = 0; i < len; i++) {
+                out.append(renderTemplateBlock(template, section.bodyStart, section.bodyEnd,
+                        context.child(Array.get(value, i), i, len)));
+            }
+        }
+    }
+
+    private static void appendIterator(StringBuilder out, CharSequence template, Section section,
+                                       Iterator<?> iterator, int size, TemplateContext context) {
+        int index = 0;
+        while (iterator.hasNext()) {
+            Object item = iterator.next();
+            int knownSize = size >= 0 ? size : (iterator.hasNext() ? -1 : index + 1);
+            out.append(renderTemplateBlock(template, section.bodyStart, section.bodyEnd,
+                    context.child(item, index, knownSize)));
+            index++;
+        }
+    }
+
+    private static Section findSection(CharSequence template, int start, int end, String name) {
+        int depth = 1;
+        int pos = start;
+        while (pos < end) {
+            int tagStart = indexOf(template, "{{", pos, end);
+            if (tagStart < 0) {
+                break;
+            }
+            boolean raw = startsWith(template, "{{{", tagStart, end);
+            String closeToken = raw ? "}}}" : "}}";
+            int tokenStart = tagStart + (raw ? 3 : 2);
+            int close = indexOf(template, closeToken, tokenStart, end);
+            if (close < 0) {
+                throw new InvalidException("Invalid template section {}", name);
+            }
+            String token = template.subSequence(tokenStart, close).toString().trim();
+            if (!raw && (token.equals("#" + name) || token.startsWith("#" + name + " "))) {
+                depth++;
+            } else if (!raw && token.equals("/" + name)) {
+                depth--;
+                if (depth == 0) {
+                    return new Section(start, tagStart, close + 2);
+                }
+            }
+            pos = close + closeToken.length();
+        }
+        throw new InvalidException("Template section {} not closed", name);
+    }
+
+    private static boolean isTruthy(Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue() != 0D;
+        }
+        if (value instanceof CharSequence) {
+            return ((CharSequence) value).length() != 0;
+        }
+        if (value instanceof Collection) {
+            return !((Collection<?>) value).isEmpty();
+        }
+        if (value instanceof Map) {
+            return !((Map<?, ?>) value).isEmpty();
+        }
+        return !value.getClass().isArray() || Array.getLength(value) != 0;
+    }
+
+    private static int minPositive(int a, int b) {
+        if (a < 0) {
+            return b;
+        }
+        if (b < 0) {
+            return a;
+        }
+        return Math.min(a, b);
+    }
+
+    private static int indexOf(CharSequence text, String token, int start, int end) {
+        int max = end - token.length();
+        for (int i = Math.max(0, start); i <= max; i++) {
+            if (startsWith(text, token, i, end)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean startsWith(CharSequence text, String token, int start, int end) {
+        if (start < 0 || start + token.length() > end) {
+            return false;
+        }
+        for (int i = 0; i < token.length(); i++) {
+            if (text.charAt(start + i) != token.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static final class Section {
+        final int bodyStart;
+        final int bodyEnd;
+        final int afterEnd;
+
+        Section(int bodyStart, int bodyEnd, int afterEnd) {
+            this.bodyStart = bodyStart;
+            this.bodyEnd = bodyEnd;
+            this.afterEnd = afterEnd;
+        }
+    }
+
+    private static final class TemplateContext {
+        final Object model;
+        final TemplateContext parent;
+
+        TemplateContext(Object model, TemplateContext parent) {
+            this.model = model;
+            this.parent = parent;
+        }
+
+        Object resolve(String path) {
+            if (path == null || path.length() == 0) {
+                return null;
+            }
+            Object value = resolveLocal(path);
+            if (value != null || parent == null) {
+                return value;
+            }
+            return parent.resolve(path);
+        }
+
+        TemplateContext child(Object item, int index, int size) {
+            Map<String, Object> vars = new HashMap<>(8);
+            vars.put("this", item);
+            vars.put(".", item);
+            vars.put("@index", Integer.valueOf(index));
+            vars.put("@first", Boolean.valueOf(index == 0));
+            vars.put("@last", Boolean.valueOf(size >= 0 && index == size - 1));
+            if (item instanceof Map.Entry) {
+                Map.Entry<?, ?> entry = (Map.Entry<?, ?>) item;
+                vars.put("key", entry.getKey());
+                vars.put("value", entry.getValue());
+            } else if (item instanceof Map) {
+                vars.putAll((Map<? extends String, ?>) item);
+            }
+            return new TemplateContext(vars, this);
+        }
+
+        Object resolveLocal(String path) {
+            if (".".equals(path)) {
+                return model instanceof Map ? ((Map<?, ?>) model).get(".") : model;
+            }
+            if ("this".equals(path)) {
+                return model instanceof Map && ((Map<?, ?>) model).containsKey("this") ? ((Map<?, ?>) model).get("this") : model;
+            }
+            if (path.startsWith("this.")) {
+                Object item = resolveLocal("this");
+                return readTemplateValue(item, path.substring(5));
+            }
+            return readTemplateValue(model, path);
+        }
+    }
+
+    private static Object readTemplateValue(Object model, String path) {
+        if (model == null) {
+            return null;
+        }
+        if (model instanceof Map && ((Map<?, ?>) model).containsKey(path)) {
+            return ((Map<?, ?>) model).get(path);
+        }
+        try {
+            return Sys.readJsonValue(model, path, null, false);
+        } catch (Throwable e) {
+            return null;
+        }
     }
     //endregion
 
