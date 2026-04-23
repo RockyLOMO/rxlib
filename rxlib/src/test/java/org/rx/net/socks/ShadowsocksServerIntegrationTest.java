@@ -9,10 +9,14 @@ import io.netty.channel.socket.DatagramPacket;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.*;
+import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.encryption.ICrypto;
 import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.support.UpstreamSupport;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -28,9 +32,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class ShadowsocksServerIntegrationTest {
     static final int TCP_ECHO_PORT = 16299;
     static final int UDP_ECHO_PORT = 16300;
+    static final int UDP_ALT_ECHO_PORT = 16301;
     static ServerBootstrap tcpEchoBootstrap;
     static Channel tcpEchoChannel;
     static Channel udpEchoChannel;
+    static Channel udpAltEchoChannel;
     static Bootstrap udpEchoBootstrap;
 
     @BeforeAll
@@ -52,6 +58,7 @@ class ShadowsocksServerIntegrationTest {
             }
         }));
         udpEchoChannel = udpEchoBootstrap.bind(Sockets.newAnyEndpoint(UDP_ECHO_PORT)).sync().channel();
+        udpAltEchoChannel = udpEchoBootstrap.bind(Sockets.newAnyEndpoint(UDP_ALT_ECHO_PORT)).sync().channel();
 
         Thread.sleep(300);
     }
@@ -61,6 +68,7 @@ class ShadowsocksServerIntegrationTest {
         if (tcpEchoChannel != null) tcpEchoChannel.close();
         if (tcpEchoBootstrap != null) Sockets.closeBootstrap(tcpEchoBootstrap);
         if (udpEchoChannel != null) udpEchoChannel.close();
+        if (udpAltEchoChannel != null) udpAltEchoChannel.close();
     }
 
     @Test
@@ -255,6 +263,82 @@ class ShadowsocksServerIntegrationTest {
         }
     }
 
+    @Test
+    @SneakyThrows
+    @Timeout(value = 30)
+    void shadowsocksUdpRoute_sameClientDifferentSocksUpstreams_useSeparateOutboundPools() {
+        int proxyAPort = 16283;
+        int proxyBPort = 16284;
+        int ssPort = 16285;
+        String method = CipherKind.AES_256_GCM.getCipherName();
+        String password = "ss-dual-upstream-password";
+
+        SocksConfig proxyAConfig = new SocksConfig(proxyAPort);
+        proxyAConfig.getWhiteList();
+        SocksProxyServer proxyA = new SocksProxyServer(proxyAConfig);
+
+        SocksConfig proxyBConfig = new SocksConfig(proxyBPort);
+        proxyBConfig.getWhiteList();
+        SocksProxyServer proxyB = new SocksProxyServer(proxyBConfig);
+
+        proxyA.onUdpRoute.replace((s, e) -> {
+            if (e.getFirstDestination().getPort() == UDP_ECHO_PORT) {
+                e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT)));
+            } else {
+                e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", 9)));
+            }
+        });
+        proxyB.onUdpRoute.replace((s, e) -> {
+            if (e.getFirstDestination().getPort() == UDP_ALT_ECHO_PORT) {
+                e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", UDP_ALT_ECHO_PORT)));
+            } else {
+                e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", 9)));
+            }
+        });
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort), method, password);
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+
+        UpstreamSupport supportA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyAPort), null, null), null);
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+        SocksConfig sharedUpstreamConfig = new SocksConfig(0);
+        ssServer.onUdpRoute.replace((s, e) -> {
+            int port = e.getFirstDestination().getPort();
+            if (port == UDP_ECHO_PORT) {
+                e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), sharedUpstreamConfig, supportA));
+                return;
+            }
+            if (port == UDP_ALT_ECHO_PORT) {
+                e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), sharedUpstreamConfig, supportB));
+                return;
+            }
+            throw new IllegalStateException("unexpected ss udp route " + e.getFirstDestination());
+        });
+
+        DatagramSocket client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        client.setSoTimeout(4000);
+        try {
+            Thread.sleep(1000);
+            ICrypto crypto = ICrypto.get(method, password, true);
+
+            byte[] firstPayload = "ss-via-proxy-a".getBytes(StandardCharsets.UTF_8);
+            sendUdpRequest(client, ssPort, crypto, firstPayload, UDP_ECHO_PORT);
+            assertArrayEquals(firstPayload, receiveUdpEcho(client, crypto, UDP_ECHO_PORT));
+
+            byte[] secondPayload = "ss-via-proxy-b".getBytes(StandardCharsets.UTF_8);
+            sendUdpRequest(client, ssPort, crypto, secondPayload, UDP_ALT_ECHO_PORT);
+            assertArrayEquals(secondPayload, receiveUdpEcho(client, crypto, UDP_ALT_ECHO_PORT));
+
+            waitForCondition(() -> proxyA.udpRelayRegistry.size() == 1, 5000, "proxyA should own one UDP relay");
+            waitForCondition(() -> proxyB.udpRelayRegistry.size() == 1, 5000, "proxyB should own one UDP relay");
+        } finally {
+            client.close();
+            ssServer.close();
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
     static byte[] readAtLeast(InputStream in, int minLen, int maxLen, int timeoutMs) throws Exception {
         byte[] buf = new byte[maxLen];
         int read = 0;
@@ -271,27 +355,58 @@ class ShadowsocksServerIntegrationTest {
     }
 
     static void sendUdpRequest(DatagramSocket socket, int proxyPort, ICrypto crypto, byte[] payload) throws Exception {
+        sendUdpRequest(socket, proxyPort, crypto, payload, UDP_ECHO_PORT);
+    }
+
+    static void sendUdpRequest(DatagramSocket socket, int proxyPort, ICrypto crypto, byte[] payload, int dstPort) throws Exception {
         ByteBuf buf = Unpooled.buffer();
-        UdpManager.encode(buf, "127.0.0.1", UDP_ECHO_PORT);
+        UdpManager.encode(buf, "127.0.0.1", dstPort);
         buf.writeBytes(payload);
         byte[] req = toBytes(crypto.encrypt(buf));
         socket.send(new java.net.DatagramPacket(req, req.length, InetAddress.getByName("127.0.0.1"), proxyPort));
     }
 
     static byte[] receiveUdpEcho(DatagramSocket socket, ICrypto crypto) throws Exception {
+        return receiveUdpEcho(socket, crypto, UDP_ECHO_PORT);
+    }
+
+    static byte[] receiveUdpEcho(DatagramSocket socket, ICrypto crypto, int expectedPort) throws Exception {
         byte[] resp = new byte[1024];
         java.net.DatagramPacket packet = new java.net.DatagramPacket(resp, resp.length);
         socket.receive(packet);
         ByteBuf decrypted = crypto.decrypt(Unpooled.wrappedBuffer(resp, 0, packet.getLength()));
         try {
             UnresolvedEndpoint addr = UdpManager.decode(decrypted);
-            assertEquals(UDP_ECHO_PORT, addr.getPort());
+            assertEquals(expectedPort, addr.getPort());
             byte[] echoed = new byte[decrypted.readableBytes()];
             decrypted.readBytes(echoed);
             return echoed;
         } finally {
             decrypted.release();
         }
+    }
+
+    interface CheckFn {
+        boolean eval() throws Exception;
+    }
+
+    static void waitForCondition(CheckFn condition, long timeoutMs, String message) throws Exception {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        AssertionError lastError = null;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                if (condition.eval()) {
+                    return;
+                }
+            } catch (AssertionError e) {
+                lastError = e;
+            }
+            Thread.sleep(50L);
+        }
+        if (lastError != null) {
+            throw lastError;
+        }
+        fail(message);
     }
 
     static byte[] toBytes(ByteBuf buf) {

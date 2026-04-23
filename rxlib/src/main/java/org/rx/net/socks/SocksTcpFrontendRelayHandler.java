@@ -13,7 +13,7 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         Channel inbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(inbound);
-        if (!sc.outboundActive) {
+        if (!sc.isOutboundReady()) {
             sc.outbound.addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     io.netty.util.ReferenceCountUtil.release(msg);

@@ -82,6 +82,13 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("RXlib Diagnostics"));
                 assertTrue(html.contains("Overview"));
                 assertTrue(html.contains("Runtime State"));
+                assertTrue(html.contains("Socks Extensions"));
+                assertTrue(html.contains("omega.rrpClient.registered"));
+                assertTrue(html.contains("omegax.sshServer.registered"));
+                assertTrue(html.contains("name=\"action\" value=\"omega\""));
+                assertTrue(html.contains("name=\"omegaConfig\""));
+                assertTrue(html.contains("name=\"action\" value=\"omegax\""));
+                assertTrue(html.contains("name=\"omegaxPort\""));
                 assertTrue(html.contains("Input Arguments"));
                 assertTrue(html.contains("System Properties"));
                 assertTrue(html.contains("System Environment"));

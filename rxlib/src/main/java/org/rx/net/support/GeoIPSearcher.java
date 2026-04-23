@@ -79,7 +79,7 @@ public class GeoIPSearcher implements Closeable {
                         return ip;
                     }
                 } catch (Exception e) {
-                    log.warn("getPublicIp retry", e);
+                    log.warn("getPublicIp retry service={}", service, e);
                 }
             }
         }
