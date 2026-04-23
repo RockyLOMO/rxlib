@@ -68,6 +68,11 @@ public class SocksConfig extends SocketConfig {
      * 用于游戏低延迟场景，以带宽换取丢包容忍度。
      */
     private UdpRedundantConfig udpRedundant;
+    /**
+     * UDP 单包压缩配置。
+     * 仅对代理链上的隧道对端生效，用于回收多倍发包带来的带宽开销。
+     */
+    private UdpCompressConfig udpCompress;
 
     public SocksConfig() {}
 
@@ -245,6 +250,94 @@ public class SocksConfig extends SocketConfig {
             udpRedundant = new UdpRedundantConfig();
         }
         return udpRedundant.getDestinationRules();
+    }
+
+    public boolean isUdpCompressEnabled() {
+        return udpCompress != null && udpCompress.isEnabled();
+    }
+
+    public void setUdpCompressEnabled(boolean enabled) {
+        if (udpCompress == null) {
+            udpCompress = new UdpCompressConfig();
+        }
+        udpCompress.setEnabled(enabled);
+    }
+
+    public UdpCompressCodec getUdpCompressCodec() {
+        return udpCompress != null ? udpCompress.getCodec() : UdpCompressCodec.LZ4_FAST;
+    }
+
+    public void setUdpCompressCodec(UdpCompressCodec codec) {
+        if (udpCompress == null) {
+            udpCompress = new UdpCompressConfig();
+        }
+        udpCompress.setCodec(codec);
+    }
+
+    public int getUdpCompressMinPayloadBytes() {
+        return udpCompress != null ? udpCompress.getMinPayloadBytes() : 96;
+    }
+
+    public void setUdpCompressMinPayloadBytes(int minPayloadBytes) {
+        if (udpCompress == null) {
+            udpCompress = new UdpCompressConfig();
+        }
+        udpCompress.setMinPayloadBytes(minPayloadBytes);
+    }
+
+    public int getUdpCompressMinSavingsBytes() {
+        return udpCompress != null ? udpCompress.getMinSavingsBytes() : 24;
+    }
+
+    public void setUdpCompressMinSavingsBytes(int minSavingsBytes) {
+        if (udpCompress == null) {
+            udpCompress = new UdpCompressConfig();
+        }
+        udpCompress.setMinSavingsBytes(minSavingsBytes);
+    }
+
+    public double getUdpCompressMinSavingsRatio() {
+        return udpCompress != null ? udpCompress.getMinSavingsRatio() : 0.12D;
+    }
+
+    public void setUdpCompressMinSavingsRatio(double minSavingsRatio) {
+        if (udpCompress == null) {
+            udpCompress = new UdpCompressConfig();
+        }
+        udpCompress.setMinSavingsRatio(minSavingsRatio);
+    }
+
+    public int getUdpCompressDictionaryId() {
+        return udpCompress != null ? udpCompress.getDictionaryId() : 0;
+    }
+
+    public void setUdpCompressDictionaryId(int dictionaryId) {
+        if (udpCompress == null) {
+            udpCompress = new UdpCompressConfig();
+        }
+        udpCompress.setDictionaryId(dictionaryId);
+    }
+
+    public boolean isUdpCompressAdaptiveBypass() {
+        return udpCompress == null || udpCompress.isAdaptiveBypass();
+    }
+
+    public void setUdpCompressAdaptiveBypass(boolean adaptiveBypass) {
+        if (udpCompress == null) {
+            udpCompress = new UdpCompressConfig();
+        }
+        udpCompress.setAdaptiveBypass(adaptiveBypass);
+    }
+
+    public int getUdpCompressAdaptiveBypassWindowSeconds() {
+        return udpCompress != null ? udpCompress.getAdaptiveBypassWindowSeconds() : 30;
+    }
+
+    public void setUdpCompressAdaptiveBypassWindowSeconds(int adaptiveBypassWindowSeconds) {
+        if (udpCompress == null) {
+            udpCompress = new UdpCompressConfig();
+        }
+        udpCompress.setAdaptiveBypassWindowSeconds(adaptiveBypassWindowSeconds);
     }
 }
 
