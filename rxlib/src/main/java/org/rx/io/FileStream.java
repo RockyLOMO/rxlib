@@ -8,7 +8,6 @@ import org.rx.core.Constants;
 import org.rx.util.Lazy;
 import org.rx.util.Snowflake;
 
-import javax.activation.MimetypesFileTypeMap;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -85,8 +84,7 @@ public class FileStream extends DuplexStream implements Serializable {
     }
 
     public String getContentType() {
-        MimetypesFileTypeMap mimeTypesMap = new MimetypesFileTypeMap();
-        return mimeTypesMap.getContentType(getPath());
+        return Files.getContentType(getPath());
     }
 
     public synchronized boolean canWrite() {
