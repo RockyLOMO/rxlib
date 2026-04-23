@@ -70,21 +70,6 @@ public class HandlerUtil {
                         resText = "1";
                     }
                     break;
-                case 2:
-                    String fu = request.getParameter("url");
-                    if (fu != null) {
-                        HttpClientConfig cfg = new HttpClientConfig();
-                        Integer tm = Reflects.convertQuietly(request.getParameter("timeout"), Integer.class);
-                        if (tm != null) {
-                            cfg.setTimeoutMillis(tm);
-                        }
-                        try (HttpClient client = new HttpClient(cfg)) {
-                            Tuple<HttpClient.RequestContent, HttpClient.Response> forwarded = client.forward(request, response, fu);
-                            org.rx.core.Extends.tryClose(forwarded.right);
-                            org.rx.core.Extends.tryClose(forwarded.left);
-                        }
-                    }
-                    break;
                 case 3:
                     String type = request.getParameter("type");
                     String jsonVal = request.getParameter("jsonVal");
@@ -103,9 +88,6 @@ public class HandlerUtil {
                     }
                     resText = target;
                     break;
-                case 5:
-                    resText = Linq.from(InetAddress.getAllByName(params.getString("host"))).select(p -> p.getHostAddress()).toArray();
-                    break;
                 case 10:
                     String startTime = request.getParameter("startTime");
                     DateTime st = startTime == null ? null : DateTime.valueOf(startTime);
@@ -123,9 +105,6 @@ public class HandlerUtil {
 
                 case 12:
                     resText = invokeEx(params.getString("expr"), params.getJSONArray("args"));
-                    break;
-                case 13:
-                    resText = exec(params.getString("cmd"), params.getString("workspace"));
                     break;
                 default:
                     resText = svrState(request, params);
@@ -216,8 +195,6 @@ public class HandlerUtil {
         return result;
     }
 
-
-
     @SneakyThrows
     Object invokeEx(String expr, List<Object> args) {
         int ms = expr.lastIndexOf(DOT);
@@ -287,14 +264,6 @@ public class HandlerUtil {
         }).toArray();
         log.debug("invokeEx {}({})", method, toJsonString(a));
         return Reflects.invokeMethod(method, ai, a);
-    }
-
-    Object exec(String cmd, String workspace) {
-        StringBuilder echo = new StringBuilder();
-        ShellCommand sc = new ShellCommand(cmd, workspace);
-        sc.onPrintOut.combine((s, e) -> echo.append(e.toString()));
-        sc.start().waitFor(30000);
-        return echo.toString();
     }
 
     @SneakyThrows

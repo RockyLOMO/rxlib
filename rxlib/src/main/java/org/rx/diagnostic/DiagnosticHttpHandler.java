@@ -3,20 +3,28 @@ package org.rx.diagnostic;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import org.rx.core.Reflects;
 import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
 import org.rx.core.ShellCommand;
 import org.rx.core.Strings;
+import org.rx.core.Sys;
 import org.rx.exception.ExceptionLevel;
+import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.exception.TraceHandler.ExceptionEntity;
 import org.rx.io.EntityDatabase;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
+import org.rx.util.BeanMapFlag;
+import org.rx.util.BeanMapper;
+import org.springframework.service.SpringContext;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -190,15 +198,16 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private void appendGlobalFilter(StringBuilder out, Query filter) {
         out.append("<section class=\"card query-card\"><h2>Query</h2>")
                 .append("<p class=\"meta\">Default range is the last 15 minutes. All tabs use this time range and row limit.</p>")
-                .append("<form class=\"filters global-filter\" method=\"get\">")
+                .append("<form class=\"filters global-filter\" method=\"get\" data-stay-tab=\"1\">")
                 .append("<label>From<input type=\"datetime-local\" name=\"from\" value=\"")
                 .append(escape(formatInputMillis(filter.fromMillis))).append("\"></label>")
                 .append("<label>To<input type=\"datetime-local\" name=\"to\" value=\"")
                 .append(escape(formatInputMillis(filter.toMillis))).append("\"></label>")
                 .append("<label>Limit<input type=\"number\" min=\"1\" max=\"")
-                .append(MAX_LIMIT).append("\" name=\"limit\" value=\"").append(filter.limit).append("\"></label>");
-        appendExceptionFilterHiddenFields(out, filter);
-        out.append("<button type=\"submit\">Search</button>")
+                .append(MAX_LIMIT).append("\" name=\"limit\" value=\"").append(filter.limit).append("\"></label>")
+                .append("<div class=\"filters context-filter\" data-context-tab=\"exceptions\">");
+        appendExceptionFilterControls(out, filter);
+        out.append("</div><button type=\"submit\">Search</button>")
                 .append("<a class=\"button\" href=\"?\">Reset</a>")
                 .append("</form>")
                 .append("<div class=\"meta\">ThreadMXBean: ")
@@ -227,7 +236,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append("<a class=\"tab-link\" href=\"#incidents\" data-tab=\"incidents\">Incidents</a>")
                 .append("<a class=\"tab-link\" href=\"#exceptions\" data-tab=\"exceptions\">Exception Traces</a>")
                 .append("<a class=\"tab-link\" href=\"#metrics\" data-tab=\"metrics\">Metrics</a>")
-                .append("<a class=\"tab-link\" href=\"#rxlib\" data-tab=\"rxlib\">RXlib</a>")
+                .append("<a class=\"tab-link\" href=\"#rxlib\" data-tab=\"rxlib\">Rx metrics</a>")
                 .append("<a class=\"tab-link\" href=\"#thread-cpu\" data-tab=\"thread-cpu\">Thread CPU</a>")
                 .append("<a class=\"tab-link\" href=\"#thread-state\" data-tab=\"thread-state\">Thread State</a>")
                 .append("<a class=\"tab-link\" href=\"#file-io\" data-tab=\"file-io\">File I/O</a>")
@@ -314,11 +323,6 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private void appendExceptionTraces(StringBuilder out, Query filter) {
         Map<String, Object> vars = new HashMap<>();
-        vars.put("baseQueryHidden", renderBaseQueryHiddenFields(filter));
-        vars.put("levelAll", Boolean.valueOf(filter.exceptionLevel == null));
-        vars.put("levels", exceptionLevelOptions(filter));
-        vars.put("exceptionKeyword", filter.exceptionKeyword);
-        vars.put("exceptionNewest", Boolean.valueOf(filter.exceptionNewest));
         List<ExceptionEntity> rows;
         try {
             Date start = filter.fromMillis == null ? null : new Date(filter.fromMillis.longValue());
@@ -346,17 +350,6 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         vars.put("rows", viewRows);
         vars.put("empty", Boolean.valueOf(viewRows.isEmpty()));
         out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-exceptions.html", vars));
-    }
-
-    private List<Map<String, Object>> exceptionLevelOptions(Query filter) {
-        List<Map<String, Object>> levels = new ArrayList<>(ExceptionLevel.values().length);
-        for (ExceptionLevel level : ExceptionLevel.values()) {
-            Map<String, Object> item = new HashMap<>();
-            item.put("name", level.name());
-            item.put("selected", Boolean.valueOf(level == filter.exceptionLevel));
-            levels.add(item);
-        }
-        return levels;
     }
 
     private void appendThreadCpu(StringBuilder out, List<Map<String, Object>> rows,
@@ -420,6 +413,30 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private void appendQueryHiddenFields(StringBuilder out, Query filter) {
         appendBaseQueryHiddenFields(out, filter);
         appendExceptionFilterHiddenFields(out, filter);
+    }
+
+    private void appendExceptionFilterControls(StringBuilder out, Query filter) {
+        out.append("<label>Level<select name=\"exceptionLevel\"><option value=\"\">All</option>");
+        for (ExceptionLevel level : ExceptionLevel.values()) {
+            out.append("<option value=\"").append(level.name()).append("\"");
+            if (level == filter.exceptionLevel) {
+                out.append(" selected");
+            }
+            out.append(">").append(level.name()).append("</option>");
+        }
+        out.append("</select></label>")
+                .append("<label>Keyword<input type=\"search\" name=\"exceptionKeyword\" value=\"")
+                .append(escape(filter.exceptionKeyword)).append("\" placeholder=\"stack keyword\"></label>")
+                .append("<label>Order<select name=\"exceptionNewest\">")
+                .append("<option value=\"false\"");
+        if (!filter.exceptionNewest) {
+            out.append(" selected");
+        }
+        out.append(">Most Occurred</option><option value=\"true\"");
+        if (filter.exceptionNewest) {
+            out.append(" selected");
+        }
+        out.append(">Newest</option></select></label>");
     }
 
     private void appendExceptionFilterHiddenFields(StringBuilder out, Query filter) {
@@ -524,6 +541,15 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         vars.put("toolHost", filter.toolHost);
         vars.put("toolCmd", filter.toolCmd);
         vars.put("toolWorkspace", filter.toolWorkspace);
+        vars.put("toolBeanType", filter.toolBeanType);
+        vars.put("toolBeanMember", filter.toolBeanMember);
+        vars.put("toolBeanJson", filter.toolBeanJson);
+        vars.put("toolBeanResult", filter.toolBeanResult);
+        vars.put("toolBeanError", filter.toolBeanError);
+        vars.put("toolInvokeExpr", filter.toolInvokeExpr);
+        vars.put("toolInvokeArgs", filter.toolInvokeArgs);
+        vars.put("toolInvokeResult", filter.toolInvokeResult);
+        vars.put("toolInvokeError", filter.toolInvokeError);
         vars.put("dnsAddresses", filter.toolDnsAddresses == null ? Collections.emptyList() : filter.toolDnsAddresses);
         vars.put("dnsError", filter.toolDnsError);
         vars.put("execOutput", filter.toolExecOutput);
@@ -554,7 +580,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private void appendRxlib(StringBuilder out, List<Map<String, Object>> chartRows) {
-        out.append("<section class=\"card\"><h2>RXlib</h2>")
+        out.append("<section class=\"card\"><h2>Rx metrics</h2>")
                 .append("<p class=\"meta\">Internal RXlib component metrics: ThreadPool, WheelTimer, ObjectPool and EntityDatabase.</p>");
         if (chartRows.isEmpty()) {
             out.append("<p class=\"empty\">No RXlib metric found in the selected range.</p>");
@@ -761,6 +787,14 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             execToolCommand(filter);
             return "Command execution completed.";
         }
+        if ("tool-bean".equals(action) || "3".equals(action)) {
+            applyToolBean(filter);
+            return "Bean/Class read write completed.";
+        }
+        if ("tool-invoke".equals(action) || "12".equals(action)) {
+            invokeToolExpression(filter);
+            return "Reflect invoke completed.";
+        }
         return handleManualCapture(request, filter);
     }
 
@@ -813,6 +847,163 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         } finally {
             filter.toolExecElapsedMillis = Long.valueOf(System.currentTimeMillis() - started);
         }
+    }
+
+    private void applyToolBean(Query filter) {
+        filter.toolBeanResult = null;
+        filter.toolBeanError = null;
+        try {
+            Object target;
+            Class<?> clazz;
+            boolean staticTarget = false;
+            if (Strings.isBlank(filter.toolBeanType)) {
+                clazz = RxConfig.class;
+                target = RxConfig.INSTANCE;
+            } else {
+                clazz = Class.forName(filter.toolBeanType);
+                target = SpringContext.isInitiated() ? SpringContext.getBean(clazz, false) : null;
+                if (target == null) {
+                    target = clazz;
+                    staticTarget = true;
+                }
+            }
+
+            if (Strings.isBlank(filter.toolBeanMember)) {
+                if (!Strings.isBlank(filter.toolBeanJson)) {
+                    if (target == RxConfig.INSTANCE) {
+                        RxConfig.INSTANCE.refreshFrom(Sys.toJsonObject(filter.toolBeanJson));
+                    } else if (!staticTarget) {
+                        BeanMapper.DEFAULT.map(Sys.fromJson(filter.toolBeanJson, clazz), target, BeanMapFlag.SKIP_NULL.flags());
+                    } else {
+                        throw new InvalidException("Spring bean {} not found. Specify a static member path to read/write class members.", clazz.getName());
+                    }
+                }
+                filter.toolBeanResult = Sys.toJsonString(staticTarget ? clazz.getName() : target);
+                return;
+            }
+
+            FieldRef ref = resolveFieldRef(target, clazz, staticTarget, filter.toolBeanMember);
+            if (!Strings.isBlank(filter.toolBeanJson)) {
+                Object value = Sys.fromJson(filter.toolBeanJson, ref.field.getGenericType());
+                ref.field.set(ref.owner, value);
+            }
+            filter.toolBeanResult = Sys.toJsonString(ref.field.get(ref.owner));
+        } catch (Throwable e) {
+            filter.toolBeanError = e.toString();
+        }
+    }
+
+    private FieldRef resolveFieldRef(Object target, Class<?> clazz, boolean staticTarget, String memberPath) throws Exception {
+        String[] parts = memberPath.split("\\.");
+        Object owner = staticTarget ? null : target;
+        Class<?> ownerType = staticTarget ? clazz : target.getClass();
+        for (int i = 0; i < parts.length - 1; i++) {
+            Field field = Reflects.getFieldMap(ownerType).get(parts[i]);
+            if (field == null) {
+                throw new NoSuchFieldException(parts[i]);
+            }
+            Object next = field.get(owner);
+            if (next == null) {
+                throw new InvalidException("Field {} is null", parts[i]);
+            }
+            owner = next;
+            ownerType = next.getClass();
+        }
+        Field field = Reflects.getFieldMap(ownerType).get(parts[parts.length - 1]);
+        if (field == null) {
+            throw new NoSuchFieldException(parts[parts.length - 1]);
+        }
+        return new FieldRef(owner, field);
+    }
+
+    private void invokeToolExpression(Query filter) {
+        filter.toolInvokeResult = null;
+        filter.toolInvokeError = null;
+        try {
+            List<Object> args = Strings.isBlank(filter.toolInvokeArgs)
+                    ? Collections.emptyList() : Sys.toJsonArray(filter.toolInvokeArgs);
+            Object result = invokeExpression(filter.toolInvokeExpr, args);
+            filter.toolInvokeResult = Sys.toJsonString(result);
+        } catch (Throwable e) {
+            filter.toolInvokeError = e.toString();
+        }
+    }
+
+    private Object invokeExpression(String expr, List<Object> args) throws Exception {
+        if (Strings.isBlank(expr)) {
+            throw new InvalidException("expr is empty.");
+        }
+        int methodSeparator = expr.lastIndexOf('.');
+        if (methodSeparator == -1) {
+            throw new InvalidException("Class name not found");
+        }
+
+        String methodName = expr.substring(methodSeparator + 1);
+        String className = expr.substring(0, methodSeparator);
+        int classSeparator = methodSeparator;
+        Class<?> type;
+        while (true) {
+            try {
+                type = Class.forName(className);
+                break;
+            } catch (ClassNotFoundException e) {
+                classSeparator = className.lastIndexOf('.');
+                if (classSeparator == -1) {
+                    throw e;
+                }
+                className = className.substring(0, classSeparator);
+            }
+        }
+
+        Object instance = SpringContext.isInitiated() ? SpringContext.getBean(type, false) : null;
+        Object target = instance == null ? type : instance;
+        Object member = null;
+        if (classSeparator != methodSeparator) {
+            String fieldExpr = expr.substring(classSeparator + 1, methodSeparator);
+            member = readMemberChain(target, fieldExpr);
+        }
+
+        Object invokeTarget = member != null ? member : target;
+        Class<?> invokeType = invokeTarget instanceof Class ? (Class<?>) invokeTarget : invokeTarget.getClass();
+        Method method = findMethod(invokeType, methodName, args.size());
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        Object[] converted = new Object[args.size()];
+        for (int i = 0; i < converted.length; i++) {
+            Object arg = args.get(i);
+            try {
+                converted[i] = Sys.fromJson(arg, method.getGenericParameterTypes()[i]);
+            } catch (Throwable e) {
+                converted[i] = Reflects.changeType(arg, parameterTypes[i]);
+            }
+        }
+        return Reflects.invokeMethod(method, invokeTarget, converted);
+    }
+
+    private Object readMemberChain(Object target, String fieldExpr) {
+        Object member = null;
+        String path = fieldExpr;
+        while (true) {
+            int index = path.indexOf('.');
+            boolean end = index == -1;
+            String fieldName = end ? path : path.substring(0, index);
+            if (member == null) {
+                member = target instanceof Class ? Reflects.readStaticField((Class<?>) target, fieldName) : Reflects.readField(target, fieldName);
+            } else {
+                member = Reflects.readField(member, fieldName);
+            }
+            if (end) {
+                return member;
+            }
+            path = path.substring(index + 1);
+        }
+    }
+
+    private Method findMethod(Class<?> type, String methodName, int parameterCount) {
+        org.rx.core.Linq<Method> methods = Reflects.getMethodMap(type).get(methodName);
+        if (methods == null) {
+            throw new InvalidException("Method {} not found on {}", methodName, type.getName());
+        }
+        return methods.where(p -> p.getParameterCount() == parameterCount).first();
     }
 
     private String handleManualCapture(ServerRequest request, Query filter) {
@@ -1278,6 +1469,11 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         query.toolHost = Strings.trim(firstQueryValue(request, "toolHost", "host"));
         query.toolCmd = Strings.trim(firstQueryValue(request, "toolCmd", "cmd"));
         query.toolWorkspace = Strings.trim(firstQueryValue(request, "toolWorkspace", "workspace"));
+        query.toolBeanType = Strings.trim(firstQueryValue(request, "toolBeanType", "type"));
+        query.toolBeanMember = Strings.trim(firstQueryValue(request, "toolBeanMember", "member"));
+        query.toolBeanJson = Strings.trim(firstQueryValue(request, "toolBeanJson", "jsonVal"));
+        query.toolInvokeExpr = Strings.trim(firstQueryValue(request, "toolInvokeExpr", "expr"));
+        query.toolInvokeArgs = Strings.trim(firstQueryValue(request, "toolInvokeArgs", "args"));
         query.captureSeconds = boundedInt(request.getQueryString().getFirst("captureSeconds"),
                 DEFAULT_CAPTURE_SECONDS, 1, MAX_CAPTURE_SECONDS);
         query.captureTopN = boundedInt(request.getQueryString().getFirst("captureTopN"),
@@ -1604,6 +1800,15 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         String toolHost;
         String toolCmd;
         String toolWorkspace;
+        String toolBeanType;
+        String toolBeanMember;
+        String toolBeanJson;
+        String toolBeanResult;
+        String toolBeanError;
+        String toolInvokeExpr;
+        String toolInvokeArgs;
+        String toolInvokeResult;
+        String toolInvokeError;
         List<String> toolDnsAddresses;
         String toolDnsError;
         String toolExecOutput;
@@ -1612,5 +1817,15 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         Long toolExecElapsedMillis;
         int captureSeconds;
         int captureTopN;
+    }
+
+    private static final class FieldRef {
+        final Object owner;
+        final Field field;
+
+        FieldRef(Object owner, Field field) {
+            this.owner = owner;
+            this.field = field;
+        }
     }
 }
