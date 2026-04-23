@@ -413,6 +413,14 @@ public final class Sockets {
         return level < 0 ? ZlibCodecFactory.newZlibEncoder(zlib) : ZlibCodecFactory.newZlibEncoder(zlib, level);
     }
 
+    public static boolean hasTcpCompressionHandlers(Channel channel) {
+        if (channel == null) {
+            return false;
+        }
+        ChannelPipeline pipeline = channel.pipeline();
+        return pipeline.get(ZIP_ENCODER) != null || pipeline.get(ZIP_DECODER) != null;
+    }
+
     public static boolean removeTcpCompressionHandlers(Channel channel) {
         if (channel == null) {
             return false;

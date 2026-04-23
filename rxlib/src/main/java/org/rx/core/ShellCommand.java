@@ -13,19 +13,24 @@ import org.rx.io.Files;
 import org.rx.util.function.TripleAction;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.LineNumberReader;
 import java.io.OutputStream;
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Extends.newConcurrentList;
-import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class ShellCommand extends Disposable implements EventPublisher<ShellCommand> {
@@ -59,7 +64,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
         public void invoke(ShellCommand s, PrintOutEventArgs e) throws Throwable {
             ByteBuf buf = Bytes.directBuffer();
             try {
-                buf.writeInt(e.lineNumber);
+                buf.writeCharSequence(String.valueOf(e.lineNumber), StandardCharsets.UTF_8);
                 buf.writeCharSequence(".\t", StandardCharsets.UTF_8);
                 buf.writeCharSequence(e.line, StandardCharsets.UTF_8);
                 buf.writeCharSequence("\n", StandardCharsets.UTF_8);
@@ -71,7 +76,6 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
     }
 
     public static final TripleAction<ShellCommand, PrintOutEventArgs> CONSOLE_OUT_HANDLER = (s, e) -> System.out.print(e.toString());
-    static final String LINUX_BASH = "bash -c ", WIN_CMD = "cmd /c ";
     static final List<ShellCommand> KILL_LIST = newConcurrentList(true);
 
     static {
@@ -178,19 +182,20 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
     public final Delegate<ShellCommand, PrintOutEventArgs> onPrintOut = Delegate.create();
     public final Delegate<ShellCommand, Integer> onExited = Delegate.create();
 
-    final long daemonPeriod;
     @Getter
     String shell;
     File workspace;
     Process process;
     Future<Void> daemonFuture;
+    boolean closeFlag;
+    Long processId;
 
     public synchronized boolean isRunning() {
         return process != null && process.isAlive();
     }
 
     public synchronized ShellCommand withCloseFlag() {
-        shell = (Sys.IS_OS_WINDOWS ? WIN_CMD : LINUX_BASH) + shell;
+        closeFlag = true;
         return this;
     }
 
@@ -210,8 +215,6 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
     public ShellCommand(@NonNull String shell, String workspace, long daemonPeriod, boolean killOnExited) {
         this.shell = shell.trim();
         this.workspace = workspace == null ? null : new File(workspace);
-
-        this.daemonPeriod = Math.max(1, daemonPeriod);
         if (killOnExited) {
             KILL_LIST.add(this);
         }
@@ -231,48 +234,33 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
         }
 
         log.debug("start {}", shell);
-        List<String> command = translateCommandline(shell);
+        Long currentJvmPid = currentJvmPid();
+        Set<Long> existingChildPids = currentJvmPid == null ? Collections.<Long>emptySet() : new HashSet<>(listDirectChildPids(currentJvmPid));
+        List<String> command = buildCommand();
         if (!command.isEmpty() && Files.isPath(command.get(0))) {
             workspace = new File(Files.getFullPathNoEndSeparator(command.get(0)));
         }
         Process tmp = process = new ProcessBuilder(command).directory(workspace).redirectErrorStream(true)  //combine inputStream and errorStream
                 .start();
+        processId = resolveProcessId(tmp, command, currentJvmPid, existingChildPids);
 
-        if (daemonFuture != null) {
-            daemonFuture.cancel(true);
-        }
         daemonFuture = Tasks.run(() -> {
-            LineNumberReader reader = null;
-            try {
-                if (!onPrintOut.isEmpty()) {
-                    reader = new LineNumberReader(new InputStreamReader(tmp.getInputStream(), StandardCharsets.UTF_8));
-                }
-
-                while (tmp.isAlive()) {
+            try (LineNumberReader reader = new LineNumberReader(new InputStreamReader(tmp.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (onPrintOut.isEmpty()) {
+                        continue;
+                    }
                     try {
-                        if (reader != null) {
-                            String line;
-                            while (
-//                                    tmp.isAlive() &&
-                                    (line = reader.readLine()) != null) {
-                                raiseEvent(onPrintOut, new PrintOutEventArgs(reader.getLineNumber(), line));
-                            }
-                        }
+                        raiseEvent(onPrintOut, new PrintOutEventArgs(reader.getLineNumber(), line));
                     } catch (Throwable e) {
                         log.error("onPrintOut", e);
                     }
-                    if (!tmp.isAlive()) {
-                        break;
-                    }
-                    Thread.sleep(daemonPeriod);
                 }
             } finally {
-                tryClose(reader);
-                synchronized (this) {
-                    int exitValue = tmp.exitValue();
-                    log.debug("exit={} {}", exitValue, shell);
-                    raiseEvent(onExited, exitValue);
-                }
+                int exitValue = tmp.waitFor();
+                log.debug("exit={} {}", exitValue, shell);
+                raiseEvent(onExited, exitValue);
             }
         });
         return this;
@@ -318,13 +306,286 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
         }
 
         log.debug("kill {}", shell);
+        Long pid = processId;
+        boolean killed = pid != null && killProcessTree(pid, new HashSet<Long>());
+        if (killed && waitForExit(process, 1000L)) {
+            return;
+        }
         process.destroyForcibly();
-        daemonFuture.cancel(true);
-        raiseEvent(onExited, process.exitValue());
+        waitForExit(process, 1000L);
     }
 
     public synchronized void restart() {
         kill();
         start();
+    }
+
+    List<String> buildCommand() {
+        if (!closeFlag) {
+            return translateCommandline(shell);
+        }
+
+        List<String> command = new ArrayList<>(3);
+        if (Sys.IS_OS_WINDOWS) {
+            command.add("cmd");
+            command.add("/c");
+        } else {
+            command.add("bash");
+            command.add("-c");
+        }
+        command.add(shell);
+        return command;
+    }
+
+    @SneakyThrows
+    Long resolveProcessId(Process target, List<String> command, Long currentJvmPid, Set<Long> existingChildPids) {
+        try {
+            return ((Number) Process.class.getMethod("pid").invoke(target)).longValue();
+        } catch (NoSuchMethodException ignored) {
+        }
+
+        try {
+            Number pid = Reflects.readField(target, "pid");
+            if (pid != null) {
+                return pid.longValue();
+            }
+        } catch (Throwable ignored) {
+        }
+
+        if (currentJvmPid == null) {
+            return null;
+        }
+        if (Sys.IS_OS_WINDOWS) {
+            return resolveWindowsProcessId(currentJvmPid, existingChildPids, command);
+        }
+        return resolveUnixProcessId(currentJvmPid);
+    }
+
+    Long resolveWindowsProcessId(long parentPid, Set<Long> existingChildPids, List<String> command) {
+        List<String> lines = runCommand(Arrays.asList("wmic", "process", "where", String.format("ParentProcessId=%d", parentPid),
+                "get", "ProcessId,CommandLine", "/format:csv"));
+        String commandText = String.join(" ", command).toLowerCase();
+        Long fallback = null;
+        for (String line : lines) {
+            if (line.isEmpty() || line.startsWith("Node,") || !line.contains(",")) {
+                continue;
+            }
+            String[] arr = line.split(",", 3);
+            if (arr.length < 3) {
+                continue;
+            }
+            Long pid = parseLong(arr[1]);
+            if (pid == null) {
+                continue;
+            }
+            if (existingChildPids.contains(pid)) {
+                continue;
+            }
+            fallback = pid;
+            String commandLine = arr[2] == null ? "" : arr[2].toLowerCase();
+            if (commandLine.contains(commandText)) {
+                return pid;
+            }
+        }
+        if (fallback != null) {
+            return fallback;
+        }
+        return resolveWindowsProcessIdByPowerShell(parentPid, existingChildPids, commandText);
+    }
+
+    Long resolveWindowsProcessIdByPowerShell(long parentPid, Set<Long> existingChildPids, String commandText) {
+        List<String> lines = runCommand(Arrays.asList("powershell", "-NoProfile", "-Command",
+                String.format("Get-CimInstance Win32_Process -Filter \\\"ParentProcessId=%d\\\" | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation", parentPid)));
+        Long fallback = null;
+        for (String line : lines) {
+            if (line.isEmpty() || line.startsWith("\"ProcessId\"")) {
+                continue;
+            }
+            String[] arr = parseCsvPair(line);
+            if (arr == null) {
+                continue;
+            }
+            Long pid = parseLong(arr[0]);
+            if (pid == null || existingChildPids.contains(pid)) {
+                continue;
+            }
+            fallback = pid;
+            String commandLine = arr[1] == null ? "" : arr[1].toLowerCase();
+            if (commandLine.contains(commandText)) {
+                return pid;
+            }
+        }
+        return fallback;
+    }
+
+    Long resolveUnixProcessId(long parentPid) {
+        List<Long> children = listChildPids(parentPid);
+        return children.isEmpty() ? null : children.get(0);
+    }
+
+    boolean killProcessTree(long pid, Set<Long> visited) {
+        if (!visited.add(pid)) {
+            return true;
+        }
+        try {
+            if (Sys.IS_OS_WINDOWS) {
+                return runExitCode(Arrays.asList("taskkill", "/T", "/F", "/PID", String.valueOf(pid))) == 0;
+            }
+
+            for (Long childPid : listChildPids(pid)) {
+                killProcessTree(childPid, visited);
+            }
+            sendSignal(pid, "-TERM");
+            Thread.sleep(200L);
+            sendSignal(pid, "-KILL");
+            return true;
+        } catch (Throwable e) {
+            log.warn("killProcessTree {}", pid, e);
+            return false;
+        }
+    }
+
+    List<Long> listChildPids(long parentPid) {
+        List<String> lines = runCommand(Arrays.asList("ps", "-o", "pid=", "--ppid", String.valueOf(parentPid)));
+        List<Long> pids = new ArrayList<>(lines.size());
+        for (String line : lines) {
+            Long pid = parseLong(line.trim());
+            if (pid != null) {
+                pids.add(pid);
+            }
+        }
+        return pids;
+    }
+
+    List<Long> listDirectChildPids(long parentPid) {
+        if (!Sys.IS_OS_WINDOWS) {
+            return listChildPids(parentPid);
+        }
+
+        List<String> lines = runCommand(Arrays.asList("wmic", "process", "where", String.format("ParentProcessId=%d", parentPid),
+                "get", "ProcessId", "/format:csv"));
+        List<Long> pids = new ArrayList<>(lines.size());
+        for (String line : lines) {
+            if (line.isEmpty() || line.startsWith("Node,")) {
+                continue;
+            }
+            int index = line.lastIndexOf(',');
+            Long pid = parseLong(index == -1 ? line : line.substring(index + 1));
+            if (pid != null) {
+                pids.add(pid);
+            }
+        }
+        return pids;
+    }
+
+    void sendSignal(long pid, String signal) {
+        runExitCode(Arrays.asList("kill", signal, String.valueOf(pid)));
+    }
+
+    Long currentJvmPid() {
+        String runtimeName = ManagementFactory.getRuntimeMXBean().getName();
+        int index = runtimeName.indexOf('@');
+        if (index <= 0) {
+            return null;
+        }
+        return parseLong(runtimeName.substring(0, index));
+    }
+
+    Long parseLong(String value) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    String[] parseCsvPair(String line) {
+        if (line.length() < 2 || line.charAt(0) != '"') {
+            return null;
+        }
+        List<String> values = new ArrayList<>(2);
+        StringBuilder buf = new StringBuilder();
+        boolean inQuote = false;
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (ch == '"') {
+                if (inQuote && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    buf.append('"');
+                    i++;
+                    continue;
+                }
+                inQuote = !inQuote;
+                continue;
+            }
+            if (ch == ',' && !inQuote) {
+                values.add(buf.toString());
+                buf.setLength(0);
+                continue;
+            }
+            buf.append(ch);
+        }
+        values.add(buf.toString());
+        return values.size() < 2 ? null : new String[]{values.get(0), values.get(1)};
+    }
+
+    List<String> runCommand(List<String> command) {
+        List<String> lines = new ArrayList<>();
+        Process cmd = null;
+        try {
+            cmd = new ProcessBuilder(command).redirectErrorStream(true).start();
+            readAllLines(cmd.getInputStream(), lines);
+            cmd.waitFor(10, TimeUnit.SECONDS);
+        } catch (Throwable e) {
+            log.debug("runCommand {}", command, e);
+        } finally {
+            if (cmd != null && cmd.isAlive()) {
+                cmd.destroyForcibly();
+            }
+        }
+        return lines;
+    }
+
+    int runExitCode(List<String> command) {
+        Process cmd = null;
+        try {
+            cmd = new ProcessBuilder(command).redirectErrorStream(true).start();
+            drain(cmd.getInputStream());
+            if (!cmd.waitFor(10, TimeUnit.SECONDS)) {
+                cmd.destroyForcibly();
+                return -1;
+            }
+            return cmd.exitValue();
+        } catch (Throwable e) {
+            log.debug("runExitCode {}", command, e);
+            return -1;
+        } finally {
+            if (cmd != null && cmd.isAlive()) {
+                cmd.destroyForcibly();
+            }
+        }
+    }
+
+    void readAllLines(InputStream in, List<String> lines) throws IOException {
+        try (LineNumberReader reader = new LineNumberReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.add(line.trim());
+            }
+        }
+    }
+
+    void drain(InputStream in) throws IOException {
+        byte[] buf = new byte[512];
+        while (in.read(buf) != -1) {
+            // discard
+        }
+    }
+
+    @SneakyThrows
+    boolean waitForExit(Process target, long timeoutMillis) {
+        return !target.isAlive() || target.waitFor(timeoutMillis, TimeUnit.MILLISECONDS);
     }
 }

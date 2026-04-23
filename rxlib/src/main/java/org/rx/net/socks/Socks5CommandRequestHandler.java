@@ -327,18 +327,18 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (!Sockets.shouldBypassTcpCompression(dstEp)) {
             return;
         }
-
-        boolean removed = Sockets.removeTcpCompressionHandlers(inbound);
-        removed |= Sockets.removeTcpCompressionHandlers(outbound);
-        if (!removed) {
+        if (!Sockets.hasTcpCompressionHandlers(inbound) && !Sockets.hasTcpCompressionHandlers(outbound)) {
             return;
         }
 
+        // The SOCKS command itself has already traversed this tunnel. Removing live zlib handlers here
+        // would desync the peer's inflate state and corrupt the rest of the TCP stream.
         if (DiagnosticMetrics.isEnabled()) {
-            DiagnosticMetrics.record("socks.tcp.compress.bypass.count", 1D, "port=" + dstEp.getPort());
+            DiagnosticMetrics.record("socks.tcp.compress.bypass.deferred.count", 1D, "port=" + dstEp.getPort());
         }
         if (config.isDebug()) {
-            log.info("socks5[{}] TCP {} => {} BYPASS_COMPRESS dstEp={}", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp);
+            log.info("socks5[{}] TCP {} => {} BYPASS_DEFERRED dstEp={} reason=live_zlib_stream",
+                    config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp);
         }
     }
 }

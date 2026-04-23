@@ -14,6 +14,7 @@ import org.junit.jupiter.api.*;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.core.RxConfig;
 import org.rx.net.Sockets;
+import org.rx.net.TransportFlags;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -72,9 +73,11 @@ class SocksProxyServerIntegrationTest {
     }
 
     static final int TCP_ECHO_PORT = 15299;
+    static final int TCP_BYPASS_ECHO_PORT = 15443;
     static final int UDP_ECHO_PORT = 15300;
     static ServerBootstrap tcpEchoBootstrap;
     static Channel tcpEchoChannel;
+    static Channel tcpBypassEchoChannel;
     static Channel udpEchoChannel;
     static Bootstrap udpEchoBootstrap;
 
@@ -88,6 +91,7 @@ class SocksProxyServerIntegrationTest {
             }
         }));
         tcpEchoChannel = tcpEchoBootstrap.bind(Sockets.newAnyEndpoint(TCP_ECHO_PORT)).sync().channel();
+        tcpBypassEchoChannel = tcpEchoBootstrap.bind(Sockets.newAnyEndpoint(TCP_BYPASS_ECHO_PORT)).sync().channel();
 
         udpEchoBootstrap = Sockets.udpBootstrap(null, ob -> ob.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
             @Override
@@ -107,6 +111,7 @@ class SocksProxyServerIntegrationTest {
     @AfterAll
     static void teardown() {
         if (tcpEchoChannel != null) tcpEchoChannel.close();
+        if (tcpBypassEchoChannel != null) tcpBypassEchoChannel.close();
         if (tcpEchoBootstrap != null) Sockets.closeBootstrap(tcpEchoBootstrap);
         if (udpEchoChannel != null) udpEchoChannel.close();
     }
@@ -440,6 +445,67 @@ class SocksProxyServerIntegrationTest {
             } finally {
                 clientSock.close();
                 tcp.close();
+            }
+        } finally {
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 30)
+    void socks5TcpConnect_chained_withCompressedTunnel_bypassCandidatePort_e2e() {
+        int proxyAPort = 15322;
+        int proxyBPort = 15323;
+
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        configB.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
+        SocksProxyServer proxyB = new SocksProxyServer(configB, null);
+
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        SocksProxyServer proxyA = new SocksProxyServer(configA, null);
+
+        SocksConfig tunnelConf = new SocksConfig();
+        tunnelConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
+        tunnelConf.setTcpCompressionLevel(5);
+        tunnelConf.setConnectTimeoutMillis(4000);
+
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+        proxyA.onTcpRoute.replace((s, e) -> e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), tunnelConf, supportB)));
+
+        try {
+            Thread.sleep(1000);
+            try (Socket s = new Socket("127.0.0.1", proxyAPort)) {
+                s.setSoTimeout(4000);
+                OutputStream out = s.getOutputStream();
+                InputStream in = s.getInputStream();
+
+                out.write(new byte[]{0x05, 0x01, 0x00});
+                out.flush();
+                assertArrayEquals(new byte[]{0x05, 0x00}, readExact(in, 2, 8000));
+
+                out.write(buildSocks5ConnectReqIpv4("127.0.0.1", TCP_BYPASS_ECHO_PORT));
+                out.flush();
+                byte[] conn = readAtLeast(in, 4, 10, 3000);
+                assertEquals(0x05, conn[0] & 0xFF);
+                assertEquals(0x00, conn[1] & 0xFF);
+
+                String message = "compressed-bypass-candidate";
+                out.write(message.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                byte[] back = readExact(in, message.getBytes(StandardCharsets.UTF_8).length, 5000);
+                assertEquals(message, new String(back, StandardCharsets.UTF_8));
+
+                for (int i = 0; i < 5; i++) {
+                    String loopMsg = "bypass-loop-" + i;
+                    out.write(loopMsg.getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    byte[] loopBack = readExact(in, loopMsg.getBytes(StandardCharsets.UTF_8).length, 5000);
+                    assertEquals(loopMsg, new String(loopBack, StandardCharsets.UTF_8));
+                }
             }
         } finally {
             proxyA.close();

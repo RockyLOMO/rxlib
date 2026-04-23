@@ -8,6 +8,7 @@ import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.rx.bean.Tuple;
 import org.rx.core.*;
 import org.rx.exception.ApplicationException;
 import org.rx.net.http.HttpClient;
@@ -191,7 +192,9 @@ public class RWebConfig implements WebMvcConfigurer {
                 if (fts != null) {
                     String fu = fts.get(ms.getName());
                     if (fu != null) {
-                        HttpClient.getDefault().forward(ra.getRequest(), ra.getResponse(), fu);
+                        Tuple<HttpClient.RequestContent, HttpClient.Response> forwarded = HttpClient.getDefault().forward(ra.getRequest(), ra.getResponse(), fu);
+                        org.rx.core.Extends.tryClose(forwarded.right);
+                        org.rx.core.Extends.tryClose(forwarded.left);
                         return null;
                     }
                 }
