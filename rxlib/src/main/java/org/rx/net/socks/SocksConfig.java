@@ -307,6 +307,17 @@ public class SocksConfig extends SocketConfig {
         udpCompress.setMinSavingsRatio(minSavingsRatio);
     }
 
+    public int getUdpCompressCompressionLevel() {
+        return udpCompress != null ? udpCompress.getCompressionLevel() : UdpCompressConfig.DEFAULT_COMPRESSION_LEVEL;
+    }
+
+    public void setUdpCompressCompressionLevel(int compressionLevel) {
+        if (udpCompress == null) {
+            udpCompress = new UdpCompressConfig();
+        }
+        udpCompress.setCompressionLevel(compressionLevel);
+    }
+
     public int getUdpCompressDictionaryId() {
         return udpCompress != null ? udpCompress.getDictionaryId() : 0;
     }

@@ -30,6 +30,11 @@ public class SocketConfig implements Serializable {
     private OptimalSettings optimalSettings;
     private int connectTimeoutMillis;
     private FlagsEnum<TransportFlags> transportFlags;
+    /**
+     * TCP zlib 压缩级别。
+     * -1 表示保持 Netty 默认值，其余取值范围为 [0, 9]。
+     */
+    private int tcpCompressionLevel = -1;
     // 1 = AES, 2 = XChaCha20Poly1305
     private short cipher = 2;
     private byte[] cipherKey;
@@ -48,6 +53,10 @@ public class SocketConfig implements Serializable {
                     .select(p -> CodecUtil.convertFromBase64(p.substring(2))).first();
         }
         return cipherKey;
+    }
+
+    public void setTcpCompressionLevel(int tcpCompressionLevel) {
+        this.tcpCompressionLevel = tcpCompressionLevel < 0 ? -1 : Math.min(9, tcpCompressionLevel);
     }
 
     public SocketConfig() {

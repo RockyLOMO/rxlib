@@ -165,6 +165,7 @@ public final class Main implements SocksRpcContract {
     public static final OptimalSettings OUT_OPS = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
     public static final OptimalSettings IN_OPS = null;
     public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
+    static final int TCP_TRIAL_COMPRESSION_LEVEL = 5;
     static RSSConf rssConf;
 
     @SneakyThrows
@@ -336,6 +337,7 @@ public final class Main implements SocksRpcContract {
         inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
         inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
         inConf.setUdpRedundantMultiplier(2);
+        applyUdpCompressionTrial(inConf);
         DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(shadowUsers.select(p -> p.right).toList());
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         log.info("rssConf socksBindPort={}, inListenAddress={}", rssConf.socksBindPort, inConf.getListenAddress());
@@ -359,6 +361,7 @@ public final class Main implements SocksRpcContract {
             inTunConf.setListenAddress(resolveClientInListenAddress(rssConf, udp2rawPort, "rss-in-tun-"));
             inTunConf.setKcptunClient(rssConf.kcptunClient);
             inTunConf.setUdpRedundantMultiplier(2);
+            applyUdpCompressionTrial(inTunConf);
             // inTunConf.setEnableUdp2raw(enableUdp2raw);
             // inTunConf.setUdp2rawClient(rssConf.udp2rawClient);
             inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
@@ -454,6 +457,8 @@ public final class Main implements SocksRpcContract {
         };
         SocksConfig outConf = Sys.deepClone(inConf);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        outConf.setTcpCompressionLevel(TCP_TRIAL_COMPRESSION_LEVEL);
+        applyUdpCompressionTrial(outConf);
         if (!kcptun) {
             outConf.setOptimalSettings(OUT_OPS);
         }
@@ -656,6 +661,17 @@ public final class Main implements SocksRpcContract {
     /** Dynadot、/hf 等复用，避免每次 new HttpClient */
     private static final HttpClient MAIN_HTTP_CLIENT = new HttpClient();
 
+    static void applyUdpCompressionTrial(SocksConfig config) {
+        config.setUdpCompressEnabled(true);
+        config.setUdpCompressCodec(UdpCompressCodec.LZ4_FAST);
+        config.setUdpCompressCompressionLevel(UdpCompressConfig.DEFAULT_COMPRESSION_LEVEL);
+        config.setUdpCompressMinPayloadBytes(96);
+        config.setUdpCompressMinSavingsBytes(24);
+        config.setUdpCompressMinSavingsRatio(0.12D);
+        config.setUdpCompressAdaptiveBypass(true);
+        config.setUdpCompressAdaptiveBypassWindowSeconds(30);
+    }
+
     static void launchServer(Map<String, String> options, int port) {
         boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
         int udp2rawPort = port + 10;
@@ -674,9 +690,11 @@ public final class Main implements SocksRpcContract {
         outConf.setWhiteListEnabled(true);
         outConf.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.OUTLAND);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        outConf.setTcpCompressionLevel(TCP_TRIAL_COMPRESSION_LEVEL);
         outConf.setOptimalSettings(OUT_OPS);
         // outConf.setConnectTimeoutMillis(connectTimeout);
         outConf.setUdpRedundantMultiplier(2);
+        applyUdpCompressionTrial(outConf);
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
@@ -685,6 +703,7 @@ public final class Main implements SocksRpcContract {
             outTunConf.setDebug(debugFlag);
             outTunConf.setListenAddress(Sockets.newAnyEndpoint(udp2rawPort));
             outTunConf.setUdpRedundantMultiplier(2);
+            applyUdpCompressionTrial(outTunConf);
             // outTunConf.setEnableUdp2raw(enableUdp2raw);
             SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
             outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
