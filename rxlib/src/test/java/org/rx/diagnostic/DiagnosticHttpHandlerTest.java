@@ -4,6 +4,8 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import org.junit.jupiter.api.Test;
 import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
+import org.rx.exception.TraceHandler;
+import org.rx.io.EntityDatabase;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpServer;
 
@@ -14,6 +16,7 @@ import java.net.ServerSocket;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -25,6 +28,8 @@ public class DiagnosticHttpHandlerTest {
         String oldRtoken = RxConfig.INSTANCE.getRtoken();
         H2DiagnosticStore store = new H2DiagnosticStore(config);
         HttpServer server = null;
+        long methodTraceId = System.nanoTime();
+        boolean methodTraceSaved = false;
         try {
             RxConfig.INSTANCE.setDiagnostic(config);
             RxConfig.INSTANCE.setRtoken("secret");
@@ -48,6 +53,19 @@ public class DiagnosticHttpHandlerTest {
             store.recordIncident("inc-human", DiagnosticIncidentType.DIRECT_MEMORY_HIGH, DiagnosticLevel.DIAG, now + 1L, now + 1L,
                     "directUsedBytes=97.52 MB (102253591 bytes)", null);
             assertTrue(store.flush(5000L));
+            EntityDatabase.DEFAULT.createMapping(TraceHandler.MethodEntity.class);
+            TraceHandler.MethodEntity methodTrace = new TraceHandler.MethodEntity();
+            methodTrace.setId(methodTraceId);
+            methodTrace.setMethodName("rxlib.test.method.foo(1)");
+            methodTrace.setParameters("[\"arg\"]");
+            methodTrace.setReturnValue("\"ok\"");
+            methodTrace.setElapsedMicros(123456L);
+            methodTrace.setOccurCount(3);
+            methodTrace.setAppName("diag-test");
+            methodTrace.setThreadName("diag-thread");
+            methodTrace.setModifyTime(new Date(now));
+            EntityDatabase.DEFAULT.save(methodTrace, true);
+            methodTraceSaved = true;
 
             int port = freePort();
             server = new HttpServer(port, false).requestDiagnostic("/diag");
@@ -71,6 +89,9 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("name=\"exceptionLevel\""));
                 assertTrue(html.contains("name=\"exceptionKeyword\""));
                 assertTrue(html.contains("name=\"exceptionNewest\""));
+                assertTrue(html.contains("Method Traces"));
+                assertTrue(html.contains("name=\"methodNamePrefix\""));
+                assertTrue(html.contains("name=\"methodOccurMost\""));
                 assertTrue(html.contains("Rx metrics"));
                 assertTrue(html.contains("inc-http"));
                 assertTrue(html.contains("http.metric"));
@@ -92,6 +113,10 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("name=\"toolCmd\""));
                 assertTrue(html.contains("Bean/Class Read Write"));
                 assertTrue(html.contains("Reflect Invoke"));
+                assertTrue(html.contains("VM Options"));
+                assertTrue(html.contains("UnlockCommercialFeatures"));
+                assertTrue(html.contains("name=\"vmOptionName\""));
+                assertTrue(html.contains("Writable Options"));
                 assertTrue(html.contains("blocked-thread"));
                 assertTrue(html.contains("127.0.0.1:8080"));
                 assertTrue(html.contains("?stack=456"));
@@ -123,6 +148,12 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(exceptionFilteredHtml.contains("value=\"true\" selected"));
                 assertTrue(exceptionFilteredHtml.contains("latest 10 rows per section"));
                 assertTrue(exceptionFilteredHtml.contains("data-context-tab=\"exceptions\""));
+
+                HttpClient.Response methodFiltered = client.get(url + "?limit=10&methodNamePrefix=rxlib.test.method&methodOccurMost=true#method-traces");
+                String methodFilteredHtml = methodFiltered.bodyAsString();
+                assertTrue(methodFilteredHtml.contains("rxlib.test.method.foo(1)"));
+                assertTrue(methodFilteredHtml.contains("Most Occurred"));
+                assertTrue(methodFilteredHtml.contains("data-context-tab=\"method-traces\""));
 
                 HttpClient.Response dns = client.get(url + "?action=5&host=localhost");
                 String dnsHtml = dns.bodyAsString();
@@ -168,6 +199,9 @@ public class DiagnosticHttpHandlerTest {
                 }
             }
         } finally {
+            if (methodTraceSaved) {
+                EntityDatabase.DEFAULT.deleteById(TraceHandler.MethodEntity.class, methodTraceId);
+            }
             if (server != null) {
                 server.close();
             }

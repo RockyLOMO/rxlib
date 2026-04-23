@@ -84,6 +84,9 @@ public class HandlerUtil {
                     Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
                     resText = queryTraces(st, et, level, kw, newest, methodOccurMost, methodNamePrefix, metricsName, take);
                     break;
+                case 12:
+                    resText = invokeEx(params.getString("expr"), params.getJSONArray("args"));
+                    break;
                 default:
                     resText = svrState(request, params);
                     break;
@@ -140,17 +143,7 @@ public class HandlerUtil {
         j.put("rxConfig", RxConfig.INSTANCE);
         j.put("ntpOffset", Reflects.readStaticField(NtpClock.class, "offset"));
 
-        Map<String, Object> threadInfo = new LinkedHashMap<>(5);
-        j.put("threadInfo", threadInfo);
-        int take = Reflects.convertQuietly(request.getParameter("take"), Integer.class, 5);
-        threadInfo.put("deadlocked", Collections.emptyList());
-        threadInfo.put("topUserTime", Collections.emptyList());
-        threadInfo.put("topCpuTime", Collections.emptyList());
-        threadInfo.put("topBlockedTime", Collections.emptyList());
-        threadInfo.put("topWaitedTime", Collections.emptyList());
         j.put("requestHeaders", Linq.from(Collections.list(request.getHeaderNames())).select(p -> String.format("%s: %s", p, String.join("; ", Collections.list(request.getHeaders(p))))));
-        j.put("requestBody", params);
-        j.putAll(queryTraces(null, null, null, null, null, null, null, null, take));
         return j;
     }
 
@@ -171,6 +164,13 @@ public class HandlerUtil {
 
         result.put("metrics", Collections.emptyList());
         return result;
+    }
+
+    Object invokeEx(String expr, List<Object> args) {
+        if (expr == null || expr.lastIndexOf(DOT) == -1) {
+            throw new InvalidException("Class name not fund");
+        }
+        return Reflects.invokeExpression(expr, args, p -> SpringContext.getBean(p, false));
     }
 
     @SneakyThrows

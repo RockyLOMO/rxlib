@@ -1,0 +1,25 @@
+<section class="card"><h2>VM Options</h2>
+    <p class="meta">Source: HotSpotDiagnosticMXBean.getDiagnosticOptions(). Only options marked writeable can be changed at runtime.</p>
+    {{#if vmOptionResult}}<p class="meta">{{vmOptionResult}}</p>{{/if}}
+    {{#if vmOptionError}}<p class="empty">{{vmOptionError}}</p>{{/if}}
+    <form class="filters" method="get" action="#vm-options">
+        <input type="hidden" name="action" value="vm-option">
+        <label>Option Name<input type="search" name="vmOptionName" value="{{vmOptionName}}" placeholder="UnlockCommercialFeatures"></label>
+        <label>Value<input type="text" name="vmOptionValue" value="{{vmOptionValue}}" placeholder="true / false / number"></label>
+        <button type="submit">Apply By Name</button>
+    </form>
+    <h3 class="chart-group-title">Writable Options</h3>
+    {{#if noWritableOptions}}<p class="empty">No writable VM diagnostic option found on this JVM.</p>{{/if}}
+    {{#unless noWritableOptions}}
+    <table><thead><tr><th>Name</th><th>Value</th><th>Origin</th><th>Set Runtime Value</th></tr></thead><tbody>
+        {{#each writableOptions}}<tr><td>{{name}}</td><td>{{value}}</td><td>{{origin}}</td><td><form class="inline-form" method="get" action="#vm-options"><input type="hidden" name="action" value="vm-option"><input type="hidden" name="vmOptionName" value="{{name}}"><input type="text" name="vmOptionValue" value="{{value}}"><button type="submit">Apply</button></form></td></tr>{{/each}}
+    </tbody></table>
+    {{/unless}}
+    <h3 class="chart-group-title">Read Only Options</h3>
+    {{#if noReadonlyOptions}}<p class="empty">No read only VM diagnostic option found.</p>{{/if}}
+    {{#unless noReadonlyOptions}}
+    <table><thead><tr><th>Name</th><th>Value</th><th>Origin</th><th>Writeable</th></tr></thead><tbody>
+        {{#each readonlyOptions}}<tr><td>{{name}}</td><td>{{value}}</td><td>{{origin}}</td><td>{{writeable}}</td></tr>{{/each}}
+    </tbody></table>
+    {{/unless}}
+</section>

@@ -1,0 +1,10 @@
+<section class="card"><h2>Method Traces</h2>
+    <p class="meta">Source: HandlerUtil queryTraces / TraceHandler.queryMethodTraces. Use the top Query card for limit, method prefix and order. Time range does not apply to this legacy TraceHandler data.</p>
+    {{#if error}}<p class="empty">Read method traces failed: {{error}}</p>{{/if}}
+    {{#unless error}}
+    <table><thead><tr><th>Modified</th><th>Method</th><th>Elapsed</th><th>Count</th><th>App</th><th>Thread</th><th>Parameters</th><th>Return/Error</th></tr></thead><tbody>
+        {{#if empty}}<tr><td class="empty" colspan="8">No method trace found.</td></tr>{{/if}}
+        {{#each rows}}<tr><td>{{modified}}</td><td>{{methodName}}<div class="meta">id {{id}}</div></td><td>{{elapsed}}<div class="meta">{{elapsedMicros}} µs</div></td><td>{{count}}</td><td>{{app}}</td><td>{{thread}}</td><td><details><summary>Parameters</summary><pre>{{parameters}}</pre></details></td><td><details><summary>Return/Error</summary><pre>{{returnValue}}</pre></details></td></tr>{{/each}}
+    </tbody></table>
+    {{/unless}}
+</section>
