@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rx.bean.DateTime;
+import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.codec.XChaCha20Poly1305Util;
 import org.rx.core.*;
@@ -78,7 +79,9 @@ public class HandlerUtil {
                             cfg.setTimeoutMillis(tm);
                         }
                         try (HttpClient client = new HttpClient(cfg)) {
-                            client.forward(request, response, fu);
+                            Tuple<HttpClient.RequestContent, HttpClient.Response> forwarded = client.forward(request, response, fu);
+                            org.rx.core.Extends.tryClose(forwarded.right);
+                            org.rx.core.Extends.tryClose(forwarded.left);
                         }
                     }
                     break;
@@ -309,7 +312,9 @@ public class HandlerUtil {
             b = xcha ? new String(XChaCha20Poly1305Util.decrypt(CodecUtil.convertFromBase64(b)), StandardCharsets.UTF_8) : b;
             if (Strings.startsWith(b, "https")) {
                 try (HttpClient client = new HttpClient()) {
-                    b = client.get(b).toString();
+                    try (HttpClient.Response response = client.get(b)) {
+                        b = response.bodyAsString();
+                    }
                 }
             }
             return toJsonObject(b);

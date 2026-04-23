@@ -112,7 +112,7 @@ public class DnsClient extends Disposable {
                 .channelType(Sockets.udpChannelClass())
                 .socketChannelType(Sockets.tcpChannelClass())
                 .ttl(5, 300)
-                .negativeTtl(5)
+                .negativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL)
                 .queryTimeoutMillis(TimeUnit.SECONDS.toMillis(5))
                 .resolvedAddressTypes(ResolvedAddressTypes.IPV4_PREFERRED)
                 .recursionDesired(true)
