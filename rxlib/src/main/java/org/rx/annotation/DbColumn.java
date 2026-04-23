@@ -11,6 +11,17 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Retention(RUNTIME)
 @Documented
 public @interface DbColumn {
+    @Target({})
+    @Retention(RUNTIME)
+    @Documented
+    @interface CompositeIndex {
+        String name();
+
+        int order();
+
+        IndexKind type() default IndexKind.INDEX_ASC;
+    }
+
     enum IndexKind {
         NONE,
         INDEX_ASC,
@@ -28,4 +39,6 @@ public @interface DbColumn {
     boolean autoIncrement() default false;
 
     IndexKind index() default IndexKind.NONE;
+
+    CompositeIndex[] compositeIndexes() default {};
 }

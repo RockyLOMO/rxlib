@@ -9,6 +9,7 @@ import org.rx.annotation.DbColumn;
 import org.rx.bean.*;
 import org.rx.core.*;
 import org.rx.core.cache.H2CacheItem;
+import org.rx.exception.InvalidException;
 import org.rx.exception.TraceHandler;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
@@ -19,6 +20,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.rx.core.Extends.sleep;
 import static org.rx.core.Sys.toJsonString;
@@ -41,6 +43,34 @@ public class EntityDatabaseTest extends AbstractTester {
         @DbColumn(primaryKey = true)
         String id;
         String name;
+        Integer age;
+    }
+
+    @Data
+    public static class MixedCompositeIndexEntity implements Serializable {
+        @DbColumn(primaryKey = true)
+        Long id;
+        @DbColumn(compositeIndexes = {
+                @DbColumn.CompositeIndex(name = "name_age", order = 1, type = DbColumn.IndexKind.INDEX_ASC)
+        })
+        String name;
+        @DbColumn(compositeIndexes = {
+                @DbColumn.CompositeIndex(name = "name_age", order = 2, type = DbColumn.IndexKind.UNIQUE_INDEX_ASC)
+        })
+        Integer age;
+    }
+
+    @Data
+    public static class DuplicateCompositeOrderEntity implements Serializable {
+        @DbColumn(primaryKey = true)
+        Long id;
+        @DbColumn(compositeIndexes = {
+                @DbColumn.CompositeIndex(name = "name_age", order = 1)
+        })
+        String name;
+        @DbColumn(compositeIndexes = {
+                @DbColumn.CompositeIndex(name = "name_age", order = 1)
+        })
         Integer age;
     }
 
@@ -112,6 +142,46 @@ public class EntityDatabaseTest extends AbstractTester {
             assertTrue(found);
         } finally {
             db.dropMapping(H2CacheItem.class);
+            db.close();
+        }
+    }
+
+    @Test
+    public void testCompositeExpirationIdIndexCreated() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/cache_item_composite_index"), null);
+        db.createMapping(H2CacheItem.class);
+        try {
+            String tableName = db.tableName(H2CacheItem.class).toUpperCase();
+            String indexName = db.compositeIndexName(db.tableName(H2CacheItem.class), "expiration_id").toUpperCase();
+            DataTable dt = db.executeQuery(String.format("SELECT INDEX_NAME, COLUMN_NAME, ORDINAL_POSITION FROM INFORMATION_SCHEMA.INDEX_COLUMNS WHERE UPPER(TABLE_NAME)='%s' AND UPPER(INDEX_NAME)='%s' ORDER BY ORDINAL_POSITION ASC", tableName, indexName));
+            List<DataRow> rows = Linq.from(dt.getRows()).toList();
+            assertEquals(2, rows.size());
+            assertEquals("EXPIRATION", rows.get(0).get("COLUMN_NAME"));
+            assertEquals("ID", rows.get(1).get("COLUMN_NAME"));
+        } finally {
+            db.dropMapping(H2CacheItem.class);
+            db.close();
+        }
+    }
+
+    @Test
+    public void testCompositeIndexRejectsMixedUniqueKinds() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/composite_index_invalid_unique"), null);
+        try {
+            InvalidException e = assertThrows(InvalidException.class, () -> db.createMapping(MixedCompositeIndexEntity.class));
+            assertTrue(e.getMessage().contains("mixes unique and non-unique"));
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
+    public void testCompositeIndexRejectsDuplicateOrder() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/composite_index_invalid_order"), null);
+        try {
+            InvalidException e = assertThrows(InvalidException.class, () -> db.createMapping(DuplicateCompositeOrderEntity.class));
+            assertTrue(e.getMessage().contains("duplicate order"));
+        } finally {
             db.close();
         }
     }

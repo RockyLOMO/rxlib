@@ -12,7 +12,9 @@ import java.util.Map;
 public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
     private static final long serialVersionUID = -7742074465897857966L;
     @Getter
-    @DbColumn(primaryKey = true)
+    @DbColumn(primaryKey = true, compositeIndexes = {
+            @DbColumn.CompositeIndex(name = "expiration_id", order = 2)
+    })
     long id;
     @Getter
     @Setter

@@ -4,6 +4,7 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import com.sun.management.VMOption;
+import org.rx.core.IOC;
 import org.rx.core.Reflects;
 import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
@@ -20,6 +21,9 @@ import org.rx.io.EntityDatabase;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
+import org.rx.net.socks.RrpClient;
+import org.rx.net.socks.RrpConfig;
+import org.rx.net.socks.SocksContext;
 import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
 import org.springframework.service.SpringContext;
@@ -153,7 +157,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                     queryTotalMetricChartRows(db, filter, NET_CHART_METRICS));
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "runtime-state", false);
-            appendRuntimeState(body, request);
+            appendRuntimeState(body, request, filter);
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "incidents", false);
             appendIncidents(body, queryIncidents(db, filter));
@@ -293,7 +297,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</section>");
     }
 
-    private void appendRuntimeState(StringBuilder out, ServerRequest request) {
+    private void appendRuntimeState(StringBuilder out, ServerRequest request, Query filter) {
         Map<String, Object> vars = new HashMap<>();
         try {
             vars.put("jarFile", String.valueOf(Sys.getJarFile(this)));
@@ -334,6 +338,12 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             vars.put("requestHeadersError", e.toString());
             vars.put("requestHeaders", Collections.emptyList());
         }
+        vars.put("socksExtensions", socksExtensionRows());
+        vars.put("baseQueryHidden", renderBaseQueryHiddenFields(filter));
+        vars.put("omegaConfig", filter.omegaConfig);
+        vars.put("omegaxPort", filter.omegaxPort == null ? "" : String.valueOf(filter.omegaxPort));
+        vars.put("omegaResult", filter.omegaResult);
+        vars.put("omegaError", filter.omegaError);
         out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-runtime.html", vars));
     }
 
@@ -367,6 +377,52 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         row.put("key", key);
         row.put("value", value == null ? "" : String.valueOf(value));
         return row;
+    }
+
+    private List<Map<String, Object>> socksExtensionRows() {
+        List<Map<String, Object>> rows = new ArrayList<>(6);
+        try {
+            boolean enabled = IOC.isInit(RrpClient.class);
+            rows.add(keyValueRow("omega.rrpClient.registered", enabled));
+            if (enabled) {
+                RrpClient client = IOC.get(RrpClient.class);
+                rows.add(keyValueRow("omega.rrpClient.connected", client.isConnected()));
+                RrpConfig config = Reflects.readField(client, "config");
+                if (config != null) {
+                    rows.add(keyValueRow("omega.rrpClient.serverEndpoint", config.getServerEndpoint()));
+                    rows.add(keyValueRow("omega.rrpClient.bindPort", config.getBindPort()));
+                    rows.add(keyValueRow("omega.rrpClient.proxies", config.getProxies() == null ? 0 : config.getProxies().size()));
+                }
+            }
+        } catch (Throwable e) {
+            rows.add(keyValueRow("omega.error", e.toString()));
+        }
+        try {
+            boolean enabled = IOC.isInit(org.apache.sshd.server.SshServer.class);
+            rows.add(keyValueRow("omegax.sshServer.registered", enabled));
+            if (enabled) {
+                org.apache.sshd.server.SshServer server = IOC.get(org.apache.sshd.server.SshServer.class);
+                rows.add(keyValueRow("omegax.sshServer.port", server.getPort()));
+                rows.add(keyValueRow("omegax.sshServer.open", sshServerOpen(server)));
+            }
+        } catch (Throwable e) {
+            rows.add(keyValueRow("omegax.error", e.toString()));
+        }
+        return rows;
+    }
+
+    private boolean sshServerOpen(org.apache.sshd.server.SshServer server) {
+        try {
+            Object value = Reflects.invokeMethod(server, "isOpen");
+            return Boolean.TRUE.equals(value);
+        } catch (Throwable ignored) {
+        }
+        try {
+            Object value = Reflects.invokeMethod(server, "isClosed");
+            return !Boolean.TRUE.equals(value);
+        } catch (Throwable ignored) {
+        }
+        return true;
     }
 
     private void appendChartGroup(StringBuilder out, String title, List<Map<String, Object>> rows, String emptyText) {
@@ -1043,6 +1099,12 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         if ("vm-option".equals(action)) {
             return setVmOption(filter);
         }
+        if ("omega".equals(action)) {
+            return invokeOmega(filter);
+        }
+        if ("omegax".equals(action)) {
+            return invokeOmegax(filter);
+        }
         if ("tool-dns".equals(action) || "5".equals(action)) {
             resolveToolDns(filter);
             return "DNS resolve completed.";
@@ -1270,6 +1332,36 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         } catch (Throwable e) {
             filter.vmOptionError = e.toString();
             return "VM option update failed: " + e.toString();
+        }
+    }
+
+    private String invokeOmega(Query filter) {
+        filter.omegaResult = null;
+        filter.omegaError = null;
+        try {
+            SocksContext.omega(filter.omegaConfig);
+            filter.omegaResult = Strings.isBlank(filter.omegaConfig) ? "omega disabled." : "omega applied.";
+            return filter.omegaResult;
+        } catch (Throwable e) {
+            filter.omegaError = e.toString();
+            return "omega failed: " + e.toString();
+        }
+    }
+
+    private String invokeOmegax(Query filter) {
+        filter.omegaResult = null;
+        filter.omegaError = null;
+        if (filter.omegaxPort == null || filter.omegaxPort.intValue() <= 0) {
+            filter.omegaError = "omegax port is invalid.";
+            return filter.omegaError;
+        }
+        try {
+            SocksContext.omegax(filter.omegaxPort.intValue());
+            filter.omegaResult = "omegax started on port " + filter.omegaxPort + ".";
+            return filter.omegaResult;
+        } catch (Throwable e) {
+            filter.omegaError = e.toString();
+            return "omegax failed: " + e.toString();
         }
     }
 
@@ -1718,6 +1810,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         query.toolInvokeArgs = Strings.trim(firstQueryValue(request, "toolInvokeArgs", "args"));
         query.vmOptionName = Strings.trim(request.getQueryString().getFirst("vmOptionName"));
         query.vmOptionValue = Strings.trim(request.getQueryString().getFirst("vmOptionValue"));
+        query.omegaConfig = Strings.trim(request.getQueryString().getFirst("omegaConfig"));
+        query.omegaxPort = parseInt(request.getQueryString().getFirst("omegaxPort"));
         query.captureSeconds = boundedInt(request.getQueryString().getFirst("captureSeconds"),
                 DEFAULT_CAPTURE_SECONDS, 1, MAX_CAPTURE_SECONDS);
         query.captureTopN = boundedInt(request.getQueryString().getFirst("captureTopN"),
@@ -2109,6 +2203,10 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         String vmOptionValue;
         String vmOptionResult;
         String vmOptionError;
+        String omegaConfig;
+        Integer omegaxPort;
+        String omegaResult;
+        String omegaError;
         List<String> toolDnsAddresses;
         String toolDnsError;
         String toolExecOutput;

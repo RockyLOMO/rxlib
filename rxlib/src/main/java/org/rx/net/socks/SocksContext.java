@@ -40,7 +40,6 @@ public final class SocksContext extends EventArgs {
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
-    //FastThreadLocal不复用SocksContext，因为SocksContext组成了复合key
     public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         if (!USE_FAST_THREAD_LOCAL) {
             return new SocksContext(srcEp, dstEp);
@@ -88,14 +87,13 @@ public final class SocksContext extends EventArgs {
         return sc;
     }
 
-    public static void omega(String s) {
+    public static synchronized void omega(String s) {
         Class<RrpClient> t = RrpClient.class;
         if (Strings.isEmpty(s)) {
             IOC.unregister(t);
             return;
         }
-        RrpConfig c = fromJson(s, new TypeReference<RrpConfig>() {
-        }.getType());
+        RrpConfig c = fromJson(s, new TypeReference<RrpConfig>() {}.getType());
         RrpClient cli = new RrpClient(c);
         cli.connectAsync();
         IOC.register(t, cli);

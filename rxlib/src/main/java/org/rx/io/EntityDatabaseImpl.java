@@ -97,6 +97,14 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
     }
 
+    @RequiredArgsConstructor
+    static final class CompositeIndexColumn {
+        final String columnName;
+        final String fieldName;
+        final int order;
+        final DbColumn.IndexKind kind;
+    }
+
     static final String SQL_CREATE = "CREATE TABLE IF NOT EXISTS $TABLE\n" +
             "(\n" +
             "$CREATE_COLUMNS" +
@@ -579,6 +587,75 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         executeUpdate(sql);
     }
 
+    String compositeIndexName(String tableName, String indexName) {
+        String normalized = indexName.replaceAll("[^0-9A-Za-z_]+", "_");
+        return String.format("%s_%s_index", tableName, normalized);
+    }
+
+    static boolean isUniqueIndexKind(DbColumn.IndexKind kind) {
+        return kind == DbColumn.IndexKind.UNIQUE_INDEX_ASC || kind == DbColumn.IndexKind.UNIQUE_INDEX_DESC;
+    }
+
+    static boolean isDescIndexKind(DbColumn.IndexKind kind) {
+        return kind == DbColumn.IndexKind.INDEX_DESC || kind == DbColumn.IndexKind.UNIQUE_INDEX_DESC;
+    }
+
+    void throwCompositeIndexInvalid(String message, Object... args) {
+        log.warn(message, args);
+        throw new InvalidException(message, args);
+    }
+
+    void validateCompositeIndex(Class<?> entityType, String indexName, List<CompositeIndexColumn> columns) {
+        if (columns == null || columns.isEmpty()) {
+            return;
+        }
+        Map<Integer, CompositeIndexColumn> orderedColumns = new HashMap<>();
+        Boolean unique = null;
+        for (CompositeIndexColumn column : columns) {
+            if (column.kind == DbColumn.IndexKind.NONE) {
+                throwCompositeIndexInvalid("Composite index {} type NONE is not allowed on {}.{}", indexName, entityType.getSimpleName(), column.fieldName);
+            }
+
+            CompositeIndexColumn exists = orderedColumns.putIfAbsent(column.order, column);
+            if (exists != null) {
+                throwCompositeIndexInvalid("Composite index {} has duplicate order {} on {}.{} and {}.{}", indexName,
+                        column.order, entityType.getSimpleName(), exists.fieldName, entityType.getSimpleName(), column.fieldName);
+            }
+
+            boolean currentUnique = isUniqueIndexKind(column.kind);
+            if (unique == null) {
+                unique = currentUnique;
+                continue;
+            }
+            if (unique != currentUnique) {
+                throwCompositeIndexInvalid("Composite index {} mixes unique and non-unique definitions on {}.{}", indexName,
+                        entityType.getSimpleName(), column.fieldName);
+            }
+        }
+    }
+
+    void createCompositeIndex(String tableName, String indexName, List<CompositeIndexColumn> columns) {
+        if (columns == null || columns.isEmpty()) {
+            return;
+        }
+        columns.sort(Comparator.comparingInt(p -> p.order));
+        boolean unique = false;
+        StringBuilder cols = new StringBuilder();
+        for (CompositeIndexColumn column : columns) {
+            unique |= isUniqueIndexKind(column.kind);
+            boolean desc = isDescIndexKind(column.kind);
+            cols.append(column.columnName);
+            if (desc) {
+                cols.append(" DESC");
+            }
+            cols.append(",");
+        }
+        cols.setLength(cols.length() - 1);
+        String sql = String.format("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s);",
+                unique ? "UNIQUE " : Strings.EMPTY, compositeIndexName(tableName, indexName), tableName, cols);
+        executeUpdate(sql);
+    }
+
     String indexName(String tableName, String columnName) {
         return String.format("%s_%s_index", tableName, columnName);
     }
@@ -614,6 +691,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
             String pkName = null;
             Map<String, Tuple<Field, DbColumn>> columns = new LinkedHashMap<>();
+            Map<String, List<CompositeIndexColumn>> compositeIndexes = new LinkedHashMap<>();
             for (Field field : Reflects.getFieldMap(entityType).values()) {
                 if (Modifier.isStatic(field.getModifiers()) || Modifier.isTransient(field.getModifiers())) {
                     continue;
@@ -636,6 +714,16 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     if (dbColumn.autoIncrement()) {
                         extra += " auto_increment";
                     }
+                    for (DbColumn.CompositeIndex compositeIndex : dbColumn.compositeIndexes()) {
+                        if (Strings.isBlank(compositeIndex.name())) {
+                            throw new InvalidException("Composite index name is empty on {}.{}", entityType.getSimpleName(), field.getName());
+                        }
+                        if (compositeIndex.order() <= 0) {
+                            throw new InvalidException("Composite index order must gt 0 on {}.{}", entityType.getSimpleName(), field.getName());
+                        }
+                        compositeIndexes.computeIfAbsent(compositeIndex.name(), k -> new ArrayList<>())
+                                .add(new CompositeIndexColumn(colName, field.getName(), compositeIndex.order(), compositeIndex.type()));
+                    }
                 }
                 createCols.appendLine("\t`%s` %s%s,", colName, h2Type, extra);
                 if (dbColumn == null || !dbColumn.autoIncrement()) {
@@ -646,6 +734,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             }
             if (pkName == null) {
                 throw new InvalidException("Require a primaryKey mapping");
+            }
+            for (Map.Entry<String, List<CompositeIndexColumn>> entry : compositeIndexes.entrySet()) {
+                validateCompositeIndex(entityType, entry.getKey(), entry.getValue());
             }
 
             insert.setLength(insert.length() - 1).append(")");
@@ -673,6 +764,13 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                     createIndex(entityType, value.left.getName());
                 } catch (Exception e) {
                     log.warn("createIndex: {}", e.getMessage());
+                }
+            }
+            for (Map.Entry<String, List<CompositeIndexColumn>> entry : compositeIndexes.entrySet()) {
+                try {
+                    createCompositeIndex(tableName, entry.getKey(), entry.getValue());
+                } catch (Exception e) {
+                    log.warn("createCompositeIndex: {}", e.getMessage());
                 }
             }
 

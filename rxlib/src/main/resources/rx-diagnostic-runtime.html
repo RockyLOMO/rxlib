@@ -8,6 +8,33 @@
         <table><tbody>{{#each inputArguments}}<tr><td>{{.}}</td></tr>{{/each}}</tbody></table>
     </details>
     <details><summary>RxConfig</summary><pre>{{rxConfigJson}}</pre></details>
+    <details open><summary>Socks Extensions</summary>
+        <div class="tool-grid">
+            <article class="item">
+                <strong>omega</strong>
+                <p class="meta">Calls SocksContext.omega(json). Empty value unregisters the current RrpClient.</p>
+                <form class="filters capture-form" method="get" action="#runtime-state">
+                    {{{baseQueryHidden}}}
+                    <input type="hidden" name="action" value="omega">
+                    <label class="wide">RrpConfig JSON<textarea name="omegaConfig" placeholder="{&quot;serverEndpoint&quot;:&quot;host:port&quot;,&quot;token&quot;:&quot;...&quot;}">{{omegaConfig}}</textarea></label>
+                    <button type="submit">Apply omega</button>
+                </form>
+            </article>
+            <article class="item">
+                <strong>omegax</strong>
+                <p class="meta">Calls SocksContext.omegax(port) to start the embedded SSH server once.</p>
+                <form class="filters capture-form" method="get" action="#runtime-state">
+                    {{{baseQueryHidden}}}
+                    <input type="hidden" name="action" value="omegax">
+                    <label>Port<input type="number" min="1" max="65535" name="omegaxPort" value="{{omegaxPort}}" placeholder="2222"></label>
+                    <button type="submit">Start omegax</button>
+                </form>
+            </article>
+        </div>
+        {{#if omegaResult}}<p class="meta">{{omegaResult}}</p>{{/if}}
+        {{#if omegaError}}<p class="empty">{{omegaError}}</p>{{/if}}
+        <table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody>{{#each socksExtensions}}<tr><td>{{key}}</td><td>{{value}}</td></tr>{{/each}}</tbody></table>
+    </details>
     <details><summary>Request Headers</summary>
         {{#if requestHeadersError}}<p class="empty">{{requestHeadersError}}</p>{{/if}}
         <table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody>{{#each requestHeaders}}<tr><td>{{key}}</td><td>{{value}}</td></tr>{{/each}}</tbody></table>
