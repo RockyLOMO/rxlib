@@ -59,10 +59,10 @@ public final class SocksContext extends EventArgs {
         Channel outCh = outbound.channel();
         SocksContext prevSc = outCh.attr(SOCKS_CTX).get();
         if (prevSc != null && prevSc != sc) {
-            prevSc.upstream = null;
-//            if (!THREAD_CTX.isSet()) {
-            THREAD_CTX.set(prevSc);
-//            }
+            if (USE_FAST_THREAD_LOCAL) {
+                prevSc.upstream = null;
+                THREAD_CTX.set(prevSc);
+            }
         }
 
         sc.inbound = inbound;

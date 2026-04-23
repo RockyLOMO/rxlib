@@ -18,6 +18,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -195,6 +198,63 @@ class ShadowsocksServerIntegrationTest {
         }
     }
 
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
+    void shadowsocksUdpRoute_slowFirstRouteDoesNotBlockSecondClient() {
+        int proxyPort = 16282;
+        String method = CipherKind.AES_256_GCM.getCipherName();
+        String password = "slow-route-password";
+        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(proxyPort), method, password);
+        config.setUseDedicatedCryptoGroup(true);
+        ShadowsocksServer server = new ShadowsocksServer(config);
+
+        CountDownLatch firstRouteEntered = new CountDownLatch(1);
+        CountDownLatch secondRouteEntered = new CountDownLatch(1);
+        CountDownLatch releaseFirstRoute = new CountDownLatch(1);
+        AtomicInteger routeCalls = new AtomicInteger();
+        server.onUdpRoute.replace((s, e) -> {
+            int call = routeCalls.incrementAndGet();
+            if (call == 1) {
+                firstRouteEntered.countDown();
+                assertTrue(secondRouteEntered.await(3, TimeUnit.SECONDS), "second route should start while first route is blocked");
+                assertTrue(releaseFirstRoute.await(3, TimeUnit.SECONDS), "first route should be released");
+            } else if (call == 2) {
+                secondRouteEntered.countDown();
+            }
+            e.setUpstream(new org.rx.net.socks.upstream.Upstream(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT)));
+        });
+
+        DatagramSocket firstClient = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        DatagramSocket secondClient = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        firstClient.setSoTimeout(4000);
+        secondClient.setSoTimeout(4000);
+        try {
+            Thread.sleep(300);
+            ICrypto firstCrypto = ICrypto.get(method, password);
+            ICrypto secondCrypto = ICrypto.get(method, password);
+            firstCrypto.setForUdp(true);
+            secondCrypto.setForUdp(true);
+
+            byte[] firstPayload = "ss-first-slow-route".getBytes(StandardCharsets.UTF_8);
+            byte[] secondPayload = "ss-second-fast-route".getBytes(StandardCharsets.UTF_8);
+            sendUdpRequest(firstClient, proxyPort, firstCrypto, firstPayload);
+            assertTrue(firstRouteEntered.await(3, TimeUnit.SECONDS), "first route should start");
+
+            sendUdpRequest(secondClient, proxyPort, secondCrypto, secondPayload);
+            assertTrue(secondRouteEntered.await(3, TimeUnit.SECONDS), "second route should not be blocked by first route");
+
+            releaseFirstRoute.countDown();
+            assertArrayEquals(secondPayload, receiveUdpEcho(secondClient, secondCrypto));
+            assertArrayEquals(firstPayload, receiveUdpEcho(firstClient, firstCrypto));
+        } finally {
+            releaseFirstRoute.countDown();
+            firstClient.close();
+            secondClient.close();
+            server.close();
+        }
+    }
+
     static byte[] readAtLeast(InputStream in, int minLen, int maxLen, int timeoutMs) throws Exception {
         byte[] buf = new byte[maxLen];
         int read = 0;
@@ -208,6 +268,30 @@ class ShadowsocksServerIntegrationTest {
         byte[] out = new byte[read];
         System.arraycopy(buf, 0, out, 0, read);
         return out;
+    }
+
+    static void sendUdpRequest(DatagramSocket socket, int proxyPort, ICrypto crypto, byte[] payload) throws Exception {
+        ByteBuf buf = Unpooled.buffer();
+        UdpManager.encode(buf, "127.0.0.1", UDP_ECHO_PORT);
+        buf.writeBytes(payload);
+        byte[] req = toBytes(crypto.encrypt(buf));
+        socket.send(new java.net.DatagramPacket(req, req.length, InetAddress.getByName("127.0.0.1"), proxyPort));
+    }
+
+    static byte[] receiveUdpEcho(DatagramSocket socket, ICrypto crypto) throws Exception {
+        byte[] resp = new byte[1024];
+        java.net.DatagramPacket packet = new java.net.DatagramPacket(resp, resp.length);
+        socket.receive(packet);
+        ByteBuf decrypted = crypto.decrypt(Unpooled.wrappedBuffer(resp, 0, packet.getLength()));
+        try {
+            UnresolvedEndpoint addr = UdpManager.decode(decrypted);
+            assertEquals(UDP_ECHO_PORT, addr.getPort());
+            byte[] echoed = new byte[decrypted.readableBytes()];
+            decrypted.readBytes(echoed);
+            return echoed;
+        } finally {
+            decrypted.release();
+        }
     }
 
     static byte[] toBytes(ByteBuf buf) {

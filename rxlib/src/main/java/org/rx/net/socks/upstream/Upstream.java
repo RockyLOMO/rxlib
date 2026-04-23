@@ -7,6 +7,7 @@ import org.rx.net.SocketConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.SocketAddress;
+import java.util.concurrent.CompletableFuture;
 
 @Getter
 public class Upstream {
@@ -28,6 +29,11 @@ public class Upstream {
     }
 
     public void initChannel(Channel channel) {
+    }
+
+    public CompletableFuture<Void> initChannelAsync(Channel channel) {
+        initChannel(channel);
+        return CompletableFuture.completedFuture(null);
     }
 
     public SocketAddress connectAddressHint() {

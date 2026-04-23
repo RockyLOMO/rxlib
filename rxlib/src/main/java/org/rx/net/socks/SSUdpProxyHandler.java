@@ -4,8 +4,11 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.AttributeKey;
+import io.netty.util.concurrent.EventExecutor;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Tasks;
 import org.rx.core.cache.MemoryCache;
+import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -13,7 +16,9 @@ import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
+import java.util.ArrayDeque;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
 
 @Slf4j
@@ -21,7 +26,14 @@ import java.util.concurrent.ConcurrentMap;
 public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     public static final AttributeKey<ConcurrentMap<RouteKey, SocksContext>> ATTR_ROUTE_MAP =
             AttributeKey.valueOf("ssUdpRouteMap");
+    static final AttributeKey<ConcurrentMap<RouteKey, RouteInitState>> ATTR_ROUTE_INIT_MAP =
+            AttributeKey.valueOf("ssUdpRouteInitMap");
+    static final AttributeKey<LastRoute> ATTR_LAST_ROUTE = AttributeKey.valueOf("ssUdpLastRoute");
     static final String REDUNDANT_DECODER_NAME = "SS_UDP_REDUNDANT_DECODER";
+    static final String COMPRESS_DECODER_NAME = "SS_UDP_COMPRESS_DECODER";
+    static final int MAX_PENDING_ROUTE_PACKETS = 32;
+    static final int MAX_PENDING_ROUTE_BYTES = 256 * 1024;
+    static final int DEFAULT_OUTBOUND_IDLE_SECONDS = 120;
 
     static final class RouteKey {
         final InetSocketAddress source;
@@ -52,6 +64,35 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         }
     }
 
+    static final class LastRoute {
+        final InetSocketAddress source;
+        final UnresolvedEndpoint destination;
+        final SocksContext context;
+
+        LastRoute(InetSocketAddress source, UnresolvedEndpoint destination, SocksContext context) {
+            this.source = source;
+            this.destination = destination;
+            this.context = context;
+        }
+
+        boolean matches(InetSocketAddress source, UnresolvedEndpoint destination) {
+            return Objects.equals(this.source, source) && Objects.equals(this.destination, destination);
+        }
+    }
+
+    static final class PendingPacket {
+        final ByteBuf content;
+
+        PendingPacket(ByteBuf content) {
+            this.content = content;
+        }
+    }
+
+    static final class RouteInitState {
+        final ArrayDeque<PendingPacket> pendingPackets = new ArrayDeque<>();
+        int pendingBytes;
+    }
+
     private static InetSocketAddress relayAddress(Upstream upstream, Channel channel) {
         return upstream instanceof SocksUdpUpstream ? ((SocksUdpUpstream) upstream).getUdpRelayAddress(channel) : null;
     }
@@ -60,12 +101,35 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         if (!(upstream instanceof SocksUdpUpstream)) {
             return;
         }
-        if (pipeline.get(REDUNDANT_DECODER_NAME) != null || pipeline.get(UdpRedundantDecoder.class) != null) {
+        // SS -> socks a 不需要做冗余/压缩发送，但 socks a -> 本地 relay 的回包可能带 RDNT / UCMP 头；
+        // 这里只补回程 decoder，负责去重、解压、剥头，不安装 encoder 避免把本地跳也放大。
+        if (pipeline.get(REDUNDANT_DECODER_NAME) == null && pipeline.get(UdpRedundantDecoder.class) == null) {
+            pipeline.addLast(REDUNDANT_DECODER_NAME, new UdpRedundantDecoder());
+        }
+        if (pipeline.get(COMPRESS_DECODER_NAME) == null && pipeline.get(UdpCompressDecoder.class) == null) {
+            pipeline.addLast(COMPRESS_DECODER_NAME, new UdpCompressDecoder());
+        }
+    }
+
+    static int resolveOutboundReadIdleSeconds(ShadowsocksConfig config) {
+        return config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0
+                ? config.getUdpReadTimeoutSeconds() : DEFAULT_OUTBOUND_IDLE_SECONDS;
+    }
+
+    static int resolveOutboundWriteIdleSeconds(ShadowsocksConfig config) {
+        return config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0
+                ? config.getUdpWriteTimeoutSeconds() : 0;
+    }
+
+    private static void installOutboundIdleHandler(ChannelPipeline pipeline, ShadowsocksConfig config) {
+        if (pipeline.get(ProxyChannelIdleHandler.class) != null) {
             return;
         }
-        // SS -> socks a 不需要做冗余发送，但 socks a -> 本地 relay 的回包可能带 RDNT 头；
-        // 这里仅补一个 decoder，负责去重/剥头，不安装 encoder 避免把本地跳也放大。
-        pipeline.addLast(REDUNDANT_DECODER_NAME, new UdpRedundantDecoder());
+        int readIdleSeconds = resolveOutboundReadIdleSeconds(config);
+        int writeIdleSeconds = resolveOutboundWriteIdleSeconds(config);
+        if (readIdleSeconds > 0 || writeIdleSeconds > 0) {
+            pipeline.addLast(new ProxyChannelIdleHandler(readIdleSeconds, writeIdleSeconds));
+        }
     }
 
     private static DatagramPacket buildOutboundPacket(SocksContext sc, Channel outbound, UnresolvedEndpoint dstEp, ByteBuf payload) {
@@ -78,6 +142,234 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             return new DatagramPacket(UdpManager.socks5Encode(payload, dstEp), udpRelayAddr);
         }
         return new DatagramPacket(payload, upstream.getDestination().socketAddress());
+    }
+
+    private static boolean isRouteActive(SocksContext context) {
+        return context != null && context.outbound != null && context.outbound.channel().isActive();
+    }
+
+    private static void clearLastRoute(Channel inbound, RouteKey routeKey, SocksContext context) {
+        LastRoute lastRoute = inbound.attr(ATTR_LAST_ROUTE).get();
+        if (lastRoute != null && lastRoute.context == context && lastRoute.matches(routeKey.source, routeKey.destination)) {
+            inbound.attr(ATTR_LAST_ROUTE).set(null);
+        }
+    }
+
+    private static SocksContext lookupRoute(Channel inbound, ConcurrentMap<RouteKey, SocksContext> routeMap,
+                                            InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+        LastRoute lastRoute = inbound.attr(ATTR_LAST_ROUTE).get();
+        if (lastRoute != null && lastRoute.matches(srcEp, dstEp)) {
+            if (isRouteActive(lastRoute.context)) {
+                return lastRoute.context;
+            }
+            inbound.attr(ATTR_LAST_ROUTE).set(null);
+        }
+
+        RouteKey routeKey = new RouteKey(srcEp, dstEp);
+        SocksContext context = routeMap.get(routeKey);
+        if (context != null) {
+            if (!isRouteActive(context)) {
+                routeMap.remove(routeKey, context);
+                return null;
+            }
+            inbound.attr(ATTR_LAST_ROUTE).set(new LastRoute(srcEp, dstEp, context));
+        }
+        return context;
+    }
+
+    private static void runOnOutboundLoop(Channel outbound, Runnable task) {
+        if (outbound.eventLoop().inEventLoop()) {
+            task.run();
+        } else {
+            outbound.eventLoop().execute(task);
+        }
+    }
+
+    private static void writePacketNow(SocksContext sc, Channel outbound, UnresolvedEndpoint dstEp,
+                                       ByteBuf payload, InetSocketAddress srcEp, boolean debug) {
+        if (!outbound.isActive()) {
+            payload.release();
+            log.warn("SS UDP relay outbound closed for {}, drop packet from {}", dstEp, srcEp);
+            return;
+        }
+
+        DatagramPacket packet = null;
+        try {
+            packet = buildOutboundPacket(sc, outbound, dstEp, payload);
+        } catch (Throwable ex) {
+            log.warn("SS UDP relay build packet error for {}, drop packet from {}", dstEp, srcEp, ex);
+        }
+        if (packet == null) {
+            payload.release();
+            log.warn("SS UDP relay not ready for {}, drop packet from {}", dstEp, srcEp);
+            return;
+        }
+        outbound.writeAndFlush(packet);
+        if (debug) {
+            Upstream upstream = sc.getUpstream();
+            InetSocketAddress udpRelayAddr = relayAddress(upstream, outbound);
+            log.info("SS UDP OUT {} => {}[{}]", srcEp, udpRelayAddr != null ? udpRelayAddr : upstream.getDestination(), dstEp);
+        }
+    }
+
+    private static void writeWhenReady(SocksContext sc, UnresolvedEndpoint dstEp, ByteBuf payload,
+                                       InetSocketAddress srcEp, boolean debug) {
+        Channel outbound = sc.outbound.channel();
+        EndpointTracer.UDP.link(srcEp, outbound);
+        Upstream upstream = sc.getUpstream();
+        if (!outbound.isActive()) {
+            payload.release();
+            log.warn("SS UDP relay outbound closed for {}, drop packet from {}", dstEp, srcEp);
+            return;
+        }
+        if (!(upstream instanceof SocksUdpUpstream) || relayAddress(upstream, outbound) != null) {
+            runOnOutboundLoop(outbound, () -> writePacketNow(sc, outbound, dstEp, payload, srcEp, debug));
+            return;
+        }
+
+        upstream.initChannelAsync(outbound).whenComplete((v, error) ->
+                runOnOutboundLoop(outbound, () -> {
+                    if (error != null) {
+                        payload.release();
+                        log.warn("SS UDP relay init upstream error for {}, drop packet from {}", dstEp, srcEp, error);
+                        return;
+                    }
+                    writePacketNow(sc, outbound, dstEp, payload, srcEp, debug);
+                }));
+    }
+
+    private static void writeRoutePacket(SocksContext context, InetSocketAddress srcEp, UnresolvedEndpoint dstEp,
+                                         ByteBuf payload, boolean debug) {
+        if (context.outboundActive) {
+            writeWhenReady(context, dstEp, payload, srcEp, debug);
+            return;
+        }
+
+        ChannelFuture outboundFuture = context.outbound;
+        outboundFuture.addListener((ChannelFutureListener) f -> {
+            if (!f.isSuccess()) {
+                payload.release();
+                return;
+            }
+            writeWhenReady(context, dstEp, payload, srcEp, debug);
+        });
+    }
+
+    private ChannelFuture openOutboundChannel(ShadowsocksServer server, Upstream upstream,
+                                              InetSocketAddress srcEp, UdpManager.ChannelKey key) {
+        ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
+            ob.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(srcEp);
+            ensureRelayResponseDecoder(ob.pipeline(), upstream);
+            installOutboundIdleHandler(ob.pipeline(), server.config);
+            ob.pipeline().addLast(UdpBackendRelayHandler.DEFAULT);
+        }).attr(ShadowsocksConfig.SVR, server).bind(0);
+        chf.channel().closeFuture().addListener(f -> UdpManager.close(key));
+        return chf;
+    }
+
+    private void beginRouteInit(Channel inbound, EventExecutor routeExecutor, ShadowsocksServer server,
+                                RouteKey routeKey, RouteInitState initState,
+                                ConcurrentMap<RouteKey, SocksContext> routeMap,
+                                ConcurrentMap<RouteKey, RouteInitState> routeInitMap) {
+        Tasks.runAsync(() -> {
+            try {
+                SocksContext context = SocksContext.getCtx(routeKey.source, routeKey.destination);
+                server.raiseEvent(server.onUdpRoute, context);
+                Upstream upstream = context.getUpstream();
+                if (upstream == null) {
+                    throw new IllegalStateException("SS UDP route upstream is null for " + routeKey.destination);
+                }
+                ChannelFuture outboundFuture = UdpManager.open(UdpManager.ssRegion, routeKey.source, upstream.getConfig(),
+                        key -> openOutboundChannel(server, upstream, routeKey.source, key));
+                outboundFuture.addListener((ChannelFutureListener) f -> {
+                    if (!f.isSuccess()) {
+                        routeExecutor.execute(() -> onRouteInitFailure(routeKey, initState, routeInitMap, f.cause()));
+                        return;
+                    }
+
+                    Channel outbound = f.channel();
+                    CompletableFuture<Void> readyFuture;
+                    try {
+                        readyFuture = upstream.initChannelAsync(outbound);
+                    } catch (Throwable e) {
+                        readyFuture = new CompletableFuture<>();
+                        readyFuture.completeExceptionally(e);
+                    }
+                    readyFuture.whenComplete((v, error) ->
+                            routeExecutor.execute(() -> {
+                                if (error != null) {
+                                    onRouteInitFailure(routeKey, initState, routeInitMap, error);
+                                    return;
+                                }
+                                onRouteInitSuccess(inbound, routeExecutor, server, routeKey, context, outboundFuture, initState, routeMap, routeInitMap);
+                            }));
+                });
+            } catch (Throwable e) {
+                routeExecutor.execute(() -> onRouteInitFailure(routeKey, initState, routeInitMap, e));
+            }
+        });
+    }
+
+    private void onRouteInitSuccess(Channel inbound, EventExecutor routeExecutor, ShadowsocksServer server, RouteKey routeKey, SocksContext context,
+                                    ChannelFuture outboundFuture, RouteInitState initState,
+                                    ConcurrentMap<RouteKey, SocksContext> routeMap,
+                                    ConcurrentMap<RouteKey, RouteInitState> routeInitMap) {
+        if (!routeInitMap.remove(routeKey, initState)) {
+            releasePending(initState);
+            return;
+        }
+        if (!inbound.isActive()) {
+            releasePending(initState);
+            return;
+        }
+
+        SocksContext.markCtx(inbound, outboundFuture, context);
+        routeMap.put(routeKey, context);
+        inbound.attr(ATTR_LAST_ROUTE).set(new LastRoute(routeKey.source, routeKey.destination, context));
+        outboundFuture.channel().closeFuture().addListener(f ->
+                routeExecutor.execute(() -> {
+                    routeMap.remove(routeKey, context);
+                    clearLastRoute(inbound, routeKey, context);
+                }));
+        flushPending(server, routeKey, context, initState);
+    }
+
+    private void onRouteInitFailure(RouteKey routeKey, RouteInitState initState,
+                                    ConcurrentMap<RouteKey, RouteInitState> routeInitMap, Throwable error) {
+        routeInitMap.remove(routeKey, initState);
+        releasePending(initState);
+        log.warn("SS UDP async route init fail for {}", routeKey.destination, error);
+    }
+
+    private boolean enqueuePendingPacket(RouteInitState initState, ByteBuf inBuf, RouteKey routeKey) {
+        int bytes = inBuf.readableBytes();
+        if (initState.pendingPackets.size() >= MAX_PENDING_ROUTE_PACKETS
+                || initState.pendingBytes + bytes > MAX_PENDING_ROUTE_BYTES) {
+            log.warn("SS UDP pending route overflow for {} from {}, pendingPackets={}, pendingBytes={}",
+                    routeKey.destination, routeKey.source, initState.pendingPackets.size(), initState.pendingBytes);
+            return false;
+        }
+        initState.pendingPackets.addLast(new PendingPacket(inBuf.retain()));
+        initState.pendingBytes += bytes;
+        return true;
+    }
+
+    private void flushPending(ShadowsocksServer server, RouteKey routeKey, SocksContext context, RouteInitState initState) {
+        boolean debug = server.config.isDebug();
+        PendingPacket packet;
+        while ((packet = initState.pendingPackets.pollFirst()) != null) {
+            initState.pendingBytes -= packet.content.readableBytes();
+            writeRoutePacket(context, routeKey.source, routeKey.destination, packet.content, debug);
+        }
+        initState.pendingBytes = 0;
+    }
+
+    private void releasePending(RouteInitState initState) {
+        PendingPacket packet;
+        while ((packet = initState.pendingPackets.pollFirst()) != null) {
+            Bytes.release(packet.content);
+        }
+        initState.pendingBytes = 0;
     }
 
     @Slf4j
@@ -136,76 +428,29 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         InetSocketAddress srcEp = in.sender();
         UnresolvedEndpoint dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
-        boolean debug = server.config.isDebug();
-
         ConcurrentMap<RouteKey, SocksContext> routeMap = routeMap(inbound);
+        ConcurrentMap<RouteKey, RouteInitState> routeInitMap = routeInitMap(inbound);
+
+        SocksContext e = lookupRoute(inbound, routeMap, srcEp, dstEp);
+        if (e != null) {
+            writeRoutePacket(e, srcEp, dstEp, inBuf.retain(), server.config.isDebug());
+            return;
+        }
 
         RouteKey routeKey = new RouteKey(srcEp, dstEp);
-        SocksContext e = routeMap.get(routeKey);
-        if (e == null) {
-            e = SocksContext.getCtx(srcEp, dstEp);
-            server.raiseEvent(server.onUdpRoute, e);
-            Upstream upstream = e.getUpstream();
-            SocksContext finalE = e;
-            ChannelFuture outboundFuture = UdpManager.open(UdpManager.ssRegion, srcEp, upstream.getConfig(), k -> {
-                ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
-                    ob.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(srcEp);
-                    upstream.initChannel(ob);
-                    ensureRelayResponseDecoder(ob.pipeline(), upstream);
-                    if (server.config.getUdpReadTimeoutSeconds() > 0 || server.config.getUdpWriteTimeoutSeconds() > 0) {
-                        ob.pipeline().addLast(new ProxyChannelIdleHandler(server.config.getUdpReadTimeoutSeconds(), server.config.getUdpWriteTimeoutSeconds()));
-                    }
-                    ob.pipeline().addLast(UdpBackendRelayHandler.DEFAULT);
-                }).attr(ShadowsocksConfig.SVR, server).bind(0);
-                chf.channel().closeFuture().addListener(f -> UdpManager.close(k));
-                return chf;
-            });
-            SocksContext.markCtx(inbound, outboundFuture, e);
-            routeMap.put(routeKey, e);
+        RouteInitState initState = routeInitMap.get(routeKey);
+        boolean created = false;
+        if (initState == null) {
+            RouteInitState newState = new RouteInitState();
+            RouteInitState oldState = routeInitMap.putIfAbsent(routeKey, newState);
+            initState = oldState != null ? oldState : newState;
+            created = oldState == null;
         }
-
-        Upstream upstream = e.getUpstream();
-        Channel outbound = e.outbound.channel();
-        final SocksContext finalE = e;
-        EndpointTracer.UDP.link(srcEp, outbound);
-        inBuf.retain();
-        if (e.outboundActive) {
-            DatagramPacket packet = null;
-            try {
-                packet = buildOutboundPacket(e, outbound, dstEp, inBuf);
-            } catch (Throwable ex) {
-                log.warn("SS UDP relay build packet error for {}, drop packet from {}", dstEp, srcEp, ex);
-            }
-            if (packet == null) {
-                inBuf.release();
-                log.warn("SS UDP relay not ready for {}, drop packet from {}", dstEp, srcEp);
-                return;
-            }
-            outbound.writeAndFlush(packet);
-        } else {
-            ByteBuf finalInBuf = inBuf;
-            e.outbound.addListener((ChannelFutureListener) f -> {
-                if (!f.isSuccess()) {
-                    finalInBuf.release();
-                    return;
-                }
-                DatagramPacket packet = null;
-                try {
-                    packet = buildOutboundPacket(finalE, f.channel(), dstEp, finalInBuf);
-                } catch (Throwable ex) {
-                    log.warn("SS UDP relay build packet error for {}, drop packet from {}", dstEp, srcEp, ex);
-                }
-                if (packet == null) {
-                    finalInBuf.release();
-                    log.warn("SS UDP relay not ready after bind for {}, drop packet from {}", dstEp, srcEp);
-                    return;
-                }
-                f.channel().writeAndFlush(packet);
-            });
+        if (!enqueuePendingPacket(initState, inBuf, routeKey)) {
+            return;
         }
-        if (debug) {
-            InetSocketAddress udpRelayAddr = relayAddress(upstream, outbound);
-            log.info("SS UDP OUT {} => {}[{}]", srcEp, udpRelayAddr != null ? udpRelayAddr : upstream.getDestination(), dstEp);
+        if (created) {
+            beginRouteInit(inbound, ctx.executor(), server, routeKey, initState, routeMap, routeInitMap);
         }
     }
 
@@ -221,6 +466,16 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         }
         ConcurrentMap<RouteKey, SocksContext> newMap = MemoryCache.<RouteKey, SocksContext>rootBuilder().maximumSize(2048).build().asMap();
         ConcurrentMap<RouteKey, SocksContext> oldMap = inbound.attr(ATTR_ROUTE_MAP).setIfAbsent(newMap);
+        return oldMap != null ? oldMap : newMap;
+    }
+
+    private static ConcurrentMap<RouteKey, RouteInitState> routeInitMap(Channel inbound) {
+        ConcurrentMap<RouteKey, RouteInitState> routeInitMap = inbound.attr(ATTR_ROUTE_INIT_MAP).get();
+        if (routeInitMap != null) {
+            return routeInitMap;
+        }
+        ConcurrentMap<RouteKey, RouteInitState> newMap = MemoryCache.<RouteKey, RouteInitState>rootBuilder().maximumSize(2048).build().asMap();
+        ConcurrentMap<RouteKey, RouteInitState> oldMap = inbound.attr(ATTR_ROUTE_INIT_MAP).setIfAbsent(newMap);
         return oldMap != null ? oldMap : newMap;
     }
 }
