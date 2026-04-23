@@ -24,7 +24,6 @@ import org.springframework.service.SpringContext;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -922,88 +921,12 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         try {
             List<Object> args = Strings.isBlank(filter.toolInvokeArgs)
                     ? Collections.emptyList() : Sys.toJsonArray(filter.toolInvokeArgs);
-            Object result = invokeExpression(filter.toolInvokeExpr, args);
+            Object result = Reflects.invokeExpression(filter.toolInvokeExpr, args,
+                    p -> SpringContext.isInitiated() ? SpringContext.getBean(p, false) : null);
             filter.toolInvokeResult = Sys.toJsonString(result);
         } catch (Throwable e) {
             filter.toolInvokeError = e.toString();
         }
-    }
-
-    private Object invokeExpression(String expr, List<Object> args) throws Exception {
-        if (Strings.isBlank(expr)) {
-            throw new InvalidException("expr is empty.");
-        }
-        int methodSeparator = expr.lastIndexOf('.');
-        if (methodSeparator == -1) {
-            throw new InvalidException("Class name not found");
-        }
-
-        String methodName = expr.substring(methodSeparator + 1);
-        String className = expr.substring(0, methodSeparator);
-        int classSeparator = methodSeparator;
-        Class<?> type;
-        while (true) {
-            try {
-                type = Class.forName(className);
-                break;
-            } catch (ClassNotFoundException e) {
-                classSeparator = className.lastIndexOf('.');
-                if (classSeparator == -1) {
-                    throw e;
-                }
-                className = className.substring(0, classSeparator);
-            }
-        }
-
-        Object instance = SpringContext.isInitiated() ? SpringContext.getBean(type, false) : null;
-        Object target = instance == null ? type : instance;
-        Object member = null;
-        if (classSeparator != methodSeparator) {
-            String fieldExpr = expr.substring(classSeparator + 1, methodSeparator);
-            member = readMemberChain(target, fieldExpr);
-        }
-
-        Object invokeTarget = member != null ? member : target;
-        Class<?> invokeType = invokeTarget instanceof Class ? (Class<?>) invokeTarget : invokeTarget.getClass();
-        Method method = findMethod(invokeType, methodName, args.size());
-        Class<?>[] parameterTypes = method.getParameterTypes();
-        Object[] converted = new Object[args.size()];
-        for (int i = 0; i < converted.length; i++) {
-            Object arg = args.get(i);
-            try {
-                converted[i] = Sys.fromJson(arg, method.getGenericParameterTypes()[i]);
-            } catch (Throwable e) {
-                converted[i] = Reflects.changeType(arg, parameterTypes[i]);
-            }
-        }
-        return Reflects.invokeMethod(method, invokeTarget, converted);
-    }
-
-    private Object readMemberChain(Object target, String fieldExpr) {
-        Object member = null;
-        String path = fieldExpr;
-        while (true) {
-            int index = path.indexOf('.');
-            boolean end = index == -1;
-            String fieldName = end ? path : path.substring(0, index);
-            if (member == null) {
-                member = target instanceof Class ? Reflects.readStaticField((Class<?>) target, fieldName) : Reflects.readField(target, fieldName);
-            } else {
-                member = Reflects.readField(member, fieldName);
-            }
-            if (end) {
-                return member;
-            }
-            path = path.substring(index + 1);
-        }
-    }
-
-    private Method findMethod(Class<?> type, String methodName, int parameterCount) {
-        org.rx.core.Linq<Method> methods = Reflects.getMethodMap(type).get(methodName);
-        if (methods == null) {
-            throw new InvalidException("Method {} not found on {}", methodName, type.getName());
-        }
-        return methods.where(p -> p.getParameterCount() == parameterCount).first();
     }
 
     private String handleManualCapture(ServerRequest request, Query filter) {

@@ -70,24 +70,6 @@ public class HandlerUtil {
                         resText = "1";
                     }
                     break;
-                case 3:
-                    String type = request.getParameter("type");
-                    String jsonVal = request.getParameter("jsonVal");
-                    Object target;
-                    if (!Strings.isBlank(type)) {
-                        Class<?> clazz = Class.forName(type);
-                        target = SpringContext.getBean(clazz, false);
-                        if (target != null && jsonVal != null) {
-                            BeanMapper.DEFAULT.map(fromJson(jsonVal, clazz), target, BeanMapFlag.SKIP_NULL.flags());
-                        }
-                    } else {
-                        target = RxConfig.INSTANCE;
-                        if (jsonVal != null) {
-                            RxConfig.INSTANCE.refreshFrom(toJsonObject(jsonVal));
-                        }
-                    }
-                    resText = target;
-                    break;
                 case 10:
                     String startTime = request.getParameter("startTime");
                     DateTime st = startTime == null ? null : DateTime.valueOf(startTime);
@@ -101,10 +83,6 @@ public class HandlerUtil {
                     String metricsName = request.getParameter("metricsName");
                     Integer take = Reflects.changeType(request.getParameter("take"), Integer.class);
                     resText = queryTraces(st, et, level, kw, newest, methodOccurMost, methodNamePrefix, metricsName, take);
-                    break;
-
-                case 12:
-                    resText = invokeEx(params.getString("expr"), params.getJSONArray("args"));
                     break;
                 default:
                     resText = svrState(request, params);
@@ -193,77 +171,6 @@ public class HandlerUtil {
 
         result.put("metrics", Collections.emptyList());
         return result;
-    }
-
-    @SneakyThrows
-    Object invokeEx(String expr, List<Object> args) {
-        int ms = expr.lastIndexOf(DOT);
-        if (ms == -1) {
-            throw new InvalidException("Class name not fund");
-        }
-
-        String mn = expr.substring(ms + 1);
-        String cls = expr.substring(0, ms);
-
-        int cs = ms;
-        Class<?> kls;
-        while (true) {
-            try {
-                kls = Class.forName(cls);
-                break;
-            } catch (ClassNotFoundException e) {
-                if ((cs = cls.lastIndexOf(DOT)) == -1) {
-                    throw e;
-                }
-                cls = cls.substring(0, cs);
-            }
-        }
-
-        Object inst = ifNull(SpringContext.getBean(kls, false), kls);
-        Object member = null;
-        if (cs != ms) {
-            String fieldExpr = expr.substring(cs + 1, ms);
-            while (true) {
-                int f = fieldExpr.indexOf(DOT);
-                boolean end = f == -1;
-                String fn = end ? fieldExpr : fieldExpr.substring(0, f);
-                if (member == null) {
-                    member = inst instanceof Class ? Reflects.readStaticField((Class<?>) inst, fn) : Reflects.readField(inst, fn);
-                } else {
-                    member = Reflects.readField(member, fn);
-                }
-                if (end) {
-                    break;
-                }
-                fieldExpr = fieldExpr.substring(f + 1);
-            }
-        }
-
-        Object ai;
-        Class<?> at;
-        if (member != null) {
-            ai = member;
-            at = member.getClass();
-        } else if (inst instanceof Class) {
-            ai = inst;
-            at = (Class<?>) inst;
-        } else {
-            ai = inst;
-            at = inst.getClass();
-        }
-        Method method = Reflects.getMethodMap(at).get(mn).where(p -> p.getParameterCount() == args.size()).first();
-        Class<?>[] parameterTypes = method.getParameterTypes();
-        Object[] a = Linq.from(method.getGenericParameterTypes()).select((p, i) -> {
-            Object o = args.get(i);
-            try {
-                return fromJson(o, p);
-            } catch (Exception e) {
-                log.debug("invokeEx convert", e);
-                return Reflects.changeType(o, parameterTypes[i]);
-            }
-        }).toArray();
-        log.debug("invokeEx {}({})", method, toJsonString(a));
-        return Reflects.invokeMethod(method, ai, a);
     }
 
     @SneakyThrows

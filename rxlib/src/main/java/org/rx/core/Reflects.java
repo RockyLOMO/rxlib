@@ -518,6 +518,135 @@ public class Reflects extends ClassUtils {
         return (T) method.invoke(instance, args);
     }
 
+    public static Object invokeExpression(String expr, List<?> args) {
+        return invokeExpression(expr, args, null);
+    }
+
+    @SneakyThrows
+    public static Object invokeExpression(String expr, List<?> args, BiFunc<Class<?>, Object> instanceResolver) {
+        if (Strings.isBlank(expr)) {
+            throw new InvalidException("expr is empty");
+        }
+        if (args == null) {
+            args = Collections.emptyList();
+        }
+        int methodSeparator = expr.lastIndexOf('.');
+        if (methodSeparator == -1) {
+            throw new InvalidException("Class name not found");
+        }
+
+        String methodName = expr.substring(methodSeparator + 1);
+        String className = expr.substring(0, methodSeparator);
+        int classSeparator = methodSeparator;
+        Class<?> type;
+        while (true) {
+            try {
+                type = Class.forName(className);
+                break;
+            } catch (ClassNotFoundException e) {
+                classSeparator = className.lastIndexOf('.');
+                if (classSeparator == -1) {
+                    throw e;
+                }
+                className = className.substring(0, classSeparator);
+            }
+        }
+
+        Object instance = instanceResolver == null ? null : instanceResolver.apply(type);
+        Object target = instance == null ? type : instance;
+        if (classSeparator != methodSeparator) {
+            target = readExpressionMember(target, expr.substring(classSeparator + 1, methodSeparator));
+        }
+
+        Class<?> invokeType = target instanceof Class ? (Class<?>) target : target.getClass();
+        ResolvedInvocation invocation = resolveInvocation(invokeType, methodName, args);
+        log.debug("invokeExpression {}({})", invocation.method, toJsonString(invocation.args));
+        return invokeMethod(invocation.method, target, invocation.args);
+    }
+
+    private static Object readExpressionMember(Object target, String fieldExpr) {
+        Object member = null;
+        String path = fieldExpr;
+        while (true) {
+            int index = path.indexOf('.');
+            boolean end = index == -1;
+            String fieldName = end ? path : path.substring(0, index);
+            if (member == null) {
+                member = target instanceof Class ? readStaticField((Class<?>) target, fieldName) : readField(target, fieldName);
+            } else {
+                member = readField(member, fieldName);
+            }
+            if (end) {
+                return member;
+            }
+            path = path.substring(index + 1);
+        }
+    }
+
+    private static ResolvedInvocation resolveInvocation(Class<?> type, String methodName, List<?> args) {
+        Linq<Method> methods = getMethodMap(type).get(methodName);
+        if (methods == null) {
+            throw new InvalidException("Method {} not found on {}", methodName, type.getName());
+        }
+        ResolvedInvocation best = null;
+        for (Method method : methods.where(p -> p.getParameterCount() == args.size()).toList()) {
+            ResolvedInvocation current = tryResolveInvocation(method, args);
+            if (current != null && (best == null || current.score > best.score)) {
+                best = current;
+            }
+        }
+        if (best == null) {
+            throw new InvalidException("Method {}({} args) not found on {}", methodName, args.size(), type.getName());
+        }
+        return best;
+    }
+
+    private static ResolvedInvocation tryResolveInvocation(Method method, List<?> args) {
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        Type[] genericTypes = method.getGenericParameterTypes();
+        Object[] converted = new Object[args.size()];
+        int score = 0;
+        try {
+            for (int i = 0; i < converted.length; i++) {
+                ConvertedArg arg = convertExpressionArg(args.get(i), parameterTypes[i], genericTypes[i]);
+                converted[i] = arg.value;
+                score += arg.score;
+            }
+            return new ResolvedInvocation(method, converted, score);
+        } catch (Throwable e) {
+            log.debug("invokeExpression skip {} by {}", method, e.toString());
+            return null;
+        }
+    }
+
+    private static ConvertedArg convertExpressionArg(Object arg, Class<?> parameterType, Type genericType) {
+        Class<?> boxedType = parameterType.isPrimitive() ? primitiveToWrapper(parameterType) : parameterType;
+        if (arg == null) {
+            if (parameterType.isPrimitive()) {
+                throw new InvalidException("Primitive parameter {} can not accept null", parameterType);
+            }
+            return new ConvertedArg(null, 1);
+        }
+        if (boxedType.isInstance(arg)) {
+            return new ConvertedArg(arg, 8);
+        }
+        try {
+            Object value = fromJson(arg, genericType);
+            if (value == null && !parameterType.isPrimitive()) {
+                return new ConvertedArg(null, 5);
+            }
+            if (value != null && boxedType.isInstance(value)) {
+                return new ConvertedArg(value, 6);
+            }
+        } catch (Throwable ignored) {
+        }
+        Object value = changeType(arg, parameterType);
+        if (value == null && parameterType.isPrimitive()) {
+            throw new InvalidException("Primitive parameter {} can not accept null", parameterType);
+        }
+        return new ConvertedArg(value, boxedType.isInstance(value) ? 4 : 2);
+    }
+
     public static Method getInterfaceMethod(Method method) {
         Cache<Method, Object> cache = Cache.getInstance(MemoryCache.class);
         Object v = cache.get(method, k -> {
@@ -545,7 +674,7 @@ public class Reflects extends ClassUtils {
         return methodCache.getValue().get(type, k -> {
             Set<Method> all = new HashSet<>();
             for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-                Method[] declared = type.getDeclaredMethods(); //can't get kotlin private methods
+                Method[] declared = current.getDeclaredMethods(); //can't get kotlin private methods
                 for (Method method : declared) {
                     setAccess(method);
                 }
@@ -860,5 +989,18 @@ public class Reflects extends ClassUtils {
                 field.set(dto, null);
             }
         }
+    }
+
+    @RequiredArgsConstructor
+    static final class ResolvedInvocation {
+        final Method method;
+        final Object[] args;
+        final int score;
+    }
+
+    @RequiredArgsConstructor
+    static final class ConvertedArg {
+        final Object value;
+        final int score;
     }
 }
