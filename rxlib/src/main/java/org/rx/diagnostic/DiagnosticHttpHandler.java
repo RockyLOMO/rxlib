@@ -5,7 +5,9 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
+import org.rx.core.ShellCommand;
 import org.rx.core.Strings;
+import org.rx.exception.ExceptionLevel;
 import org.rx.exception.TraceHandler;
 import org.rx.exception.TraceHandler.ExceptionEntity;
 import org.rx.io.EntityDatabase;
@@ -15,6 +17,7 @@ import org.rx.net.http.ServerResponse;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.Clob;
@@ -159,6 +162,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendTabPanelStart(body, "file-size", false);
             appendFileSize(body, queryFileSizeRows(db, filter));
             appendTabPanelEnd(body);
+            appendTabPanelStart(body, "tools", false);
+            appendTools(body, filter);
+            appendTabPanelEnd(body);
             appendTabsEnd(body);
             return page("RXlib Diagnostics", body.toString());
         } catch (Throwable e) {
@@ -190,8 +196,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append("<label>To<input type=\"datetime-local\" name=\"to\" value=\"")
                 .append(escape(formatInputMillis(filter.toMillis))).append("\"></label>")
                 .append("<label>Limit<input type=\"number\" min=\"1\" max=\"")
-                .append(MAX_LIMIT).append("\" name=\"limit\" value=\"").append(filter.limit).append("\"></label>")
-                .append("<button type=\"submit\">Search</button>")
+                .append(MAX_LIMIT).append("\" name=\"limit\" value=\"").append(filter.limit).append("\"></label>");
+        appendExceptionFilterHiddenFields(out, filter);
+        out.append("<button type=\"submit\">Search</button>")
                 .append("<a class=\"button\" href=\"?\">Reset</a>")
                 .append("</form>")
                 .append("<div class=\"meta\">ThreadMXBean: ")
@@ -226,6 +233,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append("<a class=\"tab-link\" href=\"#file-io\" data-tab=\"file-io\">File I/O</a>")
                 .append("<a class=\"tab-link\" href=\"#net-io\" data-tab=\"net-io\">Net I/O</a>")
                 .append("<a class=\"tab-link\" href=\"#file-size\" data-tab=\"file-size\">File Size</a>")
+                .append("<a class=\"tab-link\" href=\"#tools\" data-tab=\"tools\">Tools</a>")
                 .append("</nav><div class=\"tab-panels\">");
     }
 
@@ -305,35 +313,50 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private void appendExceptionTraces(StringBuilder out, Query filter) {
-        out.append("<section class=\"card\"><h2>Exception Traces</h2>")
-                .append("<p class=\"meta\">Source: TraceHandler.queryExceptionTraces. It uses the global time range and limit.</p>");
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("baseQueryHidden", renderBaseQueryHiddenFields(filter));
+        vars.put("levelAll", Boolean.valueOf(filter.exceptionLevel == null));
+        vars.put("levels", exceptionLevelOptions(filter));
+        vars.put("exceptionKeyword", filter.exceptionKeyword);
+        vars.put("exceptionNewest", Boolean.valueOf(filter.exceptionNewest));
         List<ExceptionEntity> rows;
         try {
             Date start = filter.fromMillis == null ? null : new Date(filter.fromMillis.longValue());
             Date end = filter.toMillis == null ? null : new Date(filter.toMillis.longValue());
-            rows = TraceHandler.INSTANCE.queryExceptionTraces(start, end, null, null, Boolean.TRUE, Integer.valueOf(filter.limit));
+            rows = TraceHandler.INSTANCE.queryExceptionTraces(start, end, filter.exceptionLevel,
+                    filter.exceptionKeyword, Boolean.valueOf(filter.exceptionNewest), Integer.valueOf(filter.limit));
         } catch (Throwable e) {
-            out.append("<p class=\"empty\">Read exception traces failed: ")
-                    .append(escape(e.toString()))
-                    .append("</p></section>");
+            vars.put("error", e.toString());
+            out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-exceptions.html", vars));
             return;
         }
-        out.append("<table><thead><tr><th>Modified</th><th>Level</th><th>Count</th><th>App</th><th>Thread</th><th>Messages</th><th>Stack</th></tr></thead><tbody>");
-        if (rows.isEmpty()) {
-            appendEmptyRow(out, 7, "No exception trace found in the selected range.");
-        }
+        List<Map<String, Object>> viewRows = new ArrayList<>(rows.size());
         for (ExceptionEntity row : rows) {
-            out.append("<tr><td>").append(formatMillis(row.getModifyTime())).append("</td><td>")
-                    .append(escape(String.valueOf(row.getLevel()))).append("</td><td>")
-                    .append(row.getOccurCount()).append("</td><td>")
-                    .append(escape(row.getAppName())).append("</td><td>")
-                    .append(escape(row.getThreadName())).append("</td><td>")
-                    .append(formatExceptionMessages(row.getMessages())).append("</td><td>")
-                    .append("<details><summary>Stack</summary><pre>")
-                    .append(escape(row.getStackTrace()))
-                    .append("</pre></details></td></tr>");
+            Map<String, Object> view = new HashMap<>();
+            view.put("modified", formatMillis(row.getModifyTime()));
+            view.put("id", Long.valueOf(row.getId()));
+            view.put("level", row.getLevel() == null ? "" : row.getLevel().name());
+            view.put("count", Integer.valueOf(row.getOccurCount()));
+            view.put("app", row.getAppName());
+            view.put("thread", row.getThreadName());
+            view.put("messagesHtml", formatExceptionMessages(row.getMessages()));
+            view.put("stackTrace", row.getStackTrace());
+            viewRows.add(view);
         }
-        out.append("</tbody></table></section>");
+        vars.put("rows", viewRows);
+        vars.put("empty", Boolean.valueOf(viewRows.isEmpty()));
+        out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-exceptions.html", vars));
+    }
+
+    private List<Map<String, Object>> exceptionLevelOptions(Query filter) {
+        List<Map<String, Object>> levels = new ArrayList<>(ExceptionLevel.values().length);
+        for (ExceptionLevel level : ExceptionLevel.values()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("name", level.name());
+            item.put("selected", Boolean.valueOf(level == filter.exceptionLevel));
+            levels.add(item);
+        }
+        return levels;
     }
 
     private void appendThreadCpu(StringBuilder out, List<Map<String, Object>> rows,
@@ -395,6 +418,24 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private void appendQueryHiddenFields(StringBuilder out, Query filter) {
+        appendBaseQueryHiddenFields(out, filter);
+        appendExceptionFilterHiddenFields(out, filter);
+    }
+
+    private void appendExceptionFilterHiddenFields(StringBuilder out, Query filter) {
+        if (filter.exceptionLevel != null) {
+            out.append("<input type=\"hidden\" name=\"exceptionLevel\" value=\"")
+                    .append(filter.exceptionLevel.name()).append("\">");
+        }
+        if (!Strings.isEmpty(filter.exceptionKeyword)) {
+            out.append("<input type=\"hidden\" name=\"exceptionKeyword\" value=\"")
+                    .append(escape(filter.exceptionKeyword)).append("\">");
+        }
+        out.append("<input type=\"hidden\" name=\"exceptionNewest\" value=\"")
+                .append(filter.exceptionNewest).append("\">");
+    }
+
+    private void appendBaseQueryHiddenFields(StringBuilder out, Query filter) {
         out.append("<input type=\"hidden\" name=\"from\" value=\"")
                 .append(escape(formatInputMillis(filter.fromMillis))).append("\">")
                 .append("<input type=\"hidden\" name=\"to\" value=\"")
@@ -405,6 +446,12 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             out.append("<input type=\"hidden\" name=\"metric\" value=\"")
                     .append(escape(filter.metric)).append("\">");
         }
+    }
+
+    private String renderBaseQueryHiddenFields(Query filter) {
+        StringBuilder out = new StringBuilder(128);
+        appendBaseQueryHiddenFields(out, filter);
+        return out.toString();
     }
 
     private void appendFileIo(StringBuilder out, List<Map<String, Object>> rows) {
@@ -469,6 +516,21 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                     .append(escape(value(row, "incident_id"))).append("</td></tr>");
         }
         out.append("</tbody></table></section>");
+    }
+
+    private void appendTools(StringBuilder out, Query filter) {
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("baseQueryHidden", renderBaseQueryHiddenFields(filter));
+        vars.put("toolHost", filter.toolHost);
+        vars.put("toolCmd", filter.toolCmd);
+        vars.put("toolWorkspace", filter.toolWorkspace);
+        vars.put("dnsAddresses", filter.toolDnsAddresses == null ? Collections.emptyList() : filter.toolDnsAddresses);
+        vars.put("dnsError", filter.toolDnsError);
+        vars.put("execOutput", filter.toolExecOutput);
+        vars.put("execError", filter.toolExecError);
+        vars.put("execTimedOut", Boolean.valueOf(filter.toolExecTimedOut));
+        vars.put("execElapsedMillis", filter.toolExecElapsedMillis == null ? "" : filter.toolExecElapsedMillis);
+        out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-tools.html", vars));
     }
 
     private void appendMetrics(StringBuilder out, List<Map<String, Object>> rows,
@@ -691,7 +753,66 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         if ("thread-mx".equals(action)) {
             return setThreadMxEnabled(Boolean.parseBoolean(request.getQueryString().getFirst("enabled")));
         }
+        if ("tool-dns".equals(action) || "5".equals(action)) {
+            resolveToolDns(filter);
+            return "DNS resolve completed.";
+        }
+        if ("tool-exec".equals(action) || "13".equals(action)) {
+            execToolCommand(filter);
+            return "Command execution completed.";
+        }
         return handleManualCapture(request, filter);
+    }
+
+    private void resolveToolDns(Query filter) {
+        filter.toolDnsAddresses = Collections.emptyList();
+        filter.toolDnsError = null;
+        if (Strings.isBlank(filter.toolHost)) {
+            filter.toolDnsError = "host is empty.";
+            return;
+        }
+        try {
+            InetAddress[] addresses = InetAddress.getAllByName(filter.toolHost);
+            List<String> result = new ArrayList<>(addresses.length);
+            for (InetAddress address : addresses) {
+                result.add(address.getHostAddress());
+            }
+            filter.toolDnsAddresses = result;
+        } catch (Throwable e) {
+            filter.toolDnsError = e.toString();
+        }
+    }
+
+    private void execToolCommand(Query filter) {
+        filter.toolExecOutput = null;
+        filter.toolExecError = null;
+        filter.toolExecTimedOut = false;
+        if (Strings.isBlank(filter.toolCmd)) {
+            filter.toolExecError = "cmd is empty.";
+            return;
+        }
+        long started = System.currentTimeMillis();
+        StringBuilder echo = new StringBuilder(8192);
+        try (ShellCommand sc = new ShellCommand(filter.toolCmd, Strings.isBlank(filter.toolWorkspace) ? null : filter.toolWorkspace)) {
+            sc.onPrintOut.combine((s, e) -> {
+                if (echo.length() < 131072) {
+                    echo.append(e.toString());
+                }
+            });
+            sc.start();
+            boolean completed = sc.waitFor(30000L);
+            if (!completed) {
+                filter.toolExecTimedOut = true;
+                sc.kill();
+                echo.append("\nCommand timed out after 30000 ms and was killed.\n");
+            }
+            filter.toolExecOutput = echo.toString();
+        } catch (Throwable e) {
+            filter.toolExecError = e.toString();
+            filter.toolExecOutput = echo.toString();
+        } finally {
+            filter.toolExecElapsedMillis = Long.valueOf(System.currentTimeMillis() - started);
+        }
     }
 
     private String handleManualCapture(ServerRequest request, Query filter) {
@@ -1123,7 +1244,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private int limit(ServerRequest request) {
-        String value = request.getQueryString().getFirst("limit");
+        String value = firstQueryValue(request, "limit", "take");
         Integer parsed = parseInt(value);
         if (parsed == null) {
             return DEFAULT_LIMIT;
@@ -1134,8 +1255,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private Query parseQuery(ServerRequest request, int limit) {
         Query query = new Query();
         query.limit = limit;
-        Long fromMillis = parseTimeMillis(request.getQueryString().getFirst("from"));
-        Long toMillis = parseTimeMillis(request.getQueryString().getFirst("to"));
+        Long fromMillis = parseTimeMillis(firstQueryValue(request, "from", "startTime"));
+        Long toMillis = parseTimeMillis(firstQueryValue(request, "to", "endTime"));
         long now = System.currentTimeMillis();
         if (toMillis == null) {
             toMillis = Long.valueOf(now);
@@ -1151,11 +1272,22 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         query.fromMillis = fromMillis;
         query.toMillis = toMillis;
         query.metric = Strings.trim(request.getQueryString().getFirst("metric"));
+        query.exceptionLevel = parseExceptionLevel(firstQueryValue(request, "exceptionLevel", "level"));
+        query.exceptionKeyword = Strings.trim(firstQueryValue(request, "exceptionKeyword", "keyword"));
+        query.exceptionNewest = "true".equalsIgnoreCase(firstQueryValue(request, "exceptionNewest", "newest"));
+        query.toolHost = Strings.trim(firstQueryValue(request, "toolHost", "host"));
+        query.toolCmd = Strings.trim(firstQueryValue(request, "toolCmd", "cmd"));
+        query.toolWorkspace = Strings.trim(firstQueryValue(request, "toolWorkspace", "workspace"));
         query.captureSeconds = boundedInt(request.getQueryString().getFirst("captureSeconds"),
                 DEFAULT_CAPTURE_SECONDS, 1, MAX_CAPTURE_SECONDS);
         query.captureTopN = boundedInt(request.getQueryString().getFirst("captureTopN"),
                 DEFAULT_CAPTURE_TOP_N, 1, MAX_CAPTURE_TOP_N);
         return query;
+    }
+
+    private String firstQueryValue(ServerRequest request, String name, String fallbackName) {
+        String value = request.getQueryString().getFirst(name);
+        return value == null ? request.getQueryString().getFirst(fallbackName) : value;
     }
 
     private String stackLink(Object value) {
@@ -1168,7 +1300,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private String page(String title, String body) {
         Map<String, Object> vars = new HashMap<>();
-        vars.put("title", escape(title));
+        vars.put("title", title);
         vars.put("body", body);
         return HttpServer.renderHtmlTemplate("rx-diagnostic.html", vars);
     }
@@ -1372,6 +1504,17 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         }
     }
 
+    private static ExceptionLevel parseExceptionLevel(String value) {
+        if (Strings.isBlank(value)) {
+            return null;
+        }
+        try {
+            return ExceptionLevel.valueOf(value.trim());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private static int boundedInt(String value, int defaultValue, int min, int max) {
         Integer parsed = parseInt(value);
         int result = parsed == null ? defaultValue : parsed.intValue();
@@ -1455,6 +1598,18 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         Long fromMillis;
         Long toMillis;
         String metric;
+        ExceptionLevel exceptionLevel;
+        String exceptionKeyword;
+        boolean exceptionNewest;
+        String toolHost;
+        String toolCmd;
+        String toolWorkspace;
+        List<String> toolDnsAddresses;
+        String toolDnsError;
+        String toolExecOutput;
+        String toolExecError;
+        boolean toolExecTimedOut;
+        Long toolExecElapsedMillis;
         int captureSeconds;
         int captureTopN;
     }

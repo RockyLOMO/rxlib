@@ -311,7 +311,7 @@ public final class Main implements SocksRpcContract {
 
         DnsServer dnsSvr = new DnsServer(rssConf.shadowDnsPort);
         dnsSvr.setTtl(60 * rssConf.dnsTtlMinutes);
-        dnsSvr.setNegativeTtl(5);
+        dnsSvr.setNegativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL);
         dnsSvr.setInterceptors(dnsInterceptors);
         dnsSvr.addHostsFile("hosts.txt");
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(rssConf.shadowDnsPort);

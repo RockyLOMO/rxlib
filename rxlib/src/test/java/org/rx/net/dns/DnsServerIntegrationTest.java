@@ -94,10 +94,10 @@ public class DnsServerIntegrationTest extends AbstractTester {
     }
 
     @Test
-    void negativeTtl_defaultIs30() throws Exception {
+    void negativeTtl_defaultIs5() throws Exception {
         DnsServer server = new DnsServer(freePort(), Collections.emptyList());
         try {
-            assertEquals(30, server.getNegativeTtl());
+            assertEquals(DnsServer.DEFAULT_NEGATIVE_TTL, server.getNegativeTtl());
             server.setNegativeTtl(60);
             assertEquals(60, server.getNegativeTtl());
         } finally {

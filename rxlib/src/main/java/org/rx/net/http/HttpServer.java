@@ -428,7 +428,7 @@ public class HttpServer extends Disposable {
     }
 
     public static String renderTemplate(CharSequence template, Map<String, Object> vars) {
-        return Strings.resolveVarExpression(template, vars);
+        return Strings.renderTemplate(template, vars);
     }
 
     @SneakyThrows

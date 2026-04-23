@@ -17,7 +17,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -88,6 +90,25 @@ public class HttpServerBlockingTest {
         String html = HttpServer.renderHtmlTemplate("rx-diagnostic.html", vars);
         assertTrue(html.contains("<title>Template OK</title>"));
         assertTrue(html.contains("<section>body</section>"));
+    }
+
+    @Test
+    public void renderTemplate_supportsSimpleHtmlTemplateSyntax() {
+        Map<String, Object> row = new HashMap<>();
+        row.put("name", "<rx>");
+        row.put("html", "<b>raw</b>");
+        List<Map<String, Object>> rows = Arrays.asList(row);
+
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("title", "T");
+        vars.put("rows", rows);
+
+        String html = HttpServer.renderTemplate("{{#if title}}<h1>{{title}}</h1>{{/if}}"
+                + "{{#each rows}}<p>{{@index}} {{name}} {{{html}}}</p>{{/each}}"
+                + "{{#unless missing}}<span>empty</span>{{/unless}}", vars);
+        assertTrue(html.contains("<h1>T</h1>"));
+        assertTrue(html.contains("<p>0 &lt;rx&gt; <b>raw</b></p>"));
+        assertTrue(html.contains("<span>empty</span>"));
     }
 
     @Test

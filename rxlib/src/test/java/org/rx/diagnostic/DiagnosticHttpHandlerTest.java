@@ -9,7 +9,9 @@ import org.rx.net.http.HttpServer;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
+import java.io.File;
 import java.net.ServerSocket;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -66,6 +68,9 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("ThreadMXBean:"));
                 assertTrue(html.contains("name=\"action\" value=\"thread-mx\""));
                 assertTrue(html.contains("Exception Traces"));
+                assertTrue(html.contains("name=\"exceptionLevel\""));
+                assertTrue(html.contains("name=\"exceptionKeyword\""));
+                assertTrue(html.contains("name=\"exceptionNewest\""));
                 assertTrue(html.contains("inc-http"));
                 assertTrue(html.contains("http.metric"));
                 assertTrue(html.contains("process.cpu.percent"));
@@ -81,6 +86,9 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("Top N"));
                 assertTrue(html.contains("Thread State"));
                 assertTrue(html.contains("Net I/O"));
+                assertTrue(html.contains("Tools"));
+                assertTrue(html.contains("name=\"toolHost\""));
+                assertTrue(html.contains("name=\"toolCmd\""));
                 assertTrue(html.contains("blocked-thread"));
                 assertTrue(html.contains("127.0.0.1:8080"));
                 assertTrue(html.contains("?stack=456"));
@@ -102,6 +110,29 @@ public class DiagnosticHttpHandlerTest {
 
                 HttpClient.Response stack = client.get(url + "?stack=456");
                 assertTrue(stack.bodyAsString().contains("stack body"));
+
+                HttpClient.Response exceptionFiltered = client.get(url + "?take=10&startTime="
+                        + (now - 1000L) + "&endTime=" + (now + 1000L)
+                        + "&level=SYSTEM&keyword=IllegalState&newest=true#exceptions");
+                String exceptionFilteredHtml = exceptionFiltered.bodyAsString();
+                assertTrue(exceptionFilteredHtml.contains("value=\"SYSTEM\" selected"));
+                assertTrue(exceptionFilteredHtml.contains("value=\"IllegalState\""));
+                assertTrue(exceptionFilteredHtml.contains("value=\"true\" selected"));
+                assertTrue(exceptionFilteredHtml.contains("latest 10 rows per section"));
+
+                HttpClient.Response dns = client.get(url + "?action=5&host=localhost");
+                String dnsHtml = dns.bodyAsString();
+                assertTrue(dnsHtml.contains("DNS Results"));
+                assertTrue(dnsHtml.contains("value=\"localhost\""));
+
+                String javaExe = System.getProperty("java.home") + File.separator + "bin" + File.separator
+                        + (File.separatorChar == '\\' ? "java.exe" : "java");
+                String cmd = "\"" + javaExe + "\" -version";
+                HttpClient.Response exec = client.get(url + "?action=13&cmd="
+                        + URLEncoder.encode(cmd, StandardCharsets.UTF_8.name()));
+                String execHtml = exec.bodyAsString();
+                assertTrue(execHtml.contains("Command execution completed"));
+                assertTrue(execHtml.toLowerCase().contains("version"));
 
                 ThreadMXBean threadMx = ManagementFactory.getThreadMXBean();
                 Boolean oldCpu = threadMx.isThreadCpuTimeSupported()

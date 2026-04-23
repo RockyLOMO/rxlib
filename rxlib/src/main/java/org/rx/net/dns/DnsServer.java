@@ -30,6 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class DnsServer extends Disposable {
+    public static final int DEFAULT_NEGATIVE_TTL = 5;
+
     public interface ResolveInterceptor {
         List<InetAddress> resolveHost(InetAddress srcIp, String host);
     }
@@ -48,7 +50,7 @@ public class DnsServer extends Disposable {
     final Map<String, RandomList<InetAddress>> hosts = new ConcurrentHashMap<>();
     @Getter
     @Setter
-    int negativeTtl = 30;
+    int negativeTtl = DEFAULT_NEGATIVE_TTL;
     RandomList<ResolveInterceptor> interceptors;
     Cache<String, List<InetAddress>> interceptorCache;
     final Cache<String, String> domainKeyCache = new MemoryCache<>(b -> b.maximumSize(4096));
