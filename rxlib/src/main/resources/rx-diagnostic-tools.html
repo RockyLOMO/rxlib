@@ -1,6 +1,31 @@
 <section class="card"><h2>Tools</h2>
-    <p class="meta">Manual tools migrated from HandlerUtil case 5 and case 13. They run only when you click the button.</p>
+    <p class="meta">Manual tools migrated from HandlerUtil case 3, 5, 12 and 13. They run only when you click the button.</p>
     <div class="tool-grid">
+        <article class="item danger">
+            <strong>Bean/Class Read Write</strong>
+            <p class="meta">Reads or updates RxConfig, a Spring bean by type, or a class/static member. JSON value is optional; empty means read only.</p>
+            <form class="filters capture-form" method="get" action="#tools">
+                {{{baseQueryHidden}}}
+                <label>Type<input type="text" name="toolBeanType" value="{{toolBeanType}}" placeholder="empty = RxConfig"></label>
+                <label>Member<input type="text" name="toolBeanMember" value="{{toolBeanMember}}" placeholder="optional field.path"></label>
+                <label class="wide">JSON Value<textarea name="toolBeanJson" placeholder="{&quot;field&quot;:&quot;value&quot;} or &quot;literal&quot;">{{toolBeanJson}}</textarea></label>
+                <button type="submit" name="action" value="tool-bean">Read / Write</button>
+            </form>
+            {{#if toolBeanError}}<p class="empty">{{toolBeanError}}</p>{{/if}}
+            {{#if toolBeanResult}}<pre class="tool-output">{{toolBeanResult}}</pre>{{/if}}
+        </article>
+        <article class="item danger">
+            <strong>Reflect Invoke</strong>
+            <p class="meta">Invokes expr such as org.example.Service.field.method. Args must be a JSON array.</p>
+            <form class="filters capture-form" method="get" action="#tools">
+                {{{baseQueryHidden}}}
+                <label class="wide">Expression<input type="text" name="toolInvokeExpr" value="{{toolInvokeExpr}}" placeholder="org.example.Type.method"></label>
+                <label class="wide">Args JSON<textarea name="toolInvokeArgs" placeholder="[1,&quot;text&quot;]">{{toolInvokeArgs}}</textarea></label>
+                <button type="submit" name="action" value="tool-invoke">Invoke</button>
+            </form>
+            {{#if toolInvokeError}}<p class="empty">{{toolInvokeError}}</p>{{/if}}
+            {{#if toolInvokeResult}}<pre class="tool-output">{{toolInvokeResult}}</pre>{{/if}}
+        </article>
         <article class="item">
             <strong>DNS Resolve</strong>
             <p class="meta">Uses InetAddress.getAllByName(host). This is a blocking local resolver call, so keep it manual.</p>

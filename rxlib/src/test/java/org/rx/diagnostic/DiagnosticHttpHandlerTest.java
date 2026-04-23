@@ -71,6 +71,7 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("name=\"exceptionLevel\""));
                 assertTrue(html.contains("name=\"exceptionKeyword\""));
                 assertTrue(html.contains("name=\"exceptionNewest\""));
+                assertTrue(html.contains("Rx metrics"));
                 assertTrue(html.contains("inc-http"));
                 assertTrue(html.contains("http.metric"));
                 assertTrue(html.contains("process.cpu.percent"));
@@ -89,6 +90,8 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("Tools"));
                 assertTrue(html.contains("name=\"toolHost\""));
                 assertTrue(html.contains("name=\"toolCmd\""));
+                assertTrue(html.contains("Bean/Class Read Write"));
+                assertTrue(html.contains("Reflect Invoke"));
                 assertTrue(html.contains("blocked-thread"));
                 assertTrue(html.contains("127.0.0.1:8080"));
                 assertTrue(html.contains("?stack=456"));
@@ -119,6 +122,7 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(exceptionFilteredHtml.contains("value=\"IllegalState\""));
                 assertTrue(exceptionFilteredHtml.contains("value=\"true\" selected"));
                 assertTrue(exceptionFilteredHtml.contains("latest 10 rows per section"));
+                assertTrue(exceptionFilteredHtml.contains("data-context-tab=\"exceptions\""));
 
                 HttpClient.Response dns = client.get(url + "?action=5&host=localhost");
                 String dnsHtml = dns.bodyAsString();
@@ -133,6 +137,17 @@ public class DiagnosticHttpHandlerTest {
                 String execHtml = exec.bodyAsString();
                 assertTrue(execHtml.contains("Command execution completed"));
                 assertTrue(execHtml.toLowerCase().contains("version"));
+
+                HttpClient.Response bean = client.get(url + "?action=3&member=rtoken");
+                String beanHtml = bean.bodyAsString();
+                assertTrue(beanHtml.contains("Bean/Class read write completed"));
+                assertTrue(beanHtml.contains("secret"));
+
+                HttpClient.Response invoke = client.get(url + "?action=12&expr=org.rx.core.Strings.trimVarExpressionName&args="
+                        + URLEncoder.encode("[\"${abc}\"]", StandardCharsets.UTF_8.name()));
+                String invokeHtml = invoke.bodyAsString();
+                assertTrue(invokeHtml.contains("Reflect invoke completed"));
+                assertTrue(invokeHtml.contains("abc"));
 
                 ThreadMXBean threadMx = ManagementFactory.getThreadMXBean();
                 Boolean oldCpu = threadMx.isThreadCpuTimeSupported()
