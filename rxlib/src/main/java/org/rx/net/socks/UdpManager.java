@@ -73,47 +73,6 @@ public final class UdpManager {
 //        return new InetSocketAddress(InetAddress.getByAddress(ipBytes), port);
 //    }
 
-    public static final byte ssRegion = 2;
-
-    @Getter
-    @RequiredArgsConstructor
-    public static class ChannelKey {
-        final byte region;
-        final InetSocketAddress source;
-        final SocketConfig config;
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == null || getClass() != o.getClass()) return false;
-            ChannelKey that = (ChannelKey) o;
-            return region == that.region && Objects.equals(source, that.source) && Objects.equals(config, that.config);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(region, source, config);
-        }
-    }
-
-    static final ConcurrentHashMap<ChannelKey, ChannelFuture> channels = new ConcurrentHashMap<>();
-
-    public static ChannelFuture open(byte region, InetSocketAddress srcEp, SocketConfig config,
-                                     BiFunc<ChannelKey, ChannelFuture> bindFn) {
-        ChannelKey key = new ChannelKey(region, srcEp, config);
-        return channels.computeIfAbsent(key, bindFn);
-    }
-
-    public static void close(ChannelKey ck) {
-        ChannelFuture chf = channels.remove(ck);
-        if (chf == null) {
-            log.warn("UDP error close fail {}", ck);
-            return;
-        }
-        Channel ch = chf.channel();
-        tryClose(SocksContext.ctx(ch).upstream);
-        ch.close();
-    }
-
     public static CompositeByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dst) {
         return socks5Encode(buf, dst.getHost(), dst.getPort());
     }
