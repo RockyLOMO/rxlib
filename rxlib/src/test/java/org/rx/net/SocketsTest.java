@@ -10,6 +10,7 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.epoll.Epoll;
 import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.handler.codec.compression.JdkZlibEncoder;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.resolver.DefaultAddressResolverGroup;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.core.RxConfig;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.socks.SocksConfig;
+import org.rx.net.support.UnresolvedEndpoint;
 
 import java.lang.reflect.Field;
 import java.net.InetAddress;
@@ -190,6 +192,38 @@ public class SocketsTest {
  
         assertNull(channel.pipeline().get(Sockets.ZIP_DECODER));
         assertNotNull(channel.pipeline().get(Sockets.ZIP_ENCODER));
+    }
+
+    @Test
+    public void testTcpCompressionLevelUsesConfiguredEncoder() {
+        SocketConfig config = new SocketConfig();
+        config.setTransportFlags(TransportFlags.COMPRESS_WRITE.flags());
+        config.setTcpCompressionLevel(5);
+
+        EmbeddedChannel channel = new EmbeddedChannel();
+        Sockets.addTcpClientHandler(channel, config);
+
+        assertTrue(channel.pipeline().get(Sockets.ZIP_ENCODER) instanceof JdkZlibEncoder);
+    }
+
+    @Test
+    public void testRemoveTcpCompressionHandlers() {
+        SocketConfig config = new SocketConfig();
+        config.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
+
+        EmbeddedChannel channel = new EmbeddedChannel();
+        Sockets.addTcpClientHandler(channel, config);
+
+        assertTrue(Sockets.removeTcpCompressionHandlers(channel));
+        assertNull(channel.pipeline().get(Sockets.ZIP_DECODER));
+        assertNull(channel.pipeline().get(Sockets.ZIP_ENCODER));
+    }
+
+    @Test
+    public void testShouldBypassTcpCompressionForEncryptedPorts() {
+        assertTrue(Sockets.shouldBypassTcpCompression(new UnresolvedEndpoint("example.com", 443)));
+        assertTrue(Sockets.shouldBypassTcpCompression(new UnresolvedEndpoint("example.com", 993)));
+        assertFalse(Sockets.shouldBypassTcpCompression(new UnresolvedEndpoint("example.com", 80)));
     }
 
     @Test

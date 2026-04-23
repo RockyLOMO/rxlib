@@ -16,6 +16,9 @@ import java.io.Serializable;
 @ToString
 public class UdpCompressConfig implements Serializable {
     private static final long serialVersionUID = 1L;
+    public static final int DEFAULT_COMPRESSION_LEVEL = 0;
+    public static final int DEFAULT_HIGH_COMPRESSION_LEVEL = 9;
+    public static final int MAX_COMPRESSION_LEVEL = 17;
 
     /**
      * 是否启用 UDP 压缩。
@@ -37,6 +40,11 @@ public class UdpCompressConfig implements Serializable {
      * 压缩后至少节省的比例。
      */
     private double minSavingsRatio = 0.12D;
+    /**
+     * LZ4 压缩等级。
+     * 0 表示保持 fast compressor；1..17 表示使用 high compressor 对应等级。
+     */
+    private int compressionLevel = DEFAULT_COMPRESSION_LEVEL;
     /**
      * 字典 id，0 表示无字典。当前实现阶段仅支持 0。
      */
@@ -66,6 +74,10 @@ public class UdpCompressConfig implements Serializable {
         this.minSavingsRatio = Math.max(0D, Math.min(1D, minSavingsRatio));
     }
 
+    public void setCompressionLevel(int compressionLevel) {
+        this.compressionLevel = compressionLevel <= 0 ? DEFAULT_COMPRESSION_LEVEL : Math.min(MAX_COMPRESSION_LEVEL, compressionLevel);
+    }
+
     public void setDictionaryId(int dictionaryId) {
         this.dictionaryId = (short) Math.max(0, Math.min(255, dictionaryId));
     }
@@ -84,6 +96,7 @@ public class UdpCompressConfig implements Serializable {
         config.setMinPayloadBytes(socksConfig.getUdpCompressMinPayloadBytes());
         config.setMinSavingsBytes(socksConfig.getUdpCompressMinSavingsBytes());
         config.setMinSavingsRatio(socksConfig.getUdpCompressMinSavingsRatio());
+        config.setCompressionLevel(socksConfig.getUdpCompressCompressionLevel());
         config.setDictionaryId(socksConfig.getUdpCompressDictionaryId());
         config.setAdaptiveBypass(socksConfig.isUdpCompressAdaptiveBypass());
         config.setAdaptiveBypassWindowSeconds(socksConfig.getUdpCompressAdaptiveBypassWindowSeconds());
@@ -99,6 +112,7 @@ public class UdpCompressConfig implements Serializable {
         socksConfig.setUdpCompressMinPayloadBytes(minPayloadBytes);
         socksConfig.setUdpCompressMinSavingsBytes(minSavingsBytes);
         socksConfig.setUdpCompressMinSavingsRatio(minSavingsRatio);
+        socksConfig.setUdpCompressCompressionLevel(compressionLevel);
         socksConfig.setUdpCompressDictionaryId(dictionaryId);
         socksConfig.setUdpCompressAdaptiveBypass(adaptiveBypass);
         socksConfig.setUdpCompressAdaptiveBypassWindowSeconds(adaptiveBypassWindowSeconds);

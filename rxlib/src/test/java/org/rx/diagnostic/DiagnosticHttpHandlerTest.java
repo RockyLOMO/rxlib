@@ -83,7 +83,7 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("Overview"));
                 assertTrue(html.contains("CPU Charts"));
                 assertTrue(html.contains("Disk Charts"));
-                assertTrue(html.contains("ThreadMXBean:"));
+                assertTrue(html.contains("ThreadMXBean"));
                 assertTrue(html.contains("name=\"action\" value=\"thread-mx\""));
                 assertTrue(html.contains("Exception Traces"));
                 assertTrue(html.contains("name=\"exceptionLevel\""));
@@ -92,7 +92,7 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("Method Traces"));
                 assertTrue(html.contains("name=\"methodNamePrefix\""));
                 assertTrue(html.contains("name=\"methodOccurMost\""));
-                assertTrue(html.contains("Rx metrics"));
+                assertTrue(html.contains("Rx Metrics"));
                 assertTrue(html.contains("inc-http"));
                 assertTrue(html.contains("http.metric"));
                 assertTrue(html.contains("process.cpu.percent"));
@@ -108,6 +108,8 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("Top N"));
                 assertTrue(html.contains("Thread State"));
                 assertTrue(html.contains("Net I/O"));
+                assertTrue(html.contains("net.* Charts"));
+                assertTrue(html.contains("diagnostic.netIoBytesPerSecondThreshold"));
                 assertTrue(html.contains("Tools"));
                 assertTrue(html.contains("name=\"toolHost\""));
                 assertTrue(html.contains("name=\"toolCmd\""));
@@ -117,6 +119,11 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("UnlockCommercialFeatures"));
                 assertTrue(html.contains("name=\"vmOptionName\""));
                 assertTrue(html.contains("Writable Options"));
+                assertTrue(html.contains("CPU available processors:"));
+                assertTrue(html.contains("diagnostic.cpuThresholdPercent"));
+                assertTrue(html.contains("diagnostic.threadBlockedThresholdCount"));
+                assertTrue(html.contains("diagnostic.diskFreePercentThreshold"));
+                assertTrue(html.contains("File.listRoots() Disk Usage"));
                 assertTrue(html.contains("blocked-thread"));
                 assertTrue(html.contains("127.0.0.1:8080"));
                 assertTrue(html.contains("?stack=456"));

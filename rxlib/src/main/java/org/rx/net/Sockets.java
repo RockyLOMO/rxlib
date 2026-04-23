@@ -53,6 +53,7 @@ import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.EndpointTracer;
+import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
@@ -108,6 +109,8 @@ public final class Sockets {
     public static final String ZIP_DECODER = "ZIP_DECODER";
     public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
     public static final AttributeKey<InetSocketAddress> ATTR_ORIGIN_REMOTE_ADDR = AttributeKey.valueOf("originRemoteAddr");
+    static final Set<Integer> TCP_COMPRESS_BYPASS_PORTS = Collections.unmodifiableSet(new HashSet<>(java.util.Arrays.asList(
+            22, 443, 465, 587, 636, 853, 989, 990, 993, 995, 3389, 8443, 9443)));
     static final String M_0 = "lookupAllHostAddr";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
@@ -405,6 +408,32 @@ public final class Sockets {
         }
     }
 
+    static ChannelHandler newTcpCompressionEncoder(SocketConfig config, ZlibWrapper zlib) {
+        int level = config != null ? config.getTcpCompressionLevel() : -1;
+        return level < 0 ? ZlibCodecFactory.newZlibEncoder(zlib) : ZlibCodecFactory.newZlibEncoder(zlib, level);
+    }
+
+    public static boolean removeTcpCompressionHandlers(Channel channel) {
+        if (channel == null) {
+            return false;
+        }
+        ChannelPipeline pipeline = channel.pipeline();
+        boolean removed = false;
+        if (pipeline.get(ZIP_ENCODER) != null) {
+            pipeline.remove(ZIP_ENCODER);
+            removed = true;
+        }
+        if (pipeline.get(ZIP_DECODER) != null) {
+            pipeline.remove(ZIP_DECODER);
+            removed = true;
+        }
+        return removed;
+    }
+
+    public static boolean shouldBypassTcpCompression(UnresolvedEndpoint dstEp) {
+        return dstEp != null && TCP_COMPRESS_BYPASS_PORTS.contains(dstEp.getPort());
+    }
+
     @SneakyThrows
     public static Channel addTcpServerHandler(Channel channel, SocketConfig config) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
@@ -428,7 +457,7 @@ public final class Sockets {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
             if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
+                pipeline.addLast(ZIP_ENCODER, newTcpCompressionEncoder(config, zlib));
             }
         }
 
@@ -459,7 +488,7 @@ public final class Sockets {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
             if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
+                pipeline.addLast(ZIP_ENCODER, newTcpCompressionEncoder(config, zlib));
             }
         }
         DiagnosticMetrics.installNetIoHandler(pipeline, DiagnosticMetrics.netComponent(config,
@@ -495,7 +524,7 @@ public final class Sockets {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
             if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
+                pipeline.addLast(ZIP_ENCODER, newTcpCompressionEncoder(config, zlib));
             }
         }
 
@@ -526,7 +555,7 @@ public final class Sockets {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
             if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                pipeline.addLast(ZIP_ENCODER, ZlibCodecFactory.newZlibEncoder(zlib));
+                pipeline.addLast(ZIP_ENCODER, newTcpCompressionEncoder(config, zlib));
             }
         }
         DiagnosticMetrics.installNetIoHandler(pipeline, DiagnosticMetrics.netComponent(config,

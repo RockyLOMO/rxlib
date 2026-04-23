@@ -143,6 +143,22 @@ public class UdpCompressTest {
         assertNull(channel.readInbound(), "重复副本应先去重，再只解压一次");
     }
 
+    @Test
+    public void testEncoderSupportsHighCompressionLevel() {
+        UdpCompressConfig config = buildConfig();
+        config.setCompressionLevel(UdpCompressConfig.DEFAULT_HIGH_COMPRESSION_LEVEL);
+        EmbeddedChannel channel = new EmbeddedChannel(new UdpCompressEncoder(config));
+        UdpRelayAttributes.initRedundantPeers(channel);
+        UdpRelayAttributes.addRedundantPeer(channel, REMOTE);
+
+        channel.writeOutbound(new DatagramPacket(Unpooled.wrappedBuffer(repeatedPayload(256)), REMOTE));
+
+        DatagramPacket out = channel.readOutbound();
+        assertNotNull(out);
+        out.release();
+        assertNull(channel.readOutbound());
+    }
+
     private static UdpCompressConfig buildConfig() {
         UdpCompressConfig config = new UdpCompressConfig();
         config.setEnabled(true);

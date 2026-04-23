@@ -21,6 +21,7 @@ public class UdpCompressEncoder extends ChannelOutboundHandlerAdapter {
     private final int minPayloadBytes;
     private final int minSavingsBytes;
     private final double minSavingsRatio;
+    private final int compressionLevel;
     private final short dictionaryId;
     private final UdpCompressStats stats;
 
@@ -38,6 +39,7 @@ public class UdpCompressEncoder extends ChannelOutboundHandlerAdapter {
         this.minPayloadBytes = config.getMinPayloadBytes();
         this.minSavingsBytes = config.getMinSavingsBytes();
         this.minSavingsRatio = config.getMinSavingsRatio();
+        this.compressionLevel = config.getCompressionLevel();
         this.dictionaryId = config.getDictionaryId();
         this.stats = new UdpCompressStats(config);
     }
@@ -89,7 +91,7 @@ public class UdpCompressEncoder extends ChannelOutboundHandlerAdapter {
 
     private DatagramPacket compress(ChannelHandlerContext ctx, DatagramPacket original,
                                     InetSocketAddress recipient, int payloadLen) {
-        int maxCompressedLen = UdpCompressSupport.maxCompressedLength(payloadLen);
+        int maxCompressedLen = UdpCompressSupport.maxCompressedLength(payloadLen, compressionLevel);
         ByteBuf encoded = ctx.alloc().directBuffer(UdpCompressSupport.HEADER_SIZE + maxCompressedLen);
         try {
             encoded.writeInt(UdpCompressSupport.HEADER_MAGIC);
@@ -100,7 +102,7 @@ public class UdpCompressEncoder extends ChannelOutboundHandlerAdapter {
 
             int dataOffset = encoded.writerIndex();
             int compressedLen = UdpCompressSupport.compress(original.content(), original.content().readerIndex(), payloadLen,
-                    encoded, dataOffset, maxCompressedLen);
+                    encoded, dataOffset, maxCompressedLen, compressionLevel);
             int totalLen = UdpCompressSupport.HEADER_SIZE + compressedLen;
             int savedBytes = payloadLen - totalLen;
             if (savedBytes <= 0) {

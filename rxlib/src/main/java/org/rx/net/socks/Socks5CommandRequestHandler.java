@@ -317,7 +317,28 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     log.info("socks5[{}] TCP {} => {} FRONTEND_CIPHER", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress());
                 }
             }
+            maybeBypassTcpCompression(inbound, outbound, e, config);
             log.info("socks5[{}] TCP {} => {} connected, dstEp={}[{}]", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.getFirstDestination());
         });
+    }
+
+    private void maybeBypassTcpCompression(Channel inbound, Channel outbound, SocksContext e, SocksConfig config) {
+        UnresolvedEndpoint dstEp = e.getFirstDestination();
+        if (!Sockets.shouldBypassTcpCompression(dstEp)) {
+            return;
+        }
+
+        boolean removed = Sockets.removeTcpCompressionHandlers(inbound);
+        removed |= Sockets.removeTcpCompressionHandlers(outbound);
+        if (!removed) {
+            return;
+        }
+
+        if (DiagnosticMetrics.isEnabled()) {
+            DiagnosticMetrics.record("socks.tcp.compress.bypass.count", 1D, "port=" + dstEp.getPort());
+        }
+        if (config.isDebug()) {
+            log.info("socks5[{}] TCP {} => {} BYPASS_COMPRESS dstEp={}", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp);
+        }
     }
 }

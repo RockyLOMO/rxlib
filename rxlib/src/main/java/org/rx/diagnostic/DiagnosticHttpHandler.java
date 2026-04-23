@@ -23,6 +23,7 @@ import org.rx.util.BeanMapFlag;
 import org.rx.util.BeanMapper;
 import org.springframework.service.SpringContext;
 
+import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.lang.reflect.Field;
@@ -168,11 +169,12 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             appendFileIo(body, queryFileIoRows(db, filter));
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "net-io", false);
-            appendNetIo(body, queryNetIoGroups(db, filter),
+            appendNetIo(body, queryMetricPrefixChartRows(db, filter, "net."), queryNetIoGroups(db, filter),
                     queryNetIoRows(db, filter));
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "file-size", false);
-            appendFileSize(body, queryFileSizeRows(db, filter));
+            appendFileSize(body, queryNamedMetricChartRows(db, filter, DISK_CHART_METRICS),
+                    queryFileSizeRows(db, filter));
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "tools", false);
             appendTools(body, filter);
@@ -218,15 +220,6 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         appendMethodFilterControls(out, filter);
         out.append("</div><button type=\"submit\">Search</button>")
                 .append("<a class=\"button\" href=\"?\">Reset</a>")
-                .append("</form>")
-                .append("<div class=\"meta\">ThreadMXBean: ")
-                .append(escape(threadMxStatus()))
-                .append("</div>")
-                .append("<form class=\"filters global-filter\" method=\"get\">");
-        appendQueryHiddenFields(out, filter);
-        out.append("<input type=\"hidden\" name=\"action\" value=\"thread-mx\">")
-                .append("<button type=\"submit\" name=\"enabled\" value=\"true\">Enable Thread CPU/Contention</button>")
-                .append("<button type=\"submit\" name=\"enabled\" value=\"false\">Disable Thread CPU/Contention</button>")
                 .append("</form></section>");
     }
 
@@ -246,7 +239,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                 .append("<a class=\"tab-link\" href=\"#exceptions\" data-tab=\"exceptions\">Exception Traces</a>")
                 .append("<a class=\"tab-link\" href=\"#method-traces\" data-tab=\"method-traces\">Method Traces</a>")
                 .append("<a class=\"tab-link\" href=\"#metrics\" data-tab=\"metrics\">Metrics</a>")
-                .append("<a class=\"tab-link\" href=\"#rxlib\" data-tab=\"rxlib\">Rx metrics</a>")
+                .append("<a class=\"tab-link\" href=\"#rxlib\" data-tab=\"rxlib\">Rx Metrics</a>")
                 .append("<a class=\"tab-link\" href=\"#thread-cpu\" data-tab=\"thread-cpu\">Thread CPU</a>")
                 .append("<a class=\"tab-link\" href=\"#thread-state\" data-tab=\"thread-state\">Thread State</a>")
                 .append("<a class=\"tab-link\" href=\"#file-io\" data-tab=\"file-io\">File I/O</a>")
@@ -278,6 +271,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                                 List<Map<String, Object>> diskRows,
                                 List<Map<String, Object>> netRows) {
         out.append("<section class=\"card\"><h2>Overview</h2>");
+        out.append("<p class=\"meta\">CPU available processors: ")
+                .append(Runtime.getRuntime().availableProcessors())
+                .append("</p>");
         appendChartGroup(out, "CPU Charts", cpuRows, "No CPU metric found in the selected range.");
         appendChartGroup(out, "Memory Charts", memoryRows, "No memory metric found in the selected range.");
         appendChartGroup(out, "Disk Charts", diskRows, "No disk metric found in the selected range.");
@@ -292,6 +288,74 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             return;
         }
         appendMetricCharts(out, rows);
+    }
+
+    private void appendThresholds(StringBuilder out, String title, List<Map<String, Object>> rows) {
+        out.append("<details class=\"thresholds\" open><summary>")
+                .append(escape(title))
+                .append("</summary><table><thead><tr><th>Config</th><th>Value</th><th>Meaning</th></tr></thead><tbody>");
+        for (Map<String, Object> row : rows) {
+            out.append("<tr><td>").append(escape(value(row, "name"))).append("</td><td>")
+                    .append(escape(value(row, "value"))).append("</td><td>")
+                    .append(escape(value(row, "meaning"))).append("</td></tr>");
+        }
+        out.append("</tbody></table></details>");
+    }
+
+    private List<Map<String, Object>> threadCpuThresholdRows() {
+        DiagnosticConfig c = currentConfig();
+        List<Map<String, Object>> rows = new ArrayList<>(5);
+        addThreshold(rows, "diagnostic.cpuThresholdPercent", formatPercent(c.getCpuThresholdPercent()), "CPU_HIGH starts when process.cpu.percent is at or above this value.");
+        addThreshold(rows, "diagnostic.cpuSustainMillis", formatMillisDuration(c.getCpuSustainMillis()), "CPU_HIGH must stay high for this duration before opening an incident.");
+        addThreshold(rows, "diagnostic.cpuTopThreads", String.valueOf(c.getCpuTopThreads()), "Number of top CPU threads captured as evidence.");
+        addThreshold(rows, "diagnostic.cpuEvidenceSamples", String.valueOf(c.getCpuEvidenceSamples()), "Number of automatic thread CPU evidence samples.");
+        addThreshold(rows, "diagnostic.cpuEvidenceIntervalMillis", formatMillisDuration(c.getCpuEvidenceIntervalMillis()), "Interval of each automatic thread CPU delta sample.");
+        return rows;
+    }
+
+    private List<Map<String, Object>> threadStateThresholdRows() {
+        DiagnosticConfig c = currentConfig();
+        List<Map<String, Object>> rows = new ArrayList<>(5);
+        addThreshold(rows, "diagnostic.threadStateEnabled", String.valueOf(c.isThreadStateEnabled()), "Master switch for WAITING/BLOCKED/deadlock checks.");
+        addThreshold(rows, "diagnostic.threadBlockedThresholdCount", String.valueOf(c.getThreadBlockedThresholdCount()), "THREAD_BLOCKED_HIGH starts when BLOCKED thread count reaches this value.");
+        addThreshold(rows, "diagnostic.threadWaitingThresholdCount", String.valueOf(c.getThreadWaitingThresholdCount()), "THREAD_WAITING_HIGH starts when WAITING/TIMED_WAITING thread count reaches this value.");
+        addThreshold(rows, "diagnostic.threadStateSustainMillis", formatMillisDuration(c.getThreadStateSustainMillis()), "Thread state incident must stay high for this duration.");
+        addThreshold(rows, "diagnostic.threadStateTopThreads", String.valueOf(c.getThreadStateTopThreads()), "Number of top state-duration threads captured as evidence.");
+        return rows;
+    }
+
+    private List<Map<String, Object>> netIoThresholdRows() {
+        DiagnosticConfig c = currentConfig();
+        List<Map<String, Object>> rows = new ArrayList<>(6);
+        addThreshold(rows, "diagnostic.netIoBytesPerSecondThreshold", formatBytes(c.getNetIoBytesPerSecondThreshold()) + "/s", "Fallback NET_IO_HIGH threshold when bandwidth threshold is not configured.");
+        addThreshold(rows, "diagnostic.netIoBandwidthBytesPerSecond", c.getNetIoBandwidthBytesPerSecond() <= 0L ? "disabled" : formatBytes(c.getNetIoBandwidthBytesPerSecond()) + "/s", "Configured link bandwidth used to derive the effective threshold.");
+        addThreshold(rows, "diagnostic.netIoBandwidthThresholdPercent", formatPercent(c.getNetIoBandwidthThresholdPercent()), "Percent of configured bandwidth that triggers NET_IO_HIGH.");
+        addThreshold(rows, "diagnostic.effectiveNetIoBytesPerSecondThreshold", formatBytes(c.effectiveNetIoBytesPerSecondThreshold()) + "/s", "Actual threshold currently used by NET_IO_HIGH.");
+        addThreshold(rows, "diagnostic.netIoSustainMillis", formatMillisDuration(c.getNetIoSustainMillis()), "NET_IO_HIGH must stay high for this duration.");
+        addThreshold(rows, "diagnostic.netIoSampleRate / netIoDiagSampleRate", formatRate(c.getNetIoSampleRate()) + " / " + formatRate(c.getNetIoDiagSampleRate()), "Stack/sample rate in LIGHT and DIAG levels.");
+        return rows;
+    }
+
+    private List<Map<String, Object>> fileSizeThresholdRows() {
+        DiagnosticConfig c = currentConfig();
+        List<Map<String, Object>> rows = new ArrayList<>(8);
+        addThreshold(rows, "diagnostic.diskFreePercentThreshold", formatPercent(c.getDiskFreePercentThreshold()), "DISK_SPACE_HIGH starts when free percent is at or below this value.");
+        addThreshold(rows, "diagnostic.diskMinFreeBytes", formatBytes(c.getDiskMinFreeBytes()), "DISK_SPACE_HIGH also starts when free bytes are at or below this value.");
+        addThreshold(rows, "diagnostic.diskScanEnabled", String.valueOf(c.isDiskScanEnabled()), "Whether to scan largest files after DISK_SPACE_HIGH.");
+        addThreshold(rows, "diagnostic.diskScanRoots", formatRoots(c.getDiskScanRoots()), "Roots scanned after incident. Empty means File.listRoots().");
+        addThreshold(rows, "diagnostic.diskScanMaxDepth", String.valueOf(c.getDiskScanMaxDepth()), "Maximum directory depth for evidence scan.");
+        addThreshold(rows, "diagnostic.diskScanMaxFiles", String.valueOf(c.getDiskScanMaxFiles()), "Maximum filesystem entries visited per root.");
+        addThreshold(rows, "diagnostic.diskScanTimeoutMillis", formatMillisDuration(c.getDiskScanTimeoutMillis()), "Maximum scan time per root.");
+        addThreshold(rows, "diagnostic.diskScanTopFiles", String.valueOf(c.getDiskScanTopFiles()), "Largest file samples persisted per root.");
+        return rows;
+    }
+
+    private void addThreshold(List<Map<String, Object>> rows, String name, String value, String meaning) {
+        Map<String, Object> row = new HashMap<>(3);
+        row.put("name", name);
+        row.put("value", value);
+        row.put("meaning", meaning);
+        rows.add(row);
     }
 
     private void appendStack(StringBuilder out, EntityDatabase db, String stackHash) {
@@ -398,6 +462,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                                  List<Map<String, Object>> stateChartRows, Query filter) {
         out.append("<section class=\"card\"><h2>Thread CPU</h2>")
                 .append("<p class=\"meta\">Automatic evidence is written after CPU_HIGH. Manual capture below records TopN thread CPU delta immediately without waiting for a threshold.</p>");
+        appendThresholds(out, "Trigger Config", threadCpuThresholdRows());
         appendManualCaptureForm(out, "thread-cpu", "thread-cpu", filter);
         appendChartGroup(out, "Thread State Counts", stateChartRows, "No thread CPU state count found in the selected range.");
         out.append("<table><thead><tr><th>Time</th><th>Thread</th><th>CPU</th><th>State</th><th>Stack</th></tr></thead><tbody>");
@@ -417,6 +482,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private void appendThreadState(StringBuilder out, List<Map<String, Object>> rows, Query filter) {
         out.append("<section class=\"card\"><h2>Thread State</h2>")
                 .append("<p class=\"meta\">Automatic evidence is written after BLOCKED/WAITING/DEADLOCK incidents. Manual capture samples thread states once per second without waiting for a threshold.</p>");
+        appendThresholds(out, "Trigger Config", threadStateThresholdRows());
         appendManualCaptureForm(out, "thread-state", "thread-state", filter);
         out.append("<table><thead><tr><th>Time</th><th>Thread</th><th>State</th><th>Duration</th><th>Blocked</th><th>Waited</th><th>Lock</th><th>Owner</th><th>Stack</th></tr></thead><tbody>");
         if (rows.isEmpty()) {
@@ -554,8 +620,11 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</tbody></table></section>");
     }
 
-    private void appendNetIo(StringBuilder out, List<Map<String, Object>> groupRows, List<Map<String, Object>> rows) {
+    private void appendNetIo(StringBuilder out, List<Map<String, Object>> chartRows,
+                             List<Map<String, Object>> groupRows, List<Map<String, Object>> rows) {
         out.append("<section class=\"card\"><h2>Net I/O</h2>");
+        appendThresholds(out, "Trigger Config", netIoThresholdRows());
+        appendChartGroup(out, "net.* Charts", chartRows, "No net.* metric found in the selected range.");
         out.append("<h3 class=\"chart-group-title\">By Endpoint</h3><table><thead><tr><th>Endpoint</th><th>Op</th><th>Min</th><th>Avg</th><th>Max</th><th>Total</th><th>Samples</th><th>Last</th></tr></thead><tbody>");
         if (groupRows.isEmpty()) {
             appendEmptyRow(out, 8, "No net I/O endpoint group data in the selected range.");
@@ -587,8 +656,12 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         out.append("</tbody></table></section>");
     }
 
-    private void appendFileSize(StringBuilder out, List<Map<String, Object>> rows) {
-        out.append("<section class=\"card\"><h2>File Size</h2><table><thead><tr><th>Time</th><th>Path</th><th>Size</th><th>Modified</th><th>Incident</th></tr></thead><tbody>");
+    private void appendFileSize(StringBuilder out, List<Map<String, Object>> rootRows, List<Map<String, Object>> rows) {
+        out.append("<section class=\"card\"><h2>File Size</h2>")
+                .append("<p class=\"meta\">Root charts come from File.listRoots() disk metrics. Top file samples are collected only after DISK_SPACE_HIGH to avoid scanning disks on the hot path.</p>");
+        appendThresholds(out, "Trigger Config", fileSizeThresholdRows());
+        appendChartGroup(out, "File.listRoots() Disk Usage", rootRows, "No root disk usage metric found in the selected range.");
+        out.append("<h3 class=\"chart-group-title\">Largest Files</h3><table><thead><tr><th>Time</th><th>Path</th><th>Size</th><th>Modified</th><th>Incident</th></tr></thead><tbody>");
         if (rows.isEmpty()) {
             appendEmptyRow(out, 5, "No file size sample yet. It is collected after DISK_SPACE_HIGH scans configured roots.");
         }
@@ -632,6 +705,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         vars.put("vmOptionValue", filter.vmOptionValue);
         vars.put("vmOptionResult", filter.vmOptionResult);
         vars.put("vmOptionError", filter.vmOptionError);
+        vars.put("threadMxStatus", threadMxStatus());
+        vars.put("baseQueryHidden", renderBaseQueryHiddenFields(filter));
         List<Map<String, Object>> writableRows = new ArrayList<>();
         List<Map<String, Object>> readonlyRows = new ArrayList<>();
         try {
@@ -678,7 +753,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     }
 
     private void appendRxlib(StringBuilder out, List<Map<String, Object>> chartRows) {
-        out.append("<section class=\"card\"><h2>Rx metrics</h2>")
+        out.append("<section class=\"card\"><h2>Rx Metrics</h2>")
                 .append("<p class=\"meta\">Internal RXlib component metrics: ThreadPool, WheelTimer, ObjectPool and EntityDatabase.</p>");
         if (chartRows.isEmpty()) {
             out.append("<p class=\"empty\">No RXlib metric found in the selected range.</p>");
@@ -1323,6 +1398,29 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         return rows;
     }
 
+    private List<Map<String, Object>> queryMetricPrefixChartRows(EntityDatabase db, Query filter, String prefix) {
+        List<Map<String, Object>> series = queryMetricPrefixSeries(db, filter, prefix);
+        if (series.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Map<String, Object>> rows = new ArrayList<>(series.size() * MAX_CHART_POINTS_PER_SERIES);
+        for (Map<String, Object> item : series) {
+            String metric = value(item, "metric");
+            String tags = value(item, "tags");
+            StringBuilder sql = new StringBuilder("SELECT * FROM (SELECT ts,metric,metric_value,COALESCE(tags,'') tags,incident_id,stack_hash"
+                    + " FROM diag_metric_sample WHERE 1=1");
+            List<Object> args = new ArrayList<>();
+            appendMetricWhere(sql, args, filter);
+            sql.append(" AND metric = ? AND COALESCE(tags,'') = ? ORDER BY ts DESC,id DESC LIMIT ?)"
+                    + " ORDER BY ts ASC");
+            args.add(metric);
+            args.add(tags);
+            args.add(Integer.valueOf(MAX_CHART_POINTS_PER_SERIES));
+            rows.addAll(query(db, sql.toString(), args.toArray()));
+        }
+        return rows;
+    }
+
     private List<Map<String, Object>> queryMetricSeries(EntityDatabase db, Query filter) {
         StringBuilder sql = new StringBuilder("SELECT metric,COALESCE(tags,'') tags,MAX(ts) last_ts,COUNT(*) sample_count"
                 + " FROM diag_metric_sample WHERE 1=1");
@@ -1345,6 +1443,17 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         appendMetricPrefixWhere(sql, args, RXLIB_METRIC_PREFIXES);
         sql.append(" GROUP BY metric,COALESCE(tags,'') ORDER BY metric ASC,last_ts DESC,sample_count DESC LIMIT ?");
         args.add(Integer.valueOf(MAX_RXLIB_CHART_SERIES));
+        return query(db, sql.toString(), args.toArray());
+    }
+
+    private List<Map<String, Object>> queryMetricPrefixSeries(EntityDatabase db, Query filter, String prefix) {
+        StringBuilder sql = new StringBuilder("SELECT metric,COALESCE(tags,'') tags,MAX(ts) last_ts,COUNT(*) sample_count"
+                + " FROM diag_metric_sample WHERE 1=1");
+        List<Object> args = new ArrayList<>();
+        appendMetricWhere(sql, args, filter);
+        sql.append(" AND metric LIKE ? GROUP BY metric,COALESCE(tags,'') ORDER BY metric ASC,last_ts DESC,sample_count DESC LIMIT ?");
+        args.add(prefix + "%");
+        args.add(Integer.valueOf(MAX_CHART_SERIES));
         return query(db, sql.toString(), args.toArray());
     }
 
@@ -1671,6 +1780,31 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             return "";
         }
         return String.format(Locale.ENGLISH, "%.3f ms", nanos / 1000000D);
+    }
+
+    private static String formatPercent(double value) {
+        return String.format(Locale.ENGLISH, "%.2f %%", value);
+    }
+
+    private static String formatRate(double value) {
+        return String.format(Locale.ENGLISH, "%.3f", value);
+    }
+
+    private static String formatRoots(List<File> roots) {
+        if (roots == null || roots.isEmpty()) {
+            return "File.listRoots()";
+        }
+        StringBuilder out = new StringBuilder();
+        for (File root : roots) {
+            if (root == null) {
+                continue;
+            }
+            if (out.length() != 0) {
+                out.append(", ");
+            }
+            out.append(root.getPath());
+        }
+        return out.length() == 0 ? "File.listRoots()" : out.toString();
     }
 
     private static String formatMillisDuration(long millis) {
