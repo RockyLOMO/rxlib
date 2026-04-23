@@ -40,7 +40,7 @@ public final class NetEventWait extends Disposable implements WaitHandle {
         }
     }
 
-    public static final String DEFAULT_URL_SUFFIX = "/mx/health?x=0";
+    public static final String DEFAULT_URL_SUFFIX = "/api/health?x=1";
     public static TripleFunc<InetSocketAddress, String, Set<String>> HTTP_SIGNAL_HANDLER;
     static final AttributeKey<Set<NetEventWait>> REF = AttributeKey.valueOf("Ref");
     static final Map<InetSocketAddress, NioDatagramChannel> channels = new ConcurrentHashMap<>(8);
@@ -88,9 +88,9 @@ public final class NetEventWait extends Disposable implements WaitHandle {
         this.multicastEndpoint = multicastEndpoint;
         idString = group + "@" + Integer.toHexString(hashCode());
         channel = channels.computeIfAbsent(multicastEndpoint, k -> (NioDatagramChannel) Sockets.udpBootstrap(null, true, c -> {
-                    c.attr(REF).set(Collections.newSetFromMap(Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.WEAK, AbstractReferenceMap.ReferenceStrength.HARD))));
-                    c.pipeline().addLast(Handler.DEFAULT);
-                })
+            c.attr(REF).set(Collections.newSetFromMap(Collections.synchronizedMap(new ReferenceIdentityMap<>(AbstractReferenceMap.ReferenceStrength.WEAK, AbstractReferenceMap.ReferenceStrength.HARD))));
+            c.pipeline().addLast(Handler.DEFAULT);
+        })
                 .bind(multicastEndpoint.getPort()).addListener((ChannelFutureListener) f -> {
                     if (!f.isSuccess()) {
                         log.error("multicast bind error {}", idString, f.cause());

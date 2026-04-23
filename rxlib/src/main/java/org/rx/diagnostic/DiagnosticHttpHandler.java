@@ -7,6 +7,7 @@ import com.sun.management.VMOption;
 import org.rx.core.Reflects;
 import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
+import org.rx.core.NtpClock;
 import org.rx.core.ShellCommand;
 import org.rx.core.Strings;
 import org.rx.core.Sys;
@@ -79,6 +80,13 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             "rx.thread_pool.", "rx.wheel_timer.", "rx.object_pool.", "rx.entity_db."
     };
     private static final Pattern SUMMARY_BYTES_PATTERN = Pattern.compile("([A-Za-z0-9_.-]*(?:BytesPerSecond|bytesPerSecond|Bytes|bytes))(=)(\\d+)");
+    private static final Pattern RTOKEN_JSON_FIELD_PATTERN = Pattern.compile("(\"rtoken\"\\s*:\\s*\")([^\"]*)\"", Pattern.CASE_INSENSITIVE);
+    private static final Comparator<Map<String, Object>> KEY_VALUE_ROW_COMPARATOR = new Comparator<Map<String, Object>>() {
+        @Override
+        public int compare(Map<String, Object> o1, Map<String, Object> o2) {
+            return value(o1, "key").compareToIgnoreCase(value(o2, "key"));
+        }
+    };
 
     private final DiagnosticConfig config;
 
@@ -118,10 +126,10 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         Query filter = parseQuery(request, limit);
         String actionMessage = handleAction(request, filter);
         String stackHash = request.getQueryString().getFirst("stack");
-        response.htmlBody(render(filter, stackHash, actionMessage));
+        response.htmlBody(render(request, filter, stackHash, actionMessage));
     }
 
-    private String render(Query filter, String stackHash, String actionMessage) {
+    private String render(ServerRequest request, Query filter, String stackHash, String actionMessage) {
         DiagnosticConfig config = currentConfig();
         if (config.isFileH2Storage() && DiagnosticFileSupport.h2StorageBytes(config.getH2File()) <= 0L) {
             StringBuilder body = new StringBuilder(256);
@@ -143,6 +151,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
                     queryNamedMetricChartRows(db, filter, MEMORY_CHART_METRICS),
                     queryNamedMetricChartRows(db, filter, DISK_CHART_METRICS),
                     queryTotalMetricChartRows(db, filter, NET_CHART_METRICS));
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "runtime-state", false);
+            appendRuntimeState(body, request);
             appendTabPanelEnd(body);
             appendTabPanelStart(body, "incidents", false);
             appendIncidents(body, queryIncidents(db, filter));
@@ -235,6 +246,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
     private void appendTabsStart(StringBuilder out) {
         out.append("<nav class=\"tabs\">")
                 .append("<a class=\"tab-link active\" href=\"#overview\" data-tab=\"overview\">Overview</a>")
+                .append("<a class=\"tab-link\" href=\"#runtime-state\" data-tab=\"runtime-state\">Runtime State</a>")
                 .append("<a class=\"tab-link\" href=\"#incidents\" data-tab=\"incidents\">Incidents</a>")
                 .append("<a class=\"tab-link\" href=\"#exceptions\" data-tab=\"exceptions\">Exception Traces</a>")
                 .append("<a class=\"tab-link\" href=\"#method-traces\" data-tab=\"method-traces\">Method Traces</a>")
@@ -279,6 +291,82 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         appendChartGroup(out, "Disk Charts", diskRows, "No disk metric found in the selected range.");
         appendChartGroup(out, "Net Charts", netRows, "No net bytes/sec metric found in the selected range.");
         out.append("</section>");
+    }
+
+    private void appendRuntimeState(StringBuilder out, ServerRequest request) {
+        Map<String, Object> vars = new HashMap<>();
+        try {
+            vars.put("jarFile", String.valueOf(Sys.getJarFile(this)));
+        } catch (Throwable e) {
+            vars.put("jarFile", e.toString());
+        }
+        try {
+            vars.put("inputArguments", ManagementFactory.getRuntimeMXBean().getInputArguments());
+        } catch (Throwable e) {
+            vars.put("runtimeError", e.toString());
+            vars.put("inputArguments", Collections.emptyList());
+        }
+        try {
+            vars.put("ntpOffset", String.valueOf(Reflects.readStaticField(NtpClock.class, "offset")));
+        } catch (Throwable e) {
+            vars.put("ntpOffset", e.toString());
+        }
+        try {
+            vars.put("rxConfigJson", redactJson(Sys.toJsonString(RxConfig.INSTANCE)));
+        } catch (Throwable e) {
+            vars.put("rxConfigJson", e.toString());
+        }
+        try {
+            vars.put("sysProperties", keyValueRows(System.getProperties()));
+        } catch (Throwable e) {
+            vars.put("sysPropertiesError", e.toString());
+            vars.put("sysProperties", Collections.emptyList());
+        }
+        try {
+            vars.put("sysEnv", keyValueRows(System.getenv()));
+        } catch (Throwable e) {
+            vars.put("sysEnvError", e.toString());
+            vars.put("sysEnv", Collections.emptyList());
+        }
+        try {
+            vars.put("requestHeaders", requestHeaderRows(request));
+        } catch (Throwable e) {
+            vars.put("requestHeadersError", e.toString());
+            vars.put("requestHeaders", Collections.emptyList());
+        }
+        out.append(HttpServer.renderHtmlTemplate("rx-diagnostic-runtime.html", vars));
+    }
+
+    private List<Map<String, Object>> requestHeaderRows(ServerRequest request) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (request == null || request.getHeaders() == null) {
+            return rows;
+        }
+        for (Map.Entry<String, String> entry : request.getHeaders().entries()) {
+            rows.add(keyValueRow(entry.getKey(), rtokenRedactedValue(entry.getKey(), entry.getValue())));
+        }
+        Collections.sort(rows, KEY_VALUE_ROW_COMPARATOR);
+        return rows;
+    }
+
+    private List<Map<String, Object>> keyValueRows(Map<?, ?> map) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (map == null) {
+            return rows;
+        }
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            String key = String.valueOf(entry.getKey());
+            rows.add(keyValueRow(key, rtokenRedactedValue(key, entry.getValue())));
+        }
+        Collections.sort(rows, KEY_VALUE_ROW_COMPARATOR);
+        return rows;
+    }
+
+    private Map<String, Object> keyValueRow(String key, Object value) {
+        Map<String, Object> row = new HashMap<>(2);
+        row.put("key", key);
+        row.put("value", value == null ? "" : String.valueOf(value));
+        return row;
     }
 
     private void appendChartGroup(StringBuilder out, String title, List<Map<String, Object>> rows, String emptyText) {
@@ -1805,6 +1893,31 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             out.append(root.getPath());
         }
         return out.length() == 0 ? "File.listRoots()" : out.toString();
+    }
+
+    private static Object rtokenRedactedValue(String key, Object value) {
+        if (value == null) {
+            return "";
+        }
+        return isRtokenKey(key) ? "***" : value;
+    }
+
+    private static String redactJson(String json) {
+        if (json == null || json.length() == 0) {
+            return "";
+        }
+        return RTOKEN_JSON_FIELD_PATTERN.matcher(json).replaceAll("$1***\"");
+    }
+
+    private static boolean isRtokenKey(String key) {
+        if (key == null) {
+            return false;
+        }
+        String normalized = key.toLowerCase(Locale.ENGLISH);
+        return "rtoken".equals(normalized)
+                || normalized.endsWith(".rtoken")
+                || normalized.endsWith("-rtoken")
+                || normalized.endsWith("_rtoken");
     }
 
     private static String formatMillisDuration(long millis) {

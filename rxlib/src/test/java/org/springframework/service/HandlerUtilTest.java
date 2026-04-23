@@ -1,126 +1,85 @@
 package org.springframework.service;
 
-import lombok.extern.slf4j.Slf4j;
-import org.junit.jupiter.api.BeforeEach;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
-import org.mockito.Mockito;
-import org.rx.exception.InvalidException;
+import org.rx.core.RxConfig;
+import org.rx.core.RxConfig.DiagnosticConfig;
+import org.rx.diagnostic.H2DiagnosticStore;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
 
-@Slf4j
 public class HandlerUtilTest {
-
-    private HandlerUtil handlerUtil;
-
-    @BeforeEach
-    void setUp() {
-        handlerUtil = new HandlerUtil();
-    }
-
     @Test
-    void testInvokeEx_InvalidExpression() {
-        // Test with invalid expression (no dot)
-        InvalidException exception = assertThrows(InvalidException.class, () -> {
-            handlerUtil.invokeEx("invalidExpression", Collections.emptyList());
-        });
-        assertEquals("Class name not fund", exception.getMessage());
-    }
+    public void aroundServesDiagnosticPageOnSpringWebPath() throws Throwable {
+        HandlerUtil handlerUtil = new HandlerUtil();
+        DiagnosticConfig oldDiagnostic = RxConfig.INSTANCE.getDiagnostic();
+        String oldRtoken = RxConfig.INSTANCE.getRtoken();
+        DiagnosticConfig config = memConfig("spring_diag");
+        H2DiagnosticStore store = new H2DiagnosticStore(config);
+        try {
+            RxConfig.INSTANCE.setDiagnostic(config);
+            RxConfig.INSTANCE.setRtoken("secret");
+            store.start();
 
-    @Test
-    void testInvokeEx_ClassNotFound() {
-        // Test with non-existent class
-        assertThrows(ClassNotFoundException.class, () -> {
-            handlerUtil.invokeEx("com.nonexistent.Class.method", Collections.emptyList());
-        });
-    }
+            MockHttpServletRequest unauthorizedRequest = new MockHttpServletRequest("GET", "/rdiag");
+            MockHttpServletResponse unauthorizedResponse = new MockHttpServletResponse();
+            assertFalse(handlerUtil.around(unauthorizedRequest, unauthorizedResponse));
+            assertEquals(401, unauthorizedResponse.getStatus());
+            assertNotNull(unauthorizedResponse.getHeader(HttpHeaderNames.WWW_AUTHENTICATE.toString()));
 
-    @Test
-    void testInvokeEx_InstanceMethodWithObject() throws Exception {
-        // Test invoking method on a specific object instance via Spring context
-        TestService testService = new TestService();
-        try (MockedStatic<SpringContext> mockedSpringContext = mockStatic(SpringContext.class)) {
-            mockedSpringContext.when(() -> SpringContext.getBean(eq(TestService.class), eq(false)))
-                    .thenReturn(testService);
-            
-            List<Object> args = Arrays.asList("test");
-            Object result = handlerUtil.invokeEx("org.springframework.service.HandlerUtilTest$TestService.process", args);
-            assertEquals("processed: test", result);
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rdiag");
+            request.addHeader(HttpHeaderNames.AUTHORIZATION.toString(), basic("secret"));
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            assertFalse(handlerUtil.around(request, response));
+            assertEquals(200, response.getStatus());
+            assertTrue(response.getContentAsString().contains("RXlib Diagnostics"));
+            assertTrue(response.getContentAsString().contains("Runtime State"));
+        } finally {
+            store.close();
+            RxConfig.INSTANCE.setDiagnostic(oldDiagnostic);
+            RxConfig.INSTANCE.setRtoken(oldRtoken);
         }
     }
 
     @Test
-    void testInvokeEx_NestedMethodInvocation() throws Exception {
-        // Test invoking method on nested object
-        TestService testService = new TestService();
-        try (MockedStatic<SpringContext> mockedSpringContext = mockStatic(SpringContext.class)) {
-            mockedSpringContext.when(() -> SpringContext.getBean(eq(TestService.class), eq(false)))
-                    .thenReturn(testService);
-            
-            List<Object> args = Arrays.asList("arg");
-            Object result = handlerUtil.invokeEx("org.springframework.service.HandlerUtilTest$TestService.nestedService.process", args);
-            assertEquals("nestedService processed: arg", result);
+    public void aroundKeepsLegacyCaseOneOnly() throws Throwable {
+        HandlerUtil handlerUtil = new HandlerUtil();
+        String oldRtoken = RxConfig.INSTANCE.getRtoken();
+        try {
+            RxConfig.INSTANCE.setRtoken("secret");
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api");
+            request.addHeader("rtoken", "secret");
+            request.setParameter("_p", "{\"x\":12}");
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            assertFalse(handlerUtil.around(request, response));
+            assertEquals("0", response.getContentAsString());
+        } finally {
+            RxConfig.INSTANCE.setRtoken(oldRtoken);
         }
     }
 
-    @Test
-    void testInvokeEx_MixedArgumentTypes() throws Exception {
-        // Test with mixed argument types
-        TestService testService = new TestService();
-        try (MockedStatic<SpringContext> mockedSpringContext = mockStatic(SpringContext.class)) {
-            mockedSpringContext.when(() -> SpringContext.getBean(eq(TestService.class), eq(false)))
-                    .thenReturn(testService);
-            
-            List<Object> args = Arrays.asList("Hello", 123, true);
-            Object result = handlerUtil.invokeEx("org.springframework.service.HandlerUtilTest$TestService.mixedArgs", args);
-            assertEquals("Hello-123-true", result);
-        }
+    private static DiagnosticConfig memConfig(String name) {
+        DiagnosticConfig config = new DiagnosticConfig();
+        config.setH2JdbcUrl("jdbc:h2:mem:" + name + "_" + System.nanoTime()
+                + ";DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL");
+        config.setH2QueueSize(64);
+        config.setH2BatchSize(16);
+        config.setH2FlushIntervalMillis(50L);
+        config.setH2TtlMillis(0L);
+        config.setDiagnosticsMaxBytes(0L);
+        config.setEvidenceMinFreeBytes(0L);
+        config.setJfrMode("off");
+        return config;
     }
 
-    @Test
-    void testInvokeEx_WithJsonConversion() throws Exception {
-        // Test parameter conversion from JSON
-        TestService testService = new TestService();
-        try (MockedStatic<SpringContext> mockedSpringContext = mockStatic(SpringContext.class)) {
-            mockedSpringContext.when(() -> SpringContext.getBean(eq(TestService.class), eq(false)))
-                    .thenReturn(testService);
-            
-            List<Object> args = Arrays.asList("{\"key\":\"value\"}");
-            Object result = handlerUtil.invokeEx("org.springframework.service.HandlerUtilTest$TestService.fromJson", args);
-            assertEquals("value", result);
-        }
-    }
-
-    // Test helper classes
-    public static class TestService {
-        public final NestedService nestedService = new NestedService();
-        
-        public String process(String input) {
-            return "processed: " + input;
-        }
-        
-        public String fromJson(String json) {
-            // Simple JSON parsing for test
-            return json.split("\"")[3];
-        }
-        
-        public String mixedArgs(String str, Integer num, Boolean flag) {
-            return str + "-" + num + "-" + flag;
-        }
-    }
-
-    public static class NestedService {
-        public String value = "nested-nested";
-        
-        public String process(String input) {
-            return "nestedService processed: " + input;
-        }
+    private static String basic(String password) {
+        String token = "rxlib:" + password;
+        return "Basic " + Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
     }
 }
