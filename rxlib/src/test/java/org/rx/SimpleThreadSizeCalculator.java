@@ -10,8 +10,9 @@ public class SimpleThreadSizeCalculator extends ThreadSizeCalculator {
     @Override
     protected Runnable creatTask() {
         return () -> {
-            HttpClient client = new HttpClient();
-            client.get("http://www.baidu.com");
+            try (HttpClient.Response response = HttpClient.getDefault().get("http://www.baidu.com")) {
+                System.out.println(response.bodyAsString());
+            }
         };
     }
 

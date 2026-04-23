@@ -681,7 +681,7 @@ public final class Sockets {
         final SocketConfig finalConfig = config;
         b.attr(SocketConfig.ATTR_INIT_FN, (BiAction<Channel>) ch -> {
             if (finalConfig instanceof SocksConfig) {
-                addRedundantHandlers(ch.pipeline(), (SocksConfig) finalConfig);
+                addUdpOptimizationHandlers(ch.pipeline(), (SocksConfig) finalConfig);
             }
             DiagnosticMetrics.installNetIoHandler(ch.pipeline(), finalConfig instanceof SocksConfig
                     ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT);
@@ -701,27 +701,57 @@ public final class Sockets {
      * 仅在自行组装 pipeline 时才需要直接调用本方法。
      */
     public static void addRedundantHandlers(ChannelPipeline pipeline, SocksConfig config) {
+        addUdpOptimizationHandlers(pipeline, config);
+    }
+
+    /**
+     * 向 pipeline 添加 UDP 压缩 / 多倍发包优化 Handler。
+     * <p>
+     * 安装顺序固定为：入站先去重后解压，出站先压缩后多倍发送。
+     */
+    public static void addUdpOptimizationHandlers(ChannelPipeline pipeline, SocksConfig config) {
+        boolean compressEnabled = config.isUdpCompressEnabled();
         int multiplier = config.getUdpRedundantMultiplier();
         boolean hasDestRules = config.hasUdpRedundantDestinationRules();
-        if (multiplier <= 1 && !config.isUdpRedundantAdaptive() && !hasDestRules) {
+        boolean redundantEnabled = multiplier > 1 || config.isUdpRedundantAdaptive() || hasDestRules;
+        if (!compressEnabled && !redundantEnabled) {
             return;
         }
-        org.rx.net.socks.UdpRedundantMultiplierResolver resolver = config.buildUdpRedundantMultiplierResolver();
-        if (config.isUdpRedundantAdaptive()) {
-            org.rx.net.socks.UdpRedundantStats stats = new org.rx.net.socks.UdpRedundantStats(
-                    multiplier, // 尊重用户配置的初始倍率
-                    config.getUdpRedundantMinMultiplier(),
-                    config.getUdpRedundantMaxMultiplier(),
-                    config.getUdpRedundantIntervalMicros(),
-                    config.getUdpRedundantLossThresholdHigh(),
-                    config.getUdpRedundantLossThresholdLow(),
-                    config.getUdpRedundantStablePeriods());
-            pipeline.addLast(org.rx.net.socks.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.socks.UdpRedundantDecoder(stats));
-            pipeline.addLast(org.rx.net.socks.UdpRedundantEncoder.class.getSimpleName(), new org.rx.net.socks.UdpRedundantEncoder(stats, resolver));
-        } else {
-            pipeline.addLast(org.rx.net.socks.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.socks.UdpRedundantDecoder());
-            pipeline.addLast(org.rx.net.socks.UdpRedundantEncoder.class.getSimpleName(),
-                    new org.rx.net.socks.UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros(), resolver));
+
+        if (redundantEnabled) {
+            org.rx.net.socks.UdpRedundantMultiplierResolver resolver = config.buildUdpRedundantMultiplierResolver();
+            if (config.isUdpRedundantAdaptive()) {
+                org.rx.net.socks.UdpRedundantStats stats = new org.rx.net.socks.UdpRedundantStats(
+                        multiplier, // 尊重用户配置的初始倍率
+                        config.getUdpRedundantMinMultiplier(),
+                        config.getUdpRedundantMaxMultiplier(),
+                        config.getUdpRedundantIntervalMicros(),
+                        config.getUdpRedundantLossThresholdHigh(),
+                        config.getUdpRedundantLossThresholdLow(),
+                        config.getUdpRedundantStablePeriods());
+                pipeline.addLast(org.rx.net.socks.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.socks.UdpRedundantDecoder(stats));
+                if (compressEnabled) {
+                    pipeline.addLast(org.rx.net.socks.UdpCompressDecoder.class.getSimpleName(),
+                            new org.rx.net.socks.UdpCompressDecoder());
+                }
+                pipeline.addLast(org.rx.net.socks.UdpRedundantEncoder.class.getSimpleName(), new org.rx.net.socks.UdpRedundantEncoder(stats, resolver));
+            } else {
+                pipeline.addLast(org.rx.net.socks.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.socks.UdpRedundantDecoder());
+                if (compressEnabled) {
+                    pipeline.addLast(org.rx.net.socks.UdpCompressDecoder.class.getSimpleName(),
+                            new org.rx.net.socks.UdpCompressDecoder());
+                }
+                pipeline.addLast(org.rx.net.socks.UdpRedundantEncoder.class.getSimpleName(),
+                        new org.rx.net.socks.UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros(), resolver));
+            }
+        } else if (compressEnabled) {
+            pipeline.addLast(org.rx.net.socks.UdpCompressDecoder.class.getSimpleName(),
+                    new org.rx.net.socks.UdpCompressDecoder());
+        }
+
+        if (compressEnabled) {
+            pipeline.addLast(org.rx.net.socks.UdpCompressEncoder.class.getSimpleName(),
+                    new org.rx.net.socks.UdpCompressEncoder(org.rx.net.socks.UdpCompressConfig.fromSocksConfig(config)));
         }
     }
 
