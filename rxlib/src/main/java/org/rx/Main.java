@@ -546,12 +546,7 @@ public final class Main implements SocksRpcContract {
     static RrpServer rrpServer;
 
     static void clientInit(DefaultSocksAuthenticator authenticator) {
-        httpServer = HttpServer.getDefault().requestAsync("/traces", (request, response) -> {
-            Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
-            Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
-            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, newest, 50);
-            response.jsonBody(list);
-        }).requestMapping("/usrInfo", (request, response) -> {
+        httpServer = HttpServer.getDefault().requestMapping("/usrInfo", (request, response) -> {
             response.jsonBody(authenticator.getStore());
         });
 
@@ -734,12 +729,7 @@ public final class Main implements SocksRpcContract {
     }
 
     static void serverInit() {
-        httpServer = HttpServer.getDefault().requestAsync("/traces", (request, response) -> {
-            Integer traceDays = Reflects.convertQuietly(request.getQueryString().getFirst("traceDays"), Integer.class, 1);
-            Boolean newest = Reflects.convertQuietly(request.getQueryString().getFirst("newest"), Boolean.class);
-            List<TraceHandler.ExceptionEntity> list = TraceHandler.INSTANCE.queryExceptionTraces(DateTime.now().addDays(-traceDays), null, null, null, newest, 50);
-            response.jsonBody(list);
-        }).requestMapping("/getPublicIp", (request, response) -> {
+        httpServer = HttpServer.getDefault().requestMapping("/getPublicIp", (request, response) -> {
             response.jsonBody(request.getRemoteEndpoint().getHostString());
         }).requestAsync("/hf", (request, response) -> {
             String url = request.getQueryString().getFirst("fu");
