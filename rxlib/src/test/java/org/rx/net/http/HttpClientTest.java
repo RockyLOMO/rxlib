@@ -469,7 +469,6 @@ public class HttpClientTest {
         int proxyPort = freePort();
         SocksUser user = new SocksUser("u1");
         user.setPassword("p1");
-        user.setIpLimit(-1);
         SocksProxyServer proxyServer = new SocksProxyServer(new SocksConfig(Sockets.newLoopbackEndpoint(proxyPort)),
                 new DefaultSocksAuthenticator(Collections.singletonList(user)));
         try {

@@ -2,8 +2,6 @@ package org.rx.net.socks;
 
 import lombok.Getter;
 import lombok.ToString;
-import org.rx.bean.DateTime;
-import org.rx.core.Tasks;
 
 import java.net.InetAddress;
 import java.util.List;
@@ -21,14 +19,6 @@ public class DefaultSocksAuthenticator implements Authenticator {
         for (SocksUser usr : initUsers) {
             store.put(usr.getUsername(), usr);
         }
-
-        Tasks.scheduleDaily(() -> {
-            resetIp();
-
-            if (DateTime.now().getDay() == 1) {
-                resetData();
-            }
-        }, "01:00:00");
     }
 
     @Override
@@ -38,38 +28,5 @@ public class DefaultSocksAuthenticator implements Authenticator {
             return null;
         }
         return user;
-    }
-
-//    public void save(@NonNull SocksUser user) {
-//        store.put(user.getUsername(), user);
-//    }
-
-    public void resetIp() {
-        for (SocksUser user : store.values()) {
-//            boolean changed = false;
-            Map<InetAddress, TrafficLoginInfo> loginIps = user.getLoginIps();
-            for (Map.Entry<InetAddress, TrafficLoginInfo> lEntry : loginIps.entrySet()) {
-                DateTime latestTime = lEntry.getValue().getLatestTime();
-                if (latestTime != null && latestTime.before(DateTime.now().addDays(-2))) {
-                    loginIps.remove(lEntry.getKey());
-//                    changed = true;
-                }
-            }
-//            if (changed) {
-//                save(user);
-//            }
-        }
-    }
-
-    public void resetData() {
-        for (SocksUser usr : store.values()) {
-            for (TrafficLoginInfo l : usr.getLoginIps().values()) {
-                l.getTotalReadBytes().set(0);
-                l.getTotalWriteBytes().set(0);
-                l.getTotalReadPackets().set(0);
-                l.getTotalWritePackets().set(0);
-            }
-            usr.setLastResetTime(DateTime.now());
-        }
     }
 }

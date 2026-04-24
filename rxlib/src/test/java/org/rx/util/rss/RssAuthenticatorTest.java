@@ -23,8 +23,8 @@ public class RssAuthenticatorTest {
         second.setIpLimit(3);
 
         RssAuthenticator authenticator = new RssAuthenticator(Arrays.asList(first, second), "inner-pwd");
-        AuthResult firstResult = authenticator.authenticate("ss-rocky", "inner-pwd");
-        AuthResult secondResult = authenticator.authenticate("ss-ccy", "inner-pwd");
+        AuthResult firstResult = authenticator.loginResult("ss-rocky", "inner-pwd");
+        AuthResult secondResult = authenticator.loginResult("ss-ccy", "inner-pwd");
 
         assertNotNull(firstResult);
         assertNotNull(secondResult);

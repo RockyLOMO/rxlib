@@ -37,8 +37,6 @@ import org.rx.net.http.RestClient;
 import org.rx.net.nameserver.NameserverClient;
 import org.rx.net.nameserver.NameserverConfig;
 import org.rx.net.nameserver.NameserverImpl;
-import org.rx.util.rss.RssRpcApp;
-import org.rx.util.rss.RssSupport;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
@@ -57,8 +55,6 @@ import org.rx.net.transport.TcpServerConfig;
 import org.rx.net.transport.UdpClient;
 import org.rx.test.*;
 //import org.rx.third.apache.ntp.*;
-import org.rx.util.function.TripleAction;
-
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.net.Inet4Address;
@@ -83,6 +79,9 @@ public class TestSocks extends AbstractTester {
     final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
+    final CopyOnWriteArraySet<String> bypassHosts = new CopyOnWriteArraySet<String>(RxConfig.INSTANCE.getNet().getBypassHosts()) {{
+        add("*qq*");
+    }};
 
     //region ns
     final NameserverConfig conf1 = new NameserverConfig() {{
@@ -494,182 +493,6 @@ public class TestSocks extends AbstractTester {
     }
     //endregion
 
-    //region ss
-    int connectTimeoutMillis = 30000;
-    String socks5Usr = "rocky";
-    String socks5Pwd = "123456";
-
-    @Test
-    public void optimalSettings() {
-        OptimalSettings[] a = {RssSupport.SS_IN_OPS, RssSupport.OUT_OPS};
-        for (OptimalSettings ops : a) {
-            ops.calculate();
-            System.out.println(ops);
-        }
-    }
-
-    CopyOnWriteArraySet<String> bypassHosts = new CopyOnWriteArraySet<String>(RxConfig.INSTANCE.getNet().getBypassHosts()) {{
-        add("*qq*");
-    }};
-
-    @SneakyThrows
-    @Test
-    public void tstUdp() {
-//        createSocksSvr(true);
-//        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:2090");
-//        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("s.f-li.cn:6885");
-        InetSocketAddress socksUdpEp = Sockets.parseEndpoint("127.0.0.1:1080");
-        InetSocketAddress ntpServer = Sockets.parseEndpoint("pool.ntp.org:123");
-//        InetSocketAddress ntpServer = Sockets.parseEndpoint("2606:4700:f1::123:123");
-
-        CountDownLatch latch = new CountDownLatch(10);
-        Channel channel = Sockets.udpBootstrap(null, ob -> {
-            ob.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
-                @Override
-                protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) throws Exception {
-                    Channel ch = ctx.channel();
-
-                    ByteBuf buf = msg.content();
-                    System.out.println("readableBytes: " + buf.readableBytes() + ", hex: " + ByteBufUtil.prettyHexDump(buf));
-                    if (buf.readableBytes() < 48) {
-//                        promise.tryFailure(new IllegalStateException("NTP响应过短"));
-                        return;
-                    }
-                    long[] result = new long[2];
-                    result[0] = System.currentTimeMillis();
-                    UnresolvedEndpoint dstEp = UdpManager.socks5Decode(buf);
-                    System.out.println("from dstEp: " + dstEp);
-
-                    // 解析Transmit Timestamp（偏移40-47字节：秒整数部分 + 秒小数部分）
-                    buf.skipBytes(40);
-                    long transmitTimestamp = buf.readLong();
-
-                    // NTP时间：整数秒（高32位） + 小数秒（低32位）
-                    long ntpSeconds = transmitTimestamp >>> 32;
-                    long ntpFraction = transmitTimestamp & 0xFFFFFFFFL;
-
-                    // 转换为毫秒
-                    long milliseconds = (ntpSeconds * 1000) + ((ntpFraction * 1000) / 0x100000000L);
-
-                    // NTP纪元从1900-01-01开始，Java Date从1970-01-01开始，偏移70年（包括闰秒调整）
-                    long epochOffset = 2208988800000L;  // 1900到1970的毫秒偏移
-                    long serverTimeMillis = milliseconds - epochOffset;
-                    result[1] = serverTimeMillis;
-
-                    DateTime localTime = new DateTime(result[0]);
-                    DateTime serverTime = new DateTime(result[1]);
-                    System.out.println("NTP服务器" + ntpServer + "时间: " + serverTime);
-                    System.out.println("本地系统时间: " + localTime);
-                    latch.countDown();
-                }
-            });
-        }).bind(0).sync().channel();
-
-
-        for (int i = 0; i < latch.getCount(); i++) {
-            Tasks.run(() -> {
-                // 构造NTP请求（48字节，首字节0x1B）
-                ByteBuf buf = channel.alloc().directBuffer(48);
-                buf.writeByte(0x1B);// LI=00, VN=3, Mode=3 (客户端)
-                buf.writeZero(47);
-
-//        channel.writeAndFlush(new DatagramPacket(buf, ntpServer));
-                channel.writeAndFlush(new DatagramPacket(UdpManager.socks5Encode(buf, ntpServer), socksUdpEp));
-            });
-//            sleep(200);
-        }
-
-        assert latch.await(20000, TimeUnit.MILLISECONDS);
-    }
-
-    @SneakyThrows
-    @Test
-    public void ssProxy() {
-        createSocksSvr(false);
-        System.in.read();
-    }
-
-    void createSocksSvr(boolean udp2raw) {
-        int shadowDnsPort = 853;
-        int outSvrPort = 2080;
-        int inSvrPort = 2090;
-        int ssPort = 2092;
-
-        //dns
-        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(shadowDnsPort);
-        DnsServer dnsSvr = new DnsServer(shadowDnsPort);
-//        Sockets.injectNameService(shadowDnsEp);
-
-        //backend
-        InetSocketAddress outSrvEp = Sockets.newLoopbackEndpoint(outSvrPort);
-        SocksConfig outConf = new SocksConfig(outSrvEp.getPort());
-        outConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
-        outConf.setConnectTimeoutMillis(connectTimeoutMillis);
-        SocksUser usr = new SocksUser(socks5Usr);
-        usr.setPassword(socks5Pwd);
-        usr.setIpLimit(-1);
-        outConf.setEnableUdp2raw(udp2raw);
-        SocksProxyServer backSvr = new SocksProxyServer(outConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
-        backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-
-        RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(outSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
-        Remoting.register(new RssRpcApp(backSvr), rpcServerConf);
-
-        //frontend
-        RandomList<UpstreamSupport> socksServers = new RandomList<>();
-        RpcClientConfig<SocksRpcContract> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(outSrvEp, outSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
-        socksServers.add(new UpstreamSupport(new AuthenticEndpoint(outSrvEp, socks5Usr, socks5Pwd), Remoting.createFacade(SocksRpcContract.class, rpcClientConf)));
-
-        SocksConfig inConf = new SocksConfig(inSvrPort);
-        inConf.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
-        inConf.setConnectTimeoutMillis(connectTimeoutMillis);
-        inConf.setEnableUdp2raw(udp2raw);
-        inConf.setUdp2rawClient(outSrvEp);
-        SocksProxyServer inSvr = new SocksProxyServer(inConf);
-        inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
-        TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
-            //must first
-            if (dstEp.getPort() == SocksRpcContract.DNS_PORT) {
-                e.setUpstream(shadowDnsUpstream);
-                return;
-            }
-            //bypass
-            if (Sockets.isBypass(bypassHosts, dstEp.getHost())) {
-                e.setUpstream(new Upstream(dstEp));
-            }
-        };
-        inSvr.onTcpRoute.replace(firstRoute, (s, e) -> {
-            if (e.getUpstream() != null) {
-                return;
-            }
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
-            e.setUpstream(new SocksTcpUpstream(dstEp, inConf, socksServers.next()));
-        });
-        inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
-            if (e.getUpstream() != null) {
-                return;
-            }
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
-            e.setUpstream(new SocksUdpUpstream(dstEp, inConf, socksServers.next()));
-        });
-
-
-        AuthenticEndpoint inSrvEp = new AuthenticEndpoint(Sockets.newLoopbackEndpoint(inSvrPort));
-        ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
-                CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
-        ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
-        frontSvr.onTcpRoute.replace((s, e) -> {
-            e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null)));
-        });
-        frontSvr.onUdpRoute.replace((s, e) -> {
-            e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null)));
-        });
-    }
-
     @Test
     public void testXChaCha() {
         // Generate a key
@@ -699,8 +522,6 @@ public class TestSocks extends AbstractTester {
 //
 //        System.in.read();
 //    }
-    //endregion
-
     //region rrp
     @SneakyThrows
     @Test

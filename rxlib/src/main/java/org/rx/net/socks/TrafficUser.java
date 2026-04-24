@@ -8,6 +8,37 @@ import java.net.InetAddress;
 import java.util.Map;
 
 public interface TrafficUser {
+    TrafficUser ANONYMOUS = new TrafficUser() {
+        @Override
+        public String getUsername() {
+            return "anonymous";
+        }
+
+        @Override
+        public Map<InetAddress, TrafficLoginInfo> getLoginIps() {
+            return java.util.Collections.emptyMap();
+        }
+
+        @Override
+        public int getIpLimit() {
+            return -1;
+        }
+
+        @Override
+        public DateTime getLastResetTime() {
+            return null;
+        }
+
+        @Override
+        public void setLastResetTime(DateTime value) {
+        }
+
+        @Override
+        public boolean isAnonymous() {
+            return true;
+        }
+    };
+
     String getUsername();
 
     Map<InetAddress, TrafficLoginInfo> getLoginIps();

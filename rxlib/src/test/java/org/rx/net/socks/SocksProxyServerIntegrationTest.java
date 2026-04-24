@@ -124,7 +124,6 @@ class SocksProxyServerIntegrationTest {
         int proxyPort = 15280;
         SocksUser usr = new SocksUser("u1");
         usr.setPassword("p1");
-        usr.setIpLimit(-1);
 
         SocksConfig config = new SocksConfig(proxyPort);
         config.getWhiteList(); // Trigger lazy init in calling thread
@@ -1380,10 +1379,8 @@ class SocksProxyServerIntegrationTest {
         config.setTrafficShapingInterval(100); 
         SocksUser usr = new SocksUser("u_shaping");
         usr.setPassword("p_shaping");
-        usr.setIpLimit(-1);
 
-        DefaultSocksAuthenticator authenticator = new DefaultSocksAuthenticator(Collections.singletonList(usr));
-        SocksProxyServer proxy = new SocksProxyServer(config, authenticator);
+        SocksProxyServer proxy = new SocksProxyServer(config, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
 
         try {
             Thread.sleep(1000);
@@ -1434,11 +1431,6 @@ class SocksProxyServerIntegrationTest {
             }
 
             Thread.sleep(500);
-
-            SocksUser user = authenticator.getStore().get("u_shaping");
-            assertNotNull(user);
-            assertTrue(user.getTotalReadBytes() >= payload.length);
-            assertTrue(user.getTotalWriteBytes() >= payload.length);
         } finally {
             proxy.close();
         }

@@ -25,10 +25,8 @@ import org.rx.io.EntityQueryLambda;
 import org.rx.io.MemoryStream;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
-import org.rx.net.socks.SocksUser;
 import org.rx.test.*;
 import org.rx.third.open.CrcModel;
-import org.rx.util.rss.RSSConf;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 import org.slf4j.MDC;
@@ -475,10 +473,6 @@ public class TestCore extends AbstractTester {
         InetAddress addr = Sockets.getLocalAddress();
         System.out.println(toJsonString(addr) + ", " + toJsonString(Collections.singletonList(addr)) + " & " + JSON.toJSONString(addr));
 
-        SocksUser r = new SocksUser("r");
-        r.setLastResetTime(DateTime.now());
-        r.getLoginIps().put(InetAddress.getByName("18.12.3.4"), new org.rx.net.socks.TrafficLoginInfo());
-        System.out.println(toJsonString(r));
     }
 
     @Test
@@ -633,11 +627,6 @@ public class TestCore extends AbstractTester {
     @Test
     public void yamlConf() {
 //        Class.forName(Sys.class.getName());
-        YamlConfiguration yamlConfiguration = new YamlConfiguration("output.yaml");
-        RSSConf rssConf = yamlConfiguration.readAs(null, RSSConf.class);
-        System.out.println("反序列化rssConf: " + rssConf);
-        System.out.println("序列化rssConf:" + yamlConfiguration.dump());
-
 //        PropertyUtils propertyUtils = new PropertyUtils();
 //        propertyUtils.setSkipMissingProperties(true);
 //        Constructor constructor = new Constructor(Main.RSSConf.class, new LoaderOptions());

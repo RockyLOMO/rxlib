@@ -104,7 +104,7 @@ public final class SocksContext extends EventArgs {
 
     @Getter
     @Setter
-    transient TrafficUser user = SocksUser.ANONYMOUS;
+    transient TrafficUser user = TrafficUser.ANONYMOUS;
 
     @Getter
     @Setter

@@ -4,7 +4,7 @@ import lombok.Getter;
 import org.rx.bean.DateTime;
 import org.rx.core.Tasks;
 import org.rx.net.socks.AuthResult;
-import org.rx.net.socks.SessionAuthenticator;
+import org.rx.net.socks.Authenticator;
 import org.rx.net.socks.SocksUser;
 import org.rx.net.socks.TrafficLoginInfo;
 
@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.rx.core.Extends.eq;
 
-public class RssAuthenticator implements SessionAuthenticator {
+public class RssAuthenticator implements Authenticator {
     @Getter
     private final Map<String, ShadowUser> shadowStore = new ConcurrentHashMap<>();
     @Getter
@@ -58,7 +58,13 @@ public class RssAuthenticator implements SessionAuthenticator {
     }
 
     @Override
-    public AuthResult authenticate(String username, String password) {
+    public SocksUser login(String username, String password) {
+        AuthResult result = loginResult(username, password);
+        return result == null ? null : result.getUser();
+    }
+
+    @Override
+    public AuthResult loginResult(String username, String password) {
         ShadowUser shadowUser = shadowStore.get(username);
         if (shadowUser == null || !eq(socksPassword, password)) {
             return null;

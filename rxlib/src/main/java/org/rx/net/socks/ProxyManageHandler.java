@@ -24,7 +24,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
     @Getter
     private SocksUser user = SocksUser.ANONYMOUS;
     @Getter
-    private TrafficUser trafficUser = SocksUser.ANONYMOUS;
+    private TrafficUser trafficUser = TrafficUser.ANONYMOUS;
     @Getter
     private TrafficLoginInfo info;
     private long activeTime;
@@ -35,9 +35,9 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
 
     public void setUser(@NonNull SocksUser user, TrafficUser trafficUser, ChannelHandlerContext ctx) {
         this.user = user;
-        this.trafficUser = trafficUser != null ? trafficUser : (user instanceof TrafficUser ? (TrafficUser) user : SocksUser.ANONYMOUS);
+        this.trafficUser = trafficUser != null ? trafficUser : TrafficUser.ANONYMOUS;
         if (this.trafficUser == null || this.trafficUser.isAnonymous()) {
-            SocksUserTraffic.bind(ctx.channel(), SocksUser.ANONYMOUS, null);
+            SocksUserTraffic.bind(ctx.channel(), TrafficUser.ANONYMOUS, null);
             return;
         }
         InetSocketAddress realEp = Sockets.getOriginRemoteAddress(ctx.channel());

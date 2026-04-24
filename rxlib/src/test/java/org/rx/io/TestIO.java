@@ -54,7 +54,6 @@ public class TestIO extends AbstractTester {
         KeyValueStore<String, SocksUser> kv = new KeyValueStore<>(conf);
         SocksUser r = new SocksUser("rocky");
         r.setPassword("202002");
-        r.setIpLimit(-1);
         kv.put(r.getUsername(), r);
 
         System.in.read();
