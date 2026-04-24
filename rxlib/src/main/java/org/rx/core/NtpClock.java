@@ -82,6 +82,7 @@ public class NtpClock extends Clock implements Serializable {
     }
 
     public static final NtpClock UTC = new NtpClock(ZoneOffset.UTC);
+    @Getter
     static long offset;
     static boolean injected;
 

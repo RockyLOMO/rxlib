@@ -6,7 +6,7 @@ import org.rx.AbstractTester;
 import org.rx.bean.ULID;
 import org.rx.core.EventArgs;
 import org.rx.net.transport.ClientDisconnectedException;
-import org.rx.net.transport.TcpServer;
+import org.rx.net.transport.RpcTcpServer;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.test.*;
 
@@ -49,7 +49,7 @@ public class RemotingTest extends AbstractTester {
         }
     }
 
-    final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
+    final Map<Object, RpcTcpServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
 
@@ -61,7 +61,7 @@ public class RemotingTest extends AbstractTester {
     }
 
     <T> void restartServer(T svcImpl, InetSocketAddress ep, long delay) {
-        TcpServer rs = serverHost.remove(svcImpl);
+        RpcTcpServer rs = serverHost.remove(svcImpl);
         sleep(delay);
         rs.close();
         log.info("Close server on port {}", rs.getConfig().getListenPort());
@@ -71,7 +71,7 @@ public class RemotingTest extends AbstractTester {
 
     @AfterEach
     void teardown() {
-        for (TcpServer s : serverHost.values()) {
+        for (RpcTcpServer s : serverHost.values()) {
             try {
                 s.close();
             } catch (Exception ignored) {
@@ -87,8 +87,8 @@ public class RemotingTest extends AbstractTester {
         int port = freePort();
         Object contract = new Object();
         RpcServerConfig conf = new RpcServerConfig(new TcpServerConfig(port));
-        TcpServer s1 = Remoting.register(contract, conf);
-        TcpServer s2 = Remoting.register(contract, conf);
+        RpcTcpServer s1 = Remoting.register(contract, conf);
+        RpcTcpServer s2 = Remoting.register(contract, conf);
         assertSame(s1, s2, "第二次 register 应命中 serverBeans 快路径");
         s1.close();
     }
@@ -105,13 +105,13 @@ public class RemotingTest extends AbstractTester {
         facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
 
         rpcApiEvent(svcImpl, facadeGroup);
-        // 同一组 facade 依赖自动重连；Remoting onReconnected 在 EventLoop 上排队重发在途包 + TcpServer 关服后仍 flush 应答
+        // 同一组 facade 依赖自动重连；Remoting onReconnected 在 EventLoop 上排队重发在途包 + RpcTcpServer 关服后仍 flush 应答
         restartServer(svcImpl, endpoint_3307, startDelay);
         rpcApiEvent(svcImpl, facadeGroup);
     }
 
     /**
-     * 单 facade、同一端口连续重启两次，验证 clientBeans 仍绑定同一 StatefulTcpClient 且 RPC 可恢复。
+     * 单 facade、同一端口连续重启两次，验证 clientBeans 仍绑定同一 DefaultRpcTcpClient 且 RPC 可恢复。
      */
     @Test
     @Order(5)

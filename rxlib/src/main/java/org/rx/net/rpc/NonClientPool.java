@@ -3,19 +3,19 @@ package org.rx.net.rpc;
 import lombok.RequiredArgsConstructor;
 import org.rx.core.Sys;
 import org.rx.exception.InvalidException;
-import org.rx.net.transport.StatefulTcpClient;
+import org.rx.net.transport.DefaultRpcTcpClient;
 import org.rx.net.transport.TcpClientConfig;
 
 import java.util.concurrent.TimeoutException;
 
 @RequiredArgsConstructor
-class NonClientPool implements TcpClientPool {
+class NonClientPool implements RpcTcpClientPool {
     private final TcpClientConfig template;
 
     @Override
-    public StatefulTcpClient borrowClient() {
+    public DefaultRpcTcpClient borrowClient() {
         TcpClientConfig config = Sys.deepClone(template);
-        StatefulTcpClient client = new StatefulTcpClient(config);
+        DefaultRpcTcpClient client = new DefaultRpcTcpClient(config);
         try {
             client.connect(config.getServerEndpoint());
         } catch (TimeoutException e) {
@@ -27,7 +27,7 @@ class NonClientPool implements TcpClientPool {
     }
 
     @Override
-    public StatefulTcpClient returnClient(StatefulTcpClient client) {
+    public DefaultRpcTcpClient returnClient(DefaultRpcTcpClient client) {
         return client;
     }
 }

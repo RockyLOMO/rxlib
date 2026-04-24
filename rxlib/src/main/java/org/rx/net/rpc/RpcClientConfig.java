@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.Sockets;
-import org.rx.net.transport.StatefulTcpClient;
+import org.rx.net.transport.DefaultRpcTcpClient;
 import org.rx.net.transport.TcpClientConfig;
 import org.rx.util.function.TripleAction;
 
@@ -51,7 +51,7 @@ public class RpcClientConfig<T> {
     private short eventVersion = DEFAULT_VERSION;
     private short minPoolSize;
     private short maxPoolSize = NON_POOL_SIZE;
-    private TripleAction<T, StatefulTcpClient> initHandler;
+    private TripleAction<T, DefaultRpcTcpClient> initHandler;
 
     public boolean isUsePool() {
         return maxPoolSize > NON_POOL_SIZE;

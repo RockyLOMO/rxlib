@@ -5,8 +5,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.net.transport.TcpClient;
-import org.rx.net.transport.TcpServer;
+import org.rx.net.transport.RpcTcpClient;
+import org.rx.net.transport.RpcTcpServer;
 import org.rx.util.function.Func;
 
 import static org.rx.core.Extends.require;
@@ -23,7 +23,7 @@ public final class RemotingContext {
     }
 
     @SneakyThrows
-    static <T> T invoke(Func<T> fn, TcpServer rs, TcpClient rc) {
+    static <T> T invoke(Func<T> fn, RpcTcpServer rs, RpcTcpClient rc) {
         CTX.set(new RemotingContext(rs, rc));
         try {
             return fn.invoke();
@@ -32,6 +32,6 @@ public final class RemotingContext {
         }
     }
 
-    final TcpServer server;
-    final TcpClient client;
+    final RpcTcpServer server;
+    final RpcTcpClient client;
 }

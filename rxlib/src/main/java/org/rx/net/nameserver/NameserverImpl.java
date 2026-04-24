@@ -10,7 +10,7 @@ import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingContext;
-import org.rx.net.transport.TcpServer;
+import org.rx.net.transport.RpcTcpServer;
 import org.rx.net.transport.UdpClient;
 
 import java.io.Serializable;
@@ -36,7 +36,7 @@ public class NameserverImpl implements Nameserver {
 
     static final String NAME = "nameserver";
     final NameserverConfig config;
-    final TcpServer rs;
+    final RpcTcpServer rs;
     @Getter
     final DnsServer dnsServer;
     @Setter

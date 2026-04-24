@@ -287,7 +287,7 @@ public class SocketsTest {
     }
 
     @Test
-    public void testAddTcpClientHandler() {
+    public void testAddRpcTcpClientHandler() {
         SocketConfig config = new SocketConfig();
         config.setTransportFlags(TransportFlags.COMPRESS_READ.flags());
  

@@ -12,7 +12,7 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 
-public interface TcpClient extends AutoCloseable, EventPublisher<TcpClient> {
+public interface RpcTcpClient extends AutoCloseable, EventPublisher<RpcTcpClient> {
     boolean isConnected();
 
     InetSocketAddress getRemoteEndpoint();
@@ -23,7 +23,7 @@ public interface TcpClient extends AutoCloseable, EventPublisher<TcpClient> {
 
     void send(Serializable pack);
 
-    Delegate<TcpClient, NEventArgs<Serializable>> onReceive();
+    Delegate<RpcTcpClient, NEventArgs<Serializable>> onReceive();
 
     Channel getChannel();
 
