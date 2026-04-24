@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.handler.codec.socksx.v5.Socks5AddressDecoder;
@@ -72,6 +73,74 @@ public final class UdpManager {
     /// /        byte region = (byte) ((key >>> 48) & 0xFFL);
 //        return new InetSocketAddress(InetAddress.getByAddress(ipBytes), port);
 //    }
+
+    @RequiredArgsConstructor
+    public static final class HeaderTemplate {
+        final byte[] bytes;
+
+        public CompositeByteBuf composite(ByteBufAllocator allocator, ByteBuf payload, boolean retainPayload) {
+            CompositeByteBuf compositeBuf = allocator.compositeBuffer(2);
+            try {
+                compositeBuf.addComponents(true, Unpooled.wrappedBuffer(bytes), retainPayload ? payload.retain() : payload);
+                return compositeBuf;
+            } catch (Throwable e) {
+                Bytes.release(compositeBuf);
+                throw e;
+            }
+        }
+
+        public boolean matches(ByteBuf buf) {
+            int readerIndex = buf.readerIndex();
+            if (buf.readableBytes() < bytes.length) {
+                return false;
+            }
+            for (int i = 0; i < bytes.length; i++) {
+                if (buf.getByte(readerIndex + i) != bytes[i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public int length() {
+            return bytes.length;
+        }
+    }
+
+    public static HeaderTemplate socks5HeaderTemplate(UnresolvedEndpoint dst) {
+        return buildHeaderTemplate(dst.getHost(), dst.getPort(), true);
+    }
+
+    public static HeaderTemplate addressHeaderTemplate(UnresolvedEndpoint dst) {
+        return buildHeaderTemplate(dst.getHost(), dst.getPort(), false);
+    }
+
+    public static HeaderTemplate addressHeaderTemplate(InetSocketAddress dst) {
+        return buildHeaderTemplate(dst.getHostString(), dst.getPort(), false);
+    }
+
+    private static HeaderTemplate buildHeaderTemplate(String host, int port, boolean socks5) {
+        ByteBuf header = Unpooled.buffer(64);
+        try {
+            if (socks5) {
+                header.writeZero(3);
+            }
+            encode(header, host, port);
+            byte[] bytes = new byte[header.readableBytes()];
+            header.getBytes(header.readerIndex(), bytes);
+            return new HeaderTemplate(bytes);
+        } finally {
+            Bytes.release(header);
+        }
+    }
+
+    public static CompositeByteBuf socks5Encode(ByteBuf buf, HeaderTemplate headerTemplate) {
+        return headerTemplate.composite(buf.alloc(), buf, false);
+    }
+
+    public static CompositeByteBuf prependAddress(ByteBufAllocator allocator, ByteBuf payload, HeaderTemplate headerTemplate) {
+        return headerTemplate.composite(allocator, payload, true);
+    }
 
     public static CompositeByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dst) {
         return socks5Encode(buf, dst.getHost(), dst.getPort());
