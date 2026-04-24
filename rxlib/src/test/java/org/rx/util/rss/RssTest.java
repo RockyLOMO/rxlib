@@ -109,7 +109,7 @@ public class RssTest extends AbstractTester {
         user.setSocksUser("inner-r");
         user.setLastResetTime(DateTime.now());
         user.getLoginIps().put(java.net.InetAddress.getByName("18.12.3.4"), new TrafficLoginInfo());
-        System.out.println(toJsonString(RssSupport.toShadowUserPayload(user)));
+        System.out.println(toJsonString(RssClient.toShadowUserPayload(user)));
     }
 
     @Test
@@ -133,15 +133,15 @@ public class RssTest extends AbstractTester {
     @Test
     @SneakyThrows
     public void nextUpstream_ThrowsWhenNoServerAvailable() {
-        RSSConf oldConf = RssSupport.rssConf;
+        RSSConf oldConf = RssClient.rssConf;
         try {
-            RssSupport.rssConf = new RSSConf();
-            RssSupport.rssConf.route = new RouteConf();
+            RssClient.rssConf = new RSSConf();
+            RssClient.rssConf.route = new RSSConf.RouteConf();
 
             assertThrows(InvalidException.class,
-                    () -> RssSupport.nextUpstream(new RandomList<UpstreamSupport>(), java.net.InetAddress.getByName("127.0.0.1")));
+                    () -> RssClient.nextUpstream(new RandomList<UpstreamSupport>(), java.net.InetAddress.getByName("127.0.0.1")));
         } finally {
-            RssSupport.rssConf = oldConf;
+            RssClient.rssConf = oldConf;
         }
     }
 

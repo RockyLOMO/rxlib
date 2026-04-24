@@ -1,26 +1,30 @@
 package org.rx.util.rss;
 
+import io.netty.handler.codec.http.HttpMethod;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Reflects;
 import org.rx.core.Sys;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
+import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.socks.Authenticator;
-import org.rx.net.socks.RrpConfig;
-import org.rx.net.socks.RrpServer;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksUser;
-import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.transport.TcpServerConfig;
 
 import java.util.Map;
 
 import static org.rx.core.Extends.eq;
 
+@Slf4j
 public final class RssServer {
+    static HttpServer httpServer;
+
     private RssServer() {
     }
 
@@ -30,7 +34,7 @@ public final class RssServer {
         boolean debugFlag = "1".equals(options.get("debug"));
         AuthenticEndpoint shadowUser = Reflects.convertQuietly(options.get("shadowUser"), AuthenticEndpoint.class);
         if (shadowUser == null) {
-            org.slf4j.LoggerFactory.getLogger(RssServer.class).info("Invalid shadowUser arg");
+            log.info("Invalid shadowUser arg");
             return;
         }
         SocksUser ssUser = new SocksUser(shadowUser.getUsername());
@@ -62,7 +66,23 @@ public final class RssServer {
         rpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
         RssRpcApp app = new RssRpcApp(outSvr);
         Remoting.register(app, rpcConf);
-        RssSupport.serverInit();
+        serverInit();
         app.await();
+    }
+
+    static void serverInit() {
+        httpServer = HttpServer.getDefault().requestMapping("/getPublicIp", (request, response) ->
+                response.jsonBody(request.getRemoteEndpoint().getHostString()))
+                .requestAsync("/hf", (request, response) -> {
+                    String url = request.getQueryString().getFirst("fu");
+                    Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);
+                    HttpClient.Request req = HttpClient.request(HttpMethod.GET, url);
+                    if (tm != null) {
+                        req.timeoutMillis(tm);
+                    }
+                    try (HttpClient.Response remote = RssSupport.MAIN_HTTP_CLIENT.execute(req)) {
+                        response.jsonBody(remote.bodyAsJson());
+                    }
+                });
     }
 }

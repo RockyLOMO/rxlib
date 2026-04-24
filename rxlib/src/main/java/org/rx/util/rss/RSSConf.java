@@ -5,8 +5,10 @@ import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.AuthenticEndpoint;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Set;
 
 @Getter
 @Setter
@@ -54,5 +56,15 @@ public class RSSConf {
 
     public boolean hasDebugFlag() {
         return (logFlags & 2) == 2;
+    }
+
+    @Getter
+    @Setter
+    @ToString
+    public static class RouteConf {
+        public boolean enable;
+        public Set<String> dstGeoSiteDirectRules;
+        public Set<InetAddress> srcIpProxyRules;
+        public int srcSteeringTTL;
     }
 }
