@@ -6,7 +6,6 @@ import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.rx.annotation.ErrorCode;
 import org.rx.bean.Decimal;
@@ -259,6 +258,15 @@ public final class Linq<T> implements Iterable<T>, Serializable {
             this.value = value;
             this.key = key;
         }
+    }
+
+    private static <TK> int getCount(Map<TK, Integer> map, TK key) {
+        Integer count = map.get(key);
+        return count == null ? 0 : count;
+    }
+
+    private static <TK> void incrementCount(Map<TK, Integer> map, TK key) {
+        map.put(key, getCount(map, key) + 1);
     }
 
     @SneakyThrows
@@ -520,6 +528,9 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public Linq<T> concat(Iterable<T> set) {
+        if (!iterator().hasNext()) {
+            return me(snapshot(set));
+        }
         List<T> result = newList();
         for (T item : data) {
             result.add(item);
@@ -531,6 +542,9 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public Linq<T> distinct() {
+        if (!parallel && data instanceof Set) {
+            return this;
+        }
         Set<T> result = newSet();
         for (T item : data) {
             result.add(item);
@@ -561,11 +575,72 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public Linq<T> difference(Iterable<T> set) {
-        return Linq.from(CollectionUtils.disjunction(this, set));
+        List<T> right = snapshot(set);
+        Map<T, Integer> leftCounts = new LinkedHashMap<>(capacity(sizeHint()));
+        Map<T, Integer> rightCounts = new LinkedHashMap<>(capacity(right.size()));
+        for (T item : data) {
+            incrementCount(leftCounts, item);
+        }
+        for (T item : right) {
+            incrementCount(rightCounts, item);
+        }
+
+        List<T> result = newList();
+        Map<T, Integer> emitted = new HashMap<>(capacity(leftCounts.size() + rightCounts.size()));
+        for (T item : data) {
+            int allowed = Math.max(getCount(leftCounts, item) - getCount(rightCounts, item), 0);
+            if (allowed == 0) {
+                continue;
+            }
+            int count = getCount(emitted, item);
+            if (count < allowed) {
+                result.add(item);
+                emitted.put(item, count + 1);
+            }
+        }
+        for (T item : right) {
+            int allowed = Math.max(getCount(rightCounts, item) - getCount(leftCounts, item), 0);
+            if (allowed == 0) {
+                continue;
+            }
+            int count = getCount(emitted, item);
+            int base = Math.max(getCount(leftCounts, item) - getCount(rightCounts, item), 0);
+            if (count < base + allowed) {
+                result.add(item);
+                emitted.put(item, count + 1);
+            }
+        }
+        return me(result);
     }
 
     public Linq<T> union(Iterable<T> set) {
-        return Linq.from(CollectionUtils.union(this, set));
+        List<T> right = snapshot(set);
+        Map<T, Integer> leftCounts = new LinkedHashMap<>(capacity(sizeHint()));
+        Map<T, Integer> rightCounts = new LinkedHashMap<>(capacity(right.size()));
+        for (T item : data) {
+            incrementCount(leftCounts, item);
+        }
+        for (T item : right) {
+            incrementCount(rightCounts, item);
+        }
+
+        List<T> result = newList();
+        for (T item : data) {
+            result.add(item);
+        }
+        Map<T, Integer> appended = new HashMap<>(capacity(rightCounts.size()));
+        for (T item : right) {
+            int extra = Math.max(getCount(rightCounts, item) - getCount(leftCounts, item), 0);
+            if (extra == 0) {
+                continue;
+            }
+            int count = getCount(appended, item);
+            if (count < extra) {
+                result.add(item);
+                appended.put(item, count + 1);
+            }
+        }
+        return me(result);
     }
 
     //ListUtils.partition()
@@ -573,8 +648,8 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         if (size <= 0) {
             throw new IllegalArgumentException("size");
         }
-        List<List<T>> n = newList();
         List<T> a = toList();
+        List<List<T>> n = newList((a.size() + size - 1) / size);
         int f = 0, t = 0;
         while (f < a.size()) {
             t = Math.min(t + size, a.size());
@@ -1123,11 +1198,27 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public String toJoinString(String delimiter) {
-        return String.join(delimiter, this.cast());
+        Objects.requireNonNull(delimiter);
+        java.lang.StringBuilder sb = new java.lang.StringBuilder();
+        for (T item : data) {
+            if (sb.length() != 0) {
+                sb.append(delimiter);
+            }
+            sb.append(Objects.requireNonNull((CharSequence) item));
+        }
+        return sb.toString();
     }
 
     public String toJoinString(String delimiter, BiFunc<T, String> selector) {
-        return String.join(delimiter, select(selector));
+        Objects.requireNonNull(delimiter);
+        java.lang.StringBuilder sb = new java.lang.StringBuilder();
+        for (T item : data) {
+            if (sb.length() != 0) {
+                sb.append(delimiter);
+            }
+            sb.append(Objects.requireNonNull(selector.apply(item)));
+        }
+        return sb.toString();
     }
 
     @SuppressWarnings(NON_UNCHECKED)

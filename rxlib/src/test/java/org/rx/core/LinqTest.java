@@ -113,4 +113,20 @@ class LinqTest {
         assertNull(q.last());
         assertNull(q.lastOrDefault(99));
     }
+
+    @Test
+    void unionAndDifferenceShouldKeepBagSemantics() {
+        Linq<Integer> left = Linq.from(1, 1, 2);
+        List<Integer> right = Arrays.asList(1, 2, 2, 3);
+
+        assertEquals(Arrays.asList(1, 1, 2, 2, 3), left.union(right).toList());
+        assertEquals(Arrays.asList(1, 2, 3), left.difference(right).toList());
+    }
+
+    @Test
+    void toJoinStringShouldSupportSelectorWithoutIntermediateQuery() {
+        String value = Linq.from(1, 2, 3).toJoinString("-", p -> "[" + p + "]");
+
+        assertEquals("[1]-[2]-[3]", value);
+    }
 }
