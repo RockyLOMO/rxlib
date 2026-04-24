@@ -13,6 +13,7 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         Channel inbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(inbound);
+        SocksUserTraffic.recordWrite(sc, msg);
         if (!sc.isOutboundReady()) {
             sc.outbound.addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {

@@ -12,7 +12,6 @@ import org.rx.core.Sys;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
-import org.rx.net.support.EndpointTracer;
 
 import java.net.InetSocketAddress;
 
@@ -24,23 +23,33 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
 
     @Getter
     private SocksUser user = SocksUser.ANONYMOUS;
-    private SocksUser.LoginInfo info;
+    @Getter
+    private TrafficUser trafficUser = SocksUser.ANONYMOUS;
+    @Getter
+    private TrafficLoginInfo info;
     private long activeTime;
 
     public ProxyManageHandler(long checkInterval) {
         super(checkInterval);
     }
 
-    public void setUser(@NonNull SocksUser user, ChannelHandlerContext ctx) {
+    public void setUser(@NonNull SocksUser user, TrafficUser trafficUser, ChannelHandlerContext ctx) {
         this.user = user;
+        this.trafficUser = trafficUser != null ? trafficUser : (user instanceof TrafficUser ? (TrafficUser) user : SocksUser.ANONYMOUS);
+        if (this.trafficUser == null || this.trafficUser.isAnonymous()) {
+            SocksUserTraffic.bind(ctx.channel(), SocksUser.ANONYMOUS, null);
+            return;
+        }
         InetSocketAddress realEp = Sockets.getOriginRemoteAddress(ctx.channel());
-        info = user.getLoginIps().computeIfAbsent(realEp.getAddress(), ip -> new SocksUser.LoginInfo());
-        if (user.getIpLimit() != -1 && user.getLoginIps().size() > user.getIpLimit()) {
-            log.error("SocksUser {} maxIpCount={}\nconnectedIps={} incomingIp={}", user.getUsername(), user.getIpLimit(), user.getLoginIps().keySet(), realEp);
+        info = this.trafficUser.getLoginIps().computeIfAbsent(realEp.getAddress(), ip -> new TrafficLoginInfo());
+        if (this.trafficUser.getIpLimit() != -1 && this.trafficUser.getLoginIps().size() > this.trafficUser.getIpLimit()) {
+            log.error("TrafficUser {} maxIpCount={}\nconnectedIps={} incomingIp={}",
+                    this.trafficUser.getUsername(), this.trafficUser.getIpLimit(), this.trafficUser.getLoginIps().keySet(), realEp);
             Sockets.closeOnFlushed(ctx.channel());
             return;
         }
-        info.refCnt++;
+        info.getRefCnt().incrementAndGet();
+        SocksUserTraffic.bind(ctx.channel(), this.trafficUser, info);
     }
 
     @Override
@@ -58,25 +67,23 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
 
         if (info != null) {
             DateTime now = DateTime.now();
-            if (info.latestTime == null || info.latestTime.before(now)) {
-                info.latestTime = now;
+            if (info.getLatestTime() == null || info.getLatestTime().before(now)) {
+                info.setLatestTime(now);
             }
-//            info.refCnt--;
-            info.totalActiveSeconds.addAndGet(elapsed / Constants.NANO_TO_MILLIS / 1000);
-            //svr write = client read
-            info.totalReadBytes.addAndGet(writeBytes);
-            info.totalWriteBytes.addAndGet(readBytes);
+            info.getRefCnt().decrementAndGet();
+            info.getTotalActiveSeconds().addAndGet(elapsed / Constants.NANO_TO_MILLIS / 1000);
         }
 
         InetSocketAddress remoteAddress = Sockets.getOriginRemoteAddress(ctx.channel());
+        String tagsUser = trafficUser != null && !trafficUser.isAnonymous() ? trafficUser.getUsername() : user.getUsername();
         if (DiagnosticMetrics.isEnabled()) {
-            String tags = "user=" + user.getUsername() + ",remote=" + remoteAddress;
+            String tags = "user=" + tagsUser + ",remote=" + remoteAddress;
             DiagnosticMetrics.record("socks.session.active.millis", elapsed / Constants.NANO_TO_MILLIS, tags);
             DiagnosticMetrics.record("socks.session.inbound.bytes", readBytes, tags);
             DiagnosticMetrics.record("socks.session.outbound.bytes", writeBytes, tags);
         }
         log.info("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",
-                user.getUsername(), remoteAddress, Sys.formatNanosElapsed(elapsed),
+                tagsUser, remoteAddress, Sys.formatNanosElapsed(elapsed),
                 Bytes.readableByteSize(readBytes), Bytes.readableByteSize(writeBytes));
         super.channelInactive(ctx);
     }

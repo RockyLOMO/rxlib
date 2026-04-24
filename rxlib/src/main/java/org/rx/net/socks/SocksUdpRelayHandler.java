@@ -256,6 +256,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                     config.getListenPort(), outBuf.readableBytes(), sender, clientAddr);
         }
         DatagramPacket packet = new DatagramPacket(outBuf, clientAddr);
+        SocksUserTraffic.recordRead(relay, sc, packet.content().readableBytes(), 1L);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
                 udpMetricTags(config, "to-client", sc != null ? sc.getUpstream() : null));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
@@ -354,6 +355,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             SocksContext context = initState.context;
             if (context == null) {
                 context = SocksContext.getCtx(clientOriginAddr, dstEp);
+                SocksUserTraffic.attachFromChannel(context, relay);
                 server.raiseEvent(server.onUdpRoute, context);
             }
             Upstream upstream = context.getUpstream();
@@ -472,6 +474,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                     config.getListenPort(), inBuf.readableBytes(), sender, upDstAddr, dstEp);
         }
         DatagramPacket packet = new DatagramPacket(inBuf, upDstAddr);
+        SocksUserTraffic.recordWrite(relay, context, packet.content().readableBytes(), 1L);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
                 udpMetricTags(config, "to-upstream", upstream));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {

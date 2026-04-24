@@ -18,6 +18,7 @@ public class SocksTcpBackendRelayHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         Channel outbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(outbound);
+        SocksUserTraffic.recordRead(sc, msg);
         log.debug("TCP RELAY {}[{}] => {}", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress());
         sc.inbound.writeAndFlush(msg);
     }

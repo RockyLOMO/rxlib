@@ -54,8 +54,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }
 
         InetSocketAddress srcEp = Sockets.getOriginRemoteAddress(inCh);
+        ProxyManageHandler manageHandler = ProxyManageHandler.get(inbound);
+        TrafficUser user = manageHandler != null ? manageHandler.getTrafficUser() : SocksUser.ANONYMOUS;
+        TrafficLoginInfo loginInfo = manageHandler != null ? manageHandler.getInfo() : null;
         if (msg.type() == Socks5CommandType.CONNECT) {
             SocksContext e = SocksContext.getCtx(srcEp, dstEp);
+            SocksUserTraffic.attach(e, user, loginInfo);
             server.raiseEvent(server.onTcpRoute, e);
             connect(inCh, msg.dstAddrType(), e, null);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
@@ -81,6 +85,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 }
                 p.addLast(udp2raw ? Udp2rawHandler.DEFAULT : SocksUdpRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(udpBindAddr);
+            SocksUserTraffic.bind(udpFuture.channel(), user, loginInfo);
 
             // Pre-set client addr so first packet can be identified
             if (udp2raw) {

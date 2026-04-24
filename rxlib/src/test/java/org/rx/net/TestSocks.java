@@ -20,7 +20,6 @@ import org.apache.sshd.server.shell.InteractiveProcessShellFactory;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
-import org.rx.Main;
 import org.rx.bean.*;
 import org.rx.codec.AESUtil;
 import org.rx.codec.CodecUtil;
@@ -38,6 +37,8 @@ import org.rx.net.http.RestClient;
 import org.rx.net.nameserver.NameserverClient;
 import org.rx.net.nameserver.NameserverConfig;
 import org.rx.net.nameserver.NameserverImpl;
+import org.rx.util.rss.RssRpcApp;
+import org.rx.util.rss.RssSupport;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingException;
 import org.rx.net.rpc.RpcClientConfig;
@@ -500,7 +501,7 @@ public class TestSocks extends AbstractTester {
 
     @Test
     public void optimalSettings() {
-        OptimalSettings[] a = {Main.SS_IN_OPS, Main.OUT_OPS};
+        OptimalSettings[] a = {RssSupport.SS_IN_OPS, RssSupport.OUT_OPS};
         for (OptimalSettings ops : a) {
             ops.calculate();
             System.out.println(ops);
@@ -613,7 +614,7 @@ public class TestSocks extends AbstractTester {
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(outSrvEp.getPort() + 1));
         rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
-        Remoting.register(new Main(backSvr), rpcServerConf);
+        Remoting.register(new RssRpcApp(backSvr), rpcServerConf);
 
         //frontend
         RandomList<UpstreamSupport> socksServers = new RandomList<>();

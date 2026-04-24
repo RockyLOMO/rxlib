@@ -47,9 +47,9 @@ public class DefaultSocksAuthenticator implements Authenticator {
     public void resetIp() {
         for (SocksUser user : store.values()) {
 //            boolean changed = false;
-            Map<InetAddress, SocksUser.LoginInfo> loginIps = user.getLoginIps();
-            for (Map.Entry<InetAddress, SocksUser.LoginInfo> lEntry : loginIps.entrySet()) {
-                DateTime latestTime = lEntry.getValue().latestTime;
+            Map<InetAddress, TrafficLoginInfo> loginIps = user.getLoginIps();
+            for (Map.Entry<InetAddress, TrafficLoginInfo> lEntry : loginIps.entrySet()) {
+                DateTime latestTime = lEntry.getValue().getLatestTime();
                 if (latestTime != null && latestTime.before(DateTime.now().addDays(-2))) {
                     loginIps.remove(lEntry.getKey());
 //                    changed = true;
@@ -63,11 +63,13 @@ public class DefaultSocksAuthenticator implements Authenticator {
 
     public void resetData() {
         for (SocksUser usr : store.values()) {
-            for (SocksUser.LoginInfo l : usr.getLoginIps().values()) {
-                l.totalReadBytes.set(0);
-                l.totalWriteBytes.set(0);
+            for (TrafficLoginInfo l : usr.getLoginIps().values()) {
+                l.getTotalReadBytes().set(0);
+                l.getTotalWriteBytes().set(0);
+                l.getTotalReadPackets().set(0);
+                l.getTotalWritePackets().set(0);
             }
-            usr.lastResetTime = DateTime.now();
+            usr.setLastResetTime(DateTime.now());
         }
     }
 }

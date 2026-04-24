@@ -8,7 +8,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
-import org.rx.Main;
 import org.rx.annotation.DbColumn;
 import org.rx.annotation.ErrorCode;
 import org.rx.annotation.Subscribe;
@@ -29,6 +28,7 @@ import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksUser;
 import org.rx.test.*;
 import org.rx.third.open.CrcModel;
+import org.rx.util.rss.RSSConf;
 import org.rx.util.function.Func;
 import org.rx.util.function.TripleAction;
 import org.slf4j.MDC;
@@ -477,7 +477,7 @@ public class TestCore extends AbstractTester {
 
         SocksUser r = new SocksUser("r");
         r.setLastResetTime(DateTime.now());
-        r.getLoginIps().put(InetAddress.getByName("18.12.3.4"), new SocksUser.LoginInfo());
+        r.getLoginIps().put(InetAddress.getByName("18.12.3.4"), new org.rx.net.socks.TrafficLoginInfo());
         System.out.println(toJsonString(r));
     }
 
@@ -634,7 +634,7 @@ public class TestCore extends AbstractTester {
     public void yamlConf() {
 //        Class.forName(Sys.class.getName());
         YamlConfiguration yamlConfiguration = new YamlConfiguration("output.yaml");
-        Main.RSSConf rssConf = yamlConfiguration.readAs(null, Main.RSSConf.class);
+        RSSConf rssConf = yamlConfiguration.readAs(null, RSSConf.class);
         System.out.println("反序列化rssConf: " + rssConf);
         System.out.println("序列化rssConf:" + yamlConfiguration.dump());
 
