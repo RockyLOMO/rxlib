@@ -50,7 +50,7 @@ import org.rx.net.support.GeoManager;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.SftpClient;
-import org.rx.net.transport.TcpServer;
+import org.rx.net.transport.RpcTcpServer;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.net.transport.UdpClient;
 import org.rx.test.*;
@@ -76,7 +76,7 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class TestSocks extends AbstractTester {
-    final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
+    final Map<Object, RpcTcpServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
     final CopyOnWriteArraySet<String> bypassHosts = new CopyOnWriteArraySet<String>(RxConfig.INSTANCE.getNet().getBypassHosts()) {{
@@ -439,7 +439,7 @@ public class TestSocks extends AbstractTester {
     }
 
     <T> Future<?> restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
-        TcpServer rs = serverHost.remove(svcImpl);
+        RpcTcpServer rs = serverHost.remove(svcImpl);
         sleep(startDelay);
         rs.close();
         System.out.println("Close server on port " + rs.getConfig().getListenPort());

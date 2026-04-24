@@ -6,24 +6,24 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.ObjectPool;
 import org.rx.core.Sys;
-import org.rx.net.transport.StatefulTcpClient;
+import org.rx.net.transport.DefaultRpcTcpClient;
 import org.rx.net.transport.TcpClientConfig;
 
 @Slf4j
 @RequiredArgsConstructor
-class RpcClientPool extends Disposable implements TcpClientPool {
-    final ObjectPool<StatefulTcpClient> pool;
+class RpcClientPool extends Disposable implements RpcTcpClientPool {
+    final ObjectPool<DefaultRpcTcpClient> pool;
 
     public RpcClientPool(RpcClientConfig<?> template) {
         int minIdleSize = Math.max(1, template.getMinPoolSize());
         int maxSize = Math.max(minIdleSize, template.getMaxPoolSize());
         pool = new ObjectPool<>(minIdleSize, maxSize, () -> {
             TcpClientConfig config = Sys.deepClone(template.getTcpConfig());
-            StatefulTcpClient c = new StatefulTcpClient(config);
+            DefaultRpcTcpClient c = new DefaultRpcTcpClient(config);
             c.connect(config.getServerEndpoint());
             log.debug("Create RpcClient {}", c);
             return c;
-        }, StatefulTcpClient::isConnected, null, c -> {
+        }, DefaultRpcTcpClient::isConnected, null, c -> {
             c.getConfig().setEnableReconnect(false);
             c.onError.purge();
             c.onReceive.purge();
@@ -44,14 +44,14 @@ class RpcClientPool extends Disposable implements TcpClientPool {
 
     @SneakyThrows
     @Override
-    public StatefulTcpClient borrowClient() {
+    public DefaultRpcTcpClient borrowClient() {
         checkNotClosed();
 
         return pool.borrow();
     }
 
     @Override
-    public StatefulTcpClient returnClient(StatefulTcpClient client) {
+    public DefaultRpcTcpClient returnClient(DefaultRpcTcpClient client) {
         checkNotClosed();
 
         pool.recycle(client);

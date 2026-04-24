@@ -58,7 +58,7 @@ public final class Remoting {
         static class EventContext {
             final EventArgs computedArgs;
             final Promise<EventArgs> computedPromise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
-            volatile TcpClient computingClient;
+            volatile RpcTcpClient computingClient;
 
             EventContext(EventArgs computedArgs) {
                 this.computedArgs = computedArgs;
@@ -66,29 +66,29 @@ public final class Remoting {
         }
 
         static class EventBean {
-            final Set<TcpClient> subscribe = ConcurrentHashMap.newKeySet();
+            final Set<RpcTcpClient> subscribe = ConcurrentHashMap.newKeySet();
             final Map<Long, EventContext> contextMap = new ConcurrentHashMap<>();
         }
 
         final RpcServerConfig config;
-        final TcpServer server;
+        final RpcTcpServer server;
         final Map<String, EventBean> eventBeans = new ConcurrentHashMap<>();
     }
 
     static final AttributeKey<MetadataMessage> HANDSHAKE_META_KEY = AttributeKey.valueOf("HandshakeMeta");
     static final String M_0 = "raiseEvent", M_1 = "raiseEventAsync", M_2 = "attachEvent";
     static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
-    // Per-contract init locks: avoids holding ConcurrentHashMap's bin lock during heavy TcpServer startup
+    // Per-contract init locks: avoids holding ConcurrentHashMap's bin lock during heavy RpcTcpServer startup
     static final Map<Object, Object> serverInitLocks = new ConcurrentHashMap<>();
-    static final Map<RpcClientConfig, TcpClientPool> clientPools = new ConcurrentHashMap<>();
+    static final Map<RpcClientConfig, RpcTcpClientPool> clientPools = new ConcurrentHashMap<>();
     static final IdGenerator generator = new IdGenerator();
-    static final Map<StatefulTcpClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<>();
+    static final Map<DefaultRpcTcpClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<>();
 
     @SneakyThrows
     public static <T> T createFacade(@NonNull Class<T> contract, @NonNull RpcClientConfig<T> config) {
         DiagnosticMetrics.setNetComponent(config.getTcpConfig(), DiagnosticMetrics.NET_RPC_CLIENT);
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
-        $<StatefulTcpClient> sync = $();
+        $<DefaultRpcTcpClient> sync = $();
         return proxy(contract, (m, p) -> {
             if (Reflects.OBJECT_METHODS.contains(m)) {
                 return p.fastInvokeSuper();
@@ -154,7 +154,7 @@ public final class Remoting {
             if (pack == null) {
                 pack = clientBean.pack = new MethodMessage(generator.increment(), m.getName(), args, ThreadPool.traceId());
             }
-            TcpClientPool pool = clientPools.computeIfAbsent(config, k -> {
+            RpcTcpClientPool pool = clientPools.computeIfAbsent(config, k -> {
                 log.info("RpcClientPool {}", toJsonString(k));
                 if (!config.isUsePool()) {
                     return new NonClientPool(config.getTcpConfig());
@@ -164,20 +164,20 @@ public final class Remoting {
 
             if (sync.v == null) {
                 // Borrow client before entering the lock to avoid blocking inside synchronized
-                StatefulTcpClient candidate = pool.borrowClient();
+                DefaultRpcTcpClient candidate = pool.borrowClient();
                 boolean returnCandidate = false;
                 synchronized (sync) {
                     if (sync.v == null) {
                         init(sync.v = candidate, p.getProxyObject(), isCompute);
-                        TripleAction<T, StatefulTcpClient> initFn = (o, c) -> {
+                        TripleAction<T, DefaultRpcTcpClient> initFn = (o, c) -> {
                             c.send(new MetadataMessage(config.getEventVersion()));
-                            TripleAction<T, StatefulTcpClient> initHandler = config.getInitHandler();
+                            TripleAction<T, DefaultRpcTcpClient> initHandler = config.getInitHandler();
                             if (initHandler != null) {
                                 initHandler.invoke(o, c);
                             }
                         };
                         sync.v.onReconnected.combine((s, e) -> {
-                            StatefulTcpClient sc = (StatefulTcpClient) s;
+                            DefaultRpcTcpClient sc = (DefaultRpcTcpClient) s;
                             initFn.invoke((T) p.getProxyObject(), sc);
                             // 在途重发仅在连接所在 EventLoop 上排队，与出站 write 顺序一致，且不走无关线程池
                             Channel ch = sc.getChannel();
@@ -213,7 +213,7 @@ public final class Remoting {
                     pool.returnClient(candidate);
                 }
             }
-            StatefulTcpClient client = sync.v;
+            DefaultRpcTcpClient client = sync.v;
             AtomicReference<Map<Integer, ClientBean>> waitBeans = new AtomicReference<>();
 
             MethodMessage methodMessage = as(pack, MethodMessage.class);
@@ -285,11 +285,11 @@ public final class Remoting {
         });
     }
 
-    private static void init(StatefulTcpClient client, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
+    private static void init(DefaultRpcTcpClient client, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
         client.onError.combine((s, e) -> e.setCancel(true));
         // Clean up the clientBeans entry when the client is permanently disconnected (no reconnect)
         client.onDisconnected.combine((s, e) -> {
-            StatefulTcpClient c = (StatefulTcpClient) s;
+            DefaultRpcTcpClient c = (DefaultRpcTcpClient) s;
             if (!c.getConfig().isEnableReconnect()) {
                 clientBeans.remove(c);
             }
@@ -329,11 +329,11 @@ public final class Remoting {
         });
     }
 
-    private static Map<Integer, ClientBean> getClientBeans(StatefulTcpClient client) {
+    private static Map<Integer, ClientBean> getClientBeans(DefaultRpcTcpClient client) {
         return clientBeans.computeIfAbsent(client, k -> new ConcurrentHashMap<>());
     }
 
-    private static void recycleClient(TcpClientPool pool, $<StatefulTcpClient> sync, StatefulTcpClient client) {
+    private static void recycleClient(RpcTcpClientPool pool, $<DefaultRpcTcpClient> sync, DefaultRpcTcpClient client) {
         synchronized (sync) {
             if (sync.v == client) {
                 sync.v = pool.returnClient(client);
@@ -358,7 +358,7 @@ public final class Remoting {
         return p.fastInvokeSuper();
     }
 
-    public static TcpServer register(Object contractInstance, int listenPort, boolean enableEventCompute) {
+    public static RpcTcpServer register(Object contractInstance, int listenPort, boolean enableEventCompute) {
         RpcServerConfig conf = new RpcServerConfig(new TcpServerConfig(listenPort));
         if (enableEventCompute) {
             conf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
@@ -366,14 +366,14 @@ public final class Remoting {
         return register(contractInstance, conf);
     }
 
-    public static TcpServer register(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
+    public static RpcTcpServer register(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
         // Fast path: already registered, no locking needed
         ServerBean existing = serverBeans.get(contractInstance);
         if (existing != null) {
             return existing.server;
         }
         // Slow path: use a per-contract init lock to avoid holding ConcurrentHashMap's bin lock
-        // during the heavyweight TcpServer creation and port binding.
+        // during the heavyweight RpcTcpServer creation and port binding.
         Object initLock = serverInitLocks.computeIfAbsent(contractInstance, k -> new Object());
         synchronized (initLock) {
             existing = serverBeans.get(contractInstance);
@@ -390,7 +390,7 @@ public final class Remoting {
 
     private static ServerBean doRegister(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
             DiagnosticMetrics.setNetComponent(config.getTcpConfig(), DiagnosticMetrics.NET_RPC_SERVER);
-            ServerBean bean = new ServerBean(config, new TcpServer(config.getTcpConfig()));
+            ServerBean bean = new ServerBean(config, new RpcTcpServer(config.getTcpConfig()));
             bean.server.onClosed.combine((s, e) -> serverBeans.remove(contractInstance));
             bean.server.onError.combine((s, e) -> {
                 e.setCancel(true);
@@ -408,7 +408,7 @@ public final class Remoting {
                                 if (computePack != null) {
                                     awaitComputedArgs(eventBean, eCtx, computePack, s);
                                 }
-                                List<TcpClient> broadcastTargets = collectBroadcastTargets(bean, eventBean, eCtx);
+                                List<RpcTcpClient> broadcastTargets = collectBroadcastTargets(bean, eventBean, eCtx);
                                 doSendBroadcast(bean, p, eCtx, broadcastTargets);
                             }, false); //must false
                             log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, e.getClient().getRemoteEndpoint());
@@ -422,7 +422,7 @@ public final class Remoting {
                             ServerBean.EventContext publishCtx = new ServerBean.EventContext(p.eventArgs);
                             publishCtx.computingClient = e.getClient();
                             log.info("serverSide event {} {} -> PUBLISH", p.eventName, e.getClient().getRemoteEndpoint());
-                            List<TcpClient> publishTargets = collectBroadcastTargets(bean, eventBean, publishCtx);
+                            List<RpcTcpClient> publishTargets = collectBroadcastTargets(bean, eventBean, publishCtx);
                             doSendBroadcast(bean, p, publishCtx, publishTargets);
                             break;
                         case COMPUTE_ARGS:
@@ -477,11 +477,11 @@ public final class Remoting {
     }
 
     // Collects broadcast targets without sending — call this inside synchronized(eventBean).
-    private static List<TcpClient> collectBroadcastTargets(ServerBean s, ServerBean.EventBean eventBean,
+    private static List<RpcTcpClient> collectBroadcastTargets(ServerBean s, ServerBean.EventBean eventBean,
                                                             ServerBean.EventContext context) {
         List<Integer> allow = s.config.getEventBroadcastVersions();
-        List<TcpClient> targets = new ArrayList<>(eventBean.subscribe.size());
-        for (TcpClient client : eventBean.subscribe) {
+        List<RpcTcpClient> targets = new ArrayList<>(eventBean.subscribe.size());
+        for (RpcTcpClient client : eventBean.subscribe) {
             if (!client.isConnected()) {
                 eventBean.subscribe.remove(client);
                 continue;
@@ -503,7 +503,7 @@ public final class Remoting {
             return null;
         }
 
-        TcpClient computingClient = selectComputingClient(bean.config, eventBean);
+        RpcTcpClient computingClient = selectComputingClient(bean.config, eventBean);
         if (computingClient == null) {
             log.warn("serverSide event {} subscribe empty", eventName);
             return null;
@@ -516,8 +516,8 @@ public final class Remoting {
         return pack;
     }
 
-    private static TcpClient selectComputingClient(RpcServerConfig config, ServerBean.EventBean eventBean) {
-        Linq<TcpClient> subscribes = Linq.from(eventBean.subscribe).where(x -> x.attr(HANDSHAKE_META_KEY) != null);
+    private static RpcTcpClient selectComputingClient(RpcServerConfig config, ServerBean.EventBean eventBean) {
+        Linq<RpcTcpClient> subscribes = Linq.from(eventBean.subscribe).where(x -> x.attr(HANDSHAKE_META_KEY) != null);
         if (config.getEventComputeVersion() == RpcServerConfig.EVENT_LATEST_COMPUTE) {
             return subscribes.groupBy(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion(), (p1, p2) -> {
                 int i = ThreadLocalRandom.current().nextInt(0, p2.count());
@@ -528,7 +528,7 @@ public final class Remoting {
                 .orderByRand().firstOrDefault();
     }
 
-    private static void awaitComputedArgs(ServerBean.EventBean eventBean, ServerBean.EventContext context, EventMessage pack, TcpServer s) {
+    private static void awaitComputedArgs(ServerBean.EventBean eventBean, ServerBean.EventContext context, EventMessage pack, RpcTcpServer s) {
         try {
             context.computingClient.send(pack);
             log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, context.computingClient.getRemoteEndpoint(), s.getConfig().getConnectTimeoutMillis());
@@ -545,7 +545,7 @@ public final class Remoting {
 
     // Sends to the pre-collected targets — call this OUTSIDE synchronized(eventBean).
     private static void doSendBroadcast(ServerBean s, EventMessage p, ServerBean.EventContext context,
-                                        List<TcpClient> targets) {
+                                        List<RpcTcpClient> targets) {
         if (targets.isEmpty()) {
             return;
         }
@@ -553,7 +553,7 @@ public final class Remoting {
         EventMessage pack = new EventMessage(p.eventName, EventFlag.BROADCAST);
         pack.eventArgs = context.computedArgs;
         tryAs(pack.eventArgs, RemotingEventArgs.class, x -> x.setBroadcastVersions(allow));
-        for (TcpClient client : targets) {
+        for (RpcTcpClient client : targets) {
             client.send(pack);
             log.info("serverSide event {} {} -> BROADCAST", pack.eventName, client.getRemoteEndpoint());
         }

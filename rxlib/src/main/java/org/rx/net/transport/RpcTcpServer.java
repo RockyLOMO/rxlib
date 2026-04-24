@@ -25,21 +25,23 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.core.Extends.*;
 
 @Slf4j
 @RequiredArgsConstructor
-public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
+public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpServer> {
     @RequiredArgsConstructor
-    static class ClientImpl extends ChannelInboundHandlerAdapter implements TcpClient {
-        final TcpServer owner;
-        final Delegate<TcpClient, NEventArgs<Serializable>> onReceive = Delegate.create();
+    static class ClientImpl extends ChannelInboundHandlerAdapter implements RpcTcpClient {
+        final RpcTcpServer owner;
+        final Delegate<RpcTcpClient, NEventArgs<Serializable>> onReceive = Delegate.create();
         @Getter
         Channel channel;
         //cache meta
         @Getter
         InetSocketAddress remoteEndpoint;
+        boolean admitted;
 
         @Override
         public boolean isConnected() {
@@ -71,7 +73,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
         }
 
         @Override
-        public Delegate<TcpClient, NEventArgs<Serializable>> onReceive() {
+        public Delegate<RpcTcpClient, NEventArgs<Serializable>> onReceive() {
             return onReceive;
         }
 
@@ -87,12 +89,15 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             log.debug("serverActive {}", channel.remoteAddress());
             TcpServerConfig config = owner.config;
             Map<InetSocketAddress, ClientImpl> clients = owner.clients;
-            if (clients.size() > config.getCapacity()) {
-                log.warn("Force close client, Not enough capacity {}/{}.", clients.size(), config.getCapacity());
+            int clientCount = owner.clientCount.incrementAndGet();
+            if (clientCount > config.getCapacity()) {
+                owner.clientCount.decrementAndGet();
+                log.warn("Force close client, Not enough capacity {}/{}.", clientCount, config.getCapacity());
                 Sockets.closeOnFlushed(channel);
                 return;
             }
 
+            admitted = true;
             clients.put(remoteEndpoint = (InetSocketAddress) channel.remoteAddress(), this);
             TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, null);
             owner.raiseEvent(owner.onConnected, args);
@@ -129,7 +134,14 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("serverInactive {}", ctx.channel().remoteAddress());
-            owner.clients.remove(getRemoteEndpoint());
+            if (admitted) {
+                admitted = false;
+                owner.clientCount.decrementAndGet();
+            }
+            InetSocketAddress endpoint = getRemoteEndpoint();
+            if (endpoint != null) {
+                owner.clients.remove(endpoint, this);
+            }
             owner.raiseEventAsync(owner.onDisconnected, new TcpServerEventArgs<>(this, null));
         }
 
@@ -180,17 +192,18 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     }
 
     static final ThreadPool SCHEDULER = new ThreadPool(Sockets.ReactorNames.RPC);
-    public final Delegate<TcpServer, TcpServerEventArgs<Serializable>> onConnected = Delegate.create(),
+    public final Delegate<RpcTcpServer, TcpServerEventArgs<Serializable>> onConnected = Delegate.create(),
             onDisconnected = Delegate.create(),
             onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<TcpServer, TcpServerEventArgs<PingPacket>> onPing = Delegate.create();
-    public final Delegate<TcpServer, TcpServerEventArgs<Throwable>> onError = Delegate.create();
-    public final Delegate<TcpServer, EventArgs> onClosed = Delegate.create();
+    public final Delegate<RpcTcpServer, TcpServerEventArgs<PingPacket>> onPing = Delegate.create();
+    public final Delegate<RpcTcpServer, TcpServerEventArgs<Throwable>> onError = Delegate.create();
+    public final Delegate<RpcTcpServer, EventArgs> onClosed = Delegate.create();
 
     @Getter
     final TcpServerConfig config;
     final Map<InetSocketAddress, ClientImpl> clients = new ConcurrentHashMap<>();
+    final AtomicInteger clientCount = new AtomicInteger();
     ServerBootstrap bootstrap;
     Channel serverChannel;
 
@@ -204,12 +217,12 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     }
 
     @Override
-    public <TArgs> CompletableFuture<Void> raiseEventAsync(Delegate<TcpServer, TArgs> event, TArgs args) {
+    public <TArgs> CompletableFuture<Void> raiseEventAsync(Delegate<RpcTcpServer, TArgs> event, TArgs args) {
         ThreadPool scheduler = asyncScheduler();
         return scheduler.runAsync(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY.flags());
     }
 
-    public Map<InetSocketAddress, TcpClient> getClients() {
+    public Map<InetSocketAddress, RpcTcpClient> getClients() {
         return Collections.unmodifiableMap(clients);
     }
 
@@ -249,7 +262,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     public String dumpClients() {
         StringBuilder buf = new StringBuilder();
         int i = 1;
-        for (TcpClient client : Linq.from(clients.values()).orderBy(p -> p.remoteEndpoint)) {
+        for (RpcTcpClient client : Linq.from(clients.values()).orderBy(p -> p.remoteEndpoint)) {
             buf.appendFormat("\t%s", client.getRemoteEndpoint());
             if (i++ % 3 == 0) {
                 buf.appendLine();
@@ -258,11 +271,11 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
         return buf.toString();
     }
 
-    public TcpClient getClient(InetSocketAddress remoteEndpoint) {
+    public RpcTcpClient getClient(InetSocketAddress remoteEndpoint) {
         return getClient(remoteEndpoint, true);
     }
 
-    public TcpClient getClient(InetSocketAddress remoteEp, boolean throwOnEmpty) {
+    public RpcTcpClient getClient(InetSocketAddress remoteEp, boolean throwOnEmpty) {
         checkNotClosed();
 
         ClientImpl handler = clients.get(remoteEp);
