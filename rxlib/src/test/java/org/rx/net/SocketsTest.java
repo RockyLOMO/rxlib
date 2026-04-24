@@ -114,6 +114,42 @@ public class SocketsTest {
     }
 
     @Test
+    public void testUdpWriteDropsWhenPendingBytesExceedLimit() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(Sockets.ATTR_UDP_WRITE_LIMIT_BYTES).set(4);
+
+        ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4, 5});
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.PENDING_OVERLIMIT,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=overlimit"));
+        assertEquals(0, payload.refCnt());
+        assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+        assertNull(channel.readOutbound());
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteAcceptedClearsPendingBytes() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(Sockets.ATTR_UDP_WRITE_LIMIT_BYTES).set(128);
+
+        ByteBuf payload = Unpooled.copiedBuffer("udp-ok", StandardCharsets.UTF_8);
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.ACCEPTED,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=accepted"));
+        channel.runPendingTasks();
+        channel.runScheduledPendingTasks();
+
+        DatagramPacket outbound = channel.readOutbound();
+        assertNotNull(outbound);
+        assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+        outbound.release();
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
     public void testParseEndpoint() {
         InetSocketAddress address = Sockets.parseEndpoint("127.0.0.1:8080");
         assertEquals("127.0.0.1", address.getAddress().getHostAddress());

@@ -5,19 +5,19 @@ todos:
   # 必须修
   - id: fix-double-release
     content: 【必须修】修复 SSUdpProxyHandler.writePacketNow 异常路径 payload 可能 double-release
-    status: pending
+    status: completed
   - id: add-udp-backpressure
-    content: 【必须修】为 UDP 中继链路补应用层写侧过载保护（不是传输层背压），增加 isWritable/drop 指标
-    status: pending
+    content: 【必须修】为 UDP 中继链路补应用层写侧过载保护（不是传输层背压），统一封装到 Sockets.writeUdp 并补 drop 指标
+    status: completed
   - id: fix-session-invalidation
     content: 【必须修】SocksUdpUpstream session 失效时主动回调 relay 清理 ctxMap/routeMap
-    status: pending
+    status: completed
   - id: add-observability
     content: 【必须修】补充 OUTBOUND_POOL、异常 sender、缓存容量、drop 等 DiagnosticMetrics 指标
-    status: pending
+    status: completed
   - id: add-tests
-    content: 【必须修】补充并发多 dst、session 自愈、泄漏检测、异常注入、大包等测试用例
-    status: pending
+    content: 【必须修】补充 UDP 写侧保护单测 + session 自愈集成回归，并回归场景4主链路
+    status: completed
   # 需要压测/指标证明后再动
   - id: fix-ctxmap-keying
     content: 【需压测/指标证明后再动】评估是否重构 SocksUdpRelayHandler.ctxMap；当前更接近 known-upstream-sender gate，而非 per-dst 回包分流表
