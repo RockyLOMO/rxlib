@@ -22,6 +22,7 @@ import org.rx.core.RxConfig;
 import org.rx.core.Tasks;
 import org.rx.core.YamlConfiguration;
 import org.rx.exception.InvalidException;
+import org.rx.io.EntityDatabaseImpl;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.OptimalSettings;
 import org.rx.net.Sockets;
@@ -40,6 +41,7 @@ import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.SocksUser;
+import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficLoginInfo;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
@@ -56,6 +58,8 @@ import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.Date;
+import java.util.List;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -216,6 +220,103 @@ public class RssTest extends AbstractTester {
             assertTrue(response.getContent().toString(StandardCharsets.UTF_8).contains("RSS SS 用户信息"));
         } finally {
             RxConfig.INSTANCE.setRtoken(oldRtoken);
+        }
+    }
+
+    @Test
+    public void rssUserTrafficStore_QueryByProtocolAndCleanupExpired() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl("jdbc:h2:mem:rss_store_" + System.nanoTime()
+                + ";DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL", null, 1, true);
+        RssUserTrafficStore store = new RssUserTrafficStore(db);
+        ShadowUser user = new ShadowUser();
+        user.setUsername("ss-rocky");
+        user.setSocksUser("inner-rocky");
+        try {
+            InetSocketAddress remote = new InetSocketAddress("18.12.3.4", 12345);
+            store.record(user, remote, SocksUserTraffic.PROTOCOL_TCP, 1024L, 2048L, 10L, 20L);
+            store.recordSession(user, remote, SocksUserTraffic.PROTOCOL_TCP, 60L);
+            store.record(user, remote, SocksUserTraffic.PROTOCOL_UDP, 512L, 256L, 5L, 3L);
+            store.flush();
+
+            List<RssUserTrafficStore.UserTrafficSummary> users = store.queryUserSummaries(0L, System.currentTimeMillis());
+            assertEquals(1, users.size());
+            assertEquals(1536L, users.get(0).getReadBytes());
+            assertEquals(2304L, users.get(0).getWriteBytes());
+
+            List<RssUserTrafficStore.ProtocolTrafficSummary> protocols = store.queryProtocolSummaries(0L, System.currentTimeMillis());
+            assertEquals(2, protocols.size());
+            assertTrue(protocols.stream().anyMatch(p -> SocksUserTraffic.PROTOCOL_TCP.equals(p.getProtocol()) && p.getSessionCount() == 1L));
+            assertTrue(protocols.stream().anyMatch(p -> SocksUserTraffic.PROTOCOL_UDP.equals(p.getProtocol()) && p.getReadBytes() == 512L));
+
+            List<RssUserTrafficStore.LoginIpTrafficSummary> loginIps = store.queryLoginIpSummaries(0L, System.currentTimeMillis());
+            assertEquals(2, loginIps.size());
+
+            RssUserTrafficStore.HourlyTrafficEntity oldTraffic = new RssUserTrafficStore.HourlyTrafficEntity();
+            long expiredHour = System.currentTimeMillis() / RssUserTrafficStore.ONE_HOUR_MILLIS - (RssUserTrafficStore.DEFAULT_RETENTION_DAYS * 24L + 1L);
+            oldTraffic.setId(RssUserTrafficStore.HourlyTrafficEntity.idOf("expired", expiredHour));
+            oldTraffic.setUsername("expired");
+            oldTraffic.setHourEpoch(expiredHour);
+            oldTraffic.setCreateTime(new Date());
+            oldTraffic.setModifyTime(new Date());
+            db.save(oldTraffic, true);
+
+            RssUserTrafficStore.HourlyLoginIpTrafficEntity oldIp = new RssUserTrafficStore.HourlyLoginIpTrafficEntity();
+            oldIp.setId(RssUserTrafficStore.HourlyLoginIpTrafficEntity.idOf("expired", "1.1.1.1", SocksUserTraffic.PROTOCOL_TCP, expiredHour));
+            oldIp.setUsername("expired");
+            oldIp.setRemoteIp("1.1.1.1");
+            oldIp.setProtocol(SocksUserTraffic.PROTOCOL_TCP);
+            oldIp.setHourEpoch(expiredHour);
+            oldIp.setCreateTime(new Date());
+            oldIp.setModifyTime(new Date());
+            db.save(oldIp, true);
+
+            store.cleanupExpired();
+            assertEquals(0L, db.count(new org.rx.io.EntityQueryLambda<RssUserTrafficStore.HourlyTrafficEntity>(RssUserTrafficStore.HourlyTrafficEntity.class)
+                    .eq(RssUserTrafficStore.HourlyTrafficEntity::getUsername, "expired")));
+            assertEquals(0L, db.count(new org.rx.io.EntityQueryLambda<RssUserTrafficStore.HourlyLoginIpTrafficEntity>(RssUserTrafficStore.HourlyLoginIpTrafficEntity.class)
+                    .eq(RssUserTrafficStore.HourlyLoginIpTrafficEntity::getUsername, "expired")));
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
+    public void renderShadowUsersPage_RendersH2HistoryAndRealtimeSections() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl("jdbc:h2:mem:rss_page_" + System.nanoTime()
+                + ";DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL", null, 1, true);
+        RssUserTrafficStore store = new RssUserTrafficStore(db);
+        ShadowUser user = new ShadowUser();
+        user.setUsername("ss-rocky");
+        user.setSocksUser("inner-rocky");
+        user.setSsPort(8388);
+        user.setLastResetTime(DateTime.valueOf("2026-04-24 12:34:56"));
+        TrafficLoginInfo loginInfo = new TrafficLoginInfo();
+        loginInfo.setLatestTime(DateTime.valueOf("2026-04-24 08:00:00"));
+        loginInfo.getRefCnt().set(2);
+        loginInfo.getTotalActiveSeconds().set(3600);
+        loginInfo.getTotalReadBytes().set(2048);
+        loginInfo.getTotalWriteBytes().set(4096);
+        user.getLoginIps().put(InetAddress.getLoopbackAddress(), loginInfo);
+        try {
+            store.record(user, new InetSocketAddress("18.12.3.4", 12345), SocksUserTraffic.PROTOCOL_TCP, 1024L, 2048L, 10L, 20L);
+            store.recordSession(user, new InetSocketAddress("18.12.3.4", 12345), SocksUserTraffic.PROTOCOL_TCP, 60L);
+            store.flush();
+
+            RssClientHttpHandler.Query query = new RssClientHttpHandler.Query();
+            query.fromMillis = 0L;
+            query.toMillis = System.currentTimeMillis();
+            query.fromValue = "1970-01-01T00:00";
+            query.toValue = "2099-01-01T00:00";
+            String html = RssClientHttpHandler.renderShadowUsersPage(Collections.singletonMap(user.getUsername(), user), store, query);
+
+            assertTrue(html.contains("用户历史概览"));
+            assertTrue(html.contains("协议历史明细"));
+            assertTrue(html.contains("实时内存快照"));
+            assertTrue(html.contains("TCP"));
+            assertTrue(html.contains("ss-rocky"));
+            assertTrue(html.contains("18.12.3.4"));
+        } finally {
+            db.close();
         }
     }
 

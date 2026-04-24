@@ -76,6 +76,10 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
 
         InetSocketAddress remoteAddress = Sockets.getOriginRemoteAddress(ctx.channel());
         String tagsUser = trafficUser != null && !trafficUser.isAnonymous() ? trafficUser.getUsername() : user.getUsername();
+        if (trafficUser != null && !trafficUser.isAnonymous()) {
+            SocksUserTraffic.recordSession(trafficUser, remoteAddress, SocksUserTraffic.PROTOCOL_TCP,
+                    elapsed / Constants.NANO_TO_MILLIS / 1000);
+        }
         if (DiagnosticMetrics.isEnabled()) {
             String tags = "user=" + tagsUser + ",remote=" + remoteAddress;
             DiagnosticMetrics.record("socks.session.active.millis", elapsed / Constants.NANO_TO_MILLIS, tags);

@@ -124,6 +124,7 @@ public class RssAuthenticator implements Authenticator {
                 l.getTotalWriteBytes().set(0);
                 l.getTotalReadPackets().set(0);
                 l.getTotalWritePackets().set(0);
+                l.getTotalActiveSeconds().set(0);
             }
             user.setLastResetTime(now);
         }

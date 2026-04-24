@@ -13,8 +13,19 @@ public final class SocksUserTraffic {
         void record(TrafficUser user, InetSocketAddress remoteAddress,
                     long readBytes, long writeBytes,
                     long readPackets, long writePackets);
+
+        default void record(TrafficUser user, InetSocketAddress remoteAddress,
+                            String protocol, long readBytes, long writeBytes,
+                            long readPackets, long writePackets) {
+            record(user, remoteAddress, readBytes, writeBytes, readPackets, writePackets);
+        }
+
+        default void recordSession(TrafficUser user, InetSocketAddress remoteAddress, String protocol, long activeSeconds) {
+        }
     }
 
+    public static final String PROTOCOL_TCP = "tcp";
+    public static final String PROTOCOL_UDP = "udp";
     public static final AttributeKey<TrafficUser> ATTR_USER = AttributeKey.valueOf("socksTrafficUser");
     public static final AttributeKey<TrafficLoginInfo> ATTR_LOGIN_INFO = AttributeKey.valueOf("socksTrafficLoginInfo");
     private static final AtomicReference<Recorder> RECORDER = new AtomicReference<>();
@@ -62,19 +73,19 @@ public final class SocksUserTraffic {
     }
 
     public static void recordWrite(SocksContext context, Object msg) {
-        record(context, 0L, readableBytes(msg), 0L, 1L);
+        record(context, PROTOCOL_TCP, 0L, readableBytes(msg), 0L, 1L);
     }
 
     public static void recordRead(SocksContext context, Object msg) {
-        record(context, readableBytes(msg), 0L, 1L, 0L);
+        record(context, PROTOCOL_TCP, readableBytes(msg), 0L, 1L, 0L);
     }
 
     public static void recordWrite(SocksContext context, long bytes, long packets) {
-        record(context, 0L, bytes, 0L, packets);
+        record(context, PROTOCOL_TCP, 0L, bytes, 0L, packets);
     }
 
     public static void recordRead(SocksContext context, long bytes, long packets) {
-        record(context, bytes, 0L, packets, 0L);
+        record(context, PROTOCOL_TCP, bytes, 0L, packets, 0L);
     }
 
     public static void recordWrite(Channel channel, SocksContext context, long bytes, long packets) {
@@ -84,7 +95,7 @@ public final class SocksUserTraffic {
         if (context.getUser() == null || context.getUser().isAnonymous()) {
             attachFromChannel(context, channel);
         }
-        recordWrite(context, bytes, packets);
+        record(context, PROTOCOL_UDP, 0L, bytes, 0L, packets);
     }
 
     public static void recordRead(Channel channel, SocksContext context, long bytes, long packets) {
@@ -94,10 +105,18 @@ public final class SocksUserTraffic {
         if (context.getUser() == null || context.getUser().isAnonymous()) {
             attachFromChannel(context, channel);
         }
-        recordRead(context, bytes, packets);
+        record(context, PROTOCOL_UDP, bytes, 0L, packets, 0L);
     }
 
-    private static void record(SocksContext context, long readBytes, long writeBytes, long readPackets, long writePackets) {
+    public static void recordSession(TrafficUser user, InetSocketAddress remoteAddress, String protocol, long activeSeconds) {
+        Recorder recorder = RECORDER.get();
+        if (recorder == null || user == null || user.isAnonymous()) {
+            return;
+        }
+        recorder.recordSession(user, remoteAddress, protocol, activeSeconds);
+    }
+
+    private static void record(SocksContext context, String protocol, long readBytes, long writeBytes, long readPackets, long writePackets) {
         if (context == null) {
             return;
         }
@@ -123,7 +142,7 @@ public final class SocksUserTraffic {
 
         Recorder recorder = RECORDER.get();
         if (recorder != null) {
-            recorder.record(user, context.getSource(), readBytes, writeBytes, readPackets, writePackets);
+            recorder.record(user, context.getSource(), protocol, readBytes, writeBytes, readPackets, writePackets);
         }
     }
 

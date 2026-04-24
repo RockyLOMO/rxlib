@@ -452,7 +452,7 @@ public final class RssClient {
         }
 
         httpServer = HttpServer.getDefault().requestAsync(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH,
-                new RssClientHttpHandler(authenticator.getShadowStore()));
+                new RssClientHttpHandler(authenticator.getShadowStore(), trafficStore));
 
         if (!Strings.isEmpty(rssConf.rrpToken) && rssConf.rrpPort != null) {
             RrpConfig c = new RrpConfig();
