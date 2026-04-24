@@ -339,6 +339,72 @@ class ShadowsocksServerIntegrationTest {
         }
     }
 
+    @Test
+    @SneakyThrows
+    @Timeout(value = 40)
+    void shadowsocksUdpRoute_rebuildsSocksSessionAfterUpstreamRelayClose() {
+        int proxyBPort = 16286;
+        int proxyAPort = 16287;
+        int ssPort = 16288;
+        String method = CipherKind.AES_256_GCM.getCipherName();
+        String password = "ss-session-heal-password";
+
+        SocksConfig proxyBConfig = new SocksConfig(proxyBPort);
+        proxyBConfig.getWhiteList();
+        SocksProxyServer proxyB = new SocksProxyServer(proxyBConfig);
+
+        SocksConfig proxyAConfig = new SocksConfig(proxyAPort);
+        proxyAConfig.getWhiteList();
+        SocksProxyServer proxyA = new SocksProxyServer(proxyAConfig);
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort), method, password);
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+
+        UpstreamSupport supportA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyAPort), null, null), null);
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+        ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyAPort), supportA)));
+        proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyBPort), supportB)));
+
+        DatagramSocket client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        client.setSoTimeout(1500);
+        try {
+            Thread.sleep(1000);
+            ICrypto crypto = ICrypto.get(method, password, true);
+
+            byte[] firstPayload = "ss-session-heal-1".getBytes(StandardCharsets.UTF_8);
+            sendUdpRequest(client, ssPort, crypto, firstPayload);
+            assertArrayEquals(firstPayload, receiveUdpEcho(client, crypto));
+
+            waitForCondition(() -> proxyB.udpRelayRegistry.size() == 1, 5000, "proxyB should own one UDP relay");
+            Channel firstRelay = proxyB.udpRelayRegistry.values().iterator().next();
+            firstRelay.close().sync();
+            waitForCondition(proxyB.udpRelayRegistry::isEmpty, 5000, "proxyB first relay should close");
+
+            byte[] secondPayload = "ss-session-heal-2".getBytes(StandardCharsets.UTF_8);
+            boolean healed = false;
+            for (int i = 0; i < 8; i++) {
+                sendUdpRequest(client, ssPort, crypto, secondPayload);
+                try {
+                    assertArrayEquals(secondPayload, receiveUdpEcho(client, crypto));
+                    healed = true;
+                    break;
+                } catch (SocketTimeoutException e) {
+                    Thread.sleep(100L);
+                }
+            }
+            assertTrue(healed, "should rebuild SOCKS UDP session after upstream relay close");
+
+            waitForCondition(() -> proxyB.udpRelayRegistry.size() == 1, 5000, "proxyB relay should be recreated");
+            Channel secondRelay = proxyB.udpRelayRegistry.values().iterator().next();
+            assertNotSame(firstRelay, secondRelay);
+        } finally {
+            client.close();
+            ssServer.close();
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
     static byte[] readAtLeast(InputStream in, int minLen, int maxLen, int timeoutMs) throws Exception {
         byte[] buf = new byte[maxLen];
         int read = 0;

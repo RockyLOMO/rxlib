@@ -73,6 +73,7 @@ public class Socks5Client extends Disposable {
 
         static final AttributeKey<Socks5UdpSession> ATTR = AttributeKey.valueOf("socks5UdpSession");
 
+        @Getter
         final Channel tcpControl;
         /** Local UDP channel for send/receive – always non-null. */
         @Getter

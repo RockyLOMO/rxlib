@@ -111,6 +111,21 @@ public class DiagnosticMonitorTest {
     }
 
     @Test
+    public void diagnosticStoreDatabaseUsesRelaxedSlowSqlThreshold() throws Exception {
+        DiagnosticConfig config = memConfig("diag_store_slow_threshold");
+        config.setH2FlushIntervalMillis(1000L);
+        EntityDatabase db = H2DiagnosticStore.createDatabase(config);
+        try {
+            assertTrue(db instanceof EntityDatabaseImpl);
+            java.lang.reflect.Field field = EntityDatabaseImpl.class.getDeclaredField("slowSqlElapsed");
+            field.setAccessible(true);
+            assertEquals(8000, field.getInt(db));
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
     public void diagnosticMetricsRecordLightweightMetric() throws Exception {
         DiagnosticConfig config = memConfig("diag_metric_bridge");
         config.setSampleIntervalMillis(60000L);

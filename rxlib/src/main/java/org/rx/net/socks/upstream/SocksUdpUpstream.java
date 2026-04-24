@@ -5,10 +5,12 @@ import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Tasks;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.Socks5Client;
 import org.rx.net.socks.Socks5Client.Socks5UdpLease;
 import org.rx.net.socks.Socks5Client.Socks5UdpSession;
+import org.rx.net.socks.SocksUdpRelayHandler;
 import org.rx.net.socks.Socks5UpstreamPoolManager;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksRpcContract;
@@ -67,7 +69,14 @@ public class SocksUdpUpstream extends Upstream {
 
     public InetSocketAddress getUdpRelayAddress(Channel channel) {
         SessionHolder holder = channel.attr(ATTR_UDP_SESSION).get();
-        return holder != null ? holder.relayAddr : null;
+        if (holder == null) {
+            return null;
+        }
+        if (holder.isValid()) {
+            return holder.relayAddr;
+        }
+        invalidateHolder(channel, holder, false, "stale-session");
+        return null;
     }
 
     @Override
@@ -240,43 +249,72 @@ public class SocksUdpUpstream extends Upstream {
         channel.attr(ATTR_UDP_SESSION).set(holder);
         UdpRelayAttributes.addRedundantPeer(channel, holder.relayAddr);
         final SessionHolder finalHolder = holder;
+        Channel controlChannel = holder.controlChannel();
+        if (controlChannel != null) {
+            controlChannel.closeFuture().addListener(f ->
+                    channel.eventLoop().execute(() -> invalidateHolder(channel, finalHolder, false, "control-close")));
+        }
         channel.closeFuture().addListener(f -> {
-            SessionHolder active = channel.attr(ATTR_UDP_SESSION).getAndSet(null);
-            if (active != finalHolder) {
-                return;
-            }
-            if (!active.pooled) {
-                tryClose(active.session);
-                tryClose(active.client);
-                return;
-            }
+            invalidateHolder(channel, finalHolder, true, "relay-close");
+        });
+    }
 
-            SocksRpcContract facade = next.getFacade();
-            if (facade == null) {
-                tryClose(active.lease);
+    private void invalidateHolder(Channel relay, SessionHolder holder, boolean resetPooledLease, String reason) {
+        Runnable task = () -> {
+            SessionHolder active = relay.attr(ATTR_UDP_SESSION).get();
+            if (active != holder) {
                 return;
             }
+            relay.attr(ATTR_UDP_SESSION).set(null);
+            SocksUdpRelayHandler.onUpstreamSessionInvalidated(relay, active.relayAddr, this);
+            DiagnosticMetrics.record("socks.udp.session.invalidate.count", 1D,
+                    "reason=" + reason + ",pooled=" + active.pooled);
 
-            Tasks.runAsync(() -> {
-                boolean ok = false;
-                try {
-                    ok = facade.resetUdpRelay(active.lease.getRelayPort());
-                    if (ok) {
-                        Socks5UpstreamPoolManager.INSTANCE.onUdpRpcSuccess(poolKey());
-                    } else {
-                        Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", null);
-                    }
-                } catch (Throwable e) {
-                    Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", e);
+            if (!resetPooledLease) {
+                closeHolder(active);
+                return;
+            }
+            closeAfterRelayClose(active);
+        };
+        if (relay.eventLoop().inEventLoop()) {
+            task.run();
+        } else {
+            relay.eventLoop().execute(task);
+        }
+    }
+
+    private void closeAfterRelayClose(SessionHolder active) {
+        if (!active.pooled) {
+            tryClose(active.session);
+            tryClose(active.client);
+            return;
+        }
+
+        SocksRpcContract facade = next.getFacade();
+        if (facade == null) {
+            tryClose(active.lease);
+            return;
+        }
+
+        Tasks.runAsync(() -> {
+            boolean ok = false;
+            try {
+                ok = facade.resetUdpRelay(active.lease.getRelayPort());
+                if (ok) {
+                    Socks5UpstreamPoolManager.INSTANCE.onUdpRpcSuccess(poolKey());
+                } else {
+                    Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", null);
                 }
+            } catch (Throwable e) {
+                Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", e);
+            }
 
-                Socks5UpstreamPoolManager.UdpLeasePool pool = active.pool;
-                if (ok && pool != null && !pool.isClosed()) {
-                    pool.recycle(active.lease);
-                    return;
-                }
-                tryClose(active.lease);
-            });
+            Socks5UpstreamPoolManager.UdpLeasePool pool = active.pool;
+            if (ok && pool != null && !pool.isClosed()) {
+                pool.recycle(active.lease);
+                return;
+            }
+            tryClose(active.lease);
         });
     }
 
@@ -311,6 +349,13 @@ public class SocksUdpUpstream extends Upstream {
                 return session != null && !session.isClosed();
             }
             return lease != null && !lease.isClosed() && lease.getTcpControl().isActive();
+        }
+
+        Channel controlChannel() {
+            if (!pooled) {
+                return session != null ? session.getTcpControl() : null;
+            }
+            return lease != null ? lease.getTcpControl() : null;
         }
     }
 }

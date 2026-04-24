@@ -48,6 +48,7 @@ import org.rx.core.*;
 import org.rx.core.StringBuilder;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
+import org.rx.io.Bytes;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
@@ -73,6 +74,7 @@ import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.bean.$.$;
 import static org.rx.core.Extends.ifNull;
@@ -82,6 +84,14 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class Sockets {
+    public enum UdpWriteResult {
+        ACCEPTED,
+        CHANNEL_INACTIVE,
+        CHANNEL_UNWRITABLE,
+        PENDING_OVERLIMIT,
+        WRITE_THROWN
+    }
+
     public interface ReactorNames {
         String SHARED_TCP = "_TCP";
         String SHARED_UDP = "_UDP";
@@ -109,6 +119,9 @@ public final class Sockets {
     public static final String ZIP_DECODER = "ZIP_DECODER";
     public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
     public static final AttributeKey<InetSocketAddress> ATTR_ORIGIN_REMOTE_ADDR = AttributeKey.valueOf("originRemoteAddr");
+    static final AttributeKey<AtomicInteger> ATTR_UDP_PENDING_WRITE_BYTES = AttributeKey.valueOf("udpPendingWriteBytes");
+    static final AttributeKey<Integer> ATTR_UDP_WRITE_LIMIT_BYTES = AttributeKey.valueOf("udpWriteLimitBytes");
+    static final int DEFAULT_UDP_WRITE_LIMIT_BYTES = 256 * 1024;
     static final Set<Integer> TCP_COMPRESS_BYPASS_PORTS = Collections.unmodifiableSet(new HashSet<>(java.util.Arrays.asList(
             22, 443, 465, 587, 636, 853, 989, 990, 993, 995, 3389, 8443, 9443)));
     static final String M_0 = "lookupAllHostAddr";
@@ -810,6 +823,130 @@ public final class Sockets {
             }
             channel.flush();
         });
+    }
+
+    /**
+     * UDP 没有 TCP 那种传输层背压，这里做的是应用层写侧过载保护：
+     * 1) inactive / notWritable 直接丢弃
+     * 2) 基于每个 channel 的待完成写入字节数做软上限保护
+     */
+    public static UdpWriteResult writeUdp(Channel channel, DatagramPacket packet, String metricPrefix, String tags) {
+        if (channel == null || packet == null) {
+            return UdpWriteResult.WRITE_THROWN;
+        }
+
+        int bytes = packet.content().readableBytes();
+        if (!channel.isActive()) {
+            releaseUdpPacket(packet, metricPrefix, tags, "inactive", 0, 0);
+            return UdpWriteResult.CHANNEL_INACTIVE;
+        }
+
+        AtomicInteger pendingBytes = udpPendingWriteBytesState(channel);
+        int queuedBytes = pendingBytes.addAndGet(bytes);
+        int limitBytes = udpWriteLimitBytes(channel);
+        if (queuedBytes > limitBytes) {
+            pendingBytes.addAndGet(-bytes);
+            releaseUdpPacket(packet, metricPrefix, tags, "pending-overlimit", queuedBytes, limitBytes);
+            return UdpWriteResult.PENDING_OVERLIMIT;
+        }
+        if (!channel.isWritable()) {
+            pendingBytes.addAndGet(-bytes);
+            releaseUdpPacket(packet, metricPrefix, tags, "not-writable", queuedBytes, limitBytes);
+            return UdpWriteResult.CHANNEL_UNWRITABLE;
+        }
+
+        try {
+            channel.writeAndFlush(packet).addListener((ChannelFutureListener) f -> {
+                pendingBytes.addAndGet(-bytes);
+                if (!f.isSuccess()) {
+                    recordUdpMetric(metricPrefix, "drop.count",
+                            appendUdpMetricTags(tags, "reason=write-fail,limitBucket=" + udpLimitBucket(limitBytes)));
+                    log.warn("UDP write fail channel={} recipient={}", channel, packet.recipient(), f.cause());
+                }
+            });
+            return UdpWriteResult.ACCEPTED;
+        } catch (Throwable e) {
+            pendingBytes.addAndGet(-bytes);
+            releaseUdpPacket(packet, metricPrefix, tags, "write-throw", queuedBytes, limitBytes);
+            log.warn("UDP write throw channel={} recipient={}", channel, packet.recipient(), e);
+            return UdpWriteResult.WRITE_THROWN;
+        }
+    }
+
+    static int udpPendingWriteBytes(Channel channel) {
+        AtomicInteger state = channel.attr(ATTR_UDP_PENDING_WRITE_BYTES).get();
+        return state == null ? 0 : Math.max(0, state.get());
+    }
+
+    static int udpWriteLimitBytes(Channel channel) {
+        Integer override = channel.attr(ATTR_UDP_WRITE_LIMIT_BYTES).get();
+        if (override != null && override > 0) {
+            return override;
+        }
+
+        SocketConfig config = channel.attr(SocketConfig.ATTR_CONF).get();
+        OptimalSettings op = config == null ? OptimalSettings.EMPTY : ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
+        WriteBufferWaterMark waterMark = op.writeBufferWaterMark;
+        if (waterMark != null) {
+            return Math.max(DEFAULT_UDP_WRITE_LIMIT_BYTES, waterMark.high());
+        }
+        return DEFAULT_UDP_WRITE_LIMIT_BYTES;
+    }
+
+    private static AtomicInteger udpPendingWriteBytesState(Channel channel) {
+        AtomicInteger state = channel.attr(ATTR_UDP_PENDING_WRITE_BYTES).get();
+        if (state != null) {
+            return state;
+        }
+        AtomicInteger newState = new AtomicInteger();
+        AtomicInteger oldState = channel.attr(ATTR_UDP_PENDING_WRITE_BYTES).setIfAbsent(newState);
+        return oldState != null ? oldState : newState;
+    }
+
+    private static void releaseUdpPacket(DatagramPacket packet, String metricPrefix, String tags,
+                                         String reason, int queuedBytes, int limitBytes) {
+        Bytes.release(packet);
+        String metricTags = appendUdpMetricTags(tags,
+                "reason=" + reason + ",limitBucket=" + udpLimitBucket(limitBytes));
+        recordUdpMetric(metricPrefix, "drop.count",
+                metricTags);
+        if (queuedBytes > 0) {
+            recordUdpMetric(metricPrefix, "pending.write.bytes", metricTags, queuedBytes);
+        }
+    }
+
+    private static void recordUdpMetric(String metricPrefix, String suffix, String tags) {
+        recordUdpMetric(metricPrefix, suffix, tags, 1D);
+    }
+
+    private static void recordUdpMetric(String metricPrefix, String suffix, String tags, double value) {
+        if (metricPrefix == null) {
+            return;
+        }
+        DiagnosticMetrics.record(metricPrefix + "." + suffix, value, tags);
+    }
+
+    private static String appendUdpMetricTags(String tags, String extra) {
+        if (extra == null || extra.isEmpty()) {
+            return tags;
+        }
+        if (tags == null || tags.isEmpty()) {
+            return extra;
+        }
+        return tags + "," + extra;
+    }
+
+    private static String udpLimitBucket(int limitBytes) {
+        if (limitBytes <= 64 * 1024) {
+            return "lte64k";
+        }
+        if (limitBytes <= 256 * 1024) {
+            return "lte256k";
+        }
+        if (limitBytes <= 1024 * 1024) {
+            return "lte1m";
+        }
+        return "gt1m";
     }
 
     /**
