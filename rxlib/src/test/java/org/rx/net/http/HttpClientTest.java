@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.io.DuplexStream;
 import org.rx.io.EntityDatabaseImpl;
 import org.rx.net.Sockets;
-import org.rx.net.socks.DefaultSocksAuthenticator;
+import org.rx.net.socks.SocksAuthenticator;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksUser;
@@ -140,7 +140,7 @@ public class HttpClientTest {
         String url = BASE_URL + "/test";
         try (HttpClient client = new HttpClient()) {
             try (HttpClient.Response res1 = client.get(url);
-                 HttpClient.Response res2 = client.get(url)) {
+                    HttpClient.Response res2 = client.get(url)) {
                 assertTrue(res1.bodyAsString().contains("ok"));
                 assertTrue(res2.bodyAsString().contains("ok"));
             }
@@ -213,7 +213,7 @@ public class HttpClientTest {
         HttpClientCookieJar jar = new HttpClientCookieJar();
         try (HttpClient client = new HttpClient(new HttpClientConfig().setCookieJar(jar).setEnableLog(false))) {
             try (HttpClient.Response set = client.get(BASE_URL + "/cookie-set");
-                 HttpClient.Response check = client.get(BASE_URL + "/cookie-check")) {
+                    HttpClient.Response check = client.get(BASE_URL + "/cookie-check")) {
                 assertTrue(set.bodyAsString().contains("cookie-set"));
                 assertTrue(check.bodyAsString().contains("v2"));
             }
@@ -231,7 +231,7 @@ public class HttpClientTest {
             assertEquals(3, client.config().getPendingAcquireMaxCount());
             assertEquals(400, client.config().getAcquireTimeoutMillis());
             try (HttpClient.Response set = client.get(BASE_URL + "/cookie-set");
-                 HttpClient.Response check = client.get(BASE_URL + "/cookie-check")) {
+                    HttpClient.Response check = client.get(BASE_URL + "/cookie-check")) {
                 assertTrue(set.bodyAsString().contains("cookie-set"));
                 assertTrue(check.bodyAsString().contains("v2"));
             }
@@ -469,9 +469,8 @@ public class HttpClientTest {
         int proxyPort = freePort();
         SocksUser user = new SocksUser("u1");
         user.setPassword("p1");
-        user.setIpLimit(-1);
         SocksProxyServer proxyServer = new SocksProxyServer(new SocksConfig(Sockets.newLoopbackEndpoint(proxyPort)),
-                new DefaultSocksAuthenticator(Collections.singletonList(user)));
+                new SocksAuthenticator(Collections.singletonList(user)));
         try {
             waitProxy(proxyServer);
             AuthenticProxy proxy = new AuthenticProxy(Proxy.Type.SOCKS, Sockets.newLoopbackEndpoint(proxyPort), "u1", "p1");

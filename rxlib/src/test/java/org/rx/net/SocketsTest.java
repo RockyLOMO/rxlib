@@ -20,7 +20,9 @@ import io.netty.resolver.dns.DnsServerAddressStreamProvider;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.rx.diagnostic.DiagnosticMonitor;
 import org.rx.core.RxConfig;
+import org.rx.core.RxConfig.DiagnosticConfig;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -29,6 +31,10 @@ import java.lang.reflect.Field;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -185,6 +191,37 @@ public class SocketsTest {
         assertEquals(0, Sockets.udpPendingWriteBytes(channel));
         assertNull(channel.readOutbound());
         channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteDropsWhenWriteThrowsAndRecordsLowCardinalityMetrics() throws Exception {
+        DiagnosticConfig config = memDiagnosticConfig("sockets_udp_write_throw");
+        config.setSampleIntervalMillis(60000L);
+        DiagnosticMonitor monitor = new DiagnosticMonitor(config);
+        monitor.start();
+        try {
+            EmbeddedChannel channel = new ThrowingWriteEmbeddedChannel();
+            channel.attr(Sockets.ATTR_UDP_WRITE_LIMIT_BYTES).set(128);
+
+            ByteBuf payload = Unpooled.copiedBuffer("udp-write-throw", StandardCharsets.UTF_8);
+            DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+            assertEquals(Sockets.UdpWriteResult.WRITE_THROWN,
+                    Sockets.writeUdp(channel, packet, "test.udp", "case=write-throw"));
+            assertEquals(0, payload.refCnt());
+            assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+            assertNull(channel.readOutbound());
+
+            assertTrue(monitor.getStore().flush(5000L));
+            String tags = "case=write-throw,reason=write-throw,limitBucket=lte64k";
+            assertEquals(1, countMetric(config, "test.udp.drop.count", tags));
+            assertEquals(1, countMetric(config, "test.udp.pending.write.bytes", tags));
+            assertEquals(0, countWhere(config, "diag_metric_sample",
+                    "metric='test.udp.drop.count' AND (tags LIKE '%pendingBytes=%' OR tags LIKE '%recipient=%' OR tags LIKE '%127.0.0.1%')"));
+            channel.finishAndReleaseAll();
+        } finally {
+            monitor.close();
+        }
     }
 
     @Test
@@ -348,5 +385,45 @@ public class SocketsTest {
         Bootstrap bootstrap = Sockets.bootstrap(new SocketConfig(), ch -> {
         });
         assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
+    }
+
+    private DiagnosticConfig memDiagnosticConfig(String name) {
+        DiagnosticConfig config = new DiagnosticConfig();
+        config.setH2JdbcUrl("jdbc:h2:mem:" + name + "_" + System.nanoTime()
+                + ";DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL");
+        config.setH2QueueSize(64);
+        config.setH2BatchSize(16);
+        config.setH2FlushIntervalMillis(50L);
+        config.setH2TtlMillis(0L);
+        config.setDiagnosticsDirectory(new java.io.File("target/diagnostics-test"));
+        config.setDiagnosticsMaxBytes(0L);
+        config.setEvidenceMinFreeBytes(0L);
+        config.setJfrMinFreeBytes(0L);
+        config.setHeapDumpMinFreeBytes(0L);
+        config.setHeavyEvidenceCooldownMillis(0L);
+        return config;
+    }
+
+    private int countMetric(DiagnosticConfig config, String metric, String tags) throws Exception {
+        return countWhere(config, "diag_metric_sample", "metric='" + metric + "' AND tags='" + tags + "'");
+    }
+
+    private int countWhere(DiagnosticConfig config, String table, String where) throws Exception {
+        try (Connection conn = DriverManager.getConnection(config.jdbcUrl());
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + table + " WHERE " + where)) {
+            assertTrue(rs.next());
+            return rs.getInt(1);
+        }
+    }
+
+    private static final class ThrowingWriteEmbeddedChannel extends EmbeddedChannel {
+        private ThrowingWriteEmbeddedChannel() {
+        }
+
+        @Override
+        public ChannelFuture writeAndFlush(Object msg) {
+            throw new IllegalStateException("synthetic write failure");
+        }
     }
 }

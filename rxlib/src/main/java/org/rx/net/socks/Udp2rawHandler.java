@@ -73,7 +73,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (context != null) {
             // If response from next-hop proxy is already wrapped, unwrap it; otherwise wrap the dest response
             if (inBuf.readableBytes() >= 3 && inBuf.getShort(inBuf.readerIndex()) == STREAM_MAGIC) {
-                handleClientModeResponse(relay, in, config);
+                handleClientModeResponse(relay, in, context, config);
             } else {
                 handleServerModeResponse(relay, in, sender, context, config);
             }
@@ -131,6 +131,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         SocksContext e = routeMap.get(dstEp);
         if (e == null) {
             e = SocksContext.getCtx(clientEp, dstEp);
+            SocksUserTraffic.attachFromChannel(e, relay);
             server.raiseEvent(server.onUdpRoute, e);
             routeMap.put(dstEp, e);
         }
@@ -148,7 +149,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
     }
 
     /** Client mode: response from udp2rawClient server → unwrap udp2raw → send back to local app */
-    private void handleClientModeResponse(Channel relay, DatagramPacket in, SocksConfig config) {
+    private void handleClientModeResponse(Channel relay, DatagramPacket in, SocksContext context, SocksConfig config) {
         InetSocketAddress srcEp = in.sender();
         ByteBuf inBuf = in.content();
 
@@ -160,7 +161,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (config.isDebug()) {
             log.info("UDP2RAW[{}] client recv {}bytes {} => {}", config.getListenPort(), inBuf.readableBytes(), srcEp, clientEp);
         }
-        relay.writeAndFlush(new DatagramPacket(inBuf.retain(), clientEp.socketAddress()));
+        DatagramPacket packet = new DatagramPacket(inBuf.retain(), clientEp.socketAddress());
+        SocksUserTraffic.recordRead(relay, context, packet.content().readableBytes(), 1L);
+        relay.writeAndFlush(packet);
     }
 
     //endregion
@@ -210,6 +213,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         SocksContext e = routeMap.get(dstEp);
         if (e == null) {
             e = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
+            SocksUserTraffic.attachFromChannel(e, relay);
             server.raiseEvent(server.onUdpRoute, e);
             routeMap.put(dstEp, e);
         }
@@ -256,6 +260,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             if (config.isDebug()) {
                 log.info("UDP2RAW[{}] server recv {}bytes {} => {}", config.getListenPort(), outBufCom.readableBytes(), dstEp, clientAddr);
             }
+            SocksUserTraffic.recordRead(relay, sc, outBufCom.readableBytes(), 1L);
             relay.writeAndFlush(new DatagramPacket(outBufCom, clientAddr));
         } catch (Throwable e) {
             Bytes.release(outBufCom);
@@ -298,6 +303,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             if (config.isDebug()) {
                 log.info("UDP2RAW[{}] client send {}bytes {} => {}[{}]", config.getListenPort(), outBuf.readableBytes(), clientEp, targetAddr, upDstEp);
             }
+            SocksUserTraffic.recordWrite(relay, context, outBuf.readableBytes(), 1L);
             relay.writeAndFlush(new DatagramPacket(outBuf, targetAddr));
         } catch (Throwable ex) {
             Bytes.release(outBuf);
@@ -328,6 +334,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (config.isDebug()) {
             log.info("UDP2RAW[{}] server send {}bytes {}[{}] => {}", config.getListenPort(), outBuf.readableBytes(), sender, clientEp, upDstEp);
         }
+        SocksUserTraffic.recordWrite(relay, context, outBuf.readableBytes(), 1L);
         relay.writeAndFlush(new DatagramPacket(outBuf, upDstAddr));
     }
 

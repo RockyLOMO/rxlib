@@ -66,7 +66,6 @@ public class RrpClient extends Disposable {
                         return null;
                     }
                     SocksUser usr = new SocksUser(u);
-                    usr.setIpLimit(-1);
                     return usr;
                 }, true, null);
                 localEndpoint = conf.getMemoryAddress();
@@ -78,7 +77,6 @@ public class RrpClient extends Disposable {
                         return null;
                     }
                     SocksUser usr = new SocksUser(u);
-                    usr.setIpLimit(-1);
                     return usr;
                 }, ch -> {
                     int bindPort = ((InetSocketAddress) ch.localAddress()).getPort();

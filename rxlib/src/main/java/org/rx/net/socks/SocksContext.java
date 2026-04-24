@@ -102,6 +102,14 @@ public final class SocksContext extends EventArgs {
     @Setter
     transient Upstream upstream;
 
+    @Getter
+    @Setter
+    transient TrafficUser user = TrafficUser.ANONYMOUS;
+
+    @Getter
+    @Setter
+    transient TrafficLoginInfo loginInfo;
+
     transient Channel inbound;
     transient ChannelFuture outbound;
 

@@ -1,0 +1,107 @@
+<section class="hero">
+    <div>
+        <h1>RSS SS 用户信息</h1>
+        <p>服务端实时渲染的 ShadowSocks 用户与来源 IP 统计，生成时间 {{generatedAt}}。</p>
+    </div>
+    <div class="pill">GET {{path}}</div>
+</section>
+
+<section class="card">
+    <div class="grid">
+        {{#each stats}}
+        <article class="item">
+            <span>{{label}}</span>
+            <strong>{{value}}</strong>
+            <span>{{meta}}</span>
+        </article>
+        {{/each}}
+    </div>
+</section>
+
+{{#unless hasUsers}}
+<section class="card warn">
+    <h2>暂无 SS 用户</h2>
+    <p class="empty">当前 `shadowStore` 为空，页面没有可展示的数据。</p>
+</section>
+{{/unless}}
+
+{{#if hasUsers}}
+<section class="card">
+    <h2>用户概览</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>用户名</th>
+            <th>内部 Socks 用户</th>
+            <th>SS 端口</th>
+            <th>IP 限制</th>
+            <th>登录 IP 数</th>
+            <th>累计下行</th>
+            <th>累计上行</th>
+            <th>下行包数</th>
+            <th>上行包数</th>
+            <th>最近重置</th>
+        </tr>
+        </thead>
+        <tbody>
+        {{#each users}}
+        <tr>
+            <td>{{username}}</td>
+            <td>{{socksUser}}</td>
+            <td>{{ssPort}}</td>
+            <td>{{ipLimit}}</td>
+            <td>{{loginIpCount}}</td>
+            <td>{{totalReadBytes}}</td>
+            <td>{{totalWriteBytes}}</td>
+            <td>{{totalReadPackets}}</td>
+            <td>{{totalWritePackets}}</td>
+            <td>{{lastResetTime}}</td>
+        </tr>
+        {{/each}}
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h2>登录 IP 明细</h2>
+    {{#each users}}
+    <article class="item">
+        <strong>{{username}}</strong>
+        <span>SS {{ssPort}} / Socks {{socksUser}} / 登录 IP {{loginIpCount}}</span>
+        {{#if hasLoginIps}}
+        <table>
+            <thead>
+            <tr>
+                <th>来源 IP</th>
+                <th>最近活跃</th>
+                <th>引用数</th>
+                <th>活跃秒数</th>
+                <th>下行</th>
+                <th>上行</th>
+                <th>下行包数</th>
+                <th>上行包数</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{#each loginIps}}
+            <tr>
+                <td>{{ip}}</td>
+                <td>{{latestTime}}</td>
+                <td>{{refCnt}}</td>
+                <td>{{activeSeconds}}</td>
+                <td>{{totalReadBytes}}</td>
+                <td>{{totalWriteBytes}}</td>
+                <td>{{totalReadPackets}}</td>
+                <td>{{totalWritePackets}}</td>
+            </tr>
+            {{/each}}
+            </tbody>
+        </table>
+        {{/if}}
+        {{#unless hasLoginIps}}
+        <p class="empty">暂无登录 IP 记录。</p>
+        {{/unless}}
+    </article>
+    {{/each}}
+</section>
+{{/if}}

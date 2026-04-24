@@ -10,15 +10,19 @@ import io.netty.channel.local.LocalChannel;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.*;
+import org.rx.bean.DateTime;
 import org.rx.net.Sockets;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -179,6 +183,46 @@ class SocksProxyServerTest {
         }
     }
 
+    @Test
+    @Order(6)
+    @SneakyThrows
+    void testConnectionTagResolverWithoutAuthBindsTrafficUser() {
+        LocalAddress localAddr = new LocalAddress("TEST_SOCKS_CONNECTION_TAG");
+        SocksConfig config = new SocksConfig(localAddr);
+        SocksProxyServer proxyServer = new SocksProxyServer(config, null);
+        TestTrafficUser trafficUser = new TestTrafficUser("shadow-u1");
+        proxyServer.setConnectionTagResolver(tag -> {
+            if (!"shadow-u1".equals(tag)) {
+                return null;
+            }
+            return new AuthResult(new SocksUser("inner-u1"), trafficUser);
+        });
+
+        Bootstrap cb = new Bootstrap()
+                .group(new DefaultEventLoopGroup(1))
+                .channel(LocalChannel.class)
+                .handler(new ChannelInitializer<LocalChannel>() {
+                    @Override
+                    protected void initChannel(LocalChannel ch) {
+                    }
+                });
+        Channel localClientChannel = cb.connect(localAddr).sync().channel();
+        try {
+            SocksConnectionTagRegistry.bindOnActive(localClientChannel, "shadow-u1");
+            runSocks5NettyClientTest(localClientChannel, "Connection Tag Binding");
+            localClientChannel.close().sync();
+            waitForCondition(() -> !trafficUser.getLoginIps().isEmpty(), 2000, "traffic user should be bound");
+            assertTrue(trafficUser.getTotalReadBytes() > 0L, "traffic user should accumulate inbound bytes");
+            assertTrue(trafficUser.getTotalWriteBytes() > 0L, "traffic user should accumulate outbound bytes");
+        } finally {
+            if (localClientChannel.isOpen()) {
+                localClientChannel.close().syncUninterruptibly();
+            }
+            cb.config().group().shutdownGracefully();
+            proxyServer.close();
+        }
+    }
+
     private void runSocks5NettyClientTest(Channel ch, String message) throws InterruptedException {
         CountDownLatch hsLatch = new CountDownLatch(1);
         CountDownLatch connLatch = new CountDownLatch(1);
@@ -318,6 +362,21 @@ class SocksProxyServerTest {
         return total;
     }
 
+    static void waitForCondition(CheckFn condition, long timeoutMs, String message) throws Exception {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.eval()) {
+                return;
+            }
+            Thread.sleep(20L);
+        }
+        fail(message);
+    }
+
+    interface CheckFn {
+        boolean eval() throws Exception;
+    }
+
     @ChannelHandler.Sharable
     static class EchoHandler extends ChannelInboundHandlerAdapter {
         @Override
@@ -328,6 +387,46 @@ class SocksProxyServerTest {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             ctx.close();
+        }
+    }
+
+    static class TestTrafficUser implements TrafficUser {
+        final String username;
+        final Map<InetAddress, TrafficLoginInfo> loginIps = new ConcurrentHashMap<>();
+        DateTime lastResetTime;
+
+        TestTrafficUser(String username) {
+            this.username = username;
+        }
+
+        @Override
+        public String getUsername() {
+            return username;
+        }
+
+        @Override
+        public Map<InetAddress, TrafficLoginInfo> getLoginIps() {
+            return loginIps;
+        }
+
+        @Override
+        public int getIpLimit() {
+            return -1;
+        }
+
+        @Override
+        public DateTime getLastResetTime() {
+            return lastResetTime;
+        }
+
+        @Override
+        public void setLastResetTime(DateTime value) {
+            lastResetTime = value;
+        }
+
+        @Override
+        public boolean isAnonymous() {
+            return false;
         }
     }
 }

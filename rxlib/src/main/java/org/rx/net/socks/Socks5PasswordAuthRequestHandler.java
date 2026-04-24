@@ -23,11 +23,19 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
 
         SocksProxyServer server = Sockets.getAttr(ctx.channel(), SocksContext.SOCKS_SVR);
         SocksUser user;
-        if (server.getAuthenticator() == null || (user = server.getAuthenticator().login(msg.username(), msg.password())) == null) {
+        TrafficUser trafficUser = null;
+        if (server.getAuthenticator() == null) {
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
+        AuthResult result = server.getAuthenticator().loginResult(msg.username(), msg.password());
+        if (result == null) {
+            ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
+            return;
+        }
+        user = result.getUser();
+        trafficUser = result.getTrafficUser();
         ctx.writeAndFlush(SUCCESS);
-        ProxyManageHandler.get(ctx).setUser(user, ctx);
+        ProxyManageHandler.get(ctx).setUser(user, trafficUser, ctx);
     }
 }

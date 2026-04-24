@@ -11,6 +11,7 @@ import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.socks.SocksConnectionTagRegistry;
 import org.rx.net.socks.Socks5ClientHandler;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksRpcContract;
@@ -89,6 +90,11 @@ public class SocksTcpUpstream extends Upstream {
 
     public void initTransport(Channel channel) {
         Sockets.addTcpClientHandler(channel, config, next.getEndpoint().getInetEndpoint());
+        String trafficUser = next.getEndpoint().getParameters().get(SocksConnectionTagRegistry.PARAM_NAME);
+        if (trafficUser != null) {
+            // 内部无鉴权链路通过连接本地地址回绑统计用户，不走热路径。
+            SocksConnectionTagRegistry.bindOnActive(channel, trafficUser);
+        }
     }
 
     public void initProxyHandler(Channel channel) {

@@ -24,6 +24,9 @@ todos:
   - id: writeudp-unwritable-test
     content: 【必须修】补充 Sockets.writeUdp 的 CHANNEL_UNWRITABLE / CHANNEL_INACTIVE 单测
     status: completed
+  - id: writeudp-write-thrown-test
+    content: 【必须修】补充 Sockets.writeUdp 的 WRITE_THROWN 分支单测，并增加低基数 metric 捕获断言
+    status: completed
   # 需要压测/指标证明后再动
   - id: fix-ctxmap-keying
     content: 【需压测/指标证明后再动】评估是否重构 SocksUdpRelayHandler.ctxMap；当前更接近 known-upstream-sender gate，而非 per-dst 回包分流表
@@ -54,6 +57,12 @@ todos:
     status: pending
   - id: route-cache-metrics-sampling
     content: 【需压测/指标证明后再动】仅在观察到 route churn 或 metrics store 压力时，再对 route/cache gauge 做采样或节流
+    status: pending
+  - id: ss-metric-listenport-tag
+    content: 【需压测/指标证明后再动】评估是否为 SSUdpProxyHandler 的 udpMetricTags 派生 `ss.udp.*` 指标补齐 listenPort 维度；route/header cache 指标已带 listenPort
+    status: pending
+  - id: udp-metric-flow-naming
+    content: 【需压测/指标证明后再动】评估将 `path`/`direction` 组合收敛为单一 `flow` 维度，或至少补充 Javadoc 明确语义
     status: pending
 isProject: false
 ---
@@ -259,7 +268,7 @@ flowchart LR
   - `shadowsocksUdpRoute_rebuildsSocksSessionAfterUpstreamRelayClose` 验证 ProxyB 关闭 UDP relay 后链路自愈 + `udpRelayRegistry` 恢复。
 - 潜在风险（追加）：
   - **[中]** 自愈用例用 8 次重试、1500ms SoTimeout、100ms 间隔，最坏 ~13s；在慢 CI 环境有 flaky 风险，`@Timeout(40)` 已给出兜底。建议：打开 DEBUG 日志后观察首次自愈耗时，把重试次数与超时调到 4 次 + 2s 内，加上对 `socks.udp.session.invalidate.count` 指标的断言。
-  - **[低]** 缺少对 `Sockets.writeUdp` 的 `CHANNEL_UNWRITABLE` 与 `CHANNEL_INACTIVE` 分支的单测；建议补齐以覆盖 writability 回退路径。
+  - **[低]** 此前缺少对 `Sockets.writeUdp` 的 `CHANNEL_UNWRITABLE` 与 `CHANNEL_INACTIVE` 分支单测；该缺口已在 commit `c9e78ca8` 补齐，当前剩余测试缺口转为 `WRITE_THROWN` 分支与低基数 metric 断言。
   - **[低]** 缺少 Netty leak detection 级别的验证；建议在 CI profile 里加一个 `-Dio.netty.leakDetection.level=PARANOID` 的单独 run，跑完整 UDP 场景4 链路集合。
   - **[低]** 缺 `ctxMap/routeMap` 多 dst 并发自愈用例：当 ProxyA 侧同时有 `dstA/dstB` 路由、ProxyB 侧 relay close 时，验证两个路由都能被清理并独立自愈。
 
@@ -275,3 +284,49 @@ flowchart LR
 - `ss-inbound-per-source-limit`：仅在 source-level drop 证明存在单源挤占时，再评估 SS inbound per-source/per-recipient soft limit 与配置化；目前不应提前把具体公平策略固化到热路径。
 - `control-future-listener-cleanup`：仅在 leak detection / heap 证明 `controlChannel.closeFuture()` listener 带来短期内存压力时，再考虑“单次绑定 + 主动摘除”；当前更像理论风险。
 - `route-cache-metrics-sampling`：仅在观察到 route churn 或 metrics store 压力时，再对 `recordRouteCacheSizes` / `recordCacheSizes` 做采样或节流；当前这些 gauge 不在每包热路径上。
+
+---
+
+## 7. 追加 review（commit c9e78ca8 `perf(socks): reduce UDP metric cardinality`）
+
+仅针对 `metric-cardinality-reduction` 与 `writeudp-unwritable-test` 两项已完成修复做追加 review，不覆盖前文；待压测项维持搁置。
+
+### 7.1 `metric-cardinality-reduction`：已落地，基数治理有效，有两处语义/维度建议
+
+- 已落地变更（[`Sockets.java`](rxlib/src/main/java/org/rx/net/Sockets.java) + [`SSUdpProxyHandler.java`](rxlib/src/main/java/org/rx/net/socks/SSUdpProxyHandler.java) + [`SocksUdpRelayHandler.java`](rxlib/src/main/java/org/rx/net/socks/SocksUdpRelayHandler.java) + [`SocksUdpUpstream.java`](rxlib/src/main/java/org/rx/net/socks/upstream/SocksUdpUpstream.java)）：
+  - `Sockets` 新增 `udpLimitBucket(int)`：`lte64k / lte256k / lte1m / gt1m`；`write-fail` 与 `releaseUdpPacket` 的 tag 由 `pendingBytes=<exact>,limitBytes=<exact>` 替换为 `limitBucket=<bucket>`。
+  - `SSUdpProxyHandler.udpMetricTags(source, recipient, destination, localAddress)` 整签换为 `udpMetricTags(path, direction, upstream)`；`recordUdpDrop` 的 tags 由 `reason+source+destination+target+bytes` 收敛为 `reason,path=frontend`；backend handler 的 `drop.count` / `unexpected.sender.count` / `invalid-socks5-relay` 统一收敛到 `path=backend,upstream=socks` 等低基数。
+  - `recordRouteCacheSizes` 以 `listenPort` 替代 `local=<InetSocketAddress>`，并加入 `scope=inbound|outbound` 区分。
+  - `SocksUdpRelayHandler.udpMetricTags` 改为 `(config, direction, upstream)`，`recordDrop` 使用 `reason,path=client-ingress,port=<listenPort>`；`cleanupInvalidatedRoute` 的 metric 由 `relay=<InetSocketAddress>,ctxRemoved=...` 替换为 `action=session-cleanup,port=<listenPort>`。
+  - `SocksUdpUpstream.invalidateHolder` 去掉 `relay=<InetSocketAddress>`，仅保留 `reason,pooled`。
+- 效果：tag 维度从“每包 endpoint 细粒度”（典型上百万 series）降为“路径×方向×上游种类×端口×桶”（一般 10² 量级），基本解决指标爆炸。
+- 追加发现：
+  - **[中] `SSUdpProxyHandler` 的 `udpMetricTags` 派生指标仍缺 `listenPort` 维度**：当前 `recordRouteCacheSizes` 已经给 `ss.udp.*.cache.size` 系列带上 `listenPort`，但 `udpMetricTags(path, direction, upstream)` 这一路派生的 `ss.udp.*` 指标仍没有 SS 的 `listenPort`。由于 `SSUdpProxyHandler` 是 `@Sharable` 单例，多 `ShadowsocksServer` 实例共用同一 handler，同 JVM 内多个 SS 端口的这部分指标会混在一起，无法按端口排障。`SocksUdpRelayHandler.udpMetricTags` 已带 `listenPort`，建议 SS 侧对齐：
+    - 把 `inbound` / `outbound` channel 或 SS `config.getServerEndpoint().getPort()` 透传到 `udpMetricTags`；或直接在 `writePacketNow` / `UdpBackendRelayHandler.channelRead0` 里用 `localPort(binding.inbound)` 补一个 `listenPort=<ssPort>` tag。
+    - 这样也能让 `ss.udp.drop.count` / 其他 `udpMetricTags` 派生的 `ss.udp.*` 与 `socks.udp.*` 的端口维度更一致，便于 dashboard 关联。
+  - **[低] `path` / `direction` 命名歧义**：当前约定是 `path`=数据来源侧（`frontend`=来自 SS client，`backend`=来自上游响应），`direction`=写入的 channel 方向（`outbound`=向上游，`inbound`=回客户端）。组合 `frontend+outbound` 表示“客户端数据写到上游”，`backend+inbound` 表示“上游响应写回客户端”，语义正确但极易被读成相反含义。建议任选其一做清理：
+    - 在 `udpMetricTags` 方法上加 Javadoc 明确语义；或
+    - 合并成单一 `flow` 维度，如 `flow=client-to-upstream` / `flow=upstream-to-client`，更直观且仍保持低基数（2 个值）。
+  - **[低] backend handler 里的 metric 仍有裸 `DiagnosticMetrics.record` 调用**：`SSUdpProxyHandler.UdpBackendRelayHandler.channelRead0` 里 `missing-binding` / `unexpected.sender.count` / `invalid-socks5-relay` 三处直接 `DiagnosticMetrics.record(name, 1D, "...")`，tag 已低基数但与 `recordUdpDrop` / `recordUdpMetric` 路径是并行存在的。建议收敛到同一私有方法（例如 `recordUdpDrop(String reason, String path)`），方便未来统一加 `listenPort` 或做 sampling。
+  - **[低] `ss.udp.drop.count` 当前只能按 `path=frontend` 粗分**：`recordUdpDrop` 在 frontend 侧的所有失败场景都贴 `path=frontend`，原因维度保留（`inactive` / `build-failed` / `init-failed` / `bind-failed` / `pending-route-overflow`）。维度够用，但 backend 侧的 `drop.count` 只有 `reason=missing-binding,path=backend` / `reason=invalid-socks5-relay,path=backend` 两条，排障时仍需配合日志；建议后续生产看板以 `reason` 为主，`path` 为辅。
+
+### 7.2 `writeudp-unwritable-test` / `writeudp-write-thrown-test`：已落地，写侧回退分支已补齐
+
+- 已落地（[`SocketsTest.java`](rxlib/src/test/java/org/rx/net/SocketsTest.java)）：
+  - `testUdpWriteDropsWhenChannelUnwritable`：通过 `channel.unsafe().outboundBuffer().setUserDefinedWritability(1, false)` 强制 not writable，断言返回 `CHANNEL_UNWRITABLE`、`payload.refCnt()==0`、`udpPendingWriteBytes==0`、`readOutbound()==null`，最后恢复 writability 再 `finishAndReleaseAll`。
+  - `testUdpWriteDropsWhenChannelInactive`：`EmbeddedChannel.close()` 后调用 `writeUdp`，断言返回 `CHANNEL_INACTIVE`、payload 释放、pending 归零。
+- `testUdpWriteDropsWhenWriteThrowsAndRecordsLowCardinalityMetrics`：通过自定义 `EmbeddedChannel` 在 `writeAndFlush` 时同步抛异常，断言返回 `WRITE_THROWN`、payload 释放、pending 归零，并校验 `test.udp.drop.count` / `test.udp.pending.write.bytes` 落库的 tags 为低基数形态。
+- 覆盖现状：`ACCEPTED` / `PENDING_OVERLIMIT` / `CHANNEL_UNWRITABLE` / `CHANNEL_INACTIVE` / `WRITE_THROWN` 五条返回路径已覆盖。
+- 追加建议：
+  - **[低] `unsafe().outboundBuffer().setUserDefinedWritability(...)` 是 Netty internal API**：Netty 主版本升级时可能变动。短期成本低，暂不动；如果未来升级 Netty 出现红灯，可替换为 pipeline 前置累积式 encoder（不断累积不 flush）触发真实 watermark 越界。
+
+### 7.3 新增待跟进项重分类
+
+#### 7.3.1 必须修
+
+- `writeudp-write-thrown-test`（已完成）：已补 `Sockets.writeUdp` 的 `WRITE_THROWN` 分支单测以及低基数 metric 捕获断言，作为降基数回归护栏。
+
+#### 7.3.2 待压测/指标证明后行动
+
+- `ss-metric-listenport-tag`：评估是否为 `SSUdpProxyHandler.udpMetricTags` 派生的 `ss.udp.*` 指标补齐 `listenPort`（或等价维度）；当前 route/header cache 指标已带 `listenPort`，单 SS 场景也不紧迫。
+- `udp-metric-flow-naming`：将 `path` / `direction` 组合维度合并为单一 `flow` 维度（`client-to-upstream` / `upstream-to-client`），或至少为现有命名补 Javadoc，避免后续读者歧义。

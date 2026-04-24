@@ -27,6 +27,7 @@ import java.net.SocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 // @Slf4j
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
@@ -46,6 +47,9 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     // 只有压缩时一定要用
     @Setter
     private PredicateFunc<UnresolvedEndpoint> cipherRouter;
+    @Getter
+    @Setter
+    private Function<String, AuthResult> connectionTagResolver;
 
     public boolean isBind() {
         return tcpChannel != null && tcpChannel.isActive();
@@ -58,6 +62,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     public boolean isAuthEnabled() {
         return authenticator != null;
+    }
+
+    boolean isTrafficBindingEnabled() {
+        return authenticator != null || connectionTagResolver != null;
     }
 
     public SocksProxyServer(SocksConfig config) {
@@ -144,7 +152,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             return;
         }
         ChannelPipeline pipeline = channel.pipeline();
-        if (isAuthEnabled()) {
+        if (isTrafficBindingEnabled()) {
             // Traffic statistics
             pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(config.getTrafficShapingInterval()));
         }

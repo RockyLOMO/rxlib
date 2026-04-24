@@ -3,6 +3,7 @@ package org.rx.diagnostic;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.VMOption;
 import org.rx.core.IOC;
 import org.rx.core.Reflects;
@@ -91,6 +92,9 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             return value(o1, "key").compareToIgnoreCase(value(o2, "key"));
         }
     };
+
+    public static final HotSpotDiagnosticMXBean diagnosticMx =
+            ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
 
     private final DiagnosticConfig config;
 
@@ -854,7 +858,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         List<Map<String, Object>> writableRows = new ArrayList<>();
         List<Map<String, Object>> readonlyRows = new ArrayList<>();
         try {
-            for (VMOption option : Sys.diagnosticMx.getDiagnosticOptions()) {
+            for (VMOption option : diagnosticMx.getDiagnosticOptions()) {
                 Map<String, Object> view = new HashMap<>();
                 view.put("name", option.getName());
                 view.put("value", option.getValue());
@@ -1325,8 +1329,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             return "VM option update skipped: name is empty.";
         }
         try {
-            Sys.diagnosticMx.setVMOption(filter.vmOptionName, filter.vmOptionValue == null ? "" : filter.vmOptionValue);
-            VMOption option = Sys.diagnosticMx.getVMOption(filter.vmOptionName);
+            diagnosticMx.setVMOption(filter.vmOptionName, filter.vmOptionValue == null ? "" : filter.vmOptionValue);
+            VMOption option = diagnosticMx.getVMOption(filter.vmOptionName);
             filter.vmOptionResult = filter.vmOptionName + "=" + option.getValue() + " (" + option.getOrigin() + ")";
             return "VM option updated: " + filter.vmOptionResult;
         } catch (Throwable e) {
