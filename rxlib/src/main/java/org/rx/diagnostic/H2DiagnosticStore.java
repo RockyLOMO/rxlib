@@ -12,6 +12,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,6 +20,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 public class H2DiagnosticStore implements DiagnosticStore {
+    private static final long STACK_REFRESH_INTERVAL_MILLIS = 60000L;
+    private static final long STACK_CACHE_CLEANUP_INTERVAL_MILLIS = 300000L;
+    private static final int STACK_CACHE_MAX_ENTRIES = 16384;
+
     private static final int TYPE_METRIC = 1;
     private static final int TYPE_STACK = 2;
     private static final int TYPE_THREAD_CPU = 3;
@@ -32,11 +37,13 @@ public class H2DiagnosticStore implements DiagnosticStore {
     private final DiagnosticConfig config;
     private final EntityDatabase db;
     private final ArrayBlockingQueue<Record> queue;
+    private final ConcurrentHashMap<Long, Long> recentStacks = new ConcurrentHashMap<Long, Long>();
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicLong droppedRecords = new AtomicLong();
     private final AtomicLong writeFailures = new AtomicLong();
     private volatile Thread worker;
     private volatile long lastCleanupMillis;
+    private volatile long lastStackCleanupMillis;
     private volatile long degradedUntilMillis;
 
     public H2DiagnosticStore(DiagnosticConfig config) {
@@ -90,6 +97,9 @@ public class H2DiagnosticStore implements DiagnosticStore {
     @Override
     public void recordStackTrace(long stackHash, String stackTrace, long timestampMillis) {
         if (stackHash == 0L || stackTrace == null || stackTrace.length() == 0) {
+            return;
+        }
+        if (shouldSkipStack(stackHash, timestampMillis)) {
             return;
         }
         Record record = new Record(TYPE_STACK);
@@ -408,6 +418,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
     }
 
     private void writeBatch(List<Record> batch) throws SQLException {
+        long started = System.nanoTime();
         boolean suppressed = DiagnosticMetrics.enterSuppressed();
         try {
             db.withConnection(conn -> {
@@ -430,6 +441,11 @@ public class H2DiagnosticStore implements DiagnosticStore {
             });
         } finally {
             DiagnosticMetrics.exitSuppressed(suppressed);
+            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            if (elapsed >= slowBatchWarnMillis()) {
+                log.warn("diagnostic h2 batch slow: {}ms, records={}, dataRecords={}, queue={}, dropped={}, degraded={}",
+                        elapsed, batch.size(), countDataRecords(batch), queue.size(), droppedRecords.get(), isDegraded());
+            }
             releaseFlushRecords(batch);
         }
     }
@@ -671,6 +687,38 @@ public class H2DiagnosticStore implements DiagnosticStore {
         return value.substring(0, max);
     }
 
+    private boolean shouldSkipStack(long stackHash, long now) {
+        Long last = recentStacks.putIfAbsent(stackHash, now);
+        if (last == null) {
+            return false;
+        }
+        if (now - last < STACK_REFRESH_INTERVAL_MILLIS) {
+            cleanupRecentStacks(now);
+            return true;
+        }
+        recentStacks.put(stackHash, now);
+        cleanupRecentStacks(now);
+        return false;
+    }
+
+    private void cleanupRecentStacks(long now) {
+        if (recentStacks.size() < STACK_CACHE_MAX_ENTRIES || now - lastStackCleanupMillis < STACK_CACHE_CLEANUP_INTERVAL_MILLIS) {
+            return;
+        }
+        lastStackCleanupMillis = now;
+        long expireBefore = now - STACK_REFRESH_INTERVAL_MILLIS;
+        for (java.util.Map.Entry<Long, Long> entry : recentStacks.entrySet()) {
+            Long ts = entry.getValue();
+            if (ts != null && ts < expireBefore) {
+                recentStacks.remove(entry.getKey(), ts);
+            }
+        }
+    }
+
+    private long slowBatchWarnMillis() {
+        return Math.max(5000L, config.getH2FlushIntervalMillis() * 8L);
+    }
+
     private static void releaseFlushRecords(List<Record> batch) {
         for (Record record : batch) {
             if (record.type == TYPE_FLUSH && record.latch != null) {
@@ -682,10 +730,14 @@ public class H2DiagnosticStore implements DiagnosticStore {
     static EntityDatabase createDatabase(DiagnosticConfig config) {
         config.normalize();
         int maxConnections = 1;
+        EntityDatabaseImpl db;
         if (config.getH2JdbcUrl() != null && config.getH2JdbcUrl().length() != 0) {
-            return new EntityDatabaseImpl(config.getH2JdbcUrl(), null, maxConnections, true);
+            db = new EntityDatabaseImpl(config.getH2JdbcUrl(), null, maxConnections, true);
+        } else {
+            db = new EntityDatabaseImpl(config.getH2File().getPath(), null, maxConnections);
         }
-        return new EntityDatabaseImpl(config.getH2File().getPath(), null, maxConnections);
+        db.setSlowSqlElapsed((int) Math.min(Integer.MAX_VALUE, Math.max(5000L, config.getH2FlushIntervalMillis() * 8L)));
+        return db;
     }
 
     private static final class Record {
