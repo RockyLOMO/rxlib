@@ -62,7 +62,7 @@ public final class RxConfig {
         String STORAGE_USAGE_WARNING = "app.storage.diskUsageWarningThreshold";
         String STORAGE_H2_SETTINGS = "app.storage.h2Settings";
         String STORAGE_H2_DB_PATH = "app.storage.h2DbPath";
-        String STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS = "app.storage.entityDatabaseMaxConnections";
+        String STORAGE_H2_MAX_CONNECTIONS = "app.storage.h2MaxConnections";
         String STORAGE_ENTITY_DATABASE_ROLL_PERIOD = "app.storage.entityDatabaseRollPeriod";
 
         String DIAGNOSTIC_ENABLED = "app.diagnostic.enabled";
@@ -72,6 +72,8 @@ public final class RxConfig {
         String DIAGNOSTIC_H2_ENABLED = "app.diagnostic.h2.enabled";
         String DIAGNOSTIC_H2_JDBC_URL = "app.diagnostic.h2.jdbcUrl";
         String DIAGNOSTIC_H2_PATH = "app.diagnostic.h2.path";
+        String DIAGNOSTIC_H2_SETTINGS = "app.diagnostic.h2Settings";
+        String DIAGNOSTIC_H2_MAX_CONNECTIONS = "app.diagnostic.h2MaxConnections";
         String DIAGNOSTIC_H2_BATCH_SIZE = "app.diagnostic.h2.batchSize";
         String DIAGNOSTIC_H2_QUEUE_SIZE = "app.diagnostic.h2.queueSize";
         String DIAGNOSTIC_H2_FLUSH_INTERVAL_MILLIS = "app.diagnostic.h2.flushIntervalMillis";
@@ -220,7 +222,7 @@ public final class RxConfig {
         int diskUsageWarningThreshold;
         String h2Settings;
         String h2DbPath;
-        int entityDatabaseMaxConnections;
+        int h2MaxConnections;
         int entityDatabaseRollPeriod;
     }
 
@@ -236,6 +238,8 @@ public final class RxConfig {
         boolean h2Enabled = true;
         String h2JdbcUrl;
         File h2File = new File(".", "rx-diagnostic");
+        String h2Settings = "CACHE_SIZE=2048;MAX_MEMORY_ROWS=512;MAX_OPERATION_MEMORY=1024;WRITE_DELAY=500";
+        int h2MaxConnections = 2;
         int h2BatchSize = 128;
         int h2QueueSize = 8192;
         long h2FlushIntervalMillis = 1000L;
@@ -299,6 +303,10 @@ public final class RxConfig {
         public void normalize() {
             sampleIntervalMillis = positive(sampleIntervalMillis, 15000L);
             ringBufferMaxSamples = Math.max(16, ringBufferMaxSamples);
+            if (h2Settings == null) {
+                h2Settings = "";
+            }
+            h2MaxConnections = Math.max(1, h2MaxConnections);
             h2BatchSize = Math.max(1, h2BatchSize);
             h2QueueSize = Math.max(h2BatchSize, h2QueueSize);
             h2FlushIntervalMillis = positive(h2FlushIntervalMillis, 1000L);
@@ -628,7 +636,7 @@ public final class RxConfig {
         storage.diskUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.STORAGE_USAGE_WARNING, storage.diskUsageWarningThreshold);
         storage.h2Settings = SystemPropertyUtil.get(ConfigNames.STORAGE_H2_SETTINGS, storage.h2Settings);
         storage.h2DbPath = SystemPropertyUtil.get(ConfigNames.STORAGE_H2_DB_PATH, storage.h2DbPath);
-        storage.entityDatabaseMaxConnections = SystemPropertyUtil.getInt(ConfigNames.STORAGE_ENTITY_DATABASE_MAX_CONNECTIONS, storage.entityDatabaseMaxConnections);
+        storage.h2MaxConnections = SystemPropertyUtil.getInt(ConfigNames.STORAGE_H2_MAX_CONNECTIONS, storage.h2MaxConnections);
         storage.entityDatabaseRollPeriod = SystemPropertyUtil.getInt(ConfigNames.STORAGE_ENTITY_DATABASE_ROLL_PERIOD, storage.entityDatabaseRollPeriod);
 
         diagnostic.enabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_ENABLED, diagnostic.enabled);
@@ -641,6 +649,8 @@ public final class RxConfig {
         if (diagPath != null && diagPath.length() != 0) {
             diagnostic.h2File = new File(diagPath);
         }
+        diagnostic.h2Settings = SystemPropertyUtil.get(ConfigNames.DIAGNOSTIC_H2_SETTINGS, diagnostic.h2Settings);
+        diagnostic.h2MaxConnections = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_H2_MAX_CONNECTIONS, diagnostic.h2MaxConnections);
         diagnostic.h2BatchSize = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_H2_BATCH_SIZE, diagnostic.h2BatchSize);
         diagnostic.h2QueueSize = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_H2_QUEUE_SIZE, diagnostic.h2QueueSize);
         diagnostic.h2FlushIntervalMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_H2_FLUSH_INTERVAL_MILLIS, diagnostic.h2FlushIntervalMillis);

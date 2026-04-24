@@ -44,6 +44,9 @@ public class H2DiagnosticStore implements DiagnosticStore {
     private volatile Thread worker;
     private volatile long lastCleanupMillis;
     private volatile long lastStackCleanupMillis;
+    private volatile long lastSlowBatchWarnMillis;
+    private volatile long lastQueuePressureWarnMillis;
+    private volatile int lastSlowBatchWarnQueue;
     private volatile long degradedUntilMillis;
 
     public H2DiagnosticStore(DiagnosticConfig config) {
@@ -269,6 +272,11 @@ public class H2DiagnosticStore implements DiagnosticStore {
             droppedRecords.incrementAndGet();
             return;
         }
+        if (shouldDropForBackpressure(record)) {
+            droppedRecords.incrementAndGet();
+            warnQueuePressure(record);
+            return;
+        }
         if (!queue.offer(record)) {
             droppedRecords.incrementAndGet();
         }
@@ -281,7 +289,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
                 Record first = queue.poll(config.getH2FlushIntervalMillis(), TimeUnit.MILLISECONDS);
                 if (first != null) {
                     batch.add(first);
-                    queue.drainTo(batch, Math.max(0, config.getH2BatchSize() - 1));
+                    queue.drainTo(batch, Math.max(0, targetBatchSize() - 1));
                 }
                 if (!batch.isEmpty()) {
                     writeBatch(batch);
@@ -442,7 +450,7 @@ public class H2DiagnosticStore implements DiagnosticStore {
         } finally {
             DiagnosticMetrics.exitSuppressed(suppressed);
             long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
-            if (elapsed >= slowBatchWarnMillis()) {
+            if (elapsed >= slowBatchWarnMillis() && shouldWarnSlowBatch()) {
                 log.warn("diagnostic h2 batch slow: {}ms, records={}, dataRecords={}, queue={}, dropped={}, degraded={}",
                         elapsed, batch.size(), countDataRecords(batch), queue.size(), droppedRecords.get(), isDegraded());
             }
@@ -719,6 +727,104 @@ public class H2DiagnosticStore implements DiagnosticStore {
         return Math.max(5000L, config.getH2FlushIntervalMillis() * 8L);
     }
 
+    private int targetBatchSize() {
+        int base = Math.max(1, config.getH2BatchSize());
+        int queueCapacity = Math.max(base, config.getH2QueueSize());
+        int pending = queue.size();
+        if (pending >= Math.max(base * 16, queueCapacity / 2)) {
+            return Math.min(queueCapacity, base * 8);
+        }
+        if (pending >= Math.max(base * 8, queueCapacity / 4)) {
+            return Math.min(queueCapacity, base * 4);
+        }
+        if (pending >= Math.max(base * 4, queueCapacity / 8)) {
+            return Math.min(queueCapacity, base * 2);
+        }
+        return base;
+    }
+
+    private boolean shouldDropForBackpressure(Record record) {
+        if (record.type == TYPE_INCIDENT || record.type == TYPE_FLUSH) {
+            return false;
+        }
+        if (queue.size() < metricDropThreshold()) {
+            return false;
+        }
+        return record.type == TYPE_METRIC && !hasIncidentReference(record);
+    }
+
+    private int metricDropThreshold() {
+        return Math.max(config.getH2BatchSize() * 16, Math.max(1, config.getH2QueueSize() / 4));
+    }
+
+    private boolean hasIncidentReference(Record record) {
+        switch (record.type) {
+            case TYPE_METRIC:
+            case TYPE_THREAD_CPU:
+            case TYPE_FILE_IO:
+            case TYPE_NET_IO:
+                return hasText(record.s3);
+            case TYPE_THREAD_STATE:
+                return hasText(record.s5);
+            case TYPE_FILE_SIZE:
+                return hasText(record.s2);
+            case TYPE_INCIDENT:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private boolean shouldWarnSlowBatch() {
+        long now = System.currentTimeMillis();
+        int pending = queue.size();
+        if (now - lastSlowBatchWarnMillis < 30000L && pending < lastSlowBatchWarnQueue + config.getH2BatchSize() * 8) {
+            return false;
+        }
+        lastSlowBatchWarnMillis = now;
+        lastSlowBatchWarnQueue = pending;
+        return true;
+    }
+
+    private void warnQueuePressure(Record record) {
+        long now = System.currentTimeMillis();
+        if (now - lastQueuePressureWarnMillis < 30000L) {
+            return;
+        }
+        lastQueuePressureWarnMillis = now;
+        log.warn("diagnostic h2 queue pressure: dropping {} records, queue={}, threshold={}, dropped={}, degraded={}",
+                recordTypeName(record.type), queue.size(), metricDropThreshold(), droppedRecords.get(), isDegraded());
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && value.length() != 0;
+    }
+
+    private static String recordTypeName(int type) {
+        switch (type) {
+            case TYPE_METRIC:
+                return "metric";
+            case TYPE_STACK:
+                return "stack";
+            case TYPE_THREAD_CPU:
+                return "thread_cpu";
+            case TYPE_FILE_IO:
+                return "file_io";
+            case TYPE_FILE_SIZE:
+                return "file_size";
+            case TYPE_INCIDENT:
+                return "incident";
+            case TYPE_FLUSH:
+                return "flush";
+            case TYPE_NET_IO:
+                return "net_io";
+            case TYPE_THREAD_STATE:
+                return "thread_state";
+            default:
+                return "unknown";
+        }
+    }
+
     private static void releaseFlushRecords(List<Record> batch) {
         for (Record record : batch) {
             if (record.type == TYPE_FLUSH && record.latch != null) {
@@ -729,14 +835,16 @@ public class H2DiagnosticStore implements DiagnosticStore {
 
     static EntityDatabase createDatabase(DiagnosticConfig config) {
         config.normalize();
-        int maxConnections = 1;
+        int maxConnections = config.getH2MaxConnections();
         EntityDatabaseImpl db;
         if (config.getH2JdbcUrl() != null && config.getH2JdbcUrl().length() != 0) {
             db = new EntityDatabaseImpl(config.getH2JdbcUrl(), null, maxConnections, true);
         } else {
             db = new EntityDatabaseImpl(config.getH2File().getPath(), null, maxConnections);
+            db.setH2Settings(config.getH2Settings());
         }
         db.setSlowSqlElapsed((int) Math.min(Integer.MAX_VALUE, Math.max(5000L, config.getH2FlushIntervalMillis() * 8L)));
+        db.setEmitSlowSqlWarn(false);
         return db;
     }
 
