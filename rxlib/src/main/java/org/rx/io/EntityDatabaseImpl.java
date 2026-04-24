@@ -235,9 +235,13 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     @Setter
     BiFunc<Class<?>, String> tableMapping = EntityQueryLambda.TO_UNDERSCORE_TABLE_MAPPING;
     @Setter
+    String h2Settings;
+    @Setter
     boolean autoRollbackOnError;
     @Setter
     int slowSqlElapsed = 200;
+    @Setter
+    boolean emitSlowSqlWarn = true;
     final AtomicLong diagnosticSqlCount = new AtomicLong();
     final AtomicLong diagnosticSlowSqlCount = new AtomicLong();
     final AtomicLong diagnosticPoolCreatedCount = new AtomicLong();
@@ -265,7 +269,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         String filePath = getFilePath();
         curFilePath = filePath;
         //http://www.h2database.com/html/commands.html#set_cache_size
-        String h2Settings = ifNull(RxConfig.INSTANCE.getStorage().getH2Settings(), "");
+        String h2Settings = ifNull(this.h2Settings, RxConfig.INSTANCE.getStorage().getH2Settings());
+        h2Settings = ifNull(h2Settings, "");
         String jdbcUrl = jdbcUrlMode ? filePath : String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;", filePath) + h2Settings;
         log.info("h2Settings: {}", jdbcUrlMode ? "<custom-jdbc-url>" : h2Settings);
         JdbcConnectionPool pool = JdbcConnectionPool.create(jdbcUrl, null, null);
@@ -299,7 +304,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     public EntityDatabaseImpl(String filePath, String timeRollingPattern, int maxConnections, boolean jdbcUrlMode) {
         if (maxConnections <= 0) {
-            int configuredMaxConnections = RxConfig.INSTANCE.getStorage().getEntityDatabaseMaxConnections();
+            int configuredMaxConnections = RxConfig.INSTANCE.getStorage().getH2MaxConnections();
             maxConnections = configuredMaxConnections > 0 ? configuredMaxConnections : Math.max(4, Math.min(8, Constants.CPU_THREADS));
         }
 
@@ -1181,7 +1186,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     private void postInvoke(String sql, List<Object> params, Connection conn, long startTime, boolean success) throws SQLException {
         long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
         if (elapsed > slowSqlElapsed) {
-            log.warn("slowSql: {} -> {}ms", sql, elapsed);
+            if (emitSlowSqlWarn) {
+                log.warn("slowSql: {} -> {}ms", sql, elapsed);
+            }
         } else {
             if (log.isDebugEnabled()) {
                 log.debug("executeQuery {}\n{}", sql, toJsonString(params));

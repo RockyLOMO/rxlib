@@ -37,6 +37,8 @@ public class DiagnosticMonitorTest {
         config.normalize();
         assertEquals(new File(".", "rx-diagnostic").getPath(), config.getDiagnosticsDirectory().getPath());
         assertEquals(new File(".", "rx-diagnostic").getPath(), config.getH2File().getPath());
+        assertEquals("CACHE_SIZE=2048;MAX_MEMORY_ROWS=512;MAX_OPERATION_MEMORY=1024;WRITE_DELAY=500", config.getH2Settings());
+        assertEquals(2, config.getH2MaxConnections());
     }
 
     @Test
@@ -112,14 +114,30 @@ public class DiagnosticMonitorTest {
 
     @Test
     public void diagnosticStoreDatabaseUsesRelaxedSlowSqlThreshold() throws Exception {
-        DiagnosticConfig config = memConfig("diag_store_slow_threshold");
+        DiagnosticConfig config = new DiagnosticConfig();
+        config.setH2File(new File("target/diag_store_slow_threshold_" + System.nanoTime()));
+        config.setH2JdbcUrl(null);
         config.setH2FlushIntervalMillis(1000L);
+        config.setH2Settings("CACHE_SIZE=1234;MAX_MEMORY_ROWS=77;MAX_OPERATION_MEMORY=88;WRITE_DELAY=999");
+        config.setH2MaxConnections(2);
         EntityDatabase db = H2DiagnosticStore.createDatabase(config);
         try {
             assertTrue(db instanceof EntityDatabaseImpl);
-            java.lang.reflect.Field field = EntityDatabaseImpl.class.getDeclaredField("slowSqlElapsed");
-            field.setAccessible(true);
-            assertEquals(8000, field.getInt(db));
+            java.lang.reflect.Field slowField = EntityDatabaseImpl.class.getDeclaredField("slowSqlElapsed");
+            slowField.setAccessible(true);
+            assertEquals(8000, slowField.getInt(db));
+
+            java.lang.reflect.Field warnField = EntityDatabaseImpl.class.getDeclaredField("emitSlowSqlWarn");
+            warnField.setAccessible(true);
+            assertFalse(warnField.getBoolean(db));
+
+            java.lang.reflect.Field settingsField = EntityDatabaseImpl.class.getDeclaredField("h2Settings");
+            settingsField.setAccessible(true);
+            assertEquals(config.getH2Settings(), settingsField.get(db));
+
+            java.lang.reflect.Field connectionField = EntityDatabaseImpl.class.getDeclaredField("maxConnections");
+            connectionField.setAccessible(true);
+            assertEquals(2, connectionField.getInt(db));
         } finally {
             db.close();
         }
