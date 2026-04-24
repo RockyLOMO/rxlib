@@ -451,8 +451,8 @@ public final class RssClient {
             org.rx.net.socks.SocksUserTraffic.registerRecorder(trafficStore);
         }
 
-        httpServer = HttpServer.getDefault().requestMapping("/usrInfo", (request, response) ->
-                response.jsonBody(toShadowStorePayload(authenticator.getShadowStore())));
+        httpServer = HttpServer.getDefault().requestAsync(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH,
+                new RssClientHttpHandler(authenticator.getShadowStore()));
 
         if (!Strings.isEmpty(rssConf.rrpToken) && rssConf.rrpPort != null) {
             RrpConfig c = new RrpConfig();

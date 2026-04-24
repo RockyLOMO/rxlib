@@ -45,6 +45,7 @@ import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.TripleAction;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.Collections;
@@ -110,6 +111,45 @@ public class RssTest extends AbstractTester {
         user.setLastResetTime(DateTime.now());
         user.getLoginIps().put(java.net.InetAddress.getByName("18.12.3.4"), new TrafficLoginInfo());
         System.out.println(toJsonString(RssClient.toShadowUserPayload(user)));
+    }
+
+    @SneakyThrows
+    @Test
+    public void renderShadowUsersPage_RendersShadowUserDetails() {
+        ShadowUser user = new ShadowUser();
+        user.setUsername("ss-rocky");
+        user.setSocksUser("inner-rocky");
+        user.setSsPort(8388);
+        user.setIpLimit(3);
+        user.setLastResetTime(DateTime.valueOf("2026-04-24 12:34:56"));
+
+        TrafficLoginInfo loginInfo = new TrafficLoginInfo();
+        loginInfo.setLatestTime(DateTime.valueOf("2026-04-24 08:00:00"));
+        loginInfo.getRefCnt().set(2);
+        loginInfo.getTotalActiveSeconds().set(3600);
+        loginInfo.getTotalReadBytes().set(2048);
+        loginInfo.getTotalWriteBytes().set(4096);
+        loginInfo.getTotalReadPackets().set(12);
+        loginInfo.getTotalWritePackets().set(24);
+        user.getLoginIps().put(InetAddress.getByName("18.12.3.4"), loginInfo);
+
+        String html = RssClientHttpHandler.renderShadowUsersPage(Collections.singletonMap(user.getUsername(), user));
+
+        assertTrue(html.contains("RSS SS 用户信息"));
+        assertTrue(html.contains(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH));
+        assertTrue(html.contains("ss-rocky"));
+        assertTrue(html.contains("inner-rocky"));
+        assertTrue(html.contains("18.12.3.4"));
+        assertTrue(html.contains("2.0KB"));
+        assertTrue(html.contains("4.0KB"));
+    }
+
+    @Test
+    public void renderShadowUsersPage_EmptyStoreShowsEmptyState() {
+        String html = RssClientHttpHandler.renderShadowUsersPage(Collections.<String, ShadowUser>emptyMap());
+
+        assertTrue(html.contains("暂无 SS 用户"));
+        assertTrue(html.contains(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH));
     }
 
     @Test
