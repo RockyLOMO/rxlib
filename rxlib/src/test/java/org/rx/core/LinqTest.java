@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LinqTest {
@@ -102,5 +103,14 @@ class LinqTest {
         Decimal sum = Linq.from(source, true).sumDecimal(p -> Decimal.valueOf(1D));
 
         assertEquals(Decimal.valueOf(1000D), sum);
+    }
+
+    @Test
+    void firstAndLastShouldPreserveNullElements() {
+        Linq<Integer> q = Linq.from(Arrays.asList(null, 1, null));
+
+        assertNull(q.first(p -> true));
+        assertNull(q.last());
+        assertNull(q.lastOrDefault(99));
     }
 }

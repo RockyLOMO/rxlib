@@ -305,11 +305,17 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     @Override
     public void forEach(Consumer<? super T> action) {
-        stream().forEach(action);
+        if (parallel) {
+            stream().forEach(action);
+            return;
+        }
+        for (T item : data) {
+            action.accept(item);
+        }
     }
 
     public void forEachOrdered(Consumer<? super T> action) {
-        stream().forEachOrdered(action);
+        forEach(action);
     }
 
     public <TR> Linq<TR> select(BiFunc<T, TR> selector) {
@@ -752,7 +758,10 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public T max() {
-        return max(stream());
+        if (parallel) {
+            return max(stream());
+        }
+        return max(data);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
@@ -760,12 +769,47 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return stream.max((Comparator<TR>) Comparator.naturalOrder()).orElse(null);
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
+    private static <TR> TR max(Iterable<TR> iterable) {
+        Iterator<TR> iterator = iterable.iterator();
+        if (!iterator.hasNext()) {
+            return null;
+        }
+        TR value = iterator.next();
+        while (iterator.hasNext()) {
+            TR candidate = iterator.next();
+            if (((Comparable<TR>) candidate).compareTo(value) > 0) {
+                value = candidate;
+            }
+        }
+        return value;
+    }
+
     public <TR> TR max(BiFunc<T, TR> selector) {
-        return max(stream().map(selector));
+        if (parallel) {
+            return max(stream().map(selector));
+        }
+        boolean found = false;
+        TR value = null;
+        for (T item : data) {
+            TR candidate = selector.apply(item);
+            if (!found) {
+                value = candidate;
+                found = true;
+                continue;
+            }
+            if (((Comparable<TR>) candidate).compareTo(value) > 0) {
+                value = candidate;
+            }
+        }
+        return found ? value : null;
     }
 
     public T min() {
-        return min(stream());
+        if (parallel) {
+            return min(stream());
+        }
+        return min(data);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
@@ -773,8 +817,40 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         return stream.min((Comparator<TR>) Comparator.naturalOrder()).orElse(null);
     }
 
+    @SuppressWarnings(NON_UNCHECKED)
+    private static <TR> TR min(Iterable<TR> iterable) {
+        Iterator<TR> iterator = iterable.iterator();
+        if (!iterator.hasNext()) {
+            return null;
+        }
+        TR value = iterator.next();
+        while (iterator.hasNext()) {
+            TR candidate = iterator.next();
+            if (((Comparable<TR>) candidate).compareTo(value) < 0) {
+                value = candidate;
+            }
+        }
+        return value;
+    }
+
     public <TR> TR min(BiFunc<T, TR> selector) {
-        return min(stream().map(selector));
+        if (parallel) {
+            return min(stream().map(selector));
+        }
+        boolean found = false;
+        TR value = null;
+        for (T item : data) {
+            TR candidate = selector.apply(item);
+            if (!found) {
+                value = candidate;
+                found = true;
+                continue;
+            }
+            if (((Comparable<TR>) candidate).compareTo(value) < 0) {
+                value = candidate;
+            }
+        }
+        return found ? value : null;
     }
 
     public double sum(ToDoubleFunction<T> selector) {
@@ -818,11 +894,12 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public T first(PredicateFunc<T> predicate) {
-        T value = firstOrDefault(predicate);
-        if (value == null) {
-            throw new NoSuchElementException("No value present");
+        for (T item : data) {
+            if (predicate.test(item)) {
+                return item;
+            }
         }
-        return value;
+        throw new NoSuchElementException("No value present");
     }
 
     public T firstOrDefault() {
@@ -852,16 +929,35 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public T last() {
-        T value = lastOrDefault();
-        if (value == null) {
+        boolean found = false;
+        T value = null;
+        if (data instanceof List) {
+            List<T> list = (List<T>) data;
+            if (!list.isEmpty()) {
+                return list.get(list.size() - 1);
+            }
+        } else {
+            for (T datum : data) {
+                value = datum;
+                found = true;
+            }
+        }
+        if (!found) {
             throw new NoSuchElementException("No value present");
         }
         return value;
     }
 
     public T last(PredicateFunc<T> predicate) {
-        T value = lastOrDefault(predicate);
-        if (value == null) {
+        T value = null;
+        boolean found = false;
+        for (T item : data) {
+            if (predicate.test(item)) {
+                value = item;
+                found = true;
+            }
+        }
+        if (!found) {
             throw new NoSuchElementException("No value present");
         }
         return value;
@@ -881,7 +977,20 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public T lastOrDefault(T defaultValue) {
-        return ifNull(lastOrDefault(), defaultValue);
+        boolean found = false;
+        T value = null;
+        if (data instanceof List) {
+            List<T> list = (List<T>) data;
+            if (!list.isEmpty()) {
+                return list.get(list.size() - 1);
+            }
+        } else {
+            for (T datum : data) {
+                value = datum;
+                found = true;
+            }
+        }
+        return found ? value : defaultValue;
     }
 
     public T lastOrDefault(PredicateFunc<T> predicate) {
