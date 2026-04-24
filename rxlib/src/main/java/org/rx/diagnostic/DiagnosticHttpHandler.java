@@ -315,7 +315,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             vars.put("inputArguments", Collections.emptyList());
         }
         try {
-            vars.put("ntpOffset", String.valueOf(Reflects.readStaticField(NtpClock.class, "offset")));
+            vars.put("ntpOffset", NtpClock.getOffset());
         } catch (Throwable e) {
             vars.put("ntpOffset", e.toString());
         }

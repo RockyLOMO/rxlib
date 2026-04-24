@@ -444,20 +444,4 @@ public class RrpClient extends Disposable {
     void reconnectAsync() {
         Tasks.setTimeout(() -> doConnect(true), 1000, bootstrap, Constants.TIMER_REPLACE_FLAG);
     }
-
-//    public synchronized void send(@NonNull Object msg) {
-//        if (!isConnected()) {
-//            if (isShouldReconnect()) {
-//                if (!FluentWait.polling(config.getWaitConnectMillis()).awaitTrue(w -> isConnected())) {
-//                    reconnectAsync();
-//                    throw new ClientDisconnectedException(this);
-//                }
-//            }
-//            if (!isConnected()) {
-//                throw new ClientDisconnectedException(this);
-//            }
-//        }
-//
-//        channel.writeAndFlush(msg);
-//    }
 }
