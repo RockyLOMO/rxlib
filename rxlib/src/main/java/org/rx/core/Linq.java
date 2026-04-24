@@ -260,6 +260,33 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         }
     }
 
+    private static final class ManyKey {
+        private final List<Object> values;
+        private final int hash;
+
+        private ManyKey(List<Object> values) {
+            this.values = values;
+            this.hash = values != null ? values.hashCode() : 0;
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof ManyKey)) {
+                return false;
+            }
+            ManyKey that = (ManyKey) obj;
+            return Objects.equals(values, that.values);
+        }
+    }
+
     private static <TK> int getCount(Map<TK, Integer> map, TK key) {
         Integer count = map.get(key);
         return count == null ? 0 : count;
@@ -323,7 +350,13 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public void forEachOrdered(Consumer<? super T> action) {
-        forEach(action);
+        if (parallel) {
+            stream().forEachOrdered(action);
+            return;
+        }
+        for (T item : data) {
+            action.accept(item);
+        }
     }
 
     public <TR> Linq<TR> select(BiFunc<T, TR> selector) {
@@ -576,50 +609,34 @@ public final class Linq<T> implements Iterable<T>, Serializable {
 
     public Linq<T> difference(Iterable<T> set) {
         List<T> right = snapshot(set);
-        Map<T, Integer> leftCounts = new LinkedHashMap<>(capacity(sizeHint()));
         Map<T, Integer> rightCounts = new LinkedHashMap<>(capacity(right.size()));
-        for (T item : data) {
-            incrementCount(leftCounts, item);
-        }
         for (T item : right) {
             incrementCount(rightCounts, item);
         }
 
         List<T> result = newList();
-        Map<T, Integer> emitted = new HashMap<>(capacity(leftCounts.size() + rightCounts.size()));
         for (T item : data) {
-            int allowed = Math.max(getCount(leftCounts, item) - getCount(rightCounts, item), 0);
-            if (allowed == 0) {
+            int count = getCount(rightCounts, item);
+            if (count == 0) {
+                result.add(item);
                 continue;
             }
-            int count = getCount(emitted, item);
-            if (count < allowed) {
-                result.add(item);
-                emitted.put(item, count + 1);
-            }
+            rightCounts.put(item, count - 1);
         }
         for (T item : right) {
-            int allowed = Math.max(getCount(rightCounts, item) - getCount(leftCounts, item), 0);
-            if (allowed == 0) {
+            int count = getCount(rightCounts, item);
+            if (count == 0) {
                 continue;
             }
-            int count = getCount(emitted, item);
-            int base = Math.max(getCount(leftCounts, item) - getCount(rightCounts, item), 0);
-            if (count < base + allowed) {
-                result.add(item);
-                emitted.put(item, count + 1);
-            }
+            result.add(item);
+            rightCounts.put(item, count - 1);
         }
         return me(result);
     }
 
     public Linq<T> union(Iterable<T> set) {
         List<T> right = snapshot(set);
-        Map<T, Integer> leftCounts = new LinkedHashMap<>(capacity(sizeHint()));
         Map<T, Integer> rightCounts = new LinkedHashMap<>(capacity(right.size()));
-        for (T item : data) {
-            incrementCount(leftCounts, item);
-        }
         for (T item : right) {
             incrementCount(rightCounts, item);
         }
@@ -627,18 +644,18 @@ public final class Linq<T> implements Iterable<T>, Serializable {
         List<T> result = newList();
         for (T item : data) {
             result.add(item);
+            int count = getCount(rightCounts, item);
+            if (count > 0) {
+                rightCounts.put(item, count - 1);
+            }
         }
-        Map<T, Integer> appended = new HashMap<>(capacity(rightCounts.size()));
         for (T item : right) {
-            int extra = Math.max(getCount(rightCounts, item) - getCount(leftCounts, item), 0);
-            if (extra == 0) {
+            int count = getCount(rightCounts, item);
+            if (count == 0) {
                 continue;
             }
-            int count = getCount(appended, item);
-            if (count < extra) {
-                result.add(item);
-                appended.put(item, count + 1);
-            }
+            result.add(item);
+            rightCounts.put(item, count - 1);
         }
         return me(result);
     }
@@ -773,9 +790,9 @@ public final class Linq<T> implements Iterable<T>, Serializable {
     }
 
     public <TR> Linq<TR> groupByMany(BiFunc<T, List<Object>> keySelector, TripleFunc<List<Object>, Linq<T>, TR> resultSelector) {
-        Map<List<Object>, List<T>> map = newMap();
+        Map<ManyKey, List<T>> map = newMap();
         for (T item : data) {
-            List<Object> key = keySelector.apply(item);
+            ManyKey key = new ManyKey(keySelector.apply(item));
             List<T> group = map.get(key);
             if (group == null) {
                 group = parallel ? newConcurrentList(false) : new ArrayList<>();
@@ -784,8 +801,8 @@ public final class Linq<T> implements Iterable<T>, Serializable {
             group.add(item);
         }
         List<TR> result = newList(map.size());
-        for (Map.Entry<List<Object>, List<T>> entry : map.entrySet()) {
-            result.add(resultSelector.apply(entry.getKey(), from(entry.getValue())));
+        for (Map.Entry<ManyKey, List<T>> entry : map.entrySet()) {
+            result.add(resultSelector.apply(entry.getKey().values, from(entry.getValue())));
         }
         return me(result);
     }

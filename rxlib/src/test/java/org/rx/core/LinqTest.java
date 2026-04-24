@@ -129,4 +129,23 @@ class LinqTest {
 
         assertEquals("[1]-[2]-[3]", value);
     }
+
+    @Test
+    void parallelForEachOrderedShouldRespectEncounterOrder() {
+        List<Integer> result = new ArrayList<>();
+
+        Linq.from(Arrays.asList(1, 2, 3, 4), true).forEachOrdered(result::add);
+
+        assertEquals(Arrays.asList(1, 2, 3, 4), result);
+    }
+
+    @Test
+    void groupByManyShouldMergeEquivalentKeyLists() {
+        List<Integer> result = Linq.from(1, 2, 3, 4)
+                .groupByMany(p -> Arrays.<Object>asList(p % 2, p > 2), (key, items) -> items.count())
+                .orderBy(p -> p)
+                .toList();
+
+        assertEquals(Arrays.asList(1, 1, 1, 1), result);
+    }
 }
