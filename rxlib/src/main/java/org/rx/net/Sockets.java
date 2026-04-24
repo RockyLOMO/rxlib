@@ -860,8 +860,7 @@ public final class Sockets {
                 pendingBytes.addAndGet(-bytes);
                 if (!f.isSuccess()) {
                     recordUdpMetric(metricPrefix, "drop.count",
-                            appendUdpMetricTags(tags, "reason=write-fail,pendingBytes=" + Math.max(0, pendingBytes.get())
-                                    + ",limitBytes=" + limitBytes));
+                            appendUdpMetricTags(tags, "reason=write-fail,limitBucket=" + udpLimitBucket(limitBytes)));
                     log.warn("UDP write fail channel={} recipient={}", channel, packet.recipient(), f.cause());
                 }
             });
@@ -907,13 +906,12 @@ public final class Sockets {
     private static void releaseUdpPacket(DatagramPacket packet, String metricPrefix, String tags,
                                          String reason, int queuedBytes, int limitBytes) {
         Bytes.release(packet);
+        String metricTags = appendUdpMetricTags(tags,
+                "reason=" + reason + ",limitBucket=" + udpLimitBucket(limitBytes));
         recordUdpMetric(metricPrefix, "drop.count",
-                appendUdpMetricTags(tags, "reason=" + reason + ",pendingBytes=" + Math.max(0, queuedBytes)
-                        + ",limitBytes=" + Math.max(0, limitBytes)));
+                metricTags);
         if (queuedBytes > 0) {
-            recordUdpMetric(metricPrefix, "pending.write.bytes",
-                    appendUdpMetricTags(tags, "reason=" + reason + ",limitBytes=" + Math.max(0, limitBytes)),
-                    queuedBytes);
+            recordUdpMetric(metricPrefix, "pending.write.bytes", metricTags, queuedBytes);
         }
     }
 
@@ -936,6 +934,19 @@ public final class Sockets {
             return extra;
         }
         return tags + "," + extra;
+    }
+
+    private static String udpLimitBucket(int limitBytes) {
+        if (limitBytes <= 64 * 1024) {
+            return "lte64k";
+        }
+        if (limitBytes <= 256 * 1024) {
+            return "lte256k";
+        }
+        if (limitBytes <= 1024 * 1024) {
+            return "lte1m";
+        }
+        return "gt1m";
     }
 
     /**

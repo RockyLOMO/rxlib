@@ -268,7 +268,7 @@ public class SocksUdpUpstream extends Upstream {
             relay.attr(ATTR_UDP_SESSION).set(null);
             SocksUdpRelayHandler.onUpstreamSessionInvalidated(relay, active.relayAddr, this);
             DiagnosticMetrics.record("socks.udp.session.invalidate.count", 1D,
-                    "reason=" + reason + ",pooled=" + active.pooled + ",relay=" + active.relayAddr);
+                    "reason=" + reason + ",pooled=" + active.pooled);
 
             if (!resetPooledLease) {
                 closeHolder(active);

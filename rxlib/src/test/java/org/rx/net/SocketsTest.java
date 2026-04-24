@@ -5,8 +5,10 @@ import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.epoll.Epoll;
 import io.netty.channel.epoll.EpollEventLoopGroup;
@@ -146,6 +148,42 @@ public class SocketsTest {
         assertNotNull(outbound);
         assertEquals(0, Sockets.udpPendingWriteBytes(channel));
         outbound.release();
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteDropsWhenChannelUnwritable() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
+        channel.attr(Sockets.ATTR_UDP_WRITE_LIMIT_BYTES).set(128);
+        channel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.copiedBuffer("udp-unwritable", StandardCharsets.UTF_8);
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.CHANNEL_UNWRITABLE,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=unwritable"));
+        assertEquals(0, payload.refCnt());
+        assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+        assertNull(channel.readOutbound());
+
+        channel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteDropsWhenChannelInactive() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.close();
+
+        ByteBuf payload = Unpooled.copiedBuffer("udp-inactive", StandardCharsets.UTF_8);
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.CHANNEL_INACTIVE,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=inactive"));
+        assertEquals(0, payload.refCnt());
+        assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+        assertNull(channel.readOutbound());
         channel.finishAndReleaseAll();
     }
 

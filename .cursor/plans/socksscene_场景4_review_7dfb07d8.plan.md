@@ -18,6 +18,12 @@ todos:
   - id: add-tests
     content: 【必须修】补充 UDP 写侧保护单测 + session 自愈集成回归，并回归场景4主链路
     status: completed
+  - id: metric-cardinality-reduction
+    content: 【必须修】降低新增 UDP DiagnosticMetrics tags 基数，仅保留低基数维度，endpoint 信息回到日志
+    status: completed
+  - id: writeudp-unwritable-test
+    content: 【必须修】补充 Sockets.writeUdp 的 CHANNEL_UNWRITABLE / CHANNEL_INACTIVE 单测
+    status: completed
   # 需要压测/指标证明后再动
   - id: fix-ctxmap-keying
     content: 【需压测/指标证明后再动】评估是否重构 SocksUdpRelayHandler.ctxMap；当前更接近 known-upstream-sender gate，而非 per-dst 回包分流表
@@ -39,6 +45,15 @@ todos:
     status: pending
   - id: udp-associate-tcp-idle
     content: 【需压测/指标证明后再动】评估 UDP_ASSOCIATE 后保留 TCP control idle handler 的收益与误杀风险
+    status: pending
+  - id: ss-inbound-per-source-limit
+    content: 【需压测/指标证明后再动】仅在 source-level drop 证明存在单源挤占时，再评估 SS inbound per-source/per-recipient soft limit 与配置化
+    status: pending
+  - id: control-future-listener-cleanup
+    content: 【需压测/指标证明后再动】仅在 leak detection / heap 证明 controlChannel closeFuture listener 有短期内存压力时，再考虑单次绑定或主动摘除
+    status: pending
+  - id: route-cache-metrics-sampling
+    content: 【需压测/指标证明后再动】仅在观察到 route churn 或 metrics store 压力时，再对 route/cache gauge 做采样或节流
     status: pending
 isProject: false
 ---
@@ -175,3 +190,88 @@ flowchart LR
 - 无发现正常路径上的 Critical bug；当前应优先处理“必须修”组，第二组全部需要先拿压测或指标证明收益/风险，再决定是否进入实现。
 - 其中“UDP 背压”表述已修正为“UDP 无传输层背压，但需要应用层写侧过载保护”。
 - 不做代码改动（plan 模式），后续若需要逐项修复，可优先按“必须修”组拆独立 PR。
+
+---
+
+## 6. 必须修项 code review（commit 1294f787）
+
+仅针对“必须修”5 项已落地代码做追加 review，不覆盖前文。结论：主体修复到位，但存在若干残留风险，建议后续迭代处理。
+
+### 6.1 项①：`SSUdpProxyHandler.writePacketNow` 异常路径 release
+
+- 已落地（[`SSUdpProxyHandler.java`](rxlib/src/main/java/org/rx/net/socks/SSUdpProxyHandler.java)）：
+  - `payload.release()` 统一替换为 `Bytes.release(payload)`，并在释放前通过 `readableBytesOf(payload)` 先取字节数。
+  - `Bytes.release` 对 `refCnt=0` 幂等，`buildOutboundPacket` 内 `CompositeByteBuf.addComponents` 即使转移 ownership 后抛错，外层二次释放也是 no-op。
+- 残留提示：
+  - `readableBytesOf` 在 `refCnt=0` 时返回 0，指标里会看到 `bytes=0` 的 drop 条目，可能掩盖真实包大小；建议在进入 try 块之前就捕获 `payload.readableBytes()`，异常分支也能上报真实字节数。
+
+### 6.2 项②：UDP 写侧过载保护 `Sockets.writeUdp`
+
+- 已落地（[`Sockets.java`](rxlib/src/main/java/org/rx/net/Sockets.java) + [`SSUdpProxyHandler.java`](rxlib/src/main/java/org/rx/net/socks/SSUdpProxyHandler.java) + [`SocksUdpRelayHandler.java`](rxlib/src/main/java/org/rx/net/socks/SocksUdpRelayHandler.java)）：
+  - `UdpWriteResult` 枚举 + `writeUdp(channel, packet, metricPrefix, tags)`。
+  - `pendingBytes`（`AtomicInteger`）对 `channel` 统计在飞字节；超 `udpWriteLimitBytes` 即 `PENDING_OVERLIMIT`，`!isWritable()` 即 `CHANNEL_UNWRITABLE`。
+  - 写成功/失败 listener 中回退 pendingBytes；`writeAndFlush` 抛异常也回退并 release。
+  - SS inbound/outbound、socks relay 三处写路径已切换到该函数。
+- 潜在风险（追加）：
+  - **[中]** SS inbound DatagramChannel 是**全局共享**（所有 SS 客户端一个 channel），`pendingBytes` 聚合所有客户端。大流量单一客户端会先耗尽 256KB 默认配额，引发其他客户端 drop（拥塞饥饿）。
+    - 建议：对 SS inbound 这一 hotspot 额外引入 per-`srcEp`（或 per-recipient）的 soft limit（`ConcurrentMap<InetSocketAddress, AtomicInteger>`），避免单 source 拖垮整体；或至少把上限从 `writeBufferWaterMark.high()` 拉到更高的数量级（例如 MB 级），并给 SocksConfig 暴露配置。
+  - **[中]** `udpWriteLimitBytes` 复用 `OptimalSettings.writeBufferWaterMark.high()`。Netty `WriteBufferWaterMark` 默认 32KB/64KB，对 UDP 常规 MTU 1500 场景只能容纳 ~40 个在飞包，短突发容易误伤。
+    - 建议：`DEFAULT_UDP_WRITE_LIMIT_BYTES` 单独暴露到 `SocketConfig/SocksConfig`，并在生产默认值上调（如 1MB 起步）。
+  - **[低]** `pending-overlimit` 分支 tag 里 `pendingBytes=queuedBytes` 含本次 bytes（尚未回退），语义上表示的是“超限前”的高水位；和 `not-writable` 分支一致。日志里看到 `pendingBytes=limit+bytes` 是预期行为，但文档/注释建议说明。
+  - **[低]** `writeAndFlush` 成功 listener 回退 pendingBytes；若写 listener 因极端情况未被调用（例如 channel 被强制 `deregister` 且未触发 `operationComplete`），会造成 pendingBytes 永久增长。当前未观察到这种 Netty 行为，但建议加 channel inactive 时的强制 reset 兜底。
+
+### 6.3 项③：Session 失效主动清理 ctxMap/routeMap
+
+- 已落地（[`SocksUdpUpstream.java`](rxlib/src/main/java/org/rx/net/socks/upstream/SocksUdpUpstream.java) + [`SocksUdpRelayHandler.java`](rxlib/src/main/java/org/rx/net/socks/SocksUdpRelayHandler.java) + [`Socks5Client.java`](rxlib/src/main/java/org/rx/net/socks/Socks5Client.java)）：
+  - `getUdpRelayAddress` 先校验 `holder.isValid()`，失效即触发 `invalidateHolder(channel, holder, false, "stale-session")`。
+  - `bindHolder` 追加 `controlChannel.closeFuture()` listener 主动 invalidate；`channel.closeFuture()` 保留原 pooled lease 回收路径。
+  - `invalidateHolder` 统一串行化到 `relay.eventLoop()`，并通过 `SocksUdpRelayHandler.onUpstreamSessionInvalidated` 调用 `cleanupInvalidatedRoute`。
+  - `cleanupInvalidatedRoute` 先按 `relayAddress` 精确删除，再全表遍历清掉所有 `ctx.getUpstream() == upstream` 的 `ctxMap/routeMap/routeInitMap/ATTR_LAST_ROUTE`。
+  - `Socks5UdpSession.tcpControl` 加 `@Getter`，`SessionHolder.controlChannel()` 统一暴露 TCP 控制通道。
+  - 自愈链条完整：`ProxyB` UDP relay close → `Socks5CommandRequestHandler` 绑定的 `udpRelay.closeFuture → tcpControl.close` → `ProxyA` 侧 TCP RST → `Socks5Client` 绑的 `session.close()` + `SocksUdpUpstream` 绑的 `invalidateHolder(control-close)` → `cleanupInvalidatedRoute` → 下次包走 `beginRouteInit` 新建 session。
+- 潜在风险（追加）：
+  - **[中]** 每次 `bindHolder` 在 `controlChannel.closeFuture()` 上 `addListener`；若同一 relay channel 经历多次 init/invalidate（频繁失效自愈），旧 `controlChannel` 对象会持有匿名 listener 引用（含 `this` 和 `finalHolder`），直到旧 `controlChannel` 被 GC 才释放。短期无感，但建议开 `-Dio.netty.leakDetection.level=PARANOID` 验证，必要时改为一次性构造“弱绑定” listener。
+  - **[低]** `cleanupInvalidatedRoute` 里先按 `relayAddress` 删再全表扫；由于同一 upstream 通常只对应一个 ctx/route 条目，第二遍 for-each 基本是兜底，属于冗余但可接受的设计。保留 for-each 的前提下，可考虑把 `ctxMap.entrySet()` 遍历加 early-break 条件或改为 `values().removeIf`。
+  - **[低]** `getUdpRelayAddress` 会在调用线程（可能是 Socks relay 的 EventLoop 或 SSUdpProxyHandler 的 EventLoop）上触发 `invalidateHolder` 异步调度；排队到 eventLoop 前其他调用者可能继续拿到 stale `null`，自愈 N+1 次触发 `invalidateHolder` task（内部通过 `active != holder` 去重）。代价低，不影响正确性，但在指标里会看到多次 `session.invalidate.count`。
+  - **[低]** `cleanupInvalidatedRoute` 与 `handleClientPacket` 都在 `relay.eventLoop()` 串行执行，没有并发问题；但 `ctxMap/routeMap/routeInitMap` 仍然是 `ConcurrentMap`，弱一致性迭代语义在单线程下等价于强一致，代码 OK。
+
+### 6.4 项④：可观测性 DiagnosticMetrics
+
+- 已落地 metric 清单（[`SSUdpProxyHandler.java`](rxlib/src/main/java/org/rx/net/socks/SSUdpProxyHandler.java) + [`SocksUdpRelayHandler.java`](rxlib/src/main/java/org/rx/net/socks/SocksUdpRelayHandler.java) + [`SocksProxyServer.java`](rxlib/src/main/java/org/rx/net/socks/SocksProxyServer.java) + [`SocksUdpUpstream.java`](rxlib/src/main/java/org/rx/net/socks/upstream/SocksUdpUpstream.java) + [`Sockets.java`](rxlib/src/main/java/org/rx/net/Sockets.java)）：
+  - `ss.udp.outbound.pool.size` / `ss.udp.route.cache.size` / `ss.udp.outbound.route.cache.size` / `ss.udp.header.cache.size`
+  - `ss.udp.drop.count` / `ss.udp.unexpected.sender.count` / `ss.udp.pending.write.bytes`
+  - `socks.udp.ctx.cache.size` / `socks.udp.route.cache.size` / `socks.udp.drop.count`
+  - `socks.udp.session.invalidate.count` / `socks.udp.session.cleanup.count`
+  - `socks.udp.relay.active.count`
+  - 自定义前缀 + tags 方式调用 `DiagnosticMetrics.record(...)`。
+- 潜在风险（追加，重要）：
+  - **[高]** **tags 高基数问题**。`recordUdpDrop` / `recordUdpMetric` / `udpMetricTags` 在 tags 里嵌入 `source=`, `sender=`, `destination=`, `recipient=`, `relay=`, `client=`, `bytes=`, `pendingBytes=`, `limitBytes=` 等高基数字段。每个包的 source/destination/bytes 都不同 → 每次 `DiagnosticMetrics.record` 创建新 series → 指标 storage/检索成本按 **O(包数)** 增长，生产环境几乎必爆。
+    - 建议：只保留低基数维度（`reason`、`port`、`kind`、`action`、`pooled`、`limit-bucket`），具体 endpoint 信息改走结构化日志或事件流（如 `log.debug` + sampled structured log）。
+  - **[中]** `recordRouteCacheSizes` 在每次 `onRouteInitSuccess` 和 session cleanup 时调用；high QPS 场景下 route 初始化频繁 → 指标写入频繁。建议按 EMA/采样频率（例如每 N 次或每 M 秒打一次 gauge）。
+  - **[低]** `ss.udp.drop.count` / `socks.udp.drop.count` 直接用 `DiagnosticMetrics.record(name, 1D, tags)`；若 DiagnosticMetrics 底层是计数器，要确认它是按 tag 分组累加还是每次都新建。配合前述 tags 降基数一起治理。
+  - **[低]** `SocksProxyServer.registerUdpRelay` 把 `port` 放到 tag（低基数，OK），但 `SocksUdpUpstream.invalidateHolder` 把 `relay=active.relayAddr` 放到 tag（高基数，会出现每个 pooled lease 一个 series）。同样建议替换。
+
+### 6.5 项⑤：测试补充
+
+- 已落地（[`SocketsTest.java`](rxlib/src/test/java/org/rx/net/SocketsTest.java) + [`ShadowsocksServerIntegrationTest.java`](rxlib/src/test/java/org/rx/net/socks/ShadowsocksServerIntegrationTest.java)）：
+  - `testUdpWriteDropsWhenPendingBytesExceedLimit` 验证 PENDING_OVERLIMIT 释放。
+  - `testUdpWriteAcceptedClearsPendingBytes` 验证成功路径 pending 归零。
+  - `shadowsocksUdpRoute_rebuildsSocksSessionAfterUpstreamRelayClose` 验证 ProxyB 关闭 UDP relay 后链路自愈 + `udpRelayRegistry` 恢复。
+- 潜在风险（追加）：
+  - **[中]** 自愈用例用 8 次重试、1500ms SoTimeout、100ms 间隔，最坏 ~13s；在慢 CI 环境有 flaky 风险，`@Timeout(40)` 已给出兜底。建议：打开 DEBUG 日志后观察首次自愈耗时，把重试次数与超时调到 4 次 + 2s 内，加上对 `socks.udp.session.invalidate.count` 指标的断言。
+  - **[低]** 缺少对 `Sockets.writeUdp` 的 `CHANNEL_UNWRITABLE` 与 `CHANNEL_INACTIVE` 分支的单测；建议补齐以覆盖 writability 回退路径。
+  - **[低]** 缺少 Netty leak detection 级别的验证；建议在 CI profile 里加一个 `-Dio.netty.leakDetection.level=PARANOID` 的单独 run，跑完整 UDP 场景4 链路集合。
+  - **[低]** 缺 `ctxMap/routeMap` 多 dst 并发自愈用例：当 ProxyA 侧同时有 `dstA/dstB` 路由、ProxyB 侧 relay close 时，验证两个路由都能被清理并独立自愈。
+
+### 6.6 新增待跟进项重分类
+
+#### 6.6.1 必须修
+
+- `metric-cardinality-reduction`（已完成）：把 Sockets.writeUdp / SSUdpProxyHandler / SocksUdpRelayHandler / SocksUdpUpstream 中新增 UDP 指标的高基数字段降为低基数维度，仅保留 `reason / path / direction / upstream / listenPort / limitBucket` 一类 tag，endpoint 信息回到日志。
+- `writeudp-unwritable-test`（已完成）：为 `Sockets.writeUdp` 补充 `CHANNEL_UNWRITABLE` / `CHANNEL_INACTIVE` 单测，覆盖 writability 回退路径。
+
+#### 6.6.2 待压测/指标证明后行动
+
+- `ss-inbound-per-source-limit`：仅在 source-level drop 证明存在单源挤占时，再评估 SS inbound per-source/per-recipient soft limit 与配置化；目前不应提前把具体公平策略固化到热路径。
+- `control-future-listener-cleanup`：仅在 leak detection / heap 证明 `controlChannel.closeFuture()` listener 带来短期内存压力时，再考虑“单次绑定 + 主动摘除”；当前更像理论风险。
+- `route-cache-metrics-sampling`：仅在观察到 route churn 或 metrics store 压力时，再对 `recordRouteCacheSizes` / `recordCacheSizes` 做采样或节流；当前这些 gauge 不在每包热路径上。

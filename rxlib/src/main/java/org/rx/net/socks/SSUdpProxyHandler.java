@@ -277,7 +277,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         }
         InetSocketAddress udpRelayAddr = relayAddress(sc.getUpstream(), outbound);
         Sockets.UdpWriteResult result = Sockets.writeUdp(outbound, packet, "ss.udp",
-                udpMetricTags(srcEp, udpRelayAddr, dstEp, outbound.localAddress()));
+                udpMetricTags("frontend", "outbound", sc.getUpstream()));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("SS UDP relay drop packet from {} for {} result={}", srcEp, dstEp, result);
             return;
@@ -584,7 +584,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             OutboundBinding binding = outbound.attr(ATTR_OUTBOUND_BINDING).get();
             if (binding == null) {
                 DiagnosticMetrics.record("ss.udp.drop.count", 1D,
-                        "reason=missing-binding,sender=" + out.sender() + ",bytes=" + out.content().readableBytes());
+                        "reason=missing-binding,path=backend");
                 log.warn("SS UDP backend relay missing outbound binding, drop packet from {}", out.sender());
                 return;
             }
@@ -599,13 +599,13 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             if (udpRelayAddr != null) {
                 if (!udpRelayAddr.equals(out.sender())) {
                     DiagnosticMetrics.record("ss.udp.unexpected.sender.count", 1D,
-                            "sender=" + out.sender() + ",expected=" + udpRelayAddr);
+                            "path=backend,upstream=socks");
                     log.warn("SS UDP discard packet from unexpected relay sender {}, expected {}", out.sender(), udpRelayAddr);
                     return;
                 }
                 if (!UdpManager.isValidSocks5UdpPacket(outBuf)) {
                     DiagnosticMetrics.record("ss.udp.drop.count", 1D,
-                            "reason=invalid-socks5-relay,sender=" + out.sender() + ",bytes=" + outBuf.readableBytes());
+                            "reason=invalid-socks5-relay,path=backend");
                     log.warn("SS UDP discard invalid socks5 relay packet from {}, size={}", out.sender(), outBuf.readableBytes());
                     return;
                 }
@@ -619,7 +619,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             DatagramPacket packet = new DatagramPacket(UdpManager.prependAddress(ctx.alloc(), outBuf,
                     addressHeaderTemplate(binding.inbound, realDstEp)), srcEp);
             Sockets.UdpWriteResult result = Sockets.writeUdp(binding.inbound, packet, "ss.udp",
-                    udpMetricTags(realDstEp, srcEp, responseDst, binding.inbound.localAddress()));
+                    udpMetricTags("backend", "inbound", binding.representativeUpstream));
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("SS UDP drop response {} => {} result={}", realDstEp, srcEp, result);
                 return;
@@ -706,35 +706,47 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private static void recordRouteCacheSizes(Channel inbound, ConcurrentMap<RouteKey, SocksContext> routeMap, Channel outbound) {
+        int listenPort = localPort(inbound);
         DiagnosticMetrics.record("ss.udp.route.cache.size", routeMap.size(),
-                "action=update,local=" + inbound.localAddress());
+                "action=update,scope=inbound,listenPort=" + listenPort);
         ConcurrentMap<UnresolvedEndpoint, SocksContext> outboundRouteMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
         if (outboundRouteMap != null) {
             DiagnosticMetrics.record("ss.udp.outbound.route.cache.size", outboundRouteMap.size(),
-                    "action=update,local=" + outbound.localAddress());
+                    "action=update,scope=outbound,listenPort=" + listenPort);
         }
         MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> socks5Cache = inbound.attr(ATTR_SOCKS5_HEADER_CACHE).get();
         if (socks5Cache != null) {
-            DiagnosticMetrics.record("ss.udp.header.cache.size", socks5Cache.size(), "kind=socks5,local=" + inbound.localAddress());
+            DiagnosticMetrics.record("ss.udp.header.cache.size", socks5Cache.size(),
+                    "kind=socks5,scope=inbound,listenPort=" + listenPort);
         }
         MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> addressCache = inbound.attr(ATTR_ADDRESS_HEADER_CACHE).get();
         if (addressCache != null) {
-            DiagnosticMetrics.record("ss.udp.header.cache.size", addressCache.size(), "kind=address,local=" + inbound.localAddress());
+            DiagnosticMetrics.record("ss.udp.header.cache.size", addressCache.size(),
+                    "kind=address,scope=inbound,listenPort=" + listenPort);
         }
     }
 
     private static void recordUdpDrop(String reason, InetSocketAddress srcEp, UnresolvedEndpoint dstEp,
                                       InetSocketAddress target, int bytes) {
-        DiagnosticMetrics.record("ss.udp.drop.count", 1D,
-                "reason=" + reason + ",source=" + srcEp + ",destination=" + dstEp + ",target=" + target + ",bytes=" + bytes);
+        DiagnosticMetrics.record("ss.udp.drop.count", 1D, "reason=" + reason + ",path=frontend");
     }
 
     private static int readableBytesOf(ByteBuf buf) {
         return buf != null && buf.refCnt() > 0 ? buf.readableBytes() : 0;
     }
 
-    private static String udpMetricTags(InetSocketAddress source, InetSocketAddress recipient,
-                                        UnresolvedEndpoint destination, java.net.SocketAddress localAddress) {
-        return "source=" + source + ",recipient=" + recipient + ",destination=" + destination + ",local=" + localAddress;
+    private static int localPort(Channel channel) {
+        java.net.SocketAddress localAddress = channel.localAddress();
+        return localAddress instanceof InetSocketAddress ? ((InetSocketAddress) localAddress).getPort() : -1;
+    }
+
+    private static String udpMetricTags(String path, String direction, Upstream upstream) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("path=").append(path)
+                .append(",direction=").append(direction);
+        if (upstream != null) {
+            sb.append(",upstream=").append(upstream instanceof SocksUdpUpstream ? "socks" : "direct");
+        }
+        return sb.toString();
     }
 }

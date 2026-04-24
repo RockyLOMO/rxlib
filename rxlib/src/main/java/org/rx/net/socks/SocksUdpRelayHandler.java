@@ -257,7 +257,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
         DatagramPacket packet = new DatagramPacket(outBuf, clientAddr);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
-                udpMetricTags(config, sender, clientAddr));
+                udpMetricTags(config, "to-client", sc != null ? sc.getUpstream() : null));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("socks5[{}] UDP relay drop response from {} to {} result={}",
                     config.getListenPort(), sender, clientAddr, result);
@@ -473,7 +473,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
         DatagramPacket packet = new DatagramPacket(inBuf, upDstAddr);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
-                udpMetricTags(config, sender, upDstAddr, clientOriginAddr, dstEp));
+                udpMetricTags(config, "to-upstream", upstream));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("socks5[{}] UDP relay drop packet from {} to {}[{}] result={}",
                     config.getListenPort(), sender, upDstAddr, dstEp, result);
@@ -528,8 +528,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
         if (removedCtx > 0 || removedRoute > 0 || removedPending > 0) {
             DiagnosticMetrics.record("socks.udp.session.cleanup.count", 1D,
-                    "relay=" + relayAddress + ",ctxRemoved=" + removedCtx + ",routeRemoved=" + removedRoute
-                            + ",pendingRemoved=" + removedPending);
+                    "action=session-cleanup,port=" + localPort(relay));
         }
         recordCacheSizes(relay, ctxMap, routeMap, "session-cleanup");
     }
@@ -549,26 +548,21 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     private static void recordDrop(String reason, InetSocketAddress sender, InetSocketAddress clientOriginAddr,
                                    SocksConfig config, int bytes) {
         DiagnosticMetrics.record("socks.udp.drop.count", 1D,
-                "reason=" + reason + ",sender=" + sender + ",client=" + clientOriginAddr
-                        + ",port=" + config.getListenPort() + ",bytes=" + bytes);
+                "reason=" + reason + ",path=client-ingress,port=" + config.getListenPort());
     }
 
-    private static String udpMetricTags(SocksConfig config, InetSocketAddress sender, InetSocketAddress recipient) {
-        return udpMetricTags(config, sender, recipient, null, null);
-    }
-
-    private static String udpMetricTags(SocksConfig config, InetSocketAddress sender, InetSocketAddress recipient,
-                                        InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp) {
+    private static String udpMetricTags(SocksConfig config, String direction, Upstream upstream) {
         StringBuilder sb = new StringBuilder();
         sb.append("listenPort=").append(config.getListenPort())
-                .append(",sender=").append(sender)
-                .append(",recipient=").append(recipient);
-        if (clientOriginAddr != null) {
-            sb.append(",client=").append(clientOriginAddr);
-        }
-        if (dstEp != null) {
-            sb.append(",destination=").append(dstEp);
+                .append(",direction=").append(direction);
+        if (upstream != null) {
+            sb.append(",upstream=").append(upstream instanceof SocksUdpUpstream ? "socks" : "direct");
         }
         return sb.toString();
+    }
+
+    private static int localPort(Channel relay) {
+        java.net.SocketAddress localAddress = relay.localAddress();
+        return localAddress instanceof InetSocketAddress ? ((InetSocketAddress) localAddress).getPort() : -1;
     }
 }
