@@ -8,6 +8,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.local.LocalAddress;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import org.junit.jupiter.api.Disabled;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
@@ -23,6 +26,8 @@ import org.rx.net.AuthenticEndpoint;
 import org.rx.net.OptimalSettings;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
+import org.rx.net.http.ServerRequest;
+import org.rx.net.http.ServerResponse;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
@@ -48,6 +53,8 @@ import org.rx.util.function.TripleAction;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.CountDownLatch;
@@ -150,6 +157,66 @@ public class RssTest extends AbstractTester {
 
         assertTrue(html.contains("暂无 SS 用户"));
         assertTrue(html.contains(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH));
+    }
+
+    @Test
+    public void rssClientHttpHandler_RejectsMissingAuthorizationLikeDiagnosticPage() {
+        String oldRtoken = RxConfig.INSTANCE.getRtoken();
+        try {
+            RxConfig.INSTANCE.setRtoken("test-rtoken");
+            RssClientHttpHandler handler = new RssClientHttpHandler(Collections.<String, ShadowUser>emptyMap());
+            ServerRequest request = new ServerRequest(new InetSocketAddress("127.0.0.1", 10086),
+                    RssClientHttpHandler.SHADOW_USERS_PAGE_PATH, HttpMethod.GET);
+            ServerResponse response = new ServerResponse();
+
+            handler.handle(request, response);
+
+            assertEquals(HttpResponseStatus.UNAUTHORIZED, response.getStatus());
+            assertEquals("Basic realm=\"rxlib-diagnostic\", charset=\"UTF-8\"",
+                    response.getHeaders().get(HttpHeaderNames.WWW_AUTHENTICATE));
+        } finally {
+            RxConfig.INSTANCE.setRtoken(oldRtoken);
+        }
+    }
+
+    @Test
+    public void rssClientHttpHandler_ReturnsServiceUnavailableWhenRtokenEmpty() {
+        String oldRtoken = RxConfig.INSTANCE.getRtoken();
+        try {
+            RxConfig.INSTANCE.setRtoken(null);
+            RssClientHttpHandler handler = new RssClientHttpHandler(Collections.<String, ShadowUser>emptyMap());
+            ServerRequest request = new ServerRequest(new InetSocketAddress("127.0.0.1", 10086),
+                    RssClientHttpHandler.SHADOW_USERS_PAGE_PATH, HttpMethod.GET);
+            ServerResponse response = new ServerResponse();
+
+            handler.handle(request, response);
+
+            assertEquals(HttpResponseStatus.SERVICE_UNAVAILABLE, response.getStatus());
+            assertTrue(response.getContent().toString(StandardCharsets.UTF_8).contains("app.rtoken"));
+        } finally {
+            RxConfig.INSTANCE.setRtoken(oldRtoken);
+        }
+    }
+
+    @Test
+    public void rssClientHttpHandler_AllowsAuthorizedRequest() {
+        String oldRtoken = RxConfig.INSTANCE.getRtoken();
+        try {
+            RxConfig.INSTANCE.setRtoken("test-rtoken");
+            RssClientHttpHandler handler = new RssClientHttpHandler(Collections.<String, ShadowUser>emptyMap());
+            ServerRequest request = new ServerRequest(new InetSocketAddress("127.0.0.1", 10086),
+                    RssClientHttpHandler.SHADOW_USERS_PAGE_PATH, HttpMethod.GET);
+            String auth = Base64.getEncoder().encodeToString("rxlib:test-rtoken".getBytes(StandardCharsets.UTF_8));
+            request.getHeaders().set(HttpHeaderNames.AUTHORIZATION, "Basic " + auth);
+            ServerResponse response = new ServerResponse();
+
+            handler.handle(request, response);
+
+            assertEquals(HttpResponseStatus.OK, response.getStatus());
+            assertTrue(response.getContent().toString(StandardCharsets.UTF_8).contains("RSS SS 用户信息"));
+        } finally {
+            RxConfig.INSTANCE.setRtoken(oldRtoken);
+        }
     }
 
     @Test

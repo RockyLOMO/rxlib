@@ -1,7 +1,10 @@
 package org.rx.util.rss;
 
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import org.rx.bean.DateTime;
+import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.io.Bytes;
 import org.rx.net.http.HttpServer;
@@ -10,7 +13,10 @@ import org.rx.net.http.ServerResponse;
 import org.rx.net.socks.TrafficLoginInfo;
 
 import java.net.InetAddress;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -20,6 +26,8 @@ import java.util.Map;
 public class RssClientHttpHandler implements HttpServer.Handler {
     public static final String SHADOW_USERS_PAGE_PATH = "/ss-users";
     static final String SHADOW_USERS_PAGE_TITLE = "RSS SS 用户信息";
+    private static final String USERNAME = "rxlib";
+    private static final String REALM = "rxlib-diagnostic";
     private static final Comparator<ShadowUser> USER_COMPARATOR = new Comparator<ShadowUser>() {
         @Override
         public int compare(ShadowUser o1, ShadowUser o2) {
@@ -60,6 +68,19 @@ public class RssClientHttpHandler implements HttpServer.Handler {
 
     @Override
     public void handle(ServerRequest request, ServerResponse response) {
+        response.getHeaders().set(HttpHeaderNames.CACHE_CONTROL, "no-store");
+        if (Strings.isEmpty(RxConfig.INSTANCE.getRtoken())) {
+            response.setStatus(HttpResponseStatus.SERVICE_UNAVAILABLE);
+            response.htmlBody(page("RSS console disabled", "<p><code>app.rtoken</code> is empty.</p>"));
+            return;
+        }
+        if (!authorize(request)) {
+            response.setStatus(HttpResponseStatus.UNAUTHORIZED);
+            response.getHeaders().set(HttpHeaderNames.WWW_AUTHENTICATE,
+                    "Basic realm=\"" + REALM + "\", charset=\"UTF-8\"");
+            response.htmlBody(page("Authorization required", "<p>Use Basic Auth: <code>rxlib</code> / <code>app.rtoken</code>.</p>"));
+            return;
+        }
         response.htmlBody(renderShadowUsersPage(shadowStore));
     }
 
@@ -165,5 +186,26 @@ public class RssClientHttpHandler implements HttpServer.Handler {
 
     private static String formatDateTime(DateTime value) {
         return value == null ? "-" : value.toDateTimeString();
+    }
+
+    private boolean authorize(ServerRequest request) {
+        String header = request.getHeaders().get(HttpHeaderNames.AUTHORIZATION);
+        if (header == null || !header.regionMatches(true, 0, "Basic ", 0, 6)) {
+            return false;
+        }
+        try {
+            String actual = new String(Base64.getDecoder().decode(header.substring(6).trim()), StandardCharsets.UTF_8);
+            String expected = USERNAME + ":" + RxConfig.INSTANCE.getRtoken();
+            return MessageDigest.isEqual(actual.getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static String page(String title, String body) {
+        Map<String, Object> vars = new LinkedHashMap<>();
+        vars.put("title", title);
+        vars.put("body", body);
+        return HttpServer.renderHtmlTemplate("rx-diagnostic.html", vars);
     }
 }
