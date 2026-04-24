@@ -1,36 +1,44 @@
 ---
 name: SocksScene 场景4 Review
-overview: 对 `SocksScene.md` 场景4（Shadowsocks → SOCKS A UDP_ASSOCIATE → SOCKS B → dest）相关代码进行 review，输出架构理解、关键路径、问题清单与修复建议，不做代码改动。
+overview: 对 `SocksScene.md` 场景4（Shadowsocks → SOCKS A UDP_ASSOCIATE → SOCKS B → dest）相关代码进行 review，输出架构理解、关键路径、问题清单与修复建议；将行动项拆分为“必须修”和“需要压测/指标证明后再动”，不做代码改动。
 todos:
+  # 必须修
   - id: fix-double-release
-    content: 修复 SSUdpProxyHandler.writePacketNow 异常路径 payload 可能 double-release
-    status: pending
-  - id: fix-ctxmap-keying
-    content: 重构 SocksUdpRelayHandler.ctxMap 避免多 dst 共享下一跳 relay 时 last-put-wins
+    content: 【必须修】修复 SSUdpProxyHandler.writePacketNow 异常路径 payload 可能 double-release
     status: pending
   - id: add-udp-backpressure
-    content: 为 UDP 中继链路加 isWritable 背压守卫与丢包指标
+    content: 【必须修】为 UDP 中继链路补应用层写侧过载保护（不是传输层背压），增加 isWritable/drop 指标
     status: pending
   - id: fix-session-invalidation
-    content: SocksUdpUpstream session 失效时主动回调 relay 清理 ctxMap/routeMap
-    status: pending
-  - id: bound-outbound-pool
-    content: 为 SSUdpProxyHandler.OUTBOUND_POOL 增加容量上限、指标与主动驱逐
-    status: pending
-  - id: ss-tcp-idle
-    content: Main.launchClient 给 SS 入口 TCP 设置合理 idle timeout
-    status: pending
-  - id: ss-codec-attr
-    content: 改造 SSProtocolCodec 不再用 channel.attr 传 REMOTE_DEST
-    status: pending
-  - id: direct-remote-dns
-    content: Direct Upstream 分支避免本地 DNS，改走远程/异步解析
+    content: 【必须修】SocksUdpUpstream session 失效时主动回调 relay 清理 ctxMap/routeMap
     status: pending
   - id: add-observability
-    content: 补充 OUTBOUND_POOL、异常 sender、缓存容量等 DiagnosticMetrics 指标
+    content: 【必须修】补充 OUTBOUND_POOL、异常 sender、缓存容量、drop 等 DiagnosticMetrics 指标
     status: pending
   - id: add-tests
-    content: 补充并发多 dst、session 自愈、泄漏检测、异常注入、大包等测试用例
+    content: 【必须修】补充并发多 dst、session 自愈、泄漏检测、异常注入、大包等测试用例
+    status: pending
+  # 需要压测/指标证明后再动
+  - id: fix-ctxmap-keying
+    content: 【需压测/指标证明后再动】评估是否重构 SocksUdpRelayHandler.ctxMap；当前更接近 known-upstream-sender gate，而非 per-dst 回包分流表
+    status: pending
+  - id: bound-outbound-pool
+    content: 【需压测/指标证明后再动】先补 OUTBOUND_POOL size/miss/lifetime 指标，再决定是否增加容量上限与主动驱逐
+    status: pending
+  - id: ss-tcp-idle
+    content: 【需压测/指标证明后再动】评估 Main.launchClient 的 SS 入口 TCP idle timeout，避免误伤合法长空闲连接
+    status: pending
+  - id: ss-codec-attr
+    content: 【需压测/指标证明后再动】仅在证明 attr handoff 有正确性问题时，才考虑替换 SSProtocolCodec 的 channel.attr 传 REMOTE_DEST 方案
+    status: pending
+  - id: direct-remote-dns
+    content: 【需压测/指标证明后再动】评估 Direct Upstream 分支避免本地 DNS 的收益与语义影响，优先限定在确实进入 Direct 分支的链路
+    status: pending
+  - id: ss-dedicated-crypto-group
+    content: 【需压测/指标证明后再动】评估 SS server 是否开启 useDedicatedCryptoGroup；需要与 EventLoop 线程亲和、上下文切换成本一起权衡
+    status: pending
+  - id: udp-associate-tcp-idle
+    content: 【需压测/指标证明后再动】评估 UDP_ASSOCIATE 后保留 TCP control idle handler 的收益与误杀风险
     status: pending
 isProject: false
 ---
@@ -78,12 +86,13 @@ flowchart LR
 - Java 8：所有新文件仅使用 J8 API（`CompletableFuture`、`ConcurrentHashMap`、Netty 4.1），无 J9+ 特性。
 - 零分配/低延迟：`UdpManager.HeaderTemplate` 缓存 ATYP+addr+port 字节，热路径复用；`CompositeByteBuf` 避免 payload 拷贝；`ATTR_LAST_ROUTE` 做 fast-path。
 - 远程 DNS：`SocksUdpRelayHandler.handleClientPacket` 将 `dstEp` 原样作为 SOCKS5 UDP 头转发到下一跳，DNS 在 B 端（或 dest 侧）解析；仅 Direct Upstream 分支会调用 `upstream.getDestination().socketAddress()` 触发本地解析。
+- UDP 无传输层背压：这里需要关注的不是 TCP 式端到端背压，而是本地写侧过载保护、丢包策略与指标。
 - ByteBuf 引用计数：正常路径 OK；异常路径有一处 double-release 风险（见 3.1）。
 - Full Clone NAT：`ctxMap` 按 `sender InetSocketAddress` 索引，endpoint-independent mapping 下回包稳定命中；异常 sender 会被 `rsv/frag` 校验拒绝。
 
-## 3. 问题清单（按严重度）
+## 3. 问题清单（按行动优先级）
 
-### 3.1 Medium 级
+### 3.1 必须修
 
 1. `SSUdpProxyHandler.writePacketNow` 对 `buildOutboundPacket` 异常路径可能 double-release
    - 关键片段（[`SSUdpProxyHandler.java`](rxlib/src/main/java/org/rx/net/socks/SSUdpProxyHandler.java)）：
@@ -91,41 +100,55 @@ flowchart LR
      - 若 `CompositeByteBuf.addComponents` 抛异常，Netty 内部已对 `payload` 做 ownership 转移/释放，外层 catch 又 `payload.release()`。
    - 建议：改为 `retainPayload=true` + 外层 try/finally 统一 release；或在 `buildOutboundPacket` 内部保证抛出前 payload 仍归调用方所有。
 
-2. `SocksUdpRelayHandler.ctxMap` 按 `upDstAddr`（下一跳 relay 地址）索引导致 last-put-wins
-   - 同一 relay channel 下多 `dstEp` 共用一个下一跳 session 时，`ctxMap.put(upDstAddr, context)` 会被后来者覆盖；当前 `handleDestResponse` 对 `SocksUdpUpstream` 只做 `outBuf.retain()` 透传，不依赖 context 细节，因此功能不受影响。
-   - 风险：未来若按 context 做 per-dst 指标/超时/流量归属会出错。
-   - 建议：`ctxMap` 改为 `Map<InetSocketAddress, Map<UnresolvedEndpoint, SocksContext>>` 或只作为 "known upstream sender" 标志位。
+2. UDP 无传输层背压，但本地写侧过载保护不足
+   - TCP 路径有 `BackpressureHandler`；UDP `relay.writeAndFlush(...)` 与 SS outbound 均无 `isWritable()` / drop metric / 本地发送压力指标。
+   - 这里不是要求补 TCP 式“背压”，而是应用层写侧过载治理。
+   - 建议：在 `SocksUdpRelayHandler.writeClientPacket` / `SSUdpProxyHandler.writeWhenReady` 前补 `channel.isWritable()` 守卫；不可写时按策略丢弃并通过 `DiagnosticMetrics` 计数。
 
-3. UDP 链路背压缺失
-   - TCP 路径有 `BackpressureHandler`；UDP `relay.writeAndFlush(...)` 与 SS outbound 均无 `isWritable()` 检查。
-   - 建议：在 `SocksUdpRelayHandler.writeClientPacket` / `SSUdpProxyHandler.writeWhenReady` 前加 `channel.isWritable()` 守卫；不可写时按策略丢弃并 `DiagnosticMetrics` 累加。
-
-4. Session 失效后路由表残留
+3. Session 失效后路由表残留
    - `SocksUdpUpstream` session 断开时仅清 `channel.attr(ATTR_UDP_SESSION)`，不回调 `SocksUdpRelayHandler` 的 `ctxMap/routeMap`；依赖下一包 `isRouteReady=false` 进入 `beginRouteInit` 分支，靠 `routeMap.put` 覆盖自愈。
    - 风险：自愈期间 fast-path 不会命中，每包都走 `routeInitMap.computeIfAbsent`；旧 ctx 永不从 ctxMap 主动移除。
    - 建议：`SocksUdpUpstream.bindHolder` 的 `closeFuture` listener 触发 relay 侧清理（通过 `relay.eventLoop().execute` 提交）。
 
-5. `SSUdpProxyHandler.OUTBOUND_POOL` 无上限
-   - 静态全局 `ConcurrentHashMap<OutboundPoolKey, ChannelFuture>`，key 含 `inboundId × source × upstreamType × affinity`；多客户端 × 多 dest 场景下端口/FD 增长仅靠 outbound idle 回收。
-   - 建议：加 `DiagnosticMetrics` 上报 size，并在达到配置阈值时主动驱逐最久未用 entry。
+4. 可观测性不足，影响后续调优判断
+   - `OUTBOUND_POOL` 无 size/miss/lifetime/evict 指标。
+   - `SocksUdpRelayHandler.channelRead0` 中非 `ctxMap` sender 回包仅 `log.warn`，缺 `DiagnosticMetrics` 计数（用于发现 NAT 穿透异常）。
+   - `MemoryCache` 的 `maximumSize`（routeMap=2048、ctxMap=256）硬编码，建议至少先补容量/命中率观测。
 
-6. `launchClient` SS 入口 TCP 永不超时
-   - [`Main.java`](rxlib/src/main/java/org/rx/Main.java)：`config.setReadTimeoutSeconds(0); config.setWriteTimeoutSeconds(0);`，`ShadowsocksServer` TCP channel 不装 `ProxyChannelIdleHandler`。
-   - 建议：继承 `rssConf.tcpTimeoutSeconds`，避免 half-open 连接堆积。
+5. 测试覆盖还缺关键稳态与异常场景
+   - 并发多 dst、session 自愈、异常注入、Netty leak detection、大包边界都值得补。
+   - 这些测试既用于验证“必须修”项，也用于为第二组假设项提供数据。
 
-### 3.2 Low 级
+### 3.2 需要压测/指标证明后再动
 
-7. `SSProtocolCodec` 通过 `inbound.attr(REMOTE_DEST)` 在 codec 与 handler 之间传递地址，对 UDP 单 DatagramChannel 多客户端模型依赖 pipeline 串行；建议改为自定义消息封装 `(DatagramPacket, UnresolvedEndpoint)`。
-8. `SSUdpProxyHandler.ensureRelayResponseDecoder` 与 `Sockets.addUdpOptimizationHandlers` 存在路径交叉；当前靠 `pipeline.get(UdpRedundantDecoder.class)` 去重，建议在 `openOutboundChannel` 中显式控制是否走 `addUdpOptimizationHandlers`。
-9. Direct Upstream 分支 `upstream.getDestination().socketAddress()` 为本地 DNS 解析；对于 B → dest 这一跳若客户端传入 domain，会在 B 侧走系统 DNS，与 "尽量远程解析" 精神冲突；建议接 `DnsClient` 异步解析或明确限制客户端必须传 IP。
-10. `launchClient` 未对 SS server 显式开启 `useDedicatedCryptoGroup=true`；大流量下 reactor 线程被 `CipherCodec` 阻塞风险。
-11. `Socks5CommandRequestHandler` 在 UDP_ASSOCIATE 后从 TCP 移除 `ProxyChannelIdleHandler`；TCP 控制仅依赖对端断连检测，应保留较大的 idle（例如 `udpTimeoutSeconds`）作兜底。
+1. `SocksUdpRelayHandler.ctxMap` 的 “last-put-wins” 问题被放大了
+   - 当前 `ctxMap` 更接近 known-upstream-sender gate，而不是 per-dst 回包分流表；现有 `handleDestResponse` 对 `SocksUdpUpstream` 只做 sender 识别和透传。
+   - 现阶段直接改成嵌套 map，会增加热路径查找与对象成本，但没有明确场景4功能收益。
+   - 建议：只有在需要做 per-dst 指标、归因、精细回包分流时，再评估是否重构。
 
-### 3.3 可观测性
+2. `SSUdpProxyHandler.OUTBOUND_POOL` 先补指标，再决定是否加容量上限
+   - 静态全局 `ConcurrentHashMap<OutboundPoolKey, ChannelFuture>` 的确值得观察，但当前已有 inbound close、outbound close、idle timeout 三层回收。
+   - 直接加 hard cap / 主动驱逐，有误杀活跃会话的风险。
+   - 建议：先补 `size/miss/lifetime/close-cause` 指标，再决定是否 cap。
 
-12. `OUTBOUND_POOL` 无 size/miss/evict 指标。
-13. `SocksUdpRelayHandler.channelRead0` 中非 `ctxMap` sender 回包仅 `log.warn`，缺 `DiagnosticMetrics` 计数（用于发现 NAT 穿透异常）。
-14. `MemoryCache` 的 `maximumSize`（routeMap=2048、ctxMap=256）硬编码，建议暴露到 `SocksConfig`。
+3. `launchClient` 的 SS 入口 TCP idle timeout 属于 workload 调参项
+   - [`Main.java`](rxlib/src/main/java/org/rx/Main.java) 确实把 `read/write timeout` 设成了 0。
+   - 但是否应该收紧，要看是否存在大量 half-open/长空闲连接，以及是否允许长时间空闲隧道。
+   - 建议：压测或线上指标证明后再改，不作为当前场景4的必修 bug。
+
+4. `SSProtocolCodec` 的 `channel.attr(REMOTE_DEST)` handoff 不是明确 bug
+   - 当前 `SSProtocolCodec` 写 attr 后，`SSUdpProxyHandler` 在同一条 UDP read 链里立即消费；在单 `DatagramChannel` 的 EventLoop 串行模型下，这不是清晰的正确性问题。
+   - 若改成自定义消息封装 `(DatagramPacket, UnresolvedEndpoint)`，会在 SS UDP 热路径上引入每包额外对象分配。
+   - 建议：只有在证明 attr handoff 出现正确性问题时，才考虑重构。
+
+5. Direct Upstream 分支避免本地 DNS 解析
+   - 这是合理方向，但不属于场景4主链路当前最紧迫问题；同时会牵涉语义边界（何时允许本地解析、何时强制远程解析）。
+   - 建议：先确认是否真实进入 Direct 分支、命中频率和耗时，再决定是否改造。
+
+6. `useDedicatedCryptoGroup=true` 与保留 UDP_ASSOCIATE TCP idle 都是调参项
+   - `useDedicatedCryptoGroup` 需要和 EventLoop 线程亲和、上下文切换成本一起权衡。
+   - UDP_ASSOCIATE 后是否保留 TCP control idle handler，也需要结合长连接模式和 NAT 行为来验证。
+   - 建议：归入压测/指标驱动项，而不是默认修复项。
 
 ## 4. 测试覆盖评估
 
@@ -149,5 +172,6 @@ flowchart LR
 ## 5. 结论
 
 - 场景4 主路径设计合理：池化 outbound、header 模板缓存、异步初始化 + pending 队列、双向 decoder 注入、redundant peer 白名单控制编码范围。
-- 无发现正常路径上的 Critical bug；以上 6 条 Medium 项建议排期修复，Low/可观测性项可并入下一轮迭代。
-- 不做代码改动（plan 模式），后续若需要逐项修复，可将本计划的每个风险项作为独立 PR 提交。
+- 无发现正常路径上的 Critical bug；当前应优先处理“必须修”组，第二组全部需要先拿压测或指标证明收益/风险，再决定是否进入实现。
+- 其中“UDP 背压”表述已修正为“UDP 无传输层背压，但需要应用层写侧过载保护”。
+- 不做代码改动（plan 模式），后续若需要逐项修复，可优先按“必须修”组拆独立 PR。
