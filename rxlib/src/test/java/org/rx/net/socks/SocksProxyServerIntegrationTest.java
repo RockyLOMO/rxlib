@@ -111,10 +111,14 @@ class SocksProxyServerIntegrationTest {
 
     @AfterAll
     static void teardown() {
-        if (tcpEchoChannel != null) tcpEchoChannel.close();
-        if (tcpBypassEchoChannel != null) tcpBypassEchoChannel.close();
-        if (tcpEchoBootstrap != null) Sockets.closeBootstrap(tcpEchoBootstrap);
-        if (udpEchoChannel != null) udpEchoChannel.close();
+        if (tcpEchoChannel != null)
+            tcpEchoChannel.close();
+        if (tcpBypassEchoChannel != null)
+            tcpBypassEchoChannel.close();
+        if (tcpEchoBootstrap != null)
+            Sockets.closeBootstrap(tcpEchoBootstrap);
+        if (udpEchoChannel != null)
+            udpEchoChannel.close();
     }
 
     @Test
@@ -127,7 +131,7 @@ class SocksProxyServerIntegrationTest {
 
         SocksConfig config = new SocksConfig(proxyPort);
         config.getWhiteList(); // Trigger lazy init in calling thread
-        SocksProxyServer proxy = new SocksProxyServer(config, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
+        SocksProxyServer proxy = new SocksProxyServer(config, new SocksAuthenticator(Collections.singletonList(usr)));
 
         try {
             Thread.sleep(1000);
@@ -138,10 +142,10 @@ class SocksProxyServerIntegrationTest {
 
                 // 1) greeting supports username/password auth (0x02)
                 log.info("Client sending greeting...");
-                out.write(new byte[]{0x05, 0x01, 0x02});
+                out.write(new byte[] {0x05, 0x01, 0x02});
                 out.flush();
                 byte[] hs = readExact(in, 2, 8000);
-                assertArrayEquals(new byte[]{0x05, 0x02}, hs);
+                assertArrayEquals(new byte[] {0x05, 0x02}, hs);
                 log.info("Client received handshake response");
 
                 // 2) auth subnegotiation (RFC1929)
@@ -157,7 +161,7 @@ class SocksProxyServerIntegrationTest {
                 out.write(toBytes(auth));
                 out.flush();
                 byte[] authResp = readExact(in, 2, 8000);
-                assertArrayEquals(new byte[]{0x01, 0x00}, authResp);
+                assertArrayEquals(new byte[] {0x01, 0x00}, authResp);
                 log.info("Client auth success");
 
                 // 3) connect to tcp echo server
@@ -208,13 +212,13 @@ class SocksProxyServerIntegrationTest {
             InputStream tcpIn = tcp.getInputStream();
 
             // Greeting: no auth
-            tcpOut.write(new byte[]{0x05, 0x01, 0x00});
+            tcpOut.write(new byte[] {0x05, 0x01, 0x00});
             tcpOut.flush();
             byte[] hsResp = readExact(tcpIn, 2, 4000);
-            assertArrayEquals(new byte[]{0x05, 0x00}, hsResp);
+            assertArrayEquals(new byte[] {0x05, 0x00}, hsResp);
 
             // UDP_ASSOCIATE request (0x03), DST = 0.0.0.0:0
-            tcpOut.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            tcpOut.write(new byte[] {0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
             tcpOut.flush();
 
             // Read response: VER(1) + REP(1) + RSV(1) + ATYP(1) + BND.ADDR + BND.PORT
@@ -235,7 +239,7 @@ class SocksProxyServerIntegrationTest {
                 ByteBuf header = Unpooled.buffer();
                 header.writeZero(3); // RSV(2)+FRAG(1)
                 header.writeByte(0x01); // IPv4
-                header.writeBytes(new byte[]{127, 0, 0, 1});
+                header.writeBytes(new byte[] {127, 0, 0, 1});
                 header.writeShort(UDP_ECHO_PORT);
                 header.writeBytes(payload);
                 byte[] req = toBytes(header);
@@ -269,7 +273,7 @@ class SocksProxyServerIntegrationTest {
                     ByteBuf mHeader = Unpooled.buffer();
                     mHeader.writeZero(3);
                     mHeader.writeByte(0x01);
-                    mHeader.writeBytes(new byte[]{127, 0, 0, 1});
+                    mHeader.writeBytes(new byte[] {127, 0, 0, 1});
                     mHeader.writeShort(UDP_ECHO_PORT);
                     mHeader.writeBytes(mPayload);
                     byte[] mReq = toBytes(mHeader);
@@ -309,7 +313,7 @@ class SocksProxyServerIntegrationTest {
         SocksConfig configA = new SocksConfig(proxyAPort);
         configA.getWhiteList();
         SocksProxyServer proxyA = new SocksProxyServer(configA, null);
-        
+
         // Setup Upstream for A to forward to B
         UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
         proxyA.onUdpRoute.replace((s, e) -> {
@@ -328,12 +332,12 @@ class SocksProxyServerIntegrationTest {
             InputStream tcpIn = tcp.getInputStream();
 
             // Greeting
-            tcpOut.write(new byte[]{0x05, 0x01, 0x00});
+            tcpOut.write(new byte[] {0x05, 0x01, 0x00});
             tcpOut.flush();
             readExact(tcpIn, 2, 4000);
 
             // UDP_ASSOCIATE
-            tcpOut.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            tcpOut.write(new byte[] {0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
             tcpOut.flush();
             byte[] response = readAtLeast(tcpIn, 10, 32, 4000);
             int relayPortA = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
@@ -347,7 +351,7 @@ class SocksProxyServerIntegrationTest {
                 ByteBuf header = Unpooled.buffer();
                 header.writeZero(3);
                 header.writeByte(0x01); // IPv4
-                header.writeBytes(new byte[]{127, 0, 0, 1});
+                header.writeBytes(new byte[] {127, 0, 0, 1});
                 header.writeShort(UDP_ECHO_PORT);
                 header.writeBytes(payload);
                 byte[] req = toBytes(header);
@@ -403,11 +407,11 @@ class SocksProxyServerIntegrationTest {
             OutputStream tcpOut = tcp.getOutputStream();
             InputStream tcpIn = tcp.getInputStream();
 
-            tcpOut.write(new byte[]{0x05, 0x01, 0x00});
+            tcpOut.write(new byte[] {0x05, 0x01, 0x00});
             tcpOut.flush();
             readExact(tcpIn, 2, 4000);
 
-            tcpOut.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            tcpOut.write(new byte[] {0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
             tcpOut.flush();
             byte[] response = readAtLeast(tcpIn, 10, 32, 4000);
             int relayPortA = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
@@ -419,7 +423,7 @@ class SocksProxyServerIntegrationTest {
                 ByteBuf header = Unpooled.buffer();
                 header.writeZero(3);
                 header.writeByte(0x01);
-                header.writeBytes(new byte[]{127, 0, 0, 1});
+                header.writeBytes(new byte[] {127, 0, 0, 1});
                 header.writeShort(UDP_ECHO_PORT);
                 header.writeBytes(payload);
                 byte[] req = toBytes(header);
@@ -483,9 +487,9 @@ class SocksProxyServerIntegrationTest {
                 OutputStream out = s.getOutputStream();
                 InputStream in = s.getInputStream();
 
-                out.write(new byte[]{0x05, 0x01, 0x00});
+                out.write(new byte[] {0x05, 0x01, 0x00});
                 out.flush();
-                assertArrayEquals(new byte[]{0x05, 0x00}, readExact(in, 2, 8000));
+                assertArrayEquals(new byte[] {0x05, 0x00}, readExact(in, 2, 8000));
 
                 out.write(buildSocks5ConnectReqIpv4("127.0.0.1", TCP_BYPASS_ECHO_PORT));
                 out.flush();
@@ -549,11 +553,11 @@ class SocksProxyServerIntegrationTest {
             OutputStream tcpOut = tcp.getOutputStream();
             InputStream tcpIn = tcp.getInputStream();
 
-            tcpOut.write(new byte[]{0x05, 0x01, 0x00});
+            tcpOut.write(new byte[] {0x05, 0x01, 0x00});
             tcpOut.flush();
             readExact(tcpIn, 2, 4000);
 
-            tcpOut.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            tcpOut.write(new byte[] {0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
             tcpOut.flush();
             byte[] response = readAtLeast(tcpIn, 10, 32, 4000);
             int relayPortA = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
@@ -566,7 +570,7 @@ class SocksProxyServerIntegrationTest {
                 ByteBuf header = Unpooled.buffer();
                 header.writeZero(3);
                 header.writeByte(0x01);
-                header.writeBytes(new byte[]{127, 0, 0, 1});
+                header.writeBytes(new byte[] {127, 0, 0, 1});
                 header.writeShort(UDP_ECHO_PORT);
                 header.writeBytes(payload);
                 byte[] req = toBytes(header);
@@ -669,7 +673,7 @@ class SocksProxyServerIntegrationTest {
 
         try {
             Thread.sleep(1000);
-            
+
             // 3) Client: UDP_ASSOCIATE to Proxy A
             DatagramSocket clientSock = new DatagramSocket();
             try (Socket tcp = new Socket("127.0.0.1", proxyAPort)) {
@@ -678,16 +682,16 @@ class SocksProxyServerIntegrationTest {
                 InputStream in = tcp.getInputStream();
 
                 // Handshake
-                out.write(new byte[]{0x05, 0x01, 0x00});
+                out.write(new byte[] {0x05, 0x01, 0x00});
                 out.flush();
                 readExact(in, 2, 5000);
 
                 // UDP_ASSOCIATE
-                byte[] reqUdp = new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0};
+                byte[] reqUdp = new byte[] {0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0};
                 out.write(reqUdp);
                 out.flush();
                 byte[] resp = readAtLeast(in, 10, 22, 5000);
-                
+
                 int relayPortA = ((resp[resp.length - 2] & 0xFF) << 8) | (resp[resp.length - 1] & 0xFF);
                 log.info("ProxyA relay port: {}", relayPortA);
 
@@ -697,7 +701,7 @@ class SocksProxyServerIntegrationTest {
                 header.writeShort(0); // rsv
                 header.writeByte(0); // frag
                 header.writeByte(0x01); // ipv4
-                header.writeBytes(new byte[]{127, 0, 0, 1});
+                header.writeBytes(new byte[] {127, 0, 0, 1});
                 header.writeShort(UDP_ECHO_PORT);
                 byte[] payload = "udp2raw-chained-test".getBytes(StandardCharsets.UTF_8);
                 header.writeBytes(payload);
@@ -773,15 +777,15 @@ class SocksProxyServerIntegrationTest {
 
             try {
                 org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword(), true);
-                
+
                 boolean ok = false;
-                for(int i = 0; i < 15; i++) {
+                for (int i = 0; i < 15; i++) {
                     // Pack UDP Echo Request
                     ByteBuf addrBuf = Unpooled.buffer(64);
                     UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
                     byte[] payload = "ss-to-socks-chained".getBytes(StandardCharsets.UTF_8);
                     addrBuf.writeBytes(payload);
-                    
+
                     ByteBuf encryptedBuf = crypto.encrypt(addrBuf);
                     byte[] encrypted = toBytes(encryptedBuf);
 
@@ -798,15 +802,15 @@ class SocksProxyServerIntegrationTest {
 
                     byte[] receivedEncrypted = new byte[p.getLength()];
                     System.arraycopy(respBuf, 0, receivedEncrypted, 0, p.getLength());
-                    
+
                     ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(receivedEncrypted));
                     UnresolvedEndpoint srcEp = UdpManager.decode(decBuf); // The real sender!
-                    
+
                     byte[] echoed = new byte[decBuf.readableBytes()];
                     decBuf.readBytes(echoed);
                     assertEquals("ss-to-socks-chained", new String(echoed, StandardCharsets.UTF_8));
                     assertEquals(UDP_ECHO_PORT, srcEp.getPort());
-                    
+
                     log.info("Shadowsocks chained UDP relay success: src={}", srcEp);
                     ok = true;
                     break;
@@ -888,11 +892,11 @@ class SocksProxyServerIntegrationTest {
             OutputStream tcpOut = tcp.getOutputStream();
             InputStream tcpIn = tcp.getInputStream();
 
-            tcpOut.write(new byte[]{0x05, 0x01, 0x00});
+            tcpOut.write(new byte[] {0x05, 0x01, 0x00});
             tcpOut.flush();
-            assertArrayEquals(new byte[]{0x05, 0x00}, readExact(tcpIn, 2, 4000));
+            assertArrayEquals(new byte[] {0x05, 0x00}, readExact(tcpIn, 2, 4000));
 
-            tcpOut.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            tcpOut.write(new byte[] {0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
             tcpOut.flush();
             byte[] response = readAtLeast(tcpIn, 10, 32, 4000);
             int relayPort = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
@@ -905,7 +909,7 @@ class SocksProxyServerIntegrationTest {
                 header.writeShort(0);
                 header.writeByte(0);
                 header.writeByte(0x01);
-                header.writeBytes(new byte[]{1, 1, 1, 1});
+                header.writeBytes(new byte[] {1, 1, 1, 1});
                 header.writeShort(53);
                 header.writeBytes(payload);
                 byte[] req = toBytes(header);
@@ -1202,8 +1206,7 @@ class SocksProxyServerIntegrationTest {
                 org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "tcp-local-pwd");
         ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
         AuthenticEndpoint proxyEndpoint = new AuthenticEndpoint(proxyConfig.getListenAddress(), null, null);
-        ssServer.onTcpRoute.replace((s, e) ->
-                e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), new SocksConfig(proxyPort), new UpstreamSupport(proxyEndpoint, null))));
+        ssServer.onTcpRoute.replace((s, e) -> e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), new SocksConfig(proxyPort), new UpstreamSupport(proxyEndpoint, null))));
 
         try {
             Thread.sleep(300);
@@ -1259,8 +1262,7 @@ class SocksProxyServerIntegrationTest {
                 org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "udp-local-pwd");
         ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
         AuthenticEndpoint proxyEndpoint = new AuthenticEndpoint(proxyConfig.getListenAddress(), null, null);
-        ssServer.onUdpRoute.replace((s, e) ->
-                e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyPort), new UpstreamSupport(proxyEndpoint, null))));
+        ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyPort), new UpstreamSupport(proxyEndpoint, null))));
 
         try {
             Thread.sleep(300);
@@ -1335,10 +1337,10 @@ class SocksProxyServerIntegrationTest {
 
                 // 1) Greeting: No auth (0x00)
                 log.info("Anon Client sending greeting...");
-                out.write(new byte[]{0x05, 0x01, 0x00});
+                out.write(new byte[] {0x05, 0x01, 0x00});
                 out.flush();
                 byte[] hs = readExact(in, 2, 8000);
-                assertArrayEquals(new byte[]{0x05, 0x00}, hs);
+                assertArrayEquals(new byte[] {0x05, 0x00}, hs);
                 log.info("Anon Client received handshake response");
 
                 // 2) Connect to tcp echo server
@@ -1376,11 +1378,11 @@ class SocksProxyServerIntegrationTest {
         int proxyPort = 15283;
         SocksConfig config = new SocksConfig(proxyPort);
         config.getWhiteList(); // Trigger lazy init in calling thread
-        config.setTrafficShapingInterval(100); 
+        config.setTrafficShapingInterval(100);
         SocksUser usr = new SocksUser("u_shaping");
         usr.setPassword("p_shaping");
 
-        SocksProxyServer proxy = new SocksProxyServer(config, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
+        SocksProxyServer proxy = new SocksProxyServer(config, new SocksAuthenticator(Collections.singletonList(usr)));
 
         try {
             Thread.sleep(1000);
@@ -1391,7 +1393,7 @@ class SocksProxyServerIntegrationTest {
                 InputStream in = s.getInputStream();
 
                 // Handshake
-                out.write(new byte[]{0x05, 0x01, 0x02});
+                out.write(new byte[] {0x05, 0x01, 0x02});
                 out.flush();
                 readExact(in, 2, 5000);
 
@@ -1415,7 +1417,8 @@ class SocksProxyServerIntegrationTest {
 
                 // Send 10KB payload
                 payload = new byte[1024 * 10];
-                for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i % 256);
+                for (int i = 0; i < payload.length; i++)
+                    payload[i] = (byte) (i % 256);
                 out.write(payload);
                 out.flush();
 
@@ -1424,7 +1427,8 @@ class SocksProxyServerIntegrationTest {
                 int totalRead = 0;
                 while (totalRead < back.length) {
                     int n = in.read(back, totalRead, back.length - totalRead);
-                    if (n == -1) break;
+                    if (n == -1)
+                        break;
                     totalRead += n;
                 }
                 assertEquals(payload.length, totalRead);
@@ -1442,7 +1446,10 @@ class SocksProxyServerIntegrationTest {
         req[1] = 0x01;
         req[2] = 0x00;
         req[3] = 0x01;
-        req[4] = 127; req[5] = 0; req[6] = 0; req[7] = 1;
+        req[4] = 127;
+        req[5] = 0;
+        req[6] = 0;
+        req[7] = 1;
         req[8] = (byte) ((port >> 8) & 0xFF);
         req[9] = (byte) (port & 0xFF);
         return req;
@@ -1454,7 +1461,8 @@ class SocksProxyServerIntegrationTest {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (read < len && System.currentTimeMillis() < deadline) {
             int n = in.read(buf, read, len - read);
-            if (n == -1) break;
+            if (n == -1)
+                break;
             read += n;
         }
         assertEquals(len, read, "short read after " + (System.currentTimeMillis() - (deadline - timeoutMs)) + "ms");
@@ -1467,7 +1475,8 @@ class SocksProxyServerIntegrationTest {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (read < minLen && System.currentTimeMillis() < deadline) {
             int n = in.read(buf, read, maxLen - read);
-            if (n == -1) break;
+            if (n == -1)
+                break;
             read += n;
         }
         assertTrue(read >= minLen, "short read");
@@ -1517,18 +1526,18 @@ class SocksProxyServerIntegrationTest {
     @SneakyThrows
     static boolean sendUdpViaProxy(int proxyPort, String message, int attempts) {
         try (Socket tcp = new Socket("127.0.0.1", proxyPort);
-             DatagramSocket clientSock = new DatagramSocket()) {
+                DatagramSocket clientSock = new DatagramSocket()) {
             tcp.setSoTimeout(5000);
             clientSock.setSoTimeout(5000);
 
             OutputStream out = tcp.getOutputStream();
             InputStream in = tcp.getInputStream();
 
-            out.write(new byte[]{0x05, 0x01, 0x00});
+            out.write(new byte[] {0x05, 0x01, 0x00});
             out.flush();
             readExact(in, 2, 4000);
 
-            out.write(new byte[]{0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
+            out.write(new byte[] {0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0});
             out.flush();
             byte[] response = readAtLeast(in, 10, 32, 4000);
             int relayPort = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
@@ -1536,7 +1545,7 @@ class SocksProxyServerIntegrationTest {
             ByteBuf header = Unpooled.buffer();
             header.writeZero(3);
             header.writeByte(0x01);
-            header.writeBytes(new byte[]{127, 0, 0, 1});
+            header.writeBytes(new byte[] {127, 0, 0, 1});
             header.writeShort(UDP_ECHO_PORT);
             header.writeBytes(message.getBytes(StandardCharsets.UTF_8));
             byte[] req = toBytes(header);

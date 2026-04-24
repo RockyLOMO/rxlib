@@ -11,11 +11,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import static org.rx.core.Extends.eq;
 
 @ToString
-public class DefaultSocksAuthenticator implements Authenticator {
+public class SocksAuthenticator implements Authenticator {
     @Getter
     final Map<String, SocksUser> store = new ConcurrentHashMap<>();
 
-    public DefaultSocksAuthenticator(List<SocksUser> initUsers) {
+    public SocksAuthenticator(List<SocksUser> initUsers) {
         for (SocksUser usr : initUsers) {
             store.put(usr.getUsername(), usr);
         }

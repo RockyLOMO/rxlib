@@ -1,6 +1,5 @@
 package org.rx.util.rss;
 
-import com.alibaba.fastjson2.annotation.JSONField;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -22,18 +21,16 @@ public class ShadowUser implements Serializable, TrafficUser {
     private static final long serialVersionUID = -3699206231570817990L;
 
     int ssPort;
-    @JSONField(serialize = false)
+    @ToString.Exclude
     String ssPwd;
     String username;
     // 内部转发仍复用少量 socks 用户，统计与公网 IP 限制挂在外部 SS 用户上。
     String socksUser;
     int ipLimit = -1;
     DateTime lastResetTime;
-    @JSONField(serialize = false)
     final Map<InetAddress, TrafficLoginInfo> loginIps = new ConcurrentHashMap<>(4);
 
-    @JSONField(name = "loginIps")
-    public Map<String, TrafficLoginInfo> getLoginIpsForJson() {
+    public Map<String, TrafficLoginInfo> snapshotLoginIps() {
         return Linq.from(loginIps.entrySet()).toMap(p -> p.getKey().getHostAddress(), Map.Entry::getValue);
     }
 

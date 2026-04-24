@@ -10,14 +10,9 @@ import static org.rx.core.Extends.eq;
 
 @Slf4j
 public final class RssLauncher {
-    private RssLauncher() {
-    }
+    private RssLauncher() {}
 
     public static void main(String[] args) {
-        run(args);
-    }
-
-    public static void run(String[] args) {
         try {
             RssSupport.bootstrapRuntime();
 

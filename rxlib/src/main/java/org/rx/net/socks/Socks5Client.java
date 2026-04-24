@@ -340,6 +340,11 @@ public class Socks5Client extends Disposable {
         // sendCommand() when commandType == UDP_ASSOCIATE.
         Sockets.bootstrap(config, proxyServer.getConnectEndpoint(), ch -> {
             Sockets.addTcpClientHandler(ch, config, proxyServer.getInetEndpoint());
+            String trafficUser = proxyServer.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME);
+            if (trafficUser != null) {
+                // 仅用于内部 RSS 链路的统计身份回绑。
+                SocksConnectionTagRegistry.bindOnActive(ch, trafficUser);
+            }
             if (originRemoteAddress != null) {
                 ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
                     @Override

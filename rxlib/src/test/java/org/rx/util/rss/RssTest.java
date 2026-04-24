@@ -18,6 +18,7 @@ import org.rx.bean.Tuple;
 import org.rx.core.RxConfig;
 import org.rx.core.Tasks;
 import org.rx.core.YamlConfiguration;
+import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.OptimalSettings;
 import org.rx.net.Sockets;
@@ -26,7 +27,7 @@ import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
-import org.rx.net.socks.DefaultSocksAuthenticator;
+import org.rx.net.socks.SocksAuthenticator;
 import org.rx.net.socks.ShadowsocksConfig;
 import org.rx.net.socks.ShadowsocksServer;
 import org.rx.net.socks.SocksConfig;
@@ -53,6 +54,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.rx.core.Sys.toJsonString;
 
@@ -60,9 +63,11 @@ public class RssTest extends AbstractTester {
     final int connectTimeoutMillis = 30000;
     final String socks5Usr = "rocky";
     final String socks5Pwd = "123456";
-    final CopyOnWriteArraySet<String> bypassHosts = new CopyOnWriteArraySet<String>(RxConfig.INSTANCE.getNet().getBypassHosts()) {{
-        add("*qq*");
-    }};
+    final CopyOnWriteArraySet<String> bypassHosts = new CopyOnWriteArraySet<String>(RxConfig.INSTANCE.getNet().getBypassHosts()) {
+        {
+            add("*qq*");
+        }
+    };
 
     @Test
     public void resolveClientInListenAddress_DefaultToLocalAddress() {
@@ -104,7 +109,7 @@ public class RssTest extends AbstractTester {
         user.setSocksUser("inner-r");
         user.setLastResetTime(DateTime.now());
         user.getLoginIps().put(java.net.InetAddress.getByName("18.12.3.4"), new TrafficLoginInfo());
-        System.out.println(toJsonString(user));
+        System.out.println(toJsonString(RssSupport.toShadowUserPayload(user)));
     }
 
     @Test
@@ -113,6 +118,30 @@ public class RssTest extends AbstractTester {
         for (OptimalSettings ops : a) {
             ops.calculate();
             System.out.println(ops);
+        }
+    }
+
+    @Test
+    public void resolveShadowEndpoint_TunFallsBackToSocksServerWithoutUdp2raw() {
+        SocketAddress inSvrAddress = new LocalAddress("rss-in-6885");
+        AuthenticEndpoint endpoint = RssClient.resolveShadowEndpoint(inSvrAddress, null, null, "ss-user", "tun-a");
+
+        assertSame(inSvrAddress, endpoint.getEndpoint());
+        assertEquals("ss-user", endpoint.getParameters().get(org.rx.net.socks.SocksConnectionTagRegistry.PARAM_NAME));
+    }
+
+    @Test
+    @SneakyThrows
+    public void nextUpstream_ThrowsWhenNoServerAvailable() {
+        RSSConf oldConf = RssSupport.rssConf;
+        try {
+            RssSupport.rssConf = new RSSConf();
+            RssSupport.rssConf.route = new RouteConf();
+
+            assertThrows(InvalidException.class,
+                    () -> RssSupport.nextUpstream(new RandomList<UpstreamSupport>(), java.net.InetAddress.getByName("127.0.0.1")));
+        } finally {
+            RssSupport.rssConf = oldConf;
         }
     }
 
@@ -191,7 +220,7 @@ public class RssTest extends AbstractTester {
         SocksUser usr = new SocksUser(socks5Usr);
         usr.setPassword(socks5Pwd);
         outConf.setEnableUdp2raw(udp2raw);
-        SocksProxyServer backSvr = new SocksProxyServer(outConf, new DefaultSocksAuthenticator(Collections.singletonList(usr)));
+        SocksProxyServer backSvr = new SocksProxyServer(outConf, new SocksAuthenticator(Collections.singletonList(usr)));
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(outSrvEp.getPort() + 1));
@@ -240,9 +269,7 @@ public class RssTest extends AbstractTester {
         ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
                 CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
-        frontSvr.onTcpRoute.replace((s, e) ->
-                e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null))));
-        frontSvr.onUdpRoute.replace((s, e) ->
-                e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null))));
+        frontSvr.onTcpRoute.replace((s, e) -> e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null))));
+        frontSvr.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null))));
     }
 }

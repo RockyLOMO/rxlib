@@ -18,6 +18,7 @@ import org.rx.core.Strings;
 import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.diagnostic.DiagnosticMonitor;
+import org.rx.exception.InvalidException;
 import org.rx.io.DuplexStream;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.OptimalSettings;
@@ -28,8 +29,10 @@ import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpServer;
 import org.rx.net.socks.Authenticator;
+import org.rx.net.socks.AuthResult;
 import org.rx.net.socks.RrpConfig;
 import org.rx.net.socks.RrpServer;
+import org.rx.net.socks.SocksConnectionTagRegistry;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksProxyServer;
@@ -60,8 +63,10 @@ import java.net.SocketAddress;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 import static org.rx.core.Extends.eachQuietly;
 import static org.rx.core.Extends.eq;
@@ -101,12 +106,16 @@ public final class RssSupport {
     static SocksProxyServer createInSvr(SocksConfig inConf, Authenticator authenticator,
                                         TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> socksServers,
                                         GeoManager geoMgr) {
-        SocksProxyServer inSvr = new SocksProxyServer(inConf, authenticator);
+        SocksProxyServer inSvr = new SocksProxyServer(inConf);
+        if (authenticator instanceof RssAuthenticator) {
+            RssAuthenticator rssAuthenticator = (RssAuthenticator) authenticator;
+            inSvr.setConnectionTagResolver(rssAuthenticator::resolve);
+        }
         boolean kcptun = inConf.getKcptunClient() != null;
         UpstreamSupport kcpUpstream = kcptun ? new UpstreamSupport(inConf.getKcptunClient(), null) : null;
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
             InetAddress srcHost = e.getSource().getAddress();
-            UpstreamSupport next = socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
+            UpstreamSupport next = nextUpstream(socksServers, srcHost);
             if (rssConf.hasDebugFlag()) {
                 log.info("route upSvr src {} -> {}", srcHost, next.getEndpoint());
             }
@@ -186,6 +195,16 @@ public final class RssSupport {
         return inSvr;
     }
 
+    static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost) {
+        try {
+            return socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
+        } catch (NoSuchElementException e) {
+            throw new InvalidException("No available socks upstream for {}", srcHost);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidException("No weighted socks upstream for {}", srcHost);
+        }
+    }
+
     static void clientInit(RssAuthenticator authenticator) {
         if (trafficStore == null) {
             trafficStore = new RssUserTrafficStore(null);
@@ -194,7 +213,7 @@ public final class RssSupport {
         }
 
         httpServer = HttpServer.getDefault().requestMapping("/usrInfo", (request, response) ->
-                response.jsonBody(authenticator.getShadowStore()));
+                response.jsonBody(toShadowStorePayload(authenticator.getShadowStore())));
 
         if (!Strings.isEmpty(rssConf.rrpToken) && rssConf.rrpPort != null) {
             RrpConfig c = new RrpConfig();
@@ -327,5 +346,36 @@ public final class RssSupport {
         String fullPathAndQuery = startIndex != -1 ? url.substring(startIndex) : "/";
         String stringToSign = apiKey + "\n" + fullPathAndQuery + "\n\n" + requestBody;
         return CodecUtil.toHex(CodecUtil.hmacSHA256(apiKey, stringToSign));
+    }
+
+    static Map<String, Object> toShadowStorePayload(Map<String, ShadowUser> shadowStore) {
+        java.util.LinkedHashMap<String, Object> payload = new java.util.LinkedHashMap<>();
+        if (shadowStore == null) {
+            return payload;
+        }
+        for (Map.Entry<String, ShadowUser> entry : shadowStore.entrySet()) {
+            payload.put(entry.getKey(), toShadowUserPayload(entry.getValue()));
+        }
+        return payload;
+    }
+
+    static Map<String, Object> toShadowUserPayload(ShadowUser user) {
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+        if (user == null) {
+            return payload;
+        }
+        payload.put("ssPort", user.getSsPort());
+        payload.put("username", user.getUsername());
+        payload.put("socksUser", user.getSocksUser());
+        payload.put("ipLimit", user.getIpLimit());
+        payload.put("lastResetTime", user.getLastResetTime());
+        payload.put("loginIps", user.snapshotLoginIps());
+        payload.put("totalReadBytes", user.getTotalReadBytes());
+        payload.put("totalWriteBytes", user.getTotalWriteBytes());
+        payload.put("totalReadPackets", user.getTotalReadPackets());
+        payload.put("totalWritePackets", user.getTotalWritePackets());
+        payload.put("humanTotalReadBytes", user.getHumanTotalReadBytes());
+        payload.put("humanTotalWriteBytes", user.getHumanTotalWriteBytes());
+        return payload;
     }
 }

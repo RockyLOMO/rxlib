@@ -19,6 +19,7 @@ import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.socks.ShadowsocksConfig;
 import org.rx.net.socks.ShadowsocksServer;
+import org.rx.net.socks.SocksConnectionTagRegistry;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksProxyServer;
@@ -287,14 +288,8 @@ public final class RssClient {
             ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
             svrRefs.add(ssSvr);
 
-            AuthenticEndpoint svrEp;
-            if (routeUserName != null && routeUserName.startsWith("hysteria")) {
-                svrEp = RssSupport.rssConf.hysteriaClient;
-            } else if (routeUserName != null && routeUserName.startsWith("tun")) {
-                svrEp = new AuthenticEndpoint(inUdp2rawSvrAddress, authUserName, authenticator.getSocksPassword());
-            } else {
-                svrEp = new AuthenticEndpoint(inSvrAddress, authUserName, authenticator.getSocksPassword());
-            }
+            AuthenticEndpoint svrEp = resolveShadowEndpoint(inSvrAddress, inUdp2rawSvrAddress,
+                    RssSupport.rssConf.hysteriaClient, authUserName, routeUserName);
 
             SocksConfig toInConf = new SocksConfig();
             toInConf.setOptimalSettings(RssSupport.IN_OPS);
@@ -322,5 +317,20 @@ public final class RssClient {
 
     public static SocketAddress resolveClientInListenAddress(RSSConf conf, int port, String localNamePrefix) {
         return RssSupport.resolveClientInListenAddress(conf, port, localNamePrefix);
+    }
+
+    static AuthenticEndpoint resolveShadowEndpoint(SocketAddress inSvrAddress, SocketAddress inUdp2rawSvrAddress,
+                                                   AuthenticEndpoint hysteriaClient, String authUserName, String routeUserName) {
+        if (routeUserName != null && routeUserName.startsWith("hysteria")) {
+            return hysteriaClient;
+        }
+
+        SocketAddress endpoint = inSvrAddress;
+        if (routeUserName != null && routeUserName.startsWith("tun") && inUdp2rawSvrAddress != null) {
+            endpoint = inUdp2rawSvrAddress;
+        }
+        AuthenticEndpoint target = new AuthenticEndpoint(endpoint);
+        target.getParameters().put(SocksConnectionTagRegistry.PARAM_NAME, authUserName);
+        return target;
     }
 }

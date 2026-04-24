@@ -55,6 +55,14 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
         InetSocketAddress srcEp = Sockets.getOriginRemoteAddress(inCh);
         ProxyManageHandler manageHandler = ProxyManageHandler.get(inbound);
+        if (!server.isAuthEnabled() && manageHandler != null && manageHandler.getUser().isAnonymous()
+                && server.getConnectionTagResolver() != null) {
+            String connectionTag = SocksConnectionTagRegistry.resolve(inCh);
+            AuthResult result = connectionTag == null ? null : server.getConnectionTagResolver().apply(connectionTag);
+            if (result != null) {
+                manageHandler.setUser(result.getUser(), result.getTrafficUser(), inbound);
+            }
+        }
         TrafficUser user = manageHandler != null ? manageHandler.getTrafficUser() : TrafficUser.ANONYMOUS;
         TrafficLoginInfo loginInfo = manageHandler != null ? manageHandler.getInfo() : null;
         if (msg.type() == Socks5CommandType.CONNECT) {

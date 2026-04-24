@@ -2,7 +2,9 @@ package org.rx.util.rss;
 
 import lombok.Getter;
 import org.rx.bean.DateTime;
+import org.rx.core.Strings;
 import org.rx.core.Tasks;
+import org.rx.exception.InvalidException;
 import org.rx.net.socks.AuthResult;
 import org.rx.net.socks.Authenticator;
 import org.rx.net.socks.SocksUser;
@@ -29,12 +31,13 @@ public class RssAuthenticator implements Authenticator {
             if (shadowUser == null) {
                 continue;
             }
+            validateShadowUser(shadowUser);
             String username = shadowUser.getUsername();
-            if (username == null) {
-                continue;
-            }
             shadowUser.setUsername(username);
-            shadowStore.put(username, shadowUser);
+            ShadowUser oldShadowUser = ((ConcurrentHashMap<String, ShadowUser>) shadowStore).putIfAbsent(username, shadowUser);
+            if (oldShadowUser != null && oldShadowUser != shadowUser) {
+                throw new InvalidException("Duplicate shadow username {}", username);
+            }
 
             String socksUserName = shadowUser.getSocksUser();
             SocksUser socksUser = socksStore.get(socksUserName);
@@ -57,6 +60,21 @@ public class RssAuthenticator implements Authenticator {
         }, "01:00:00");
     }
 
+    private void validateShadowUser(ShadowUser shadowUser) {
+        if (shadowUser.getSsPort() <= 0) {
+            throw new InvalidException("ShadowUser {} invalid ssPort={}", shadowUser, shadowUser.getSsPort());
+        }
+        if (Strings.isEmpty(shadowUser.getSsPwd())) {
+            throw new InvalidException("ShadowUser {} ssPwd is empty", shadowUser);
+        }
+        if (Strings.isEmpty(shadowUser.getSocksUser())) {
+            throw new InvalidException("ShadowUser {} socksUser is empty", shadowUser);
+        }
+        if (Strings.isEmpty(shadowUser.getUsername())) {
+            throw new InvalidException("ShadowUser {} username is empty", shadowUser);
+        }
+    }
+
     @Override
     public SocksUser login(String username, String password) {
         AuthResult result = loginResult(username, password);
@@ -69,6 +87,15 @@ public class RssAuthenticator implements Authenticator {
         if (shadowUser == null || !eq(socksPassword, password)) {
             return null;
         }
+        return resolve(shadowUser);
+    }
+
+    public AuthResult resolve(String username) {
+        ShadowUser shadowUser = shadowStore.get(username);
+        return shadowUser == null ? null : resolve(shadowUser);
+    }
+
+    private AuthResult resolve(ShadowUser shadowUser) {
         // 认证返回内部 socks 用户，统计归属单独绑定到对应 SS 用户。
         SocksUser socksUser = socksStore.get(shadowUser.getSocksUser());
         if (socksUser == null) {
