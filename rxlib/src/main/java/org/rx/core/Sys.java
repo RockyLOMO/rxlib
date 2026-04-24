@@ -7,9 +7,6 @@ import com.alibaba.fastjson2.reader.ObjectReader;
 import com.alibaba.fastjson2.reader.ObjectReaderProvider;
 import com.alibaba.fastjson2.writer.ObjectWriter;
 import com.alibaba.fastjson2.writer.ObjectWriterProvider;
-import com.sun.management.HotSpotDiagnosticMXBean;
-import com.sun.management.OperatingSystemMXBean;
-import io.netty.util.Timeout;
 import lombok.*;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.lang3.SystemUtils;
@@ -34,8 +31,6 @@ import org.slf4j.spi.MDCAdapter;
 import org.springframework.cglib.proxy.Enhancer;
 
 import java.io.File;
-import java.io.Serializable;
-import java.lang.management.ManagementFactory;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -44,7 +39,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -61,72 +55,8 @@ import static org.rx.core.RxConfig.ConfigNames.getWithoutPrefix;
 
 @SuppressWarnings(Constants.NON_UNCHECKED)
 public final class Sys extends SystemUtils {
-    @Getter
-    @RequiredArgsConstructor
-    public static class Info implements Serializable {
-        private static final long serialVersionUID = -1263477025428108392L;
-        private final int cpuThreads;
-        private final double cpuLoad;
-        private final int liveThreadCount;
-        private final long freePhysicalMemory;
-        private final long totalPhysicalMemory;
-        private final Linq<DiskInfo> disks;
-
-        public int getCpuLoadPercent() {
-            return Numbers.toPercent(cpuLoad);
-        }
-
-        public long getUsedPhysicalMemory() {
-            return totalPhysicalMemory - freePhysicalMemory;
-        }
-
-        public int getUsedPhysicalMemoryPercent() {
-            return Numbers.toPercent((double) getUsedPhysicalMemory() / totalPhysicalMemory);
-        }
-
-        public boolean hasCpuLoadWarning() {
-            return getCpuLoadPercent() > RxConfig.INSTANCE.threadPool.cpuLoadWarningThreshold;
-        }
-
-        public boolean hasPhysicalMemoryUsageWarning() {
-            return getUsedPhysicalMemoryPercent() > RxConfig.INSTANCE.cache.physicalMemoryUsageWarningThreshold;
-        }
-
-        public boolean hasDiskUsageWarning() {
-            return disks.any(DiskInfo::hasDiskUsageWarning);
-        }
-
-        public DiskInfo getSummedDisk() {
-            return disks.groupBy(p -> true, (p, x) -> new DiskInfo("SummedDisk", "/", (long) x.sum(y -> y.freeSpace), (long) x.sum(y -> y.totalSpace), false)).first();
-        }
-    }
-
-    @Getter
-    @RequiredArgsConstructor
-    public static class DiskInfo implements Serializable {
-        private static final long serialVersionUID = -9137708658583628112L;
-        private final String name;
-        private final String path;
-        private final long freeSpace;
-        private final long totalSpace;
-        private final boolean bootstrapDisk;
-
-        public long getUsedSpace() {
-            return totalSpace - freeSpace;
-        }
-
-        public int getUsedPercent() {
-            return Numbers.toPercent((double) getUsedSpace() / totalSpace);
-        }
-
-        public boolean hasDiskUsageWarning() {
-            return getUsedPercent() > RxConfig.INSTANCE.storage.diskUsageWarningThreshold;
-        }
-    }
-
     public static byte transformedFlags;
     public static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Sys.class);
-    public static final HotSpotDiagnosticMXBean diagnosticMx = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
     static final String DPT = "_DPT";
     static final Pattern PATTERN_TO_FIND_OPTIONS = Pattern.compile("(?<=-).*?(?==)");
     static final JSONReader.Feature[] JSON_READ_FLAGS = new JSONReader.Feature[]{SupportClassForName, AllowUnQuotedFieldNames};
@@ -142,7 +72,6 @@ public final class Sys extends SystemUtils {
         return jsonValueFilter(o, k, v);
     };
     static final String[] seconds = {"ns", "µs", "ms", "s"};
-    static Timeout samplingTimeout;
 
     static {
         ObjectReaderProvider objectReaderProvider = JSONFactory.getDefaultObjectReaderProvider();
@@ -648,30 +577,7 @@ public final class Sys extends SystemUtils {
     }
     //endregion
 
-    //region mx
-    public synchronized static void mxScheduleTask(BiAction<Info> mxHandler) {
-        if (samplingTimeout != null) {
-            samplingTimeout.cancel();
-        }
-        samplingTimeout = CpuWatchman.timer.newTimeout(t -> {
-            try {
-                mxHandler.invoke(mxInfo());
-            } catch (Throwable e) {
-                log.error("mxScheduleTask", e);
-            } finally {
-                t.timer().newTimeout(t.task(), RxConfig.INSTANCE.getMxSamplingPeriod(), TimeUnit.MILLISECONDS);
-            }
-        }, RxConfig.INSTANCE.getMxSamplingPeriod(), TimeUnit.MILLISECONDS);
-    }
-
-    public static Info mxInfo() {
-        File bd = new File("/");
-        OperatingSystemMXBean osMx = CpuWatchman.osMx;
-        return new Info(osMx.getAvailableProcessors(), osMx.getSystemCpuLoad(), ManagementFactory.getThreadMXBean().getThreadCount(),
-                osMx.getFreePhysicalMemorySize(), osMx.getTotalPhysicalMemorySize(),
-                Linq.from(File.listRoots()).select(p -> new DiskInfo(p.getName(), p.getAbsolutePath(), p.getFreeSpace(), p.getTotalSpace(), bd.getAbsolutePath().equals(p.getAbsolutePath()))));
-    }
-
+    //region common
     public static String formatCpuLoad(double val) {
         String p = String.valueOf(val * PERCENT);
         int ix = p.indexOf(".") + 1;
@@ -693,9 +599,7 @@ public final class Sys extends SystemUtils {
         }
         return v + seconds[i];
     }
-    //endregion
 
-    //region common
     public static <T> T deepClone(T obj) {
         return Serializer.DEFAULT.deserialize(Serializer.DEFAULT.serialize(obj));
     }
