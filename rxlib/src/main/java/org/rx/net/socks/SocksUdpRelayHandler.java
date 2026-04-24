@@ -5,7 +5,6 @@ import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Tasks;
 import org.rx.core.cache.MemoryCache;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
@@ -59,6 +58,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             AttributeKey.valueOf("udpRouteMap");
     static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, RouteInitState>> ATTR_ROUTE_INIT_MAP =
             AttributeKey.valueOf("udpRouteInitMap");
+    static final AttributeKey<LastRoute> ATTR_LAST_ROUTE = AttributeKey.valueOf("udpLastRoute");
+    static final AttributeKey<MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate>> ATTR_ROUTE_HEADER_CACHE =
+            AttributeKey.valueOf("udpRouteHeaderCache");
     static final int MAX_PENDING_ROUTE_PACKETS = 32;
     static final int MAX_PENDING_ROUTE_BYTES = 256 * 1024;
 
@@ -85,6 +87,20 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
         RouteInitState(SocksContext context) {
             this.context = context;
+        }
+    }
+
+    static final class LastRoute {
+        final UdpManager.HeaderTemplate requestHeader;
+        final SocksContext context;
+
+        LastRoute(UdpManager.HeaderTemplate requestHeader, SocksContext context) {
+            this.requestHeader = requestHeader;
+            this.context = context;
+        }
+
+        boolean matches(ByteBuf buf) {
+            return requestHeader.matches(buf);
         }
     }
 
@@ -169,10 +185,23 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap = routeInitMap(relay);
 
         inBuf.markReaderIndex();
+        LastRoute lastRoute = relay.attr(ATTR_LAST_ROUTE).get();
+        if (lastRoute != null && lastRoute.matches(inBuf)) {
+            SocksContext lastContext = lastRoute.context;
+            if (isRouteReady(relay, lastContext)) {
+                if (!(lastContext.getUpstream() instanceof SocksUdpUpstream)) {
+                    inBuf.skipBytes(lastRoute.requestHeader.length());
+                }
+                writeClientPacket(relay, inBuf, sender, clientOriginAddr, lastContext.getFirstDestination(), lastContext, false);
+                return;
+            }
+            relay.attr(ATTR_LAST_ROUTE).set(null);
+        }
         final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
 
         SocksContext e = routeMap.get(dstEp);
         if (e != null && isRouteReady(relay, e)) {
+            relay.attr(ATTR_LAST_ROUTE).set(new LastRoute(routeHeaderTemplate(relay, dstEp), e));
             writeClientPacket(relay, inBuf, sender, clientOriginAddr, dstEp, e, false);
             return;
         }
@@ -254,6 +283,27 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         return oldMap != null ? oldMap : newMap;
     }
 
+    private static MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> routeHeaderCache(Channel relay) {
+        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> cache = relay.attr(ATTR_ROUTE_HEADER_CACHE).get();
+        if (cache != null) {
+            return cache;
+        }
+        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> newCache = new MemoryCache<>(b -> b.maximumSize(256));
+        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> oldCache = relay.attr(ATTR_ROUTE_HEADER_CACHE).setIfAbsent(newCache);
+        return oldCache != null ? oldCache : newCache;
+    }
+
+    private static UdpManager.HeaderTemplate routeHeaderTemplate(Channel relay, UnresolvedEndpoint destination) {
+        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> cache = routeHeaderCache(relay);
+        UdpManager.HeaderTemplate template = cache.get(destination);
+        if (template != null) {
+            return template;
+        }
+        UdpManager.HeaderTemplate newTemplate = UdpManager.socks5HeaderTemplate(destination);
+        UdpManager.HeaderTemplate oldTemplate = cache.putIfAbsent(destination, newTemplate);
+        return oldTemplate != null ? oldTemplate : newTemplate;
+    }
+
     private static boolean isRouteReady(Channel relay, SocksContext context) {
         Upstream upstream = context.getUpstream();
         if (!(upstream instanceof SocksUdpUpstream)) {
@@ -269,35 +319,41 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         return upstream.getDestination().socketAddress();
     }
 
+    private static void runOnRelayLoop(Channel relay, Runnable task) {
+        if (relay.eventLoop().inEventLoop()) {
+            task.run();
+        } else {
+            relay.eventLoop().execute(task);
+        }
+    }
+
     private void beginRouteInit(Channel relay, SocksProxyServer server, InetSocketAddress clientOriginAddr,
                                 UnresolvedEndpoint dstEp, RouteInitState initState,
                                 ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
                                 ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
                                 ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
-        Tasks.runAsync(() -> {
-            try {
-                SocksContext context = initState.context;
-                if (context == null) {
-                    context = SocksContext.getCtx(clientOriginAddr, dstEp);
-                    server.raiseEvent(server.onUdpRoute, context);
-                }
-                Upstream upstream = context.getUpstream();
-                if (upstream == null) {
-                    throw new IllegalStateException("UDP route upstream is null for " + dstEp);
-                }
-                final SocksContext finalContext = context;
-                CompletableFuture<Void> readyFuture = upstream.initChannelAsync(relay);
-                readyFuture.whenComplete((v, error) -> relay.eventLoop().execute(() -> {
-                    if (error != null) {
-                        onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, error);
-                        return;
-                    }
-                    onRouteInitSuccess(relay, dstEp, finalContext, initState, ctxMap, routeMap, routeInitMap);
-                }));
-            } catch (Throwable e) {
-                relay.eventLoop().execute(() -> onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, e));
+        try {
+            SocksContext context = initState.context;
+            if (context == null) {
+                context = SocksContext.getCtx(clientOriginAddr, dstEp);
+                server.raiseEvent(server.onUdpRoute, context);
             }
-        });
+            Upstream upstream = context.getUpstream();
+            if (upstream == null) {
+                throw new IllegalStateException("UDP route upstream is null for " + dstEp);
+            }
+            final SocksContext finalContext = context;
+            CompletableFuture<Void> readyFuture = upstream.initChannelAsync(relay);
+            readyFuture.whenComplete((v, error) -> runOnRelayLoop(relay, () -> {
+                if (error != null) {
+                    onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, error);
+                    return;
+                }
+                onRouteInitSuccess(relay, dstEp, finalContext, initState, ctxMap, routeMap, routeInitMap);
+            }));
+        } catch (Throwable e) {
+            runOnRelayLoop(relay, () -> onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, e));
+        }
     }
 
     private void onRouteInitSuccess(Channel relay, UnresolvedEndpoint dstEp, SocksContext context, RouteInitState initState,
@@ -318,6 +374,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
         ctxMap.put(upDstAddr, context);
         routeMap.put(dstEp, context);
+        relay.attr(ATTR_LAST_ROUTE).set(new LastRoute(routeHeaderTemplate(relay, dstEp), context));
         flushPending(relay, context, initState);
     }
 
