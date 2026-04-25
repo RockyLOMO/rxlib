@@ -1,9 +1,9 @@
 package org.rx.net.rpc;
 
-import org.rx.net.transport.DefaultRpcTcpClient;
+import org.rx.net.transport.DefaultTcpClient;
 
 public interface RpcTcpClientPool {
-    DefaultRpcTcpClient borrowClient();
+    DefaultTcpClient borrowClient();
 
-    DefaultRpcTcpClient returnClient(DefaultRpcTcpClient client);
+    DefaultTcpClient returnClient(DefaultTcpClient client);
 }

@@ -31,7 +31,7 @@ class TcpTransportTest {
         syncConfig.setServerEndpoint(endpoint);
         syncConfig.setEnableReconnect(false);
         syncConfig.setConnectTimeoutMillis(5000);
-        DefaultRpcTcpClient syncClient = new DefaultRpcTcpClient(syncConfig);
+        DefaultTcpClient syncClient = new DefaultTcpClient(syncConfig);
         try {
             long start = System.nanoTime();
             TimeoutException ex = assertThrows(TimeoutException.class, () -> syncClient.connect(endpoint));
@@ -47,7 +47,7 @@ class TcpTransportTest {
         asyncConfig.setServerEndpoint(endpoint);
         asyncConfig.setEnableReconnect(false);
         asyncConfig.setConnectTimeoutMillis(5000);
-        DefaultRpcTcpClient asyncClient = new DefaultRpcTcpClient(asyncConfig);
+        DefaultTcpClient asyncClient = new DefaultTcpClient(asyncConfig);
         try {
             Future<Void> future = asyncClient.connectAsync(endpoint);
             awaitTrue(future::isDone, asyncConfig.getConnectTimeoutMillis(), "异步连接失败后 future 必须结束");
@@ -65,7 +65,7 @@ class TcpTransportTest {
         TcpServerConfig config = new TcpServerConfig(port);
         config.setCapacity(1);
 
-        RpcTcpServer server = new RpcTcpServer(config);
+        TcpServer server = new TcpServer(config);
         AtomicInteger connectedCount = new AtomicInteger();
         server.onConnected.combine((s, e) -> connectedCount.incrementAndGet());
         server.start();

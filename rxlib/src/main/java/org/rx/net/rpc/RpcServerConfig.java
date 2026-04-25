@@ -21,4 +21,5 @@ public class RpcServerConfig {
     private final TcpServerConfig tcpConfig;
     private final List<Integer> eventBroadcastVersions = new ArrayList<>();
     private short eventComputeVersion = EVENT_DISABLE_COMPUTE;
+    private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
 }

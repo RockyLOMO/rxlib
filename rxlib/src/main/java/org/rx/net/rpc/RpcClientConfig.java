@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.Sockets;
-import org.rx.net.transport.DefaultRpcTcpClient;
+import org.rx.net.transport.DefaultTcpClient;
 import org.rx.net.transport.TcpClientConfig;
 import org.rx.util.function.TripleAction;
 
@@ -51,7 +51,8 @@ public class RpcClientConfig<T> {
     private short eventVersion = DEFAULT_VERSION;
     private short minPoolSize;
     private short maxPoolSize = NON_POOL_SIZE;
-    private TripleAction<T, DefaultRpcTcpClient> initHandler;
+    private TripleAction<T, DefaultTcpClient> initHandler;
+    private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
 
     public boolean isUsePool() {
         return maxPoolSize > NON_POOL_SIZE;

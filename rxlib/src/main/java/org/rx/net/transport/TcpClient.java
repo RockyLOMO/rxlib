@@ -7,12 +7,11 @@ import org.rx.core.EventPublisher;
 import org.rx.core.NEventArgs;
 import org.rx.core.Strings;
 
-import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 
-public interface RpcTcpClient extends AutoCloseable, EventPublisher<RpcTcpClient> {
+public interface TcpClient extends AutoCloseable, EventPublisher<TcpClient> {
     boolean isConnected();
 
     InetSocketAddress getRemoteEndpoint();
@@ -21,9 +20,9 @@ public interface RpcTcpClient extends AutoCloseable, EventPublisher<RpcTcpClient
 
     Future<Void> connectAsync(InetSocketAddress remoteEp);
 
-    void send(Serializable pack);
+    void send(Object pack);
 
-    Delegate<RpcTcpClient, NEventArgs<Serializable>> onReceive();
+    Delegate<TcpClient, NEventArgs<Object>> onReceive();
 
     Channel getChannel();
 

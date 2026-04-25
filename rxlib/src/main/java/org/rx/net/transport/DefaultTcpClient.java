@@ -1,21 +1,28 @@
 package org.rx.net.transport;
 
-import io.netty.channel.*;
-import io.netty.handler.codec.serialization.ObjectDecoder;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelPipeline;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.*;
+import org.rx.core.Constants;
+import org.rx.core.Delegate;
+import org.rx.core.EventArgs;
+import org.rx.core.FluentWait;
+import org.rx.core.NEventArgs;
+import org.rx.core.NtpClock;
+import org.rx.core.ThreadPool;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.transport.protocol.ErrorPacket;
 import org.rx.net.transport.protocol.PingPacket;
 import org.slf4j.helpers.MessageFormatter;
 
-import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.concurrent.CancellationException;
@@ -25,13 +32,16 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.as;
+import static org.rx.core.Extends.ifNull;
+import static org.rx.core.Extends.quietly;
+import static org.rx.core.Extends.tryAs;
 
 @Slf4j
-public class DefaultRpcTcpClient extends AbstractTcpReconnectClient implements RpcTcpClient {
+public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpClient {
     @RequiredArgsConstructor
     static class ClientHandler extends ChannelInboundHandlerAdapter {
-        final DefaultRpcTcpClient owner;
+        final DefaultTcpClient owner;
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
@@ -45,22 +55,17 @@ public class DefaultRpcTcpClient extends AbstractTcpReconnectClient implements R
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             Channel channel = ctx.channel();
             log.debug("clientRead {} {}", channel.remoteAddress(), msg.getClass());
-            Serializable pack;
-            if ((pack = as(msg, Serializable.class)) == null) {
-                log.warn("clientRead discard {} {}", channel.remoteAddress(), msg.getClass());
+            if (tryAs(msg, ErrorPacket.class, p -> exceptionCaught(ctx, new InvalidException("Server error: {}", p.getErrorMessage())))) {
                 return;
             }
-            if (tryAs(pack, ErrorPacket.class, p -> exceptionCaught(ctx, new InvalidException("Server error: {}", p.getErrorMessage())))) {
-                return;
-            }
-            if (tryAs(pack, PingPacket.class, p -> {
+            if (tryAs(msg, PingPacket.class, p -> {
                 log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), NtpClock.UTC.millis() - p.getTimestamp());
                 owner.raiseEventAsync(owner.onPong, p);
             })) {
                 return;
             }
 
-            owner.raiseEventAsync(owner.onReceive, new NEventArgs<>(pack));
+            owner.raiseEventAsync(owner.onReceive, new NEventArgs<>(msg));
         }
 
         @Override
@@ -108,44 +113,42 @@ public class DefaultRpcTcpClient extends AbstractTcpReconnectClient implements R
     }
 
     static final TcpClientConfig NULL_CONF = new TcpClientConfig();
-    public final Delegate<RpcTcpClient, EventArgs> onConnected = Delegate.create(),
+    public final Delegate<TcpClient, EventArgs> onConnected = Delegate.create(),
             onDisconnected = Delegate.create();
-    public final Delegate<RpcTcpClient, NEventArgs<InetSocketAddress>> onReconnecting = Delegate.create(),
+    public final Delegate<TcpClient, NEventArgs<InetSocketAddress>> onReconnecting = Delegate.create(),
             onReconnected = Delegate.create();
-    public final Delegate<RpcTcpClient, NEventArgs<Serializable>> onSend = Delegate.create(),
+    public final Delegate<TcpClient, NEventArgs<Object>> onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<RpcTcpClient, PingPacket> onPong = Delegate.create();
-    public final Delegate<RpcTcpClient, NEventArgs<Throwable>> onError = Delegate.create();
+    public final Delegate<TcpClient, PingPacket> onPong = Delegate.create();
+    public final Delegate<TcpClient, NEventArgs<Throwable>> onError = Delegate.create();
     @Getter
     final TcpClientConfig config;
-    //cache meta
     @Getter
     InetSocketAddress remoteEndpoint, localEndpoint;
     volatile InetSocketAddress connectingEp;
 
     @Override
     public @NonNull ThreadPool asyncScheduler() {
-        return RpcTcpServer.SCHEDULER;
+        return TcpServer.SCHEDULER;
     }
 
     protected synchronized boolean isShouldReconnect() {
         return config.isEnableReconnect() && !isConnected();
     }
 
-    public DefaultRpcTcpClient(@NonNull TcpClientConfig config) {
+    public DefaultTcpClient(@NonNull TcpClientConfig config) {
         this.config = config;
     }
 
-    protected DefaultRpcTcpClient() {
+    protected DefaultTcpClient() {
         this.config = NULL_CONF;
     }
 
     @Override
     protected void dispose() {
-        config.setEnableReconnect(false); //import
+        config.setEnableReconnect(false);
         cancelPendingConnect(new CancellationException("client closed"));
         Sockets.closeOnFlushed(getChannel());
-//        bootstrap.config().group().shutdownGracefully();
     }
 
     @Override
@@ -182,9 +185,11 @@ public class DefaultRpcTcpClient extends AbstractTcpReconnectClient implements R
         return beginConnect(Sockets.bootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
             Sockets.addTcpClientHandler(channel, config, config.getServerEndpoint());
-            pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
-                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
-                    new ClientHandler(this));
+            TcpChannelCodec codec = config.getCodec();
+            if (codec != null) {
+                codec.install(pipeline);
+            }
+            pipeline.addLast(new ClientHandler(this));
         }));
     }
 
@@ -229,10 +234,8 @@ public class DefaultRpcTcpClient extends AbstractTcpReconnectClient implements R
     }
 
     @Override
-    public void send(@NonNull Serializable pack) {
-        // Fast path: channel is active, no locking needed — Netty's writeAndFlush is thread-safe
+    public void send(@NonNull Object pack) {
         if (!isConnected()) {
-            // Slow path: reconnect in progress; synchronize only for the reconnect check/wait
             synchronized (this) {
                 if (!isConnected()) {
                     if (isShouldReconnect()) {
@@ -248,7 +251,7 @@ public class DefaultRpcTcpClient extends AbstractTcpReconnectClient implements R
             }
         }
 
-        NEventArgs<Serializable> args = new NEventArgs<>(pack);
+        NEventArgs<Object> args = new NEventArgs<>(pack);
         raiseEvent(onSend, args);
         if (args.isCancel()) {
             return;
@@ -259,7 +262,7 @@ public class DefaultRpcTcpClient extends AbstractTcpReconnectClient implements R
     }
 
     @Override
-    public Delegate<RpcTcpClient, NEventArgs<Serializable>> onReceive() {
+    public Delegate<TcpClient, NEventArgs<Object>> onReceive() {
         return onReceive;
     }
 }

@@ -1,8 +1,12 @@
 package org.rx.net.transport;
 
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.*;
-import io.netty.handler.codec.serialization.ObjectDecoder;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -11,14 +15,19 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.*;
-import org.rx.core.StringBuilder;
+import org.rx.core.Delegate;
+import org.rx.core.Disposable;
+import org.rx.core.EventArgs;
+import org.rx.core.EventPublisher;
+import org.rx.core.Linq;
+import org.rx.core.NEventArgs;
+import org.rx.core.RunFlag;
+import org.rx.core.ThreadPool;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.transport.protocol.PingPacket;
 import org.rx.util.IdGenerator;
 
-import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.Map;
@@ -27,18 +36,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.quietly;
+import static org.rx.core.Extends.tryAs;
 
 @Slf4j
 @RequiredArgsConstructor
-public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpServer> {
+public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     @RequiredArgsConstructor
-    static class ClientImpl extends ChannelInboundHandlerAdapter implements RpcTcpClient {
-        final RpcTcpServer owner;
-        final Delegate<RpcTcpClient, NEventArgs<Serializable>> onReceive = Delegate.create();
+    static class ClientImpl extends ChannelInboundHandlerAdapter implements TcpClient {
+        final TcpServer owner;
+        final Delegate<TcpClient, NEventArgs<Object>> onReceive = Delegate.create();
         @Getter
         Channel channel;
-        //cache meta
         @Getter
         InetSocketAddress remoteEndpoint;
         boolean admitted;
@@ -49,19 +58,18 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
         }
 
         @Override
-        public void send(Serializable pack) {
+        public void send(Object pack) {
             if (!isConnected()) {
                 log.warn("Send cancelled or client {} disconnected", remoteEndpoint);
                 return;
             }
-            // dispose 之后，Remoting 等 onReceive 异步任务仍可能回写应答；此时 owner 已 closed 但子 channel 仍可 flush
             if (owner.isClosed()) {
                 channel.writeAndFlush(pack);
                 log.debug("serverWrite (server closing) {} {}", channel.remoteAddress(), pack);
                 return;
             }
 
-            TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, pack);
+            TcpServerEventArgs<Object> args = new TcpServerEventArgs<>(this, pack);
             owner.raiseEvent(owner.onSend, args);
             if (args.isCancel() || !isConnected()) {
                 log.warn("Send cancelled or client {} disconnected", remoteEndpoint);
@@ -73,7 +81,7 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
         }
 
         @Override
-        public Delegate<RpcTcpClient, NEventArgs<Serializable>> onReceive() {
+        public Delegate<TcpClient, NEventArgs<Object>> onReceive() {
             return onReceive;
         }
 
@@ -84,7 +92,6 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
-//            super.channelActive(ctx);
             channel = ctx.channel();
             log.debug("serverActive {}", channel.remoteAddress());
             TcpServerConfig config = owner.config;
@@ -99,7 +106,7 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
 
             admitted = true;
             clients.put(remoteEndpoint = (InetSocketAddress) channel.remoteAddress(), this);
-            TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, null);
+            TcpServerEventArgs<Object> args = new TcpServerEventArgs<>(this, null);
             owner.raiseEvent(owner.onConnected, args);
             if (args.isCancel()) {
                 log.warn("Force close client");
@@ -112,13 +119,7 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
             Channel channel = ctx.channel();
             log.debug("serverRead {} {}", channel.remoteAddress(), msg);
 
-            Serializable pack;
-            if ((pack = as(msg, Serializable.class)) == null) {
-                log.warn("serverRead discard");
-                Sockets.closeOnFlushed(channel);
-                return;
-            }
-            if (tryAs(pack, PingPacket.class, p -> {
+            if (tryAs(msg, PingPacket.class, p -> {
                 ctx.writeAndFlush(p);
                 owner.raiseEventAsync(owner.onPing, new TcpServerEventArgs<>(this, p));
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
@@ -126,7 +127,7 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
                 return;
             }
 
-            TcpServerEventArgs<Serializable> args = new TcpServerEventArgs<>(this, pack);
+            TcpServerEventArgs<Object> args = new TcpServerEventArgs<>(this, msg);
             raiseEvent(onReceive, args);
             owner.raiseEventAsync(owner.onReceive, args);
         }
@@ -192,13 +193,13 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
     }
 
     static final ThreadPool SCHEDULER = new ThreadPool(Sockets.ReactorNames.RPC);
-    public final Delegate<RpcTcpServer, TcpServerEventArgs<Serializable>> onConnected = Delegate.create(),
+    public final Delegate<TcpServer, TcpServerEventArgs<Object>> onConnected = Delegate.create(),
             onDisconnected = Delegate.create(),
             onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<RpcTcpServer, TcpServerEventArgs<PingPacket>> onPing = Delegate.create();
-    public final Delegate<RpcTcpServer, TcpServerEventArgs<Throwable>> onError = Delegate.create();
-    public final Delegate<RpcTcpServer, EventArgs> onClosed = Delegate.create();
+    public final Delegate<TcpServer, TcpServerEventArgs<PingPacket>> onPing = Delegate.create();
+    public final Delegate<TcpServer, TcpServerEventArgs<Throwable>> onError = Delegate.create();
+    public final Delegate<TcpServer, EventArgs> onClosed = Delegate.create();
 
     @Getter
     final TcpServerConfig config;
@@ -217,13 +218,17 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
     }
 
     @Override
-    public <TArgs> CompletableFuture<Void> raiseEventAsync(Delegate<RpcTcpServer, TArgs> event, TArgs args) {
+    public <TArgs> CompletableFuture<Void> raiseEventAsync(Delegate<TcpServer, TArgs> event, TArgs args) {
         ThreadPool scheduler = asyncScheduler();
-        return scheduler.runAsync(() -> raiseEvent(event, args), String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY.flags());
+        return scheduler.runAsync(() -> {
+            raiseEvent(event, args);
+            return null;
+        }, String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY.flags());
     }
 
-    public Map<InetSocketAddress, RpcTcpClient> getClients() {
-        return Collections.unmodifiableMap(clients);
+    @SuppressWarnings("unchecked")
+    public Map<InetSocketAddress, TcpClient> getClients() {
+        return (Map<InetSocketAddress, TcpClient>) (Map) Collections.unmodifiableMap(clients);
     }
 
     @Override
@@ -245,12 +250,13 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
             Sockets.closeBootstrap(bootstrap);
         }
         bootstrap = Sockets.serverBootstrap(config, channel -> {
-            //tcp keepalive OS level，IdleStateHandler APP level
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), 0, 0));
             Sockets.addTcpServerHandler(channel, config);
-            pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
-                    new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
-                    new ClientImpl(this));
+            TcpChannelCodec codec = config.getCodec();
+            if (codec != null) {
+                codec.install(pipeline);
+            }
+            pipeline.addLast(new ClientImpl(this));
         }).option(ChannelOption.SO_REUSEADDR, true);
         ChannelFuture bindFuture = bootstrap.bind(config.getListenPort()).syncUninterruptibly();
         if (!bindFuture.isSuccess()) {
@@ -260,9 +266,9 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
     }
 
     public String dumpClients() {
-        StringBuilder buf = new StringBuilder();
+        org.rx.core.StringBuilder buf = new org.rx.core.StringBuilder();
         int i = 1;
-        for (RpcTcpClient client : Linq.from(clients.values()).orderBy(p -> p.remoteEndpoint)) {
+        for (ClientImpl client : Linq.from(clients.values()).orderBy(p -> p.remoteEndpoint)) {
             buf.appendFormat("\t%s", client.getRemoteEndpoint());
             if (i++ % 3 == 0) {
                 buf.appendLine();
@@ -271,11 +277,11 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
         return buf.toString();
     }
 
-    public RpcTcpClient getClient(InetSocketAddress remoteEndpoint) {
+    public TcpClient getClient(InetSocketAddress remoteEndpoint) {
         return getClient(remoteEndpoint, true);
     }
 
-    public RpcTcpClient getClient(InetSocketAddress remoteEp, boolean throwOnEmpty) {
+    public TcpClient getClient(InetSocketAddress remoteEp, boolean throwOnEmpty) {
         checkNotClosed();
 
         ClientImpl handler = clients.get(remoteEp);
@@ -285,7 +291,7 @@ public class RpcTcpServer extends Disposable implements EventPublisher<RpcTcpSer
         return handler;
     }
 
-    public void send(InetSocketAddress remoteEndpoint, Serializable pack) {
+    public void send(InetSocketAddress remoteEndpoint, Object pack) {
         getClient(remoteEndpoint).send(pack);
     }
 }

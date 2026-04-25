@@ -6,24 +6,24 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.ObjectPool;
 import org.rx.core.Sys;
-import org.rx.net.transport.DefaultRpcTcpClient;
+import org.rx.net.transport.DefaultTcpClient;
 import org.rx.net.transport.TcpClientConfig;
 
 @Slf4j
 @RequiredArgsConstructor
 class RpcClientPool extends Disposable implements RpcTcpClientPool {
-    final ObjectPool<DefaultRpcTcpClient> pool;
+    final ObjectPool<DefaultTcpClient> pool;
 
     public RpcClientPool(RpcClientConfig<?> template) {
         int minIdleSize = Math.max(1, template.getMinPoolSize());
         int maxSize = Math.max(minIdleSize, template.getMaxPoolSize());
         pool = new ObjectPool<>(minIdleSize, maxSize, () -> {
             TcpClientConfig config = Sys.deepClone(template.getTcpConfig());
-            DefaultRpcTcpClient c = new DefaultRpcTcpClient(config);
+            DefaultTcpClient c = new DefaultTcpClient(config);
             c.connect(config.getServerEndpoint());
             log.debug("Create RpcClient {}", c);
             return c;
-        }, DefaultRpcTcpClient::isConnected, null, c -> {
+        }, DefaultTcpClient::isConnected, null, c -> {
             c.getConfig().setEnableReconnect(false);
             c.onError.purge();
             c.onReceive.purge();
@@ -32,6 +32,7 @@ class RpcClientPool extends Disposable implements RpcTcpClientPool {
             c.onConnected.purge();
             c.onReconnected.purge();
             c.onReconnecting.purge();
+            c.onPong.purge();
         });
         pool.setBorrowTimeout(template.getTcpConfig().getConnectTimeoutMillis());
         pool.setLeakDetectionThreshold(pool.getIdleTimeout());
@@ -44,14 +45,14 @@ class RpcClientPool extends Disposable implements RpcTcpClientPool {
 
     @SneakyThrows
     @Override
-    public DefaultRpcTcpClient borrowClient() {
+    public DefaultTcpClient borrowClient() {
         checkNotClosed();
 
         return pool.borrow();
     }
 
     @Override
-    public DefaultRpcTcpClient returnClient(DefaultRpcTcpClient client) {
+    public DefaultTcpClient returnClient(DefaultTcpClient client) {
         checkNotClosed();
 
         pool.recycle(client);

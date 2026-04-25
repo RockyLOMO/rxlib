@@ -29,6 +29,7 @@
         <bcprov.version>1.78</bcprov.version>
         <sshd.version>2.16.0</sshd.version>
         <geoip2.version>2.17.0</geoip2.version>
+        <fury.version>0.10.3</fury.version>
 
         <spring.boot.version>2.5.15</spring.boot.version>
         <spring.version>5.3.27</spring.version>
@@ -218,6 +219,11 @@
             <groupId>it.unimi.dsi</groupId>
             <artifactId>fastutil</artifactId>
             <version>8.5.18</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.fury</groupId>
+            <artifactId>fury-core</artifactId>
+            <version>${fury.version}</version>
         </dependency>
         <dependency>
             <groupId>at.yawk.lz4</groupId>

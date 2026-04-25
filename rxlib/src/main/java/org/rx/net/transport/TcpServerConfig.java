@@ -16,4 +16,5 @@ public class TcpServerConfig extends SocketConfig {
     private final int listenPort;
     private int capacity = 10000;
     private int heartbeatTimeout = 60;
+    private TcpChannelCodec codec;
 }
