@@ -47,6 +47,7 @@ import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.support.IpGeolocation;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.TcpServerConfig;
@@ -127,6 +128,7 @@ public class RssTest extends AbstractTester {
     @SneakyThrows
     @Test
     public void renderShadowUsersPage_RendersShadowUserDetails() {
+        RssClientHttpHandler.GeoLookup oldLookup = RssClientHttpHandler.geoLookup;
         ShadowUser user = new ShadowUser();
         user.setUsername("ss-rocky");
         user.setSocksUser("inner-rocky");
@@ -144,15 +146,27 @@ public class RssTest extends AbstractTester {
         loginInfo.getTotalWritePackets().set(24);
         user.getLoginIps().put(InetAddress.getByName("18.12.3.4"), loginInfo);
 
-        String html = RssClientHttpHandler.renderShadowUsersPage(Collections.singletonMap(user.getUsername(), user));
+        try {
+            RssClientHttpHandler.geoLookup = new RssClientHttpHandler.GeoLookup() {
+                @Override
+                public IpGeolocation resolve(String ip) {
+                    return new IpGeolocation("United States", "US", "US");
+                }
+            };
 
-        assertTrue(html.contains("RSS SS 用户信息"));
-        assertTrue(html.contains(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH));
-        assertTrue(html.contains("ss-rocky"));
-        assertTrue(html.contains("inner-rocky"));
-        assertTrue(html.contains("18.12.3.4"));
-        assertTrue(html.contains("2.0KB"));
-        assertTrue(html.contains("4.0KB"));
+            String html = RssClientHttpHandler.renderShadowUsersPage(Collections.singletonMap(user.getUsername(), user));
+
+            assertTrue(html.contains("RSS SS 用户信息"));
+            assertTrue(html.contains(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH));
+            assertTrue(html.contains("ss-rocky"));
+            assertTrue(html.contains("inner-rocky"));
+            assertTrue(html.contains("18.12.3.4"));
+            assertTrue(html.contains("United States (US)"));
+            assertTrue(html.contains("2.0KB"));
+            assertTrue(html.contains("4.0KB"));
+        } finally {
+            RssClientHttpHandler.geoLookup = oldLookup;
+        }
     }
 
     @Test

@@ -21,6 +21,7 @@ import org.springframework.core.env.Environment;
 import java.io.File;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.newConcurrentList;
@@ -67,6 +68,7 @@ public final class RxConfig {
 
         String DIAGNOSTIC_ENABLED = "app.diagnostic.enabled";
         String DIAGNOSTIC_LEVEL = "app.diagnostic.level";
+        String DIAGNOSTIC_RETENTION_DAYS = "app.diagnostic.retentionDays";
         String DIAGNOSTIC_SAMPLE_INTERVAL_MILLIS = "app.diagnostic.sample.intervalMillis";
         String DIAGNOSTIC_RING_BUFFER_MAX_SAMPLES = "app.diagnostic.ringBuffer.maxSamples";
         String DIAGNOSTIC_H2_ENABLED = "app.diagnostic.h2.enabled";
@@ -232,6 +234,7 @@ public final class RxConfig {
     public static class DiagnosticConfig {
         boolean enabled = true;
         DiagnosticLevel level = DiagnosticLevel.LIGHT;
+        int retentionDays = 2;
         long sampleIntervalMillis = 15000L;
         int ringBufferMaxSamples = 4096;
 
@@ -243,13 +246,13 @@ public final class RxConfig {
         int h2BatchSize = 128;
         int h2QueueSize = 8192;
         long h2FlushIntervalMillis = 1000L;
-        long h2TtlMillis = 3L * 24L * 60L * 60L * 1000L;
+        long h2TtlMillis;
         long h2MaxBytes = 256L * 1024L * 1024L;
         long h2FailureDegradeMillis = 60000L;
 
         File diagnosticsDirectory = new File(".", "rx-diagnostic");
         long diagnosticsMaxBytes = 1024L * 1024L * 1024L;
-        long diagnosticsTtlMillis = 3L * 24L * 60L * 60L * 1000L;
+        long diagnosticsTtlMillis;
         long evidenceMinFreeBytes = 64L * 1024L * 1024L;
         long jfrMinFreeBytes = 256L * 1024L * 1024L;
         long heapDumpMinFreeBytes = 2L * 1024L * 1024L * 1024L;
@@ -301,6 +304,7 @@ public final class RxConfig {
         boolean nativeMemoryTrackingEnabled = true;
 
         public void normalize() {
+            retentionDays = Math.max(1, retentionDays);
             sampleIntervalMillis = positive(sampleIntervalMillis, 15000L);
             ringBufferMaxSamples = Math.max(16, ringBufferMaxSamples);
             if (h2Settings == null) {
@@ -310,6 +314,8 @@ public final class RxConfig {
             h2BatchSize = Math.max(1, h2BatchSize);
             h2QueueSize = Math.max(h2BatchSize, h2QueueSize);
             h2FlushIntervalMillis = positive(h2FlushIntervalMillis, 1000L);
+            long retentionMillis = TimeUnit.DAYS.toMillis(retentionDays);
+            h2TtlMillis = h2TtlMillis > 0L ? h2TtlMillis : retentionMillis;
             h2MaxBytes = Math.max(0L, h2MaxBytes);
             h2FailureDegradeMillis = Math.max(0L, h2FailureDegradeMillis);
             if (diagnosticsDirectory == null) {
@@ -319,7 +325,7 @@ public final class RxConfig {
                 h2File = new File(diagnosticsDirectory, "rx-diagnostic");
             }
             diagnosticsMaxBytes = Math.max(0L, diagnosticsMaxBytes);
-            diagnosticsTtlMillis = Math.max(0L, diagnosticsTtlMillis);
+            diagnosticsTtlMillis = diagnosticsTtlMillis > 0L ? diagnosticsTtlMillis : retentionMillis;
             evidenceMinFreeBytes = Math.max(0L, evidenceMinFreeBytes);
             jfrMinFreeBytes = Math.max(0L, jfrMinFreeBytes);
             heapDumpMinFreeBytes = Math.max(0L, heapDumpMinFreeBytes);
@@ -641,6 +647,7 @@ public final class RxConfig {
 
         diagnostic.enabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_ENABLED, diagnostic.enabled);
         diagnostic.level = getEnum(ConfigNames.DIAGNOSTIC_LEVEL, diagnostic.level);
+        diagnostic.retentionDays = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_RETENTION_DAYS, diagnostic.retentionDays);
         diagnostic.sampleIntervalMillis = SystemPropertyUtil.getLong(ConfigNames.DIAGNOSTIC_SAMPLE_INTERVAL_MILLIS, diagnostic.sampleIntervalMillis);
         diagnostic.ringBufferMaxSamples = SystemPropertyUtil.getInt(ConfigNames.DIAGNOSTIC_RING_BUFFER_MAX_SAMPLES, diagnostic.ringBufferMaxSamples);
         diagnostic.h2Enabled = SystemPropertyUtil.getBoolean(ConfigNames.DIAGNOSTIC_H2_ENABLED, diagnostic.h2Enabled);

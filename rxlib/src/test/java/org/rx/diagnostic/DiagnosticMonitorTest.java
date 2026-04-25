@@ -37,8 +37,11 @@ public class DiagnosticMonitorTest {
         config.normalize();
         assertEquals(new File(".", "rx-diagnostic").getPath(), config.getDiagnosticsDirectory().getPath());
         assertEquals(new File(".", "rx-diagnostic").getPath(), config.getH2File().getPath());
+        assertEquals(2, config.getRetentionDays());
         assertEquals("CACHE_SIZE=2048;MAX_MEMORY_ROWS=512;MAX_OPERATION_MEMORY=1024;WRITE_DELAY=500", config.getH2Settings());
         assertEquals(2, config.getH2MaxConnections());
+        assertEquals(TimeUnit.DAYS.toMillis(2), config.getH2TtlMillis());
+        assertEquals(TimeUnit.DAYS.toMillis(2), config.getDiagnosticsTtlMillis());
     }
 
     @Test

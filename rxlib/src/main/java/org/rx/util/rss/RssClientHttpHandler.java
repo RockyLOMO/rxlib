@@ -12,6 +12,8 @@ import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
 import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficLoginInfo;
+import org.rx.net.support.GeoManager;
+import org.rx.net.support.IpGeolocation;
 import org.rx.util.rss.RssUserTrafficStore.LoginIpTrafficSummary;
 import org.rx.util.rss.RssUserTrafficStore.ProtocolTrafficSummary;
 import org.rx.util.rss.RssUserTrafficStore.UserTrafficSummary;
@@ -89,6 +91,12 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             return leftIp.compareTo(rightIp);
         }
     };
+    static volatile GeoLookup geoLookup = new GeoLookup() {
+        @Override
+        public IpGeolocation resolve(String ip) {
+            return GeoManager.INSTANCE.resolveIp(ip);
+        }
+    };
 
     static final class Query {
         long fromMillis;
@@ -97,16 +105,26 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         String toValue;
     }
 
+    interface GeoLookup {
+        IpGeolocation resolve(String ip);
+    }
+
     private final Map<String, ShadowUser> shadowStore;
     private final RssUserTrafficStore trafficStore;
+    private final int memoryRetentionHours;
 
     public RssClientHttpHandler(Map<String, ShadowUser> shadowStore) {
-        this(shadowStore, null);
+        this(shadowStore, null, 24);
     }
 
     public RssClientHttpHandler(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore) {
+        this(shadowStore, trafficStore, 24);
+    }
+
+    public RssClientHttpHandler(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, int memoryRetentionHours) {
         this.shadowStore = shadowStore;
         this.trafficStore = trafficStore;
+        this.memoryRetentionHours = Math.max(1, memoryRetentionHours);
     }
 
     @Override
@@ -129,19 +147,29 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             response.htmlBody(page("Authorization required", "<p>Use Basic Auth: <code>rxlib</code> / <code>app.rtoken</code>.</p>"));
             return;
         }
-        response.htmlBody(renderShadowUsersPage(shadowStore, trafficStore, parseQuery(request)));
+        response.htmlBody(renderShadowUsersPage(shadowStore, trafficStore, parseQuery(request), effectiveMemoryRetentionHours(memoryRetentionHours)));
     }
 
     static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore) {
+        return renderShadowUsersPage(shadowStore, 24);
+    }
+
+    static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, int memoryRetentionHours) {
         Query query = new Query();
         query.toMillis = System.currentTimeMillis();
         query.fromMillis = query.toMillis - DEFAULT_QUERY_RANGE_MILLIS;
         query.fromValue = formatQueryTime(query.fromMillis);
         query.toValue = formatQueryTime(query.toMillis);
-        return renderShadowUsersPage(shadowStore, null, query);
+        return renderShadowUsersPage(shadowStore, null, query, memoryRetentionHours);
     }
 
     static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, Query query) {
+        return renderShadowUsersPage(shadowStore, trafficStore, query, 24);
+    }
+
+    static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, Query query, int memoryRetentionHours) {
+        int effectiveMemoryRetentionHours = effectiveMemoryRetentionHours(memoryRetentionHours);
+        int effectiveRetentionDays = trafficStore == null ? 0 : trafficStore.retentionDays();
         List<UserTrafficSummary> historyUsers = trafficStore == null ? Collections.<UserTrafficSummary>emptyList()
                 : trafficStore.queryUserSummaries(query.fromMillis, query.toMillis);
         List<ProtocolTrafficSummary> protocolSummaries = trafficStore == null ? Collections.<ProtocolTrafficSummary>emptyList()
@@ -164,10 +192,11 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         vars.put("queryFrom", query.fromValue);
         vars.put("queryTo", query.toValue);
         vars.put("selectedRange", formatDateTime(new Date(query.fromMillis)) + " - " + formatDateTime(new Date(query.toMillis)));
-        vars.put("h2RetentionDays", trafficStore == null ? 0 : trafficStore.retentionDays());
-        vars.put("memoryResetPolicy", "内存快照每天清理 2 天未活跃 IP；每月 1 日重置累计字节、包数与活跃时长。");
+        vars.put("h2RetentionDays", effectiveRetentionDays);
+        vars.put("memoryRetentionHours", effectiveMemoryRetentionHours);
+        vars.put("memoryResetPolicy", "内存快照仅保留近 " + effectiveMemoryRetentionHours + " 小时未活跃 IP；实时累计值会随过期 IP 自然淘汰，不再做额外月度清零。");
         vars.put("stats", buildStats(userRows.size(), protocolRows.size(), loginIpRows.size(), liveIpRows.size(),
-                historyUsers, query, trafficStore));
+                historyUsers, query, trafficStore, effectiveMemoryRetentionHours));
         vars.put("hasHistoryUsers", !userRows.isEmpty());
         vars.put("historyUsers", userRows);
         vars.put("hasAnyUsers", !userRows.isEmpty() || !liveIpRows.isEmpty());
@@ -185,7 +214,8 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     }
 
     private static List<Map<String, Object>> buildStats(int userCount, int protocolRowCount, int historyIpCount, int liveIpCount,
-                                                        List<UserTrafficSummary> historyUsers, Query query, RssUserTrafficStore trafficStore) {
+                                                        List<UserTrafficSummary> historyUsers, Query query, RssUserTrafficStore trafficStore,
+                                                        int memoryRetentionHours) {
         long totalReadBytes = 0L;
         long totalWriteBytes = 0L;
         long totalReadPackets = 0L;
@@ -201,11 +231,13 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             totalSessions += row.getSessionCount();
         }
 
-        List<Map<String, Object>> stats = new ArrayList<Map<String, Object> >(6);
+        List<Map<String, Object>> stats = new ArrayList<Map<String, Object> >(7);
         stats.add(summaryItem("查询范围", formatDateTime(new Date(query.fromMillis)) + " - " + formatDateTime(new Date(query.toMillis)),
                 "默认近 1 个月，历史数据按 H2 查询。"));
         stats.add(summaryItem("H2 保留期", trafficStore == null ? "-" : trafficStore.retentionDays() + " 天",
                 "超出保留期的小时聚合数据会自动清理。"));
+        stats.add(summaryItem("内存保留期", Math.max(1, memoryRetentionHours) + " 小时",
+                "仅保留近窗口内仍活跃或最近活跃的登录 IP。"));
         stats.add(summaryItem("历史用户数", userCount, "H2 中命中的用户聚合数量。"));
         stats.add(summaryItem("历史下行/上行", Bytes.readableByteSize(totalReadBytes) + " / " + Bytes.readableByteSize(totalWriteBytes),
                 "按所选时间范围聚合的总流量。"));
@@ -286,6 +318,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             row.put("socksUser", shadowUser == null || Strings.isEmpty(shadowUser.getSocksUser()) ? "-" : shadowUser.getSocksUser());
             row.put("ssPort", shadowUser == null ? "-" : shadowUser.getSsPort());
             row.put("ip", summary.getRemoteIp());
+            row.put("geo", formatGeo(summary.getRemoteIp()));
             row.put("latestTime", formatDateTime(summary.getLatestTime()));
             row.put("activeDuration", formatDurationSeconds(summary.getActiveSeconds()));
             row.put("avgReadSpeed", formatSpeed(summary.getReadBytes(), summary.getActiveSeconds()));
@@ -327,6 +360,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
                 row.put("socksUser", Strings.isEmpty(user.getSocksUser()) ? "-" : user.getSocksUser());
                 row.put("ssPort", user.getSsPort());
                 row.put("ip", entry.getKey() == null ? "" : entry.getKey().getHostAddress());
+                row.put("geo", formatGeo(entry.getKey() == null ? null : entry.getKey().getHostAddress()));
                 row.put("latestTime", formatDateTime(info == null ? null : info.getLatestTime()));
                 row.put("currentConnections", info == null ? 0 : info.getRefCnt().get());
                 row.put("activeDuration", formatDurationSeconds(activeSeconds));
@@ -340,6 +374,48 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             }
         }
         return rows;
+    }
+
+    private static String formatGeo(String ip) {
+        if (Strings.isEmpty(ip)) {
+            return "-";
+        }
+        IpGeolocation geo = safeResolveGeo(ip);
+        if (geo == null) {
+            return "-";
+        }
+        String country = Strings.isEmpty(geo.getCountry()) ? "" : geo.getCountry();
+        String code = Strings.isEmpty(geo.getCountryCode()) ? "" : geo.getCountryCode();
+        String category = Strings.isEmpty(geo.getCategory()) ? "" : geo.getCategory();
+        if (!country.isEmpty()) {
+            if (!code.isEmpty() && !country.equalsIgnoreCase(code)) {
+                return country + " (" + code + ")";
+            }
+            return country;
+        }
+        if ("private".equalsIgnoreCase(category)) {
+            return "内网";
+        }
+        if ("unknown".equalsIgnoreCase(category)) {
+            return "未知";
+        }
+        if ("notReady".equalsIgnoreCase(category)) {
+            return "GeoIP加载中";
+        }
+        return category.isEmpty() ? "-" : category;
+    }
+
+    private static IpGeolocation safeResolveGeo(String ip) {
+        try {
+            return geoLookup == null ? null : geoLookup.resolve(ip);
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    private static int effectiveMemoryRetentionHours(int configuredHours) {
+        RSSConf conf = RssClient.rssConf;
+        return conf != null ? Math.max(1, conf.memoryRetentionHours) : Math.max(1, configuredHours);
     }
 
     private Query parseQuery(ServerRequest request) {

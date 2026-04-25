@@ -14,6 +14,7 @@ import java.net.InetAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Extends.eq;
 
@@ -24,9 +25,16 @@ public class RssAuthenticator implements Authenticator {
     private final Map<String, SocksUser> socksStore = new ConcurrentHashMap<>();
     @Getter
     private final String socksPassword;
+    @Getter
+    private final int memoryRetentionHours;
 
     public RssAuthenticator(List<ShadowUser> shadowUsers, String socksPassword) {
+        this(shadowUsers, socksPassword, 24);
+    }
+
+    public RssAuthenticator(List<ShadowUser> shadowUsers, String socksPassword, int memoryRetentionHours) {
         this.socksPassword = socksPassword;
+        this.memoryRetentionHours = Math.max(1, memoryRetentionHours);
         for (ShadowUser shadowUser : shadowUsers) {
             if (shadowUser == null) {
                 continue;
@@ -51,13 +59,8 @@ public class RssAuthenticator implements Authenticator {
             }
         }
 
-        Tasks.scheduleDaily(() -> {
-            resetIp();
-
-            if (DateTime.now().getDay() == 1) {
-                resetData();
-            }
-        }, "01:00:00");
+        resetIp();
+        Tasks.schedulePeriod(this::resetIp, TimeUnit.HOURS.toMillis(1));
     }
 
     private void validateShadowUser(ShadowUser shadowUser) {
@@ -105,28 +108,24 @@ public class RssAuthenticator implements Authenticator {
     }
 
     public void resetIp() {
+        DateTime now = DateTime.now();
+        DateTime expireBefore = now.addHours(-currentMemoryRetentionHours());
         for (ShadowUser user : shadowStore.values()) {
             Map<InetAddress, TrafficLoginInfo> loginIps = user.getLoginIps();
             for (Map.Entry<InetAddress, TrafficLoginInfo> lEntry : loginIps.entrySet()) {
-                DateTime latestTime = lEntry.getValue().getLatestTime();
-                if (latestTime != null && latestTime.before(DateTime.now().addDays(-2))) {
+                TrafficLoginInfo info = lEntry.getValue();
+                DateTime latestTime = info.getLatestTime();
+                if (info.getRefCnt().get() <= 0 && (latestTime == null || latestTime.before(expireBefore))) {
                     loginIps.remove(lEntry.getKey());
                 }
             }
+            user.setLastResetTime(expireBefore);
         }
     }
 
-    public void resetData() {
-        DateTime now = DateTime.now();
-        for (ShadowUser user : shadowStore.values()) {
-            for (TrafficLoginInfo l : user.getLoginIps().values()) {
-                l.getTotalReadBytes().set(0);
-                l.getTotalWriteBytes().set(0);
-                l.getTotalReadPackets().set(0);
-                l.getTotalWritePackets().set(0);
-                l.getTotalActiveSeconds().set(0);
-            }
-            user.setLastResetTime(now);
-        }
+    private int currentMemoryRetentionHours() {
+        RSSConf conf = RssClient.rssConf;
+        return conf != null ? Math.max(1, conf.memoryRetentionHours) : memoryRetentionHours;
     }
+
 }

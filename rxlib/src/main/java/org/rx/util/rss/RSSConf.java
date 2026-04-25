@@ -30,6 +30,8 @@ public class RSSConf {
     public int rpcAutoWhiteListSeconds = 120;
     public int shadowDnsPort = 753;
     public int dnsTtlMinutes = 600;
+    public int trafficRetentionDays = 60;
+    public int memoryRetentionHours = 24;
 
     // rrp
     public String rrpToken;

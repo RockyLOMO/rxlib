@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.LongAdder;
 public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoCloseable {
     static final long ONE_HOUR_MILLIS = 60L * 60L * 1000L;
     static final long DEFAULT_FLUSH_PERIOD_MILLIS = 60L * 1000L;
-    static final int DEFAULT_RETENTION_DAYS = 15;
+    static final int DEFAULT_RETENTION_DAYS = 60;
 
     @Data
     public static class HourlyTrafficEntity implements Serializable {
@@ -157,13 +157,19 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
     }
 
     private final EntityDatabase db;
+    private final int retentionDays;
     private final AtomicReference<Map<String, Counter>> counters = new AtomicReference<>(new ConcurrentHashMap<String, Counter>());
     private final AtomicReference<Map<String, LoginIpCounter>> loginIpCounters = new AtomicReference<>(new ConcurrentHashMap<String, LoginIpCounter>());
     private volatile ScheduledFuture<?> flushTask;
     private volatile long lastCleanupHourEpoch = Long.MIN_VALUE;
 
     public RssUserTrafficStore(EntityDatabase db) {
+        this(db, DEFAULT_RETENTION_DAYS);
+    }
+
+    public RssUserTrafficStore(EntityDatabase db, int retentionDays) {
         this.db = db != null ? db : EntityDatabase.DEFAULT;
+        this.retentionDays = Math.max(1, retentionDays);
         this.db.createMapping(HourlyTrafficEntity.class, HourlyLoginIpTrafficEntity.class);
     }
 
@@ -344,7 +350,7 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
     }
 
     public int retentionDays() {
-        return DEFAULT_RETENTION_DAYS;
+        return currentRetentionDays();
     }
 
     public List<UserTrafficSummary> queryUserSummaries(long fromMillis, long toMillis) {
@@ -483,7 +489,7 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
     }
 
     void cleanupExpired() {
-        long expireBeforeHour = System.currentTimeMillis() / ONE_HOUR_MILLIS - DEFAULT_RETENTION_DAYS * 24L;
+        long expireBeforeHour = System.currentTimeMillis() / ONE_HOUR_MILLIS - currentRetentionDays() * 24L;
         String trafficTable = db.tableName(HourlyTrafficEntity.class);
         String loginIpTable = db.tableName(HourlyLoginIpTrafficEntity.class);
         db.executeUpdate(String.format("DELETE FROM %s WHERE hour_epoch < %s", trafficTable, expireBeforeHour));
@@ -540,5 +546,10 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
         }
         String hostString = remoteAddress.getHostString();
         return hostString == null || hostString.length() == 0 ? null : hostString;
+    }
+
+    private int currentRetentionDays() {
+        RSSConf conf = RssClient.rssConf;
+        return conf != null ? Math.max(1, conf.trafficRetentionDays) : retentionDays;
     }
 }

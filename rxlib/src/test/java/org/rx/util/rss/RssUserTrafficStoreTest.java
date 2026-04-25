@@ -15,6 +15,7 @@ public class RssUserTrafficStoreTest extends AbstractTester {
         EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/rss_user_traffic"), null);
         try {
             RssUserTrafficStore store = new RssUserTrafficStore(db);
+            assertEquals(60, store.retentionDays());
             ShadowUser user = new ShadowUser();
             user.setUsername("rocky");
             user.setSocksUser("socks-rocky");
@@ -33,6 +34,24 @@ public class RssUserTrafficStoreTest extends AbstractTester {
             assertEquals(3L, entity.getReadPackets());
             assertEquals(4L, entity.getWritePackets());
         } finally {
+            db.dropMapping(RssUserTrafficStore.HourlyTrafficEntity.class);
+            db.close();
+        }
+    }
+
+    @Test
+    public void retentionDaysUsesCurrentRssConfig() {
+        RSSConf oldConf = RssClient.rssConf;
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/rss_user_traffic_retention"), null);
+        try {
+            RssUserTrafficStore store = new RssUserTrafficStore(db, 60);
+            RSSConf conf = new RSSConf();
+            conf.trafficRetentionDays = 7;
+            RssClient.rssConf = conf;
+
+            assertEquals(7, store.retentionDays());
+        } finally {
+            RssClient.rssConf = oldConf;
             db.dropMapping(RssUserTrafficStore.HourlyTrafficEntity.class);
             db.close();
         }
