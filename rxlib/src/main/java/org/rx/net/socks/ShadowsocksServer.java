@@ -16,6 +16,8 @@ import org.rx.util.function.TripleAction;
 import org.rx.core.RxConfig;
 import org.rx.core.Constants;
 
+import java.util.List;
+
 //@Slf4j
 public class ShadowsocksServer extends Disposable implements EventPublisher<ShadowsocksServer> {
     public static final TripleAction<ShadowsocksServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
@@ -25,6 +27,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
     final ShadowsocksConfig config;
     final ServerBootstrap bootstrap;
     final Channel udpChannel;
+    final List<Channel> udpChannels;
     private static EventExecutorGroup SHARED_CRYPTO_GROUP;
 
     private static synchronized EventExecutorGroup sharedCryptoGroup() {
@@ -53,10 +56,10 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
                 channel.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
             }
         });
-        bootstrap.attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint());
+        Sockets.bindChannels(bootstrap.attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
 
         //udp server
-        udpChannel = Sockets.udpBootstrap(config, ctx -> {
+        udpChannels = Sockets.bindChannels(Sockets.udpBootstrap(config, ctx -> {
             ICrypto _crypto = ICrypto.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(true);
             ctx.attr(ShadowsocksConfig.CIPHER).set(_crypto);
@@ -66,12 +69,15 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             } else {
                 ctx.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
             }
-        }).attr(ShadowsocksConfig.SVR, this).bind(config.getServerEndpoint()).channel();
+        }).attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
+        udpChannel = udpChannels.get(0);
     }
 
     @Override
     protected void dispose() {
         Sockets.closeBootstrap(bootstrap);
-        udpChannel.close();
+        for (Channel channel : udpChannels) {
+            channel.close();
+        }
     }
 }
