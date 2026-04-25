@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.bean.$.$;
@@ -83,6 +84,7 @@ public final class Remoting {
     static final Map<RpcClientConfig, RpcTcpClientPool> clientPools = new ConcurrentHashMap<>();
     static final IdGenerator generator = new IdGenerator();
     static final Map<DefaultRpcTcpClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<>();
+    static final Map<DefaultRpcTcpClient, AtomicInteger> clientRefCounts = new ConcurrentHashMap<>();
 
     @SneakyThrows
     public static <T> T createFacade(@NonNull Class<T> contract, @NonNull RpcClientConfig<T> config) {
@@ -97,6 +99,7 @@ public final class Remoting {
                 synchronized (sync) {
                     if (sync.v != null) {
                         clientBeans.remove(sync.v);
+                        clientRefCounts.remove(sync.v);
                         sync.v.close();
                         sync.v = null;
                     }
@@ -213,7 +216,11 @@ public final class Remoting {
                     pool.returnClient(candidate);
                 }
             }
-            DefaultRpcTcpClient client = sync.v;
+            DefaultRpcTcpClient client;
+            synchronized (sync) {
+                client = sync.v;
+                retainClient(client);
+            }
             AtomicReference<Map<Integer, ClientBean>> waitBeans = new AtomicReference<>();
 
             MethodMessage methodMessage = as(pack, MethodMessage.class);
@@ -276,9 +283,9 @@ public final class Remoting {
                 Map<Integer, ClientBean> wb = waitBeans.get();
                 if (wb != null) {
                     wb.remove(clientBean.pack.id);
-                    if (wb.isEmpty()) {
-                        recycleClient(pool, sync, client);
-                    }
+                }
+                if (releaseClient(client) && (wb == null || wb.isEmpty())) {
+                    recycleClient(pool, sync, client);
                 }
             }
             return clientBean.pack != null ? clientBean.pack.returnValue : null;
@@ -292,6 +299,7 @@ public final class Remoting {
             DefaultRpcTcpClient c = (DefaultRpcTcpClient) s;
             if (!c.getConfig().isEnableReconnect()) {
                 clientBeans.remove(c);
+                clientRefCounts.remove(c);
             }
         });
         client.onReceive.combine((s, e) -> {
@@ -331,6 +339,31 @@ public final class Remoting {
 
     private static Map<Integer, ClientBean> getClientBeans(DefaultRpcTcpClient client) {
         return clientBeans.computeIfAbsent(client, k -> new ConcurrentHashMap<>());
+    }
+
+    private static void retainClient(DefaultRpcTcpClient client) {
+        if (client == null) {
+            return;
+        }
+        clientRefCounts.computeIfAbsent(client, k -> new AtomicInteger()).incrementAndGet();
+    }
+
+    private static boolean releaseClient(DefaultRpcTcpClient client) {
+        if (client == null) {
+            return true;
+        }
+
+        AtomicInteger ref = clientRefCounts.get(client);
+        if (ref == null) {
+            return true;
+        }
+
+        int remain = ref.decrementAndGet();
+        if (remain > 0) {
+            return false;
+        }
+        clientRefCounts.remove(client, ref);
+        return true;
     }
 
     private static void recycleClient(RpcTcpClientPool pool, $<DefaultRpcTcpClient> sync, DefaultRpcTcpClient client) {

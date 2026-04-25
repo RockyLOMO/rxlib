@@ -1,6 +1,5 @@
 package org.rx.net.transport;
 
-import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.handler.codec.serialization.ObjectDecoder;
 import io.netty.handler.timeout.IdleStateEvent;
@@ -18,6 +17,7 @@ import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -28,7 +28,7 @@ import java.util.concurrent.TimeoutException;
 import static org.rx.core.Extends.*;
 
 @Slf4j
-public class DefaultRpcTcpClient extends Disposable implements RpcTcpClient {
+public class DefaultRpcTcpClient extends AbstractTcpReconnectClient implements RpcTcpClient {
     @RequiredArgsConstructor
     static class ClientHandler extends ChannelInboundHandlerAdapter {
         final DefaultRpcTcpClient owner;
@@ -121,21 +121,11 @@ public class DefaultRpcTcpClient extends Disposable implements RpcTcpClient {
     //cache meta
     @Getter
     InetSocketAddress remoteEndpoint, localEndpoint;
-    Bootstrap bootstrap;
-    volatile CompletableFuture<Void> connectPromise;
-    @Getter
-    volatile Channel channel;
-    volatile ChannelFuture connectingFuture;
     volatile InetSocketAddress connectingEp;
 
     @Override
     public @NonNull ThreadPool asyncScheduler() {
         return RpcTcpServer.SCHEDULER;
-    }
-
-    public boolean isConnected() {
-        Channel c = channel;
-        return c != null && c.isActive();
     }
 
     protected synchronized boolean isShouldReconnect() {
@@ -153,11 +143,8 @@ public class DefaultRpcTcpClient extends Disposable implements RpcTcpClient {
     @Override
     protected void dispose() {
         config.setEnableReconnect(false); //import
-        CompletableFuture<Void> promise = connectPromise;
-        if (promise != null && !promise.isDone()) {
-            promise.completeExceptionally(new CancellationException("client closed"));
-        }
-        Sockets.closeOnFlushed(channel);
+        cancelPendingConnect(new CancellationException("client closed"));
+        Sockets.closeOnFlushed(getChannel());
 //        bootstrap.config().group().shutdownGracefully();
     }
 
@@ -181,11 +168,7 @@ public class DefaultRpcTcpClient extends Disposable implements RpcTcpClient {
     }
 
     private synchronized CompletableFuture<Void> beginConnect(@NonNull InetSocketAddress remoteEp) {
-        if (isConnected()) {
-            throw new InvalidException("{} has connected", this);
-        }
-
-        CompletableFuture<Void> promise = connectPromise;
+        CompletableFuture<Void> promise = currentConnectPromise();
         InetSocketAddress currentEp = config.getServerEndpoint();
         if (promise != null && !promise.isDone()) {
             if (currentEp != null && !currentEp.equals(remoteEp)) {
@@ -196,25 +179,13 @@ public class DefaultRpcTcpClient extends Disposable implements RpcTcpClient {
 
         config.setReactorName(Sockets.ReactorNames.RPC);
         config.setServerEndpoint(remoteEp);
-        bootstrap = Sockets.bootstrap(config, channel -> {
+        return beginConnect(Sockets.bootstrap(config, channel -> {
             ChannelPipeline pipeline = channel.pipeline().addLast(new IdleStateHandler(config.getHeartbeatTimeout(), config.getHeartbeatTimeout() / 2, 0));
             Sockets.addTcpClientHandler(channel, config, config.getServerEndpoint());
             pipeline.addLast(TcpClientConfig.DEFAULT_ENCODER,
                     new ObjectDecoder(Constants.MAX_HEAP_BUF_SIZE, TcpClientConfig.DEFAULT_CLASS_RESOLVER),
                     new ClientHandler(this));
-        });
-        connectPromise = promise = new CompletableFuture<Void>() {
-            @Override
-            public boolean cancel(boolean mayInterruptIfRunning) {
-                ChannelFuture f = connectingFuture;
-                if (f != null) {
-                    f.cancel(mayInterruptIfRunning);
-                }
-                return super.cancel(mayInterruptIfRunning);
-            }
-        };
-        doConnect(false);
-        return promise;
+        }));
     }
 
     @Override
@@ -222,68 +193,39 @@ public class DefaultRpcTcpClient extends Disposable implements RpcTcpClient {
         return beginConnect(remoteEp);
     }
 
-    private void completeConnectSuccess() {
-        CompletableFuture<Void> promise = connectPromise;
-        if (promise != null && !promise.isDone()) {
-            promise.complete(null);
-        }
-    }
-
-    private void completeConnectFailure(Throwable cause) {
-        CompletableFuture<Void> promise = connectPromise;
-        if (promise != null && !promise.isDone()) {
-            promise.completeExceptionally(cause);
-        }
-    }
-
-    synchronized void doConnect(boolean reconnect) {
-        InetSocketAddress ep;
+    @Override
+    protected SocketAddress resolveConnectEndpoint(boolean reconnect) {
         if (reconnect) {
-            if (!isShouldReconnect()) {
-                return;
-            }
-
             NEventArgs<InetSocketAddress> args = new NEventArgs<>(ifNull(connectingEp, config.getServerEndpoint()));
             raiseEvent(onReconnecting, args);
-            ep = connectingEp = args.getValue();
-        } else {
-            ep = config.getServerEndpoint();
+            return connectingEp = args.getValue();
         }
-
-        connectingFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
-            channel = f.channel();
-            connectingFuture = null;
-            if (!f.isSuccess()) {
-                Throwable cause = f.cause();
-                if (isShouldReconnect()) {
-                    Tasks.timer().setTimeout(() -> {
-                        doConnect(true);
-                        circuitContinue(isShouldReconnect());
-                    }, d -> {
-                        long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
-                        log.warn("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);
-                        return delay;
-                    }, this, Constants.TIMER_SINGLE_FLAG);
-                } else {
-                    log.warn("{} {} {} fail", this, reconnect ? "reconnect" : "connect", ep);
-                    completeConnectFailure(cause == null ? new InvalidException("{} {} {} fail", this, reconnect ? "reconnect" : "connect", ep) : cause);
-                }
-                return;
-            }
-            connectingEp = null;
-            config.setServerEndpoint(ep);
-            remoteEndpoint = (InetSocketAddress) channel.remoteAddress();
-            localEndpoint = (InetSocketAddress) channel.localAddress();
-            completeConnectSuccess();
-            if (reconnect) {
-                log.info("{} reconnect {} ok", this, ep);
-                raiseEvent(onReconnected, new NEventArgs<>(ep));
-            }
-        });
+        return config.getServerEndpoint();
     }
 
-    void reconnectAsync() {
-        Tasks.setTimeout(() -> doConnect(true), 1000, bootstrap, Constants.TIMER_REPLACE_FLAG);
+    @Override
+    protected void onConnectSuccess(SocketAddress endpoint, boolean reconnect, Channel channel) {
+        InetSocketAddress ep = (InetSocketAddress) endpoint;
+        connectingEp = null;
+        config.setServerEndpoint(ep);
+        remoteEndpoint = (InetSocketAddress) channel.remoteAddress();
+        localEndpoint = (InetSocketAddress) channel.localAddress();
+        if (!reconnect) {
+            return;
+        }
+
+        log.info("{} reconnect {} ok", this, ep);
+        raiseEvent(onReconnected, new NEventArgs<>(ep));
+    }
+
+    @Override
+    protected void onConnectFailure(SocketAddress endpoint, boolean reconnect, Throwable cause) {
+        log.warn("{} {} {} fail", this, reconnect ? "reconnect" : "connect", endpoint);
+    }
+
+    @Override
+    protected void onReconnectRetry(SocketAddress endpoint, long delayMs) {
+        log.warn("{} reconnect {} failed will re-attempt in {}ms", this, endpoint, delayMs);
     }
 
     @Override
