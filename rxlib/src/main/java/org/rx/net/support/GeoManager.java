@@ -121,7 +121,7 @@ public class GeoManager {
         return r.getPublicIp();
     }
 
-    private static final IpGeolocation NOT_READY = new IpGeolocation(null, null, "notReady");
+    private static final IpGeolocation NOT_READY = new IpGeolocation(null, null, null, "notReady");
 
     public IpGeolocation resolveIp(String ip) {
         ensureLoaded();
@@ -130,6 +130,11 @@ public class GeoManager {
             return NOT_READY;
         }
         return r.lookup(ip);
+    }
+
+    public String resolveCity(String ip) {
+        IpGeolocation geolocation = resolveIp(ip);
+        return geolocation == null ? null : geolocation.getCity();
     }
 
     public boolean matchSiteDirect(String domain) {

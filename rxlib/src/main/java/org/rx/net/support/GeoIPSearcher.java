@@ -4,7 +4,9 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.maxmind.db.CHMCache;
 import com.maxmind.db.Reader;
 import com.maxmind.geoip2.DatabaseReader;
+import com.maxmind.geoip2.model.CityResponse;
 import com.maxmind.geoip2.model.CountryResponse;
+import com.maxmind.geoip2.record.City;
 import com.maxmind.geoip2.record.Country;
 import io.netty.util.NetUtil;
 import lombok.Setter;
@@ -28,8 +30,8 @@ import static org.rx.core.Extends.tryClose;
 @Slf4j
 public class GeoIPSearcher implements Closeable {
     static final long CACHE_PUBLIC_IP_NANOS = TimeUnit.HOURS.toNanos(2);
-    static final IpGeolocation PRIVATE_IP = new IpGeolocation(null, null, "private");
-    static final IpGeolocation UNKNOWN_IP = new IpGeolocation(null, null, "unknown");
+    static final IpGeolocation PRIVATE_IP = new IpGeolocation(null, null, null, "private");
+    static final IpGeolocation UNKNOWN_IP = new IpGeolocation(null, null, null, "unknown");
     private static final String[] defaultPublicIpServices = new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
 
     final DatabaseReader reader;
@@ -110,13 +112,41 @@ public class GeoIPSearcher implements Closeable {
             return UNKNOWN_IP;
         }
 
-        Optional<CountryResponse> countryResponse;
-        if (ip.isAnyLocalAddress() || !(countryResponse = reader.tryCountry(ip)).isPresent()) {
+        if (ip.isAnyLocalAddress()) {
             return UNKNOWN_IP;
         }
-        CountryResponse cp = countryResponse.get();
-        Country c = cp.getCountry();
-        return new IpGeolocation(c.getName(), c.getIsoCode(), c.getIsoCode());
+        IpGeolocation geolocation = tryLookupCity(ip);
+        return geolocation != null ? geolocation : tryLookupCountry(ip);
+    }
+
+    private IpGeolocation tryLookupCity(InetAddress ip) {
+        try {
+            Optional<CityResponse> cityResponse = reader.tryCity(ip);
+            if (!cityResponse.isPresent()) {
+                return null;
+            }
+            CityResponse cp = cityResponse.get();
+            Country country = cp.getCountry();
+            City city = cp.getCity();
+            return new IpGeolocation(country.getName(), country.getIsoCode(),
+                    city == null ? null : city.getName(), country.getIsoCode());
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private IpGeolocation tryLookupCountry(InetAddress ip) {
+        try {
+            Optional<CountryResponse> countryResponse = reader.tryCountry(ip);
+            if (!countryResponse.isPresent()) {
+                return UNKNOWN_IP;
+            }
+            CountryResponse cp = countryResponse.get();
+            Country c = cp.getCountry();
+            return new IpGeolocation(c.getName(), c.getIsoCode(), null, c.getIsoCode());
+        } catch (Throwable ignored) {
+            return UNKNOWN_IP;
+        }
     }
 
     HttpClient createPublicIpClient() {

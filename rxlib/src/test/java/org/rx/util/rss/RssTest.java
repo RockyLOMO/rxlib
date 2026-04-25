@@ -150,7 +150,7 @@ public class RssTest extends AbstractTester {
             RssClientHttpHandler.geoLookup = new RssClientHttpHandler.GeoLookup() {
                 @Override
                 public IpGeolocation resolve(String ip) {
-                    return new IpGeolocation("United States", "US", "US");
+                    return new IpGeolocation("United States", "US", "New York", "US");
                 }
             };
 
@@ -161,9 +161,12 @@ public class RssTest extends AbstractTester {
             assertTrue(html.contains("ss-rocky"));
             assertTrue(html.contains("inner-rocky"));
             assertTrue(html.contains("18.12.3.4"));
-            assertTrue(html.contains("United States (US)"));
+            assertTrue(html.contains("United States / New York (US)"));
             assertTrue(html.contains("2.0KB"));
             assertTrue(html.contains("4.0KB"));
+            assertTrue(!html.contains("下行包数"));
+            assertTrue(!html.contains("上行包数"));
+            assertTrue(!html.contains("历史包数"));
         } finally {
             RssClientHttpHandler.geoLookup = oldLookup;
         }
