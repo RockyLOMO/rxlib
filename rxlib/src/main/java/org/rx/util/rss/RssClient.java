@@ -116,6 +116,8 @@ public final class RssClient {
             if (changed.udp2rawSocksServers == null) {
                 changed.udp2rawSocksServers = Collections.emptyList();
             }
+            changed.trafficRetentionDays = Math.max(1, changed.trafficRetentionDays);
+            changed.memoryRetentionHours = Math.max(1, changed.memoryRetentionHours);
             rssConf = changed;
             List<AuthenticEndpoint> svrs = rssConf.socksServers;
             log.info("rssConf load socksServers: {}", toJsonString(svrs));
@@ -259,7 +261,8 @@ public final class RssClient {
         inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
         inConf.setUdpRedundantMultiplier(2);
         RssSupport.applyUdpCompressionTrial(inConf);
-        RssAuthenticator authenticator = new RssAuthenticator(shadowUsers.select(p -> p.right).toList(), rssConf.socksPwd.trim());
+        RssAuthenticator authenticator = new RssAuthenticator(shadowUsers.select(p -> p.right).toList(),
+                rssConf.socksPwd.trim(), rssConf.memoryRetentionHours);
         Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
         log.info("rssConf socksBindPort={}, inListenAddress={}", rssConf.socksBindPort, inConf.getListenAddress());
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
@@ -445,14 +448,17 @@ public final class RssClient {
     }
 
     static void clientInit(RssAuthenticator authenticator) {
-        if (trafficStore == null) {
-            trafficStore = new RssUserTrafficStore(null);
+        if (trafficStore == null || trafficStore.retentionDays() != rssConf.trafficRetentionDays) {
+            if (trafficStore != null) {
+                trafficStore.close();
+            }
+            trafficStore = new RssUserTrafficStore(null, rssConf.trafficRetentionDays);
             trafficStore.start();
             org.rx.net.socks.SocksUserTraffic.registerRecorder(trafficStore);
         }
 
         httpServer = HttpServer.getDefault().requestAsync(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH,
-                new RssClientHttpHandler(authenticator.getShadowStore(), trafficStore));
+                new RssClientHttpHandler(authenticator.getShadowStore(), trafficStore, authenticator.getMemoryRetentionHours()));
 
         if (!Strings.isEmpty(rssConf.rrpToken) && rssConf.rrpPort != null) {
             RrpConfig c = new RrpConfig();

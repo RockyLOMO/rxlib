@@ -36,6 +36,7 @@ app:
     h2MaxConnections: 4
     entityDatabaseRollPeriod: 10000
   diagnostic:
+    retentionDays: 2
     h2Settings: CACHE_SIZE=2048;MAX_MEMORY_ROWS=512;MAX_OPERATION_MEMORY=1024;WRITE_DELAY=500
     h2MaxConnections: 2
   net:
