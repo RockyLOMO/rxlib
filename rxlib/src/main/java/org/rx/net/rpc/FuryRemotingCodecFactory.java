@@ -15,6 +15,8 @@ import org.apache.fury.config.Language;
 import org.apache.fury.memory.MemoryBuffer;
 import org.apache.fury.resolver.ClassChecker;
 import org.apache.fury.resolver.ClassResolver;
+import org.apache.fury.serializer.Serializer;
+import org.rx.bean.DateTime;
 import org.rx.core.Constants;
 import org.rx.core.EventArgs;
 import org.rx.core.NEventArgs;
@@ -34,6 +36,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TimeZone;
 
 @NoArgsConstructor
 public class FuryRemotingCodecFactory implements RemotingCodecFactory {
@@ -137,6 +140,27 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
             fury.register(EventArgs.class, (short) (REGISTER_BASE_ID + 7));
             fury.register(NEventArgs.class, (short) (REGISTER_BASE_ID + 8));
             fury.register(RemotingEventArgs.class, (short) (REGISTER_BASE_ID + 9));
+            fury.register(DateTime.class, (short) (REGISTER_BASE_ID + 10));
+            fury.registerSerializer(DateTime.class, new DateTimeSerializer(fury));
+        }
+    }
+
+    static final class DateTimeSerializer extends Serializer<DateTime> {
+        DateTimeSerializer(Fury fury) {
+            super(fury, DateTime.class);
+        }
+
+        @Override
+        public void write(MemoryBuffer buffer, DateTime value) {
+            buffer.writeInt64(value.getTime());
+            fury.writeJavaString(buffer, value.getTimeZone().getID());
+        }
+
+        @Override
+        public DateTime read(MemoryBuffer buffer) {
+            long ticks = buffer.readInt64();
+            String zoneId = fury.readJavaString(buffer);
+            return new DateTime(ticks, TimeZone.getTimeZone(zoneId));
         }
     }
 

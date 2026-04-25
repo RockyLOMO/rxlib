@@ -6,6 +6,7 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.ResourceLeakDetector;
 import org.junit.jupiter.api.Test;
+import org.rx.bean.DateTime;
 import org.rx.core.Sys;
 import org.rx.net.transport.TcpChannelCodec;
 import org.rx.net.transport.TcpClientConfig;
@@ -17,6 +18,7 @@ import org.rx.test.UserEventArgs;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.TimeZone;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -63,6 +65,22 @@ class FuryRemotingCodecTest {
         Object decoded = roundTrip(clone.getCodec(), allowedPrefixes, new MethodMessage(11, "ping", new Object[]{"ok"}, "trace-11"));
         MethodMessage pack = assertInstanceOf(MethodMessage.class, decoded);
         assertEquals("ok", pack.parameters[0]);
+    }
+
+    @Test
+    void roundTripDateTimeParameterWithCustomSerializer() {
+        RpcClientConfig<Object> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", 9529), 1);
+        FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
+        TcpChannelCodec codec = factory.newClientCodec(config);
+        List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
+
+        DateTime dateTime = new DateTime(1711960245123L, TimeZone.getTimeZone("UTC"));
+        MethodMessage method = new MethodMessage(15, "withDateTime", new Object[]{dateTime}, "trace-15");
+        Object decoded = roundTrip(codec, allowedPrefixes, method);
+        MethodMessage pack = assertInstanceOf(MethodMessage.class, decoded);
+        DateTime decodedDateTime = assertInstanceOf(DateTime.class, pack.parameters[0]);
+        assertEquals(dateTime.getTime(), decodedDateTime.getTime());
+        assertEquals(dateTime.getTimeZone().getID(), decodedDateTime.getTimeZone().getID());
     }
 
     private static Object roundTrip(TcpChannelCodec codec, List<String> allowedPrefixes, Object message) {
