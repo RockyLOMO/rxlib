@@ -87,7 +87,7 @@ class FuryRemotingCodecTest {
         EmbeddedChannel outbound = new EmbeddedChannel();
         EmbeddedChannel inbound = new EmbeddedChannel(
                 new FuryRemotingCodecFactory.FuryMessageDecoder(
-                        new FuryRemotingCodecFactory.FuryCodecSupport(new ArrayList<>(allowedPrefixes))));
+                        new FuryRemotingCodecFactory.FuryRemotingSupport(new ArrayList<>(allowedPrefixes))));
         try {
             codec.install(outbound.pipeline());
             assertTrue(outbound.writeOutbound(message));

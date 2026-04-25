@@ -10,12 +10,14 @@ import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingContext;
+import org.rx.net.transport.FuryUdpClientCodec;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.UdpClient;
 
 import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -76,7 +78,13 @@ public class NameserverImpl implements Nameserver {
         rs.onPing.combine((s, e) -> attrs(e.getClient().getRemoteEndpoint().getAddress())
                 .put("ping", String.format("%dms", (NtpClock.UTC.millis() - e.getValue().getTimestamp()) * 2)));
 
-        ss = new UdpClient(getSyncPort());
+        FuryUdpClientCodec syncCodec = FuryUdpClientCodec.createDefault();
+        if (config.getUdpCodecAllowPrefixes() != null) {
+            for (String prefix : new ArrayList<>(config.getUdpCodecAllowPrefixes())) {
+                syncCodec.allowPrefix(prefix);
+            }
+        }
+        ss = new UdpClient(getSyncPort(), syncCodec);
         ss.onReceive.combine((s, e) -> {
             Object packet = e.getValue().packet;
             log.info("[{}] Replica {}", getSyncPort(), packet);

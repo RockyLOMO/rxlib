@@ -2,6 +2,8 @@ package org.rx.net.transport;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.CompositeByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.AttributeKey;
@@ -12,7 +14,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
-import org.rx.io.Serializer;
+import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.transport.protocol.AckSync;
 import org.rx.net.transport.protocol.UdpMessage;
@@ -29,6 +31,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.rx.core.Extends.circuitContinue;
 import static org.rx.core.Extends.quietly;
@@ -61,9 +64,10 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
     @RequiredArgsConstructor
     static final class SendContext {
         final UdpMessage message;
-        final byte[] payload;
+        final ByteBuf payload;
         final int fragmentCount;
         final CompletableFuture<Void> ackFuture = new CompletableFuture<>();
+        final AtomicBoolean payloadReleased = new AtomicBoolean();
         volatile ChannelFuture writeFuture;
         volatile TimeoutFuture<?> resendFuture;
         volatile TimeoutFuture<?> timeoutFuture;
@@ -79,48 +83,89 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
                 future.cancel();
             }
         }
+
+        void releasePayload() {
+            if (payloadReleased.compareAndSet(false, true)) {
+                Bytes.release(payload);
+            }
+        }
     }
 
     static final class ReceiveAssembly {
         final AckSync ack;
         final int alive;
-        final byte[][] fragments;
+        final ByteBuf[] fragments;
         volatile TimeoutFuture<?> expireFuture;
         int receivedCount;
+        int totalBytes;
 
         ReceiveAssembly(AckSync ack, int alive, int fragmentCount) {
             this.ack = ack;
             this.alive = alive;
-            this.fragments = new byte[fragmentCount][];
+            this.fragments = new ByteBuf[fragmentCount];
         }
 
-        synchronized boolean add(int index, byte[] payload) {
+        synchronized FragmentAddResult add(int index, ByteBuf payload, int maxPayloadBytes) {
             if (fragments[index] != null) {
-                return false;
+                return FragmentAddResult.DUPLICATE;
+            }
+            int nextBytes = totalBytes + payload.readableBytes();
+            if (nextBytes > maxPayloadBytes) {
+                return FragmentAddResult.OVERFLOW;
             }
             fragments[index] = payload;
             receivedCount++;
-            return true;
+            totalBytes = nextBytes;
+            return receivedCount == fragments.length ? FragmentAddResult.COMPLETE : FragmentAddResult.ADDED;
         }
 
         synchronized boolean isComplete() {
             return receivedCount == fragments.length;
         }
 
-        synchronized byte[] merge() {
-            int length = 0;
-            for (byte[] fragment : fragments) {
-                length += fragment.length;
+        synchronized CompositeByteBuf buildPayload(ByteBufAllocator allocator) {
+            CompositeByteBuf payload = allocator.compositeBuffer(fragments.length);
+            try {
+                for (int i = 0; i < fragments.length; i++) {
+                    ByteBuf fragment = fragments[i];
+                    if (fragment == null) {
+                        throw new InvalidException("UDP fragment missing {}", i);
+                    }
+                    payload.addComponent(true, fragment);
+                    fragments[i] = null;
+                }
+                receivedCount = 0;
+                totalBytes = 0;
+                return payload;
+            } catch (Throwable e) {
+                Bytes.release(payload);
+                release();
+                throw e;
             }
-
-            byte[] merged = new byte[length];
-            int offset = 0;
-            for (byte[] fragment : fragments) {
-                System.arraycopy(fragment, 0, merged, offset, fragment.length);
-                offset += fragment.length;
-            }
-            return merged;
         }
+
+        synchronized void release() {
+            for (int i = 0; i < fragments.length; i++) {
+                Bytes.release(fragments[i]);
+                fragments[i] = null;
+            }
+            receivedCount = 0;
+            totalBytes = 0;
+        }
+
+        void cancelExpire() {
+            TimeoutFuture<?> future = expireFuture;
+            if (future != null) {
+                future.cancel();
+            }
+        }
+    }
+
+    enum FragmentAddResult {
+        ADDED,
+        DUPLICATE,
+        COMPLETE,
+        OVERFLOW
     }
 
     @RequiredArgsConstructor
@@ -180,6 +225,8 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
     @Getter
     final InetSocketAddress localEndpoint;
     @Getter
+    final UdpClientCodec codec;
+    @Getter
     @Setter
     int waitAckTimeoutMillis = 15 * 1000;
     @Getter
@@ -196,6 +243,21 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
     int maxFragmentCount = 128;
 
     public UdpClient(int bindPort) {
+        this(bindPort, new UdpClientConfig());
+    }
+
+    public UdpClient(int bindPort, UdpClientCodec codec) {
+        this(bindPort, configOf(codec));
+    }
+
+    public UdpClient(int bindPort, UdpClientConfig config) {
+        UdpClientConfig resolved = requireConfig(config);
+        codec = requireCodec(resolved.getCodec());
+        waitAckTimeoutMillis = resolved.getWaitAckTimeoutMillis();
+        fullSync = resolved.isFullSync();
+        maxResend = resolved.getMaxResend();
+        maxFragmentPayloadBytes = resolved.getMaxFragmentPayloadBytes();
+        maxFragmentCount = resolved.getMaxFragmentCount();
         bootstrap = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(HANDLER));
         channel = bootstrap.bind(bindPort).syncUninterruptibly().channel();
         channel.attr(OWNER).set(this);
@@ -241,7 +303,6 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
 
     public <T extends Serializable> CompletableFuture<T> requestAsync(InetSocketAddress remoteAddress, Object packet, Class<T> responseType, int timeoutMillis) {
         ensureRequestTimeout(timeoutMillis);
-        ensureSerializable(packet);
 
         int requestId = nextMessageId();
         RpcRequestContext<T> request = new RpcRequestContext<>(responseType);
@@ -330,33 +391,50 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
     }
 
     SendContext beginSend(InetSocketAddress remoteAddress, Object packet, int waitAckTimeoutMillis, boolean fullSync, int messageId) {
-        ensureSerializable(packet);
         ensureFragmentSettings();
 
         AckSync ack = fullSync ? AckSync.FULL : waitAckTimeoutMillis > 0 ? AckSync.SEMI : AckSync.NONE;
         int alive = waitAckTimeoutMillis > 0 ? waitAckTimeoutMillis : defaultAliveMillis();
-        byte[] payload = Serializer.DEFAULT.serializeToBytes(packet);
-        int fragmentCount = fragmentCount(payload.length);
-        UdpMessage message = new UdpMessage(messageId, ack, alive, remoteAddress, packet);
-        SendContext context = new SendContext(message, payload, fragmentCount);
-        if (ack != AckSync.NONE) {
-            SendContext old = pendingSends.putIfAbsent(messageId, context);
-            if (old != null) {
-                throw new InvalidException("Duplicate udp send id {}", messageId);
-            }
-            scheduleAckTimeout(context);
-            scheduleResend(context);
-        } else {
-            context.ackFuture.complete(null);
-        }
-
+        ByteBuf payload = null;
+        SendContext context = null;
         try {
-            context.writeFuture = writeFragments(context);
+            payload = codec.encode(channel.alloc(), packet);
+            if (payload == null) {
+                throw new InvalidException("UDP codec encode returned null");
+            }
+            int fragmentCount = fragmentCount(payload.readableBytes());
+            UdpMessage message = new UdpMessage(messageId, ack, alive, remoteAddress, packet);
+            context = new SendContext(message, payload, fragmentCount);
+            payload = null;
+            if (ack != AckSync.NONE) {
+                SendContext old = pendingSends.putIfAbsent(messageId, context);
+                if (old != null) {
+                    throw new InvalidException("Duplicate udp send id {}", messageId);
+                }
+                scheduleAckTimeout(context);
+                scheduleResend(context);
+            } else {
+                context.ackFuture.complete(null);
+            }
+
+            try {
+                context.writeFuture = writeFragments(context);
+            } catch (Throwable e) {
+                failSend(context, e);
+                throw e;
+            }
+            if (ack == AckSync.NONE) {
+                context.releasePayload();
+            }
+            return context;
         } catch (Throwable e) {
-            failSend(context, e);
-            throw e;
+            if (context != null) {
+                context.releasePayload();
+            } else {
+                Bytes.release(payload);
+            }
+            throw InvalidException.sneaky(e);
         }
-        return context;
     }
 
     void handlePacket(DatagramPacket packet) {
@@ -398,8 +476,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
                     log.warn("Discard invalid udp fragment {}#{}/{} from {}", messageId, fragmentIndex, fragmentCount, sender);
                     return;
                 }
-                byte[] payload = new byte[buf.readableBytes()];
-                buf.readBytes(payload);
+                ByteBuf payload = buf.readRetainedSlice(buf.readableBytes());
                 handleData(sender, messageId, ack, alive, fragmentIndex, fragmentCount, payload);
                 return;
             default:
@@ -415,45 +492,74 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         }
         context.cancelTimers();
         context.ackFuture.complete(null);
+        context.releasePayload();
         log.debug("Receive udp ack {}", messageId);
     }
 
-    void handleData(InetSocketAddress sender, int messageId, AckSync ack, int alive, int fragmentIndex, int fragmentCount, byte[] payload) {
+    void handleData(InetSocketAddress sender, int messageId, AckSync ack, int alive, int fragmentIndex, int fragmentCount, ByteBuf payload) {
         ReceiveKey key = new ReceiveKey(sender, messageId);
-        if (completedReceives.contains(key)) {
-            if (ack != AckSync.NONE) {
-                sendAck(sender, messageId);
-            }
-            return;
-        }
-        if (inflightReceives.contains(key)) {
-            return;
-        }
-
-        ReceiveAssembly assembly = pendingReceives.compute(key, (k, old) -> {
-            if (old == null || old.fragments.length != fragmentCount || old.ack != ack) {
-                if (old != null && old.expireFuture != null) {
-                    old.expireFuture.cancel();
+        boolean releasePayload = true;
+        try {
+            if (completedReceives.contains(key)) {
+                if (ack != AckSync.NONE) {
+                    sendAck(sender, messageId);
                 }
-                ReceiveAssembly created = new ReceiveAssembly(ack, alive, fragmentCount);
-                created.expireFuture = Tasks.setTimeout(() -> pendingReceives.remove(k, created), alive);
-                return created;
+                return;
             }
-            return old;
-        });
-        assembly.add(fragmentIndex, payload);
-        if (!assembly.isComplete()) {
-            return;
-        }
-        if (!pendingReceives.remove(key, assembly)) {
-            return;
-        }
-        if (assembly.expireFuture != null) {
-            assembly.expireFuture.cancel();
-        }
+            if (inflightReceives.contains(key)) {
+                return;
+            }
 
-        Object pack = Serializer.DEFAULT.deserializeFromBytes(assembly.merge());
-        handleLogicalMessage(sender, key, new UdpMessage(messageId, ack, alive, sender, pack));
+            ReceiveAssembly assembly = pendingReceives.compute(key, (k, old) -> {
+                if (old == null || old.fragments.length != fragmentCount || old.ack != ack) {
+                    if (old != null) {
+                        old.cancelExpire();
+                        old.release();
+                    }
+                    ReceiveAssembly created = new ReceiveAssembly(ack, alive, fragmentCount);
+                    created.expireFuture = Tasks.setTimeout(() -> expireAssembly(k, created), alive);
+                    return created;
+                }
+                return old;
+            });
+            FragmentAddResult addResult = assembly.add(fragmentIndex, payload, maxEncodedPayloadBytes());
+            if (addResult == FragmentAddResult.DUPLICATE) {
+                return;
+            }
+            if (addResult == FragmentAddResult.OVERFLOW) {
+                log.warn("Discard oversized udp assembly {}#{}/{} bytes={} from {}", messageId, fragmentIndex, fragmentCount,
+                        assembly.totalBytes + payload.readableBytes(), sender);
+                if (pendingReceives.remove(key, assembly)) {
+                    assembly.cancelExpire();
+                }
+                assembly.release();
+                return;
+            }
+            releasePayload = false;
+            if (addResult != FragmentAddResult.COMPLETE || !assembly.isComplete()) {
+                return;
+            }
+            if (!pendingReceives.remove(key, assembly)) {
+                assembly.cancelExpire();
+                assembly.release();
+                return;
+            }
+            assembly.cancelExpire();
+
+            ByteBuf merged = assembly.buildPayload(channel.alloc());
+            try {
+                Object pack = codec.decode(merged);
+                handleLogicalMessage(sender, key, new UdpMessage(messageId, ack, alive, sender, pack));
+            } finally {
+                Bytes.release(merged);
+            }
+        } catch (Throwable e) {
+            onHandlerError(e);
+        } finally {
+            if (releasePayload) {
+                Bytes.release(payload);
+            }
+        }
     }
 
     void handleLogicalMessage(InetSocketAddress sender, ReceiveKey key, UdpMessage message) {
@@ -534,6 +640,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
             TimeoutException ex = new TimeoutException(String.format("UDP ack timeout %s", context.message.remoteAddress));
             context.cancelTimers();
             context.ackFuture.completeExceptionally(ex);
+            context.releasePayload();
         }, context.message.alive);
     }
 
@@ -566,6 +673,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         pendingSends.remove(context.message.id, context);
         context.cancelTimers();
         context.ackFuture.completeExceptionally(error);
+        context.releasePayload();
         onHandlerError(error);
     }
 
@@ -573,7 +681,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         ChannelPromise promise = channel.newPromise();
         try {
             int offset = 0;
-            int payloadLength = context.payload.length;
+            int payloadLength = context.payload.readableBytes();
             for (int i = 0; i < context.fragmentCount; i++) {
                 int length = Math.min(maxFragmentPayloadBytes, payloadLength - offset);
                 if (context.fragmentCount == 1 && payloadLength == 0) {
@@ -594,19 +702,33 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         return promise;
     }
 
-    DatagramPacket encodeData(UdpMessage message, int fragmentIndex, int fragmentCount, byte[] payload, int offset, int length) {
-        ByteBuf buf = channel.alloc().ioBuffer(DATA_HEADER_SIZE + length);
-        buf.writeInt(MAGIC);
-        buf.writeByte(TYPE_DATA);
-        buf.writeInt(message.id);
-        buf.writeByte(message.ack.ordinal());
-        buf.writeInt(message.alive);
-        buf.writeShort(fragmentIndex);
-        buf.writeShort(fragmentCount);
-        if (length > 0) {
-            buf.writeBytes(payload, offset, length);
+    DatagramPacket encodeData(UdpMessage message, int fragmentIndex, int fragmentCount, ByteBuf payload, int offset, int length) {
+        ByteBuf header = channel.alloc().ioBuffer(DATA_HEADER_SIZE);
+        ByteBuf slice = null;
+        CompositeByteBuf composite = null;
+        try {
+            header.writeInt(MAGIC);
+            header.writeByte(TYPE_DATA);
+            header.writeInt(message.id);
+            header.writeByte(message.ack.ordinal());
+            header.writeInt(message.alive);
+            header.writeShort(fragmentIndex);
+            header.writeShort(fragmentCount);
+            if (length == 0) {
+                return new DatagramPacket(header, message.remoteAddress);
+            }
+            slice = payload.retainedSlice(payload.readerIndex() + offset, length);
+            composite = channel.alloc().compositeBuffer(2);
+            composite.addComponents(true, header, slice);
+            header = null;
+            slice = null;
+            return new DatagramPacket(composite, message.remoteAddress);
+        } catch (Throwable e) {
+            Bytes.release(header);
+            Bytes.release(slice);
+            Bytes.release(composite);
+            throw e;
         }
-        return new DatagramPacket(buf, message.remoteAddress);
     }
 
     void sendAck(InetSocketAddress remoteAddress, int messageId) {
@@ -644,12 +766,6 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         return count;
     }
 
-    void ensureSerializable(Object packet) {
-        if (!(packet instanceof Serializable)) {
-            throw new InvalidException("UDP packet must be Serializable");
-        }
-    }
-
     void ensureFragmentSettings() {
         if (maxFragmentPayloadBytes <= 0) {
             throw new InvalidException("maxFragmentPayloadBytes <= 0");
@@ -669,6 +785,19 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         return waitAckTimeoutMillis > 0 ? waitAckTimeoutMillis : 15 * 1000;
     }
 
+    int maxEncodedPayloadBytes() {
+        long maxBytes = (long) maxFragmentPayloadBytes * maxFragmentCount;
+        return maxBytes >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) maxBytes;
+    }
+
+    void expireAssembly(ReceiveKey key, ReceiveAssembly assembly) {
+        if (!pendingReceives.remove(key, assembly)) {
+            return;
+        }
+        assembly.cancelExpire();
+        assembly.release();
+    }
+
     void onHandlerError(Throwable error) {
         log.error("udp client error {}", localEndpoint, error);
         quietly(() -> raiseEvent(onError, new NEventArgs<>(error)));
@@ -679,6 +808,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         for (SendContext context : pendingSends.values()) {
             context.cancelTimers();
             context.ackFuture.completeExceptionally(new ClientDisconnectedException(localEndpoint));
+            context.releasePayload();
         }
         pendingSends.clear();
 
@@ -689,9 +819,8 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         pendingRequests.clear();
 
         for (ReceiveAssembly assembly : pendingReceives.values()) {
-            if (assembly.expireFuture != null) {
-                assembly.expireFuture.cancel();
-            }
+            assembly.cancelExpire();
+            assembly.release();
         }
         pendingReceives.clear();
         completedReceives.clear();
@@ -700,5 +829,25 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         if (channel.isOpen()) {
             channel.close().syncUninterruptibly();
         }
+    }
+
+    static UdpClientConfig configOf(UdpClientCodec codec) {
+        UdpClientConfig config = new UdpClientConfig();
+        config.setCodec(requireCodec(codec));
+        return config;
+    }
+
+    static UdpClientConfig requireConfig(UdpClientConfig config) {
+        if (config == null) {
+            throw new InvalidException("UdpClientConfig is null");
+        }
+        return config;
+    }
+
+    static UdpClientCodec requireCodec(UdpClientCodec codec) {
+        if (codec == null) {
+            throw new InvalidException("UdpClientCodec is null");
+        }
+        return codec;
     }
 }

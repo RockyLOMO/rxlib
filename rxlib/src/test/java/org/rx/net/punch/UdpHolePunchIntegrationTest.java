@@ -3,7 +3,6 @@ package org.rx.net.punch;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -15,24 +14,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class UdpHolePunchIntegrationTest {
-    static int freeUdpPort() throws Exception {
-        try (DatagramSocket socket = new DatagramSocket(0)) {
-            return socket.getLocalPort();
-        }
-    }
-
     @Test
     @Timeout(15)
     void connectBuildsDirectSessionAndSupportsRpc() throws Exception {
-        int serverPort = freeUdpPort();
-        int portA = freeUdpPort();
-        int portB = freeUdpPort();
-        InetSocketAddress serverEndpoint = new InetSocketAddress("127.0.0.1", serverPort);
-
         ExecutorService pool = Executors.newFixedThreadPool(2);
-        try (UdpHolePunchServer server = new UdpHolePunchServer(serverPort);
-             UdpHolePunchClient clientA = new UdpHolePunchClient(portA);
-             UdpHolePunchClient clientB = new UdpHolePunchClient(portB)) {
+        try (UdpHolePunchServer server = new UdpHolePunchServer(0);
+             UdpHolePunchClient clientA = new UdpHolePunchClient(0);
+             UdpHolePunchClient clientB = new UdpHolePunchClient(0)) {
+            InetSocketAddress serverEndpoint = server.getLocalEndpoint();
             clientA.setPeerWaitTimeoutMillis(3000);
             clientB.setPeerWaitTimeoutMillis(3000);
             clientA.setDirectConnectTimeoutMillis(3000);
@@ -56,8 +45,8 @@ class UdpHolePunchIntegrationTest {
 
             assertEquals("peer-b", sessionA.getRemotePeerId());
             assertEquals("peer-a", sessionB.getRemotePeerId());
-            assertEquals(portB, sessionA.getDirectRemoteEndpoint().getPort());
-            assertEquals(portA, sessionB.getDirectRemoteEndpoint().getPort());
+            assertEquals(clientB.getLocalEndpoint().getPort(), sessionA.getDirectRemoteEndpoint().getPort());
+            assertEquals(clientA.getLocalEndpoint().getPort(), sessionB.getDirectRemoteEndpoint().getPort());
             assertTrue(sessionA.getDirectRemoteEndpoint().getAddress().isLoopbackAddress());
             assertTrue(sessionB.getDirectRemoteEndpoint().getAddress().isLoopbackAddress());
             assertEquals("direct-pong", sessionA.request("direct-ping", String.class, 3000));
