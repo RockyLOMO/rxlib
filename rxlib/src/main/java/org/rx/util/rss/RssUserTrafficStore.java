@@ -29,6 +29,12 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
     static final long ONE_HOUR_MILLIS = 60L * 60L * 1000L;
     static final long DEFAULT_FLUSH_PERIOD_MILLIS = 60L * 1000L;
     static final int DEFAULT_RETENTION_DAYS = 60;
+    static final String UPSERT_HOURLY_TRAFFIC_SQL = "MERGE INTO %s t USING (VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)) s(id, username, hour_epoch, read_bytes, write_bytes, read_packets, write_packets, create_time, modify_time) ON t.id = s.id " +
+            "WHEN MATCHED THEN UPDATE SET t.read_bytes = t.read_bytes + s.read_bytes, t.write_bytes = t.write_bytes + s.write_bytes, t.read_packets = t.read_packets + s.read_packets, t.write_packets = t.write_packets + s.write_packets, t.modify_time = s.modify_time " +
+            "WHEN NOT MATCHED THEN INSERT (id, username, hour_epoch, read_bytes, write_bytes, read_packets, write_packets, create_time, modify_time) VALUES (s.id, s.username, s.hour_epoch, s.read_bytes, s.write_bytes, s.read_packets, s.write_packets, s.create_time, s.modify_time)";
+    static final String UPSERT_HOURLY_LOGIN_IP_TRAFFIC_SQL = "MERGE INTO %s t USING (VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)) s(id, username, remote_ip, protocol, hour_epoch, active_seconds, session_count, read_bytes, write_bytes, read_packets, write_packets, last_seen_time, modify_time) ON t.id = s.id " +
+            "WHEN MATCHED THEN UPDATE SET t.active_seconds = t.active_seconds + s.active_seconds, t.session_count = t.session_count + s.session_count, t.read_bytes = t.read_bytes + s.read_bytes, t.write_bytes = t.write_bytes + s.write_bytes, t.read_packets = t.read_packets + s.read_packets, t.write_packets = t.write_packets + s.write_packets, t.last_seen_time = CASE WHEN s.last_seen_time IS NULL THEN t.last_seen_time WHEN t.last_seen_time IS NULL OR t.last_seen_time < s.last_seen_time THEN s.last_seen_time ELSE t.last_seen_time END, t.modify_time = s.modify_time " +
+            "WHEN NOT MATCHED THEN INSERT (id, username, remote_ip, protocol, hour_epoch, active_seconds, session_count, read_bytes, write_bytes, read_packets, write_packets, last_seen_time, create_time, modify_time) VALUES (s.id, s.username, s.remote_ip, s.protocol, s.hour_epoch, s.active_seconds, s.session_count, s.read_bytes, s.write_bytes, s.read_packets, s.write_packets, s.last_seen_time, s.modify_time, s.modify_time)";
 
     @Data
     public static class HourlyTrafficEntity implements Serializable {
@@ -269,12 +275,8 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
         db.begin();
         boolean committed = false;
         try {
-            for (Counter counter : pending.values()) {
-                saveCounter(counter);
-            }
-            for (LoginIpCounter counter : pendingLoginIps.values()) {
-                saveLoginIpCounter(counter);
-            }
+            batchSaveCounters(pending.values());
+            batchSaveLoginIpCounters(pendingLoginIps.values());
             db.commit();
             committed = true;
         } finally {
@@ -285,68 +287,80 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
         cleanupExpiredIfDueQuietly();
     }
 
-    private void saveCounter(Counter counter) {
-        long readBytes = counter.readBytes.sum();
-        long writeBytes = counter.writeBytes.sum();
-        long readPackets = counter.readPackets.sum();
-        long writePackets = counter.writePackets.sum();
-        if ((readBytes | writeBytes | readPackets | writePackets) == 0L) {
-            return;
-        }
+    private void batchSaveCounters(Iterable<Counter> counters) {
+        final String sql = String.format(UPSERT_HOURLY_TRAFFIC_SQL, db.tableName(HourlyTrafficEntity.class));
+        db.withConnection(conn -> {
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                int batchSize = 0;
+                for (Counter counter : counters) {
+                    long readBytes = counter.readBytes.sum();
+                    long writeBytes = counter.writeBytes.sum();
+                    long readPackets = counter.readPackets.sum();
+                    long writePackets = counter.writePackets.sum();
+                    if ((readBytes | writeBytes | readPackets | writePackets) == 0L) {
+                        continue;
+                    }
 
-        String id = HourlyTrafficEntity.idOf(counter.username, counter.hourEpoch);
-        HourlyTrafficEntity entity = db.findById(HourlyTrafficEntity.class, id);
-        boolean insert = entity == null;
-        if (insert) {
-            entity = new HourlyTrafficEntity();
-            entity.setId(id);
-            entity.setUsername(counter.username);
-            entity.setHourEpoch(counter.hourEpoch);
-            entity.setCreateTime(new Date());
-        }
-        entity.setReadBytes(entity.getReadBytes() + readBytes);
-        entity.setWriteBytes(entity.getWriteBytes() + writeBytes);
-        entity.setReadPackets(entity.getReadPackets() + readPackets);
-        entity.setWritePackets(entity.getWritePackets() + writePackets);
-        entity.setModifyTime(new Date());
-        db.save(entity, insert);
+                    Timestamp now = new Timestamp(System.currentTimeMillis());
+                    stmt.setString(1, HourlyTrafficEntity.idOf(counter.username, counter.hourEpoch));
+                    stmt.setString(2, counter.username);
+                    stmt.setLong(3, counter.hourEpoch);
+                    stmt.setLong(4, readBytes);
+                    stmt.setLong(5, writeBytes);
+                    stmt.setLong(6, readPackets);
+                    stmt.setLong(7, writePackets);
+                    stmt.setTimestamp(8, now);
+                    stmt.setTimestamp(9, now);
+                    stmt.addBatch();
+                    batchSize++;
+                }
+                if (batchSize > 0) {
+                    stmt.executeBatch();
+                }
+            }
+        });
     }
 
-    private void saveLoginIpCounter(LoginIpCounter counter) {
-        long activeSeconds = counter.activeSeconds.sum();
-        long sessionCount = counter.sessionCount.sum();
-        long readBytes = counter.readBytes.sum();
-        long writeBytes = counter.writeBytes.sum();
-        long readPackets = counter.readPackets.sum();
-        long writePackets = counter.writePackets.sum();
-        Date lastSeenTime = counter.lastSeenTime.get();
-        if ((activeSeconds | sessionCount | readBytes | writeBytes | readPackets | writePackets) == 0L && lastSeenTime == null) {
-            return;
-        }
+    private void batchSaveLoginIpCounters(Iterable<LoginIpCounter> counters) {
+        final String sql = String.format(UPSERT_HOURLY_LOGIN_IP_TRAFFIC_SQL, db.tableName(HourlyLoginIpTrafficEntity.class));
+        db.withConnection(conn -> {
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                int batchSize = 0;
+                for (LoginIpCounter counter : counters) {
+                    long activeSeconds = counter.activeSeconds.sum();
+                    long sessionCount = counter.sessionCount.sum();
+                    long readBytes = counter.readBytes.sum();
+                    long writeBytes = counter.writeBytes.sum();
+                    long readPackets = counter.readPackets.sum();
+                    long writePackets = counter.writePackets.sum();
+                    Date lastSeenTime = counter.lastSeenTime.get();
+                    if ((activeSeconds | sessionCount | readBytes | writeBytes | readPackets | writePackets) == 0L && lastSeenTime == null) {
+                        continue;
+                    }
 
-        String id = HourlyLoginIpTrafficEntity.idOf(counter.username, counter.remoteIp, counter.protocol, counter.hourEpoch);
-        HourlyLoginIpTrafficEntity entity = db.findById(HourlyLoginIpTrafficEntity.class, id);
-        boolean insert = entity == null;
-        if (insert) {
-            entity = new HourlyLoginIpTrafficEntity();
-            entity.setId(id);
-            entity.setUsername(counter.username);
-            entity.setRemoteIp(counter.remoteIp);
-            entity.setProtocol(counter.protocol);
-            entity.setHourEpoch(counter.hourEpoch);
-            entity.setCreateTime(new Date());
-        }
-        entity.setActiveSeconds(entity.getActiveSeconds() + activeSeconds);
-        entity.setSessionCount(entity.getSessionCount() + sessionCount);
-        entity.setReadBytes(entity.getReadBytes() + readBytes);
-        entity.setWriteBytes(entity.getWriteBytes() + writeBytes);
-        entity.setReadPackets(entity.getReadPackets() + readPackets);
-        entity.setWritePackets(entity.getWritePackets() + writePackets);
-        if (lastSeenTime != null && (entity.getLastSeenTime() == null || entity.getLastSeenTime().before(lastSeenTime))) {
-            entity.setLastSeenTime(lastSeenTime);
-        }
-        entity.setModifyTime(new Date());
-        db.save(entity, insert);
+                    Timestamp lastSeen = lastSeenTime == null ? null : new Timestamp(lastSeenTime.getTime());
+                    Timestamp now = new Timestamp(System.currentTimeMillis());
+                    stmt.setString(1, HourlyLoginIpTrafficEntity.idOf(counter.username, counter.remoteIp, counter.protocol, counter.hourEpoch));
+                    stmt.setString(2, counter.username);
+                    stmt.setString(3, counter.remoteIp);
+                    stmt.setString(4, counter.protocol);
+                    stmt.setLong(5, counter.hourEpoch);
+                    stmt.setLong(6, activeSeconds);
+                    stmt.setLong(7, sessionCount);
+                    stmt.setLong(8, readBytes);
+                    stmt.setLong(9, writeBytes);
+                    stmt.setLong(10, readPackets);
+                    stmt.setLong(11, writePackets);
+                    stmt.setTimestamp(12, lastSeen);
+                    stmt.setTimestamp(13, now);
+                    stmt.addBatch();
+                    batchSize++;
+                }
+                if (batchSize > 0) {
+                    stmt.executeBatch();
+                }
+            }
+        });
     }
 
     public int retentionDays() {
