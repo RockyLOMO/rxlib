@@ -61,4 +61,11 @@ public class GeoIPSearcherTest {
         assertSame(GeoIPSearcher.PRIVATE_IP, searcher.lookup("192.168.31.2"));
         assertSame(GeoIPSearcher.PRIVATE_IP, searcher.lookup("127.0.0.1"));
     }
+
+    @Test
+    public void testIpGeolocationCarriesCityField() {
+        IpGeolocation geolocation = new IpGeolocation("China", "CN", "Shanghai", "CN");
+
+        assertEquals("Shanghai", geolocation.getCity());
+    }
 }

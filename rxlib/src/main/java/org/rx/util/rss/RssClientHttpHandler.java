@@ -218,15 +218,11 @@ public class RssClientHttpHandler implements HttpServer.Handler {
                                                         int memoryRetentionHours) {
         long totalReadBytes = 0L;
         long totalWriteBytes = 0L;
-        long totalReadPackets = 0L;
-        long totalWritePackets = 0L;
         long totalActiveSeconds = 0L;
         long totalSessions = 0L;
         for (UserTrafficSummary row : historyUsers) {
             totalReadBytes += row.getReadBytes();
             totalWriteBytes += row.getWriteBytes();
-            totalReadPackets += row.getReadPackets();
-            totalWritePackets += row.getWritePackets();
             totalActiveSeconds += row.getActiveSeconds();
             totalSessions += row.getSessionCount();
         }
@@ -241,8 +237,6 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         stats.add(summaryItem("历史用户数", userCount, "H2 中命中的用户聚合数量。"));
         stats.add(summaryItem("历史下行/上行", Bytes.readableByteSize(totalReadBytes) + " / " + Bytes.readableByteSize(totalWriteBytes),
                 "按所选时间范围聚合的总流量。"));
-        stats.add(summaryItem("历史包数", totalReadPackets + " / " + totalWritePackets,
-                "下行包 / 上行包。"));
         stats.add(summaryItem("历史活跃时长/会话数", formatDurationSeconds(totalActiveSeconds) + " / " + totalSessions,
                 "基于已结束连接累计的活跃时长与会话数。协议与 IP 明细见下方表格。"));
         stats.add(summaryItem("协议/IP/实时行数", protocolRowCount + " / " + historyIpCount + " / " + liveIpCount,
@@ -274,8 +268,6 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             row.put("avgWriteSpeed", formatSpeed(summary.getWriteBytes(), summary.getActiveSeconds()));
             row.put("totalReadBytes", Bytes.readableByteSize(summary.getReadBytes()));
             row.put("totalWriteBytes", Bytes.readableByteSize(summary.getWriteBytes()));
-            row.put("totalReadPackets", summary.getReadPackets());
-            row.put("totalWritePackets", summary.getWritePackets());
             row.put("sessionCount", summary.getSessionCount());
             rows.add(row);
         }
@@ -300,8 +292,6 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             row.put("avgWriteSpeed", formatSpeed(summary.getWriteBytes(), summary.getActiveSeconds()));
             row.put("totalReadBytes", Bytes.readableByteSize(summary.getReadBytes()));
             row.put("totalWriteBytes", Bytes.readableByteSize(summary.getWriteBytes()));
-            row.put("totalReadPackets", summary.getReadPackets());
-            row.put("totalWritePackets", summary.getWritePackets());
             row.put("latestTime", formatDateTime(summary.getLatestTime()));
             rows.add(row);
         }
@@ -326,8 +316,6 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             row.put("sessionCount", summary.getSessionCount());
             row.put("totalReadBytes", Bytes.readableByteSize(summary.getReadBytes()));
             row.put("totalWriteBytes", Bytes.readableByteSize(summary.getWriteBytes()));
-            row.put("totalReadPackets", summary.getReadPackets());
-            row.put("totalWritePackets", summary.getWritePackets());
             rows.add(row);
         }
         return rows;
@@ -368,8 +356,6 @@ public class RssClientHttpHandler implements HttpServer.Handler {
                 row.put("avgWriteSpeed", formatSpeed(writeBytes, activeSeconds));
                 row.put("totalReadBytes", Bytes.readableByteSize(readBytes));
                 row.put("totalWriteBytes", Bytes.readableByteSize(writeBytes));
-                row.put("totalReadPackets", info == null ? 0L : info.getTotalReadPackets().get());
-                row.put("totalWritePackets", info == null ? 0L : info.getTotalWritePackets().get());
                 rows.add(row);
             }
         }
@@ -386,12 +372,17 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         }
         String country = Strings.isEmpty(geo.getCountry()) ? "" : geo.getCountry();
         String code = Strings.isEmpty(geo.getCountryCode()) ? "" : geo.getCountryCode();
+        String city = Strings.isEmpty(geo.getCity()) ? "" : geo.getCity();
         String category = Strings.isEmpty(geo.getCategory()) ? "" : geo.getCategory();
         if (!country.isEmpty()) {
-            if (!code.isEmpty() && !country.equalsIgnoreCase(code)) {
-                return country + " (" + code + ")";
+            StringBuilder text = new StringBuilder(country);
+            if (!city.isEmpty() && !country.equalsIgnoreCase(city)) {
+                text.append(" / ").append(city);
             }
-            return country;
+            if (!code.isEmpty() && !country.equalsIgnoreCase(code)) {
+                text.append(" (").append(code).append(')');
+            }
+            return text.toString();
         }
         if ("private".equalsIgnoreCase(category)) {
             return "内网";
