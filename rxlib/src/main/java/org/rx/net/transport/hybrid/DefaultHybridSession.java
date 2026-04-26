@@ -1,5 +1,6 @@
 package org.rx.net.transport.hybrid;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.AttributeKey;
 import org.rx.core.Delegate;
@@ -259,6 +260,7 @@ final class DefaultHybridSession implements HybridSession {
         cancelPunch();
         degradeToTcpOnly(reason);
         sequenceWindow.clear();
+        clearMirroredAttrs();
         attrs.clear();
         onSend.purge();
         onReceive.purge();
@@ -409,21 +411,37 @@ final class DefaultHybridSession implements HybridSession {
     @Override
     @SuppressWarnings("unchecked")
     public <T> T attr(AttributeKey<T> key) {
-        return (T) attrs.get(key);
+        Object value = attrs.get(key);
+        if (value != null || attrs.containsKey(key)) {
+            return (T) value;
+        }
+        if (tcpClient != null && tcpClient.getChannel() != null) {
+            return tcpClient.attr(key);
+        }
+        return null;
     }
 
     @Override
     public <T> void attr(AttributeKey<T> key, T value) {
         if (value == null) {
             attrs.remove(key);
+            if (tcpClient != null && tcpClient.isConnected()) {
+                tcpClient.attr(key, null);
+            }
             return;
         }
         attrs.put(key, value);
+        if (tcpClient != null && tcpClient.isConnected()) {
+            tcpClient.attr(key, value);
+        }
     }
 
     @Override
     public boolean hasAttr(AttributeKey<?> key) {
-        return attrs.containsKey(key);
+        if (attrs.containsKey(key)) {
+            return true;
+        }
+        return tcpClient != null && tcpClient.getChannel() != null && tcpClient.attr(key) != null;
     }
 
     @Override
@@ -445,12 +463,27 @@ final class DefaultHybridSession implements HybridSession {
         cancelProbe();
         cancelPunch();
         sequenceWindow.clear();
+        clearMirroredAttrs();
         attrs.clear();
         onSend.purge();
         onReceive.purge();
         markMetricsClosed();
         if (tcpClient != null) {
             quietly(tcpClient::close);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    void clearMirroredAttrs() {
+        if (tcpClient == null) {
+            return;
+        }
+        Channel channel = tcpClient.getChannel();
+        if (channel == null) {
+            return;
+        }
+        for (AttributeKey<?> key : attrs.keySet()) {
+            channel.attr((AttributeKey<Object>) key).set(null);
         }
     }
 }

@@ -6,7 +6,9 @@ import org.rx.core.EventArgs;
 import org.rx.core.EventPublisher;
 import org.rx.core.NEventArgs;
 import org.rx.core.Tasks;
+import org.rx.core.ThreadPool;
 import org.rx.exception.InvalidException;
+import org.rx.net.Sockets;
 import org.rx.net.transport.DefaultTcpClient;
 import org.rx.net.transport.TcpClient;
 import org.rx.net.transport.TcpClientConfig;
@@ -23,6 +25,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 
 public final class HybridClient implements AutoCloseable, EventPublisher<HybridClient> {
+    static final ThreadPool SCHEDULER = new ThreadPool(Sockets.ReactorNames.RPC);
+
     public final Delegate<HybridClient, EventArgs> onConnected = Delegate.create();
     public final Delegate<HybridClient, EventArgs> onDisconnected = Delegate.create();
     public final Delegate<HybridClient, NEventArgs<InetSocketAddress>> onReconnecting = Delegate.create();
@@ -39,6 +43,11 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
     private final UdpClient udpClient;
     private final DefaultTcpClient tcpClient;
     private volatile DefaultHybridSession session;
+
+    @Override
+    public ThreadPool asyncScheduler() {
+        return SCHEDULER;
+    }
 
     public HybridClient(HybridConfig config) {
         this.config = requireConfig(config);
@@ -130,7 +139,11 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
     }
 
     public void resetHandlers() {
+        onConnected.purge();
         onDisconnected.purge();
+        onReconnecting.purge();
+        onReconnected.purge();
+        onSessionReady.purge();
         onReceive.purge();
         onError.purge();
         onSend.purge();
@@ -255,7 +268,14 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
             tcpClient.close();
         }
         udpClient.close();
+        onConnected.purge();
+        onDisconnected.purge();
+        onReconnecting.purge();
+        onReconnected.purge();
+        onSessionReady.purge();
         onReceive.purge();
+        onError.purge();
+        onSend.purge();
     }
 
     static HybridConfig requireConfig(HybridConfig config) {

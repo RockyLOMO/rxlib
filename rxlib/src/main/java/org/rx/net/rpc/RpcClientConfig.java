@@ -1,17 +1,16 @@
 package org.rx.net.rpc;
 
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.Sockets;
-import org.rx.net.transport.DefaultTcpClient;
 import org.rx.net.transport.TcpClientConfig;
+import org.rx.net.transport.hybrid.HybridClient;
+import org.rx.net.transport.hybrid.HybridConfig;
 import org.rx.util.function.TripleAction;
 
 import java.net.InetSocketAddress;
 
-@RequiredArgsConstructor
 @Getter
 @Setter
 @ToString
@@ -28,7 +27,7 @@ public class RpcClientConfig<T> {
         TcpClientConfig tcpClientConfig = new TcpClientConfig();
         tcpClientConfig.setServerEndpoint(serverEndpoint);
         tcpClientConfig.setEnableReconnect(true);
-        RpcClientConfig<T> config = new RpcClientConfig<>(tcpClientConfig);
+        RpcClientConfig<T> config = new RpcClientConfig<T>(tcpClientConfig);
         config.setEventVersion((short) eventVersion);
         return config;
     }
@@ -41,18 +40,35 @@ public class RpcClientConfig<T> {
         TcpClientConfig tcpClientConfig = new TcpClientConfig();
         tcpClientConfig.setServerEndpoint(serverEndpoint);
         tcpClientConfig.setEnableReconnect(false);
-        RpcClientConfig<T> config = new RpcClientConfig<>(tcpClientConfig);
+        RpcClientConfig<T> config = new RpcClientConfig<T>(tcpClientConfig);
         config.setMinPoolSize((short) minPoolSize);
         config.setMaxPoolSize((short) maxPoolSize);
         return config;
     }
 
-    private final TcpClientConfig tcpConfig;
+    private final HybridConfig hybridConfig;
     private short eventVersion = DEFAULT_VERSION;
     private short minPoolSize;
     private short maxPoolSize = NON_POOL_SIZE;
-    private TripleAction<T, DefaultTcpClient> initHandler;
+    private int requestTimeoutMillis = -1;
+    private TripleAction<T, HybridClient> initHandler;
     private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
+
+    public RpcClientConfig(TcpClientConfig tcpConfig) {
+        this(new HybridConfig());
+        hybridConfig.setTcpClientConfig(tcpConfig);
+    }
+
+    public RpcClientConfig(HybridConfig hybridConfig) {
+        this.hybridConfig = hybridConfig == null ? new HybridConfig() : hybridConfig;
+        if (this.hybridConfig.getTcpClientConfig() == null) {
+            this.hybridConfig.setTcpClientConfig(new TcpClientConfig());
+        }
+    }
+
+    public TcpClientConfig getTcpConfig() {
+        return hybridConfig.getTcpClientConfig();
+    }
 
     public boolean isUsePool() {
         return maxPoolSize > NON_POOL_SIZE;

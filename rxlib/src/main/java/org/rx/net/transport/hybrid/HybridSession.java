@@ -28,6 +28,18 @@ public interface HybridSession extends AutoCloseable, EventPublisher<HybridSessi
 
     boolean hasAttr(AttributeKey<?> key);
 
+    default boolean hasAttr(String name) {
+        return hasAttr(AttributeKey.valueOf(name));
+    }
+
+    default <T> T attr(String name) {
+        return attr(AttributeKey.<T>valueOf(name));
+    }
+
+    default <T> void attr(String name, T value) {
+        attr(AttributeKey.<T>valueOf(name), value);
+    }
+
     Delegate<HybridSession, NEventArgs<Object>> onSend();
 
     Delegate<HybridSession, NEventArgs<Object>> onReceive();

@@ -135,7 +135,7 @@ public class NameserverImpl implements Nameserver {
 
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().attr(APP_NAME_KEY, appName);
-        InetAddress addr = ctx.getClient().getRemoteEndpoint().getAddress();
+        InetAddress addr = ctx.getClient().tcpRemoteEndpoint().getAddress();
         Sys.logCtx("remoteAddr", addr);
         doRegister(appName, weight, addr);
 
@@ -157,7 +157,7 @@ public class NameserverImpl implements Nameserver {
             throw new InvalidException("Must register first");
         }
 
-        doDeregister(appName, ctx.getClient().getRemoteEndpoint().getAddress(), false, true);
+        doDeregister(appName, ctx.getClient().tcpRemoteEndpoint().getAddress(), false, true);
     }
 
     void doDeregister(String appName, InetAddress addr, boolean isDisconnected, boolean shouldSync) {
@@ -192,14 +192,14 @@ public class NameserverImpl implements Nameserver {
     @Override
     public <T extends Serializable> void instanceAttr(String appName, String key, T value) {
         RemotingContext ctx = RemotingContext.context();
-        attrs(ctx.getClient().getRemoteEndpoint().getAddress()).put(key, value);
+        attrs(ctx.getClient().tcpRemoteEndpoint().getAddress()).put(key, value);
         syncAttributes();
     }
 
     @Override
     public <T extends Serializable> T instanceAttr(String appName, String key) {
         RemotingContext ctx = RemotingContext.context();
-        return (T) attrs(ctx.getClient().getRemoteEndpoint().getAddress()).get(key);
+        return (T) attrs(ctx.getClient().tcpRemoteEndpoint().getAddress()).get(key);
     }
 
     @Override
@@ -215,7 +215,7 @@ public class NameserverImpl implements Nameserver {
         }
         if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
-            hosts.remove(ctx.getClient().getRemoteEndpoint().getAddress());
+            hosts.remove(ctx.getClient().tcpRemoteEndpoint().getAddress());
         }
         return hosts;
     }
@@ -234,7 +234,7 @@ public class NameserverImpl implements Nameserver {
         }
         if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
-            hosts.remove(ctx.getClient().getRemoteEndpoint().getAddress());
+            hosts.remove(ctx.getClient().tcpRemoteEndpoint().getAddress());
         }
         return getDiscoverInfos(hosts, instanceAttrKeys);
     }

@@ -51,7 +51,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         tcpServer.onReceive.combine(this::onTcpReceive);
         tcpServer.onDisconnected.combine((s, e) -> removeSession(e.getClient()));
         tcpServer.onError.combine((s, e) -> raiseEventAsync(onError, new NEventArgs<Throwable>(e.getValue())));
-        tcpServer.onClosed.combine((s, e) -> raiseEventAsync(onClosed, EventArgs.EMPTY));
+        tcpServer.onClosed.combine((s, e) -> onTransportClosed());
         udpClient.onReceive.combine(this::onUdpReceive);
     }
 
@@ -61,6 +61,10 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
 
     public boolean isStarted() {
         return tcpServer.isStarted();
+    }
+
+    public TcpServer tcpServer() {
+        return tcpServer;
     }
 
     public Map<InetSocketAddress, TcpClient> tcpClients() {
@@ -212,6 +216,23 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         sessionsById.remove(session.sessionId, session);
         session.detach("tcp-disconnected");
         raiseEventAsync(onDisconnected, new NEventArgs<HybridSession>(session));
+    }
+
+    void onTransportClosed() {
+        for (DefaultHybridSession session : sessionsById.values()) {
+            session.detach("server-closed");
+            quietly(session.tcpClient::close);
+        }
+        sessionsById.clear();
+        sessionsByTcp.clear();
+        pendingTcpData.clear();
+        quietly(udpClient::close);
+        onSend.purge();
+        onReceive.purge();
+        onConnected.purge();
+        onDisconnected.purge();
+        onError.purge();
+        raiseEventAsync(onClosed, EventArgs.EMPTY);
     }
 
     @Override
