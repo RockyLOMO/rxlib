@@ -1,5 +1,6 @@
 package org.rx.net.transport.hybrid;
 
+import io.netty.util.AttributeKey;
 import org.rx.core.Delegate;
 import org.rx.core.EventPublisher;
 import org.rx.core.NEventArgs;
@@ -18,6 +19,16 @@ public interface HybridSession extends AutoCloseable, EventPublisher<HybridSessi
     void send(Object packet);
 
     void send(Object packet, HybridSendOptions options);
+
+    HybridSendResult sendWithResult(Object packet, HybridSendOptions options);
+
+    <T> T attr(AttributeKey<T> key);
+
+    <T> void attr(AttributeKey<T> key, T value);
+
+    boolean hasAttr(AttributeKey<?> key);
+
+    Delegate<HybridSession, NEventArgs<Object>> onSend();
 
     Delegate<HybridSession, NEventArgs<Object>> onReceive();
 }

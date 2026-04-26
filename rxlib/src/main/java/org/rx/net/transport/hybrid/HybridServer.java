@@ -14,13 +14,22 @@ import org.rx.net.transport.UdpClient;
 import org.rx.net.transport.protocol.UdpMessage;
 
 import java.net.InetSocketAddress;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+import static org.rx.core.Extends.quietly;
 
 public final class HybridServer implements AutoCloseable, EventPublisher<HybridServer> {
+    static final int MAX_PENDING_TCP_DATA_BEFORE_HELLO = 1024;
+
     public final Delegate<HybridServer, NEventArgs<HybridSession>> onConnected = Delegate.create();
     public final Delegate<HybridServer, NEventArgs<HybridSession>> onDisconnected = Delegate.create();
-    public final Delegate<HybridServer, NEventArgs<Object>> onReceive = Delegate.create();
+    public final Delegate<HybridServer, HybridServerEventArgs<Object>> onReceive = Delegate.create();
+    public final Delegate<HybridServer, HybridServerEventArgs<Object>> onSend = Delegate.create();
     public final Delegate<HybridServer, NEventArgs<Throwable>> onError = Delegate.create();
     public final Delegate<HybridServer, EventArgs> onClosed = Delegate.create();
 
@@ -32,6 +41,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
     private final TcpServer tcpServer;
     private final Map<Long, DefaultHybridSession> sessionsById = new ConcurrentHashMap<>();
     private final Map<TcpClient, DefaultHybridSession> sessionsByTcp = new ConcurrentHashMap<>();
+    private final Map<TcpClient, Queue<HybridTcpData>> pendingTcpData = new ConcurrentHashMap<>();
 
     public HybridServer(HybridConfig config) {
         this.config = requireConfig(config);
@@ -57,6 +67,27 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         return tcpServer.getClients();
     }
 
+    public Map<Long, HybridSession> sessions() {
+        Map<Long, HybridSession> snapshot = new HashMap<Long, HybridSession>(sessionsById.size());
+        snapshot.putAll(sessionsById);
+        return Collections.unmodifiableMap(snapshot);
+    }
+
+    public HybridSession getSession(long sessionId) {
+        return sessionsById.get(sessionId);
+    }
+
+    public boolean closeSession(long sessionId) {
+        DefaultHybridSession session = sessionsById.remove(sessionId);
+        if (session == null) {
+            return false;
+        }
+        sessionsByTcp.remove(session.tcpClient, session);
+        session.close();
+        raiseEventAsync(onDisconnected, new NEventArgs<HybridSession>(session));
+        return true;
+    }
+
     void onTcpReceive(TcpServer sender, org.rx.net.transport.TcpServerEventArgs<Object> e) {
         Object packet = e.getValue();
         TcpClient client = e.getClient();
@@ -67,6 +98,15 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         DefaultHybridSession session = sessionsByTcp.get(client);
         if (packet instanceof HybridTcpData && session != null) {
             session.receiveTcp((HybridTcpData) packet);
+            return;
+        }
+        if (packet instanceof HybridTcpData) {
+            Queue<HybridTcpData> queue = pendingTcpData.computeIfAbsent(client, k -> new ConcurrentLinkedQueue<HybridTcpData>());
+            if (queue.size() >= MAX_PENDING_TCP_DATA_BEFORE_HELLO) {
+                metrics.tcpPendingDrops.increment();
+                return;
+            }
+            queue.offer((HybridTcpData) packet);
         }
     }
 
@@ -79,17 +119,40 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
             client.send(newAck(old));
             return;
         }
+        if (old != null) {
+            sessionsById.remove(old.sessionId, old);
+            old.detach("session-replaced");
+        }
 
         DefaultHybridSession session = new DefaultHybridSession(config, udpClient, client, metrics,
                 hello.sessionId, hello.udpToken, "server-" + udpClient.getLocalEndpoint().getPort());
-        session.onReceive().combine((s, e) -> raiseEventAsync(onReceive, e));
+        session.remotePeerId = hello.peerId;
+        session.onReceive().combine((s, e) -> raiseEvent(onReceive, new HybridServerEventArgs<Object>(s, e.getValue())));
+        session.onSend().combine((s, e) -> {
+            HybridServerEventArgs<Object> args = new HybridServerEventArgs<Object>(s, e.getValue());
+            raiseEvent(onSend, args);
+            e.setValue(args.getValue());
+            e.setCancel(args.isCancel());
+        });
         sessionsById.put(session.sessionId, session);
         sessionsByTcp.put(client, session);
         client.send(newAck(session));
         raiseEventAsync(onConnected, new NEventArgs<HybridSession>(session));
+        drainPendingTcpData(client, session);
 
         InetSocketAddress endpoint = HybridClient.udpEndpoint(hello.udpLocalHost, hello.udpLocalPort, client.getRemoteEndpoint());
-        Tasks.runAsync(() -> session.startDirectProbe(endpoint));
+        session.startDirectProbe(endpoint);
+    }
+
+    void drainPendingTcpData(TcpClient client, DefaultHybridSession session) {
+        Queue<HybridTcpData> queue = pendingTcpData.remove(client);
+        if (queue == null) {
+            return;
+        }
+        HybridTcpData data;
+        while ((data = queue.poll()) != null) {
+            session.receiveTcp(data);
+        }
     }
 
     void onUdpReceive(UdpClient sender, NEventArgs<UdpMessage> e) {
@@ -142,6 +205,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
 
     void removeSession(TcpClient client) {
         DefaultHybridSession session = sessionsByTcp.remove(client);
+        pendingTcpData.remove(client);
         if (session == null) {
             return;
         }
@@ -153,12 +217,15 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
     @Override
     public void close() {
         for (DefaultHybridSession session : sessionsById.values()) {
-            session.close();
+            session.detach("server-closing");
+            quietly(session.tcpClient::close);
         }
         sessionsById.clear();
         sessionsByTcp.clear();
+        pendingTcpData.clear();
         tcpServer.close();
         udpClient.close();
+        onSend.purge();
         onReceive.purge();
     }
 

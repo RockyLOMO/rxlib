@@ -15,12 +15,20 @@ import org.rx.net.transport.protocol.UdpMessage;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.TimeUnit;
 
 public final class HybridClient implements AutoCloseable, EventPublisher<HybridClient> {
     public final Delegate<HybridClient, EventArgs> onConnected = Delegate.create();
     public final Delegate<HybridClient, EventArgs> onDisconnected = Delegate.create();
+    public final Delegate<HybridClient, NEventArgs<InetSocketAddress>> onReconnecting = Delegate.create();
+    public final Delegate<HybridClient, EventArgs> onReconnected = Delegate.create();
+    public final Delegate<HybridClient, NEventArgs<HybridSession>> onSessionReady = Delegate.create();
+    public final Delegate<HybridClient, NEventArgs<Object>> onSend = Delegate.create();
     public final Delegate<HybridClient, NEventArgs<Object>> onReceive = Delegate.create();
     public final Delegate<HybridClient, NEventArgs<Throwable>> onError = Delegate.create();
 
@@ -46,17 +54,66 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
             }
             raiseEventAsync(onDisconnected, EventArgs.EMPTY);
         });
+        tcpClient.onReconnecting.combine((s, e) -> {
+            NEventArgs<InetSocketAddress> args = new NEventArgs<InetSocketAddress>(e.getValue());
+            raiseEvent(onReconnecting, args);
+            e.setValue(args.getValue());
+        });
+        tcpClient.onReconnected.combine((s, e) -> {
+            DefaultHybridSession created = createSession();
+            sendHello(created);
+            raiseEventAsync(onReconnected, EventArgs.EMPTY);
+        });
         tcpClient.onError.combine((s, e) -> raiseEventAsync(onError, e));
         udpClient.onReceive.combine(this::onUdpReceive);
     }
 
     public void connect(InetSocketAddress serverEndpoint) throws TimeoutException {
-        tcpClient.connect(serverEndpoint);
-        DefaultHybridSession created = new DefaultHybridSession(config, udpClient, tcpClient, metrics,
-                positiveRandomLong(), positiveRandomLong(), "client-" + udpClient.getLocalEndpoint().getPort());
-        created.onReceive().combine((s, e) -> raiseEventAsync(onReceive, e));
-        session = created;
-        tcpClient.send(newHello(created));
+        Future<Void> future = connectAsync(serverEndpoint);
+        try {
+            future.get(config.getTcpClientConfig().getConnectTimeoutMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw InvalidException.sneaky(e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof TimeoutException) {
+                throw (TimeoutException) cause;
+            }
+            throw InvalidException.sneaky(cause);
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw e;
+        }
+    }
+
+    public Future<Void> connectAsync(InetSocketAddress serverEndpoint) {
+        Future<Void> connectFuture = tcpClient.connectAsync(serverEndpoint);
+        CompletableFuture<Void> promise = new CompletableFuture<>();
+        if (connectFuture instanceof CompletableFuture) {
+            @SuppressWarnings("unchecked")
+            CompletableFuture<Void> tcpPromise = (CompletableFuture<Void>) connectFuture;
+            tcpPromise.whenComplete((r, e) -> completeConnect(promise, e));
+            return promise;
+        }
+        Tasks.runAsync(() -> {
+            try {
+                connectFuture.get();
+                completeConnect(promise, null);
+            } catch (Throwable e) {
+                completeConnect(promise, e);
+            }
+        });
+        return promise;
+    }
+
+    void completeConnect(CompletableFuture<Void> promise, Throwable error) {
+        if (error != null) {
+            promise.completeExceptionally(error);
+            return;
+        }
+        DefaultHybridSession created = createSession();
+        sendHello(created);
+        promise.complete(null);
     }
 
     public boolean isConnected() {
@@ -64,16 +121,32 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
         return current != null && current.isConnected();
     }
 
+    public boolean isSessionReady() {
+        return isConnected();
+    }
+
     public HybridSession session() {
         return session;
     }
 
+    public void resetHandlers() {
+        onDisconnected.purge();
+        onReceive.purge();
+        onError.purge();
+        onSend.purge();
+    }
+
     public void send(Object packet) {
-        currentSession().send(packet);
+        send(packet, HybridSendOptions.DEFAULT);
     }
 
     public void send(Object packet, HybridSendOptions options) {
-        currentSession().send(packet, options);
+        NEventArgs<Object> args = new NEventArgs<Object>(packet);
+        raiseEvent(onSend, args);
+        if (args.isCancel()) {
+            return;
+        }
+        currentSession().send(args.getValue(), options);
     }
 
     void onTcpReceive(TcpClient sender, NEventArgs<Object> e) {
@@ -97,8 +170,9 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
             metrics.illegalUdpDrops.increment();
             return;
         }
+        current.remotePeerId = ack.peerId;
         InetSocketAddress endpoint = udpEndpoint(ack.udpObservedHost, ack.udpObservedPort, tcpClient.getRemoteEndpoint());
-        Tasks.runAsync(() -> current.startDirectProbe(endpoint));
+        current.startDirectProbe(endpoint);
     }
 
     void onUdpReceive(UdpClient sender, NEventArgs<UdpMessage> e) {
@@ -141,6 +215,26 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
         hello.enableUdpDirect = config.isEnableUdpDirect();
         hello.enableUdpHolePunch = config.isEnableUdpHolePunch();
         return hello;
+    }
+
+    DefaultHybridSession createSession() {
+        DefaultHybridSession old = session;
+        if (old != null) {
+            old.detach("session-replaced");
+        }
+        return new DefaultHybridSession(config, udpClient, tcpClient, metrics,
+                positiveRandomLong(), positiveRandomLong(), "client-" + udpClient.getLocalEndpoint().getPort());
+    }
+
+    void bindSession(DefaultHybridSession created) {
+        created.onReceive().combine((s, e) -> raiseEventAsync(onReceive, e));
+    }
+
+    void sendHello(DefaultHybridSession created) {
+        bindSession(created);
+        session = created;
+        tcpClient.send(newHello(created));
+        raiseEventAsync(onSessionReady, new NEventArgs<HybridSession>(created));
     }
 
     DefaultHybridSession currentSession() {
