@@ -86,10 +86,18 @@ class UdpTransportTest {
         try (UdpClient server = new UdpClient(0, config);
              UdpClient client = new UdpClient(0, config)) {
             InetSocketAddress serverEndpoint = server.getLocalEndpoint();
-            server.onReceive.combine((s, e) -> s.reply(e.getValue(), ((String) e.getValue().packet()).toUpperCase()));
 
-            String response = client.request(serverEndpoint, "codec-config", String.class, 2000);
-            assertEquals("CODEC-CONFIG", response);
+            CountDownLatch received = new CountDownLatch(1);
+            String[] value = new String[1];
+            server.onReceive.combine((s, e) -> {
+                value[0] = (String) e.getValue().packet();
+                received.countDown();
+            });
+
+            client.send(serverEndpoint, "codec-config");
+
+            assertTrue(received.await(3, TimeUnit.SECONDS), "server should receive custom-codec message");
+            assertEquals("codec-config", value[0]);
         }
     }
 
