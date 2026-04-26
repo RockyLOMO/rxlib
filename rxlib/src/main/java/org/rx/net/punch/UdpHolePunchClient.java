@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.NEventArgs;
+import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.net.transport.ClientDisconnectedException;
 import org.rx.net.transport.UdpClient;
@@ -141,6 +142,16 @@ public final class UdpHolePunchClient implements AutoCloseable {
         } finally {
             pendingSessions.remove(key, pending);
         }
+    }
+
+    public CompletableFuture<UdpHolePunchSession> connectAsync(InetSocketAddress rendezvousEndpoint, String roomId, String peerId) {
+        return connectAsync(rendezvousEndpoint, roomId, peerId, peerWaitTimeoutMillis, directConnectTimeoutMillis);
+    }
+
+    public CompletableFuture<UdpHolePunchSession> connectAsync(InetSocketAddress rendezvousEndpoint, String roomId, String peerId,
+                                                               int waitPeerTimeoutMillis, int directTimeoutMillis) {
+        ensureOpen();
+        return Tasks.runAsync(() -> connect(rendezvousEndpoint, roomId, peerId, waitPeerTimeoutMillis, directTimeoutMillis));
     }
 
     void detach(UdpHolePunchSession session) {

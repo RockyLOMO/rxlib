@@ -65,6 +65,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
     static final class SendContext {
         final UdpMessage message;
         final ByteBuf payload;
+        final int encodedBytes;
         final int fragmentCount;
         final CompletableFuture<Void> ackFuture = new CompletableFuture<>();
         final AtomicBoolean payloadReleased = new AtomicBoolean();
@@ -261,7 +262,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         bootstrap = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(HANDLER));
         channel = bootstrap.bind(bindPort).syncUninterruptibly().channel();
         channel.attr(OWNER).set(this);
-        localEndpoint = (InetSocketAddress) channel.localAddress();
+        localEndpoint = connectableLocalEndpoint((InetSocketAddress) channel.localAddress());
     }
 
     public boolean isActive() {
@@ -356,6 +357,30 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         }
     }
 
+    public UdpSendResult sendWithResult(InetSocketAddress remoteAddress, Object packet) {
+        return sendWithResult(remoteAddress, packet, waitAckTimeoutMillis, fullSync);
+    }
+
+    public UdpSendResult sendWithResult(InetSocketAddress remoteAddress, Object packet, int waitAckTimeoutMillis, boolean fullSync) {
+        SendContext context = beginSend(remoteAddress, packet, waitAckTimeoutMillis, fullSync, nextMessageId());
+        return new UdpSendResult(context.writeFuture, context.ackFuture, context.encodedBytes, context.fragmentCount);
+    }
+
+    public int encodedSize(Object packet) {
+        ByteBuf payload = null;
+        try {
+            payload = codec.encode(channel.alloc(), packet);
+            if (payload == null) {
+                throw new InvalidException("UDP codec encode returned null");
+            }
+            return payload.readableBytes();
+        } catch (Throwable e) {
+            throw InvalidException.sneaky(e);
+        } finally {
+            Bytes.release(payload);
+        }
+    }
+
     public ChannelFuture sendAsync(InetSocketAddress remoteAddress, Object packet) throws TimeoutException {
         return sendAsync(remoteAddress, packet, waitAckTimeoutMillis, fullSync);
     }
@@ -402,9 +427,10 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
             if (payload == null) {
                 throw new InvalidException("UDP codec encode returned null");
             }
-            int fragmentCount = fragmentCount(payload.readableBytes());
+            int encodedBytes = payload.readableBytes();
+            int fragmentCount = fragmentCount(encodedBytes);
             UdpMessage message = new UdpMessage(messageId, ack, alive, remoteAddress, packet);
-            context = new SendContext(message, payload, fragmentCount);
+            context = new SendContext(message, payload, encodedBytes, fragmentCount);
             payload = null;
             if (ack != AckSync.NONE) {
                 SendContext old = pendingSends.putIfAbsent(messageId, context);
@@ -849,5 +875,12 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
             throw new InvalidException("UdpClientCodec is null");
         }
         return codec;
+    }
+
+    static InetSocketAddress connectableLocalEndpoint(InetSocketAddress endpoint) {
+        if (endpoint == null || endpoint.getAddress() == null || !endpoint.getAddress().isAnyLocalAddress()) {
+            return endpoint;
+        }
+        return new InetSocketAddress(Sockets.getLoopbackAddress(), endpoint.getPort());
     }
 }
