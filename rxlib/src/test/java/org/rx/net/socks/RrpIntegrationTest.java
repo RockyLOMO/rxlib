@@ -21,6 +21,8 @@ import java.io.OutputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -122,6 +124,29 @@ class RrpIntegrationTest {
         } finally {
             client.close();
             server.close();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void connectFailureCompletesFutureWhenReconnectDisabled() throws Exception {
+        int port;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            port = socket.getLocalPort();
+        }
+
+        RrpConfig conf = new RrpConfig();
+        conf.setServerEndpoint("127.0.0.1:" + port);
+        conf.setEnableReconnect(false);
+        conf.setProxies(Collections.emptyList());
+        RrpClient client = new RrpClient(conf);
+        try {
+            Future<Void> future = client.connectAsync();
+            ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(3, java.util.concurrent.TimeUnit.SECONDS));
+            assertNotNull(ex.getCause(), "连接失败原因应透传给调用方");
+            assertTrue(future.isDone(), "连接失败后 future 必须结束");
+        } finally {
+            client.close();
         }
     }
 
@@ -446,7 +471,7 @@ class RrpIntegrationTest {
         byte[] tokenBytes = token.getBytes(StandardCharsets.US_ASCII);
         buf.writeInt(tokenBytes.length);
         buf.writeBytes(tokenBytes);
-        byte[] data = Serializer.DEFAULT.serializeToBytes(Collections.singletonList(proxy));
+        byte[] data = Serializer.FURY.serializeToBytes(Collections.singletonList(proxy));
         buf.writeInt(data.length);
         buf.writeBytes(data);
         ch.writeInbound(buf);

@@ -17,4 +17,5 @@ public class NameserverConfig implements Serializable {
     private int registerPort = 854;
     private int syncPort;
     private List<String> replicaEndpoints;
+    private List<String> udpCodecAllowPrefixes;
 }

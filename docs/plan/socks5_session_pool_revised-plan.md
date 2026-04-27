@@ -1,7 +1,7 @@
 # Socks5 Session Pool（修订版 v6）
 
 ## Summary
-- TCP 做暖池；UDP 做 lease 池。TCP 目标是消掉到 ProxyB 的 `connect + auth` RTT，UDP 目标是复用远端 `UDP_ASSOCIATE` relay，覆盖 `docs/test/socksServer.md` 的场景2、udp2raw 场景、场景4。
+- TCP 做暖池；UDP 做 lease 池。TCP 目标是消掉到 ProxyB 的 `connect + auth` RTT，UDP 目标是复用远端 `UDP_ASSOCIATE` relay，覆盖 `../test/SocksScene.md` 的场景2、udp2raw 场景、场景4。
 - 不直接用 `AuthenticEndpoint` 做 map key；新增不可变 snapshot key 类，避免 `AuthenticEndpoint` 缺少 `equals/hashCode` 且字段可变导致 pool 永远 miss。
 - TCP 暖连接是后台预建的，borrow 后与 inbound 不同 `eventLoop`；这会多一次跨线程 hop，但不是正确性问题。实现和代码注释里要明确这一点。
 - UDP 复用依赖 `SocksRpcContract` 的远端控制面，拆成 `resetUdpRelay(relayPort)` 和 `claimUdpRelay(relayPort, clientAddr)`；`reset` 在 recycle 后异步执行，`claim` 在 borrow 时同步短超时执行。

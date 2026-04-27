@@ -10,14 +10,12 @@ import io.netty.channel.local.LocalChannel;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.Tuple;
-import org.rx.core.Constants;
 import org.rx.core.Disposable;
 import org.rx.core.Sys;
-import org.rx.core.Tasks;
-import org.rx.exception.InvalidException;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
+import org.rx.net.transport.AbstractTcpReconnectClient;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -31,7 +29,7 @@ import static org.rx.net.socks.RrpConfig.ATTR_CLI_CONN;
 import static org.rx.net.socks.RrpConfig.ATTR_CLI_PROXY;
 
 @Slf4j
-public class RrpClient extends Disposable {
+public class RrpClient extends AbstractTcpReconnectClient {
     static final int MAX_CHANNEL_ID_LEN = RrpServer.MAX_CHANNEL_ID_LEN;
     static final boolean enableMemoryChannel = true;
 
@@ -170,7 +168,7 @@ public class RrpClient extends Disposable {
                 buf.writeInt(tokenData.length);
                 buf.writeBytes(tokenData);
             }
-            byte[] bytes = Serializer.DEFAULT.serializeToBytes(config.getProxies());
+            byte[] bytes = Serializer.FURY.serializeToBytes(config.getProxies());
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
             serverChannel.writeAndFlush(buf).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
@@ -289,16 +287,7 @@ public class RrpClient extends Disposable {
 
     final RrpConfig config;
     final Map<Integer, RpClientProxy> proxyMap = new ConcurrentHashMap<>();
-    Bootstrap bootstrap;
-    Future<Void> connectingFutureWrapper;
-    volatile Channel channel;
-    volatile ChannelFuture connectingFuture;
     volatile ScheduledFuture<?> heartbeatFuture;
-
-    public boolean isConnected() {
-        Channel c = channel;
-        return c != null && c.isActive();
-    }
 
     protected synchronized boolean isShouldReconnect() {
         return config.isEnableReconnect() && !isConnected();
@@ -313,7 +302,8 @@ public class RrpClient extends Disposable {
         config.setEnableReconnect(false);
         stopHeartbeat();
         closeClientProxies();
-        Sockets.closeOnFlushed(channel);
+        cancelPendingConnect(new CancellationException("client closed"));
+        Sockets.closeOnFlushed(getChannel());
     }
 
     void closeClientProxies() {
@@ -347,101 +337,36 @@ public class RrpClient extends Disposable {
     }
 
     public synchronized Future<Void> connectAsync() {
-        if (isConnected()) {
-            throw new InvalidException("{} has connected", this);
-        }
-
         config.setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
 //        config.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags());
-        bootstrap = Sockets.bootstrap(config, channel -> {
+        return beginConnect(Sockets.bootstrap(config, channel -> {
             Sockets.addTcpClientHandler(channel, config).pipeline()
 //                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
 //                    .addLast(new HttpPseudoHeaderDecoder(), HttpPseudoHeaderEncoder.DEFAULT)
                     .addLast(new ClientHandler());
             Sockets.dumpPipeline("RrpCli", channel);
-        });
-        doConnect(false);
-        if (connectingFutureWrapper == null) {
-            connectingFutureWrapper = new Future<Void>() {
-                @Override
-                public boolean cancel(boolean mayInterruptIfRunning) {
-                    synchronized (RrpClient.this) {
-                        config.setEnableReconnect(false);
-                    }
-                    ChannelFuture f = connectingFuture;
-                    if (f != null) {
-                        f.cancel(mayInterruptIfRunning);
-                    }
-                    return true;
-                }
-
-                @Override
-                public boolean isCancelled() {
-                    ChannelFuture f = connectingFuture;
-                    return f == null || f.isCancelled();
-                }
-
-                @Override
-                public boolean isDone() {
-                    return connectingFuture == null;
-                }
-
-                @Override
-                public Void get() throws InterruptedException, ExecutionException {
-                    ChannelFuture f = connectingFuture;
-                    if (f == null) {
-                        return null;
-                    }
-                    return f.get();
-                }
-
-                @Override
-                public Void get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-                    ChannelFuture f = connectingFuture;
-                    if (f == null) {
-                        return null;
-                    }
-                    return f.get(timeout, unit);
-                }
-            };
-        }
-        return connectingFutureWrapper;
+        }));
     }
 
-    synchronized void doConnect(boolean reconnect) {
-        if (isConnected()) {
-            return;
-        }
-        if (reconnect && !isShouldReconnect()) {
-            return;
-        }
-
-        InetSocketAddress ep = Sockets.parseEndpoint(config.getServerEndpoint());
-        connectingFuture = bootstrap.connect(ep).addListener((ChannelFutureListener) f -> {
-            channel = f.channel();
-            if (!f.isSuccess()) {
-                if (isShouldReconnect()) {
-                    Tasks.timer().setTimeout(() -> {
-                        doConnect(true);
-                        circuitContinue(isShouldReconnect());
-                    }, d -> {
-                        long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
-                        log.debug("{} reconnect {} failed will re-attempt in {}ms", this, ep, delay);
-                        return delay;
-                    }, this, Constants.TIMER_SINGLE_FLAG);
-                } else {
-                    log.debug("{} {} {} fail", this, reconnect ? "reconnect" : "connect", ep);
-                }
-                return;
-            }
-            connectingFuture = null;
-            if (reconnect) {
-                log.debug("{} reconnect {} ok", this, ep);
-            }
-        });
+    @Override
+    protected SocketAddress resolveConnectEndpoint(boolean reconnect) {
+        return Sockets.parseEndpoint(config.getServerEndpoint());
     }
 
-    void reconnectAsync() {
-        Tasks.setTimeout(() -> doConnect(true), 1000, bootstrap, Constants.TIMER_REPLACE_FLAG);
+    @Override
+    protected void onConnectSuccess(SocketAddress endpoint, boolean reconnect, Channel channel) {
+        if (reconnect) {
+            log.debug("{} reconnect {} ok", this, endpoint);
+        }
+    }
+
+    @Override
+    protected void onConnectFailure(SocketAddress endpoint, boolean reconnect, Throwable cause) {
+        log.debug("{} {} {} fail", this, reconnect ? "reconnect" : "connect", endpoint);
+    }
+
+    @Override
+    protected void onReconnectRetry(SocketAddress endpoint, long delayMs) {
+        log.debug("{} reconnect {} failed will re-attempt in {}ms", this, endpoint, delayMs);
     }
 }

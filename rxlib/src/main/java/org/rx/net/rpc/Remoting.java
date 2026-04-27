@@ -1,13 +1,11 @@
 package org.rx.net.rpc;
 
-import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.ImmediateEventExecutor;
 import io.netty.util.concurrent.Promise;
 import io.netty.util.internal.ThreadLocalRandom;
-import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -15,22 +13,37 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
 import org.rx.bean.$;
 import org.rx.bean.DynamicProxyBean;
-import org.rx.core.*;
+import org.rx.core.EventArgs;
+import org.rx.core.EventPublisher;
+import org.rx.core.Linq;
+import org.rx.core.Reflects;
+import org.rx.core.ResetEventWait;
+import org.rx.core.RxConfig;
+import org.rx.core.StringBuilder;
+import org.rx.core.Sys;
+import org.rx.core.ThreadPool;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.protocol.EventFlag;
 import org.rx.net.rpc.protocol.EventMessage;
 import org.rx.net.rpc.protocol.MetadataMessage;
 import org.rx.net.rpc.protocol.MethodMessage;
-import org.rx.net.transport.*;
+import org.rx.net.transport.ClientDisconnectedException;
+import org.rx.net.transport.TcpServer;
+import org.rx.net.transport.TcpServerConfig;
+import org.rx.net.transport.hybrid.HybridClient;
+import org.rx.net.transport.hybrid.HybridConfig;
+import org.rx.net.transport.hybrid.HybridServer;
+import org.rx.net.transport.hybrid.HybridServerEventArgs;
+import org.rx.net.transport.hybrid.HybridSession;
 import org.rx.net.transport.protocol.ErrorPacket;
 import org.rx.util.BeanMapper;
 import org.rx.util.IdGenerator;
 import org.rx.util.Snowflake;
 import org.rx.util.function.TripleAction;
 
-import java.io.Serializable;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -38,10 +51,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.bean.$.$;
-import static org.rx.core.Extends.*;
+import static org.rx.core.Extends.as;
+import static org.rx.core.Extends.ifNull;
+import static org.rx.core.Extends.tryAs;
 import static org.rx.core.Sys.proxy;
 import static org.rx.core.Sys.toJsonString;
 
@@ -57,8 +74,8 @@ public final class Remoting {
     public static class ServerBean {
         static class EventContext {
             final EventArgs computedArgs;
-            final Promise<EventArgs> computedPromise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
-            volatile RpcTcpClient computingClient;
+            final Promise<EventArgs> computedPromise = new DefaultPromise<EventArgs>(ImmediateEventExecutor.INSTANCE);
+            volatile HybridSession computingSession;
 
             EventContext(EventArgs computedArgs) {
                 this.computedArgs = computedArgs;
@@ -66,29 +83,31 @@ public final class Remoting {
         }
 
         static class EventBean {
-            final Set<RpcTcpClient> subscribe = ConcurrentHashMap.newKeySet();
-            final Map<Long, EventContext> contextMap = new ConcurrentHashMap<>();
+            final Set<HybridSession> subscribe = ConcurrentHashMap.newKeySet();
+            final Map<Long, EventContext> contextMap = new ConcurrentHashMap<Long, EventContext>();
         }
 
         final RpcServerConfig config;
-        final RpcTcpServer server;
-        final Map<String, EventBean> eventBeans = new ConcurrentHashMap<>();
+        final HybridServer server;
+        final Map<String, EventBean> eventBeans = new ConcurrentHashMap<String, EventBean>();
     }
 
     static final AttributeKey<MetadataMessage> HANDSHAKE_META_KEY = AttributeKey.valueOf("HandshakeMeta");
     static final String M_0 = "raiseEvent", M_1 = "raiseEventAsync", M_2 = "attachEvent";
-    static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<>();
-    // Per-contract init locks: avoids holding ConcurrentHashMap's bin lock during heavy RpcTcpServer startup
-    static final Map<Object, Object> serverInitLocks = new ConcurrentHashMap<>();
-    static final Map<RpcClientConfig, RpcTcpClientPool> clientPools = new ConcurrentHashMap<>();
+    static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<Object, ServerBean>();
+    static final Map<Object, Object> serverInitLocks = new ConcurrentHashMap<Object, Object>();
+    static final Map<RpcClientConfig, RpcHybridClientPool> clientPools = new ConcurrentHashMap<RpcClientConfig, RpcHybridClientPool>();
     static final IdGenerator generator = new IdGenerator();
-    static final Map<DefaultRpcTcpClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<>();
+    static final Map<HybridClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<HybridClient, Map<Integer, ClientBean>>();
+    static final Map<HybridClient, AtomicInteger> clientRefCounts = new ConcurrentHashMap<HybridClient, AtomicInteger>();
 
     @SneakyThrows
     public static <T> T createFacade(@NonNull Class<T> contract, @NonNull RpcClientConfig<T> config) {
+        ensureClientCodec(config);
         DiagnosticMetrics.setNetComponent(config.getTcpConfig(), DiagnosticMetrics.NET_RPC_CLIENT);
-        FastThreadLocal<Boolean> isCompute = new FastThreadLocal<>();
-        $<DefaultRpcTcpClient> sync = $();
+        FastThreadLocal<Boolean> isCompute = new FastThreadLocal<Boolean>();
+        $<HybridClient> sync = $();
+        Set<String> subscribedEvents = ConcurrentHashMap.newKeySet();
         return proxy(contract, (m, p) -> {
             if (Reflects.OBJECT_METHODS.contains(m)) {
                 return p.fastInvokeSuper();
@@ -96,7 +115,8 @@ public final class Remoting {
             if (Reflects.isCloseMethod(m)) {
                 synchronized (sync) {
                     if (sync.v != null) {
-                        clientBeans.remove(sync.v);
+                        clearClient(sync.v);
+                        subscribedEvents.clear();
                         sync.v.close();
                         sync.v = null;
                     }
@@ -104,7 +124,7 @@ public final class Remoting {
                 return null;
             }
 
-            Serializable pack = null;
+            Object pack = null;
             Object[] args = p.arguments;
             ClientBean clientBean = new ClientBean();
             switch (m.getName()) {
@@ -130,6 +150,7 @@ public final class Remoting {
                         case 3:
                             setReturnValue(clientBean, invokeSuper(m, p));
                             String eventName = (String) args[0];
+                            subscribedEvents.add(eventName);
                             pack = new EventMessage(eventName, EventFlag.SUBSCRIBE);
                             log.info("clientSide event {} -> SUBSCRIBE", eventName);
                             break;
@@ -139,6 +160,7 @@ public final class Remoting {
                     if (args.length == 2) {
                         setReturnValue(clientBean, invokeSuper(m, p));
                         String eventName = (String) args[0];
+                        subscribedEvents.remove(eventName);
                         pack = new EventMessage(eventName, EventFlag.UNSUBSCRIBE);
                         log.info("clientSide event {} -> UNSUBSCRIBE", eventName);
                     }
@@ -154,58 +176,21 @@ public final class Remoting {
             if (pack == null) {
                 pack = clientBean.pack = new MethodMessage(generator.increment(), m.getName(), args, ThreadPool.traceId());
             }
-            RpcTcpClientPool pool = clientPools.computeIfAbsent(config, k -> {
-                log.info("RpcClientPool {}", toJsonString(k));
+            RpcHybridClientPool pool = clientPools.computeIfAbsent(config, k -> {
+                log.info("RpcHybridClientPool {}", toJsonString(k));
                 if (!config.isUsePool()) {
-                    return new NonClientPool(config.getTcpConfig());
+                    return new NonHybridClientPool(config.getHybridConfig());
                 }
-                return new RpcClientPool(config);
+                return new RpcHybridClientPoolImpl(config);
             });
 
             if (sync.v == null) {
-                // Borrow client before entering the lock to avoid blocking inside synchronized
-                DefaultRpcTcpClient candidate = pool.borrowClient();
+                HybridClient candidate = pool.borrowClient();
                 boolean returnCandidate = false;
                 synchronized (sync) {
                     if (sync.v == null) {
-                        init(sync.v = candidate, p.getProxyObject(), isCompute);
-                        TripleAction<T, DefaultRpcTcpClient> initFn = (o, c) -> {
-                            c.send(new MetadataMessage(config.getEventVersion()));
-                            TripleAction<T, DefaultRpcTcpClient> initHandler = config.getInitHandler();
-                            if (initHandler != null) {
-                                initHandler.invoke(o, c);
-                            }
-                        };
-                        sync.v.onReconnected.combine((s, e) -> {
-                            DefaultRpcTcpClient sc = (DefaultRpcTcpClient) s;
-                            initFn.invoke((T) p.getProxyObject(), sc);
-                            // 在途重发仅在连接所在 EventLoop 上排队，与出站 write 顺序一致，且不走无关线程池
-                            Channel ch = sc.getChannel();
-                            if (ch == null) {
-                                log.warn("onReconnected: channel null, skip pending resend");
-                                return;
-                            }
-                            ch.eventLoop().execute(() -> {
-                                for (ClientBean val : getClientBeans(sc).values()) {
-                                    if (val.syncRoot.getHoldCount() == 0) {
-                                        continue;
-                                    }
-                                    log.info("clientSide resent pack[{}] {}", val.pack.id, val.pack.methodName);
-                                    try {
-                                        sc.send(val.pack);
-                                    } catch (ClientDisconnectedException ex) {
-                                        log.warn("clientSide resent pack[{}] fail", val.pack.id);
-                                    }
-                                }
-                            });
-                        });
-                        initFn.invoke((T) p.getProxyObject(), sync.v);
-                        //Recheck if onHandshake() return client to pool
-                        if (sync.v == null) {
-                            init(sync.v = pool.borrowClient(), p.getProxyObject(), isCompute);
-                        }
+                        init(sync.v = candidate, p.getProxyObject(), config, isCompute, subscribedEvents);
                     } else {
-                        // Another thread already initialized the client; return the eagerly borrowed one
                         returnCandidate = true;
                     }
                 }
@@ -213,25 +198,32 @@ public final class Remoting {
                     pool.returnClient(candidate);
                 }
             }
-            DefaultRpcTcpClient client = sync.v;
-            AtomicReference<Map<Integer, ClientBean>> waitBeans = new AtomicReference<>();
+
+            HybridClient client;
+            HybridSession session;
+            synchronized (sync) {
+                client = sync.v;
+                session = currentSession(client);
+                retainClient(client);
+            }
 
             MethodMessage methodMessage = as(pack, MethodMessage.class);
             boolean isMethodCall = methodMessage != null;
+            int requestId = clientBean.pack == null ? -1 : clientBean.pack.id;
             try {
                 if (isMethodCall) {
-                    Sys.callLog(contract, methodMessage.methodName,
+                    return Sys.callLog(contract, methodMessage.methodName,
                             () -> String.format("Client %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
-                                    Sockets.toString(client.getLocalEndpoint()),
-                                    Sockets.toString(client.getConfig().getServerEndpoint())), methodMessage.parameters, () -> {
-                                // 必须先登记 wait map，再 send；否则极快返回的应答可能在 onReceive 中找不到 ClientBean（读超时）
-                                Map<Integer, ClientBean> wb = getClientBeans(client);
-                                waitBeans.set(wb);
-                                wb.put(clientBean.pack.id, clientBean);
-                                client.send(methodMessage);
-                                if (!clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis())) {
+                                    currentLocalEndpoint(client), Sockets.toString(currentRemoteEndpoint(client))),
+                            methodMessage.parameters, () -> {
+                                HybridSession requestSession = resolveSession(client, session);
+                                Map<Integer, ClientBean> waitMap = getClientBeans(client);
+                                waitMap.put(clientBean.pack.id, clientBean);
+                                sendRequest(client, requestSession, methodMessage);
+                                int timeoutMillis = resolveRequestTimeout(config, client);
+                                if (!clientBean.syncRoot.waitOne(timeoutMillis)) {
                                     if (!client.isConnected()) {
-                                        throw new ClientDisconnectedException(client);
+                                        throw new ClientDisconnectedException(currentRemoteEndpoint(client));
                                     }
                                     if (clientBean.pack.returnValue == null) {
                                         throw new TimeoutException(String.format("The method %s read timeout", clientBean.pack.methodName));
@@ -243,97 +235,172 @@ public final class Remoting {
                                 }
                                 return clientBean.pack.returnValue;
                             });
-                } else {
-                    client.send(pack);
                 }
+                sendPacket(client, session, pack);
             } catch (ClientDisconnectedException e) {
-                if (!client.getConfig().isEnableReconnect()) {
+                if (!client.getConfig().getTcpClientConfig().isEnableReconnect()) {
                     synchronized (sync) {
                         if (sync.v == client) {
                             sync.v = null;
                         }
                     }
-                    if (!isMethodCall || waitBeans.get() == null) {
-                        pool.returnClient(client);
-                    }
                     throw e;
                 }
 
                 if (isMethodCall) {
-                    Map<Integer, ClientBean> wb = getClientBeans(client);
-                    waitBeans.set(wb);
-                    wb.put(clientBean.pack.id, clientBean);
-                    if (!clientBean.syncRoot.waitOne(client.getConfig().getConnectTimeoutMillis())) {
+                    int timeoutMillis = resolveRequestTimeout(config, client);
+                    if (!clientBean.syncRoot.waitOne(timeoutMillis)) {
                         if (clientBean.pack.returnValue == null) {
                             throw e;
                         }
                     }
                     clientBean.syncRoot.reset();
+                    if (clientBean.pack.errorMessage != null) {
+                        throw new RemotingException(clientBean.pack.errorMessage);
+                    }
+                } else if (isSubscriptionPacket(pack)) {
+                    log.info("clientSide event subscription deferred until reconnect");
                 } else {
                     throw e;
                 }
             } finally {
-                Map<Integer, ClientBean> wb = waitBeans.get();
-                if (wb != null) {
-                    wb.remove(clientBean.pack.id);
-                    if (wb.isEmpty()) {
-                        recycleClient(pool, sync, client);
-                    }
+                if (requestId >= 0) {
+                    removeWaitBean(client, session, requestId);
+                }
+                if (releaseClient(client) && (!config.isUsePool() || !hasPendingWaitBeans(client))) {
+                    recycleClient(pool, sync, client);
                 }
             }
             return clientBean.pack != null ? clientBean.pack.returnValue : null;
         });
     }
 
-    private static void init(DefaultRpcTcpClient client, Object proxyObject, FastThreadLocal<Boolean> isCompute) {
+    private static void init(HybridClient client, Object proxyObject, RpcClientConfig<?> config, FastThreadLocal<Boolean> isCompute,
+                             Set<String> subscribedEvents) {
+        client.resetHandlers();
+        AtomicReference<HybridSession> sessionRef = new AtomicReference<HybridSession>();
+        AtomicBoolean initHandlerInvoked = new AtomicBoolean();
         client.onError.combine((s, e) -> e.setCancel(true));
-        // Clean up the clientBeans entry when the client is permanently disconnected (no reconnect)
         client.onDisconnected.combine((s, e) -> {
-            DefaultRpcTcpClient c = (DefaultRpcTcpClient) s;
-            if (!c.getConfig().isEnableReconnect()) {
-                clientBeans.remove(c);
+            if (!client.getConfig().getTcpClientConfig().isEnableReconnect()) {
+                clientBeans.remove(client);
+                clientRefCounts.remove(client);
             }
         });
-        client.onReceive.combine((s, e) -> {
-            if (tryAs(e.getValue(), EventMessage.class, x -> {
-                switch (x.flag) {
-                    case BROADCAST:
-                    case COMPUTE_ARGS:
-                        try {
-                            isCompute.set(true);
-                            EventPublisher<?> target = (EventPublisher<?>) proxyObject;
-                            target.raiseEvent(x.eventName, x.eventArgs);
-                            log.info("clientSide event {} -> {} OK & args={}", x.eventName, x.flag, toJsonString(x.eventArgs));
-                        } catch (Exception ex) {
-                            log.error("clientSide event {} -> {}", x.eventName, x.flag, ex);
-                        } finally {
-                            if (x.flag == EventFlag.COMPUTE_ARGS) {
-                                s.send(x);  //import
-                            }
+        client.onReceive.combine((s, e) -> handleClientReceive(client, sessionRef.get(), proxyObject, isCompute, e.getValue()));
+        client.onSessionReady.combine((s, e) -> onClientSessionReady(client, sessionRef, proxyObject, config, e.getValue(),
+                subscribedEvents, initHandlerInvoked));
+        HybridSession current = client.session();
+        if (current != null) {
+            onClientSessionReady(client, sessionRef, proxyObject, config, current, subscribedEvents, initHandlerInvoked);
+        }
+    }
+
+    @SneakyThrows
+    private static void onClientSessionReady(HybridClient client, AtomicReference<HybridSession> sessionRef,
+                                             Object proxyObject, RpcClientConfig<?> config, HybridSession session,
+                                             Set<String> subscribedEvents, AtomicBoolean initHandlerInvoked) {
+        HybridSession previous = sessionRef.getAndSet(session);
+        if (previous == session) {
+            return;
+        }
+
+        session.send(new MetadataMessage(config.getEventVersion()), RemotingHybridOptions.CONTROL);
+        List<String> replayEvents = new ArrayList<String>(subscribedEvents);
+        if (initHandlerInvoked.compareAndSet(false, true)) {
+            TripleAction<Object, HybridClient> initHandler = (TripleAction<Object, HybridClient>) config.getInitHandler();
+            if (initHandler != null) {
+                initHandler.invoke(proxyObject, client);
+            }
+        }
+        if (previous != null) {
+            resendSubscriptions(session, replayEvents);
+        }
+        resendPending(client, previous, session);
+    }
+
+    private static void resendSubscriptions(HybridSession session, Iterable<String> subscribedEvents) {
+        for (String eventName : subscribedEvents) {
+            session.send(new EventMessage(eventName, EventFlag.SUBSCRIBE), RemotingHybridOptions.CONTROL);
+            log.info("clientSide event {} -> RESUBSCRIBE", eventName);
+        }
+    }
+
+    private static void handleClientReceive(HybridClient client, HybridSession session, Object proxyObject,
+                                            FastThreadLocal<Boolean> isCompute, Object value) {
+        if (tryAs(value, EventMessage.class, x -> {
+            switch (x.flag) {
+                case BROADCAST:
+                case COMPUTE_ARGS:
+                    try {
+                        isCompute.set(true);
+                        EventPublisher<?> target = (EventPublisher<?>) proxyObject;
+                        target.raiseEvent(x.eventName, x.eventArgs);
+                        log.info("clientSide event {} -> {} OK & args={}", x.eventName, x.flag, toJsonString(x.eventArgs));
+                    } catch (Exception ex) {
+                        log.error("clientSide event {} -> {}", x.eventName, x.flag, ex);
+                    } finally {
+                        if (x.flag == EventFlag.COMPUTE_ARGS) {
+                            activeSession(client, session).send(x, RemotingHybridOptions.CONTROL);
                         }
-                        break;
-                }
-            })) {
-                return;  //import
+                    }
+                    break;
             }
+        })) {
+            return;
+        }
 
-            MethodMessage svrPack = (MethodMessage) e.getValue();
-//            log.debug("recv: {}", svrPack.returnValue);
-            ClientBean clientBean = getClientBeans(client).get(svrPack.id);
-            if (clientBean == null) {
-                log.warn("clientSide callback pack[{}] fail", svrPack.id);
-                return;
-            }
-            clientBean.pack = svrPack;
-            clientBean.syncRoot.set();
-        });
+        MethodMessage svrPack = (MethodMessage) value;
+        ClientBean clientBean = getClientBeans(client).get(svrPack.id);
+        if (clientBean == null) {
+            log.warn("clientSide callback pack[{}] fail", svrPack.id);
+            return;
+        }
+        clientBean.pack = svrPack;
+        clientBean.syncRoot.set();
     }
 
-    private static Map<Integer, ClientBean> getClientBeans(DefaultRpcTcpClient client) {
-        return clientBeans.computeIfAbsent(client, k -> new ConcurrentHashMap<>());
+    private static Map<Integer, ClientBean> getClientBeans(HybridClient client) {
+        return clientBeans.computeIfAbsent(client, k -> new ConcurrentHashMap<Integer, ClientBean>());
     }
 
-    private static void recycleClient(RpcTcpClientPool pool, $<DefaultRpcTcpClient> sync, DefaultRpcTcpClient client) {
+    private static void resendPending(HybridClient client, HybridSession oldSession, HybridSession newSession) {
+        for (ClientBean value : getClientBeans(client).values()) {
+            log.info("clientSide resent pack[{}] {}", value.pack.id, value.pack.methodName);
+            try {
+                newSession.send(value.pack, RemotingHybridOptions.CONTROL);
+            } catch (ClientDisconnectedException ex) {
+                log.warn("clientSide resent pack[{}] fail", value.pack.id);
+            }
+        }
+    }
+
+    private static void retainClient(HybridClient client) {
+        if (client == null) {
+            return;
+        }
+        clientRefCounts.computeIfAbsent(client, k -> new AtomicInteger()).incrementAndGet();
+    }
+
+    private static boolean releaseClient(HybridClient client) {
+        if (client == null) {
+            return true;
+        }
+
+        AtomicInteger ref = clientRefCounts.get(client);
+        if (ref == null) {
+            return true;
+        }
+
+        int remain = ref.decrementAndGet();
+        if (remain > 0) {
+            return false;
+        }
+        clientRefCounts.remove(client, ref);
+        return true;
+    }
+
+    private static void recycleClient(RpcHybridClientPool pool, $<HybridClient> sync, HybridClient client) {
         synchronized (sync) {
             if (sync.v == client) {
                 sync.v = pool.returnClient(client);
@@ -341,6 +408,97 @@ public final class Remoting {
             }
         }
         pool.returnClient(client);
+    }
+
+    private static void clearClient(HybridClient client) {
+        clientBeans.remove(client);
+        clientRefCounts.remove(client);
+    }
+
+    private static void removeWaitBean(HybridClient client, HybridSession session, int requestId) {
+        if (requestId < 0) {
+            return;
+        }
+        Map<Integer, ClientBean> waitMap = clientBeans.get(client);
+        if (waitMap != null) {
+            waitMap.remove(requestId);
+        }
+    }
+
+    private static boolean hasPendingWaitBeans(HybridClient client) {
+        if (client == null) {
+            return false;
+        }
+        Map<Integer, ClientBean> waitMap = clientBeans.get(client);
+        return waitMap != null && !waitMap.isEmpty();
+    }
+
+    private static int resolveRequestTimeout(RpcClientConfig<?> config, HybridClient client) {
+        return config.getRequestTimeoutMillis() > 0 ? config.getRequestTimeoutMillis()
+                : client.getConfig().getTcpClientConfig().getConnectTimeoutMillis();
+    }
+
+    private static HybridSession currentSession(HybridClient client) {
+        return client == null ? null : client.session();
+    }
+
+    private static HybridSession resolveSession(HybridClient client, HybridSession session) {
+        if (session != null && session.isConnected()) {
+            return session;
+        }
+        HybridSession current = currentSession(client);
+        if (current != null && current.isConnected()) {
+            return current;
+        }
+        return null;
+    }
+
+    private static HybridSession activeSession(HybridClient client, HybridSession session) {
+        HybridSession resolved = resolveSession(client, session);
+        if (resolved == null || !resolved.isConnected()) {
+            throw new ClientDisconnectedException(currentRemoteEndpoint(client));
+        }
+        return resolved;
+    }
+
+    private static String currentLocalEndpoint(HybridClient client) {
+        HybridSession session = currentSession(client);
+        InetSocketAddress local = session == null ? null : session.tcpRemoteEndpoint();
+        return Sockets.toString(local);
+    }
+
+    private static InetSocketAddress currentRemoteEndpoint(HybridClient client) {
+        HybridSession session = currentSession(client);
+        if (session != null && session.tcpRemoteEndpoint() != null) {
+            return session.tcpRemoteEndpoint();
+        }
+        return client == null ? null : client.getConfig().getTcpClientConfig().getServerEndpoint();
+    }
+
+    private static void sendRequest(HybridClient client, HybridSession session, MethodMessage message) {
+        activeSession(client, session).send(message, RemotingHybridOptions.METHOD);
+    }
+
+    private static void sendPacket(HybridClient client, HybridSession session, Object packet) {
+        HybridSession active = activeSession(client, session);
+        if (packet instanceof MetadataMessage) {
+            active.send(packet, RemotingHybridOptions.CONTROL);
+            return;
+        }
+        if (packet instanceof EventMessage) {
+            active.send(packet, RemotingHybridOptions.event((EventMessage) packet));
+            return;
+        }
+        if (packet instanceof MethodMessage) {
+            active.send(packet, RemotingHybridOptions.METHOD);
+            return;
+        }
+        active.send(packet);
+    }
+
+    private static boolean isSubscriptionPacket(Object packet) {
+        EventMessage event = as(packet, EventMessage.class);
+        return event != null && (event.flag == EventFlag.SUBSCRIBE || event.flag == EventFlag.UNSUBSCRIBE);
     }
 
     private static void setReturnValue(ClientBean clientBean, Object value) {
@@ -358,7 +516,7 @@ public final class Remoting {
         return p.fastInvokeSuper();
     }
 
-    public static RpcTcpServer register(Object contractInstance, int listenPort, boolean enableEventCompute) {
+    public static TcpServer register(Object contractInstance, int listenPort, boolean enableEventCompute) {
         RpcServerConfig conf = new RpcServerConfig(new TcpServerConfig(listenPort));
         if (enableEventCompute) {
             conf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
@@ -366,128 +524,155 @@ public final class Remoting {
         return register(contractInstance, conf);
     }
 
-    public static RpcTcpServer register(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
-        // Fast path: already registered, no locking needed
+    public static TcpServer register(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
+        return registerBean(contractInstance, config).server.tcpServer();
+    }
+
+    public static HybridServer registerHybrid(Object contractInstance, int listenPort, boolean enableEventCompute) {
+        RpcServerConfig conf = new RpcServerConfig(new TcpServerConfig(listenPort));
+        if (enableEventCompute) {
+            conf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
+        }
+        return registerHybrid(contractInstance, conf);
+    }
+
+    public static HybridServer registerHybrid(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
+        return registerBean(contractInstance, config).server;
+    }
+
+    private static ServerBean registerBean(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
         ServerBean existing = serverBeans.get(contractInstance);
         if (existing != null) {
-            return existing.server;
+            return existing;
         }
-        // Slow path: use a per-contract init lock to avoid holding ConcurrentHashMap's bin lock
-        // during the heavyweight RpcTcpServer creation and port binding.
         Object initLock = serverInitLocks.computeIfAbsent(contractInstance, k -> new Object());
         synchronized (initLock) {
             existing = serverBeans.get(contractInstance);
             if (existing != null) {
                 serverInitLocks.remove(contractInstance);
-                return existing.server;
+                return existing;
             }
             ServerBean bean = doRegister(contractInstance, config);
             serverBeans.put(contractInstance, bean);
             serverInitLocks.remove(contractInstance);
-            return bean.server;
+            return bean;
         }
     }
 
     private static ServerBean doRegister(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
-            DiagnosticMetrics.setNetComponent(config.getTcpConfig(), DiagnosticMetrics.NET_RPC_SERVER);
-            ServerBean bean = new ServerBean(config, new RpcTcpServer(config.getTcpConfig()));
-            bean.server.onClosed.combine((s, e) -> serverBeans.remove(contractInstance));
-            bean.server.onError.combine((s, e) -> {
-                e.setCancel(true);
-                e.getClient().send(new ErrorPacket(String.format("server error: %s", e.getValue().toString())));
-            });
-            bean.server.onReceive.combine((s, e) -> {
-                if (tryAs(e.getValue(), EventMessage.class, p -> {
-                    ServerBean.EventBean eventBean = bean.eventBeans.computeIfAbsent(p.eventName, x -> new ServerBean.EventBean());
-                    switch (p.flag) {
-                        case SUBSCRIBE:
-                            EventPublisher<?> eventTarget = (EventPublisher<?>) contractInstance;
-                            eventTarget.attachEvent(p.eventName, (sender, args) -> {
-                                ServerBean.EventContext eCtx = new ServerBean.EventContext((EventArgs) args);
-                                EventMessage computePack = prepareComputePack(bean, eventBean, p.eventName, (EventArgs) args, eCtx);
-                                if (computePack != null) {
-                                    awaitComputedArgs(eventBean, eCtx, computePack, s);
-                                }
-                                List<RpcTcpClient> broadcastTargets = collectBroadcastTargets(bean, eventBean, eCtx);
-                                doSendBroadcast(bean, p, eCtx, broadcastTargets);
-                            }, false); //must false
-                            log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, e.getClient().getRemoteEndpoint());
-                            eventBean.subscribe.add(e.getClient());
-                            break;
-                        case UNSUBSCRIBE:
-                            log.info("serverSide event {} {} -> UNSUBSCRIBE", p.eventName, e.getClient().getRemoteEndpoint());
-                            eventBean.subscribe.remove(e.getClient());
-                            break;
-                        case PUBLISH:
-                            ServerBean.EventContext publishCtx = new ServerBean.EventContext(p.eventArgs);
-                            publishCtx.computingClient = e.getClient();
-                            log.info("serverSide event {} {} -> PUBLISH", p.eventName, e.getClient().getRemoteEndpoint());
-                            List<RpcTcpClient> publishTargets = collectBroadcastTargets(bean, eventBean, publishCtx);
-                            doSendBroadcast(bean, p, publishCtx, publishTargets);
-                            break;
-                        case COMPUTE_ARGS:
-                            ServerBean.EventContext ctx = eventBean.contextMap.get(p.computeId);
-                            if (ctx == null) {
-                                log.warn("serverSide event {} [{}] -> COMPUTE_ARGS FAIL", p.eventName, p.computeId);
-                            } else {
-                                try {
-                                    BeanMapper.DEFAULT.map(p.eventArgs, ctx.computedArgs);
-                                    ctx.computedPromise.trySuccess(ctx.computedArgs);
-                                    log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName, ctx.computingClient.getRemoteEndpoint(), toJsonString(ctx.computedArgs));
-                                } catch (Throwable ex) {
-                                    ctx.computedPromise.tryFailure(ex);
-                                    log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", p.eventName, ctx.computingClient.getRemoteEndpoint(), ex);
-                                }
-                            }
-                            break;
-                    }
-                })) {
-                    return;
-                }
-                if (tryAs(e.getValue(), MetadataMessage.class, p -> e.getClient().attr(HANDSHAKE_META_KEY, p))) {
-                    log.debug("Handshake: {}", toJsonString(e.getValue()));
-                    return;
-                }
-
-                MethodMessage pack = (MethodMessage) e.getValue();
-                try {
-                    pack.returnValue = Sys.callLog(contractInstance.getClass(), pack.methodName,
-                            () -> String.format("Server %s.%s [%s -> %s]", contractInstance.getClass().getSimpleName(), pack.methodName,
-                                    s.getConfig().getListenPort(), Sockets.toString(e.getClient().getRemoteEndpoint())),
-                            pack.parameters, () -> RemotingContext.invoke(() -> {
-                                String tn = RxConfig.INSTANCE.getThreadPool().getTraceName();
-                                if (tn != null) {
-                                    ThreadPool.startTrace(pack.traceId, true);
-                                }
-                                try {
-                                    return Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters);
-                                } finally {
-                                    ThreadPool.endTrace();
-                                }
-                            }, s, e.getClient()));
-                } catch (Throwable ex) {
-                    Throwable cause = ifNull(ex.getCause(), ex);
-                    pack.errorMessage = String.format("%s %s", cause.getClass().getSimpleName(), cause.getMessage());
-                }
-                Arrays.fill(pack.parameters, null);
-                e.getClient().send(pack);
-            });
-            bean.server.start();
-            return bean;
+        ensureServerCodec(config);
+        DiagnosticMetrics.setNetComponent(config.getTcpConfig(), DiagnosticMetrics.NET_RPC_SERVER);
+        ServerBean bean = new ServerBean(config, new HybridServer(config.getHybridConfig()));
+        bean.server.onClosed.combine((s, e) -> serverBeans.remove(contractInstance));
+        bean.server.onDisconnected.combine((s, e) -> cleanupSubscriptions(bean, e.getValue()));
+        bean.server.onError.combine((s, e) -> e.setCancel(true));
+        bean.server.onReceive.combine((s, e) -> onServerReceive(contractInstance, bean, s, e));
+        bean.server.start();
+        return bean;
     }
 
-    // Collects broadcast targets without sending — call this inside synchronized(eventBean).
-    private static List<RpcTcpClient> collectBroadcastTargets(ServerBean s, ServerBean.EventBean eventBean,
-                                                            ServerBean.EventContext context) {
-        List<Integer> allow = s.config.getEventBroadcastVersions();
-        List<RpcTcpClient> targets = new ArrayList<>(eventBean.subscribe.size());
-        for (RpcTcpClient client : eventBean.subscribe) {
+    private static void onServerReceive(Object contractInstance, ServerBean bean, HybridServer s, HybridServerEventArgs<Object> e) {
+        HybridSession session = e.getSession();
+        if (tryAs(e.getValue(), EventMessage.class, p -> {
+            ServerBean.EventBean eventBean = bean.eventBeans.computeIfAbsent(p.eventName, x -> new ServerBean.EventBean());
+            switch (p.flag) {
+                case SUBSCRIBE:
+                    EventPublisher<?> eventTarget = (EventPublisher<?>) contractInstance;
+                    eventTarget.attachEvent(p.eventName, (sender, args) -> {
+                        ServerBean.EventContext eventContext = new ServerBean.EventContext((EventArgs) args);
+                        EventMessage computePack = prepareComputePack(bean, eventBean, p.eventName, (EventArgs) args, eventContext);
+                        if (computePack != null) {
+                            awaitComputedArgs(eventBean, eventContext, computePack, s);
+                        }
+                        List<HybridSession> broadcastTargets = collectBroadcastTargets(bean, eventBean, eventContext);
+                        doSendBroadcast(bean, p, eventContext, broadcastTargets);
+                    }, false);
+                    log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, session.tcpRemoteEndpoint());
+                    eventBean.subscribe.add(session);
+                    break;
+                case UNSUBSCRIBE:
+                    log.info("serverSide event {} {} -> UNSUBSCRIBE", p.eventName, session.tcpRemoteEndpoint());
+                    eventBean.subscribe.remove(session);
+                    break;
+                case PUBLISH:
+                    ServerBean.EventContext publishContext = new ServerBean.EventContext(p.eventArgs);
+                    publishContext.computingSession = session;
+                    log.info("serverSide event {} {} -> PUBLISH", p.eventName, session.tcpRemoteEndpoint());
+                    List<HybridSession> publishTargets = collectBroadcastTargets(bean, eventBean, publishContext);
+                    doSendBroadcast(bean, p, publishContext, publishTargets);
+                    break;
+                case COMPUTE_ARGS:
+                    ServerBean.EventContext context = eventBean.contextMap.remove(p.computeId);
+                    if (context == null) {
+                        log.warn("serverSide event {} [{}] -> COMPUTE_ARGS FAIL", p.eventName, p.computeId);
+                    } else {
+                        try {
+                            BeanMapper.DEFAULT.map(p.eventArgs, context.computedArgs);
+                            context.computedPromise.trySuccess(context.computedArgs);
+                            log.info("serverSide event {} {} -> COMPUTE_ARGS OK & args={}", p.eventName,
+                                    context.computingSession == null ? null : context.computingSession.tcpRemoteEndpoint(), toJsonString(context.computedArgs));
+                        } catch (Throwable ex) {
+                            context.computedPromise.tryFailure(ex);
+                            log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", p.eventName,
+                                    context.computingSession == null ? null : context.computingSession.tcpRemoteEndpoint(), ex);
+                        }
+                    }
+                    break;
+            }
+        })) {
+            return;
+        }
+        if (tryAs(e.getValue(), MetadataMessage.class, p -> session.attr(HANDSHAKE_META_KEY, p))) {
+            log.debug("Handshake: {}", toJsonString(e.getValue()));
+            return;
+        }
+
+        MethodMessage pack = (MethodMessage) e.getValue();
+        try {
+            pack.returnValue = Sys.callLog(contractInstance.getClass(), pack.methodName,
+                    () -> String.format("Server %s.%s [%s -> %s]", contractInstance.getClass().getSimpleName(), pack.methodName,
+                            s.getConfig().getTcpServerConfig().getListenPort(), Sockets.toString(session.tcpRemoteEndpoint())),
+                    pack.parameters, () -> RemotingContext.invoke(() -> {
+                        String traceName = RxConfig.INSTANCE.getThreadPool().getTraceName();
+                        if (traceName != null) {
+                            ThreadPool.startTrace(pack.traceId, true);
+                        }
+                        try {
+                            return Reflects.invokeMethod(contractInstance, pack.methodName, pack.parameters);
+                        } finally {
+                            ThreadPool.endTrace();
+                        }
+                    }, s, session));
+        } catch (Throwable ex) {
+            Throwable cause = ifNull(ex.getCause(), ex);
+            pack.errorMessage = String.format("%s %s", cause.getClass().getSimpleName(), cause.getMessage());
+        }
+        if (pack.parameters != null) {
+            Arrays.fill(pack.parameters, null);
+        }
+        session.send(pack, RemotingHybridOptions.response(pack));
+    }
+
+    private static void cleanupSubscriptions(ServerBean bean, HybridSession session) {
+        if (session == null) {
+            return;
+        }
+        for (ServerBean.EventBean eventBean : bean.eventBeans.values()) {
+            eventBean.subscribe.remove(session);
+        }
+    }
+
+    private static List<HybridSession> collectBroadcastTargets(ServerBean bean, ServerBean.EventBean eventBean,
+                                                               ServerBean.EventContext context) {
+        List<Integer> allow = bean.config.getEventBroadcastVersions();
+        List<HybridSession> targets = new ArrayList<HybridSession>(eventBean.subscribe.size());
+        for (HybridSession client : eventBean.subscribe) {
             if (!client.isConnected()) {
                 eventBean.subscribe.remove(client);
                 continue;
             }
             MetadataMessage meta;
-            if (client == context.computingClient || (meta = client.attr(HANDSHAKE_META_KEY)) == null
+            if (client == context.computingSession || (meta = client.attr(HANDSHAKE_META_KEY)) == null
                     || (!allow.isEmpty() && !allow.contains(meta.getEventVersion()))) {
                 continue;
             }
@@ -499,16 +684,16 @@ public final class Remoting {
     private static EventMessage prepareComputePack(ServerBean bean, ServerBean.EventBean eventBean, String eventName,
                                                    EventArgs args, ServerBean.EventContext context) {
         if (bean.config.getEventComputeVersion() == RpcServerConfig.EVENT_DISABLE_COMPUTE) {
-            context.computingClient = null;
+            context.computingSession = null;
             return null;
         }
 
-        RpcTcpClient computingClient = selectComputingClient(bean.config, eventBean);
-        if (computingClient == null) {
+        HybridSession computingSession = selectComputingSession(bean.config, eventBean);
+        if (computingSession == null) {
             log.warn("serverSide event {} subscribe empty", eventName);
             return null;
         }
-        context.computingClient = computingClient;
+        context.computingSession = computingSession;
         EventMessage pack = new EventMessage(eventName, EventFlag.COMPUTE_ARGS);
         pack.computeId = Snowflake.DEFAULT.nextId();
         pack.eventArgs = args;
@@ -516,46 +701,71 @@ public final class Remoting {
         return pack;
     }
 
-    private static RpcTcpClient selectComputingClient(RpcServerConfig config, ServerBean.EventBean eventBean) {
-        Linq<RpcTcpClient> subscribes = Linq.from(eventBean.subscribe).where(x -> x.attr(HANDSHAKE_META_KEY) != null);
+    private static HybridSession selectComputingSession(RpcServerConfig config, ServerBean.EventBean eventBean) {
+        Linq<HybridSession> subscribes = Linq.from(eventBean.subscribe).where(x -> x.isConnected() && x.attr(HANDSHAKE_META_KEY) != null);
         if (config.getEventComputeVersion() == RpcServerConfig.EVENT_LATEST_COMPUTE) {
             return subscribes.groupBy(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion(), (p1, p2) -> {
-                int i = ThreadLocalRandom.current().nextInt(0, p2.count());
-                return p2.skip(i).first();
+                int index = ThreadLocalRandom.current().nextInt(0, p2.count());
+                return p2.skip(index).first();
             }).orderByDescending(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion()).firstOrDefault();
         }
         return subscribes.where(x -> x.<MetadataMessage>attr(HANDSHAKE_META_KEY).getEventVersion() == config.getEventComputeVersion())
                 .orderByRand().firstOrDefault();
     }
 
-    private static void awaitComputedArgs(ServerBean.EventBean eventBean, ServerBean.EventContext context, EventMessage pack, RpcTcpServer s) {
+    private static void awaitComputedArgs(ServerBean.EventBean eventBean, ServerBean.EventContext context, EventMessage pack, HybridServer server) {
         try {
-            context.computingClient.send(pack);
-            log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName, context.computingClient.getRemoteEndpoint(), s.getConfig().getConnectTimeoutMillis());
-            if (!context.computedPromise.await(s.getConfig().getConnectTimeoutMillis())) {
-                log.warn("serverSide event {} {} -> COMPUTE_ARGS TIMEOUT", pack.eventName, context.computingClient.getRemoteEndpoint());
+            context.computingSession.send(pack, RemotingHybridOptions.CONTROL);
+            log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", pack.eventName,
+                    context.computingSession.tcpRemoteEndpoint(), server.getConfig().getTcpServerConfig().getConnectTimeoutMillis());
+            if (!context.computedPromise.await(server.getConfig().getTcpServerConfig().getConnectTimeoutMillis())) {
+                log.warn("serverSide event {} {} -> COMPUTE_ARGS TIMEOUT", pack.eventName, context.computingSession.tcpRemoteEndpoint());
             }
         } catch (Exception ex) {
             context.computedPromise.tryFailure(ex);
-            log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, context.computingClient.getRemoteEndpoint(), ex);
+            log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, context.computingSession.tcpRemoteEndpoint(), ex);
         } finally {
-            Tasks.setTimeout(() -> eventBean.contextMap.remove(pack.computeId), s.getConfig().getConnectTimeoutMillis() * 2L);
+            eventBean.contextMap.remove(pack.computeId, context);
         }
     }
 
-    // Sends to the pre-collected targets — call this OUTSIDE synchronized(eventBean).
-    private static void doSendBroadcast(ServerBean s, EventMessage p, ServerBean.EventContext context,
-                                        List<RpcTcpClient> targets) {
+    private static void doSendBroadcast(ServerBean bean, EventMessage p, ServerBean.EventContext context,
+                                        List<HybridSession> targets) {
         if (targets.isEmpty()) {
             return;
         }
-        List<Integer> allow = s.config.getEventBroadcastVersions();
+        List<Integer> allow = bean.config.getEventBroadcastVersions();
         EventMessage pack = new EventMessage(p.eventName, EventFlag.BROADCAST);
         pack.eventArgs = context.computedArgs;
         tryAs(pack.eventArgs, RemotingEventArgs.class, x -> x.setBroadcastVersions(allow));
-        for (RpcTcpClient client : targets) {
-            client.send(pack);
-            log.info("serverSide event {} {} -> BROADCAST", pack.eventName, client.getRemoteEndpoint());
+        for (HybridSession client : targets) {
+            if (!client.isConnected()) {
+                continue;
+            }
+            client.send(pack, RemotingHybridOptions.event(pack));
+            log.info("serverSide event {} {} -> BROADCAST", pack.eventName, client.tcpRemoteEndpoint());
         }
+    }
+
+    private static void ensureClientCodec(RpcClientConfig<?> config) {
+        RemotingCodecFactory factory = config.getCodecFactory();
+        if (factory == null) {
+            factory = FuryRemotingCodecFactory.createDefault();
+            config.setCodecFactory(factory);
+        }
+        HybridConfig hybridConfig = config.getHybridConfig();
+        hybridConfig.getUdpClientConfig().setCodec(factory.newCodec());
+        config.getTcpConfig().setCodec(factory.newClientCodec(config));
+    }
+
+    private static void ensureServerCodec(RpcServerConfig config) {
+        RemotingCodecFactory factory = config.getCodecFactory();
+        if (factory == null) {
+            factory = FuryRemotingCodecFactory.createDefault();
+            config.setCodecFactory(factory);
+        }
+        HybridConfig hybridConfig = config.getHybridConfig();
+        hybridConfig.getUdpClientConfig().setCodec(factory.newCodec());
+        config.getTcpConfig().setCodec(factory.newServerCodec(config));
     }
 }

@@ -10,12 +10,15 @@ import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingContext;
-import org.rx.net.transport.RpcTcpServer;
+import org.rx.net.transport.FuryUdpClientCodec;
 import org.rx.net.transport.UdpClient;
+import org.rx.net.transport.hybrid.HybridServer;
+import org.rx.net.transport.hybrid.HybridSession;
 
 import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -36,7 +39,7 @@ public class NameserverImpl implements Nameserver {
 
     static final String NAME = "nameserver";
     final NameserverConfig config;
-    final RpcTcpServer rs;
+    final HybridServer rs;
     @Getter
     final DnsServer dnsServer;
     @Setter
@@ -54,8 +57,8 @@ public class NameserverImpl implements Nameserver {
     }
 
     public Map<String, List<InstanceInfo>> getInstances() {
-        return Linq.from(rs.getClients().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"),
-                (k, p) -> getDiscoverInfos(p.select(x -> x.getRemoteEndpoint().getAddress()).toList(), Collections.emptyList()));
+        return Linq.from(rs.sessions().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"),
+                (k, p) -> getDiscoverInfos(p.select(x -> x.tcpRemoteEndpoint().getAddress()).toList(), Collections.emptyList()));
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
@@ -64,19 +67,26 @@ public class NameserverImpl implements Nameserver {
         dnsServer.setTtl(config.getDnsTtl());
         svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toList());
 
-        rs = Remoting.register(this, config.getRegisterPort(), false);
+        rs = Remoting.registerHybrid(this, config.getRegisterPort(), false);
         rs.onDisconnected.combine((s, e) -> {
-            String appName = e.getClient().attr(APP_NAME_KEY);
+            HybridSession session = e.getValue();
+            String appName = session.attr(APP_NAME_KEY);
             if (appName == null) {
                 return;
             }
 
-            doDeregister(appName, e.getClient().getRemoteEndpoint().getAddress(), true, true);
+            doDeregister(appName, session.tcpRemoteEndpoint().getAddress(), true, true);
         });
-        rs.onPing.combine((s, e) -> attrs(e.getClient().getRemoteEndpoint().getAddress())
+        rs.onPing.combine((s, e) -> attrs(e.getSession().tcpRemoteEndpoint().getAddress())
                 .put("ping", String.format("%dms", (NtpClock.UTC.millis() - e.getValue().getTimestamp()) * 2)));
 
-        ss = new UdpClient(getSyncPort());
+        FuryUdpClientCodec syncCodec = FuryUdpClientCodec.createDefault();
+        if (config.getUdpCodecAllowPrefixes() != null) {
+            for (String prefix : new ArrayList<>(config.getUdpCodecAllowPrefixes())) {
+                syncCodec.allowPrefix(prefix);
+            }
+        }
+        ss = new UdpClient(getSyncPort(), syncCodec);
         ss.onReceive.combine((s, e) -> {
             Object packet = e.getValue().packet;
             log.info("[{}] Replica {}", getSyncPort(), packet);
@@ -89,6 +99,13 @@ public class NameserverImpl implements Nameserver {
                 syncRegister((Set<InetSocketAddress>) packet);
             }
         });
+    }
+
+    @Override
+    public void close() {
+        quietly(rs::close);
+        quietly(ss::close);
+        quietly(dnsServer::close);
     }
 
     public synchronized void syncRegister(@NonNull Set<InetSocketAddress> serverEndpoints) {
@@ -123,11 +140,11 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public int register(@NonNull String appName, int weight, Set<InetSocketAddress> serverEndpoints) {
-        Sys.logCtx("clientSize", rs.getClients().size());
+        Sys.logCtx("clientSize", rs.sessions().size());
 
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().attr(APP_NAME_KEY, appName);
-        InetAddress addr = ctx.getClient().getRemoteEndpoint().getAddress();
+        InetAddress addr = ctx.getClient().tcpRemoteEndpoint().getAddress();
         Sys.logCtx("remoteAddr", addr);
         doRegister(appName, weight, addr);
 
@@ -149,12 +166,12 @@ public class NameserverImpl implements Nameserver {
             throw new InvalidException("Must register first");
         }
 
-        doDeregister(appName, ctx.getClient().getRemoteEndpoint().getAddress(), false, true);
+        doDeregister(appName, ctx.getClient().tcpRemoteEndpoint().getAddress(), false, true);
     }
 
     void doDeregister(String appName, InetAddress addr, boolean isDisconnected, boolean shouldSync) {
         //Multiple instances of same app and same ip, such as k8s rolling updates.
-        int c = Linq.from(rs.getClients().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.getRemoteEndpoint().getAddress().equals(addr));
+        int c = Linq.from(rs.sessions().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.tcpRemoteEndpoint().getAddress().equals(addr));
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);
             if (dnsServer.removeHosts(appName, Collections.singletonList(addr))) {
@@ -184,14 +201,14 @@ public class NameserverImpl implements Nameserver {
     @Override
     public <T extends Serializable> void instanceAttr(String appName, String key, T value) {
         RemotingContext ctx = RemotingContext.context();
-        attrs(ctx.getClient().getRemoteEndpoint().getAddress()).put(key, value);
+        attrs(ctx.getClient().tcpRemoteEndpoint().getAddress()).put(key, value);
         syncAttributes();
     }
 
     @Override
     public <T extends Serializable> T instanceAttr(String appName, String key) {
         RemotingContext ctx = RemotingContext.context();
-        return (T) attrs(ctx.getClient().getRemoteEndpoint().getAddress()).get(key);
+        return (T) attrs(ctx.getClient().tcpRemoteEndpoint().getAddress()).get(key);
     }
 
     @Override
@@ -207,7 +224,7 @@ public class NameserverImpl implements Nameserver {
         }
         if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
-            hosts.remove(ctx.getClient().getRemoteEndpoint().getAddress());
+            hosts.remove(ctx.getClient().tcpRemoteEndpoint().getAddress());
         }
         return hosts;
     }
@@ -226,7 +243,7 @@ public class NameserverImpl implements Nameserver {
         }
         if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
-            hosts.remove(ctx.getClient().getRemoteEndpoint().getAddress());
+            hosts.remove(ctx.getClient().tcpRemoteEndpoint().getAddress());
         }
         return getDiscoverInfos(hosts, instanceAttrKeys);
     }

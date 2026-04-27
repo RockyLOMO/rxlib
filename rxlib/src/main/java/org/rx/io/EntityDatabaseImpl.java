@@ -118,7 +118,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     static final String $TABLE = "$TABLE", $CREATE_COLUMNS = "$CREATE_COLUMNS", $PK = "$PK",
             $UPDATE_COLUMNS = "$UPDATE_COLUMNS";
     static final Map<Class<?>, H2Type> H2_TYPES = new ConcurrentHashMap<>();
-    static final Serializer SERIALIZER = Serializer.DEFAULT;
+    static final Serializer SERIALIZER = Serializer.FURY;
     static final Map<Class<?>, SqlMeta> SQL_META = new ConcurrentHashMap<>();
     //    static final AtomicInteger TX_ID = new AtomicInteger();
     static final FastThreadLocal<Connection> TL_CONN = new FastThreadLocal<>();

@@ -28,8 +28,8 @@ import java.util.concurrent.ConcurrentMap;
  * Lifecycle: one channel per TCP control connection.
  *
  * Direction logic:
- *   sender is in ctxMap (known upstream)  → upstream response → client  (inbound)
- *   otherwise                              → client → upstream            (outbound)
+ * sender is in ctxMap (known upstream) → upstream response → client (inbound)
+ * otherwise → client → upstream (outbound)
  *
  * Upstreams are registered on first client packet to each destination,
  * keyed by the exact resolved InetSocketAddress so that response packets
@@ -109,9 +109,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     /**
      * https://datatracker.ietf.org/doc/html/rfc1928
      * +----+------+------+----------+----------+----------+
-     * |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+     * |RSV | FRAG | ATYP | DST.ADDR | DST.PORT | DATA |
      * +----+------+------+----------+----------+----------+
-     * | 2  |  1   |  1   | Variable |    2     | Variable |
+     * | 2 | 1 | 1 | Variable | 2 | Variable |
      * +----+------+------+----------+----------+----------+
      */
     @Override
@@ -133,7 +133,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
     /** Client → Upstream (destination or next-hop SOCKS server) */
     private void handleClientPacket(Channel relay,
-                                    DatagramPacket in, InetSocketAddress sender) {
+            DatagramPacket in, InetSocketAddress sender) {
         ByteBuf inBuf = in.content();
         if (inBuf.readableBytes() < 4) {
             return;
@@ -232,8 +232,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
     /** Upstream response → Client */
     private void handleDestResponse(Channel relay, DatagramPacket in,
-                                    InetSocketAddress sender,
-                                    SocksContext sc) {
+            InetSocketAddress sender,
+            SocksContext sc) {
         InetSocketAddress clientAddr = relay.attr(ATTR_CLIENT_ADDR).get();
         if (clientAddr == null) {
             return; // no established session yet
@@ -347,10 +347,10 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private void beginRouteInit(Channel relay, SocksProxyServer server, InetSocketAddress clientOriginAddr,
-                                UnresolvedEndpoint dstEp, RouteInitState initState,
-                                ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
-                                ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
-                                ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
+            UnresolvedEndpoint dstEp, RouteInitState initState,
+            ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
+            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
+            ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
         try {
             SocksContext context = initState.context;
             if (context == null) {
@@ -377,9 +377,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private void onRouteInitSuccess(Channel relay, UnresolvedEndpoint dstEp, SocksContext context, RouteInitState initState,
-                                    ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
-                                    ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
-                                    ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
+            ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
+            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
+            ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
         if (!routeInitMap.remove(dstEp, initState)) {
             releasePending(initState);
             return;
@@ -400,9 +400,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private void onRouteInitFailure(Channel relay, UnresolvedEndpoint dstEp, RouteInitState initState,
-                                    ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
-                                    ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap,
-                                    Throwable error) {
+            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
+            ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap,
+            Throwable error) {
         routeInitMap.remove(dstEp, initState);
         if (initState.context != null) {
             routeMap.remove(dstEp, initState.context);
@@ -413,8 +413,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private boolean enqueuePendingPacket(RouteInitState initState, ByteBuf inBuf, InetSocketAddress sender,
-                                         InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
-                                         SocksConfig config) {
+            InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
+            SocksConfig config) {
         int bytes = inBuf.readableBytes();
         if (initState.pendingPackets.size() >= MAX_PENDING_ROUTE_PACKETS
                 || initState.pendingBytes + bytes > MAX_PENDING_ROUTE_BYTES) {
@@ -446,8 +446,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private void writeClientPacket(Channel relay, ByteBuf inBuf, InetSocketAddress sender,
-                                   InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
-                                   SocksContext context, boolean retained) {
+            InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
+            SocksContext context, boolean retained) {
         Upstream upstream = context.getUpstream();
         InetSocketAddress upDstAddr = resolveUpstreamTarget(relay, upstream);
         if (upDstAddr == null) {
@@ -537,7 +537,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private static void recordCacheSizes(Channel relay, ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
-                                         ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap, String action) {
+            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap, String action) {
         SocksProxyServer server = Sockets.getAttr(relay, SocksContext.SOCKS_SVR);
         int port = server != null ? server.config.getListenPort() : -1;
         if (ctxMap != null) {
@@ -549,7 +549,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private static void recordDrop(String reason, InetSocketAddress sender, InetSocketAddress clientOriginAddr,
-                                   SocksConfig config, int bytes) {
+            SocksConfig config, int bytes) {
         DiagnosticMetrics.record("socks.udp.drop.count", 1D,
                 "reason=" + reason + ",path=client-ingress,port=" + config.getListenPort());
     }

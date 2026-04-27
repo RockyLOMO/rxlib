@@ -180,12 +180,14 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
     static int resolveOutboundReadIdleSeconds(ShadowsocksConfig config) {
         return config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0
-                ? config.getUdpReadTimeoutSeconds() : DEFAULT_OUTBOUND_IDLE_SECONDS;
+                ? config.getUdpReadTimeoutSeconds()
+                : DEFAULT_OUTBOUND_IDLE_SECONDS;
     }
 
     static int resolveOutboundWriteIdleSeconds(ShadowsocksConfig config) {
         return config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0
-                ? config.getUdpWriteTimeoutSeconds() : 0;
+                ? config.getUdpWriteTimeoutSeconds()
+                : 0;
     }
 
     private static void installOutboundIdleHandler(ChannelPipeline pipeline, ShadowsocksConfig config) {
@@ -223,7 +225,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private static SocksContext lookupRoute(Channel inbound, ConcurrentMap<RouteKey, SocksContext> routeMap,
-                                            InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+            InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
         LastRoute lastRoute = inbound.attr(ATTR_LAST_ROUTE).get();
         if (lastRoute != null && lastRoute.matches(srcEp, dstEp)) {
             if (isRouteActive(lastRoute.context)) {
@@ -253,7 +255,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private static void writePacketNow(SocksContext sc, Channel outbound, UnresolvedEndpoint dstEp,
-                                       ByteBuf payload, InetSocketAddress srcEp, boolean debug) {
+            ByteBuf payload, InetSocketAddress srcEp, boolean debug) {
         if (!outbound.isActive()) {
             int bytes = readableBytesOf(payload);
             Bytes.release(payload);
@@ -289,7 +291,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private static void writeWhenReady(SocksContext sc, UnresolvedEndpoint dstEp, ByteBuf payload,
-                                       InetSocketAddress srcEp, boolean debug) {
+            InetSocketAddress srcEp, boolean debug) {
         Channel outbound = sc.outbound.channel();
         EndpointTracer.UDP.link(srcEp, outbound);
         Upstream upstream = sc.getUpstream();
@@ -305,21 +307,20 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             return;
         }
 
-        upstream.initChannelAsync(outbound).whenComplete((v, error) ->
-                runOnOutboundLoop(outbound, () -> {
-                    if (error != null) {
-                        int bytes = readableBytesOf(payload);
-                        Bytes.release(payload);
-                        recordUdpDrop("init-failed", srcEp, dstEp, null, bytes);
-                        log.warn("SS UDP relay init upstream error for {}, drop packet from {}", dstEp, srcEp, error);
-                        return;
-                    }
-                    writePacketNow(sc, outbound, dstEp, payload, srcEp, debug);
-                }));
+        upstream.initChannelAsync(outbound).whenComplete((v, error) -> runOnOutboundLoop(outbound, () -> {
+            if (error != null) {
+                int bytes = readableBytesOf(payload);
+                Bytes.release(payload);
+                recordUdpDrop("init-failed", srcEp, dstEp, null, bytes);
+                log.warn("SS UDP relay init upstream error for {}, drop packet from {}", dstEp, srcEp, error);
+                return;
+            }
+            writePacketNow(sc, outbound, dstEp, payload, srcEp, debug);
+        }));
     }
 
     private static void writeRoutePacket(SocksContext context, InetSocketAddress srcEp, UnresolvedEndpoint dstEp,
-                                         ByteBuf payload, boolean debug) {
+            ByteBuf payload, boolean debug) {
         if (context.isOutboundReady()) {
             writeWhenReady(context, dstEp, payload, srcEp, debug);
             return;
@@ -338,7 +339,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private ChannelFuture openOutboundChannel(Channel inbound, ShadowsocksServer server, Upstream upstream,
-                                              InetSocketAddress srcEp, OutboundPoolKey key) {
+            InetSocketAddress srcEp, OutboundPoolKey key) {
         ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
             ob.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(srcEp);
             ensureRelayResponseDecoder(ob.pipeline(), upstream);
@@ -466,9 +467,9 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private void beginRouteInit(Channel inbound, EventExecutor routeExecutor, ShadowsocksServer server,
-                                RouteKey routeKey, RouteInitState initState,
-                                ConcurrentMap<RouteKey, SocksContext> routeMap,
-                                ConcurrentMap<RouteKey, RouteInitState> routeInitMap) {
+            RouteKey routeKey, RouteInitState initState,
+            ConcurrentMap<RouteKey, SocksContext> routeMap,
+            ConcurrentMap<RouteKey, RouteInitState> routeInitMap) {
         try {
             SocksContext context = SocksContext.getCtx(routeKey.source, routeKey.destination);
             server.raiseEvent(server.onUdpRoute, context);
@@ -491,14 +492,13 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                     readyFuture = new CompletableFuture<>();
                     readyFuture.completeExceptionally(e);
                 }
-                readyFuture.whenComplete((v, error) ->
-                        runOnExecutor(routeExecutor, () -> {
-                            if (error != null) {
-                                onRouteInitFailure(routeKey, initState, routeInitMap, error);
-                                return;
-                            }
-                            onRouteInitSuccess(inbound, routeExecutor, server, routeKey, context, outboundFuture, initState, routeMap, routeInitMap);
-                        }));
+                readyFuture.whenComplete((v, error) -> runOnExecutor(routeExecutor, () -> {
+                    if (error != null) {
+                        onRouteInitFailure(routeKey, initState, routeInitMap, error);
+                        return;
+                    }
+                    onRouteInitSuccess(inbound, routeExecutor, server, routeKey, context, outboundFuture, initState, routeMap, routeInitMap);
+                }));
             });
         } catch (Throwable e) {
             runOnExecutor(routeExecutor, () -> onRouteInitFailure(routeKey, initState, routeInitMap, e));
@@ -506,9 +506,9 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private void onRouteInitSuccess(Channel inbound, EventExecutor routeExecutor, ShadowsocksServer server, RouteKey routeKey, SocksContext context,
-                                    ChannelFuture outboundFuture, RouteInitState initState,
-                                    ConcurrentMap<RouteKey, SocksContext> routeMap,
-                                    ConcurrentMap<RouteKey, RouteInitState> routeInitMap) {
+            ChannelFuture outboundFuture, RouteInitState initState,
+            ConcurrentMap<RouteKey, SocksContext> routeMap,
+            ConcurrentMap<RouteKey, RouteInitState> routeInitMap) {
         if (!routeInitMap.remove(routeKey, initState)) {
             releasePending(initState);
             return;
@@ -524,18 +524,17 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         routeMap.put(routeKey, context);
         inbound.attr(ATTR_LAST_ROUTE).set(new LastRoute(routeKey.source, routeKey.destination, context));
         recordRouteCacheSizes(inbound, routeMap, outboundFuture.channel());
-        outboundFuture.channel().closeFuture().addListener(f ->
-                routeExecutor.execute(() -> {
-                    routeMap.remove(routeKey, context);
-                    unregisterOutboundRoute(outboundFuture.channel(), routeKey.destination, context);
-                    clearLastRoute(inbound, routeKey, context);
-                    recordRouteCacheSizes(inbound, routeMap, outboundFuture.channel());
-                }));
+        outboundFuture.channel().closeFuture().addListener(f -> routeExecutor.execute(() -> {
+            routeMap.remove(routeKey, context);
+            unregisterOutboundRoute(outboundFuture.channel(), routeKey.destination, context);
+            clearLastRoute(inbound, routeKey, context);
+            recordRouteCacheSizes(inbound, routeMap, outboundFuture.channel());
+        }));
         flushPending(server, routeKey, context, initState);
     }
 
     private void onRouteInitFailure(RouteKey routeKey, RouteInitState initState,
-                                    ConcurrentMap<RouteKey, RouteInitState> routeInitMap, Throwable error) {
+            ConcurrentMap<RouteKey, RouteInitState> routeInitMap, Throwable error) {
         routeInitMap.remove(routeKey, initState);
         releasePending(initState);
         log.warn("SS UDP async route init fail for {}", routeKey.destination, error);
@@ -642,9 +641,9 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket in) throws Exception {
         ByteBuf inBuf = in.content();
-//        if (inBuf.readableBytes() < 4) { //no cipher, min size = 1 + 1 + 2 ,[1-byte type][variable-length host][2-byte port]
-//            return;
-//        }
+        // if (inBuf.readableBytes() < 4) { //no cipher, min size = 1 + 1 + 2 ,[1-byte type][variable-length host][2-byte port]
+        // return;
+        // }
 
         Channel inbound = ctx.channel();
         InetSocketAddress srcEp = in.sender();
@@ -727,7 +726,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private static void recordUdpDrop(String reason, InetSocketAddress srcEp, UnresolvedEndpoint dstEp,
-                                      InetSocketAddress target, int bytes) {
+            InetSocketAddress target, int bytes) {
         DiagnosticMetrics.record("ss.udp.drop.count", 1D, "reason=" + reason + ",path=frontend");
     }
 

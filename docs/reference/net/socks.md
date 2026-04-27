@@ -1,48 +1,33 @@
-# RSocks 网络代理组件
+# 代理与穿透模块 (org.rx.net.socks)
 
-高性能 Netty 实现的 SOCKS5/Shadowsocks/RRP 代理协议栈，支持 TCP/UDP 全协议转发、智能路由、域名匹配和加密传输。
+此模块提供全面的 SOCKS5、Shadowsocks 以及基于 Rx 自定义的 RRP 代理与中继服务协议支持。包含代理的服务端和客户端，并实现了高级别特性的 UDP 转发与穿透能力。
 
-## 目录结构
+## 核心类介绍
 
-```
-org.rx.net/
-├── dns/           # DNS 服务器与解析
-├── socks/         # SOCKS5/Shadowsocks/RRP 代理实现
-└── support/       # 路由支持（域名匹配、GeoIP）
-```
+- **`SocksProxyServer`**:
+  完整的 SOCKS5 代理服务器。它不仅支持标准的 TCP 代理，还完美兼容 Full Clone NAT 下的 UDP 代理机制。通过对接各类处理器（如 `Socks5WarmupHandler`，`SocksUdpRelayHandler`），支持动态上游切换。
 
----
+- **`Socks5Client`**:
+  代理客户端实现。专门优化了 SOCKS5 UDP 的连接建立流程（实现了 `Socks5UdpSession` 池化机制），消除了反复握手建立 UDP 会话的性能开销。
 
-## DNS 模块
+- **`ShadowsocksServer` / `SSUdpProxyHandler` / `SSTcpProxyHandler`**:
+  实现了 Shadowsocks 兼容协议的服务端，支持多种加密密码学配置。
 
-### DnsServer
+- **`RrpServer` / `RrpClient`**:
+  “Rx Remoting Proxy” 的实现，专为长连接或混合连接的远程反向代理、内网穿透设计的服务端与客户端套件。
 
-基于 Netty 的高性能 DNS 服务器，同时支持 TCP 和 UDP 协议（标准端口 53）。
+- **`Udp2rawHandler`**:
+  提供了将 UDP 流量伪装为 TCP 流量的功能，以穿过某些阻断 UDP 的严苛防火墙策略。
 
-**核心特点：**
-
-| 特性 | 说明 |
-|------|------|
-| **双协议支持** | 同时监听 TCP/UDP，使用 Netty 内置编解码器 `TcpDnsQueryDecoder` / `DatagramDnsQueryDecoder` |
-| **hosts 权重负载** | 支持 `enableHostsWeight` 模式，相同域名多 IP 时按权重分配，返回 1-2 个 IP |
-| **解析拦截器** | `ResolveInterceptor` 接口支持自定义解析逻辑，可对接外部服务（如服务发现） |
-| **防缓存击穿** | `resolvingKeys` + `resolvingPromises` 防止并发场景下的缓存穿透（thundering-herd） |
-| **H2 持久缓存** | 使用 `H2StoreCache` 作为 DNS 缓存后端，支持 TTL 和跨进程共享 |
-
-**典型用途：**
-- 本地开发 DNS 劫持/劫持测试
-- 内网服务发现 DNS 前端
-- 配合 SOCKS5 实现智能 DNS 路由
+- **`UdpCompressCodec` / `UdpRedundantCodec`**:
+  为 UDP 代理数据在弱网环境下提供的额外增强：压缩（减少带宽占用）与冗余（多倍发送减少丢包率影响）。
 
 ---
 
-## SOCKS5 代理模块
+## SOCKS5 代理模块详细说明
 
 ### SocksProxyServer
-
 标准 SOCKS5 协议服务器实现，支持 TCP CONNECT 和 UDP ASSOCIATE。
-
-**核心特点：**
 
 | 特性 | 说明 |
 |------|------|
@@ -60,10 +45,7 @@ org.rx.net/
 ```
 
 ### Socks5Client
-
 SOCKS5 客户端实现，支持 CONNECT 和 UDP_ASSOCIATE。
-
-**核心特点：**
 
 | 特性 | 说明 |
 |------|------|
@@ -73,10 +55,7 @@ SOCKS5 客户端实现，支持 CONNECT 和 UDP_ASSOCIATE。
 | **Wildcard 地址解析** | 代理返回 `0.0.0.0` 时自动替换为代理服务器实际 IP |
 
 ### SocksContext
-
 代理会话上下文，贯穿连接生命周期。
-
-**核心特点：**
 
 | 特性 | 说明 |
 |------|------|
@@ -89,10 +68,7 @@ SOCKS5 客户端实现，支持 CONNECT 和 UDP_ASSOCIATE。
 ## Shadowsocks 模块
 
 ### ShadowsocksServer
-
 Shadowsocks 协议服务器（TCP/UDP）。
-
-**核心特点：**
 
 | 特性 | 说明 |
 |------|------|
@@ -110,10 +86,7 @@ Shadowsocks 协议服务器（TCP/UDP）。
 ## RRP (Reverse Relay Protocol) 模块
 
 ### RrpServer / RrpClient
-
 反向中继协议，用于内网穿透：客户端主动连接服务器，服务器将远程端口流量转发到客户端。
-
-**核心特点：**
 
 | 特性 | 说明 |
 |------|------|
@@ -129,7 +102,6 @@ Shadowsocks 协议服务器（TCP/UDP）。
 - `ACTION_SYNC_CLOSE (3)` - 同步关闭通知
 
 ### RRP 工作流程
-![61ac288128ef2e5336c874b0094fbe1a.png](./61ac288128ef2e5336c874b0094fbe1a.png)
 
 ```plantuml
 @startuml
@@ -187,87 +159,12 @@ end note
 - `user` = 直连端
 - `natSvr` = 内网服务 (10.1.1.x:3306)
 
-以下为 RRP 流程说明原文（与上图 PlantUML 同源）；图中注释与步骤一一对应。
-```text
-角色 localSvr = k8s pod 内网微服务(RrpClient)， remoteSvr = 公网cloud.xx.cn java服务(RrpServer)， user = 直连端， natSvr = 内网服务（10.1.1.x:3306）
-
---注册远程端口--
-remoteSvr 开启通信端口4001
-localSvr 主进程内开启RrpClient连接 remoteSvr cloud.xx.cn:4001
-	注释内容： 数据包加密并伪装成http数据包，针对只允许http请求的防火墙
-localSvr 向 remoteSvr 注册远程直连端口如6015  
-	注释内容： 数据包加密并伪装成http数据包
-localSvr 开启本地回路socks5服务
-
---转发数据包--
-user 端上的mysql client 直连 natSvr，
-	注释内容： 全局抓包user 端请求 natSvr 的数据包，包装成socks5 client的数据包去请求 remoteSvr 的注册地址如 cloud.xx.cn:6015
-remoteSvr 把 user 的数据包 加密并伪装成http数据包通过发送给 localSvr
-	注释内容： RrpClient <-> RrpServer 之间只会有一个tcp连接，所有内外部多连接不同协议数据包请求都包装在内
-localSvr 再把数据包解析发送本地回路socks5服务
-本地回路socks5服务根据协议发送数据包至natSvr
-
-注释内容： 从而实现 user 直连 natSvr 的效果
-```
-
----
-
-## 路由支持模块 (support)
-
-### UltraDomainTrieMatcher
-
-高性能双数组 Trie 域名后缀匹配器。
-
-**核心特点：**
-
-| 特性 | 说明 |
-|------|------|
-| **Suffix Compression (Tail)** | 共享后缀存储，大幅降低内存占用 |
-| **Zero-Allocation 查询** | 使用 `Window` 滑动窗口 + `CompactLabelMap` 扁平哈希，无临时对象分配 |
-| **FastThreadLocal 零拷贝** | 查询过程不生成中间字符串，直接基于原始字符数组比较 |
-| **CompactLabelMap** | 自定义开放寻址哈希表，替代 fastutil 运行时依赖，序列化友好 |
-
-**复杂度：**
-- 构建：O(N × L)，N 为规则数，L 为平均域名长度
-- 查询：O(L)，与规则数无关
-
-### GeoSiteMatcher
-
-V2Ray GeoSite 格式规则匹配器，支持完整规则类型。
-
-**核心特点：**
-
-| 特性 | 说明 |
-|------|------|
-| **四层匹配策略** | 按优先级：①后缀 (Trie) ②完整 (HashSet) ③关键词 (Aho-Corasick) ④正则 (Regex) |
-| **Aho-Corasick 多模式** | 使用 `hankcs/AhoCorasickDoubleArrayTrie` 实现 O(N) 多关键词匹配 |
-| **零分配 Case-Insensitive** | `LowerAsciiCharSequence` 包装器避免 toLowerCase 字符串分配 |
-| **线程安全 Regex** | `ReusablePattern` 使用 `FastThreadLocal<Matcher>` 避免重复编译 |
-
-**规则格式支持：**
-- `domain:example.com` - 后缀匹配（默认）
-- `full:example.com` - 完整匹配
-- `keyword:example` - 关键词包含
-- `regexp:.*example.*` - 正则匹配
-
-### DomainTrieMatcher (Deprecated)
-
-早期域名 Trie 实现，使用压缩数组节点。
-
-**特点：**
-- 仅支持 38 字符集（a-z, 0-9, ., -）
-- 反向插入实现后缀匹配
-- 已被 `UltraDomainTrieMatcher` 取代
-
 ---
 
 ## 配置类说明
 
 ### SocksConfig
-
 SOCKS5 服务器配置，继承 `SocketConfig`。
-
-**关键配置项：**
 
 ```java
 // 超时控制
@@ -291,10 +188,7 @@ udpRedundant.intervalMicros = 1000  // 发包间隔
 ```
 
 ### RrpConfig
-
 RRP 协议配置。
-
-**关键配置项：**
 
 ```java
 // 服务端
@@ -312,8 +206,6 @@ proxies = [
 ]
 ```
 
----
-
 ## 性能优化要点
 
 1. **零拷贝**：`LocalChannel` 内存通道避免内核态切换
@@ -321,8 +213,6 @@ proxies = [
 3. **线程隔离**：加密操作 offload 到独立线程池
 4. **无锁查询**：域名匹配全程无锁、零分配
 5. **背压控制**：写缓冲上限 + 流控反馈防止 OOM
-
----
 
 ## 集成测试类
 

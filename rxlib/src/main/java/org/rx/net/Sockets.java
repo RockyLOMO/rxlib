@@ -290,6 +290,81 @@ public final class Sockets {
         return Epoll.isAvailable() ? EpollDatagramChannel.class : NioDatagramChannel.class;
     }
 
+    public static int reusePortBindCount(SocketConfig config, SocketAddress bindAddress) {
+        if (!Epoll.isAvailable()) {
+            return 1;
+        }
+        if (bindAddress != null) {
+            if (!(bindAddress instanceof InetSocketAddress)) {
+                return 1;
+            }
+            InetSocketAddress inetAddress = (InetSocketAddress) bindAddress;
+            if (inetAddress.getPort() <= 0) {
+                return 1;
+            }
+        }
+        int bindCount = config == null ? 1 : config.getReusePortBindCount();
+        if (bindCount == 0) {
+            int cpuThreads = Math.max(1, Constants.CPU_THREADS);
+            int reactorThreadAmount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
+            int effectiveReactorThreads = reactorThreadAmount > 0 ? reactorThreadAmount : cpuThreads;
+            return Math.max(1, Math.min(effectiveReactorThreads, cpuThreads));
+        }
+        return Math.max(1, bindCount);
+    }
+
+    /**
+     * 统一处理 REUSEPORT 多 bind。
+     * 仅在 Linux epoll + 固定 Inet 端口 + reusePortBindCount != 1 时创建多 listener。
+     */
+    public static List<Channel> bindChannels(Bootstrap bootstrap, SocketAddress bindAddress, SocketConfig config) {
+        int bindCount = reusePortBindCount(config, bindAddress);
+        List<Channel> channels = new ArrayList<>(bindCount);
+        for (int i = 0; i < bindCount; i++) {
+            Bootstrap bindBootstrap = i == 0 ? bootstrap : bootstrap.clone();
+            if (bindCount > 1) {
+                bindBootstrap.option(EpollChannelOption.SO_REUSEPORT, true);
+            }
+            ChannelFuture future = bindBootstrap.bind(bindAddress);
+            future.addListener((ChannelFutureListener) f -> {
+                if (!f.isSuccess()) {
+                    log.error("UDP bind {} fail", toString(bindAddress), f.cause());
+                }
+            });
+            channels.add(future.channel());
+        }
+        if (bindCount > 1) {
+            log.info("UDP SO_REUSEPORT enabled bindAddress={} bindCount={}", toString(bindAddress), bindCount);
+        }
+        return channels;
+    }
+
+    /**
+     * 统一处理 REUSEPORT 多 bind。
+     * 仅在 Linux epoll + 固定 Inet 端口 + reusePortBindCount != 1 时创建多 listener。
+     */
+    public static List<Channel> bindChannels(ServerBootstrap bootstrap, SocketAddress bindAddress, SocketConfig config) {
+        int bindCount = reusePortBindCount(config, bindAddress);
+        List<Channel> channels = new ArrayList<>(bindCount);
+        for (int i = 0; i < bindCount; i++) {
+            ServerBootstrap bindBootstrap = i == 0 ? bootstrap : bootstrap.clone();
+            if (bindCount > 1) {
+                bindBootstrap.option(EpollChannelOption.SO_REUSEPORT, true);
+            }
+            ChannelFuture future = bindBootstrap.bind(bindAddress);
+            future.addListener((ChannelFutureListener) f -> {
+                if (!f.isSuccess()) {
+                    log.error("TCP bind {} fail", toString(bindAddress), f.cause());
+                }
+            });
+            channels.add(future.channel());
+        }
+        if (bindCount > 1) {
+            log.info("TCP SO_REUSEPORT enabled bindAddress={} bindCount={}", toString(bindAddress), bindCount);
+        }
+        return channels;
+    }
+
     // region tcp
     public static ServerBootstrap serverBootstrap(BiAction<SocketChannel> initChannel) {
         return serverBootstrap(null, initChannel);
@@ -310,7 +385,8 @@ public final class Sockets {
         WriteBufferWaterMark writeBufferWaterMark = op.writeBufferWaterMark;
         AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
-        final int bossThreadAmount = 1; // Equal to the number of bind(), default 1
+        // REUSEPORT 多 bind 需要至少匹配的 boss 数量，才能让监听 socket 分散到多个 accept loop。
+        final int bossThreadAmount = reusePortBindCount(config, null);
         ServerBootstrap b = new ServerBootstrap()
                 .group(newEventLoop(bossThreadAmount), reactor(rn, true))
                 .channel(Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)

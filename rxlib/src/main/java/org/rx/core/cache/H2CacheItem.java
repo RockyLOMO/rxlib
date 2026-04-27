@@ -63,7 +63,7 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
         }
         synchronized (this) {
             if (!keyDecoded) {
-                _key = key == null ? null : Serializer.DEFAULT.deserializeFromBytes(key);
+                _key = key == null ? null : Serializer.FURY.deserializeFromBytes(key);
                 keyDecoded = true;
             }
         }
@@ -74,7 +74,7 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
         synchronized (this) {
             this._key = key;
             this.keyDecoded = true;
-            this.id = CodecUtil.hash64(this.key = Serializer.DEFAULT.serializeToBytes(key));
+            this.id = CodecUtil.hash64(this.key = Serializer.FURY.serializeToBytes(key));
         }
     }
 
@@ -85,7 +85,7 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
         }
         synchronized (this) {
             if (!valDecoded) {
-                _val = val == null ? null : Serializer.DEFAULT.deserializeFromBytes(val);
+                _val = val == null ? null : Serializer.FURY.deserializeFromBytes(val);
                 valDecoded = true;
             }
         }
@@ -98,7 +98,7 @@ public class H2CacheItem<K, V> extends CachePolicy implements Map.Entry<K, V> {
             V oldValue = getValue();
             this._val = value;
             this.valDecoded = true;
-            this.val = Serializer.DEFAULT.serializeToBytes(value);
+            this.val = Serializer.FURY.serializeToBytes(value);
             this.valIdx = CodecUtil.hash64(this.val);
             return oldValue;
         }

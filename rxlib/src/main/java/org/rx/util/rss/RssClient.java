@@ -249,6 +249,7 @@ public final class RssClient {
             ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(shadowUser.getSsPort()),
                     CipherKind.AES_256_GCM.getCipherName(), shadowUser.getSsPwd());
             config.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
+            enableShadowIngressReusePort(config);
             return Tuple.of(config, shadowUser);
         });
 
@@ -484,6 +485,21 @@ public final class RssClient {
             String res = setDDns(rssConf.ddnsApiKey, domain, subDomains, wanIp.getHostAddress());
             log.info("ddns set {} + {} @ {} -> {}", domain, subDomains, wanIp.getHostAddress(), res);
         }, rssConf.ddnsJobSeconds * 1000L);
+    }
+
+    static void enableShadowIngressReusePort(ShadowsocksConfig config) {
+        if (config == null) {
+            return;
+        }
+
+        config.setReusePortBindCount(2);
+        int bindCount = Sockets.reusePortBindCount(config, config.getServerEndpoint());
+        if (bindCount <= 1) {
+            return;
+        }
+
+        log.info("shadow ingress enable SO_REUSEPORT endpoint={} bindCount={}",
+                config.getServerEndpoint(), bindCount);
     }
 
     @SneakyThrows
