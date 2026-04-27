@@ -1,15 +1,17 @@
 package org.rx.net.transport.hybrid;
 
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.Setter;
 
 import java.util.concurrent.CompletableFuture;
 
 @Getter
-@RequiredArgsConstructor
+@AllArgsConstructor
 public final class HybridSendResult {
     private final HybridRoute selectedRoute;
-    private final HybridRoute actualRoute;
+    @Setter
+    private volatile HybridRoute actualRoute;
     private final long sequence;
     private final int encodedBytes;
     private final int udpFragmentCount;

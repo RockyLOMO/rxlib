@@ -17,6 +17,7 @@ public final class HybridMetrics {
     final LongAdder udpFallbackToTcp = new LongAdder();
     final LongAdder duplicateDrops = new LongAdder();
     final LongAdder illegalUdpDrops = new LongAdder();
+    final LongAdder tcpSessionConflicts = new LongAdder();
     final LongAdder routeSwitches = new LongAdder();
     final LongAdder activeSessions = new LongAdder();
     final LongAdder tcpOnlySessions = new LongAdder();
@@ -70,6 +71,10 @@ public final class HybridMetrics {
 
     public long illegalUdpDrops() {
         return illegalUdpDrops.sum();
+    }
+
+    public long tcpSessionConflicts() {
+        return tcpSessionConflicts.sum();
     }
 
     public long routeSwitches() {

@@ -11,8 +11,9 @@ import org.rx.net.dns.DnsServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingContext;
 import org.rx.net.transport.FuryUdpClientCodec;
-import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.UdpClient;
+import org.rx.net.transport.hybrid.HybridServer;
+import org.rx.net.transport.hybrid.HybridSession;
 
 import java.io.Serializable;
 import java.net.InetAddress;
@@ -38,7 +39,7 @@ public class NameserverImpl implements Nameserver {
 
     static final String NAME = "nameserver";
     final NameserverConfig config;
-    final TcpServer rs;
+    final HybridServer rs;
     @Getter
     final DnsServer dnsServer;
     @Setter
@@ -56,8 +57,8 @@ public class NameserverImpl implements Nameserver {
     }
 
     public Map<String, List<InstanceInfo>> getInstances() {
-        return Linq.from(rs.getClients().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"),
-                (k, p) -> getDiscoverInfos(p.select(x -> x.getRemoteEndpoint().getAddress()).toList(), Collections.emptyList()));
+        return Linq.from(rs.sessions().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"),
+                (k, p) -> getDiscoverInfos(p.select(x -> x.tcpRemoteEndpoint().getAddress()).toList(), Collections.emptyList()));
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
@@ -66,16 +67,17 @@ public class NameserverImpl implements Nameserver {
         dnsServer.setTtl(config.getDnsTtl());
         svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toList());
 
-        rs = Remoting.register(this, config.getRegisterPort(), false);
+        rs = Remoting.registerHybrid(this, config.getRegisterPort(), false);
         rs.onDisconnected.combine((s, e) -> {
-            String appName = e.getClient().attr(APP_NAME_KEY);
+            HybridSession session = e.getValue();
+            String appName = session.attr(APP_NAME_KEY);
             if (appName == null) {
                 return;
             }
 
-            doDeregister(appName, e.getClient().getRemoteEndpoint().getAddress(), true, true);
+            doDeregister(appName, session.tcpRemoteEndpoint().getAddress(), true, true);
         });
-        rs.onPing.combine((s, e) -> attrs(e.getClient().getRemoteEndpoint().getAddress())
+        rs.onPing.combine((s, e) -> attrs(e.getSession().tcpRemoteEndpoint().getAddress())
                 .put("ping", String.format("%dms", (NtpClock.UTC.millis() - e.getValue().getTimestamp()) * 2)));
 
         FuryUdpClientCodec syncCodec = FuryUdpClientCodec.createDefault();
@@ -97,6 +99,13 @@ public class NameserverImpl implements Nameserver {
                 syncRegister((Set<InetSocketAddress>) packet);
             }
         });
+    }
+
+    @Override
+    public void close() {
+        quietly(rs::close);
+        quietly(ss::close);
+        quietly(dnsServer::close);
     }
 
     public synchronized void syncRegister(@NonNull Set<InetSocketAddress> serverEndpoints) {
@@ -131,7 +140,7 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public int register(@NonNull String appName, int weight, Set<InetSocketAddress> serverEndpoints) {
-        Sys.logCtx("clientSize", rs.getClients().size());
+        Sys.logCtx("clientSize", rs.sessions().size());
 
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().attr(APP_NAME_KEY, appName);
@@ -162,7 +171,7 @@ public class NameserverImpl implements Nameserver {
 
     void doDeregister(String appName, InetAddress addr, boolean isDisconnected, boolean shouldSync) {
         //Multiple instances of same app and same ip, such as k8s rolling updates.
-        int c = Linq.from(rs.getClients().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.getRemoteEndpoint().getAddress().equals(addr));
+        int c = Linq.from(rs.sessions().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.tcpRemoteEndpoint().getAddress().equals(addr));
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);
             if (dnsServer.removeHosts(appName, Collections.singletonList(addr))) {

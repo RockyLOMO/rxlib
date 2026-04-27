@@ -21,7 +21,6 @@ import org.rx.core.ResetEventWait;
 import org.rx.core.RxConfig;
 import org.rx.core.StringBuilder;
 import org.rx.core.Sys;
-import org.rx.core.Tasks;
 import org.rx.core.ThreadPool;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.Sockets;
@@ -52,6 +51,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -107,6 +107,7 @@ public final class Remoting {
         DiagnosticMetrics.setNetComponent(config.getTcpConfig(), DiagnosticMetrics.NET_RPC_CLIENT);
         FastThreadLocal<Boolean> isCompute = new FastThreadLocal<Boolean>();
         $<HybridClient> sync = $();
+        Set<String> subscribedEvents = ConcurrentHashMap.newKeySet();
         return proxy(contract, (m, p) -> {
             if (Reflects.OBJECT_METHODS.contains(m)) {
                 return p.fastInvokeSuper();
@@ -115,6 +116,7 @@ public final class Remoting {
                 synchronized (sync) {
                     if (sync.v != null) {
                         clearClient(sync.v);
+                        subscribedEvents.clear();
                         sync.v.close();
                         sync.v = null;
                     }
@@ -148,6 +150,7 @@ public final class Remoting {
                         case 3:
                             setReturnValue(clientBean, invokeSuper(m, p));
                             String eventName = (String) args[0];
+                            subscribedEvents.add(eventName);
                             pack = new EventMessage(eventName, EventFlag.SUBSCRIBE);
                             log.info("clientSide event {} -> SUBSCRIBE", eventName);
                             break;
@@ -157,6 +160,7 @@ public final class Remoting {
                     if (args.length == 2) {
                         setReturnValue(clientBean, invokeSuper(m, p));
                         String eventName = (String) args[0];
+                        subscribedEvents.remove(eventName);
                         pack = new EventMessage(eventName, EventFlag.UNSUBSCRIBE);
                         log.info("clientSide event {} -> UNSUBSCRIBE", eventName);
                     }
@@ -185,7 +189,7 @@ public final class Remoting {
                 boolean returnCandidate = false;
                 synchronized (sync) {
                     if (sync.v == null) {
-                        init(sync.v = candidate, p.getProxyObject(), config, isCompute);
+                        init(sync.v = candidate, p.getProxyObject(), config, isCompute, subscribedEvents);
                     } else {
                         returnCandidate = true;
                     }
@@ -240,9 +244,6 @@ public final class Remoting {
                             sync.v = null;
                         }
                     }
-                    if (!isMethodCall) {
-                        pool.returnClient(client);
-                    }
                     throw e;
                 }
 
@@ -257,6 +258,8 @@ public final class Remoting {
                     if (clientBean.pack.errorMessage != null) {
                         throw new RemotingException(clientBean.pack.errorMessage);
                     }
+                } else if (isSubscriptionPacket(pack)) {
+                    log.info("clientSide event subscription deferred until reconnect");
                 } else {
                     throw e;
                 }
@@ -272,9 +275,11 @@ public final class Remoting {
         });
     }
 
-    private static void init(HybridClient client, Object proxyObject, RpcClientConfig<?> config, FastThreadLocal<Boolean> isCompute) {
+    private static void init(HybridClient client, Object proxyObject, RpcClientConfig<?> config, FastThreadLocal<Boolean> isCompute,
+                             Set<String> subscribedEvents) {
         client.resetHandlers();
         AtomicReference<HybridSession> sessionRef = new AtomicReference<HybridSession>();
+        AtomicBoolean initHandlerInvoked = new AtomicBoolean();
         client.onError.combine((s, e) -> e.setCancel(true));
         client.onDisconnected.combine((s, e) -> {
             if (!client.getConfig().getTcpClientConfig().isEnableReconnect()) {
@@ -283,27 +288,42 @@ public final class Remoting {
             }
         });
         client.onReceive.combine((s, e) -> handleClientReceive(client, sessionRef.get(), proxyObject, isCompute, e.getValue()));
-        client.onSessionReady.combine((s, e) -> onClientSessionReady(client, sessionRef, proxyObject, config, e.getValue()));
+        client.onSessionReady.combine((s, e) -> onClientSessionReady(client, sessionRef, proxyObject, config, e.getValue(),
+                subscribedEvents, initHandlerInvoked));
         HybridSession current = client.session();
         if (current != null) {
-            onClientSessionReady(client, sessionRef, proxyObject, config, current);
+            onClientSessionReady(client, sessionRef, proxyObject, config, current, subscribedEvents, initHandlerInvoked);
         }
     }
 
     @SneakyThrows
     private static void onClientSessionReady(HybridClient client, AtomicReference<HybridSession> sessionRef,
-                                             Object proxyObject, RpcClientConfig<?> config, HybridSession session) {
+                                             Object proxyObject, RpcClientConfig<?> config, HybridSession session,
+                                             Set<String> subscribedEvents, AtomicBoolean initHandlerInvoked) {
         HybridSession previous = sessionRef.getAndSet(session);
         if (previous == session) {
             return;
         }
 
         session.send(new MetadataMessage(config.getEventVersion()), RemotingHybridOptions.CONTROL);
-        TripleAction<Object, HybridClient> initHandler = (TripleAction<Object, HybridClient>) config.getInitHandler();
-        if (initHandler != null) {
-            initHandler.invoke(proxyObject, client);
+        List<String> replayEvents = new ArrayList<String>(subscribedEvents);
+        if (initHandlerInvoked.compareAndSet(false, true)) {
+            TripleAction<Object, HybridClient> initHandler = (TripleAction<Object, HybridClient>) config.getInitHandler();
+            if (initHandler != null) {
+                initHandler.invoke(proxyObject, client);
+            }
+        }
+        if (previous != null) {
+            resendSubscriptions(session, replayEvents);
         }
         resendPending(client, previous, session);
+    }
+
+    private static void resendSubscriptions(HybridSession session, Iterable<String> subscribedEvents) {
+        for (String eventName : subscribedEvents) {
+            session.send(new EventMessage(eventName, EventFlag.SUBSCRIBE), RemotingHybridOptions.CONTROL);
+            log.info("clientSide event {} -> RESUBSCRIBE", eventName);
+        }
     }
 
     private static void handleClientReceive(HybridClient client, HybridSession session, Object proxyObject,
@@ -476,6 +496,11 @@ public final class Remoting {
         active.send(packet);
     }
 
+    private static boolean isSubscriptionPacket(Object packet) {
+        EventMessage event = as(packet, EventMessage.class);
+        return event != null && (event.flag == EventFlag.SUBSCRIBE || event.flag == EventFlag.UNSUBSCRIBE);
+    }
+
     private static void setReturnValue(ClientBean clientBean, Object value) {
         if (clientBean.pack == null) {
             clientBean.pack = new MethodMessage(generator.increment(), null, null, ThreadPool.traceId());
@@ -500,21 +525,37 @@ public final class Remoting {
     }
 
     public static TcpServer register(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
+        return registerBean(contractInstance, config).server.tcpServer();
+    }
+
+    public static HybridServer registerHybrid(Object contractInstance, int listenPort, boolean enableEventCompute) {
+        RpcServerConfig conf = new RpcServerConfig(new TcpServerConfig(listenPort));
+        if (enableEventCompute) {
+            conf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
+        }
+        return registerHybrid(contractInstance, conf);
+    }
+
+    public static HybridServer registerHybrid(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
+        return registerBean(contractInstance, config).server;
+    }
+
+    private static ServerBean registerBean(@NonNull Object contractInstance, @NonNull RpcServerConfig config) {
         ServerBean existing = serverBeans.get(contractInstance);
         if (existing != null) {
-            return existing.server.tcpServer();
+            return existing;
         }
         Object initLock = serverInitLocks.computeIfAbsent(contractInstance, k -> new Object());
         synchronized (initLock) {
             existing = serverBeans.get(contractInstance);
             if (existing != null) {
                 serverInitLocks.remove(contractInstance);
-                return existing.server.tcpServer();
+                return existing;
             }
             ServerBean bean = doRegister(contractInstance, config);
             serverBeans.put(contractInstance, bean);
             serverInitLocks.remove(contractInstance);
-            return bean.server.tcpServer();
+            return bean;
         }
     }
 
@@ -561,7 +602,7 @@ public final class Remoting {
                     doSendBroadcast(bean, p, publishContext, publishTargets);
                     break;
                 case COMPUTE_ARGS:
-                    ServerBean.EventContext context = eventBean.contextMap.get(p.computeId);
+                    ServerBean.EventContext context = eventBean.contextMap.remove(p.computeId);
                     if (context == null) {
                         log.warn("serverSide event {} [{}] -> COMPUTE_ARGS FAIL", p.eventName, p.computeId);
                     } else {
@@ -684,8 +725,7 @@ public final class Remoting {
             context.computedPromise.tryFailure(ex);
             log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", pack.eventName, context.computingSession.tcpRemoteEndpoint(), ex);
         } finally {
-            Tasks.setTimeout(() -> eventBean.contextMap.remove(pack.computeId),
-                    server.getConfig().getTcpServerConfig().getConnectTimeoutMillis() * 2L);
+            eventBean.contextMap.remove(pack.computeId, context);
         }
     }
 

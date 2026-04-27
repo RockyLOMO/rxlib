@@ -1,5 +1,6 @@
 package org.rx.net.transport.hybrid;
 
+import io.netty.util.NetUtil;
 import lombok.Getter;
 import org.rx.core.Delegate;
 import org.rx.core.EventArgs;
@@ -17,6 +18,7 @@ import org.rx.net.transport.protocol.UdpMessage;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -120,9 +122,13 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
             promise.completeExceptionally(error);
             return;
         }
-        DefaultHybridSession created = createSession();
-        sendHello(created);
-        promise.complete(null);
+        try {
+            DefaultHybridSession created = createSession();
+            sendHello(created);
+            promise.complete(null);
+        } catch (Throwable e) {
+            promise.completeExceptionally(e);
+        }
     }
 
     public boolean isConnected() {
@@ -306,12 +312,29 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
         if (port <= 0) {
             return null;
         }
-        InetSocketAddress endpoint = new InetSocketAddress(host, port);
-        InetAddress address = endpoint.getAddress();
-        if (address != null && address.isAnyLocalAddress() && tcpRemoteEndpoint != null) {
+        InetAddress address = literalAddress(host);
+        if (address == null) {
+            return null;
+        }
+        if (address.isAnyLocalAddress() && tcpRemoteEndpoint != null && tcpRemoteEndpoint.getAddress() != null) {
             return new InetSocketAddress(tcpRemoteEndpoint.getAddress(), port);
         }
-        return endpoint;
+        return new InetSocketAddress(address, port);
+    }
+
+    static InetAddress literalAddress(String host) {
+        if (host == null || host.length() == 0) {
+            return null;
+        }
+        byte[] bytes = NetUtil.createByteArrayFromIpAddressString(host);
+        if (bytes == null) {
+            return null;
+        }
+        try {
+            return InetAddress.getByAddress(bytes);
+        } catch (UnknownHostException e) {
+            return null;
+        }
     }
 
     static long positiveRandomLong() {

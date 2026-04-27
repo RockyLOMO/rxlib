@@ -143,21 +143,28 @@ final class DefaultHybridSession implements HybridSession {
             UdpSendResult result = udpClient.sendWithResult(endpoint, data, waitAckTimeout, options.isFullSync());
             metrics.udpSendPackets.increment();
             metrics.udpSendBytes.add(result.getEncodedBytes());
+            CompletableFuture<Void> ackFuture = new CompletableFuture<Void>();
+            HybridSendResult hybridResult = new HybridSendResult(HybridRoute.UDP, HybridRoute.UDP, seq, encodedBytes,
+                    result.getFragmentCount(), toCompletableFuture(result.getWriteFuture()), ackFuture, false);
             result.getAckFuture().whenComplete((r, e) -> {
                 udpInflight.decrementAndGet();
                 if (e == null) {
                     udpFailures.set(0);
+                    ackFuture.complete(null);
                     return;
                 }
-                onUdpSendFailure(seq, packet, options, e);
+                if (onUdpSendFailure(seq, packet, options, e)) {
+                    hybridResult.setActualRoute(HybridRoute.TCP);
+                    ackFuture.complete(null);
+                } else {
+                    ackFuture.completeExceptionally(e);
+                }
             });
-            return new HybridSendResult(HybridRoute.UDP, HybridRoute.UDP, seq, encodedBytes,
-                    result.getFragmentCount(), toCompletableFuture(result.getWriteFuture()), result.getAckFuture(), false);
+            return hybridResult;
         } catch (Throwable e) {
             udpInflight.decrementAndGet();
             metrics.udpWriteDrops.increment();
-            boolean fallback = options.isFallbackToTcpOnUdpFailure() && isConnected();
-            onUdpSendFailure(seq, packet, options, e);
+            boolean fallback = onUdpSendFailure(seq, packet, options, e);
             CompletableFuture<Void> failed = new CompletableFuture<>();
             failed.completeExceptionally(e);
             CompletableFuture<Void> ackFuture = fallback ? CompletableFuture.completedFuture(null) : failed;
@@ -166,7 +173,7 @@ final class DefaultHybridSession implements HybridSession {
         }
     }
 
-    void onUdpSendFailure(long seq, Object packet, HybridSendOptions options, Throwable error) {
+    boolean onUdpSendFailure(long seq, Object packet, HybridSendOptions options, Throwable error) {
         if (error instanceof TimeoutException || error.getCause() instanceof TimeoutException) {
             metrics.udpAckTimeouts.increment();
         }
@@ -174,9 +181,15 @@ final class DefaultHybridSession implements HybridSession {
             degradeToTcpOnly("udp-send-failure");
         }
         if (options.isFallbackToTcpOnUdpFailure() && isConnected()) {
-            metrics.udpFallbackToTcp.increment();
-            sendTcp(seq, packet, encodedSize(packet));
+            try {
+                metrics.udpFallbackToTcp.increment();
+                sendTcp(seq, packet, encodedSize(packet));
+                return true;
+            } catch (Throwable ignored) {
+                return false;
+            }
         }
+        return false;
     }
 
     void sendTcp(long seq, Object packet) {
@@ -255,12 +268,18 @@ final class DefaultHybridSession implements HybridSession {
     }
 
     void detach(String reason) {
+        detach(reason, true);
+    }
+
+    void detach(String reason, boolean clearChannelAttrs) {
         closed = true;
         cancelProbe();
         cancelPunch();
         degradeToTcpOnly(reason);
         sequenceWindow.clear();
-        clearMirroredAttrs();
+        if (clearChannelAttrs) {
+            clearMirroredAttrs();
+        }
         attrs.clear();
         onSend.purge();
         onReceive.purge();

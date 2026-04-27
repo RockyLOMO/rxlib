@@ -8,6 +8,10 @@ import org.rx.core.EventArgs;
 import org.rx.net.transport.ClientDisconnectedException;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
+import org.rx.net.transport.hybrid.HybridClient;
+import org.rx.net.transport.hybrid.HybridServer;
+import org.rx.net.rpc.protocol.EventFlag;
+import org.rx.net.rpc.protocol.EventMessage;
 import org.rx.test.*;
 
 import java.net.InetSocketAddress;
@@ -17,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,6 +45,30 @@ public class RemotingTest extends AbstractTester {
                 throw new RuntimeException(e);
             }
             return 1;
+        }
+    }
+
+    static class CountingHybridClientPool implements RpcHybridClientPool {
+        final HybridClient client;
+        final AtomicInteger returnCount = new AtomicInteger();
+
+        CountingHybridClientPool(RpcClientConfig<?> config) {
+            client = new HybridClient(config.getHybridConfig());
+        }
+
+        @Override
+        public HybridClient borrowClient() {
+            return client;
+        }
+
+        @Override
+        public HybridClient returnClient(HybridClient client) {
+            returnCount.incrementAndGet();
+            return null;
+        }
+
+        void close() {
+            client.close();
         }
     }
 
@@ -129,6 +158,75 @@ public class RemotingTest extends AbstractTester {
 
     @Test
     @Order(6)
+    @Timeout(60)
+    void initHandlerRunsOnceAndSubscriptionsReplayAfterReconnect() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        UserManagerImpl impl = new UserManagerImpl();
+        startServer(impl, endpoint);
+
+        AtomicInteger initCalls = new AtomicInteger();
+        AtomicInteger callbacks = new AtomicInteger();
+        RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(endpoint, 0);
+        config.getTcpConfig().setConnectTimeoutMillis(1000);
+        config.setInitHandler((p, c) -> {
+            initCalls.incrementAndGet();
+            p.<UserEventArgs>attachEvent("onCreate", (s, e) -> callbacks.incrementAndGet(), false);
+        });
+
+        UserManager facade = Remoting.createFacade(UserManager.class, config);
+        assertEquals(2, facade.computeLevel(1, 1));
+        awaitEquals(initCalls, 1, 3000);
+        awaitCallbackAfterCreate(impl, callbacks, 1, 5000);
+
+        restartServer(impl, endpoint, 1200);
+        awaitCompute(facade, 2, 15000);
+        awaitCallbackAfterCreate(impl, callbacks, 2, 5000);
+
+        restartServer(impl, endpoint, 1200);
+        awaitCompute(facade, 2, 15000);
+        awaitCallbackAfterCreate(impl, callbacks, 3, 5000);
+
+        assertEquals(1, initCalls.get(), "同一个 stateful client 重连不应重复执行 initHandler");
+        facade.close();
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void initHandlerAttachEventSendsSingleSubscribeOnFirstSession() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        UserManagerImpl impl = new UserManagerImpl();
+        RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(port));
+        AtomicInteger subscribePackets = new AtomicInteger();
+        HybridServer server = Remoting.registerHybrid(impl, serverConfig);
+        server.onReceive.combine((s, e) -> {
+            if (e.getValue() instanceof EventMessage) {
+                EventMessage message = (EventMessage) e.getValue();
+                if (message.flag == EventFlag.SUBSCRIBE && "onCreate".equals(message.eventName)) {
+                    subscribePackets.incrementAndGet();
+                }
+            }
+        });
+        try {
+            RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(endpoint, 0);
+            config.getTcpConfig().setConnectTimeoutMillis(1000);
+            config.setInitHandler((p, c) -> p.<UserEventArgs>attachEvent("onCreate", (s, e) -> {
+            }, false));
+
+            UserManager facade = Remoting.createFacade(UserManager.class, config);
+            assertEquals(2, facade.computeLevel(1, 1));
+
+            awaitEquals(subscribePackets, 1, 3000);
+            facade.close();
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Order(6)
     @Timeout(20)
     void rpcPoolMode_disconnectDuringMethodCall_doesNotDoubleRecycle() throws Exception {
         int port = freePort();
@@ -142,6 +240,109 @@ public class RemotingTest extends AbstractTester {
 
         assertThrows(ClientDisconnectedException.class, facade::disconnectBeforeReply,
                 "断链时应保留客户端断开异常，不能被连接池重复回收异常覆盖");
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void rpcPoolMode_disconnectedEventPacket_recyclesOnce() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        RpcClientConfig<UserManager> config = RpcClientConfig.poolMode(endpoint, 1, 1);
+        UserManager facade = Remoting.createFacade(UserManager.class, config);
+        CountingHybridClientPool pool = new CountingHybridClientPool(config);
+        Remoting.clientPools.put(config, pool);
+        try {
+            assertThrows(ClientDisconnectedException.class, () ->
+                    facade.<UserEventArgs>attachEvent("onCreate", (s, e) -> {
+                    }, false));
+            assertEquals(1, pool.returnCount.get(), "事件包断链后只能归还池化客户端一次");
+        } finally {
+            Remoting.clientPools.remove(config);
+            pool.close();
+        }
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void eventComputeTimeoutDropsLateContext() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        UserManagerImpl impl = new UserManagerImpl();
+        RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(port));
+        serverConfig.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
+        serverConfig.getTcpConfig().setConnectTimeoutMillis(100);
+        TcpServer server = Remoting.register(impl, serverConfig);
+
+        RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(endpoint, 1);
+        config.getTcpConfig().setConnectTimeoutMillis(1000);
+        UserManager facade = Remoting.createFacade(UserManager.class, config);
+        try {
+            String eventName = "lateCompute";
+            facade.<UserEventArgs>attachEvent(eventName, (s, e) -> {
+                sleep(350);
+                e.setFlag(99);
+            }, false);
+            sleep(300);
+
+            UserEventArgs args = new UserEventArgs(PersonBean.LeZhi);
+            args.setFlag(7);
+            impl.raiseEvent(eventName, args);
+            assertEquals(7, args.getFlag(), "compute 超时后应使用原始参数继续执行");
+            sleep(700);
+            assertEquals(7, args.getFlag(), "迟到 COMPUTE_ARGS 不能再改写已广播的参数对象");
+        } finally {
+            facade.close();
+            server.close();
+        }
+    }
+
+    static void awaitCompute(UserManager facade, int expected, long timeoutMillis) {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        Throwable last = null;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                assertEquals(expected, facade.computeLevel(1, 1));
+                return;
+            } catch (Throwable e) {
+                last = e;
+                sleep(300);
+            }
+        }
+        if (last instanceof RuntimeException) {
+            throw (RuntimeException) last;
+        }
+        throw new AssertionError(last);
+    }
+
+    static void awaitEquals(AtomicInteger value, int expected, long timeoutMillis) {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (value.get() == expected) {
+                return;
+            }
+            sleep(50);
+        }
+        assertEquals(expected, value.get());
+    }
+
+    static void awaitCallbackAfterCreate(UserManagerImpl impl, AtomicInteger callbacks, int expected, long timeoutMillis) {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            impl.create(PersonBean.LeZhi);
+            long shortDeadline = System.currentTimeMillis() + 300;
+            while (System.currentTimeMillis() < shortDeadline) {
+                if (callbacks.get() == expected) {
+                    return;
+                }
+                if (callbacks.get() > expected) {
+                    assertEquals(expected, callbacks.get());
+                }
+                sleep(50);
+            }
+        }
+        assertEquals(expected, callbacks.get());
     }
 
     private void rpcApiEvent(UserManagerImpl svcImpl, List<UserManager> facadeGroup) {

@@ -11,6 +11,7 @@ import org.rx.net.transport.TcpClient;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.net.transport.UdpClient;
+import org.rx.net.transport.protocol.PingPacket;
 import org.rx.net.transport.protocol.UdpMessage;
 
 import java.net.InetSocketAddress;
@@ -30,6 +31,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
     public final Delegate<HybridServer, NEventArgs<HybridSession>> onDisconnected = Delegate.create();
     public final Delegate<HybridServer, HybridServerEventArgs<Object>> onReceive = Delegate.create();
     public final Delegate<HybridServer, HybridServerEventArgs<Object>> onSend = Delegate.create();
+    public final Delegate<HybridServer, HybridServerEventArgs<PingPacket>> onPing = Delegate.create();
     public final Delegate<HybridServer, NEventArgs<Throwable>> onError = Delegate.create();
     public final Delegate<HybridServer, EventArgs> onClosed = Delegate.create();
 
@@ -50,6 +52,12 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         tcpServer = new TcpServer(this.config.getTcpServerConfig());
         tcpServer.onReceive.combine(this::onTcpReceive);
         tcpServer.onDisconnected.combine((s, e) -> removeSession(e.getClient()));
+        tcpServer.onPing.combine((s, e) -> {
+            DefaultHybridSession session = sessionsByTcp.get(e.getClient());
+            if (session != null) {
+                raiseEventAsync(onPing, new HybridServerEventArgs<PingPacket>(session, e.getValue()));
+            }
+        });
         tcpServer.onError.combine((s, e) -> raiseEventAsync(onError, new NEventArgs<Throwable>(e.getValue())));
         tcpServer.onClosed.combine((s, e) -> onTransportClosed());
         udpClient.onReceive.combine(this::onUdpReceive);
@@ -87,8 +95,13 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
             return false;
         }
         sessionsByTcp.remove(session.tcpClient, session);
-        session.close();
-        raiseEventAsync(onDisconnected, new NEventArgs<HybridSession>(session));
+        pendingTcpData.remove(session.tcpClient);
+        try {
+            raiseEvent(onDisconnected, new NEventArgs<HybridSession>(session));
+        } finally {
+            session.detach("server-close-session", false);
+            quietly(session.tcpClient::close);
+        }
         return true;
     }
 
@@ -138,7 +151,14 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
             e.setValue(args.getValue());
             e.setCancel(args.isCancel());
         });
-        sessionsById.put(session.sessionId, session);
+        DefaultHybridSession conflict = sessionsById.putIfAbsent(session.sessionId, session);
+        if (conflict != null) {
+            metrics.tcpSessionConflicts.increment();
+            session.detach("session-id-conflict", false);
+            pendingTcpData.remove(client);
+            quietly(client::close);
+            return;
+        }
         sessionsByTcp.put(client, session);
         client.send(newAck(session));
         raiseEventAsync(onConnected, new NEventArgs<HybridSession>(session));
@@ -214,8 +234,11 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
             return;
         }
         sessionsById.remove(session.sessionId, session);
-        session.detach("tcp-disconnected");
-        raiseEventAsync(onDisconnected, new NEventArgs<HybridSession>(session));
+        try {
+            raiseEvent(onDisconnected, new NEventArgs<HybridSession>(session));
+        } finally {
+            session.detach("tcp-disconnected", false);
+        }
     }
 
     void onTransportClosed() {
@@ -229,6 +252,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         quietly(udpClient::close);
         onSend.purge();
         onReceive.purge();
+        onPing.purge();
         onConnected.purge();
         onDisconnected.purge();
         onError.purge();
@@ -248,6 +272,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         udpClient.close();
         onSend.purge();
         onReceive.purge();
+        onPing.purge();
     }
 
     static HybridConfig requireConfig(HybridConfig config) {
