@@ -42,16 +42,12 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
     final Set<String> allowedClassPrefixes = FuryCodecSupport.defaultAllowedClassPrefixes();
 
     public FuryRemotingCodecFactory allowPrefix(String prefix) {
-        if (prefix != null && !prefix.isEmpty()) {
-            allowedClassPrefixes.add(prefix);
-        }
+        FuryCodecSupport.allowPrefix(allowedClassPrefixes, prefix);
         return this;
     }
 
     public FuryRemotingCodecFactory allowClass(Class<?> type) {
-        if (type != null) {
-            allowedClassPrefixes.add(type.getName());
-        }
+        FuryCodecSupport.allowClass(allowedClassPrefixes, type);
         return this;
     }
 

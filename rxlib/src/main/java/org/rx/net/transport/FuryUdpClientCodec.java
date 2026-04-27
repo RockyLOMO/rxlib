@@ -26,18 +26,14 @@ public class FuryUdpClientCodec implements UdpClientCodec {
     }
 
     public FuryUdpClientCodec allowPrefix(String prefix) {
-        if (prefix != null && !prefix.isEmpty()) {
-            allowedClassPrefixes.add(prefix);
-            furyLocal = null;
-        }
+        FuryCodecSupport.allowPrefix(allowedClassPrefixes, prefix);
+        furyLocal = null;
         return this;
     }
 
     public FuryUdpClientCodec allowClass(Class<?> type) {
-        if (type != null) {
-            allowedClassPrefixes.add(type.getName());
-            furyLocal = null;
-        }
+        FuryCodecSupport.allowClass(allowedClassPrefixes, type);
+        furyLocal = null;
         return this;
     }
 
