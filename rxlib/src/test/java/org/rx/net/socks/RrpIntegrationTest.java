@@ -471,7 +471,7 @@ class RrpIntegrationTest {
         byte[] tokenBytes = token.getBytes(StandardCharsets.US_ASCII);
         buf.writeInt(tokenBytes.length);
         buf.writeBytes(tokenBytes);
-        byte[] data = Serializer.DEFAULT.serializeToBytes(Collections.singletonList(proxy));
+        byte[] data = Serializer.FURY.serializeToBytes(Collections.singletonList(proxy));
         buf.writeInt(data.length);
         buf.writeBytes(data);
         ch.writeInbound(buf);

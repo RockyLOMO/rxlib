@@ -168,7 +168,7 @@ public class RrpClient extends AbstractTcpReconnectClient {
                 buf.writeInt(tokenData.length);
                 buf.writeBytes(tokenData);
             }
-            byte[] bytes = Serializer.DEFAULT.serializeToBytes(config.getProxies());
+            byte[] bytes = Serializer.FURY.serializeToBytes(config.getProxies());
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
             serverChannel.writeAndFlush(buf).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
