@@ -79,7 +79,7 @@ public final class UdpHolePunchSession implements EventPublisher<UdpHolePunchSes
     }
 
     void fireReceive(UdpMessage message) {
-        quietly(() -> raiseEvent(onReceive, new NEventArgs<>(message)));
+        quietly(() -> publishEvent(onReceive, new NEventArgs<>(message)));
     }
 
     void updateDirectRemoteEndpoint(InetSocketAddress directRemoteEndpoint) {

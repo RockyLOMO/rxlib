@@ -1,6 +1,7 @@
 package org.rx.net.dns;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
 import io.netty.handler.codec.dns.TcpDnsQueryDecoder;
@@ -40,6 +41,9 @@ public class DnsServer extends Disposable {
     static final AttributeKey<DnsServer> ATTR_SVR = AttributeKey.valueOf("svr");
     static final AttributeKey<DnsClient> ATTR_UPSTREAM = AttributeKey.valueOf("upstream");
     final ServerBootstrap serverBootstrap;
+    final DnsClient upstreamClient;
+    final Channel tcpChannel;
+    final Channel udpChannel;
     @Setter
     int ttl = 1800;
     @Setter
@@ -59,13 +63,15 @@ public class DnsServer extends Disposable {
     final Map<String, Promise<List<InetAddress>>> resolvingPromises = new ConcurrentHashMap<>();
 
     public void setInterceptors(RandomList<ResolveInterceptor> interceptors) {
-        if (CollectionUtils.isEmpty(this.interceptors = interceptors)) {
+        if (CollectionUtils.isEmpty(interceptors)) {
+            this.interceptors = null;
+            interceptorCache = null;
             return;
         }
 
         H2StoreCache<Object, Object> cache = (H2StoreCache<Object, Object>) H2StoreCache.DEFAULT;
         //todo srcIp
-//        cache.onExpired.combine((s, entry) -> {
+//        cache.onExpired.add((s, entry) -> {
 //            String key;
 //            if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
 //                return;
@@ -83,6 +89,7 @@ public class DnsServer extends Disposable {
 //            }, CachePolicy.absolute(ttl)));
 //        });
         interceptorCache = (Cache) cache;
+        this.interceptors = interceptors;
     }
 
     public DnsServer(int port) {
@@ -95,19 +102,32 @@ public class DnsServer extends Disposable {
             nameServerList = Collections.emptyList();
         }
 
-        DnsClient client = new DnsClient(nameServerList);
+        upstreamClient = new DnsClient(nameServerList);
         serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(), DnsHandler.DEFAULT))
-                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, client);
-        serverBootstrap.bind(port);
+                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient);
+        tcpChannel = serverBootstrap.bind(port).channel();
 
-        Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
-                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, client)
-                .bind(port);
+        udpChannel = Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
+                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient)
+                .bind(port).channel();
     }
 
     @Override
     protected void dispose() {
+        closeChannel(tcpChannel);
+        closeChannel(udpChannel);
+        upstreamClient.close();
         Sockets.closeBootstrap(serverBootstrap);
+    }
+
+    private void closeChannel(Channel channel) {
+        if (channel != null) {
+            if (channel.eventLoop().inEventLoop()) {
+                channel.close();
+            } else {
+                channel.close().syncUninterruptibly();
+            }
+        }
     }
 
     public List<InetAddress> getHosts(String host) {

@@ -1303,7 +1303,7 @@ public final class Sockets {
     public static Linq<SocketInfo> socketInfos(SocketProtocol protocol) {
         try (ShellCommand cmd = new ShellCommand("netstat -aon")) {
             List<SocketInfo> list = new ArrayList<>();
-            cmd.onPrintOut.combine((s, e) -> {
+            cmd.onPrintOut.add((s, e) -> {
                 String line = e.getLine();
                 if (!line.contains(protocol.name())) {
                     return;
@@ -1338,7 +1338,7 @@ public final class Sockets {
             $<String> name = $();
             try (ShellCommand cmd = new ShellCommand(String.format("tasklist /fi \"pid eq %s\"", pid))) {
                 String t = String.format(" %s", pid);
-                cmd.onPrintOut.combine((s, e) -> {
+                cmd.onPrintOut.add((s, e) -> {
                     int i = e.getLine().indexOf(t);
                     if (i == -1) {
                         return;

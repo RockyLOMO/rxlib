@@ -31,7 +31,7 @@ public final class UdpHolePunchServer implements AutoCloseable {
         // 定期清理等待中的房间，避免长期占用匹配表。
         cleanupFuture = Tasks.schedulePeriod(() -> registry.cleanup(System.currentTimeMillis()),
                 cleanupIntervalMillis, cleanupIntervalMillis);
-        transport.onReceive.combine(receiveHandler);
+        transport.onReceive.add(receiveHandler);
     }
 
     public InetSocketAddress getLocalEndpoint() {

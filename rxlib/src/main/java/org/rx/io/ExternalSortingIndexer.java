@@ -229,7 +229,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         int b = HashKey.BYTES;
         this.bufSize = bufSize = (bufSize / b) * b;
         wal = new WALFileStream(file, bufSize, readerCount, Serializer.DEFAULT);
-        wal.onGrow.combine((s, e) -> ensureGrow());
+        wal.onGrow.add((s, e) -> ensureGrow());
         ensureGrow();
     }
 

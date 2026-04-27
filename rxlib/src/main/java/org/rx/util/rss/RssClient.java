@@ -108,7 +108,7 @@ public final class RssClient {
                     }
                     return false;
                 }).enableWatch();
-        watcher.onChanged.combine((s, e) -> {
+        watcher.onChanged.add((s, e) -> {
             RSSConf changed = s.readAs(RSSConf.class);
             if (changed == null) {
                 return;

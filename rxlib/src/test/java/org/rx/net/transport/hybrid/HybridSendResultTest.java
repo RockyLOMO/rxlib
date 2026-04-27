@@ -29,7 +29,7 @@ class HybridSendResultTest {
         CountDownLatch received = new CountDownLatch(1);
         try (HybridServer server = new HybridServer(serverConfig);
              HybridClient client = new HybridClient(clientConfig)) {
-            server.onReceive.combine((s, e) -> received.countDown());
+            server.onReceive.add((s, e) -> received.countDown());
 
             server.start();
             client.connect(new InetSocketAddress("127.0.0.1", port));
@@ -65,7 +65,7 @@ class HybridSendResultTest {
         CountDownLatch received = new CountDownLatch(1);
         try (HybridServer server = new HybridServer(serverConfig);
              HybridClient client = new HybridClient(clientConfig)) {
-            server.onReceive.combine((s, e) -> {
+            server.onReceive.add((s, e) -> {
                 if ("udp-fallback".equals(e.getValue())) {
                     received.countDown();
                 }

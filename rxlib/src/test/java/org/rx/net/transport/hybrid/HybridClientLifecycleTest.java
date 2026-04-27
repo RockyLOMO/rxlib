@@ -33,7 +33,7 @@ class HybridClientLifecycleTest {
         CountDownLatch ready = new CountDownLatch(1);
         try (HybridServer server = new HybridServer(serverConfig);
              HybridClient client = new HybridClient(clientConfig)) {
-            client.onSessionReady.combine((s, e) -> ready.countDown());
+            client.onSessionReady.add((s, e) -> ready.countDown());
 
             server.start();
             client.connectAsync(new InetSocketAddress("127.0.0.1", port)).get(3, TimeUnit.SECONDS);

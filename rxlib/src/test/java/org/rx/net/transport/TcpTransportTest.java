@@ -67,7 +67,7 @@ class TcpTransportTest {
 
         TcpServer server = new TcpServer(config);
         AtomicInteger connectedCount = new AtomicInteger();
-        server.onConnected.combine((s, e) -> connectedCount.incrementAndGet());
+        server.onConnected.add((s, e) -> connectedCount.incrementAndGet());
         server.start();
 
         Socket first = new Socket();

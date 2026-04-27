@@ -63,6 +63,29 @@ public class DnsServerIntegrationTest extends AbstractTester {
     }
 
     @Test
+    void setInterceptors_empty_clearsResolverState() throws Exception {
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        try {
+            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(Collections.emptyList()));
+            assertNull(server.interceptors);
+            assertNull(server.interceptorCache);
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void close_releasesChannelsAndUpstreamResolver() throws Exception {
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+
+        server.close();
+
+        assertFalse(server.tcpChannel.isOpen());
+        assertFalse(server.udpChannel.isOpen());
+        assertTrue(server.upstreamClient.isClosed());
+    }
+
+    @Test
     void removeHosts_unknownHost_doesNotCreateMapEntry() throws Exception {
         DnsServer server = new DnsServer(freePort(), Collections.emptyList());
         try {

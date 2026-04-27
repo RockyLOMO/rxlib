@@ -314,17 +314,17 @@ public class TestSocks extends AbstractTester {
         }
         for (int i = 0; i < 1; i++) {
             UserEventArgs args = new UserEventArgs(PersonBean.LeZhi);
-            facadeGroup.get(0).raiseEvent(eventName, args);
+            facadeGroup.get(0).publishEvent(eventName, args);
             log.info("facade0 flag:" + args.getFlag());
             assert args.getFlag() == 1;
 
             args = new UserEventArgs(PersonBean.LeZhi);
             args.setFlag(1);
-            facadeGroup.get(1).raiseEvent(eventName, args);
+            facadeGroup.get(1).publishEvent(eventName, args);
             log.info("facade1 flag:" + args.getFlag());
             assert args.getFlag() == 2;
 
-            svcImpl.raiseEvent(eventName, args);
+            svcImpl.publishEvent(eventName, args);
             sleep(50);
             log.info("svr flag:" + args.getFlag());
             //开启计算广播是3，没开启是2
@@ -394,7 +394,7 @@ public class TestSocks extends AbstractTester {
             }, false);
             System.out.println("attachEvent done");
 
-            c.onReconnecting.combine((s, e) -> {
+            c.onReconnecting.add((s, e) -> {
                 InetSocketAddress next;
                 if (eq(e.getValue().getPort(), endpoint_3307.getPort())) {
                     next = endpoint_3308;
@@ -409,7 +409,7 @@ public class TestSocks extends AbstractTester {
         });
         UserManager userManager = Remoting.createFacade(UserManager.class, config);
         assert userManager.computeLevel(1, 1) == 2;
-        userManager.raiseEvent(eventName, EventArgs.EMPTY);
+        userManager.publishEvent(eventName, EventArgs.EMPTY);
 
         restartServer(svcImpl, endpoint_3308, startDelay); //10秒后开启3308端口实例，重连3308成功
         int max = 10;
@@ -425,8 +425,8 @@ public class TestSocks extends AbstractTester {
             assert userManager.computeLevel(i, 1) == i + 1;
             i++;
         }
-        userManager.raiseEvent(eventName, EventArgs.EMPTY);
-        userManager.raiseEvent(eventName, EventArgs.EMPTY);
+        userManager.publishEvent(eventName, EventArgs.EMPTY);
+        userManager.publishEvent(eventName, EventArgs.EMPTY);
 
         sleep(5000);
     }
@@ -471,10 +471,10 @@ public class TestSocks extends AbstractTester {
     @Test
     public void udpRpc() {
         UdpClient c1 = new UdpClient(endpoint_3307.getPort());
-        c1.onReceive.combine((s, e) -> log.info("client1 recv {}", toJsonString(e)));
+        c1.onReceive.add((s, e) -> log.info("client1 recv {}", toJsonString(e)));
         UdpClient c2 = new UdpClient(endpoint_3308.getPort());
         AtomicInteger count = new AtomicInteger();
-        c2.onReceive.combine((s, e) -> {
+        c2.onReceive.add((s, e) -> {
             log.info("client2 recv {}", toJsonString(e));
             if (count.incrementAndGet() < 2) {
                 throw new InvalidException("error");

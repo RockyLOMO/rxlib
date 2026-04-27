@@ -134,20 +134,20 @@ public final class NameserverClient extends Disposable {
                 };
                 RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(regEp, 0);
                 config.setInitHandler((ns, rc) -> {
-                    rc.onConnected.combine((s, e) -> {
+                    rc.onConnected.add((s, e) -> {
                         holder.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
                         reInject();
                     });
-                    rc.onDisconnected.combine((s, e) -> {
+                    rc.onDisconnected.add((s, e) -> {
                         holder.setWeight(tuple, 0);
                         reInject();
                     });
-                    rc.onReconnecting.combine((s, e) -> {
+                    rc.onReconnecting.add((s, e) -> {
                         if (svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::newAllEndpoints).toSet())) {
                             registerAsync(svrEps);
                         }
                     });
-                    rc.onReconnected.combine((s, e) -> {
+                    rc.onReconnected.add((s, e) -> {
                         tuple.dnsPort = null;
                         handshake.invoke();
                     });

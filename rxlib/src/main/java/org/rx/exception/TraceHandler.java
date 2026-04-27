@@ -88,7 +88,7 @@ public final class TraceHandler implements Thread.UncaughtExceptionHandler {
         try {
             EntityDatabase db = EntityDatabase.DEFAULT;
             db.createMapping(ExceptionEntity.class, MethodEntity.class);
-            queue.onConsume.combine((s, e) -> {
+            queue.onConsume.add((s, e) -> {
                 RxConfig.TraceConfig c = RxConfig.INSTANCE.getTrace();
                 if (c.getKeepDays() <= 0) {
                     return;

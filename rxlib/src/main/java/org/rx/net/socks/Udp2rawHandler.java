@@ -132,7 +132,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (e == null) {
             e = SocksContext.getCtx(clientEp, dstEp);
             SocksUserTraffic.attachFromChannel(e, relay);
-            server.raiseEvent(server.onUdpRoute, e);
+            server.publishEvent(server.onUdpRoute, e);
             routeMap.put(dstEp, e);
         }
         final SocksContext routeContext = e;
@@ -214,7 +214,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (e == null) {
             e = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
             SocksUserTraffic.attachFromChannel(e, relay);
-            server.raiseEvent(server.onUdpRoute, e);
+            server.publishEvent(server.onUdpRoute, e);
             routeMap.put(dstEp, e);
         }
         final SocksContext routeContext = e;

@@ -96,7 +96,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
 
     public static int exec(String shell, String workspace, long timeoutMillis, TripleAction<ShellCommand, PrintOutEventArgs> outHandler) {
         try (ShellCommand cmd = new ShellCommand(shell, workspace)) {
-            cmd.onPrintOut.combine(outHandler);
+            cmd.onPrintOut.add(outHandler);
             cmd.start();
             if (timeoutMillis == Constants.TIMEOUT_INFINITE) {
                 return cmd.waitFor();
@@ -200,7 +200,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
     }
 
     public synchronized ShellCommand withAutoRestart() {
-        onExited.last((s, e) -> restart());
+        onExited.add(Delegate.Order.Last, (s, e) -> restart());
         return this;
     }
 
@@ -222,7 +222,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
 
     @Override
     protected void dispose() {
-        onPrintOut.close();
+        onPrintOut.purge(true);
         kill();
         KILL_LIST.remove(this);
     }
@@ -252,7 +252,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
                         continue;
                     }
                     try {
-                        raiseEvent(onPrintOut, new PrintOutEventArgs(reader.getLineNumber(), line));
+                        publishEvent(onPrintOut, new PrintOutEventArgs(reader.getLineNumber(), line));
                     } catch (Throwable e) {
                         log.error("onPrintOut", e);
                     }
@@ -260,7 +260,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
             } finally {
                 int exitValue = tmp.waitFor();
                 log.debug("exit={} {}", exitValue, shell);
-                raiseEvent(onExited, exitValue);
+                publishEvent(onExited, exitValue);
             }
         });
         return this;

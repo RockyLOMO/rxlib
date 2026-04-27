@@ -42,7 +42,7 @@ import java.util.concurrent.CompletableFuture;
  * <p>Usage – UDP_ASSOCIATE:
  * <pre>{@code
  * client.udpAssociateAsync().thenAccept(session -> {
- *     session.onReceive.combine((s, e) -> {
+ *     session.onReceive.add((s, e) -> {
  *         DatagramPacket pkt = e.getValue();
  *         // pkt.sender() is the decoded SOCKS5 source; pkt.content() is the payload (must be released)
  *     });
@@ -164,7 +164,7 @@ public class Socks5Client extends Disposable {
                         content.retain(),  // caller must release
                         msg.recipient(),
                         new InetSocketAddress(src.getHost(), src.getPort()));
-                session.raiseEventAsync(session.onReceive, new NEventArgs<>(decoded))
+                session.publishEventAsync(session.onReceive, new NEventArgs<>(decoded))
                         .whenComplete((r, e) -> Bytes.release(decoded));
             } finally {
                 Bytes.release(content);

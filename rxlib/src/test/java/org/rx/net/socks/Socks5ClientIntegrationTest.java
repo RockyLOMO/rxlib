@@ -99,7 +99,7 @@ public class Socks5ClientIntegrationTest {
             System.out.println("DEBUG: UDP session started, relay addr: " + session.getRelayAddress());
             assertNotNull(session.getUdpRelay());
 
-            session.onReceive.combine((s, e) -> {
+            session.onReceive.add((s, e) -> {
                 DatagramPacket pkt = e.getValue();
                 try {
                     String received = pkt.content().toString(StandardCharsets.UTF_8);
