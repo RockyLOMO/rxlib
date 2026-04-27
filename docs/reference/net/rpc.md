@@ -26,6 +26,28 @@ rxlib 自研的高性能远程过程调用框架。支持 TCP 单一协议，也
 - 内部系统间的低延迟、高频调用通信。
 - 对传输性能有严苛要求的私有协议服务（相比 HTTP REST 或 gRPC 更轻量和迅速）。
 
+## Hybrid 传输模式注意事项
+
+在 rxlib 的 RPC 模块中，`Remoting` 默认采用 TCP/UDP 混合传输（Hybrid）协议。
+
+### 默认行为
+即使你只设置了 `TcpServerConfig` 的端口（例如 `new RpcServerConfig(new TcpServerConfig(port))`），内部调用的 `HybridServer` 依然会：
+1. **默认开启 UDP 逻辑**：`HybridConfig` 中的 `enableUdpDirect`（直连）和 `enableUdpHolePunch`（打洞）默认均为 `true`。
+2. **自动绑定 UDP 端口**：服务端会自动绑定一个随机的可用 UDP 端口用于数据传输。
+3. **主动发起探测**：一旦有支持 Hybrid 的客户端连接进来，服务端会通过 `HybridHelloAck` 宣告自己的 UDP 能力，并主动向客户端发起 UDP 直连探测（Probe）。
+
+### 如何关闭 UDP/打洞逻辑
+如果你确定业务只需要纯 TCP 通信（例如为了减少端口占用或在严格的防火墙环境下），可以显式关闭 UDP 相关功能：
+
+```java
+RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(port));
+// 显式关闭 UDP 直连和打洞逻辑
+rpcConf.getHybridConfig().setEnableUdpDirect(false);
+rpcConf.getHybridConfig().setEnableUdpHolePunch(false);
+
+Remoting.register(contractInstance, rpcConf);
+```
+
 ## 使用示例
 
 ### 基本 RPC 调用与事件广播
