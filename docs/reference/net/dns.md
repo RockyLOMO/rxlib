@@ -16,6 +16,18 @@
 - **`DnsMessageUtil`**:
   辅助构建和解析 DNS 报文（`DnsQuery`, `DnsResponse`）的工具类。
 
+## 核心特点
+
+| 特性 | 说明 |
+|------|------|
+| **双协议支持** | 同时监听 TCP/UDP，使用 Netty 内置编解码器 `TcpDnsQueryDecoder` / `DatagramDnsQueryDecoder` |
+| **hosts 权重负载** | 支持 `enableHostsWeight` 模式，相同域名多 IP 时按权重分配，返回 1-2 个 IP |
+| **解析拦截器** | `ResolveInterceptor` 接口支持自定义解析逻辑，可对接外部服务（如服务发现） |
+| **防缓存击穿** | `resolvingKeys` + `resolvingPromises` 防止并发场景下的缓存穿透（thundering-herd） |
+| **H2 持久缓存** | 使用 `H2StoreCache` 作为 DNS 缓存后端，支持 TTL 和跨进程共享 |
+
 ## 适用场景
 - 在代理服务器或高性能爬虫等需要大量 DNS 解析的场景中，防止 DNS 解析阻塞 Netty 线程池。
 - 构建本地防污染 DNS 缓存代理服务器。
+- 本地开发 DNS 劫持/劫持测试。
+- 配合 SOCKS5 实现智能 DNS 路由。
