@@ -28,6 +28,7 @@
         <!--1.78.1有问题-->
         <bcprov.version>1.78</bcprov.version>
         <sshd.version>2.16.0</sshd.version>
+        <geoip2.version>5.0.2</geoip2.version>
         <fury.version>0.10.3</fury.version>
 
         <spring.boot.version>2.7.18</spring.boot.version>
