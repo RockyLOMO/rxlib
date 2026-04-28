@@ -3,12 +3,15 @@ package org.rx.net.dns;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.dns.TcpDnsQueryDecoder;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.ssl.SslHandler;
+import io.netty.util.ReferenceCountUtil;
 import org.junit.jupiter.api.Test;
 import org.rx.net.Sockets;
 
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.util.Collections;
 
@@ -74,6 +77,23 @@ class DnsTcpPortMuxHandlerTest {
             channel.finishAndReleaseAll();
         } finally {
             server.close();
+        }
+    }
+
+    @Test
+    void udpSourceHandler_recordsSenderBeforeDnsDecode() {
+        EmbeddedChannel channel = new EmbeddedChannel(DnsDatagramSourceHandler.DEFAULT);
+        InetSocketAddress recipient = new InetSocketAddress("127.0.0.1", 53);
+        InetSocketAddress sender = new InetSocketAddress("192.0.2.10", 53000);
+        DatagramPacket packet = new DatagramPacket(Unpooled.buffer(2).writeShort(0), recipient, sender);
+
+        assertTrue(channel.writeInbound(packet));
+        DatagramPacket inbound = channel.readInbound();
+        try {
+            assertEquals(sender, channel.attr(DnsServer.ATTR_UDP_SENDER).get());
+        } finally {
+            ReferenceCountUtil.release(inbound);
+            channel.finishAndReleaseAll();
         }
     }
 }

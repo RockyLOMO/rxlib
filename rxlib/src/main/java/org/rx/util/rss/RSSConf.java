@@ -27,6 +27,7 @@ public class RSSConf {
     public int udpTimeoutSeconds = 60 * 10;
     public int rpcMinSize = 2;
     public int rpcMaxSize = 6;
+    public int rpcRequestTimeoutMillis = 3000;
     public int rpcAutoWhiteListSeconds = 120;
     public int shadowDnsPort = 753;
     public int dnsTtlMinutes = 600;

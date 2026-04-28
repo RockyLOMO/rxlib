@@ -135,6 +135,7 @@ public final class RssClient {
                 RpcClientConfig<SocksRpcContract> rpcConf = RpcClientConfig.poolMode(
                         Sockets.newEndpoint(socksServerEp, socksServerEp.getPort() + 1),
                         rssConf.rpcMinSize, rssConf.rpcMaxSize);
+                rpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(rssConf));
                 TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
                 tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
                 int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
@@ -193,7 +194,7 @@ public final class RssClient {
                     }
                 });
                 socksServers.add(us, weight);
-                dnsInterceptors.add(us.getFacade());
+                dnsInterceptors.add(us.getFacade(), weight);
             }
             for (AuthenticEndpoint socksServer : udp2rawSvrs) {
                 int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
@@ -446,6 +447,15 @@ public final class RssClient {
         } catch (IllegalArgumentException e) {
             throw new InvalidException("No weighted socks upstream for {}", srcHost);
         }
+    }
+
+    static int resolveRpcRequestTimeoutMillis(RSSConf conf) {
+        int configured = conf.rpcRequestTimeoutMillis;
+        if (configured > 0) {
+            return configured;
+        }
+        int connectTimeoutMillis = Math.max(1000, conf.connectTimeoutSeconds * 1000);
+        return Math.min(connectTimeoutMillis, 3000);
     }
 
     static void clientInit(RssAuthenticator authenticator) {
