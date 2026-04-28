@@ -23,6 +23,7 @@ DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
 JAVA_PROCESS_KEYWORD="app.jar -port=${PORT}"
+APP_LOG_FILE="${APP_LOG_FILE:-./app.out}"
 
 # 生成不会冲突的历史 jar 名称。
 next_backup_file() {
@@ -104,27 +105,37 @@ get_process_pid() {
   pgrep -f "${JAVA_PROCESS_KEYWORD}" | head -1
 }
 
+pid_alive() {
+  local pid="$1"
+  [ -n "${pid}" ] && kill -0 "${pid}" >/dev/null 2>&1
+}
+
 wait_for_startup() {
   local wait_count pid
+  pid="${1:-}"
   wait_count=0
   while [ ${wait_count} -lt 30 ]; do
     if port_in_use; then
-      pid=$(get_process_pid)
+      pid="${pid:-$(get_process_pid)}"
       echo "${GREEN}[${LOCAL_TIME}] 启动成功！PID: ${pid}"
       return 0
     fi
-    if ! process_exists; then
+    if [ -n "${pid}" ]; then
+      if ! pid_alive "${pid}"; then
+        echo "${RED}[${LOCAL_TIME}] 启动失败！进程已退出，请手动查看 ${APP_LOG_FILE}"
+        return 1
+      fi
+    elif ! process_exists; then
       echo "${RED}[${LOCAL_TIME}] 启动失败！进程已退出，请手动执行查看错误"
       return 1
     fi
     if [ ${wait_count} -eq 0 ]; then
-      pid=$(get_process_pid)
       echo "${YELLOW}[${LOCAL_TIME}] 进程已启动，等待端口 ${PORT}/tcp 完成绑定... PID: ${pid}"
     fi
     sleep 1
     wait_count=$((wait_count + 1))
   done
-  pid=$(get_process_pid)
+  pid="${pid:-$(get_process_pid)}"
   echo "${RED}[${LOCAL_TIME}] 启动超时！进程仍在运行但端口 ${PORT}/tcp 未完成绑定，PID: ${pid}"
   return 1
 }
@@ -149,5 +160,6 @@ if [ -f "app.jar.latest" ]; then
 fi
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程..."
-nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >/dev/null 2>&1 &
-wait_for_startup || exit 1
+nohup java ${MEM_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >>"${APP_LOG_FILE}" 2>&1 &
+APP_PID=$!
+wait_for_startup "${APP_PID}" || exit 1
