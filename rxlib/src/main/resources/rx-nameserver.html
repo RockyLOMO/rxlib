@@ -1,0 +1,115 @@
+<section class="hero">
+    <div>
+        <h1>RXlib Nameserver</h1>
+        <p>注册中心实时快照，生成时间 {{generatedAt}}。</p>
+    </div>
+    <div class="pill">GET {{path}}</div>
+</section>
+
+<section class="card">
+    <div class="grid">
+        <article class="item">
+            <span>注册端口</span>
+            <strong>{{registerPort}}</strong>
+            <span>Hybrid RPC register port</span>
+        </article>
+        <article class="item">
+            <span>DNS 端口 / TTL</span>
+            <strong>{{dnsPort}} / {{dnsTtl}}</strong>
+            <span>DNS hosts response config</span>
+        </article>
+        <article class="item">
+            <span>同步端口</span>
+            <strong>{{syncPort}}</strong>
+            <span>Replica UDP sync port</span>
+        </article>
+        <article class="item">
+            <span>App / 实例 / Session</span>
+            <strong>{{appCount}} / {{instanceCount}} / {{sessionCount}}</strong>
+            <span>Active registered clients</span>
+        </article>
+    </div>
+</section>
+
+{{#unless hasInstances}}
+<section class="card warn">
+    <h2>暂无注册实例</h2>
+    <p class="empty">当前 nameserver 没有活跃注册客户端。</p>
+</section>
+{{/unless}}
+
+{{#if hasApps}}
+<section class="card">
+    <h2>应用概览</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>App</th>
+            <th>实例数</th>
+        </tr>
+        </thead>
+        <tbody>
+        {{#each apps}}
+        <tr>
+            <td>{{appName}}</td>
+            <td>{{instanceCount}}</td>
+        </tr>
+        {{/each}}
+        </tbody>
+    </table>
+</section>
+{{/if}}
+
+{{#if hasInstances}}
+<section class="card">
+    <h2>注册实例</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>App</th>
+            <th>实例地址</th>
+            <th>Public IP</th>
+            <th>App ID</th>
+            <th>Ping</th>
+            <th>TCP Remote</th>
+            <th>Connected</th>
+            <th>属性</th>
+        </tr>
+        </thead>
+        <tbody>
+        {{#each instances}}
+        <tr>
+            <td>{{appName}}</td>
+            <td>{{address}}</td>
+            <td>{{publicIp}}</td>
+            <td>{{appId}}</td>
+            <td>{{ping}}</td>
+            <td>{{tcpRemote}}</td>
+            <td>{{connected}}</td>
+            <td class="summary">{{attrs}}</td>
+        </tr>
+        {{/each}}
+        </tbody>
+    </table>
+</section>
+{{/if}}
+
+{{#if hasReplicas}}
+<section class="card">
+    <h2>Replica Endpoints</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Endpoint</th>
+        </tr>
+        </thead>
+        <tbody>
+        {{#each replicas}}
+        <tr>
+            <td>{{endpoint}}</td>
+        </tr>
+        {{/each}}
+        </tbody>
+    </table>
+</section>
+{{/if}}

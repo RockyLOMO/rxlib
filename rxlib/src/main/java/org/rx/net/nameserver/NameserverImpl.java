@@ -8,6 +8,7 @@ import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingContext;
 import org.rx.net.transport.FuryUdpClientCodec;
@@ -97,6 +98,17 @@ public class NameserverImpl implements Nameserver {
                 }
             }) && !tryAs(packet, DeregisterInfo.class, p -> doDeregister(p.appName, p.address, false, false))) {
                 syncRegister((Set<InetSocketAddress>) packet);
+            }
+        });
+        registerHttpPage();
+    }
+
+    void registerHttpPage() {
+        quietly(() -> {
+            HttpServer server = HttpServer.getDefault();
+            if (server != null) {
+                server.requestAsync(NameserverHttpHandler.PAGE_PATH, new NameserverHttpHandler(this));
+                log.info("Nameserver http page registered on {}", NameserverHttpHandler.PAGE_PATH);
             }
         });
     }

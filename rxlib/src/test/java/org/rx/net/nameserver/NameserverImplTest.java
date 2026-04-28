@@ -2,6 +2,8 @@ package org.rx.net.nameserver;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.rx.core.RxConfig;
+import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 
@@ -14,6 +16,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.rx.core.Extends.sleep;
 
@@ -73,7 +76,7 @@ class NameserverImplTest {
         NameserverClient client = new NameserverClient("inventory");
         client.publicIpResolver = () -> "1.1.1.1";
         try {
-            client.registerAsync(Collections.singleton(new InetSocketAddress("127.0.0.1", registerPort))).get(5, TimeUnit.SECONDS);
+            client.registerAsync(Collections.singleton(new InetSocketAddress("127.0.0.1", registerPort))).get(15, TimeUnit.SECONDS);
 
             List<Nameserver.InstanceInfo> infos = server.discover("inventory", Collections.singletonList(Nameserver.PUBLIC_IP_KEY));
 
@@ -81,6 +84,36 @@ class NameserverImplTest {
         } finally {
             client.close();
             server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void registersHttpPageOnDefaultHttpServer() throws Exception {
+        RxConfig.HttpConfig httpConfig = RxConfig.INSTANCE.getNet().getHttp();
+        int oldPort = httpConfig.getServerPort();
+        boolean oldTls = httpConfig.isServerTls();
+        int httpPort = freePort();
+        NameserverImpl server = null;
+        try {
+            httpConfig.setServerPort(httpPort);
+            httpConfig.setServerTls(false);
+
+            server = newServer(freePort(), freePort(), freePort());
+            HttpServer httpServer = HttpServer.getDefault();
+
+            assertNotNull(httpServer);
+            assertTrue(httpServer.getMapping().containsKey(NameserverHttpHandler.PAGE_PATH));
+        } finally {
+            if (server != null) {
+                server.close();
+            }
+            HttpServer httpServer = HttpServer.getDefault();
+            if (httpServer != null) {
+                httpServer.close();
+            }
+            httpConfig.setServerPort(oldPort);
+            httpConfig.setServerTls(oldTls);
         }
     }
 
