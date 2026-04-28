@@ -18,6 +18,7 @@ import org.rx.exception.FallbackException;
 import org.rx.exception.InvalidException;
 import org.rx.exception.LoggingAgent;
 import org.rx.exception.TraceHandler;
+import org.rx.io.JdkAndJsonSerializer;
 import org.rx.io.Serializer;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
