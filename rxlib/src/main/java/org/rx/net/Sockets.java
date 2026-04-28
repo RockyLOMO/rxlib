@@ -206,11 +206,7 @@ public final class Sockets {
         }
         return new DnsAddressResolverGroup(nb);
     }
-
-    // static {
-    // InetAddress.getLoopbackAddress();
-    // }
-
+    
     public static LengthFieldBasedFrameDecoder intLengthFieldDecoder() {
         return new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4);
     }
