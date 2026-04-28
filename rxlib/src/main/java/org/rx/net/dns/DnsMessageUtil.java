@@ -30,12 +30,18 @@ public class DnsMessageUtil {
                 setRecords(section, response, newResponse);
             }
             return newResponse;
-        } else {
-            if (response instanceof ReferenceCounted) {
-                ((ReferenceCounted) response).retain();
-            }
-            return (DefaultDnsResponse) response;
         }
+
+        DefaultDnsResponse newResponse = new DefaultDnsResponse(query.id(), response.opCode(), response.code());
+        newResponse.setAuthoritativeAnswer(response.isAuthoritativeAnswer())
+                .setTruncated(response.isTruncated())
+                .setRecursionAvailable(response.isRecursionAvailable())
+                .setRecursionDesired(response.isRecursionDesired())
+                .setZ(response.z());
+        for (DnsSection section : DnsSection.values()) {
+            setRecords(section, response, newResponse);
+        }
+        return newResponse;
     }
 
     public static DefaultDnsResponse newResponse(DefaultDnsQuery query, boolean isTcp) {

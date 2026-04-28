@@ -94,4 +94,20 @@ class DoHMessageCodecTest {
             response.release();
         }
     }
+
+    @Test
+    void decodeResponse_servfailThrows() {
+        DefaultDnsResponse response = new DefaultDnsResponse(13, DnsOpCode.QUERY, DnsResponseCode.SERVFAIL);
+        response.addRecord(DnsSection.QUESTION, new DefaultDnsQuestion("fail.example.", DnsRecordType.A));
+
+        ByteBuf buf = Unpooled.buffer();
+        try {
+            DoHMessageCodec.encodeResponse(buf, response);
+
+            assertThrows(IllegalStateException.class, () -> DoHMessageCodec.decodeAddresses(buf, 13));
+        } finally {
+            buf.release();
+            response.release();
+        }
+    }
 }

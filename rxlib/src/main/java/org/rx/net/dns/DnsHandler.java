@@ -7,6 +7,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.dns.DatagramDnsQuery;
 import io.netty.handler.codec.dns.DefaultDnsQuery;
 import io.netty.handler.codec.dns.DefaultDnsResponse;
+import io.netty.handler.codec.dns.DnsResponseCode;
 import io.netty.util.concurrent.Promise;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
@@ -34,13 +35,19 @@ public class DnsHandler extends SimpleChannelInboundHandler<DefaultDnsQuery> {
         }
         DnsClient upstream = Sockets.getAttr(ch, DnsServer.ATTR_UPSTREAM);
 
+        query.retain();
         Promise<DefaultDnsResponse> promise = DnsResolveCore.resolve(server, upstream, srcIp, query, isTcp, ctx.executor());
         promise.addListener(f -> {
-            if (!f.isSuccess()) {
-                log.error("dns {} query error", isTcp ? "TCP" : "UDP", f.cause());
-                return;
+            try {
+                if (!f.isSuccess()) {
+                    log.error("dns {} query error", isTcp ? "TCP" : "UDP", f.cause());
+                    ctx.writeAndFlush(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
+                    return;
+                }
+                ctx.writeAndFlush(promise.getNow());
+            } finally {
+                query.release();
             }
-            ctx.writeAndFlush(promise.getNow());
         });
     }
 

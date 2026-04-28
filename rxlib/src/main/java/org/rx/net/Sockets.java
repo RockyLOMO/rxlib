@@ -287,12 +287,18 @@ public final class Sockets {
         return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
             if (Strings.hashEquals(method.getName(), M_0)) {
                 String host = (String) args[0];
-                // If all interceptors can't handle it, the source object will process it.
+                // null means delegate to the platform resolver; empty means negative answer.
+                DnsServer.ResolveInterceptor interceptor = nsInterceptor;
                 try {
-                    List<InetAddress> addresses = nsInterceptor.resolveHost(null, host);
-                    if (!CollectionUtils.isEmpty(addresses)) {
+                    List<InetAddress> addresses = interceptor != null ? interceptor.resolveHost(null, host) : null;
+                    if (addresses != null) {
+                        if (addresses.isEmpty()) {
+                            throw new UnknownHostException(host);
+                        }
                         return addresses.toArray(empty);
                     }
+                } catch (IllegalStateException | UnknownHostException e) {
+                    throw e;
                 } catch (Exception e) {
                     log.info("nsProxy error {}", e.getMessage());
                 }

@@ -75,8 +75,11 @@ public final class DoHMessageCodec {
         int nsCount = in.readUnsignedShort();
         int arCount = in.readUnsignedShort();
         int rcode = flags & 0x0f;
-        if (rcode != DnsResponseCode.NOERROR.intValue()) {
+        if (rcode == DnsResponseCode.NXDOMAIN.intValue()) {
             return new ArrayList<>(0);
+        }
+        if (rcode != DnsResponseCode.NOERROR.intValue()) {
+            throw new IllegalStateException("DNS response rcode " + rcode);
         }
         for (int i = 0; i < qdCount; i++) {
             readName(in);

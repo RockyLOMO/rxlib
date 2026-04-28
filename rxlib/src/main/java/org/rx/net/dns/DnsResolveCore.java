@@ -65,7 +65,8 @@ public final class DnsResolveCore {
                 waitPromise.addListener(f -> executor.execute(() -> {
                     try {
                         if (!f.isSuccess()) {
-                            promise.tryFailure(f.cause());
+                            log.error("dns query {}+{} resolveHost error", srcIp, domain, f.cause());
+                            promise.trySuccess(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
                             return;
                         }
                         List<InetAddress> result = waitPromise.getNow();
@@ -111,6 +112,7 @@ public final class DnsResolveCore {
         query.retain();
         Tasks.run(() -> {
             List<InetAddress> resolvedIps = null;
+            boolean handoffToUpstream = false;
             try {
                 resolvedIps = interceptors.next().resolveHost(srcIp, domain);
                 if (resolvedIps != null) {
@@ -120,6 +122,7 @@ public final class DnsResolveCore {
                 }
                 resolvePromise.trySuccess(resolvedIps);
                 if (resolvedIps == null) {
+                    handoffToUpstream = true;
                     queryUpstream(upstream, query, isTcp, responsePromise);
                     return;
                 }
@@ -128,9 +131,9 @@ public final class DnsResolveCore {
             } catch (Throwable e) {
                 log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
                 resolvePromise.tryFailure(e);
-                responsePromise.tryFailure(e);
+                responsePromise.trySuccess(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
             } finally {
-                if (responsePromise.isDone()) {
+                if (!handoffToUpstream) {
                     query.release();
                 }
                 server.resolvingPromises.remove(resolveKey, resolvePromise);
@@ -160,7 +163,8 @@ public final class DnsResolveCore {
                     envelope.release();
                 }
             } catch (Throwable e) {
-                promise.tryFailure(e);
+                log.error("dns query {} unexpected fail", question, e);
+                promise.trySuccess(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
             } finally {
                 query.release();
             }
