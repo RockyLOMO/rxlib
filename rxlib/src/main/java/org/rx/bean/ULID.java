@@ -65,7 +65,7 @@ public final class ULID implements Serializable, Comparable<ULID> {
         if (name instanceof Long) {
             return newULID(Bytes.toBytes((Long) name), timestamp);
         }
-        try (DuplexStream stream = Serializer.FURY.serialize(name)) {
+        try (DuplexStream stream = Serializer.DEFAULT.serialize(name)) {
             return newULID(stream.toArray(), timestamp);
         }
     }

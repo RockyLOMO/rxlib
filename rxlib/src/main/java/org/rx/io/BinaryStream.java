@@ -197,7 +197,7 @@ public class BinaryStream extends DuplexStream {
     public <T extends Serializable> T readObject() {
         try (HybridStream serialize = new HybridStream()) {
             read(serialize, readLong());
-            return Serializer.FURY.deserialize(serialize.rewind());
+            return Serializer.DEFAULT.deserialize(serialize.rewind());
         }
     }
 
@@ -255,7 +255,7 @@ public class BinaryStream extends DuplexStream {
     }
 
     public <T extends Serializable> void writeObject(T value) {
-        try (DuplexStream stream = Serializer.FURY.serialize(value)) {
+        try (DuplexStream stream = Serializer.DEFAULT.serialize(value)) {
             writeLong(stream.getLength());
             write(stream);
         }

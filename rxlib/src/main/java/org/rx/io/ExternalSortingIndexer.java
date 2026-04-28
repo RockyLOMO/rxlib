@@ -29,7 +29,7 @@ class ExternalSortingIndexer<TK> extends Disposable implements KeyIndexer<TK> {
         static final int BYTES = 24;
 
         static <TK> long hash(TK key) {
-            return key instanceof Long ? (Long) key : CodecUtil.hash64(Serializer.DEFAULT.serializeToBytes(key));
+            return key instanceof Long ? (Long) key : CodecUtil.hash64(JdkAndJsonSerializer.DEFAULT.serializeToBytes(key));
         }
 
         private static final long serialVersionUID = -3136532663217712845L;

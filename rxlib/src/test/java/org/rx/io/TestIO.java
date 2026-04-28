@@ -492,8 +492,8 @@ public class TestIO extends AbstractTester {
         stream.setPosition(0L);
         System.out.println(stream.read());
 
-        DuplexStream serializeStream = Serializer.DEFAULT.serialize(stream);
-        MemoryStream newStream = Serializer.DEFAULT.deserialize(serializeStream);
+        DuplexStream serializeStream = JdkAndJsonSerializer.DEFAULT.serialize(stream);
+        MemoryStream newStream = JdkAndJsonSerializer.DEFAULT.deserialize(serializeStream);
         newStream.setPosition(0L);
         byte[] bytes = newStream.toArray();
         for (int i = 0; i < 40; i++) {
@@ -520,7 +520,7 @@ public class TestIO extends AbstractTester {
     @SneakyThrows
     @Test
     public void serialize() {
-        JdkAndJsonSerializer serializer = (JdkAndJsonSerializer) Serializer.DEFAULT;
+        JdkAndJsonSerializer serializer = (JdkAndJsonSerializer) JdkAndJsonSerializer.DEFAULT;
 
         GirlBean girlBean = new GirlBean();
         girlBean.setName(str_name_wyf);
