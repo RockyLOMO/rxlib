@@ -3,6 +3,7 @@ package org.rx.net.nameserver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.core.RxConfig;
+import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.rx.core.Extends.sleep;
 
@@ -114,6 +116,31 @@ class NameserverImplTest {
             }
             httpConfig.setServerPort(oldPort);
             httpConfig.setServerTls(oldTls);
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void constructorReusesExternalDnsServer() throws Exception {
+        int dnsPort = freePort();
+        int registerPort = freePort();
+        int syncPort = freePort();
+        DnsServer dnsServer = new DnsServer(dnsPort, Collections.emptyList());
+        NameserverImpl server = null;
+        try {
+            NameserverConfig config = new NameserverConfig();
+            config.setDnsPort(dnsPort);
+            config.setRegisterPort(registerPort);
+            config.setSyncPort(syncPort);
+
+            server = new NameserverImpl(config, dnsServer);
+
+            assertSame(dnsServer, server.getDnsServer());
+        } finally {
+            if (server != null) {
+                server.close();
+            }
+            dnsServer.close();
         }
     }
 

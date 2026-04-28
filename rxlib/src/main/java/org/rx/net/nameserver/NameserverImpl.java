@@ -43,6 +43,7 @@ public class NameserverImpl implements Nameserver {
     final HybridServer rs;
     @Getter
     final DnsServer dnsServer;
+    final boolean ownDnsServer;
     @Setter
     long syncDelay = 500;
     final UdpClient ss;
@@ -63,9 +64,16 @@ public class NameserverImpl implements Nameserver {
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
+        this(config, null);
+    }
+
+    public NameserverImpl(@NonNull NameserverConfig config, DnsServer dnsServer) {
         this.config = config;
-        dnsServer = new DnsServer(config.getDnsPort());
-        dnsServer.setTtl(config.getDnsTtl());
+        ownDnsServer = dnsServer == null;
+        this.dnsServer = ownDnsServer ? new DnsServer(config.getDnsPort()) : dnsServer;
+        if (ownDnsServer) {
+            this.dnsServer.setTtl(config.getDnsTtl());
+        }
         svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toList());
 
         rs = Remoting.registerHybrid(this, config.getRegisterPort(), false);
@@ -117,7 +125,9 @@ public class NameserverImpl implements Nameserver {
     public void close() {
         quietly(rs::close);
         quietly(ss::close);
-        quietly(dnsServer::close);
+        if (ownDnsServer) {
+            quietly(dnsServer::close);
+        }
     }
 
     public synchronized void syncRegister(@NonNull Set<InetSocketAddress> serverEndpoints) {

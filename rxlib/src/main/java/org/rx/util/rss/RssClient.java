@@ -26,6 +26,8 @@ import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpServer;
+import org.rx.net.nameserver.NameserverConfig;
+import org.rx.net.nameserver.NameserverImpl;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.socks.Authenticator;
@@ -76,6 +78,7 @@ public final class RssClient {
     static RSSConf rssConf;
     static RrpServer rrpServer;
     static HttpServer httpServer;
+    static NameserverImpl nameserver;
     static RssUserTrafficStore trafficStore;
 
     private RssClient() {
@@ -243,6 +246,7 @@ public final class RssClient {
         dnsSvr.setNegativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL);
         dnsSvr.setInterceptors(dnsInterceptors);
         dnsSvr.addHostsFile("hosts.txt");
+        nameserver = new NameserverImpl(resolveNameserverConfig(rssConf), dnsSvr);
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(rssConf.shadowDnsPort);
         Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
 
@@ -456,6 +460,17 @@ public final class RssClient {
         }
         int connectTimeoutMillis = Math.max(1000, conf.connectTimeoutSeconds * 1000);
         return Math.min(connectTimeoutMillis, 3000);
+    }
+
+    static NameserverConfig resolveNameserverConfig(RSSConf conf) {
+        NameserverConfig config = conf.nameserver;
+        if (config == null) {
+            config = new NameserverConfig();
+            conf.nameserver = config;
+        }
+        config.setDnsPort(conf.shadowDnsPort);
+        config.setDnsTtl(60 * conf.dnsTtlMinutes);
+        return config;
     }
 
     static void clientInit(RssAuthenticator authenticator) {

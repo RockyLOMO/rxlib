@@ -30,6 +30,7 @@ import org.rx.net.TransportFlags;
 import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.nameserver.NameserverConfig;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.rpc.RpcServerConfig;
@@ -103,6 +104,23 @@ public class RssTest extends AbstractTester {
         assertEquals(6885, endpoint.getPort());
         assertNotNull(endpoint.getAddress());
         assertTrue(endpoint.getAddress().isLoopbackAddress());
+    }
+
+    @Test
+    public void resolveNameserverConfig_UsesShadowDnsServerPortAndTtl() {
+        RSSConf conf = new RSSConf();
+        NameserverConfig config = new NameserverConfig();
+        config.setRegisterPort(1854);
+        conf.nameserver = config;
+        conf.shadowDnsPort = 1853;
+        conf.dnsTtlMinutes = 2;
+
+        NameserverConfig resolved = RssClient.resolveNameserverConfig(conf);
+
+        assertSame(config, resolved);
+        assertEquals(1853, resolved.getDnsPort());
+        assertEquals(120, resolved.getDnsTtl());
+        assertEquals(1854, resolved.getRegisterPort());
     }
 
     @SneakyThrows

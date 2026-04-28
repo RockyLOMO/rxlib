@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.nameserver.NameserverConfig;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -31,6 +32,7 @@ public class RSSConf {
     public int rpcAutoWhiteListSeconds = 120;
     public int shadowDnsPort = 753;
     public int dnsTtlMinutes = 600;
+    public NameserverConfig nameserver = new NameserverConfig();
     public int trafficRetentionDays = 60;
     public int memoryRetentionHours = 24;
 
