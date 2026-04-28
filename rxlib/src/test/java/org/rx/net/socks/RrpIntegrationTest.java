@@ -265,6 +265,37 @@ class RrpIntegrationTest {
     }
 
     @Test
+    void serverRejectsLegacyJdkRegisterPayloadAndReleases() {
+        RrpConfig conf = new RrpConfig();
+        conf.setToken("t");
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        try {
+            EmbeddedChannel ch = new EmbeddedChannel();
+            ch.attr(ATTR_SVR).set(server);
+            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
+            ch.pipeline().fireChannelActive();
+
+            byte[] tokenBytes = "t".getBytes(StandardCharsets.US_ASCII);
+            byte[] data = Serializer.DEFAULT.serializeToBytes(Collections.singletonList(newProxy("jdk", 19009, "u1:p1")));
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_REGISTER);
+            buf.writeInt(tokenBytes.length);
+            buf.writeBytes(tokenBytes);
+            buf.writeInt(data.length);
+            buf.writeBytes(data);
+
+            ch.writeInbound(buf);
+            assertEquals(0, buf.refCnt(), "legacy msg should still be released by handler");
+            ch.runPendingTasks();
+            assertFalse(ch.isOpen(), "legacy JDK register payload should close main channel");
+            assertTrue(server.proxiesByPort.isEmpty(), "legacy JDK register payload must not register proxy");
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
     void clientRejectsInvalidIdLenAndReleases() {
         RrpConfig conf = new RrpConfig();
         conf.setProxies(Collections.emptyList());
@@ -504,4 +535,3 @@ class RrpIntegrationTest {
         }
     }
 }
-

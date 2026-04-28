@@ -1,12 +1,22 @@
 package org.rx.net.dns;
 
+import io.netty.handler.codec.dns.DefaultDnsQuery;
+import io.netty.handler.codec.dns.DefaultDnsQuestion;
+import io.netty.handler.codec.dns.DefaultDnsResponse;
+import io.netty.handler.codec.dns.DnsRecordType;
+import io.netty.handler.codec.dns.DnsSection;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.GlobalEventExecutor;
+import io.netty.util.concurrent.Promise;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.bean.RandomList;
+import org.rx.net.transport.ClientDisconnectedException;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -22,6 +32,20 @@ class DnsOptimizationTest {
     static int freePort() throws Exception {
         try (ServerSocket ss = new ServerSocket(0)) {
             return ss.getLocalPort();
+        }
+    }
+
+    static DefaultDnsResponse resolveOnce(DnsServer server, String host) throws Exception {
+        DefaultDnsQuery query = new DefaultDnsQuery(1);
+        query.addRecord(DnsSection.QUESTION, new DefaultDnsQuestion(host, DnsRecordType.A));
+        try {
+            Promise<DefaultDnsResponse> promise = DnsResolveCore.resolve(server, server.upstreamClient,
+                    InetAddress.getLoopbackAddress(), query, true, GlobalEventExecutor.INSTANCE);
+            assertTrue(promise.await(5, TimeUnit.SECONDS), "DNS resolve promise timeout");
+            assertTrue(promise.isSuccess(), () -> "DNS resolve failed: " + promise.cause());
+            return promise.getNow();
+        } finally {
+            ReferenceCountUtil.release(query);
         }
     }
 
@@ -106,6 +130,58 @@ class DnsOptimizationTest {
             for (InetAddress result : results) {
                 assertEquals(resolvedIp, result);
             }
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void interceptorDisconnect_triesNextResolverAndSkipsOpenBreaker() throws Exception {
+        int dnsPort = freePort();
+        String host1 = "failover-1-" + UUID.randomUUID() + ".example";
+        String host2 = "failover-2-" + UUID.randomUUID() + ".example";
+        InetAddress resolvedIp = InetAddress.getByName("198.51.100.89");
+        AtomicInteger failedCalls = new AtomicInteger();
+        AtomicInteger healthyCalls = new AtomicInteger();
+        DnsServer.ResolveInterceptor failing = (srcIp, lookupHost) -> {
+            failedCalls.incrementAndGet();
+            throw new ClientDisconnectedException("dns-rpc-primary");
+        };
+        DnsServer.ResolveInterceptor healthy = (srcIp, lookupHost) -> {
+            healthyCalls.incrementAndGet();
+            return Collections.singletonList(resolvedIp);
+        };
+        RandomList<DnsServer.ResolveInterceptor> interceptors =
+                new RandomList<DnsServer.ResolveInterceptor>(Arrays.asList(failing, healthy)) {
+                    @Override
+                    public DnsServer.ResolveInterceptor next() {
+                        return failing;
+                    }
+                };
+        DnsServer server = new DnsServer(dnsPort, Collections.emptyList());
+        try {
+            server.setInterceptors(interceptors);
+            DefaultDnsResponse first = resolveOnce(server, host1);
+            try {
+                assertEquals(1, first.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(first);
+            }
+
+            assertEquals(1, failedCalls.get(), "首次失败后应打开短熔断");
+            assertEquals(1, healthyCalls.get(), "应尝试下一个 DNS interceptor");
+            assertFalse(server.isInterceptorAvailable(failing, System.currentTimeMillis()));
+
+            DefaultDnsResponse second = resolveOnce(server, host2);
+            try {
+                assertEquals(1, second.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(second);
+            }
+
+            assertEquals(1, failedCalls.get(), "熔断窗口内不应再次调用失败 interceptor");
+            assertEquals(2, healthyCalls.get());
         } finally {
             server.close();
         }

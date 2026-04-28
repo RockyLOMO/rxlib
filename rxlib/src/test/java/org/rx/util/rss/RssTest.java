@@ -370,6 +370,20 @@ public class RssTest extends AbstractTester {
         }
     }
 
+    @Test
+    public void resolveRpcRequestTimeoutMillis_UsesConfiguredOrConnectBound() {
+        RSSConf conf = new RSSConf();
+
+        assertEquals(3000, RssClient.resolveRpcRequestTimeoutMillis(conf));
+        conf.rpcRequestTimeoutMillis = 1200;
+        assertEquals(1200, RssClient.resolveRpcRequestTimeoutMillis(conf));
+        conf.rpcRequestTimeoutMillis = 0;
+        conf.connectTimeoutSeconds = 1;
+        assertEquals(1000, RssClient.resolveRpcRequestTimeoutMillis(conf));
+        conf.connectTimeoutSeconds = 10;
+        assertEquals(3000, RssClient.resolveRpcRequestTimeoutMillis(conf));
+    }
+
     @SneakyThrows
     @Disabled("manual rss integration")
     @Test

@@ -39,6 +39,8 @@ public class DnsServer extends Disposable {
     static final String DOMAIN_PREFIX = "_dns:";
     static final AttributeKey<DnsServer> ATTR_SVR = AttributeKey.valueOf("svr");
     static final AttributeKey<DnsClient> ATTR_UPSTREAM = AttributeKey.valueOf("upstream");
+    static final AttributeKey<InetSocketAddress> ATTR_UDP_SENDER = AttributeKey.valueOf("dnsUdpSender");
+    static final long DEFAULT_INTERCEPTOR_BREAKER_MILLIS = 30_000L;
     final ServerBootstrap serverBootstrap;
     final DnsClient upstreamClient;
     final Channel tcpChannel;
@@ -60,6 +62,9 @@ public class DnsServer extends Disposable {
     // Tracks keys currently being resolved to prevent thundering-herd cache stampede
     final Set<String> resolvingKeys = ConcurrentHashMap.newKeySet();
     final Map<String, Promise<List<InetAddress>>> resolvingPromises = new ConcurrentHashMap<>();
+    final Map<ResolveInterceptor, Long> interceptorBreakerUntil = new ConcurrentHashMap<>();
+    @Setter
+    long interceptorBreakerOpenMillis = DEFAULT_INTERCEPTOR_BREAKER_MILLIS;
     @Getter
     volatile DnsDoHConfig dohConfig = new DnsDoHConfig();
 
@@ -67,6 +72,7 @@ public class DnsServer extends Disposable {
         if (CollectionUtils.isEmpty(interceptors)) {
             this.interceptors = null;
             interceptorCache = null;
+            interceptorBreakerUntil.clear();
             return;
         }
 
@@ -91,6 +97,38 @@ public class DnsServer extends Disposable {
 //        });
         interceptorCache = (Cache) cache;
         this.interceptors = interceptors;
+        retainInterceptorBreakerKeys(interceptors.aliveList());
+    }
+
+    boolean isInterceptorAvailable(ResolveInterceptor interceptor, long nowMillis) {
+        Long until = interceptorBreakerUntil.get(interceptor);
+        if (until == null) {
+            return true;
+        }
+        if (until <= nowMillis) {
+            interceptorBreakerUntil.remove(interceptor, until);
+            return true;
+        }
+        return false;
+    }
+
+    void markInterceptorSuccess(ResolveInterceptor interceptor) {
+        interceptorBreakerUntil.remove(interceptor);
+    }
+
+    void markInterceptorFailure(ResolveInterceptor interceptor) {
+        long openMillis = interceptorBreakerOpenMillis;
+        if (openMillis <= 0) {
+            return;
+        }
+        long until = System.currentTimeMillis() + openMillis;
+        interceptorBreakerUntil.put(interceptor, until < 0 ? Long.MAX_VALUE : until);
+    }
+
+    void retainInterceptorBreakerKeys(Collection<ResolveInterceptor> aliveInterceptors) {
+        if (!interceptorBreakerUntil.isEmpty()) {
+            interceptorBreakerUntil.keySet().retainAll(aliveInterceptors);
+        }
     }
 
     public DnsServer(int port) {
@@ -108,7 +146,8 @@ public class DnsServer extends Disposable {
                 .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient);
         tcpChannel = serverBootstrap.bind(port).channel();
 
-        udpChannel = Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
+        udpChannel = Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(
+                        DnsDatagramSourceHandler.DEFAULT, new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
                 .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient)
                 .bind(port).channel();
     }
