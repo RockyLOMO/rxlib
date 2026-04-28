@@ -415,7 +415,7 @@ public class DiagnosticMonitor implements EventPublisher<DiagnosticMonitor>, Aut
         final File bundleDir = bundleWriter.createBundleDir(incidentId, type);
         final String bundlePath = bundleDir == null ? null : bundleDir.getAbsolutePath();
         store.recordIncident(incidentId, type, level, now, 0L, summary, bundlePath);
-        raiseEventAsync(onIncident, new DiagnosticIncidentEvent(incidentId, type, level, now, summary, bundlePath));
+        publishEventAsync(onIncident, new DiagnosticIncidentEvent(incidentId, type, level, now, summary, bundlePath));
         if (evidenceExecutor == null) {
             return;
         }

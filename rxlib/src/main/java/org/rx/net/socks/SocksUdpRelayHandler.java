@@ -53,7 +53,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
     /**
      * Per-relay route cache: UnresolvedEndpoint (dst) → SocksContext.
-     * Prevents re-evaluating routing rules (raiseEvent) for every single UDP packet
+     * Prevents re-evaluating routing rules (publishEvent) for every single UDP packet
      * to the same destination.
      */
     public static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
@@ -356,7 +356,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             if (context == null) {
                 context = SocksContext.getCtx(clientOriginAddr, dstEp);
                 SocksUserTraffic.attachFromChannel(context, relay);
-                server.raiseEvent(server.onUdpRoute, context);
+                server.publishEvent(server.onUdpRoute, context);
             }
             Upstream upstream = context.getUpstream();
             if (upstream == null) {

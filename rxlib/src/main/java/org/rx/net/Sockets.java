@@ -51,6 +51,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
+import org.rx.net.dns.DoHClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.EndpointTracer;
@@ -205,11 +206,7 @@ public final class Sockets {
         }
         return new DnsAddressResolverGroup(nb);
     }
-
-    // static {
-    // InetAddress.getLoopbackAddress();
-    // }
-
+    
     public static LengthFieldBasedFrameDecoder intLengthFieldDecoder() {
         return new LengthFieldBasedFrameDecoder(Constants.MAX_HEAP_BUF_SIZE, 0, 4, 0, 4);
     }
@@ -219,12 +216,16 @@ public final class Sockets {
         if (CollectionUtils.isEmpty(nameServerList)) {
             throw new InvalidException("Empty server list");
         }
-        DnsClient client = new DnsClient(nameServerList);
-        injectNameService((srcIp, host) -> client.resolveAll(host));
+        injectNameService(new DnsClientNameService(nameServerList));
+    }
+
+    public static void injectNameService(@NonNull DoHClient client) {
+        injectNameService((DnsServer.ResolveInterceptor) client);
     }
 
     @SneakyThrows
     public static void injectNameService(@NonNull DnsServer.ResolveInterceptor interceptor) {
+        DnsServer.ResolveInterceptor old = nsInterceptor;
         if (nsInterceptor == null) {
             synchronized (Sockets.class) {
                 if (nsInterceptor == null) {
@@ -248,6 +249,32 @@ public final class Sockets {
             }
         }
         nsInterceptor = interceptor;
+        closeOldNameService(old, interceptor);
+    }
+
+    private static void closeOldNameService(DnsServer.ResolveInterceptor old, DnsServer.ResolveInterceptor current) {
+        if (old == null || old == current || !(old instanceof AutoCloseable)) {
+            return;
+        }
+        quietly(((AutoCloseable) old)::close);
+    }
+
+    static final class DnsClientNameService implements DnsServer.ResolveInterceptor, AutoCloseable {
+        final DnsClient client;
+
+        DnsClientNameService(List<InetSocketAddress> nameServerList) {
+            client = new DnsClient(nameServerList);
+        }
+
+        @Override
+        public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+            return client.resolveAll(host);
+        }
+
+        @Override
+        public void close() {
+            client.close();
+        }
     }
 
     private static Object nsProxy(Object ns) {
@@ -256,12 +283,18 @@ public final class Sockets {
         return Proxy.newProxyInstance(type.getClassLoader(), type.getInterfaces(), (pObject, method, args) -> {
             if (Strings.hashEquals(method.getName(), M_0)) {
                 String host = (String) args[0];
-                // If all interceptors can't handle it, the source object will process it.
+                // null means delegate to the platform resolver; empty means negative answer.
+                DnsServer.ResolveInterceptor interceptor = nsInterceptor;
                 try {
-                    List<InetAddress> addresses = nsInterceptor.resolveHost(null, host);
-                    if (!CollectionUtils.isEmpty(addresses)) {
+                    List<InetAddress> addresses = interceptor != null ? interceptor.resolveHost(null, host) : null;
+                    if (addresses != null) {
+                        if (addresses.isEmpty()) {
+                            throw new UnknownHostException(host);
+                        }
                         return addresses.toArray(empty);
                     }
+                } catch (IllegalStateException | UnknownHostException e) {
+                    throw e;
                 } catch (Exception e) {
                     log.info("nsProxy error {}", e.getMessage());
                 }
@@ -1303,7 +1336,7 @@ public final class Sockets {
     public static Linq<SocketInfo> socketInfos(SocketProtocol protocol) {
         try (ShellCommand cmd = new ShellCommand("netstat -aon")) {
             List<SocketInfo> list = new ArrayList<>();
-            cmd.onPrintOut.combine((s, e) -> {
+            cmd.onPrintOut.add((s, e) -> {
                 String line = e.getLine();
                 if (!line.contains(protocol.name())) {
                     return;
@@ -1338,7 +1371,7 @@ public final class Sockets {
             $<String> name = $();
             try (ShellCommand cmd = new ShellCommand(String.format("tasklist /fi \"pid eq %s\"", pid))) {
                 String t = String.format(" %s", pid);
-                cmd.onPrintOut.combine((s, e) -> {
+                cmd.onPrintOut.add((s, e) -> {
                     int i = e.getLine().indexOf(t);
                     if (i == -1) {
                         return;

@@ -68,7 +68,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (msg.type() == Socks5CommandType.CONNECT) {
             SocksContext e = SocksContext.getCtx(srcEp, dstEp);
             SocksUserTraffic.attach(e, user, loginInfo);
-            server.raiseEvent(server.onTcpRoute, e);
+            server.publishEvent(server.onTcpRoute, e);
             connect(inCh, msg.dstAddrType(), e, null);
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
             log.debug("socks5[{}] UDP_ASSOCIATE {}", config.getListenPort(), msg);
@@ -236,7 +236,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
-                    server.raiseEvent(server.onReconnecting, e);
+                    server.publishEvent(server.onReconnecting, e);
                     short[] attempts = reconnectionAttempts;
                     if (attempts == null) {
                         attempts = new short[]{0};

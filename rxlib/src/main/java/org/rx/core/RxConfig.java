@@ -150,6 +150,13 @@ public final class RxConfig {
         String NTP_SERVERS = "app.net.ntp.servers";
         String DNS_INLAND_SERVERS = "app.net.dns.inlandServers";
         String DNS_OUTLAND_SERVERS = "app.net.dns.outlandServers";
+        String DNS_DOH_ENABLED = "app.net.dns.dohEnabled";
+        String DNS_DOH_PATH = "app.net.dns.dohPath";
+        String DNS_DOH_ALLOW_PLAIN_HTTP = "app.net.dns.dohAllowPlainHttp";
+        String DNS_DOH_MAX_MESSAGE_BYTES = "app.net.dns.dohMaxMessageBytes";
+        String DNS_DOH_TIMEOUT_MILLIS = "app.net.dns.dohTimeoutMillis";
+        String DNS_DOH_MAX_IN_FLIGHT = "app.net.dns.dohMaxInFlight";
+        String DNS_DOH_ENDPOINTS = "app.net.dns.dohEndpoints";
         String REST_LOG_MODE = "app.rest.logMode";
         String REST_LOG_NAME_LIST = "app.rest.logNameList";
         String REST_FORWARDS = "app.rest.forwards";
@@ -455,6 +462,13 @@ public final class RxConfig {
     public static class DnsConfig {
         final List<String> inlandServers = newConcurrentList(true);
         final List<String> outlandServers = newConcurrentList(true);
+        boolean dohEnabled;
+        String dohPath = "/dns-query";
+        boolean dohAllowPlainHttp;
+        int dohMaxMessageBytes = 65535;
+        int dohTimeoutMillis = 5000;
+        int dohMaxInFlight = 64;
+        final List<String> dohEndpoints = newConcurrentList(true);
     }
 
     @Getter
@@ -736,6 +750,13 @@ public final class RxConfig {
 
         reset(net.dns.inlandServers, ConfigNames.DNS_INLAND_SERVERS);
         reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
+        net.dns.dohEnabled = SystemPropertyUtil.getBoolean(ConfigNames.DNS_DOH_ENABLED, net.dns.dohEnabled);
+        net.dns.dohPath = SystemPropertyUtil.get(ConfigNames.DNS_DOH_PATH, net.dns.dohPath);
+        net.dns.dohAllowPlainHttp = SystemPropertyUtil.getBoolean(ConfigNames.DNS_DOH_ALLOW_PLAIN_HTTP, net.dns.dohAllowPlainHttp);
+        net.dns.dohMaxMessageBytes = SystemPropertyUtil.getInt(ConfigNames.DNS_DOH_MAX_MESSAGE_BYTES, net.dns.dohMaxMessageBytes);
+        net.dns.dohTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.DNS_DOH_TIMEOUT_MILLIS, net.dns.dohTimeoutMillis);
+        net.dns.dohMaxInFlight = SystemPropertyUtil.getInt(ConfigNames.DNS_DOH_MAX_IN_FLIGHT, net.dns.dohMaxInFlight);
+        reset(net.dns.dohEndpoints, ConfigNames.DNS_DOH_ENDPOINTS);
 
         rest.logMode = SystemPropertyUtil.getInt(ConfigNames.REST_LOG_MODE, rest.logMode);
         reset(rest.logNameList, ConfigNames.REST_LOG_NAME_LIST);

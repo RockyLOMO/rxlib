@@ -76,7 +76,7 @@ public class ShardingEntityDatabase implements EntityDatabase {
             }
         }).join();
 
-        nsClient.onAppAddressChanged.combine((s, e) -> {
+        nsClient.onAppAddressChanged.add((s, e) -> {
             if (!Strings.hashEquals(APP_NAME, e.getAppName())) {
                 return;
             }

@@ -105,7 +105,7 @@ public class KeyValueStore<TK, TV> extends Disposable implements AbstractMap<TK,
     }
 
     public KeyValueStore(KeyValueStoreConfig config) {
-        this(config, Serializer.DEFAULT);
+        this(config, JdkAndJsonSerializer.DEFAULT);
     }
 
     @SneakyThrows

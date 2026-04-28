@@ -472,7 +472,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             ConcurrentMap<RouteKey, RouteInitState> routeInitMap) {
         try {
             SocksContext context = SocksContext.getCtx(routeKey.source, routeKey.destination);
-            server.raiseEvent(server.onUdpRoute, context);
+            server.publishEvent(server.onUdpRoute, context);
             Upstream upstream = context.getUpstream();
             if (upstream == null) {
                 throw new IllegalStateException("SS UDP route upstream is null for " + routeKey.destination);

@@ -33,12 +33,12 @@ class HybridServerEventArgsTest {
         String[] reply = new String[1];
         try (HybridServer server = new HybridServer(serverConfig);
              HybridClient client = new HybridClient(clientConfig)) {
-            server.onReceive.combine((s, e) -> {
+            server.onReceive.add((s, e) -> {
                 source[0] = e.getSession();
                 e.getSession().send("pong");
                 serverReceived.countDown();
             });
-            client.onReceive.combine((s, e) -> {
+            client.onReceive.add((s, e) -> {
                 reply[0] = (String) e.getValue();
                 clientReceived.countDown();
             });
@@ -71,11 +71,11 @@ class HybridServerEventArgsTest {
         AtomicReference<String> attr = new AtomicReference<String>();
         try (HybridServer server = new HybridServer(serverConfig);
              HybridClient client = new HybridClient(clientConfig)) {
-            server.onConnected.combine((s, e) -> {
+            server.onConnected.add((s, e) -> {
                 e.getValue().attr("hybrid.disconnect.attr", "alive");
                 connected.countDown();
             });
-            server.onDisconnected.combine((s, e) -> {
+            server.onDisconnected.add((s, e) -> {
                 attr.set(e.getValue().attr("hybrid.disconnect.attr"));
                 disconnected.countDown();
             });
@@ -108,13 +108,13 @@ class HybridServerEventArgsTest {
         AtomicReference<String> attr = new AtomicReference<String>();
         try (HybridServer server = new HybridServer(serverConfig);
              HybridClient client = new HybridClient(clientConfig)) {
-            server.onConnected.combine((s, e) -> {
+            server.onConnected.add((s, e) -> {
                 DefaultHybridSession session = (DefaultHybridSession) e.getValue();
                 session.attr("hybrid.close.attr", "alive");
                 sessionId.set(session.sessionId);
                 connected.countDown();
             });
-            server.onDisconnected.combine((s, e) -> {
+            server.onDisconnected.add((s, e) -> {
                 attr.set(e.getValue().attr("hybrid.close.attr"));
                 disconnected.countDown();
             });

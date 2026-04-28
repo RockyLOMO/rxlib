@@ -48,7 +48,7 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
             Channel channel = ctx.channel();
             log.debug("clientActive {}", channel.remoteAddress());
 
-            owner.raiseEventAsync(owner.onConnected, EventArgs.EMPTY);
+            owner.publishEventAsync(owner.onConnected, EventArgs.EMPTY);
         }
 
         @Override
@@ -60,12 +60,12 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
             }
             if (tryAs(msg, PingPacket.class, p -> {
                 log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), NtpClock.UTC.millis() - p.getTimestamp());
-                owner.raiseEventAsync(owner.onPong, p);
+                owner.publishEventAsync(owner.onPong, p);
             })) {
                 return;
             }
 
-            owner.raiseEventAsync(owner.onReceive, new NEventArgs<>(msg));
+            owner.publishEventAsync(owner.onReceive, new NEventArgs<>(msg));
         }
 
         @Override
@@ -73,7 +73,7 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
             Channel channel = ctx.channel();
             log.info("clientInactive {}", channel.remoteAddress());
 
-            owner.raiseEvent(owner.onDisconnected, EventArgs.EMPTY);
+            owner.publishEvent(owner.onDisconnected, EventArgs.EMPTY);
             owner.reconnectAsync();
         }
 
@@ -104,7 +104,7 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
             }
 
             NEventArgs<Throwable> args = new NEventArgs<>(cause);
-            quietly(() -> owner.raiseEvent(owner.onError, args));
+            quietly(() -> owner.publishEvent(owner.onError, args));
             if (args.isCancel()) {
                 return;
             }
@@ -202,7 +202,7 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
     protected SocketAddress resolveConnectEndpoint(boolean reconnect) {
         if (reconnect) {
             NEventArgs<InetSocketAddress> args = new NEventArgs<>(ifNull(connectingEp, config.getServerEndpoint()));
-            raiseEvent(onReconnecting, args);
+            publishEvent(onReconnecting, args);
             return connectingEp = args.getValue();
         }
         return config.getServerEndpoint();
@@ -220,7 +220,7 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
         }
 
         log.info("{} reconnect {} ok", this, ep);
-        raiseEvent(onReconnected, new NEventArgs<>(ep));
+        publishEvent(onReconnected, new NEventArgs<>(ep));
     }
 
     @Override
@@ -252,7 +252,7 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
         }
 
         NEventArgs<Object> args = new NEventArgs<>(pack);
-        raiseEvent(onSend, args);
+        publishEvent(onSend, args);
         if (args.isCancel()) {
             return;
         }

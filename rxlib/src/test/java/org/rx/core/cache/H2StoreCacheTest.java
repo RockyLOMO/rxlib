@@ -827,7 +827,7 @@ public class H2StoreCacheTest extends AbstractTester {
         TrackingEntityDatabase db = new TrackingEntityDatabase();
         H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
         AtomicInteger expiredEvents = new AtomicInteger();
-        cache.onExpired.combine((s, e) -> expiredEvents.incrementAndGet());
+        cache.onExpired.add((s, e) -> expiredEvents.incrementAndGet());
         cache.syncPut("expire-event", "v1", new CachePolicy(System.currentTimeMillis() + 200, 0));
         assertEquals("v1", db.persistedValue("expire-event"));
         Thread.sleep(300);

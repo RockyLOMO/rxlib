@@ -68,7 +68,7 @@ public class NameserverImpl implements Nameserver {
         svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toList());
 
         rs = Remoting.registerHybrid(this, config.getRegisterPort(), false);
-        rs.onDisconnected.combine((s, e) -> {
+        rs.onDisconnected.add((s, e) -> {
             HybridSession session = e.getValue();
             String appName = session.attr(APP_NAME_KEY);
             if (appName == null) {
@@ -77,7 +77,7 @@ public class NameserverImpl implements Nameserver {
 
             doDeregister(appName, session.tcpRemoteEndpoint().getAddress(), true, true);
         });
-        rs.onPing.combine((s, e) -> attrs(e.getSession().tcpRemoteEndpoint().getAddress())
+        rs.onPing.add((s, e) -> attrs(e.getSession().tcpRemoteEndpoint().getAddress())
                 .put("ping", String.format("%dms", (NtpClock.UTC.millis() - e.getValue().getTimestamp()) * 2)));
 
         FuryUdpClientCodec syncCodec = FuryUdpClientCodec.createDefault();
@@ -87,7 +87,7 @@ public class NameserverImpl implements Nameserver {
             }
         }
         ss = new UdpClient(getSyncPort(), syncCodec);
-        ss.onReceive.combine((s, e) -> {
+        ss.onReceive.add((s, e) -> {
             Object packet = e.getValue().packet;
             log.info("[{}] Replica {}", getSyncPort(), packet);
             if (!tryAs(packet, Map.class, p -> {
@@ -114,7 +114,7 @@ public class NameserverImpl implements Nameserver {
         }
 
         dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, Linq.from(svrEps).select(InetSocketAddress::getAddress).toList());
-        raiseEventAsync(EVENT_CLIENT_SYNC, new NEventArgs<>(svrEps));
+        publishEventAsync(EVENT_CLIENT_SYNC, new NEventArgs<>(svrEps));
         Tasks.setTimeout(() -> {
             for (InetSocketAddress ssAddr : serverEndpoints) {
                 ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), svrEps);
@@ -154,7 +154,7 @@ public class NameserverImpl implements Nameserver {
 
     void doRegister(String appName, int weight, InetAddress addr) {
         if (dnsServer.addHosts(appName, weight, Collections.singletonList(addr))) {
-            raiseEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, true, attrs(addr)));
+            publishEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, true, attrs(addr)));
         }
     }
 
@@ -175,7 +175,7 @@ public class NameserverImpl implements Nameserver {
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);
             if (dnsServer.removeHosts(appName, Collections.singletonList(addr))) {
-                raiseEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, false, attrs(addr)));
+                publishEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, false, attrs(addr)));
             }
             if (shouldSync) {
                 syncDeregister(new DeregisterInfo(appName, addr));

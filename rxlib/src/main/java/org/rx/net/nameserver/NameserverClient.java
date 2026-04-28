@@ -10,7 +10,9 @@ import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
+import org.rx.net.support.GeoManager;
 import org.rx.util.function.Action;
+import org.rx.util.function.Func;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -57,6 +59,7 @@ public final class NameserverClient extends Disposable {
     final String appName;
     final RandomList<NsInfo> holder = new RandomList<>();
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
+    volatile Func<String> publicIpResolver = () -> GeoManager.INSTANCE.getPublicIp();
 
     public Set<InetSocketAddress> registerEndpoints() {
         return Linq.from(holder).select(p -> p.registerEndpoint).toSet();
@@ -120,13 +123,13 @@ public final class NameserverClient extends Disposable {
                             return;
                         }
                         log.info("login ns {} -> {} PREV={}", regEp, tuple.dnsPort, lastDp);
-                        tuple.ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
+                        registerInstanceAttrs(tuple.ns);
                         reInject();
                     } catch (Throwable e) {
                         log.debug("login error", e);
                         Tasks.setTimeout(() -> {
                             tuple.dnsPort = tuple.ns.register(appName, svrEps);
-                            tuple.ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
+                            registerInstanceAttrs(tuple.ns);
                             reInject();
                             circuitContinue(false);
                         }, DEFAULT_RETRY_PERIOD, appName, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
@@ -134,20 +137,20 @@ public final class NameserverClient extends Disposable {
                 };
                 RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(regEp, 0);
                 config.setInitHandler((ns, rc) -> {
-                    rc.onConnected.combine((s, e) -> {
+                    rc.onConnected.add((s, e) -> {
                         holder.setWeight(tuple, RandomList.DEFAULT_WEIGHT);
                         reInject();
                     });
-                    rc.onDisconnected.combine((s, e) -> {
+                    rc.onDisconnected.add((s, e) -> {
                         holder.setWeight(tuple, 0);
                         reInject();
                     });
-                    rc.onReconnecting.combine((s, e) -> {
+                    rc.onReconnecting.add((s, e) -> {
                         if (svrEps.addAll(Linq.from(registerEndpoints).selectMany(Sockets::newAllEndpoints).toSet())) {
                             registerAsync(svrEps);
                         }
                     });
-                    rc.onReconnected.combine((s, e) -> {
+                    rc.onReconnected.add((s, e) -> {
                         tuple.dnsPort = null;
                         handshake.invoke();
                     });
@@ -170,6 +173,14 @@ public final class NameserverClient extends Disposable {
                 handshake.invoke();
             }
         }));
+    }
+
+    void registerInstanceAttrs(Nameserver ns) {
+        ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
+        String publicIp = quietly(publicIpResolver);
+        if (publicIp != null && Sockets.isValidIp(publicIp)) {
+            ns.instanceAttr(appName, Nameserver.PUBLIC_IP_KEY, publicIp);
+        }
     }
 
     public CompletableFuture<?> deregisterAsync() {

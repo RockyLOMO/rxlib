@@ -1,8 +1,12 @@
 package org.rx.net.dns;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.dns.*;
 import io.netty.util.ReferenceCounted;
 
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 public class DnsMessageUtil {
@@ -26,12 +30,18 @@ public class DnsMessageUtil {
                 setRecords(section, response, newResponse);
             }
             return newResponse;
-        } else {
-            if (response instanceof ReferenceCounted) {
-                ((ReferenceCounted) response).retain();
-            }
-            return (DefaultDnsResponse) response;
         }
+
+        DefaultDnsResponse newResponse = new DefaultDnsResponse(query.id(), response.opCode(), response.code());
+        newResponse.setAuthoritativeAnswer(response.isAuthoritativeAnswer())
+                .setTruncated(response.isTruncated())
+                .setRecursionAvailable(response.isRecursionAvailable())
+                .setRecursionDesired(response.isRecursionDesired())
+                .setZ(response.z());
+        for (DnsSection section : DnsSection.values()) {
+            setRecords(section, response, newResponse);
+        }
+        return newResponse;
     }
 
     public static DefaultDnsResponse newResponse(DefaultDnsQuery query, boolean isTcp) {
@@ -50,6 +60,27 @@ public class DnsMessageUtil {
             return newErrorResponse(((DatagramDnsQuery) dnsQuery).recipient(), ((DatagramDnsQuery) dnsQuery).sender(), dnsQuery, rCode);
         }
         return newErrorResponse(null, null, dnsQuery, rCode);
+    }
+
+    public static DefaultDnsResponse newAddressResponse(DefaultDnsQuery query, boolean isTcp, DefaultDnsQuestion question,
+                                                        long ttl, Iterable<InetAddress> ips) {
+        DefaultDnsResponse response = newResponse(query, isTcp);
+        if (question instanceof ReferenceCounted) {
+            ((ReferenceCounted) question).retain();
+        }
+        response.addRecord(DnsSection.QUESTION, question);
+
+        DnsRecordType queryType = question.type();
+        for (InetAddress ip : ips) {
+            DnsRecordType type = ip instanceof Inet6Address ? DnsRecordType.AAAA : DnsRecordType.A;
+            if (queryType != type) {
+                continue;
+            }
+            byte[] address = ip.getAddress();
+            ByteBuf content = Unpooled.wrappedBuffer(address);
+            response.addRecord(DnsSection.ANSWER, new DefaultDnsRawRecord(question.name(), type, ttl, content));
+        }
+        return response;
     }
 
     private static DefaultDnsResponse newErrorResponse(InetSocketAddress sender, InetSocketAddress recipient,

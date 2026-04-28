@@ -62,7 +62,6 @@ import static org.rx.core.Extends.tryAs;
 import static org.rx.core.Sys.proxy;
 import static org.rx.core.Sys.toJsonString;
 
-//snappy + protobuf
 @Slf4j
 public final class Remoting {
     public static class ClientBean {
@@ -93,7 +92,7 @@ public final class Remoting {
     }
 
     static final AttributeKey<MetadataMessage> HANDSHAKE_META_KEY = AttributeKey.valueOf("HandshakeMeta");
-    static final String M_0 = "raiseEvent", M_1 = "raiseEventAsync", M_2 = "attachEvent";
+    static final String M_0 = "publishEvent", M_1 = "publishEventAsync", M_2 = "attachEvent";
     static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<Object, ServerBean>();
     static final Map<Object, Object> serverInitLocks = new ConcurrentHashMap<Object, Object>();
     static final Map<RpcClientConfig, RpcHybridClientPool> clientPools = new ConcurrentHashMap<RpcClientConfig, RpcHybridClientPool>();
@@ -276,19 +275,19 @@ public final class Remoting {
     }
 
     private static void init(HybridClient client, Object proxyObject, RpcClientConfig<?> config, FastThreadLocal<Boolean> isCompute,
-                             Set<String> subscribedEvents) {
+            Set<String> subscribedEvents) {
         client.resetHandlers();
         AtomicReference<HybridSession> sessionRef = new AtomicReference<HybridSession>();
         AtomicBoolean initHandlerInvoked = new AtomicBoolean();
-        client.onError.combine((s, e) -> e.setCancel(true));
-        client.onDisconnected.combine((s, e) -> {
+        client.onError.add((s, e) -> e.setCancel(true));
+        client.onDisconnected.add((s, e) -> {
             if (!client.getConfig().getTcpClientConfig().isEnableReconnect()) {
                 clientBeans.remove(client);
                 clientRefCounts.remove(client);
             }
         });
-        client.onReceive.combine((s, e) -> handleClientReceive(client, sessionRef.get(), proxyObject, isCompute, e.getValue()));
-        client.onSessionReady.combine((s, e) -> onClientSessionReady(client, sessionRef, proxyObject, config, e.getValue(),
+        client.onReceive.add((s, e) -> handleClientReceive(client, sessionRef.get(), proxyObject, isCompute, e.getValue()));
+        client.onSessionReady.add((s, e) -> onClientSessionReady(client, sessionRef, proxyObject, config, e.getValue(),
                 subscribedEvents, initHandlerInvoked));
         HybridSession current = client.session();
         if (current != null) {
@@ -298,8 +297,8 @@ public final class Remoting {
 
     @SneakyThrows
     private static void onClientSessionReady(HybridClient client, AtomicReference<HybridSession> sessionRef,
-                                             Object proxyObject, RpcClientConfig<?> config, HybridSession session,
-                                             Set<String> subscribedEvents, AtomicBoolean initHandlerInvoked) {
+            Object proxyObject, RpcClientConfig<?> config, HybridSession session,
+            Set<String> subscribedEvents, AtomicBoolean initHandlerInvoked) {
         HybridSession previous = sessionRef.getAndSet(session);
         if (previous == session) {
             return;
@@ -327,7 +326,7 @@ public final class Remoting {
     }
 
     private static void handleClientReceive(HybridClient client, HybridSession session, Object proxyObject,
-                                            FastThreadLocal<Boolean> isCompute, Object value) {
+            FastThreadLocal<Boolean> isCompute, Object value) {
         if (tryAs(value, EventMessage.class, x -> {
             switch (x.flag) {
                 case BROADCAST:
@@ -335,7 +334,7 @@ public final class Remoting {
                     try {
                         isCompute.set(true);
                         EventPublisher<?> target = (EventPublisher<?>) proxyObject;
-                        target.raiseEvent(x.eventName, x.eventArgs);
+                        target.publishEvent(x.eventName, x.eventArgs);
                         log.info("clientSide event {} -> {} OK & args={}", x.eventName, x.flag, toJsonString(x.eventArgs));
                     } catch (Exception ex) {
                         log.error("clientSide event {} -> {}", x.eventName, x.flag, ex);
@@ -563,10 +562,10 @@ public final class Remoting {
         ensureServerCodec(config);
         DiagnosticMetrics.setNetComponent(config.getTcpConfig(), DiagnosticMetrics.NET_RPC_SERVER);
         ServerBean bean = new ServerBean(config, new HybridServer(config.getHybridConfig()));
-        bean.server.onClosed.combine((s, e) -> serverBeans.remove(contractInstance));
-        bean.server.onDisconnected.combine((s, e) -> cleanupSubscriptions(bean, e.getValue()));
-        bean.server.onError.combine((s, e) -> e.setCancel(true));
-        bean.server.onReceive.combine((s, e) -> onServerReceive(contractInstance, bean, s, e));
+        bean.server.onClosed.add((s, e) -> serverBeans.remove(contractInstance));
+        bean.server.onDisconnected.add((s, e) -> cleanupSubscriptions(bean, e.getValue()));
+        bean.server.onError.add((s, e) -> e.setCancel(true));
+        bean.server.onReceive.add((s, e) -> onServerReceive(contractInstance, bean, s, e));
         bean.server.start();
         return bean;
     }
@@ -663,7 +662,7 @@ public final class Remoting {
     }
 
     private static List<HybridSession> collectBroadcastTargets(ServerBean bean, ServerBean.EventBean eventBean,
-                                                               ServerBean.EventContext context) {
+            ServerBean.EventContext context) {
         List<Integer> allow = bean.config.getEventBroadcastVersions();
         List<HybridSession> targets = new ArrayList<HybridSession>(eventBean.subscribe.size());
         for (HybridSession client : eventBean.subscribe) {
@@ -682,7 +681,7 @@ public final class Remoting {
     }
 
     private static EventMessage prepareComputePack(ServerBean bean, ServerBean.EventBean eventBean, String eventName,
-                                                   EventArgs args, ServerBean.EventContext context) {
+            EventArgs args, ServerBean.EventContext context) {
         if (bean.config.getEventComputeVersion() == RpcServerConfig.EVENT_DISABLE_COMPUTE) {
             context.computingSession = null;
             return null;
@@ -730,7 +729,7 @@ public final class Remoting {
     }
 
     private static void doSendBroadcast(ServerBean bean, EventMessage p, ServerBean.EventContext context,
-                                        List<HybridSession> targets) {
+            List<HybridSession> targets) {
         if (targets.isEmpty()) {
             return;
         }

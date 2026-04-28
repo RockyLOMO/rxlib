@@ -35,7 +35,7 @@ class UdpTransportTest {
 
             AtomicInteger attempts = new AtomicInteger();
             CountDownLatch handled = new CountDownLatch(1);
-            server.onReceive.combine((s, e) -> {
+            server.onReceive.add((s, e) -> {
                 if (attempts.incrementAndGet() == 1) {
                     throw new InvalidException("first attempt fail");
                 }
@@ -66,7 +66,7 @@ class UdpTransportTest {
             }
             EchoRequest request = new EchoRequest("frag-rpc", payload);
 
-            server.onReceive.combine((s, e) -> {
+            server.onReceive.add((s, e) -> {
                 EchoRequest packet = e.getValue().packet();
                 s.reply(e.getValue(), new EchoResponse(packet.name, Arrays.copyOf(packet.payload, packet.payload.length)));
             });
@@ -89,7 +89,7 @@ class UdpTransportTest {
 
             CountDownLatch received = new CountDownLatch(1);
             String[] value = new String[1];
-            server.onReceive.combine((s, e) -> {
+            server.onReceive.add((s, e) -> {
                 value[0] = (String) e.getValue().packet();
                 received.countDown();
             });
@@ -148,7 +148,7 @@ class UdpTransportTest {
         InetSocketAddress sender = new InetSocketAddress("127.0.0.1", 40003);
         CountDownLatch errorLatch = new CountDownLatch(1);
         try (UdpClient client = new UdpClient(0, new DecodeFailCodec())) {
-            client.onError.combine((s, e) -> errorLatch.countDown());
+            client.onError.add((s, e) -> errorLatch.countDown());
             ByteBuf payload = Unpooled.directBuffer(4).writeInt(7);
 
             client.handleData(sender, 12, AckSync.SEMI, 1000, 0, 1, payload);

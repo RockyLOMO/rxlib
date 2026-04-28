@@ -13,7 +13,7 @@ public class UserManagerImpl implements UserManager {
     @Override
     public void create(PersonBean person) {
         UserEventArgs e = new UserEventArgs(person);
-        raiseEvent(onCreate, e);
+        publishEvent(onCreate, e);
         if (e.isCancel()) {
             log.info("create canceled");
             return;

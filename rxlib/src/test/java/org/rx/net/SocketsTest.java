@@ -30,6 +30,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import java.lang.reflect.Field;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -253,21 +254,31 @@ public class SocketsTest {
     @Test
     public void testInjectNameService() {
         String host = "rxlib-" + UUID.randomUUID() + ".test";
+        String negativeHost = "rxlib-negative-" + UUID.randomUUID() + ".test";
+        String blockedHost = "rxlib-blocked-" + UUID.randomUUID() + ".test";
         InetAddress expected = InetAddress.getByAddress(host, new byte[]{127, 0, 0, 123});
         try {
             Sockets.injectNameService((srcIp, h) -> {
                 if (host.equals(h)) {
                     return Collections.singletonList(expected);
                 }
-                return Collections.emptyList();
+                if (negativeHost.equals(h)) {
+                    return Collections.emptyList();
+                }
+                if (blockedHost.equals(h)) {
+                    throw new IllegalStateException("blocked");
+                }
+                return null;
             });
 
             InetAddress actual = InetAddress.getByName(host);
             assertEquals(expected.getHostAddress(), actual.getHostAddress());
+            assertThrows(UnknownHostException.class, () -> InetAddress.getByName(negativeHost));
+            assertThrows(IllegalStateException.class, () -> InetAddress.getByName(blockedHost));
             assertNotNull(Sockets.nsInterceptor);
         } finally {
             // Keep proxy installed but restore interceptor to delegate to the platform resolver.
-            Sockets.nsInterceptor = (srcIp, h) -> Collections.emptyList();
+            Sockets.nsInterceptor = (srcIp, h) -> null;
         }
     }
 

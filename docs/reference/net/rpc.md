@@ -5,7 +5,7 @@ rxlib 自研的高性能远程过程调用框架。支持 TCP 单一协议，也
 ## 核心类介绍
 
 - **`Remoting`**:
-  RPC 模块的顶级外观类，提供了注册服务端实现和创建客户端代理的核心工厂方法。
+  RPC 模块的顶级外观类，提供了注册服务端实现和创建客户端代理的核心工厂方法。支持分布式事件广播与 **Event Compute Args**（客户端协同参数计算）功能。
 
 - **`RpcServerConfig` / `RpcClientConfig`**:
   RPC 服务端与客户端的详细配置类。包含连接超时、池大小、通信加密、混合传输支持等相关设置。
@@ -48,7 +48,39 @@ rpcConf.getHybridConfig().setEnableUdpHolePunch(false);
 Remoting.register(contractInstance, rpcConf);
 ```
 
-## 使用示例
+
+## 分布式事件增强 (Event Compute Args)
+
+在 RPC 事件模型中，服务端触发事件后通常直接广播参数。但在某些场景下，服务端只知道“事件发生了”，而具体的事件参数（`EventArgs`）可能依赖于客户端的本地状态或逻辑。
+
+`computeArgs` 功能允许服务端在广播事件之前，先请求一个特定的客户端（通常是版本最新的）来“填充”或“计算”事件参数。
+
+### 核心流程
+1. **服务端触发事件**：业务代码调用 `server.raiseEvent(eventName, args)`。
+2. **请求计算 (COMPUTE_ARGS)**：服务端根据配置选择一个客户端发送请求。此时服务端会同步等待客户端回传。
+3. **客户端计算**：被选中的客户端执行本地事件逻辑，更新 `args` 中的属性并回传给服务端。
+4. **最终广播 (BROADCAST)**：服务端收到回传后，将“计算完成”的参数广播给所有订阅该事件的客户端。
+
+### 配置策略 (RpcServerConfig)
+通过 `RpcServerConfig.setEventComputeVersion(short)` 进行控制：
+- **`EVENT_DISABLE_COMPUTE (-1)`**：默认值。禁用计算功能，直接广播。
+- **`EVENT_LATEST_COMPUTE (0)`**：**自动选择最新版本**。服务端会从当前在线的客户端中，选择版本号（`eventVersion`）最高的客户端执行计算。这是推荐的生产配置，确保计算逻辑始终是最新的。
+- **指定版本号 (>0)**：强制要求特定版本的客户端执行计算。
+
+### 开启方式
+```java
+// 方式1：注册时开启（默认使用 EVENT_LATEST_COMPUTE）
+Remoting.register(contractInstance, port, true);
+
+// 方式2：通过配置类显式开启
+RpcServerConfig conf = new RpcServerConfig(new TcpServerConfig(port));
+conf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
+Remoting.register(contractInstance, conf);
+```
+
+> [!TIP]
+> 该特性非常适合用于“服务端通知、客户端决策”的异步协同场景。服务端只需负责事件流转，而具体的决策数据由当前逻辑最完备（版本最高）的客户端提供。
+
 
 ### 基本 RPC 调用与事件广播
 

@@ -66,7 +66,7 @@ public class FileWatcher extends Disposable implements EventPublisher<FileWatche
                 quietly(() -> {
                     WatchKey key = service.take();
                     for (WatchEvent<?> event : key.pollEvents()) {
-                        raiseEvent(event);
+                        publishEvent(event);
                     }
                     key.reset();
                 });
@@ -80,12 +80,12 @@ public class FileWatcher extends Disposable implements EventPublisher<FileWatche
         service.close();
     }
 
-    private void raiseEvent(WatchEvent<?> tmp) {
+    private void publishEvent(WatchEvent<?> tmp) {
         WatchEvent<Path> event = (WatchEvent<Path>) tmp;
         Path absolutePath = Paths.get(directoryPath, event.context().toString());
         if (filter != null && !filter.test(absolutePath)) {
             return;
         }
-        raiseEvent(onChanged, new FileChangeEventArgs(absolutePath, event.kind()));
+        publishEvent(onChanged, new FileChangeEventArgs(absolutePath, event.kind()));
     }
 }

@@ -32,7 +32,7 @@ public class CircularBlockingQueue<T> extends LinkedBlockingQueue<T> implements 
             consumeTimer = Tasks.timer().setTimeout(() -> {
                 T t;
                 while ((t = poll()) != null) {
-                    raiseEvent(onConsume, t);
+                    publishEvent(onConsume, t);
                 }
             }, d -> consumePeriod, null, Constants.TIMER_PERIOD_FLAG);
         } else {
@@ -44,7 +44,7 @@ public class CircularBlockingQueue<T> extends LinkedBlockingQueue<T> implements 
 
     public CircularBlockingQueue(int capacity) {
         super(capacity);
-        onFull.combine((q, t) -> {
+        onFull.add((q, t) -> {
             pLock.lock();
             try {
                 boolean ok;
@@ -70,7 +70,7 @@ public class CircularBlockingQueue<T> extends LinkedBlockingQueue<T> implements 
         boolean r = super.offer(t);
         if (!r && onFull != null) {
             NEventArgs<T> e = new NEventArgs<>(t);
-            raiseEvent(onFull, e);
+            publishEvent(onFull, e);
             return !e.isCancel();
         }
         return r;

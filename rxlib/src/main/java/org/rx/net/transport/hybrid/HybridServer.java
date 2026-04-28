@@ -50,17 +50,17 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         ensureTcpCodec(this.config.getTcpServerConfig(), this.config.getUdpClientConfig().getCodec());
         udpClient = new UdpClient(this.config.getUdpBindPort(), this.config.getUdpClientConfig());
         tcpServer = new TcpServer(this.config.getTcpServerConfig());
-        tcpServer.onReceive.combine(this::onTcpReceive);
-        tcpServer.onDisconnected.combine((s, e) -> removeSession(e.getClient()));
-        tcpServer.onPing.combine((s, e) -> {
+        tcpServer.onReceive.add(this::onTcpReceive);
+        tcpServer.onDisconnected.add((s, e) -> removeSession(e.getClient()));
+        tcpServer.onPing.add((s, e) -> {
             DefaultHybridSession session = sessionsByTcp.get(e.getClient());
             if (session != null) {
-                raiseEventAsync(onPing, new HybridServerEventArgs<PingPacket>(session, e.getValue()));
+                publishEventAsync(onPing, new HybridServerEventArgs<PingPacket>(session, e.getValue()));
             }
         });
-        tcpServer.onError.combine((s, e) -> raiseEventAsync(onError, new NEventArgs<Throwable>(e.getValue())));
-        tcpServer.onClosed.combine((s, e) -> onTransportClosed());
-        udpClient.onReceive.combine(this::onUdpReceive);
+        tcpServer.onError.add((s, e) -> publishEventAsync(onError, new NEventArgs<Throwable>(e.getValue())));
+        tcpServer.onClosed.add((s, e) -> onTransportClosed());
+        udpClient.onReceive.add(this::onUdpReceive);
     }
 
     public void start() {
@@ -97,7 +97,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         sessionsByTcp.remove(session.tcpClient, session);
         pendingTcpData.remove(session.tcpClient);
         try {
-            raiseEvent(onDisconnected, new NEventArgs<HybridSession>(session));
+            publishEvent(onDisconnected, new NEventArgs<HybridSession>(session));
         } finally {
             session.detach("server-close-session", false);
             quietly(session.tcpClient::close);
@@ -144,10 +144,10 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         DefaultHybridSession session = new DefaultHybridSession(config, udpClient, client, metrics,
                 hello.sessionId, hello.udpToken, "server-" + udpClient.getLocalEndpoint().getPort());
         session.remotePeerId = hello.peerId;
-        session.onReceive().combine((s, e) -> raiseEvent(onReceive, new HybridServerEventArgs<Object>(s, e.getValue())));
-        session.onSend().combine((s, e) -> {
+        session.onReceive().add((s, e) -> publishEvent(onReceive, new HybridServerEventArgs<Object>(s, e.getValue())));
+        session.onSend().add((s, e) -> {
             HybridServerEventArgs<Object> args = new HybridServerEventArgs<Object>(s, e.getValue());
-            raiseEvent(onSend, args);
+            publishEvent(onSend, args);
             e.setValue(args.getValue());
             e.setCancel(args.isCancel());
         });
@@ -161,7 +161,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         }
         sessionsByTcp.put(client, session);
         client.send(newAck(session));
-        raiseEventAsync(onConnected, new NEventArgs<HybridSession>(session));
+        publishEventAsync(onConnected, new NEventArgs<HybridSession>(session));
         drainPendingTcpData(client, session);
 
         InetSocketAddress endpoint = HybridClient.udpEndpoint(hello.udpLocalHost, hello.udpLocalPort, client.getRemoteEndpoint());
@@ -235,7 +235,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         }
         sessionsById.remove(session.sessionId, session);
         try {
-            raiseEvent(onDisconnected, new NEventArgs<HybridSession>(session));
+            publishEvent(onDisconnected, new NEventArgs<HybridSession>(session));
         } finally {
             session.detach("tcp-disconnected", false);
         }
@@ -256,7 +256,7 @@ public final class HybridServer implements AutoCloseable, EventPublisher<HybridS
         onConnected.purge();
         onDisconnected.purge();
         onError.purge();
-        raiseEventAsync(onClosed, EventArgs.EMPTY);
+        publishEventAsync(onClosed, EventArgs.EMPTY);
     }
 
     @Override

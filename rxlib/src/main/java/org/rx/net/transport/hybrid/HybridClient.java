@@ -56,27 +56,27 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
         ensureTcpCodec(this.config.getTcpClientConfig(), this.config.getUdpClientConfig().getCodec());
         udpClient = new UdpClient(this.config.getUdpBindPort(), this.config.getUdpClientConfig());
         tcpClient = new DefaultTcpClient(this.config.getTcpClientConfig());
-        tcpClient.onReceive.combine(this::onTcpReceive);
-        tcpClient.onConnected.combine((s, e) -> raiseEventAsync(onConnected, EventArgs.EMPTY));
-        tcpClient.onDisconnected.combine((s, e) -> {
+        tcpClient.onReceive.add(this::onTcpReceive);
+        tcpClient.onConnected.add((s, e) -> publishEventAsync(onConnected, EventArgs.EMPTY));
+        tcpClient.onDisconnected.add((s, e) -> {
             DefaultHybridSession current = session;
             if (current != null) {
                 current.detach("tcp-disconnected");
             }
-            raiseEventAsync(onDisconnected, EventArgs.EMPTY);
+            publishEventAsync(onDisconnected, EventArgs.EMPTY);
         });
-        tcpClient.onReconnecting.combine((s, e) -> {
+        tcpClient.onReconnecting.add((s, e) -> {
             NEventArgs<InetSocketAddress> args = new NEventArgs<InetSocketAddress>(e.getValue());
-            raiseEvent(onReconnecting, args);
+            publishEvent(onReconnecting, args);
             e.setValue(args.getValue());
         });
-        tcpClient.onReconnected.combine((s, e) -> {
+        tcpClient.onReconnected.add((s, e) -> {
             DefaultHybridSession created = createSession();
             sendHello(created);
-            raiseEventAsync(onReconnected, EventArgs.EMPTY);
+            publishEventAsync(onReconnected, EventArgs.EMPTY);
         });
-        tcpClient.onError.combine((s, e) -> raiseEventAsync(onError, e));
-        udpClient.onReceive.combine(this::onUdpReceive);
+        tcpClient.onError.add((s, e) -> publishEventAsync(onError, e));
+        udpClient.onReceive.add(this::onUdpReceive);
     }
 
     public void connect(InetSocketAddress serverEndpoint) throws TimeoutException {
@@ -161,7 +161,7 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
 
     public void send(Object packet, HybridSendOptions options) {
         NEventArgs<Object> args = new NEventArgs<Object>(packet);
-        raiseEvent(onSend, args);
+        publishEvent(onSend, args);
         if (args.isCancel()) {
             return;
         }
@@ -246,14 +246,14 @@ public final class HybridClient implements AutoCloseable, EventPublisher<HybridC
     }
 
     void bindSession(DefaultHybridSession created) {
-        created.onReceive().combine((s, e) -> raiseEventAsync(onReceive, e));
+        created.onReceive().add((s, e) -> publishEventAsync(onReceive, e));
     }
 
     void sendHello(DefaultHybridSession created) {
         bindSession(created);
         session = created;
         tcpClient.send(newHello(created));
-        raiseEventAsync(onSessionReady, new NEventArgs<HybridSession>(created));
+        publishEventAsync(onSessionReady, new NEventArgs<HybridSession>(created));
     }
 
     DefaultHybridSession currentSession() {

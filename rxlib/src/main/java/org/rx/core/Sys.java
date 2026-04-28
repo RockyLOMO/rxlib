@@ -601,7 +601,7 @@ public final class Sys extends SystemUtils {
     }
 
     public static <T> T deepClone(T obj) {
-        return Serializer.DEFAULT.deserialize(Serializer.DEFAULT.serialize(obj));
+        return JdkAndJsonSerializer.DEFAULT.deserialize(JdkAndJsonSerializer.DEFAULT.serialize(obj));
     }
 
     public static String fastCacheKey(String region, Object... args) {

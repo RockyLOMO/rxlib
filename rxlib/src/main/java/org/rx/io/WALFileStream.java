@@ -228,7 +228,7 @@ public final class WALFileStream extends DuplexStream implements EventPublisher<
                 long resize = length + growSize;
                 log.info("growSize {} {}->{}", getName(), length, resize);
                 _setLength(resize);
-                raiseEvent(onGrow, EventArgs.EMPTY);
+                publishEvent(onGrow, EventArgs.EMPTY);
                 return true;
             }
 

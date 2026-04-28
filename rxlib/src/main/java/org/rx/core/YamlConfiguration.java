@@ -137,7 +137,7 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
             }
         }
         watcher = new FileWatcher(Files.getFullPath(this.outputFile = outputFile), p -> p.toString().equals(this.outputFile));
-        watcher.onChanged.combine((s, e) -> {
+        watcher.onChanged.add((s, e) -> {
             String filePath = e.getPath().toString();
             log.info("Config changing {} {} -> {}", e.isCreate(), filePath, yaml);
             if (!reloadWatchedYaml(filePath, e.isDelete(), false)) {
@@ -145,7 +145,7 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
                 return;
             }
             log.info("Config changed {} {} -> {}", e.isCreate(), filePath, yaml);
-            raiseEvent(onChanged, new ChangedEventArgs(filePath));
+            publishEvent(onChanged, new ChangedEventArgs(filePath));
         });
 
         return this;
@@ -170,7 +170,7 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
             return;
         }
         log.info("Config changed {} -> {}", filePath, yaml);
-        raiseEvent(onChanged, new ChangedEventArgs(filePath));
+        publishEvent(onChanged, new ChangedEventArgs(filePath));
     }
 
     public synchronized YamlConfiguration write(@NonNull String fileName) {

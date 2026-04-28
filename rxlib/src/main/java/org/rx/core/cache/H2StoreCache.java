@@ -1045,7 +1045,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         }
 
         if (op.type == PendingOpType.REMOVE && op.expiredEventEntry != null && deleteResult != DeleteResult.SKIPPED_NEWER) {
-            raiseEvent(onExpired, castEntry(op.expiredEventEntry));
+            publishEvent(onExpired, castEntry(op.expiredEventEntry));
         }
 
         persistedSeq.merge(key, op.seq, Math::max);

@@ -3,7 +3,6 @@ package org.rx.net.dns;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.bean.RandomList;
-import org.rx.core.Tasks;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -81,7 +80,7 @@ class DnsOptimizationTest {
             AtomicReference<Throwable> firstError = new AtomicReference<>();
             CopyOnWriteArrayList<InetAddress> results = new CopyOnWriteArrayList<>();
             for (int i = 0; i < threads; i++) {
-                Tasks.run(() -> {
+                Thread thread = new Thread(() -> {
                     try (DnsClient client = new DnsClient(Collections.singletonList(new InetSocketAddress("127.0.0.1", dnsPort)))) {
                         start.await();
                         results.add(client.resolve(host));
@@ -90,11 +89,13 @@ class DnsOptimizationTest {
                     } finally {
                         done.countDown();
                     }
-                });
+                }, "dns-optimization-test-" + i);
+                thread.setDaemon(true);
+                thread.start();
             }
 
             start.countDown();
-            assertTrue(resolving.await(3, TimeUnit.SECONDS));
+            assertTrue(resolving.await(10, TimeUnit.SECONDS));
             Thread.sleep(200);
             assertEquals(1, resolveCalls.get(), "并发相同域名请求应只触发一次 resolveHost");
 

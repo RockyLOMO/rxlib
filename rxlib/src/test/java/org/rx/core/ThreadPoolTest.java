@@ -1025,7 +1025,7 @@ public class ThreadPoolTest extends AbstractTester {
         //线程trace，支持异步trace包括Executor(ThreadPool), ScheduledExecutorService(WheelTimer), CompletableFuture.xxAsync(), parallelStream()系列方法。
         RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
         ThreadPool.traceIdGenerator = () -> UUID.randomUUID().toString().replace("-", "");
-        ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e));
+        ThreadPool.onTraceIdChanged.add((s, e) -> MDC.put("rx-traceId", e));
         ThreadPool pool = new ThreadPool(3, 1, new IntWaterMark(20, 40), "DEV");
 
         //当线程池无空闲线程时，任务放置队列后，当队列任务执行时会带上正确的traceId
@@ -1214,7 +1214,7 @@ public class ThreadPoolTest extends AbstractTester {
     @Test
     public void serialAsync() {
         RxConfig.INSTANCE.getThreadPool().setTraceName("rx-traceId");
-        ThreadPool.onTraceIdChanged.combine((s, e) -> MDC.put("rx-traceId", e));
+        ThreadPool.onTraceIdChanged.add((s, e) -> MDC.put("rx-traceId", e));
         ThreadPool.startTrace(null);
 
         ThreadPool pool = Tasks.nextPool();

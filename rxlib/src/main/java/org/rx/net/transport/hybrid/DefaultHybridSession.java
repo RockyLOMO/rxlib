@@ -101,7 +101,7 @@ final class DefaultHybridSession implements HybridSession {
     public HybridSendResult sendWithResult(Object packet, HybridSendOptions options) {
         ensureOpen();
         NEventArgs<Object> args = new NEventArgs<Object>(packet);
-        raiseEvent(onSend, args);
+        publishEvent(onSend, args);
         if (args.isCancel()) {
             CompletableFuture<Void> done = CompletableFuture.completedFuture(null);
             return new HybridSendResult(null, null, 0, 0, 0, done, done, true);
@@ -212,7 +212,7 @@ final class DefaultHybridSession implements HybridSession {
             return;
         }
         metrics.tcpReceivePackets.increment();
-        raiseEvent(onReceive, new NEventArgs<Object>(data.packet));
+        publishEvent(onReceive, new NEventArgs<Object>(data.packet));
     }
 
     void receiveUdp(InetSocketAddress sender, HybridUdpData data) {
@@ -225,7 +225,7 @@ final class DefaultHybridSession implements HybridSession {
             return;
         }
         metrics.udpReceivePackets.increment();
-        raiseEvent(onReceive, new NEventArgs<Object>(data.packet));
+        publishEvent(onReceive, new NEventArgs<Object>(data.packet));
     }
 
     boolean acceptProbe(InetSocketAddress sender, long packetSessionId, long packetToken) {

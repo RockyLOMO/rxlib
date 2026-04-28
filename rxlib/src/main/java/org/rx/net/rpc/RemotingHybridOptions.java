@@ -9,7 +9,7 @@ final class RemotingHybridOptions {
     static final HybridSendOptions CONTROL = HybridSendOptions.FORCE_TCP;
     static final HybridSendOptions METHOD = HybridSendOptions.FORCE_TCP;
     static final HybridSendOptions RESPONSE = HybridSendOptions.FORCE_TCP;
-    static final HybridSendOptions EVENT = HybridSendOptions.FORCE_TCP;
+    static final HybridSendOptions EVENT = new HybridSendOptions();
 
     private RemotingHybridOptions() {
     }

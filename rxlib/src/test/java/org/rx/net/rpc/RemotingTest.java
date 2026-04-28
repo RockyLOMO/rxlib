@@ -201,7 +201,7 @@ public class RemotingTest extends AbstractTester {
         RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(port));
         AtomicInteger subscribePackets = new AtomicInteger();
         HybridServer server = Remoting.registerHybrid(impl, serverConfig);
-        server.onReceive.combine((s, e) -> {
+        server.onReceive.add((s, e) -> {
             if (e.getValue() instanceof EventMessage) {
                 EventMessage message = (EventMessage) e.getValue();
                 if (message.flag == EventFlag.SUBSCRIBE && "onCreate".equals(message.eventName)) {
@@ -288,7 +288,7 @@ public class RemotingTest extends AbstractTester {
 
             UserEventArgs args = new UserEventArgs(PersonBean.LeZhi);
             args.setFlag(7);
-            impl.raiseEvent(eventName, args);
+            impl.publishEvent(eventName, args);
             assertEquals(7, args.getFlag(), "compute 超时后应使用原始参数继续执行");
             sleep(700);
             assertEquals(7, args.getFlag(), "迟到 COMPUTE_ARGS 不能再改写已广播的参数对象");
@@ -365,17 +365,17 @@ public class RemotingTest extends AbstractTester {
         }
 
         UserEventArgs args = new UserEventArgs(PersonBean.LeZhi);
-        facadeGroup.get(0).raiseEvent(eventName, args);
+        facadeGroup.get(0).publishEvent(eventName, args);
         log.info("facade0 flag:{}", args.getFlag());
         assertEquals(1, args.getFlag());
 
         args = new UserEventArgs(PersonBean.LeZhi);
         args.setFlag(1);
-        facadeGroup.get(1).raiseEvent(eventName, args);
+        facadeGroup.get(1).publishEvent(eventName, args);
         log.info("facade1 flag:{}", args.getFlag());
         assertEquals(2, args.getFlag());
 
-        svcImpl.raiseEvent(eventName, args);
+        svcImpl.publishEvent(eventName, args);
         sleep(100);
         log.info("svr flag:{}", args.getFlag());
         assertEquals(2, args.getFlag());
@@ -438,7 +438,7 @@ public class RemotingTest extends AbstractTester {
         RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(endpoint_3307, 0);
         config.setInitHandler((p, c) -> {
             p.attachEvent(eventName, (s, e) -> log.info("attachEvent callback"), false);
-            c.onReconnecting.combine((s, e) -> {
+            c.onReconnecting.add((s, e) -> {
                 InetSocketAddress next = eq(e.getValue().getPort(), endpoint_3307.getPort())
                         ? endpoint_3308 : endpoint_3307;
                 log.info("reconnect -> {}", next);
@@ -450,7 +450,7 @@ public class RemotingTest extends AbstractTester {
 
         UserManager userManager = Remoting.createFacade(UserManager.class, config);
         assertEquals(2, userManager.computeLevel(1, 1));
-        userManager.raiseEvent(eventName, EventArgs.EMPTY);
+        userManager.publishEvent(eventName, EventArgs.EMPTY);
 
         restartServer(svcImpl, endpoint_3308, startDelay);
         sleep(3000);
@@ -467,7 +467,7 @@ public class RemotingTest extends AbstractTester {
             assertEquals(i + 1, userManager.computeLevel(i, 1));
             i++;
         }
-        userManager.raiseEvent(eventName, EventArgs.EMPTY);
+        userManager.publishEvent(eventName, EventArgs.EMPTY);
     }
 
     @Test
