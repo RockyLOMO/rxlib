@@ -8,6 +8,7 @@ import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingContext;
 import org.rx.net.transport.FuryUdpClientCodec;
@@ -42,6 +43,7 @@ public class NameserverImpl implements Nameserver {
     final HybridServer rs;
     @Getter
     final DnsServer dnsServer;
+    final boolean ownDnsServer;
     @Setter
     long syncDelay = 500;
     final UdpClient ss;
@@ -62,9 +64,16 @@ public class NameserverImpl implements Nameserver {
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
+        this(config, null);
+    }
+
+    public NameserverImpl(@NonNull NameserverConfig config, DnsServer dnsServer) {
         this.config = config;
-        dnsServer = new DnsServer(config.getDnsPort());
-        dnsServer.setTtl(config.getDnsTtl());
+        ownDnsServer = dnsServer == null;
+        this.dnsServer = ownDnsServer ? new DnsServer(config.getDnsPort()) : dnsServer;
+        if (ownDnsServer) {
+            this.dnsServer.setTtl(config.getDnsTtl());
+        }
         svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toList());
 
         rs = Remoting.registerHybrid(this, config.getRegisterPort(), false);
@@ -99,13 +108,26 @@ public class NameserverImpl implements Nameserver {
                 syncRegister((Set<InetSocketAddress>) packet);
             }
         });
+        registerHttpPage();
+    }
+
+    void registerHttpPage() {
+        quietly(() -> {
+            HttpServer server = HttpServer.getDefault();
+            if (server != null) {
+                server.requestAsync(NameserverHttpHandler.PAGE_PATH, new NameserverHttpHandler(this));
+                log.info("Nameserver http page registered on {}", NameserverHttpHandler.PAGE_PATH);
+            }
+        });
     }
 
     @Override
     public void close() {
         quietly(rs::close);
         quietly(ss::close);
-        quietly(dnsServer::close);
+        if (ownDnsServer) {
+            quietly(dnsServer::close);
+        }
     }
 
     public synchronized void syncRegister(@NonNull Set<InetSocketAddress> serverEndpoints) {
