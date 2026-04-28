@@ -4,8 +4,11 @@ import org.junit.jupiter.api.Test;
 import org.rx.net.rpc.protocol.EventFlag;
 import org.rx.net.rpc.protocol.EventMessage;
 import org.rx.net.rpc.protocol.MethodMessage;
+import org.rx.net.transport.hybrid.HybridSendOptions;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RemotingHybridRouteOptionsTest {
     @Test
@@ -17,9 +20,17 @@ class RemotingHybridRouteOptionsTest {
 
     @Test
     void broadcastAndPublishStayAutoRoute() {
-        assertSame(RemotingHybridOptions.EVENT, RemotingHybridOptions.event(new EventMessage("e", EventFlag.PUBLISH)));
-        assertSame(RemotingHybridOptions.EVENT, RemotingHybridOptions.event(new EventMessage("e", EventFlag.BROADCAST)));
-        assertSame(RemotingHybridOptions.EVENT, RemotingHybridOptions.event(null));
+        HybridSendOptions publish = RemotingHybridOptions.event(new EventMessage("e", EventFlag.PUBLISH));
+        HybridSendOptions broadcast = RemotingHybridOptions.event(new EventMessage("e", EventFlag.BROADCAST));
+        HybridSendOptions fallback = RemotingHybridOptions.event(null);
+
+        assertSame(RemotingHybridOptions.EVENT, publish);
+        assertSame(RemotingHybridOptions.EVENT, broadcast);
+        assertSame(RemotingHybridOptions.EVENT, fallback);
+        assertFalse(publish.isForceTcp());
+        assertFalse(broadcast.isForceTcp());
+        assertFalse(fallback.isForceTcp());
+        assertTrue(publish.isFallbackToTcpOnUdpFailure());
     }
 
     @Test

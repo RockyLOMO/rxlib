@@ -51,6 +51,7 @@ import org.rx.exception.InvalidException;
 import org.rx.io.Bytes;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
+import org.rx.net.dns.DoHClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.EndpointTracer;
@@ -219,12 +220,16 @@ public final class Sockets {
         if (CollectionUtils.isEmpty(nameServerList)) {
             throw new InvalidException("Empty server list");
         }
-        DnsClient client = new DnsClient(nameServerList);
-        injectNameService((srcIp, host) -> client.resolveAll(host));
+        injectNameService(new DnsClientNameService(nameServerList));
+    }
+
+    public static void injectNameService(@NonNull DoHClient client) {
+        injectNameService((DnsServer.ResolveInterceptor) client);
     }
 
     @SneakyThrows
     public static void injectNameService(@NonNull DnsServer.ResolveInterceptor interceptor) {
+        DnsServer.ResolveInterceptor old = nsInterceptor;
         if (nsInterceptor == null) {
             synchronized (Sockets.class) {
                 if (nsInterceptor == null) {
@@ -248,6 +253,32 @@ public final class Sockets {
             }
         }
         nsInterceptor = interceptor;
+        closeOldNameService(old, interceptor);
+    }
+
+    private static void closeOldNameService(DnsServer.ResolveInterceptor old, DnsServer.ResolveInterceptor current) {
+        if (old == null || old == current || !(old instanceof AutoCloseable)) {
+            return;
+        }
+        quietly(((AutoCloseable) old)::close);
+    }
+
+    static final class DnsClientNameService implements DnsServer.ResolveInterceptor, AutoCloseable {
+        final DnsClient client;
+
+        DnsClientNameService(List<InetSocketAddress> nameServerList) {
+            client = new DnsClient(nameServerList);
+        }
+
+        @Override
+        public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+            return client.resolveAll(host);
+        }
+
+        @Override
+        public void close() {
+            client.close();
+        }
     }
 
     private static Object nsProxy(Object ns) {
