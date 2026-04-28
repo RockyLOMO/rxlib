@@ -69,7 +69,7 @@ public final class UdpHolePunchClient implements AutoCloseable {
         }
         this.transport = transport;
         this.ownTransport = ownTransport;
-        transport.onReceive.combine(receiveHandler);
+        transport.onReceive.add(receiveHandler);
     }
 
     public InetSocketAddress getLocalEndpoint() {

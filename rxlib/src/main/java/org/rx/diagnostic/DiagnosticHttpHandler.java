@@ -1158,7 +1158,7 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
         long started = System.currentTimeMillis();
         StringBuilder echo = new StringBuilder(8192);
         try (ShellCommand sc = new ShellCommand(filter.toolCmd, Strings.isBlank(filter.toolWorkspace) ? null : filter.toolWorkspace)) {
-            sc.onPrintOut.combine((s, e) -> {
+            sc.onPrintOut.add((s, e) -> {
                 if (echo.length() < 131072) {
                     echo.append(e.toString());
                 }

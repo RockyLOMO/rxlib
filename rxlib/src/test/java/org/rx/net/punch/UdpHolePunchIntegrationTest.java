@@ -36,7 +36,7 @@ class UdpHolePunchIntegrationTest {
             UdpHolePunchSession sessionB = futureB.get(10, TimeUnit.SECONDS);
 
             CountDownLatch receiveLatch = new CountDownLatch(1);
-            sessionB.onReceive.combine((s, e) -> {
+            sessionB.onReceive.add((s, e) -> {
                 if ("direct-ping".equals(e.getValue().packet())) {
                     receiveLatch.countDown();
                     s.reply(e.getValue(), "direct-pong");

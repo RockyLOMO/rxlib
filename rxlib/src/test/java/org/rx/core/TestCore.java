@@ -339,18 +339,18 @@ public class TestCore extends AbstractTester {
         UserManagerImpl mgr = new UserManagerImpl();
         PersonBean p = PersonBean.YouFan;
 
-        mgr.onCreate.last((s, e) -> System.out.println("always tail:" + e));
+        mgr.onCreate.add(Delegate.Order.Last, (s, e) -> System.out.println("always tail:" + e));
         TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
         TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
         TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
 
-        mgr.onCreate.combine(a);
+        mgr.onCreate.add(a);
         mgr.create(p);  //触发事件（a执行）
 
-        mgr.onCreate.combine(b);
+        mgr.onCreate.add(b);
         mgr.create(p); //触发事件（a, b执行）
 
-        mgr.onCreate.combine(a, b);  //会去重
+        mgr.onCreate.add(a, b);  //会去重
         mgr.create(p); //触发事件（a, b执行）
 
         mgr.onCreate.remove(b);
@@ -359,7 +359,7 @@ public class TestCore extends AbstractTester {
         mgr.onCreate.replace(a, c);
         mgr.create(p); //触发事件（a, c执行）
 
-        mgr.onCreate.purge().combine((s, e) -> {
+        mgr.onCreate.purge().add((s, e) -> {
             e.setHandled(true);
             System.out.println("only handled");
         }, a);
@@ -478,17 +478,17 @@ public class TestCore extends AbstractTester {
     @Test
     public void shellExec() {
         ShellCommand executor = new ShellCommand("ping www.baidu.com", null);
-        executor.onPrintOut.combine(ShellCommand.CONSOLE_OUT_HANDLER);
+        executor.onPrintOut.add(ShellCommand.CONSOLE_OUT_HANDLER);
         executor.start().waitFor();
 
         executor = new ShellCommand("ping www.baidu.com", null);
         ShellCommand finalExecutor = executor;
-        executor.onPrintOut.combine((s, e) -> {
+        executor.onPrintOut.add((s, e) -> {
             System.out.println("K: " + e.getLine());
             finalExecutor.kill();
         });
-        executor.onPrintOut.combine(new ShellCommand.FileOutHandler(AbstractTester.path("out.txt")));
-        executor.onExited.combine((s, e) -> System.out.println("shell exit"));
+        executor.onPrintOut.add(new ShellCommand.FileOutHandler(AbstractTester.path("out.txt")));
+        executor.onExited.add((s, e) -> System.out.println("shell exit"));
         executor.start().waitFor();
 
         System.out.println("done");

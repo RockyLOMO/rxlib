@@ -28,7 +28,7 @@ class HybridTransportUdpDirectIntegrationTest {
         String[] value = new String[1];
         try (HybridServer server = new HybridServer(serverConfig);
              HybridClient client = new HybridClient(clientConfig)) {
-            server.onReceive.combine((s, e) -> {
+            server.onReceive.add((s, e) -> {
                 value[0] = (String) e.getValue();
                 received.countDown();
             });

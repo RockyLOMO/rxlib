@@ -477,7 +477,7 @@ public class JdbcExecutor extends Disposable implements EventPublisher<JdbcExecu
             } else {
                 log.info("[ExecTimeout] {}", sql);
             }
-            raiseEvent(onExecuteTimeout, new TimeoutEventArgs(executeTimeoutMillis, sql, params));
+            publishEvent(onExecuteTimeout, new TimeoutEventArgs(executeTimeoutMillis, sql, params));
             return false;
         }, executeTimeoutMillis);
     }

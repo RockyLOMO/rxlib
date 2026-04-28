@@ -1,10 +1,10 @@
 package org.rx.net.dns;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
 import io.netty.handler.codec.dns.DatagramDnsQueryDecoder;
 import io.netty.handler.codec.dns.DatagramDnsResponseEncoder;
-import io.netty.handler.codec.dns.TcpDnsQueryDecoder;
-import io.netty.handler.codec.dns.TcpDnsResponseEncoder;
+import io.netty.handler.codec.dns.DnsRecordType;
 import io.netty.util.AttributeKey;
 import io.netty.util.concurrent.Promise;
 import lombok.Getter;
@@ -40,6 +40,9 @@ public class DnsServer extends Disposable {
     static final AttributeKey<DnsServer> ATTR_SVR = AttributeKey.valueOf("svr");
     static final AttributeKey<DnsClient> ATTR_UPSTREAM = AttributeKey.valueOf("upstream");
     final ServerBootstrap serverBootstrap;
+    final DnsClient upstreamClient;
+    final Channel tcpChannel;
+    final Channel udpChannel;
     @Setter
     int ttl = 1800;
     @Setter
@@ -57,15 +60,19 @@ public class DnsServer extends Disposable {
     // Tracks keys currently being resolved to prevent thundering-herd cache stampede
     final Set<String> resolvingKeys = ConcurrentHashMap.newKeySet();
     final Map<String, Promise<List<InetAddress>>> resolvingPromises = new ConcurrentHashMap<>();
+    @Getter
+    volatile DnsDoHConfig dohConfig = new DnsDoHConfig();
 
     public void setInterceptors(RandomList<ResolveInterceptor> interceptors) {
-        if (CollectionUtils.isEmpty(this.interceptors = interceptors)) {
+        if (CollectionUtils.isEmpty(interceptors)) {
+            this.interceptors = null;
+            interceptorCache = null;
             return;
         }
 
         H2StoreCache<Object, Object> cache = (H2StoreCache<Object, Object>) H2StoreCache.DEFAULT;
         //todo srcIp
-//        cache.onExpired.combine((s, entry) -> {
+//        cache.onExpired.add((s, entry) -> {
 //            String key;
 //            if ((key = as(entry.getKey(), String.class)) == null || !key.startsWith(DOMAIN_PREFIX)) {
 //                return;
@@ -83,6 +90,7 @@ public class DnsServer extends Disposable {
 //            }, CachePolicy.absolute(ttl)));
 //        });
         interceptorCache = (Cache) cache;
+        this.interceptors = interceptors;
     }
 
     public DnsServer(int port) {
@@ -95,19 +103,32 @@ public class DnsServer extends Disposable {
             nameServerList = Collections.emptyList();
         }
 
-        DnsClient client = new DnsClient(nameServerList);
-        serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new TcpDnsQueryDecoder(), new TcpDnsResponseEncoder(), DnsHandler.DEFAULT))
-                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, client);
-        serverBootstrap.bind(port);
+        upstreamClient = new DnsClient(nameServerList);
+        serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new DnsTcpPortMuxHandler(this)))
+                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient);
+        tcpChannel = serverBootstrap.bind(port).channel();
 
-        Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
-                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, client)
-                .bind(port);
+        udpChannel = Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
+                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient)
+                .bind(port).channel();
     }
 
     @Override
     protected void dispose() {
+        closeChannel(tcpChannel);
+        closeChannel(udpChannel);
+        upstreamClient.close();
         Sockets.closeBootstrap(serverBootstrap);
+    }
+
+    private void closeChannel(Channel channel) {
+        if (channel != null) {
+            if (channel.eventLoop().inEventLoop()) {
+                channel.close();
+            } else {
+                channel.close().syncUninterruptibly();
+            }
+        }
     }
 
     public List<InetAddress> getHosts(String host) {
@@ -131,6 +152,24 @@ public class DnsServer extends Disposable {
 
     String cacheKey(String domain) {
         return domainKeyCache.get(domain, k -> DOMAIN_PREFIX.concat(k));
+    }
+
+    String cacheKey(String domain, DnsRecordType queryType) {
+        return domainKeyCache.get(queryType.name() + ":" + domain,
+                k -> DOMAIN_PREFIX.concat("int:").concat(queryType.name()).concat(":").concat(domain));
+    }
+
+    String resolveKey(String domain) {
+        return domainKeyCache.get("*:" + domain, k -> DOMAIN_PREFIX.concat("int:*:").concat(domain));
+    }
+
+    public DnsServer enableDoH(DnsDoHConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("config");
+        }
+        config.setEnabled(true);
+        dohConfig = config;
+        return this;
     }
 
     private List<InetAddress> weightedHosts(RandomList<InetAddress> ips) {

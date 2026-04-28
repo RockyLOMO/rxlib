@@ -43,7 +43,7 @@ public class YamlConfigurationTest {
         conf.snapshots.add(valid);
 
         AtomicInteger changedCount = new AtomicInteger();
-        conf.onChanged.combine((s, e) -> changedCount.incrementAndGet());
+        conf.onChanged.add((s, e) -> changedCount.incrementAndGet());
         conf.raiseChange(confFile.toString());
 
         assertEquals(1, changedCount.get());
@@ -64,7 +64,7 @@ public class YamlConfigurationTest {
         conf.snapshots.add(new LinkedHashMap<String, Object>());
 
         AtomicInteger changedCount = new AtomicInteger();
-        conf.onChanged.combine((s, e) -> changedCount.incrementAndGet());
+        conf.onChanged.add((s, e) -> changedCount.incrementAndGet());
         assertDoesNotThrow(() -> conf.raiseChange(confFile.toString()));
 
         assertEquals(0, changedCount.get());

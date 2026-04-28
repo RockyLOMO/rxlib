@@ -68,13 +68,13 @@ public class CodecUtil {
     }
 
     public static <T> String serializeToBase64(T obj) {
-        byte[] data = Serializer.FURY.serializeToBytes(obj);
+        byte[] data = Serializer.DEFAULT.serializeToBytes(obj);
         return convertToBase64(data);
     }
 
     public static <T> T deserializeFromBase64(String base64) {
         byte[] data = convertFromBase64(base64);
-        return Serializer.FURY.deserialize(new MemoryStream(data, 0, data.length));
+        return Serializer.DEFAULT.deserialize(new MemoryStream(data, 0, data.length));
     }
 
     //guava hash
@@ -94,7 +94,7 @@ public class CodecUtil {
 //    }
 
     public static BigInteger hashUnsigned64(Object... args) {
-        return hashUnsigned64(Serializer.FURY.serializeToBytes(args));
+        return hashUnsigned64(Serializer.DEFAULT.serializeToBytes(args));
     }
 
     public static BigInteger hashUnsigned64(byte[] buf) {
@@ -112,11 +112,11 @@ public class CodecUtil {
     }
 
     public static long hash64(Object... array) {
-        return hash64(Serializer.FURY.serializeToBytes(array));
+        return hash64(Serializer.DEFAULT.serializeToBytes(array));
     }
 
     public static long hash64(Object single) {
-        return hash64(Serializer.FURY.serializeToBytes(single));
+        return hash64(Serializer.DEFAULT.serializeToBytes(single));
     }
 
     public static long hash64(String data) {

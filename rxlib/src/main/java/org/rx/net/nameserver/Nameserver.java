@@ -50,6 +50,7 @@ public interface Nameserver extends EventPublisher<Nameserver>, AutoCloseable {
     String EVENT_APP_ADDRESS_CHANGED = "APP_ADDRESS_CHANGED";
     String EVENT_APP_ATTRS_CHANGED = "APP_ATTRS_CHANGED";
     String APP_NAME_KEY = "app.name";
+    String PUBLIC_IP_KEY = "publicIp";
 
     default int register(String appName, Set<InetSocketAddress> serverEndpoints) {
         return register(appName, RandomList.DEFAULT_WEIGHT, serverEndpoints);

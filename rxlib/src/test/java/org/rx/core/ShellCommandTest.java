@@ -35,8 +35,8 @@ class ShellCommandTest {
         List<String> lines = new CopyOnWriteArrayList<>();
         CountDownLatch exited = new CountDownLatch(1);
         try (ShellCommand command = new ShellCommand(chainedEchoCommand(), null, Constants.DEFAULT_INTERVAL, false).withCloseFlag()) {
-            command.onPrintOut.combine((s, e) -> lines.add(e.getLine().trim()));
-            command.onExited.combine((s, e) -> exited.countDown());
+            command.onPrintOut.add((s, e) -> lines.add(e.getLine().trim()));
+            command.onExited.add((s, e) -> exited.countDown());
 
             command.start();
             assertEquals(0, command.waitFor());
@@ -52,7 +52,7 @@ class ShellCommandTest {
         AtomicInteger exits = new AtomicInteger();
         CountDownLatch exited = new CountDownLatch(1);
         try (ShellCommand command = new ShellCommand(longRunningShellCommand(), null, Constants.DEFAULT_INTERVAL, false).withCloseFlag()) {
-            command.onExited.combine((s, e) -> {
+            command.onExited.add((s, e) -> {
                 exits.incrementAndGet();
                 exited.countDown();
             });

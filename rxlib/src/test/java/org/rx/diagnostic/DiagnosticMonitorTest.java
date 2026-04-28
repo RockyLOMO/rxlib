@@ -354,7 +354,7 @@ public class DiagnosticMonitorTest {
         config.setJfrMode("off");
         CountDownLatch latch = new CountDownLatch(1);
         DiagnosticMonitor monitor = new DiagnosticMonitor(config);
-        monitor.onIncident.combine((sender, event) -> {
+        monitor.onIncident.add((sender, event) -> {
             if (event.getType() == DiagnosticIncidentType.CPU_HIGH) {
                 latch.countDown();
             }

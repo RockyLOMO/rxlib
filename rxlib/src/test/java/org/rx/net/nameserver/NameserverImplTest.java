@@ -11,7 +11,9 @@ import java.net.ServerSocket;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.rx.core.Extends.sleep;
 
@@ -57,6 +59,27 @@ class NameserverImplTest {
 
             awaitEmpty(server, "billing", 5000);
         } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void nameserverClientRegistersPublicIpAttr() throws Exception {
+        int dnsPort = freePort();
+        int registerPort = freePort();
+        int syncPort = freePort();
+        NameserverImpl server = newServer(dnsPort, registerPort, syncPort);
+        NameserverClient client = new NameserverClient("inventory");
+        client.publicIpResolver = () -> "1.1.1.1";
+        try {
+            client.registerAsync(Collections.singleton(new InetSocketAddress("127.0.0.1", registerPort))).get(5, TimeUnit.SECONDS);
+
+            List<Nameserver.InstanceInfo> infos = server.discover("inventory", Collections.singletonList(Nameserver.PUBLIC_IP_KEY));
+
+            assertEquals("1.1.1.1", infos.get(0).getAttributes().get(Nameserver.PUBLIC_IP_KEY));
+        } finally {
+            client.close();
             server.close();
         }
     }

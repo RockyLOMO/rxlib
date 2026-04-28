@@ -49,7 +49,7 @@ public interface EventPublisher<TSender extends EventPublisher<TSender>> extends
     default <TEvent> void attachEvent(@NonNull String eventName, TripleAction<TSender, TEvent> eventDelegate, boolean combine) {
         Delegate<TSender, TEvent> d = Delegate.wrap(this, eventName);
         if (combine) {
-            d.combine(eventDelegate);
+            d.add(eventDelegate);
             return;
         }
         d.replace(eventDelegate);
@@ -62,28 +62,28 @@ public interface EventPublisher<TSender extends EventPublisher<TSender>> extends
 
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
-    default <TEvent> void raiseEvent(@NonNull String eventName, TEvent event) {
+    default <TEvent> void publishEvent(@NonNull String eventName, TEvent event) {
         Delegate<TSender, TEvent> d = Delegate.wrap(this, eventName);
         d.invoke((TSender) this, event);
     }
 
     @SuppressWarnings(NON_UNCHECKED)
     @SneakyThrows
-    default <TEvent> void raiseEvent(Delegate<TSender, TEvent> eventDelegate, @NonNull TEvent event) {
+    default <TEvent> void publishEvent(Delegate<TSender, TEvent> eventDelegate, @NonNull TEvent event) {
         if (eventDelegate.isEmpty()) {
             return;
         }
         eventDelegate.invoke((TSender) this, event);
     }
 
-    default <TEvent> CompletableFuture<Void> raiseEventAsync(String eventName, TEvent event) {
-        return asyncScheduler().runAsync(() -> raiseEvent(eventName, event));
+    default <TEvent> CompletableFuture<Void> publishEventAsync(String eventName, TEvent event) {
+        return asyncScheduler().runAsync(() -> publishEvent(eventName, event));
     }
 
-    default <TEvent> CompletableFuture<Void> raiseEventAsync(Delegate<TSender, TEvent> eventDelegate, TEvent event) {
+    default <TEvent> CompletableFuture<Void> publishEventAsync(Delegate<TSender, TEvent> eventDelegate, TEvent event) {
         if (eventDelegate.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
-        return asyncScheduler().runAsync(() -> raiseEvent(eventDelegate, event));
+        return asyncScheduler().runAsync(() -> publishEvent(eventDelegate, event));
     }
 }

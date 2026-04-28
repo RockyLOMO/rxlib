@@ -605,7 +605,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
             return;
         }
 
-        raiseEventAsync(onReceive, new NEventArgs<>(message)).whenComplete((r, e) -> {
+        publishEventAsync(onReceive, new NEventArgs<>(message)).whenComplete((r, e) -> {
             if (e == null) {
                 onReceiveSuccess(sender, key, message);
                 return;
@@ -826,7 +826,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
 
     void onHandlerError(Throwable error) {
         log.error("udp client error {}", localEndpoint, error);
-        quietly(() -> raiseEvent(onError, new NEventArgs<>(error)));
+        quietly(() -> publishEvent(onError, new NEventArgs<>(error)));
     }
 
     @Override

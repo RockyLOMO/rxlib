@@ -63,7 +63,7 @@ public class RWebConfig implements WebMvcConfigurer {
         }
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
         conf.setTraceName(traceName);
-        ThreadPool.onTraceIdChanged.first((s, e) -> logCtx(conf.getTraceName(), e));
+        ThreadPool.onTraceIdChanged.add(Delegate.Order.First, (s, e) -> logCtx(conf.getTraceName(), e));
     }
 
     public static void beginTrace(HttpServletRequest request, HttpServletResponse response) {

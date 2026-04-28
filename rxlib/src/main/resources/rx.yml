@@ -64,6 +64,13 @@ app:
         - ntp.tencent.com
         - cn.pool.ntp.org
     dns:
+      dohEnabled: false
+      dohPath: /dns-query
+      dohAllowPlainHttp: false
+      dohMaxMessageBytes: 65535
+      dohTimeoutMillis: 5000
+      dohMaxInFlight: 64
+      dohEndpoints: []
       inlandServers:
         - "114.114.114.114:53"
       outlandServers:

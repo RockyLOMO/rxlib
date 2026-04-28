@@ -18,6 +18,7 @@ import org.rx.exception.FallbackException;
 import org.rx.exception.InvalidException;
 import org.rx.exception.LoggingAgent;
 import org.rx.exception.TraceHandler;
+import org.rx.io.JdkAndJsonSerializer;
 import org.rx.io.Serializer;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
@@ -601,7 +602,7 @@ public final class Sys extends SystemUtils {
     }
 
     public static <T> T deepClone(T obj) {
-        return Serializer.DEFAULT.deserialize(Serializer.DEFAULT.serialize(obj));
+        return JdkAndJsonSerializer.DEFAULT.deserialize(JdkAndJsonSerializer.DEFAULT.serialize(obj));
     }
 
     public static String fastCacheKey(String region, Object... args) {

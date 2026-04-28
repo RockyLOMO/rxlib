@@ -16,6 +16,7 @@ import static org.rx.core.Sys.*;
 //https://github.com/RuedigerMoeller/fast-serialization
 @Slf4j
 public class JdkAndJsonSerializer implements Serializer, JsonTypeInvoker {
+    public static final Serializer DEFAULT = new JdkAndJsonSerializer();
     static class JsonWrapper implements Compressible {
         private static final long serialVersionUID = 8279878386622487781L;
 

@@ -70,7 +70,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             }
 
             TcpServerEventArgs<Object> args = new TcpServerEventArgs<>(this, pack);
-            owner.raiseEvent(owner.onSend, args);
+            owner.publishEvent(owner.onSend, args);
             if (args.isCancel() || !isConnected()) {
                 log.warn("Send cancelled or client {} disconnected", remoteEndpoint);
                 return;
@@ -107,7 +107,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             admitted = true;
             clients.put(remoteEndpoint = (InetSocketAddress) channel.remoteAddress(), this);
             TcpServerEventArgs<Object> args = new TcpServerEventArgs<>(this, null);
-            owner.raiseEvent(owner.onConnected, args);
+            owner.publishEvent(owner.onConnected, args);
             if (args.isCancel()) {
                 log.warn("Force close client");
                 Sockets.closeOnFlushed(channel);
@@ -121,15 +121,15 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
             if (tryAs(msg, PingPacket.class, p -> {
                 ctx.writeAndFlush(p);
-                owner.raiseEventAsync(owner.onPing, new TcpServerEventArgs<>(this, p));
+                owner.publishEventAsync(owner.onPing, new TcpServerEventArgs<>(this, p));
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
             })) {
                 return;
             }
 
             TcpServerEventArgs<Object> args = new TcpServerEventArgs<>(this, msg);
-            raiseEvent(onReceive, args);
-            owner.raiseEventAsync(owner.onReceive, args);
+            publishEvent(onReceive, args);
+            owner.publishEventAsync(owner.onReceive, args);
         }
 
         @Override
@@ -143,7 +143,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             if (endpoint != null) {
                 owner.clients.remove(endpoint, this);
             }
-            owner.raiseEventAsync(owner.onDisconnected, new TcpServerEventArgs<>(this, null));
+            owner.publishEventAsync(owner.onDisconnected, new TcpServerEventArgs<>(this, null));
         }
 
         @Override
@@ -166,7 +166,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             }
 
             TcpServerEventArgs<Throwable> args = new TcpServerEventArgs<>(this, cause);
-            quietly(() -> owner.raiseEvent(owner.onError, args));
+            quietly(() -> owner.publishEvent(owner.onError, args));
             if (args.isCancel()) {
                 return;
             }
@@ -218,10 +218,10 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     }
 
     @Override
-    public <TArgs> CompletableFuture<Void> raiseEventAsync(Delegate<TcpServer, TArgs> event, TArgs args) {
+    public <TArgs> CompletableFuture<Void> publishEventAsync(Delegate<TcpServer, TArgs> event, TArgs args) {
         ThreadPool scheduler = asyncScheduler();
         return scheduler.runAsync(() -> {
-            raiseEvent(event, args);
+            publishEvent(event, args);
             return null;
         }, String.format("ServerEvent%s", IdGenerator.DEFAULT.increment()), RunFlag.PRIORITY.flags());
     }
@@ -237,7 +237,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             serverChannel.close();
         }
         Sockets.closeBootstrap(bootstrap);
-        raiseEvent(onClosed, EventArgs.EMPTY);
+        publishEvent(onClosed, EventArgs.EMPTY);
     }
 
     @SneakyThrows
