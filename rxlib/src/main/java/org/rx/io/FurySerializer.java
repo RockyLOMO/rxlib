@@ -79,12 +79,10 @@ public class FurySerializer implements Serializer {
         synchronized (this) {
             local = furyLocal;
             if (local == null) {
-                local = new FastThreadLocal<Fury>() {
-                    @Override
-                    protected Fury initialValue() {
-                        return newFury(new ArrayList<String>(allowedClassPrefixes));
-                    }
-                };
+                local = FurySupport.sharedFuryLocal(FurySerializer.class, "serializer",
+                        new ArrayList<String>(allowedClassPrefixes),
+                        fury -> FurySupport.registerDateTime(fury,
+                                (short) (REGISTER_BASE_ID + FurySupport.DATE_TIME_REGISTER_ID_OFFSET)));
                 furyLocal = local;
             }
         }

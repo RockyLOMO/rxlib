@@ -12,6 +12,7 @@ import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class FuryUdpClientCodecTest {
@@ -82,6 +83,17 @@ class FuryUdpClientCodecTest {
         } finally {
             encoded.release();
         }
+    }
+
+    @Test
+    void codecsReuseSharedFuryLocalForSameAllowlist() {
+        FuryUdpClientCodec first = FuryUdpClientCodec.createDefault();
+        FuryUdpClientCodec second = FuryUdpClientCodec.createDefault();
+
+        first.fury();
+        second.fury();
+
+        assertSame(first.furyLocal, second.furyLocal);
     }
 
     private void assertInvalidFrame(short magic, int version, int codecId, int payloadLength) {

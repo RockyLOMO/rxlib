@@ -108,12 +108,10 @@ public class FuryUdpClientCodec implements UdpClientCodec {
         synchronized (this) {
             local = furyLocal;
             if (local == null) {
-                local = new FastThreadLocal<Fury>() {
-                    @Override
-                    protected Fury initialValue() {
-                        return newFury(new ArrayList<>(allowedClassPrefixes));
-                    }
-                };
+                local = FuryCodecSupport.sharedFuryLocal(FuryUdpClientCodec.class, "udp-client",
+                        new ArrayList<>(allowedClassPrefixes),
+                        fury -> FuryCodecSupport.registerDateTime(fury,
+                                (short) (REGISTER_BASE_ID + FuryCodecSupport.DATE_TIME_REGISTER_ID_OFFSET)));
                 furyLocal = local;
             }
         }
