@@ -374,6 +374,78 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void shouldScheduleDdns_RequiresPositivePeriodAndDomains() {
+        RSSConf conf = new RSSConf();
+
+        assertTrue(!RssClient.shouldScheduleDdns(conf));
+        conf.ddnsDomains = Collections.singletonList("a.example.com");
+        assertTrue(!RssClient.shouldScheduleDdns(conf));
+        conf.ddnsJobSeconds = 60;
+        assertTrue(RssClient.shouldScheduleDdns(conf));
+    }
+
+    @Test
+    public void applyUdpLeasePool_EnablesAndClampsRssConfig() {
+        RSSConf conf = new RSSConf();
+        conf.udpLeasePoolMinSize = 64;
+        conf.udpLeasePoolMaxSize = 4;
+        conf.udpLeasePoolMaxIdleMillis = 5;
+        conf.udpLeaseRpcBreakerThreshold = 0;
+        conf.udpLeaseRpcBreakerOpenSeconds = 0;
+        SocksConfig config = new SocksConfig();
+
+        RssClient.applyUdpLeasePool(conf, config);
+
+        assertTrue(config.isUdpLeasePoolEnabled());
+        assertEquals(4, config.getUdpLeasePoolMinSize());
+        assertEquals(4, config.getUdpLeasePoolMaxSize());
+        assertEquals(1000, config.getUdpLeasePoolMaxIdleMillis());
+        assertEquals(1, config.getUdpLeaseRpcBreakerThreshold());
+        assertEquals(1, config.getUdpLeaseRpcBreakerOpenSeconds());
+    }
+
+    @Test
+    public void applyUdpLeasePool_DisabledKeepsPoolOff() {
+        RSSConf conf = new RSSConf();
+        conf.udpLeasePoolEnabled = false;
+        SocksConfig config = new SocksConfig();
+        config.setUdpLeasePoolEnabled(true);
+
+        RssClient.applyUdpLeasePool(conf, config);
+
+        assertTrue(!config.isUdpLeasePoolEnabled());
+    }
+
+    @Test
+    public void routeUpstream_KcptunReturnsIndependentSupportWithSelectedFacade() {
+        SocksConfig config = new SocksConfig();
+        AuthenticEndpoint kcp = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 4093), "k", "p");
+        AuthenticEndpoint upstream = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1090), "u", "p");
+        SocksRpcContract facade = new SocksRpcContract() {
+            @Override
+            public void fakeEndpoint(java.math.BigInteger hash, String realEndpoint) {
+            }
+
+            @Override
+            public void addWhiteList(InetAddress endpoint) {
+            }
+
+            @Override
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                return Collections.emptyList();
+            }
+        };
+        UpstreamSupport next = new UpstreamSupport(upstream, facade);
+        config.setKcptunClient(kcp);
+
+        UpstreamSupport routed = RssClient.routeUpstream(config, next);
+
+        assertTrue(routed != next);
+        assertSame(kcp, routed.getEndpoint());
+        assertSame(facade, routed.getFacade());
+    }
+
+    @Test
     @SneakyThrows
     public void nextUpstream_ThrowsWhenNoServerAvailable() {
         RSSConf oldConf = RssClient.rssConf;
