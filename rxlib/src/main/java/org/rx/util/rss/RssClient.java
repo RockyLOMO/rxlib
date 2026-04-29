@@ -52,7 +52,6 @@ import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleAction;
 
 import java.io.OutputStream;
-import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -134,7 +133,7 @@ public final class RssClient {
         }
 
         @Override
-        public void fakeEndpoint(BigInteger hash, String realEndpoint) {
+        public void fakeEndpoint(long hash, String realEndpoint) {
             delegate.fakeEndpoint(hash, realEndpoint);
         }
 

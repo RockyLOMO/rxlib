@@ -10,7 +10,6 @@ import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 
-import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -42,7 +41,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         UnresolvedEndpoint dstEp = new UnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
         String dstEpHost = dstEp.getHost();
         if (dstEpHost.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX)) {
-            UnresolvedEndpoint realEp = SocksRpcContract.fakeDict().get(new BigInteger(dstEpHost.substring(0, dstEpHost.length() - SocksRpcContract.FAKE_HOST_SUFFIX.length())));
+            Long hash = SocksRpcContract.parseFakeHostHash(dstEpHost);
+            UnresolvedEndpoint realEp = hash == null ? null : SocksRpcContract.fakeDict().get(hash);
             if (realEp == null) {
                 log.error("socks5[{}] recover dstEp {} fail", config.getListenPort(), dstEp);
             } else {

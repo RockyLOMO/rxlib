@@ -7,7 +7,6 @@ import org.rx.core.cache.H2StoreCache;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.support.UnresolvedEndpoint;
 
-import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
@@ -22,11 +21,30 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
     int DNS_PORT = 53;
     long ASYNC_TIMEOUT = 4 * 1000;
 
-    static Cache<BigInteger, UnresolvedEndpoint> fakeDict() {
-        return (Cache<BigInteger, UnresolvedEndpoint>) H2StoreCache.DEFAULT;
+    static Cache<Long, UnresolvedEndpoint> fakeDict() {
+        return (Cache<Long, UnresolvedEndpoint>) H2StoreCache.DEFAULT;
     }
 
-    void fakeEndpoint(BigInteger hash, String realEndpoint);
+    static String fakeHost(long hash) {
+        return Long.toHexString(hash) + FAKE_HOST_SUFFIX;
+    }
+
+    static Long parseFakeHostHash(String host) {
+        if (host == null || !host.endsWith(FAKE_HOST_SUFFIX)) {
+            return null;
+        }
+        String token = host.substring(0, host.length() - FAKE_HOST_SUFFIX.length());
+        if (token.length() == 0) {
+            return null;
+        }
+        try {
+            return Long.valueOf(Long.parseUnsignedLong(token, 16));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    void fakeEndpoint(long hash, String realEndpoint);
 
     void addWhiteList(InetAddress endpoint);
 
