@@ -1,15 +1,12 @@
 package org.rx.net.support;
 
-import io.netty.util.NetUtil;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.rx.net.Sockets;
 
 import java.io.Serializable;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.UnknownHostException;
 import java.util.Objects;
 
 @RequiredArgsConstructor
@@ -29,23 +26,14 @@ public class UnresolvedEndpoint implements Serializable {
     public UnresolvedEndpoint(@NonNull InetSocketAddress socketAddress) {
         host = socketAddress.getHostString();
         port = socketAddress.getPort();
-        cache = Sockets.isValidIp(host) ? socketAddress : InetSocketAddress.createUnresolved(host, port);
+        cache = Sockets.newUnresolvedEndpoint(host, port);
     }
 
     public InetSocketAddress socketAddress() {
         if (cache == null) {
-            cache = Sockets.isValidIp(host) ? new InetSocketAddress(parseAddress(host), port)
-                    : InetSocketAddress.createUnresolved(host, port);
+            cache = Sockets.newUnresolvedEndpoint(host, port);
         }
         return cache;
-    }
-
-    private static InetAddress parseAddress(String host) {
-        try {
-            return InetAddress.getByAddress(NetUtil.createByteArrayFromIpAddressString(host));
-        } catch (UnknownHostException e) {
-            throw new IllegalArgumentException(e);
-        }
     }
 
     @Override

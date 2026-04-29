@@ -301,7 +301,7 @@ public final class RssClient {
         }
 
         Action fn = () -> {
-            InetAddress addr = InetAddress.getByName(geoMgr.getPublicIp());
+            InetAddress addr = Sockets.parseIpAddress(geoMgr.getPublicIp());
             eachQuietly(socksServers, p -> p.getFacade().addWhiteList(addr));
         };
         fn.invoke();
@@ -552,7 +552,7 @@ public final class RssClient {
             return;
         }
 
-        InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
+        InetAddress wanIp = Sockets.parseIpAddress(GeoManager.INSTANCE.getPublicIp());
         List<String> subDomains = Linq.from(conf.ddnsDomains)
                 .where(sd -> !DnsClient.inlandClient().resolveAll(sd).contains(wanIp))
                 .select(sd -> sd.substring(0, sd.indexOf("."))).toList();
