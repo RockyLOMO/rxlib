@@ -925,7 +925,13 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         long seq = nextSeq();
         H2CacheItem<Object, Object> tombstone = newTombstone(key, seq);
         PendingOp op = new PendingOp(key, seq, opEpoch, PendingOpType.REMOVE, tombstone);
-        op.expiredEventEntry = snapshotEntry(item);
+        if (!onExpired.isEmpty()) {
+            try {
+                op.expiredEventEntry = snapshotEntry(key, item);
+            } catch (RuntimeException e) {
+                log.warn("skip expired event snapshot key={} id={}: {}", key, item.getId(), e.toString());
+            }
+        }
         PendingOp installed = installDerivedOp(op, observedVersion);
         if (installed == op) {
             l1Cache.put(key, tombstone, tombstone);
@@ -1503,8 +1509,8 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         return (Map.Entry<TK, TV>) entry;
     }
 
-    Map.Entry<Object, Object> snapshotEntry(H2CacheItem<?, ?> item) {
-        return new AbstractMap.SimpleEntry<Object, Object>(item.getKey(), item.getValue());
+    Map.Entry<Object, Object> snapshotEntry(Object key, H2CacheItem<?, ?> item) {
+        return new AbstractMap.SimpleEntry<Object, Object>(key, item.getValue());
     }
 
     static Object wrapPhysicalKey(Object key, String keyPrefix) {
