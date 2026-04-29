@@ -153,7 +153,11 @@ public class RandomList<T> extends AbstractList<T> implements RandomAccess, Seri
 
         lock.writeLock().lock();
         try {
-            findElement(element, true).weight = weight;
+            WeightElement<T> node = findElement(element, true);
+            if (node.weight != weight) {
+                node.weight = weight;
+                change(true);
+            }
         } finally {
             lock.writeLock().unlock();
         }

@@ -32,7 +32,6 @@ class RpcClientPool extends Disposable implements RpcTcpClientPool {
             c.onConnected.purge();
             c.onReconnected.purge();
             c.onReconnecting.purge();
-            c.onPong.purge();
         });
         pool.setBorrowTimeout(template.getTcpConfig().getConnectTimeoutMillis());
         pool.setLeakDetectionThreshold(pool.getIdleTimeout());

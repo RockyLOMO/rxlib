@@ -119,7 +119,7 @@ public class NameserverHttpHandler implements HttpServer.Handler {
             row.put("connected", session.isConnected());
             row.put("appId", attr(attrs, RxConfig.ConfigNames.APP_ID));
             row.put("publicIp", attr(attrs, Nameserver.PUBLIC_IP_KEY));
-            row.put("ping", attr(attrs, "ping"));
+            row.put("ping", heartbeat(session.heartbeatRttMillis()));
             row.put("attrs", formatAttrs(attrs));
             rows.add(row);
         }
@@ -182,6 +182,10 @@ public class NameserverHttpHandler implements HttpServer.Handler {
             out.append(entry.getKey()).append('=').append(entry.getValue());
         }
         return out.toString();
+    }
+
+    private static String heartbeat(long rttMillis) {
+        return rttMillis < 0 ? "-" : Long.toString(rttMillis) + "ms";
     }
 
     private boolean authorize(ServerRequest request) {

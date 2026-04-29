@@ -65,6 +65,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -461,6 +462,165 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    @SneakyThrows
+    public void nextUpstream_SkipsUnhealthyCachedServer() {
+        RSSConf oldConf = RssClient.rssConf;
+        try {
+            RssClient.rssConf = new RSSConf();
+            RssClient.rssConf.route = new RSSConf.RouteConf();
+            RssClient.rssConf.route.srcSteeringTTL = 60;
+            RandomList<UpstreamSupport> servers = new RandomList<>();
+            UpstreamSupport first = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), null);
+            first.setConfiguredWeight(1);
+            servers.add(first, 1);
+            InetAddress source = InetAddress.getByName("127.0.0.1");
+
+            assertSame(first, RssClient.nextUpstream(servers, source));
+
+            UpstreamSupport second = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1081)), null);
+            second.setConfiguredWeight(1);
+            servers.add(second, 1);
+            first.setHealthy(false);
+            servers.setWeight(first, 0);
+
+            assertSame(second, RssClient.nextUpstream(servers, source));
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
+    }
+
+    @Test
+    public void routeUpstream_KcptunTracksSelectedServerConnections() {
+        SocksConfig config = new SocksConfig();
+        AuthenticEndpoint kcp = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 4093), "k", "p");
+        AuthenticEndpoint upstream = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1090), "u", "p");
+        UpstreamSupport next = new UpstreamSupport(upstream, null);
+        config.setKcptunClient(kcp);
+
+        UpstreamSupport routed = RssClient.routeUpstream(config, next);
+        routed.retainConnection();
+        try {
+            assertSame(next, routed.getConnectionTracker());
+            assertEquals(1, next.activeConnectionCount());
+        } finally {
+            routed.releaseConnection();
+        }
+        assertEquals(0, next.activeConnectionCount());
+    }
+
+    @Test
+    public void closeUpstreamsWhenIdle_WaitsForActiveConnections() {
+        AtomicInteger closeCount = new AtomicInteger();
+        SocksRpcContract facade = new SocksRpcContract() {
+            @Override
+            public void fakeEndpoint(java.math.BigInteger hash, String realEndpoint) {
+            }
+
+            @Override
+            public void addWhiteList(InetAddress endpoint) {
+            }
+
+            @Override
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                return Collections.emptyList();
+            }
+
+            @Override
+            public void close() {
+                closeCount.incrementAndGet();
+            }
+        };
+        UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), facade);
+        support.setConfiguredWeight(1);
+        RandomList<UpstreamSupport> servers = new RandomList<>();
+        servers.add(support, 1);
+        RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers, new RandomList<UpstreamSupport>(),
+                new RandomList<DnsServer.ResolveInterceptor>());
+
+        support.retainConnection();
+        RssClient.closeUpstreamsWhenIdle(snapshot);
+        assertEquals(0, closeCount.get());
+        assertTrue(!snapshot.closed);
+
+        support.releaseConnection();
+        RssClient.closeUpstreamsWhenIdle(snapshot);
+        assertEquals(1, closeCount.get());
+        assertTrue(snapshot.closed);
+    }
+
+    @Test
+    public void closeUpstreamsWhenIdle_ForceClosesAfterDeadline() {
+        AtomicInteger closeCount = new AtomicInteger();
+        SocksRpcContract facade = new SocksRpcContract() {
+            @Override
+            public void fakeEndpoint(java.math.BigInteger hash, String realEndpoint) {
+            }
+
+            @Override
+            public void addWhiteList(InetAddress endpoint) {
+            }
+
+            @Override
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                return Collections.emptyList();
+            }
+
+            @Override
+            public void close() {
+                closeCount.incrementAndGet();
+            }
+        };
+        UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), facade);
+        support.setConfiguredWeight(1);
+        RandomList<UpstreamSupport> servers = new RandomList<>();
+        servers.add(support, 1);
+        RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers, new RandomList<UpstreamSupport>(),
+                new RandomList<DnsServer.ResolveInterceptor>());
+
+        support.retainConnection();
+        snapshot.closeDeadlineMillis = System.currentTimeMillis() - 1L;
+        try {
+            RssClient.closeUpstreamsWhenIdle(snapshot);
+            assertEquals(1, closeCount.get());
+            assertTrue(snapshot.closed);
+        } finally {
+            support.releaseConnection();
+        }
+    }
+
+    @Test
+    public void renderShadowUsersPage_RendersUpstreamHealth() {
+        UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080), "u", "secret"), null);
+        support.setConfiguredWeight(3);
+        support.setHealthy(false);
+        support.retainConnection();
+        RandomList<UpstreamSupport> servers = new RandomList<>();
+        servers.add(support, 0);
+        RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers, new RandomList<UpstreamSupport>(),
+                new RandomList<DnsServer.ResolveInterceptor>());
+        RssClientHttpHandler.Query query = new RssClientHttpHandler.Query();
+        query.fromMillis = 0L;
+        query.toMillis = System.currentTimeMillis();
+        query.fromValue = "1970-01-01T00:00";
+        query.toValue = "2099-01-01T00:00";
+
+        try {
+            String html = RssClientHttpHandler.renderShadowUsersPage(Collections.<String, ShadowUser>emptyMap(), null, query,
+                    RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS, snapshot);
+
+            assertTrue(html.contains("Socks Servers"));
+            assertTrue(html.contains("u@127.0.0.1:1080"));
+            assertTrue(html.contains("DOWN"));
+            assertTrue(html.contains(">3<"));
+            assertTrue(html.contains(">0<"));
+            assertTrue(html.contains(">1<"));
+            assertTrue(!html.contains("secret"));
+        } finally {
+            support.releaseConnection();
+        }
+    }
+
+    @Test
     public void resolveRpcRequestTimeoutMillis_UsesConfiguredOrConnectBound() {
         RSSConf conf = new RSSConf();
 
@@ -489,7 +649,7 @@ public class RssTest extends AbstractTester {
         assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
 
         assertEquals(1, conf.trafficRetentionDays);
-        assertEquals(1, conf.memoryRetentionHours);
+        assertEquals(RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS, conf.memoryRetentionHours);
         assertEquals(4, conf.rpcMinSize);
         assertEquals(4, conf.rpcMaxSize);
         assertEquals(1, conf.connectTimeoutSeconds);

@@ -21,6 +21,7 @@ import org.rx.core.EventArgs;
 import org.rx.core.EventPublisher;
 import org.rx.core.Linq;
 import org.rx.core.NEventArgs;
+import org.rx.core.NtpClock;
 import org.rx.core.RunFlag;
 import org.rx.core.ThreadPool;
 import org.rx.exception.InvalidException;
@@ -50,6 +51,10 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
         Channel channel;
         @Getter
         InetSocketAddress remoteEndpoint;
+        @Getter
+        volatile long lastHeartbeatMillis;
+        @Getter
+        volatile long heartbeatRttMillis = -1L;
         boolean admitted;
 
         @Override
@@ -120,8 +125,8 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             log.debug("serverRead {} {}", channel.remoteAddress(), msg);
 
             if (tryAs(msg, PingPacket.class, p -> {
+                updateHeartbeat(p);
                 ctx.writeAndFlush(p);
-                owner.publishEventAsync(owner.onPing, new TcpServerEventArgs<>(this, p));
                 log.debug("serverHeartbeat pong {}", channel.remoteAddress());
             })) {
                 return;
@@ -190,6 +195,13 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             }
             throw new UnsupportedOperationException();
         }
+
+        void updateHeartbeat(PingPacket packet) {
+            long now = NtpClock.UTC.millis();
+            lastHeartbeatMillis = now;
+            long rtt = (now - packet.getTimestamp()) << 1;
+            heartbeatRttMillis = rtt < 0 ? 0 : rtt;
+        }
     }
 
     static final ThreadPool SCHEDULER = new ThreadPool(Sockets.ReactorNames.RPC);
@@ -197,7 +209,6 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             onDisconnected = Delegate.create(),
             onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<TcpServer, TcpServerEventArgs<PingPacket>> onPing = Delegate.create();
     public final Delegate<TcpServer, TcpServerEventArgs<Throwable>> onError = Delegate.create();
     public final Delegate<TcpServer, EventArgs> onClosed = Delegate.create();
 

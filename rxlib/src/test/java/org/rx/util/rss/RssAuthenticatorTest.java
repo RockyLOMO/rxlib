@@ -41,6 +41,7 @@ public class RssAuthenticatorTest {
         assertSame(second, secondResult.getTrafficUser());
         assertSame(firstResult.getUser(), secondResult.getUser());
         assertEquals("shared-socks", firstResult.getUser().getUsername());
+        assertEquals(RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS, authenticator.getMemoryRetentionHours());
     }
 
     @Test
@@ -101,6 +102,41 @@ public class RssAuthenticatorTest {
         } finally {
             RssClient.rssConf = oldConf;
         }
+    }
+
+    @Test
+    public void resetIpSkipsUsersWithoutConnections() {
+        ShadowUser user = new ShadowUser();
+        user.setUsername("ss-rocky");
+        user.setSsPort(1081);
+        user.setSsPwd("pwd-rocky");
+        user.setSocksUser("shared-socks");
+
+        RssAuthenticator authenticator = new RssAuthenticator(Arrays.asList(user), "inner-pwd",
+                RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS);
+        authenticator.resetIp();
+
+        assertTrue(user.getLoginIps().isEmpty());
+        assertTrue(user.getLastResetTime() == null);
+    }
+
+    @Test
+    public void resetIpUsesFiveHourDefaultWindow() throws Exception {
+        ShadowUser user = new ShadowUser();
+        user.setUsername("ss-rocky");
+        user.setSsPort(1081);
+        user.setSsPwd("pwd-rocky");
+        user.setSocksUser("shared-socks");
+
+        TrafficLoginInfo expired = new TrafficLoginInfo();
+        expired.setLatestTime(org.rx.bean.DateTime.now().addHours(-6));
+        user.getLoginIps().put(InetAddress.getByName("18.12.3.4"), expired);
+
+        RssAuthenticator authenticator = new RssAuthenticator(Arrays.asList(user), "inner-pwd");
+        authenticator.resetIp();
+
+        assertEquals(0, user.getLoginIps().size());
+        assertNotNull(user.getLastResetTime());
     }
 
     @Test

@@ -22,20 +22,22 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.rx.core.Extends.eq;
 
 public class RssAuthenticator implements Authenticator {
+    static final int DEFAULT_MEMORY_RETENTION_HOURS = 5;
+
     @Getter
     private final Map<String, ShadowUser> shadowStore = new ConcurrentHashMap<>();
     @Getter
     private final Map<String, SocksUser> socksStore = new ConcurrentHashMap<>();
-    private final AtomicReference<AuthSettings> settings = new AtomicReference<>(new AuthSettings(null, 24));
+    private final AtomicReference<AuthSettings> settings = new AtomicReference<>(new AuthSettings(null, DEFAULT_MEMORY_RETENTION_HOURS));
 
     public RssAuthenticator(List<ShadowUser> shadowUsers, String socksPassword) {
-        this(shadowUsers, socksPassword, 24);
+        this(shadowUsers, socksPassword, DEFAULT_MEMORY_RETENTION_HOURS);
     }
 
     public RssAuthenticator(List<ShadowUser> shadowUsers, String socksPassword, int memoryRetentionHours) {
         reload(shadowUsers, socksPassword, memoryRetentionHours);
         resetIp();
-        Tasks.schedulePeriod(this::resetIp, TimeUnit.HOURS.toMillis(1));
+        Tasks.schedulePeriod(this::resetIp, TimeUnit.HOURS.toMillis(DEFAULT_MEMORY_RETENTION_HOURS));
     }
 
     public synchronized void reload(List<ShadowUser> shadowUsers, String socksPassword, int memoryRetentionHours) {
@@ -133,15 +135,35 @@ public class RssAuthenticator implements Authenticator {
         DateTime expireBefore = now.addHours(-currentMemoryRetentionHours());
         for (ShadowUser user : shadowStore.values()) {
             Map<InetAddress, TrafficLoginInfo> loginIps = user.getLoginIps();
+            boolean hasConnectionData = false;
             for (Map.Entry<InetAddress, TrafficLoginInfo> lEntry : loginIps.entrySet()) {
                 TrafficLoginInfo info = lEntry.getValue();
+                if (hasConnectionData(info)) {
+                    hasConnectionData = true;
+                }
+                if (info == null) {
+                    loginIps.remove(lEntry.getKey());
+                    continue;
+                }
                 DateTime latestTime = info.getLatestTime();
                 if (info.getRefCnt().get() <= 0 && (latestTime == null || latestTime.before(expireBefore))) {
                     loginIps.remove(lEntry.getKey());
                 }
             }
-            user.setLastResetTime(expireBefore);
+            if (hasConnectionData || !loginIps.isEmpty()) {
+                user.setLastResetTime(expireBefore);
+            }
         }
+    }
+
+    private boolean hasConnectionData(TrafficLoginInfo info) {
+        return info != null && (info.getRefCnt().get() > 0
+                || info.getLatestTime() != null
+                || info.getTotalActiveSeconds().get() > 0L
+                || info.getTotalReadBytes().get() > 0L
+                || info.getTotalWriteBytes().get() > 0L
+                || info.getTotalReadPackets().get() > 0L
+                || info.getTotalWritePackets().get() > 0L);
     }
 
     private int currentMemoryRetentionHours() {

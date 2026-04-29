@@ -78,6 +78,13 @@ public class RemotingTest extends AbstractTester {
         }
     }
 
+    static void closeClientPool(RpcClientConfig<?> config) throws Exception {
+        RpcHybridClientPool pool = Remoting.clientPools.remove(config);
+        if (pool instanceof AutoCloseable) {
+            ((AutoCloseable) pool).close();
+        }
+    }
+
     final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
@@ -240,6 +247,36 @@ public class RemotingTest extends AbstractTester {
 
         assertThrows(ClientDisconnectedException.class, facade::disconnectBeforeReply,
                 "断链时应保留客户端断开异常，不能被连接池重复回收异常覆盖");
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void remotingPing_reportsFacadeReachability() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        UserManagerImpl impl = new UserManagerImpl();
+        startServer(impl, endpoint);
+
+        RpcClientConfig<UserManager> config = RpcClientConfig.poolMode(endpoint, 1, 1);
+        config.setRequestTimeoutMillis(1000);
+        UserManager facade = Remoting.createFacade(UserManager.class, config);
+        try {
+            assertTrue(Remoting.ping(facade, 1000));
+        } finally {
+            facade.close();
+            closeClientPool(config);
+        }
+
+        RpcClientConfig<UserManager> downConfig = RpcClientConfig.poolMode(new InetSocketAddress("127.0.0.1", freePort()), 1, 1);
+        downConfig.getTcpConfig().setConnectTimeoutMillis(200);
+        UserManager downFacade = Remoting.createFacade(UserManager.class, downConfig);
+        try {
+            assertTrue(!Remoting.ping(downFacade, 200));
+        } finally {
+            downFacade.close();
+            closeClientPool(downConfig);
+        }
     }
 
     @Test

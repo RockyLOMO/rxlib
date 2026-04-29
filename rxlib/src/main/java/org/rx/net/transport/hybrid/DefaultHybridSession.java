@@ -88,6 +88,16 @@ final class DefaultHybridSession implements HybridSession {
     }
 
     @Override
+    public long lastHeartbeatMillis() {
+        return tcpClient == null ? 0L : tcpClient.getLastHeartbeatMillis();
+    }
+
+    @Override
+    public long heartbeatRttMillis() {
+        return tcpClient == null ? -1L : tcpClient.getHeartbeatRttMillis();
+    }
+
+    @Override
     public void send(Object packet) {
         send(packet, HybridSendOptions.DEFAULT);
     }

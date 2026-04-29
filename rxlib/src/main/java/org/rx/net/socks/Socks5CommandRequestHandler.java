@@ -197,6 +197,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (outbound == null) {
             return false;
         }
+        upstream.bindActiveConnection(outbound);
 
         ensureFrontendHandlers(inbound, outbound);
         EndpointTracer.TCP.link(Sockets.getOriginRemoteAddress(inbound), outbound);

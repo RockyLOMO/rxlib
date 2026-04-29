@@ -59,8 +59,8 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
                 return;
             }
             if (tryAs(msg, PingPacket.class, p -> {
-                log.info("clientHeartbeat pong {} {}ms", channel.remoteAddress(), NtpClock.UTC.millis() - p.getTimestamp());
-                owner.publishEventAsync(owner.onPong, p);
+                owner.updateHeartbeat(p);
+                log.debug("clientHeartbeat pong {} {}ms", channel.remoteAddress(), owner.getHeartbeatRttMillis());
             })) {
                 return;
             }
@@ -119,12 +119,15 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
             onReconnected = Delegate.create();
     public final Delegate<TcpClient, NEventArgs<Object>> onSend = Delegate.create(),
             onReceive = Delegate.create();
-    public final Delegate<TcpClient, PingPacket> onPong = Delegate.create();
     public final Delegate<TcpClient, NEventArgs<Throwable>> onError = Delegate.create();
     @Getter
     final TcpClientConfig config;
     @Getter
     InetSocketAddress remoteEndpoint, localEndpoint;
+    @Getter
+    volatile long lastHeartbeatMillis;
+    @Getter
+    volatile long heartbeatRttMillis = -1L;
     volatile InetSocketAddress connectingEp;
 
     @Override
@@ -142,6 +145,13 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
 
     protected DefaultTcpClient() {
         this.config = NULL_CONF;
+    }
+
+    void updateHeartbeat(PingPacket packet) {
+        long now = NtpClock.UTC.millis();
+        lastHeartbeatMillis = now;
+        long rtt = now - packet.getTimestamp();
+        heartbeatRttMillis = rtt < 0 ? 0 : rtt;
     }
 
     @Override

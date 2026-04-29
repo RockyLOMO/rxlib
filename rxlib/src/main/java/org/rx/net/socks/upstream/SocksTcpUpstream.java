@@ -1,6 +1,7 @@
 package org.rx.net.socks.upstream;
 
 import io.netty.channel.Channel;
+import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
@@ -26,6 +27,9 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class SocksTcpUpstream extends Upstream {
+    private static final AttributeKey<UpstreamSupport> ATTR_ACTIVE_SUPPORT =
+            AttributeKey.valueOf("socksTcpUpstreamActiveSupport");
+
     private UpstreamSupport next;
     private boolean destinationPrepared;
 
@@ -89,6 +93,7 @@ public class SocksTcpUpstream extends Upstream {
     }
 
     public void initTransport(Channel channel) {
+        bindActiveConnection(channel);
         Sockets.addTcpClientHandler(channel, config, next.getEndpoint().getInetEndpoint());
         String trafficUser = next.getEndpoint().getParameters().get(SocksConnectionTagRegistry.PARAM_NAME);
         if (trafficUser != null) {
@@ -102,6 +107,17 @@ public class SocksTcpUpstream extends Upstream {
         Socks5ClientHandler proxyHandler = new Socks5ClientHandler(svrEp.getConnectEndpoint(), svrEp.getUsername(), svrEp.getPassword());
         proxyHandler.setConnectTimeoutMillis(config.getConnectTimeoutMillis());
         channel.pipeline().addLast(proxyHandler);
+    }
+
+    public void bindActiveConnection(Channel channel) {
+        if (channel == null || next == null) {
+            return;
+        }
+        if (channel.attr(ATTR_ACTIVE_SUPPORT).setIfAbsent(next) != null) {
+            return;
+        }
+        next.retainConnection();
+        channel.closeFuture().addListener(f -> next.releaseConnection());
     }
 
     @Override

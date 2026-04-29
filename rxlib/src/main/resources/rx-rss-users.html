@@ -28,6 +28,38 @@
     </div>
 </section>
 
+{{#if hasUpstreams}}
+<section class="card">
+    <h2>Socks Servers</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>类型</th>
+            <th>Endpoint</th>
+            <th>健康状态</th>
+            <th>配置权重</th>
+            <th>当前权重</th>
+            <th>活跃连接</th>
+            <th>RPC</th>
+        </tr>
+        </thead>
+        <tbody>
+        {{#each upstreams}}
+        <tr>
+            <td>{{type}}</td>
+            <td>{{endpoint}}</td>
+            <td>{{health}}</td>
+            <td>{{configuredWeight}}</td>
+            <td>{{currentWeight}}</td>
+            <td>{{activeConnections}}</td>
+            <td>{{rpc}}</td>
+        </tr>
+        {{/each}}
+        </tbody>
+    </table>
+</section>
+{{/if}}
+
 {{#unless hasAnyUsers}}
 <section class="card warn">
     <h2>暂无 SS 用户</h2>

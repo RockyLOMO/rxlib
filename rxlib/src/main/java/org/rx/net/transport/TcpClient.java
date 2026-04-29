@@ -24,6 +24,14 @@ public interface TcpClient extends AutoCloseable, EventPublisher<TcpClient> {
 
     Delegate<TcpClient, NEventArgs<Object>> onReceive();
 
+    default long getLastHeartbeatMillis() {
+        return 0L;
+    }
+
+    default long getHeartbeatRttMillis() {
+        return -1L;
+    }
+
     Channel getChannel();
 
     default <T> boolean hasAttr(AttributeKey<T> key) {

@@ -1,7 +1,11 @@
 package org.rx.net.transport;
 
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.rx.net.transport.protocol.PingPacket;
 
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -14,6 +18,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TcpTransportTest {
     static int freePort() throws Exception {
@@ -87,6 +95,27 @@ class TcpTransportTest {
             closeQuietly(first);
             server.close();
         }
+    }
+
+    @Test
+    @Timeout(10)
+    void serverHeartbeatUpdatesStateWithoutEventDispatch() {
+        TcpServer server = new TcpServer(new TcpServerConfig(0));
+        TcpServer.ClientImpl client = new TcpServer.ClientImpl(server);
+        ChannelHandlerContext ctx = mock(ChannelHandlerContext.class);
+        Channel channel = mock(Channel.class);
+        ChannelFuture future = mock(ChannelFuture.class);
+        InetSocketAddress remote = new InetSocketAddress("127.0.0.1", 18080);
+        when(ctx.channel()).thenReturn(channel);
+        when(channel.remoteAddress()).thenReturn(remote);
+        when(ctx.writeAndFlush(any())).thenReturn(future);
+
+        PingPacket packet = new PingPacket();
+        client.channelRead(ctx, packet);
+
+        verify(ctx).writeAndFlush(packet);
+        assertTrue(client.getLastHeartbeatMillis() >= packet.getTimestamp());
+        assertTrue(client.getHeartbeatRttMillis() >= 0);
     }
 
     static void awaitTrue(BooleanSupplier condition, long timeoutMillis, String message) throws InterruptedException {
