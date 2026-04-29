@@ -40,7 +40,7 @@ public class RSSConf {
     public int dnsTtlMinutes = 600;
     public NameserverConfig nameserver = new NameserverConfig();
     public int trafficRetentionDays = 60;
-    public int memoryRetentionHours = 24;
+    public int memoryRetentionHours = RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS;
 
     // rrp
     public String rrpToken;

@@ -48,6 +48,10 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             Sockets.closeOnFlushed(ctx.channel());
             return;
         }
+        DateTime now = DateTime.now();
+        if (info.getLatestTime() == null || info.getLatestTime().before(now)) {
+            info.setLatestTime(now);
+        }
         info.getRefCnt().incrementAndGet();
         SocksUserTraffic.bind(ctx.channel(), this.trafficUser, info);
     }

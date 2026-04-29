@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.core.Extends.eachQuietly;
@@ -69,6 +70,7 @@ final class RssRuntime implements AutoCloseable {
         udp2rawSocksServersRef.set(snapshot.udp2rawSocksServers);
         dnsInterceptors.setDelegate(snapshot.dnsInterceptors);
         upstreamSnapshot = snapshot;
+        startUpstreamHealthCheck(snapshot);
 
         dnsSvr = createDnsServer(conf, dnsInterceptors);
         nameserverRef = new NameserverImpl(resolveNameserverConfig(conf), dnsSvr);
@@ -161,6 +163,7 @@ final class RssRuntime implements AutoCloseable {
             socksServersRef.set(nextUpstream.socksServers);
             udp2rawSocksServersRef.set(nextUpstream.udp2rawSocksServers);
             upstreamSnapshot = nextUpstream;
+            startUpstreamHealthCheck(nextUpstream);
             nextUpstream = null;
 
             authenticator.reload(newConf.shadowUsers, newConf.socksPwd.trim(), newConf.memoryRetentionHours);
@@ -589,6 +592,10 @@ final class RssRuntime implements AutoCloseable {
         final RandomList<UpstreamSupport> socksServers;
         final RandomList<UpstreamSupport> udp2rawSocksServers;
         final RandomList<DnsServer.ResolveInterceptor> dnsInterceptors;
+        volatile ScheduledFuture<?> healthTask;
+        volatile long closeDeadlineMillis;
+        volatile boolean closing;
+        volatile boolean closed;
 
         UpstreamSnapshot(RandomList<UpstreamSupport> socksServers,
                          RandomList<UpstreamSupport> udp2rawSocksServers,

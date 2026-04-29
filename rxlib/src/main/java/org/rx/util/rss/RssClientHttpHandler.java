@@ -3,10 +3,13 @@ package org.rx.util.rss;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import org.rx.bean.RandomList;
 import org.rx.bean.DateTime;
 import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.io.Bytes;
+import org.rx.net.AuthenticEndpoint;
+import org.rx.net.Sockets;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
@@ -14,11 +17,13 @@ import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficLoginInfo;
 import org.rx.net.support.GeoManager;
 import org.rx.net.support.IpGeolocation;
+import org.rx.net.support.UpstreamSupport;
 import org.rx.util.rss.RssUserTrafficStore.LoginIpTrafficSummary;
 import org.rx.util.rss.RssUserTrafficStore.ProtocolTrafficSummary;
 import org.rx.util.rss.RssUserTrafficStore.UserTrafficSummary;
 
 import java.net.InetAddress;
+import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
@@ -114,11 +119,11 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     private final int memoryRetentionHours;
 
     public RssClientHttpHandler(Map<String, ShadowUser> shadowStore) {
-        this(shadowStore, null, 24);
+        this(shadowStore, null, RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS);
     }
 
     public RssClientHttpHandler(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore) {
-        this(shadowStore, trafficStore, 24);
+        this(shadowStore, trafficStore, RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS);
     }
 
     public RssClientHttpHandler(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, int memoryRetentionHours) {
@@ -151,7 +156,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     }
 
     static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore) {
-        return renderShadowUsersPage(shadowStore, 24);
+        return renderShadowUsersPage(shadowStore, RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS);
     }
 
     static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, int memoryRetentionHours) {
@@ -164,10 +169,15 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     }
 
     static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, Query query) {
-        return renderShadowUsersPage(shadowStore, trafficStore, query, 24);
+        return renderShadowUsersPage(shadowStore, trafficStore, query, RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS);
     }
 
     static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, Query query, int memoryRetentionHours) {
+        return renderShadowUsersPage(shadowStore, trafficStore, query, memoryRetentionHours, currentUpstreamSnapshot());
+    }
+
+    static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, Query query,
+                                        int memoryRetentionHours, RssRuntime.UpstreamSnapshot upstreamSnapshot) {
         int effectiveMemoryRetentionHours = effectiveMemoryRetentionHours(memoryRetentionHours);
         int effectiveRetentionDays = trafficStore == null ? 0 : trafficStore.retentionDays();
         List<UserTrafficSummary> historyUsers = trafficStore == null ? Collections.<UserTrafficSummary>emptyList()
@@ -185,6 +195,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         List<Map<String, Object>> protocolRows = buildProtocolRows(protocolSummaries, shadowStore);
         List<Map<String, Object>> loginIpRows = buildHistoryLoginIpRows(historyIps, shadowStore);
         List<Map<String, Object>> liveIpRows = buildLiveLoginIpRows(shadowStore);
+        List<Map<String, Object>> upstreamRows = buildUpstreamRows(upstreamSnapshot);
 
         LinkedHashMap<String, Object> vars = new LinkedHashMap<String, Object>();
         vars.put("path", SHADOW_USERS_PAGE_PATH);
@@ -194,9 +205,11 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         vars.put("selectedRange", formatDateTime(new Date(query.fromMillis)) + " - " + formatDateTime(new Date(query.toMillis)));
         vars.put("h2RetentionDays", effectiveRetentionDays);
         vars.put("memoryRetentionHours", effectiveMemoryRetentionHours);
-        vars.put("memoryResetPolicy", "内存快照仅保留近 " + effectiveMemoryRetentionHours + " 小时未活跃 IP；实时累计值会随过期 IP 自然淘汰，不再做额外月度清零。");
+        vars.put("memoryResetPolicy", "用户开始有连接后按 " + effectiveMemoryRetentionHours + " 小时窗口保留登录 IP；无连接用户不更新内存统计窗口。");
         vars.put("stats", buildStats(userRows.size(), protocolRows.size(), loginIpRows.size(), liveIpRows.size(),
-                historyUsers, query, trafficStore, effectiveMemoryRetentionHours));
+                historyUsers, query, trafficStore, effectiveMemoryRetentionHours, upstreamRows));
+        vars.put("hasUpstreams", !upstreamRows.isEmpty());
+        vars.put("upstreams", upstreamRows);
         vars.put("hasHistoryUsers", !userRows.isEmpty());
         vars.put("historyUsers", userRows);
         vars.put("hasAnyUsers", !userRows.isEmpty() || !liveIpRows.isEmpty());
@@ -215,7 +228,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
 
     private static List<Map<String, Object>> buildStats(int userCount, int protocolRowCount, int historyIpCount, int liveIpCount,
                                                         List<UserTrafficSummary> historyUsers, Query query, RssUserTrafficStore trafficStore,
-                                                        int memoryRetentionHours) {
+                                                        int memoryRetentionHours, List<Map<String, Object>> upstreamRows) {
         long totalReadBytes = 0L;
         long totalWriteBytes = 0L;
         long totalActiveSeconds = 0L;
@@ -227,13 +240,30 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             totalSessions += row.getSessionCount();
         }
 
-        List<Map<String, Object>> stats = new ArrayList<Map<String, Object> >(7);
+        long healthyUpstreams = 0L;
+        long activeUpstreamConnections = 0L;
+        if (upstreamRows != null) {
+            for (Map<String, Object> row : upstreamRows) {
+                if (Boolean.TRUE.equals(row.get("healthyValue"))) {
+                    healthyUpstreams++;
+                }
+                Object active = row.get("activeConnectionsValue");
+                if (active instanceof Number) {
+                    activeUpstreamConnections += ((Number) active).longValue();
+                }
+            }
+        }
+
+        List<Map<String, Object>> stats = new ArrayList<Map<String, Object> >(8);
         stats.add(summaryItem("查询范围", formatDateTime(new Date(query.fromMillis)) + " - " + formatDateTime(new Date(query.toMillis)),
                 "默认近 1 个月，历史数据按 H2 查询。"));
         stats.add(summaryItem("H2 保留期", trafficStore == null ? "-" : trafficStore.retentionDays() + " 天",
                 "超出保留期的小时聚合数据会自动清理。"));
         stats.add(summaryItem("内存保留期", Math.max(1, memoryRetentionHours) + " 小时",
-                "仅保留近窗口内仍活跃或最近活跃的登录 IP。"));
+                "从用户首次连接开始统计，空闲 IP 到期后从内存快照移除。"));
+        stats.add(summaryItem("上游健康/连接", healthyUpstreams + "/" + (upstreamRows == null ? 0 : upstreamRows.size())
+                        + " / " + activeUpstreamConnections,
+                "健康上游数 / 配置上游数 / 当前活跃上游连接数。"));
         stats.add(summaryItem("历史用户数", userCount, "H2 中命中的用户聚合数量。"));
         stats.add(summaryItem("历史下行/上行", Bytes.readableByteSize(totalReadBytes) + " / " + Bytes.readableByteSize(totalWriteBytes),
                 "按所选时间范围聚合的总流量。"));
@@ -242,6 +272,60 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         stats.add(summaryItem("协议/IP/实时行数", protocolRowCount + " / " + historyIpCount + " / " + liveIpCount,
                 "协议历史行 / H2 IP 历史行 / 内存实时 IP 快照行。"));
         return stats;
+    }
+
+    static List<Map<String, Object>> buildUpstreamRows(RssRuntime.UpstreamSnapshot snapshot) {
+        if (snapshot == null) {
+            return Collections.emptyList();
+        }
+        List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
+        appendUpstreamRows(rows, "socks", snapshot.socksServers);
+        appendUpstreamRows(rows, "udp2raw", snapshot.udp2rawSocksServers);
+        return rows;
+    }
+
+    private static void appendUpstreamRows(List<Map<String, Object>> rows, String type, RandomList<UpstreamSupport> servers) {
+        if (servers == null) {
+            return;
+        }
+        for (UpstreamSupport support : servers.readOnlySnapshot()) {
+            boolean healthy = support.isHealthy();
+            int activeConnections = support.activeConnectionCount();
+            int currentWeight = currentWeight(servers, support);
+            LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
+            row.put("type", type);
+            row.put("endpoint", formatEndpoint(support.getEndpoint()));
+            row.put("health", healthy ? "UP" : "DOWN");
+            row.put("healthyValue", healthy);
+            row.put("configuredWeight", support.getConfiguredWeight());
+            row.put("currentWeight", currentWeight);
+            row.put("activeConnections", activeConnections);
+            row.put("activeConnectionsValue", activeConnections);
+            row.put("rpc", support.getFacade() == null ? "-" : "yes");
+            rows.add(row);
+        }
+    }
+
+    private static int currentWeight(RandomList<UpstreamSupport> servers, UpstreamSupport support) {
+        try {
+            return servers.getWeight(support);
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    private static String formatEndpoint(AuthenticEndpoint endpoint) {
+        if (endpoint == null) {
+            return "-";
+        }
+        SocketAddress address = endpoint.getEndpoint();
+        String target = address == null ? "-" : Sockets.toString(address);
+        return Strings.isEmpty(endpoint.getUsername()) ? target : endpoint.getUsername() + "@" + target;
+    }
+
+    private static RssRuntime.UpstreamSnapshot currentUpstreamSnapshot() {
+        RssRuntime rt = RssClient.runtime;
+        return rt == null ? null : rt.upstreamSnapshot;
     }
 
     private static Map<String, Object> summaryItem(String label, Object value, String meta) {

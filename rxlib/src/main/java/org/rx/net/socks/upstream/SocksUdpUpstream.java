@@ -24,6 +24,7 @@ import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.rx.core.Extends.tryClose;
 
@@ -247,6 +248,7 @@ public class SocksUdpUpstream extends Upstream {
 
     private void bindHolder(Channel channel, SessionHolder holder) {
         channel.attr(ATTR_UDP_SESSION).set(holder);
+        holder.retain(next);
         UdpRelayAttributes.addRedundantPeer(channel, holder.relayAddr);
         final SessionHolder finalHolder = holder;
         Channel controlChannel = holder.controlChannel();
@@ -266,6 +268,7 @@ public class SocksUdpUpstream extends Upstream {
                 return;
             }
             relay.attr(ATTR_UDP_SESSION).set(null);
+            active.releaseActive();
             SocksUdpRelayHandler.onUpstreamSessionInvalidated(relay, active.relayAddr, this);
             DiagnosticMetrics.record("socks.udp.session.invalidate.count", 1D,
                     "reason=" + reason + ",pooled=" + active.pooled);
@@ -325,6 +328,8 @@ public class SocksUdpUpstream extends Upstream {
         final Socks5UpstreamPoolManager.UdpLeasePool pool;
         final InetSocketAddress relayAddr;
         final boolean pooled;
+        final AtomicBoolean activeRetained = new AtomicBoolean();
+        volatile UpstreamSupport activeSupport;
 
         static SessionHolder session(Socks5Client client, Socks5UdpSession session) {
             return new SessionHolder(client, session, null, null, session.getRelayAddress(), false);
@@ -349,6 +354,21 @@ public class SocksUdpUpstream extends Upstream {
                 return session != null && !session.isClosed();
             }
             return lease != null && !lease.isClosed() && lease.getTcpControl().isActive();
+        }
+
+        void retain(UpstreamSupport support) {
+            if (support != null && activeRetained.compareAndSet(false, true)) {
+                activeSupport = support;
+                support.retainConnection();
+            }
+        }
+
+        void releaseActive() {
+            UpstreamSupport support = activeSupport;
+            if (support != null && activeRetained.compareAndSet(true, false)) {
+                support.releaseConnection();
+                activeSupport = null;
+            }
         }
 
         Channel controlChannel() {

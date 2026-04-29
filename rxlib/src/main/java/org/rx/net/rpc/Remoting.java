@@ -23,6 +23,7 @@ import org.rx.core.StringBuilder;
 import org.rx.core.Sys;
 import org.rx.core.ThreadPool;
 import org.rx.diagnostic.DiagnosticMetrics;
+import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.protocol.EventFlag;
 import org.rx.net.rpc.protocol.EventMessage;
@@ -46,6 +47,8 @@ import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -67,6 +70,17 @@ public final class Remoting {
     public static class ClientBean {
         final ResetEventWait syncRoot = new ResetEventWait();
         MethodMessage pack;
+    }
+
+    static final class ClientRef {
+        final RpcClientConfig<?> config;
+        final FastThreadLocal<Boolean> isCompute = new FastThreadLocal<Boolean>();
+        final $<HybridClient> sync = $();
+        final Set<String> subscribedEvents = ConcurrentHashMap.newKeySet();
+
+        ClientRef(RpcClientConfig<?> config) {
+            this.config = config;
+        }
     }
 
     @RequiredArgsConstructor
@@ -93,9 +107,11 @@ public final class Remoting {
 
     static final AttributeKey<MetadataMessage> HANDSHAKE_META_KEY = AttributeKey.valueOf("HandshakeMeta");
     static final String M_0 = "publishEvent", M_1 = "publishEventAsync", M_2 = "attachEvent";
+    static final String M_PING = "__remotingPing";
     static final Map<Object, ServerBean> serverBeans = new ConcurrentHashMap<Object, ServerBean>();
     static final Map<Object, Object> serverInitLocks = new ConcurrentHashMap<Object, Object>();
     static final Map<RpcClientConfig, RpcHybridClientPool> clientPools = new ConcurrentHashMap<RpcClientConfig, RpcHybridClientPool>();
+    static final Map<Object, ClientRef> facadeRefs = Collections.synchronizedMap(new IdentityHashMap<Object, ClientRef>());
     static final IdGenerator generator = new IdGenerator();
     static final Map<HybridClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<HybridClient, Map<Integer, ClientBean>>();
     static final Map<HybridClient, AtomicInteger> clientRefCounts = new ConcurrentHashMap<HybridClient, AtomicInteger>();
@@ -104,20 +120,19 @@ public final class Remoting {
     public static <T> T createFacade(@NonNull Class<T> contract, @NonNull RpcClientConfig<T> config) {
         ensureClientCodec(config);
         DiagnosticMetrics.setNetComponent(config.getTcpConfig(), DiagnosticMetrics.NET_RPC_CLIENT);
-        FastThreadLocal<Boolean> isCompute = new FastThreadLocal<Boolean>();
-        $<HybridClient> sync = $();
-        Set<String> subscribedEvents = ConcurrentHashMap.newKeySet();
-        return proxy(contract, (m, p) -> {
+        ClientRef ref = new ClientRef(config);
+        T facade = proxy(contract, (m, p) -> {
             if (Reflects.OBJECT_METHODS.contains(m)) {
                 return p.fastInvokeSuper();
             }
             if (Reflects.isCloseMethod(m)) {
-                synchronized (sync) {
-                    if (sync.v != null) {
-                        clearClient(sync.v);
-                        subscribedEvents.clear();
-                        sync.v.close();
-                        sync.v = null;
+                facadeRefs.remove(p.getProxyObject());
+                synchronized (ref.sync) {
+                    if (ref.sync.v != null) {
+                        clearClient(ref.sync.v);
+                        ref.subscribedEvents.clear();
+                        ref.sync.v.close();
+                        ref.sync.v = null;
                     }
                 }
                 return null;
@@ -130,10 +145,10 @@ public final class Remoting {
                 case M_0:
                 case M_1:
                     if (args.length == 2) {
-                        if (!(args[0] instanceof String) || BooleanUtils.isTrue(isCompute.get())) {
+                        if (!(args[0] instanceof String) || BooleanUtils.isTrue(ref.isCompute.get())) {
                             return invokeSuper(m, p);
                         }
-                        isCompute.remove();
+                        ref.isCompute.remove();
 
                         setReturnValue(clientBean, invokeSuper(m, p));
                         EventMessage eventMessage = new EventMessage((String) args[0], EventFlag.PUBLISH);
@@ -149,7 +164,7 @@ public final class Remoting {
                         case 3:
                             setReturnValue(clientBean, invokeSuper(m, p));
                             String eventName = (String) args[0];
-                            subscribedEvents.add(eventName);
+                            ref.subscribedEvents.add(eventName);
                             pack = new EventMessage(eventName, EventFlag.SUBSCRIBE);
                             log.info("clientSide event {} -> SUBSCRIBE", eventName);
                             break;
@@ -159,7 +174,7 @@ public final class Remoting {
                     if (args.length == 2) {
                         setReturnValue(clientBean, invokeSuper(m, p));
                         String eventName = (String) args[0];
-                        subscribedEvents.remove(eventName);
+                        ref.subscribedEvents.remove(eventName);
                         pack = new EventMessage(eventName, EventFlag.UNSUBSCRIBE);
                         log.info("clientSide event {} -> UNSUBSCRIBE", eventName);
                     }
@@ -175,36 +190,12 @@ public final class Remoting {
             if (pack == null) {
                 pack = clientBean.pack = new MethodMessage(generator.increment(), m.getName(), args, ThreadPool.traceId());
             }
-            RpcHybridClientPool pool = clientPools.computeIfAbsent(config, k -> {
-                log.info("RpcHybridClientPool {}", toJsonString(k));
-                if (!config.isUsePool()) {
-                    return new NonHybridClientPool(config.getHybridConfig());
-                }
-                return new RpcHybridClientPoolImpl(config);
-            });
-
-            if (sync.v == null) {
-                HybridClient candidate = pool.borrowClient();
-                boolean returnCandidate = false;
-                synchronized (sync) {
-                    if (sync.v == null) {
-                        init(sync.v = candidate, p.getProxyObject(), config, isCompute, subscribedEvents);
-                    } else {
-                        returnCandidate = true;
-                    }
-                }
-                if (returnCandidate) {
-                    pool.returnClient(candidate);
-                }
-            }
+            RpcHybridClientPool pool = resolveClientPool(config);
 
             HybridClient client;
             HybridSession session;
-            synchronized (sync) {
-                client = sync.v;
-                session = currentSession(client);
-                retainClient(client);
-            }
+            client = borrowFacadeClient(ref, p.getProxyObject(), pool);
+            session = currentSession(client);
 
             MethodMessage methodMessage = as(pack, MethodMessage.class);
             boolean isMethodCall = methodMessage != null;
@@ -238,9 +229,9 @@ public final class Remoting {
                 sendPacket(client, session, pack);
             } catch (ClientDisconnectedException e) {
                 if (!client.getConfig().getTcpClientConfig().isEnableReconnect()) {
-                    synchronized (sync) {
-                        if (sync.v == client) {
-                            sync.v = null;
+                    synchronized (ref.sync) {
+                        if (ref.sync.v == client) {
+                            ref.sync.v = null;
                         }
                     }
                     throw e;
@@ -267,11 +258,107 @@ public final class Remoting {
                     removeWaitBean(client, session, requestId);
                 }
                 if (releaseClient(client) && (!config.isUsePool() || !hasPendingWaitBeans(client))) {
-                    recycleClient(pool, sync, client);
+                    recycleClient(pool, ref.sync, client);
                 }
             }
             return clientBean.pack != null ? clientBean.pack.returnValue : null;
         });
+        facadeRefs.put(facade, ref);
+        return facade;
+    }
+
+    public static boolean ping(Object facade) {
+        return ping(facade, 0);
+    }
+
+    public static boolean ping(Object facade, int timeoutMillis) {
+        if (facade == null) {
+            return false;
+        }
+        ClientRef ref = facadeRefs.get(facade);
+        if (ref == null) {
+            return false;
+        }
+
+        RpcHybridClientPool pool = resolveClientPool(ref.config);
+        HybridClient client = null;
+        HybridSession session = null;
+        ClientBean clientBean = new ClientBean();
+        clientBean.pack = new MethodMessage(generator.increment(), M_PING, null, ThreadPool.traceId());
+        int requestId = clientBean.pack.id;
+        try {
+            client = borrowFacadeClient(ref, facade, pool);
+            session = currentSession(client);
+            getClientBeans(client).put(requestId, clientBean);
+            sendRequest(client, resolveSession(client, session), clientBean.pack);
+            int waitMillis = timeoutMillis > 0 ? timeoutMillis : resolveRequestTimeout(ref.config, client);
+            if (!clientBean.syncRoot.waitOne(waitMillis)) {
+                return false;
+            }
+            clientBean.syncRoot.reset();
+            return clientBean.pack.errorMessage == null && Boolean.TRUE.equals(clientBean.pack.returnValue);
+        } catch (Throwable e) {
+            log.debug("Remoting ping {} fail", ref.config.getTcpConfig().getServerEndpoint(), e);
+            return false;
+        } finally {
+            if (client != null) {
+                removeWaitBean(client, session, requestId);
+                if (releaseClient(client) && (!ref.config.isUsePool() || !hasPendingWaitBeans(client))) {
+                    recycleClient(pool, ref.sync, client);
+                }
+            }
+        }
+    }
+
+    private static RpcHybridClientPool resolveClientPool(RpcClientConfig<?> config) {
+        return clientPools.computeIfAbsent(config, k -> {
+            log.info("RpcHybridClientPool {}", toJsonString(k));
+            if (!config.isUsePool()) {
+                return new NonHybridClientPool(config.getHybridConfig());
+            }
+            return new RpcHybridClientPoolImpl(config);
+        });
+    }
+
+    private static HybridClient borrowFacadeClient(ClientRef ref, Object proxyObject, RpcHybridClientPool pool) {
+        if (ref.sync.v == null) {
+            HybridClient candidate = pool.borrowClient();
+            boolean returnCandidate = false;
+            boolean assignedCandidate = false;
+            boolean initOk = false;
+            try {
+                synchronized (ref.sync) {
+                    if (ref.sync.v == null) {
+                        ref.sync.v = candidate;
+                        assignedCandidate = true;
+                        init(candidate, proxyObject, ref.config, ref.isCompute, ref.subscribedEvents);
+                        initOk = true;
+                    } else {
+                        returnCandidate = true;
+                    }
+                }
+            } catch (Throwable e) {
+                if (assignedCandidate && !initOk) {
+                    synchronized (ref.sync) {
+                        if (ref.sync.v == candidate) {
+                            ref.sync.v = null;
+                        }
+                    }
+                    clearClient(candidate);
+                    pool.returnClient(candidate);
+                }
+                throw InvalidException.sneaky(e);
+            }
+            if (returnCandidate) {
+                pool.returnClient(candidate);
+            }
+        }
+
+        synchronized (ref.sync) {
+            HybridClient client = ref.sync.v;
+            retainClient(client);
+            return client;
+        }
     }
 
     private static void init(HybridClient client, Object proxyObject, RpcClientConfig<?> config, FastThreadLocal<Boolean> isCompute,
@@ -627,6 +714,11 @@ public final class Remoting {
         }
 
         MethodMessage pack = (MethodMessage) e.getValue();
+        if (M_PING.equals(pack.methodName)) {
+            pack.returnValue = Boolean.TRUE;
+            session.send(pack, RemotingHybridOptions.response(pack));
+            return;
+        }
         try {
             pack.returnValue = Sys.callLog(contractInstance.getClass(), pack.methodName,
                     () -> String.format("Server %s.%s [%s -> %s]", contractInstance.getClass().getSimpleName(), pack.methodName,

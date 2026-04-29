@@ -16,6 +16,7 @@ import org.rx.core.Strings;
 import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.core.config.YamlConfigSource;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
 import org.rx.io.DuplexStream;
 import org.rx.net.AuthenticEndpoint;
@@ -78,6 +79,9 @@ import static org.rx.core.Sys.toJsonString;
 public final class RssClient {
     static final long RSS_RELOAD_DEBOUNCE_MILLIS = 100L;
     static final long UPSTREAM_CLOSE_DELAY_MILLIS = 30_000L;
+    static final long UPSTREAM_CLOSE_CHECK_MILLIS = 1_000L;
+    static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 5L * 60L * 1000L;
+    static final long UPSTREAM_HEALTH_CHECK_PERIOD_MILLIS = 5_000L;
 
     static volatile RSSConf rssConf;
     static volatile RssRuntime runtime;
@@ -196,7 +200,8 @@ public final class RssClient {
             conf.udp2rawSocksServers = Collections.emptyList();
         }
         conf.trafficRetentionDays = Math.max(1, conf.trafficRetentionDays);
-        conf.memoryRetentionHours = Math.max(1, conf.memoryRetentionHours);
+        conf.memoryRetentionHours = conf.memoryRetentionHours <= 0
+                ? RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS : conf.memoryRetentionHours;
         conf.connectTimeoutSeconds = Math.max(1, conf.connectTimeoutSeconds);
         conf.tcpTimeoutSeconds = Math.max(0, conf.tcpTimeoutSeconds);
         conf.udpTimeoutSeconds = Math.max(0, conf.udpTimeoutSeconds);
@@ -284,6 +289,7 @@ public final class RssClient {
                     firstFacade = facade;
                 }
                 UpstreamSupport support = new UpstreamSupport(socksServer, facade);
+                support.setConfiguredWeight(weight);
                 socksServers.add(support, weight);
                 dnsInterceptors.add(facade, weight);
             }
@@ -292,7 +298,9 @@ public final class RssClient {
                 if (weight <= 0) {
                     continue;
                 }
-                udp2rawSocksServers.add(new UpstreamSupport(socksServer, firstFacade), weight);
+                UpstreamSupport support = new UpstreamSupport(socksServer, firstFacade);
+                support.setConfiguredWeight(weight);
+                udp2rawSocksServers.add(support, weight);
             }
             log.info("rssConf load socksServers: {}", toJsonString(conf.socksServers));
             log.info("rssConf load udp2rawSocksServers: {}", toJsonString(conf.udp2rawSocksServers));
@@ -514,24 +522,53 @@ public final class RssClient {
     }
 
     static void closeUpstreamsLater(RssRuntime.UpstreamSnapshot snapshot) {
-        if (snapshot == null) {
+        if (snapshot == null || snapshot.closed) {
             return;
         }
-        Tasks.setTimeout(() -> closeUpstreamsQuietly(snapshot), UPSTREAM_CLOSE_DELAY_MILLIS);
+        snapshot.closing = true;
+        long deadline = System.currentTimeMillis() + UPSTREAM_CLOSE_DELAY_MILLIS + UPSTREAM_CLOSE_MAX_WAIT_MILLIS;
+        if (snapshot.closeDeadlineMillis <= 0L || snapshot.closeDeadlineMillis > deadline) {
+            snapshot.closeDeadlineMillis = deadline;
+        }
+        cancelUpstreamHealthCheck(snapshot);
+        Tasks.setTimeout(() -> closeUpstreamsWhenIdle(snapshot), UPSTREAM_CLOSE_DELAY_MILLIS);
+    }
+
+    static void closeUpstreamsWhenIdle(RssRuntime.UpstreamSnapshot snapshot) {
+        if (snapshot == null || snapshot.closed) {
+            return;
+        }
+        int active = activeConnectionCount(snapshot);
+        if (active > 0) {
+            long deadline = snapshot.closeDeadlineMillis;
+            if (deadline > 0L && System.currentTimeMillis() >= deadline) {
+                log.warn("rssConf old upstream force close activeConnections={} after maxWait={}ms",
+                        active, UPSTREAM_CLOSE_MAX_WAIT_MILLIS);
+                closeUpstreamsQuietly(snapshot);
+                return;
+            }
+            log.info("rssConf old upstream wait activeConnections={}", active);
+            Tasks.setTimeout(() -> closeUpstreamsWhenIdle(snapshot), UPSTREAM_CLOSE_CHECK_MILLIS);
+            return;
+        }
+        closeUpstreamsQuietly(snapshot);
     }
 
     static void closeUpstreamsQuietly(RssRuntime.UpstreamSnapshot snapshot) {
-        if (snapshot == null) {
+        if (snapshot == null || snapshot.closed) {
             return;
         }
+        snapshot.closed = true;
+        snapshot.closing = true;
+        cancelUpstreamHealthCheck(snapshot);
         Set<SocksRpcContract> facades = Collections.newSetFromMap(new IdentityHashMap<SocksRpcContract, Boolean>());
-        for (UpstreamSupport support : snapshot.socksServers.aliveList()) {
+        for (UpstreamSupport support : snapshot.socksServers.readOnlySnapshot()) {
             org.rx.net.socks.Socks5UpstreamPoolManager.INSTANCE.closeEndpoint(support.getEndpoint());
             if (support.getFacade() != null) {
                 facades.add(support.getFacade());
             }
         }
-        for (UpstreamSupport support : snapshot.udp2rawSocksServers.aliveList()) {
+        for (UpstreamSupport support : snapshot.udp2rawSocksServers.readOnlySnapshot()) {
             org.rx.net.socks.Socks5UpstreamPoolManager.INSTANCE.closeEndpoint(support.getEndpoint());
             if (support.getFacade() != null) {
                 facades.add(support.getFacade());
@@ -540,6 +577,95 @@ public final class RssClient {
         for (SocksRpcContract facade : facades) {
             tryClose(facade);
         }
+    }
+
+    static void startUpstreamHealthCheck(RssRuntime.UpstreamSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        snapshot.healthTask = Tasks.schedulePeriod(() -> refreshUpstreamHealth(snapshot),
+                0L, UPSTREAM_HEALTH_CHECK_PERIOD_MILLIS);
+    }
+
+    static void cancelUpstreamHealthCheck(RssRuntime.UpstreamSnapshot snapshot) {
+        if (snapshot == null || snapshot.healthTask == null) {
+            return;
+        }
+        snapshot.healthTask.cancel(false);
+        snapshot.healthTask = null;
+    }
+
+    static void refreshUpstreamHealth(RssRuntime.UpstreamSnapshot snapshot) {
+        if (snapshot == null || snapshot.closing) {
+            return;
+        }
+        refreshUpstreamHealth(snapshot, snapshot.socksServers, true);
+        refreshUpstreamHealth(snapshot, snapshot.udp2rawSocksServers, false);
+    }
+
+    static void refreshUpstreamHealth(RssRuntime.UpstreamSnapshot snapshot, RandomList<UpstreamSupport> servers, boolean updateDns) {
+        if (servers == null) {
+            return;
+        }
+        for (UpstreamSupport support : servers.readOnlySnapshot()) {
+            boolean healthy = pingUpstream(support);
+            updateUpstreamHealth(snapshot, servers, support, healthy, updateDns);
+        }
+    }
+
+    static boolean pingUpstream(UpstreamSupport support) {
+        if (support == null || support.getFacade() == null) {
+            return true;
+        }
+        SocksRpcContract facade = support.getFacade();
+        if (facade instanceof ForwardingSocksRpcContract) {
+            facade = ((ForwardingSocksRpcContract) facade).delegate;
+        }
+        return Remoting.ping(facade);
+    }
+
+    static void updateUpstreamHealth(RssRuntime.UpstreamSnapshot snapshot, RandomList<UpstreamSupport> servers,
+                                     UpstreamSupport support, boolean healthy, boolean updateDns) {
+        if (support == null || servers == null) {
+            return;
+        }
+        boolean previous = support.isHealthy();
+        support.setHealthy(healthy);
+        int weight = healthy ? Math.max(0, support.getConfiguredWeight()) : 0;
+        setWeightIfPresent(servers, support, weight);
+        if (updateDns && snapshot != null && support.getFacade() != null) {
+            setWeightIfPresent(snapshot.dnsInterceptors, support.getFacade(), weight);
+        }
+        DiagnosticMetrics.record("rss.upstream.health", healthy ? 1D : 0D, "endpoint=" + support.getEndpoint());
+        if (previous != healthy) {
+            log.info("rss upstream {} health {}", support.getEndpoint(), healthy ? "UP" : "DOWN");
+        }
+    }
+
+    static <T> void setWeightIfPresent(RandomList<T> list, T element, int weight) {
+        if (list == null || element == null || !list.contains(element)) {
+            return;
+        }
+        try {
+            if (list.getWeight(element) != weight) {
+                list.setWeight(element, weight);
+            }
+        } catch (NoSuchElementException ignored) {
+        }
+    }
+
+    static int activeConnectionCount(RssRuntime.UpstreamSnapshot snapshot) {
+        if (snapshot == null) {
+            return 0;
+        }
+        int count = 0;
+        Set<UpstreamSupport> supports = Collections.newSetFromMap(new IdentityHashMap<UpstreamSupport, Boolean>());
+        supports.addAll(snapshot.socksServers.readOnlySnapshot());
+        supports.addAll(snapshot.udp2rawSocksServers.readOnlySnapshot());
+        for (UpstreamSupport support : supports) {
+            count += support.activeConnectionCount();
+        }
+        return count;
     }
 
     static void closeInServerQuietly(RssRuntime.RssInServer server) {
@@ -663,7 +789,11 @@ public final class RssClient {
 
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost) {
         try {
-            return socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
+            UpstreamSupport next = socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
+            if (next.isHealthy()) {
+                return next;
+            }
+            return nextHealthyUpstream(socksServers);
         } catch (NoSuchElementException e) {
             throw new InvalidException("No available socks upstream for {}", srcHost);
         } catch (IllegalArgumentException e) {
@@ -671,11 +801,24 @@ public final class RssClient {
         }
     }
 
+    static UpstreamSupport nextHealthyUpstream(RandomList<UpstreamSupport> socksServers) {
+        int size = socksServers.size();
+        for (int i = 0; i < size; i++) {
+            UpstreamSupport next = socksServers.next();
+            if (next.isHealthy()) {
+                return next;
+            }
+        }
+        throw new NoSuchElementException();
+    }
+
     static UpstreamSupport routeUpstream(SocksConfig inConf, UpstreamSupport next) {
         if (inConf == null || inConf.getKcptunClient() == null) {
             return next;
         }
-        return new UpstreamSupport(inConf.getKcptunClient(), next.getFacade());
+        UpstreamSupport routed = new UpstreamSupport(inConf.getKcptunClient(), next.getFacade());
+        routed.setConnectionTracker(next);
+        return routed;
     }
 
     static void applyUdpLeasePool(RSSConf conf, SocksConfig config) {
