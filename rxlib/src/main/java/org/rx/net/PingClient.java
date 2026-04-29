@@ -6,13 +6,13 @@ import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
-import org.rx.net.dns.DnsClient;
 
 import java.io.IOException;
 import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 
@@ -74,9 +74,8 @@ public final class PingClient {
 
     public boolean isReachable(String host) {
         try {
-            InetAddress address = Sockets.isValidIp(host) ? Sockets.parseIpAddress(host) : DnsClient.inlandClient().resolve(host);
-            return isReachable(address);
-        } catch (Exception e) {
+            return isReachable(InetAddress.getByName(host));
+        } catch (UnknownHostException e) {
             log.warn("isReachable {}", e.getMessage());
             return false;
         }

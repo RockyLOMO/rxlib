@@ -19,7 +19,6 @@ import org.rx.exception.TraceHandler;
 import org.rx.exception.TraceHandler.ExceptionEntity;
 import org.rx.exception.TraceHandler.MethodEntity;
 import org.rx.io.EntityDatabase;
-import org.rx.net.dns.DnsClient;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
@@ -1137,8 +1136,8 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             return;
         }
         try {
-            List<InetAddress> addresses = DnsClient.inlandClient().resolveAll(filter.toolHost);
-            List<String> result = new ArrayList<>(addresses.size());
+            InetAddress[] addresses = InetAddress.getAllByName(filter.toolHost);
+            List<String> result = new ArrayList<>(addresses.length);
             for (InetAddress address : addresses) {
                 result.add(address.getHostAddress());
             }
