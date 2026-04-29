@@ -12,7 +12,6 @@ import org.rx.net.Sockets;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.support.GeoManager;
 
-import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -47,7 +46,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
         }
 
         @Override
-        public void fakeEndpoint(BigInteger hash, String realEndpoint) {
+        public void fakeEndpoint(long hash, String realEndpoint) {
         }
 
         @SneakyThrows
