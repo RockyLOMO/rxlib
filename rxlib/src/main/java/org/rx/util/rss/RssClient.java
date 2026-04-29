@@ -9,14 +9,13 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
-import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Linq;
 import org.rx.core.Reflects;
 import org.rx.core.Strings;
 import org.rx.core.Sys;
 import org.rx.core.Tasks;
-import org.rx.core.YamlConfiguration;
+import org.rx.core.config.YamlConfigSource;
 import org.rx.exception.InvalidException;
 import org.rx.io.DuplexStream;
 import org.rx.net.AuthenticEndpoint;
@@ -34,13 +33,11 @@ import org.rx.net.socks.Authenticator;
 import org.rx.net.socks.RrpConfig;
 import org.rx.net.socks.RrpServer;
 import org.rx.net.socks.ShadowsocksConfig;
-import org.rx.net.socks.ShadowsocksServer;
 import org.rx.net.socks.SocksConnectionTagRegistry;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcContract;
-import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -49,7 +46,6 @@ import org.rx.net.support.IpGeolocation;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.TcpClientConfig;
-import org.rx.util.function.Action;
 import org.rx.util.function.BiFunc;
 import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleAction;
@@ -64,11 +60,15 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.core.Extends.eachQuietly;
 import static org.rx.core.Extends.tryClose;
@@ -76,276 +76,494 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class RssClient {
-    static RSSConf rssConf;
+    static final long RSS_RELOAD_DEBOUNCE_MILLIS = 100L;
+    static final long UPSTREAM_CLOSE_DELAY_MILLIS = 30_000L;
+
+    static volatile RSSConf rssConf;
+    static volatile RssRuntime runtime;
     static RrpServer rrpServer;
+    static String rrpToken;
+    static Integer rrpPort;
     static HttpServer httpServer;
     static NameserverImpl nameserver;
     static RssUserTrafficStore trafficStore;
     static ScheduledFuture<?> ddnsTask;
     static int ddnsTaskPeriodSeconds;
+    static ScheduledFuture<?> autoWhiteListTask;
+    static int autoWhiteListTaskPeriodSeconds;
 
     private RssClient() {
     }
 
     @SneakyThrows
     public static void launch(Map<String, String> options, int port) {
-        boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
-        int udp2rawPort = port + 10;
+        YamlConfigSource<RSSConf> source = new YamlConfigSource<RSSConf>("rss", RSSConf.class, "conf.yml")
+                .setValidator(RssClient::normalizeAndValidateRssConfig)
+                .setChangeDetector((oldConfig, newConfig) -> !Strings.hashEquals(toJsonString(oldConfig), toJsonString(newConfig)))
+                .setDebounceMillis(RSS_RELOAD_DEBOUNCE_MILLIS);
+        RssRuntime rt = null;
+        try {
+            source.start();
+            rt = new RssRuntime(options, port, source.current());
+            runtime = rt;
+            RssRuntime current = rt;
+            source.onChanged.add((s, e) -> current.reload(e.getOldConfig(), e.getNewConfig()));
+        } catch (Throwable e) {
+            tryClose(source);
+            if (rt != null) {
+                tryClose(rt);
+            }
+            throw InvalidException.sneaky(e);
+        }
+
+        log.info("Server started..");
+        rt.await();
+    }
+
+    static final class ForwardingSocksRpcContract implements SocksRpcContract {
+        final SocksRpcContract delegate;
+        final GeoManager geoMgr;
+
+        ForwardingSocksRpcContract(SocksRpcContract delegate, GeoManager geoMgr) {
+            this.delegate = delegate;
+            this.geoMgr = geoMgr;
+        }
+
+        @Override
+        public void fakeEndpoint(BigInteger hash, String realEndpoint) {
+            delegate.fakeEndpoint(hash, realEndpoint);
+        }
+
+        @Override
+        public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+            boolean outProxy;
+            String ext;
+            RSSConf conf = rssConf;
+            RSSConf.RouteConf routeConf = conf.route;
+            if (routeConf.enable) {
+                if (routeConf.srcIpProxyRules != null && routeConf.srcIpProxyRules.contains(srcIp)) {
+                    outProxy = true;
+                    ext = "srcIp:proxy";
+                } else if (geoMgr.matchSiteDirect(host)) {
+                    outProxy = false;
+                    ext = "geosite:direct";
+                } else {
+                    outProxy = true;
+                    ext = "geosite:proxy";
+                }
+            } else {
+                outProxy = true;
+                ext = "routeDisabled";
+            }
+            if (conf.hasRouteFlag()) {
+                log.info("route dns {}+{} {} <- {}", srcIp, host, outProxy ? "PROXY" : "DIRECT", ext);
+            }
+            return outProxy ? delegate.resolveHost(srcIp, host) : DnsClient.inlandClient().resolveAll(host);
+        }
+
+        @Override
+        public void addWhiteList(InetAddress endpoint) {
+            delegate.addWhiteList(endpoint);
+        }
+
+        @Override
+        public boolean resetUdpRelay(int relayPort) {
+            return delegate.resetUdpRelay(relayPort);
+        }
+
+        @Override
+        public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
+            return delegate.claimUdpRelay(relayPort, clientAddr);
+        }
+
+        @Override
+        public void close() {
+            tryClose(delegate);
+        }
+    }
+
+    static boolean normalizeAndValidateRssConfig(RSSConf conf) {
+        if (conf == null) {
+            return false;
+        }
+        if (conf.route == null) {
+            conf.route = new RSSConf.RouteConf();
+        }
+        if (conf.nameserver == null) {
+            conf.nameserver = new NameserverConfig();
+        }
+        if (conf.udp2rawSocksServers == null) {
+            conf.udp2rawSocksServers = Collections.emptyList();
+        }
+        conf.trafficRetentionDays = Math.max(1, conf.trafficRetentionDays);
+        conf.memoryRetentionHours = Math.max(1, conf.memoryRetentionHours);
+        conf.connectTimeoutSeconds = Math.max(1, conf.connectTimeoutSeconds);
+        conf.tcpTimeoutSeconds = Math.max(0, conf.tcpTimeoutSeconds);
+        conf.udpTimeoutSeconds = Math.max(0, conf.udpTimeoutSeconds);
+        conf.rpcMinSize = Math.max(1, conf.rpcMinSize);
+        conf.rpcMaxSize = Math.max(conf.rpcMinSize, conf.rpcMaxSize);
+        conf.rpcRequestTimeoutMillis = Math.max(0, conf.rpcRequestTimeoutMillis);
+        conf.rpcAutoWhiteListSeconds = Math.max(0, conf.rpcAutoWhiteListSeconds);
+        conf.shadowDnsPort = Math.max(1, conf.shadowDnsPort);
+        conf.dnsTtlMinutes = Math.max(1, conf.dnsTtlMinutes);
+        resolveNameserverConfig(conf);
+
+        if (Strings.isEmpty(conf.socksPwd) || CollectionUtils.isEmpty(conf.shadowUsers) || CollectionUtils.isEmpty(conf.socksServers)) {
+            return false;
+        }
+        if (!hasWeightedSocksServer(conf.socksServers)) {
+            return false;
+        }
+        if (conf.rrpPort != null && conf.rrpPort <= 0) {
+            return false;
+        }
+        Set<String> usernames = new LinkedHashSet<>();
+        Set<Integer> shadowPorts = new LinkedHashSet<>();
+        for (ShadowUser user : conf.shadowUsers) {
+            if (user == null || user.getSsPort() <= 0 || Strings.isEmpty(user.getSsPwd())
+                    || Strings.isEmpty(user.getSocksUser()) || Strings.isEmpty(user.getUsername())) {
+                return false;
+            }
+            if (!usernames.add(user.getUsername()) || !shadowPorts.add(user.getSsPort())) {
+                return false;
+            }
+        }
+        if (shouldScheduleDdns(conf)) {
+            if (Strings.isEmpty(conf.ddnsApiKey)) {
+                return false;
+            }
+            for (String domain : conf.ddnsDomains) {
+                int dotIndex = domain == null ? -1 : domain.indexOf('.');
+                if (dotIndex <= 0 || dotIndex == domain.length() - 1) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasWeightedSocksServer(List<AuthenticEndpoint> socksServers) {
+        for (AuthenticEndpoint socksServer : socksServers) {
+            if (socksServer != null && socksServer.getInetEndpoint() != null && weightOf(socksServer) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static int weightOf(AuthenticEndpoint endpoint) {
+        if (endpoint == null) {
+            return 0;
+        }
+        return Reflects.convertQuietly(endpoint.getParameters().get("w"), int.class, 0);
+    }
+
+    static RssRuntime.UpstreamSnapshot buildUpstreams(RSSConf conf, GeoManager geoMgr) {
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
         RandomList<UpstreamSupport> udp2rawSocksServers = new RandomList<>();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
-        GeoManager geoMgr = GeoManager.INSTANCE;
+        List<SocksRpcContract> createdFacades = new ArrayList<>();
 
-        List<Object> svrRefs = new ArrayList<>();
-        YamlConfiguration watcher = new YamlConfiguration("conf.yml")
-                .setWatchValidator(conf -> {
-                    RSSConf changed = conf.readAs(RSSConf.class);
-                    if (changed == null || CollectionUtils.isEmpty(changed.socksServers)) {
-                        return false;
-                    }
-                    for (AuthenticEndpoint socksServer : changed.socksServers) {
-                        if (socksServer == null || socksServer.getInetEndpoint() == null) {
-                            continue;
-                        }
-                        int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
-                        if (weight > 0) {
-                            return true;
-                        }
-                    }
-                    return false;
-                }).enableWatch();
-        watcher.onChanged.add((s, e) -> {
-            RSSConf changed = s.readAs(RSSConf.class);
-            if (changed == null) {
-                return;
-            }
-            if (changed.udp2rawSocksServers == null) {
-                changed.udp2rawSocksServers = Collections.emptyList();
-            }
-            changed.trafficRetentionDays = Math.max(1, changed.trafficRetentionDays);
-            changed.memoryRetentionHours = Math.max(1, changed.memoryRetentionHours);
-            rssConf = changed;
-            List<AuthenticEndpoint> svrs = rssConf.socksServers;
-            log.info("rssConf load socksServers: {}", toJsonString(svrs));
-            List<AuthenticEndpoint> udp2rawSvrs = rssConf.udp2rawSocksServers;
-            log.info("rssConf load udp2rawSocksServers: {}", toJsonString(udp2rawSvrs));
-            geoMgr.setGeoSiteDirectRules(rssConf.route.dstGeoSiteDirectRules);
-
-            List<UpstreamSupport> oldSvrs = socksServers.aliveList();
-            List<UpstreamSupport> oldUdp2rawSvrs = udp2rawSocksServers.aliveList();
-            List<DnsServer.ResolveInterceptor> oldDnss = dnsInterceptors.aliveList();
-
+        try {
             SocksRpcContract firstFacade = null;
-            for (AuthenticEndpoint socksServer : svrs) {
-                InetSocketAddress socksServerEp = socksServer.requireEndpoint();
-                RpcClientConfig<SocksRpcContract> rpcConf = RpcClientConfig.poolMode(
-                        Sockets.newEndpoint(socksServerEp, socksServerEp.getPort() + 1),
-                        rssConf.rpcMinSize, rssConf.rpcMaxSize);
-                rpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(rssConf));
-                TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
-                tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
-                int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
+            for (AuthenticEndpoint socksServer : conf.socksServers) {
+                int weight = weightOf(socksServer);
                 if (weight <= 0) {
                     continue;
                 }
-                SocksRpcContract facade = Remoting.createFacade(SocksRpcContract.class, rpcConf);
+                InetSocketAddress socksServerEp = socksServer.requireEndpoint();
+                RpcClientConfig<SocksRpcContract> rpcConf = RpcClientConfig.poolMode(
+                        Sockets.newEndpoint(socksServerEp, socksServerEp.getPort() + 1),
+                        conf.rpcMinSize, conf.rpcMaxSize);
+                rpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(conf));
+                TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
+                tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
+                SocksRpcContract facade = new ForwardingSocksRpcContract(Remoting.createFacade(SocksRpcContract.class, rpcConf), geoMgr);
+                createdFacades.add(facade);
                 if (firstFacade == null) {
                     firstFacade = facade;
                 }
-                UpstreamSupport us = new UpstreamSupport(socksServer, new SocksRpcContract() {
-                    @Override
-                    public void fakeEndpoint(BigInteger hash, String realEndpoint) {
-                        facade.fakeEndpoint(hash, realEndpoint);
-                    }
-
-                    @Override
-                    public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
-                        boolean outProxy;
-                        String ext;
-                        RSSConf.RouteConf routeConf = rssConf.route;
-                        if (routeConf.enable) {
-                            if (routeConf.srcIpProxyRules != null && routeConf.srcIpProxyRules.contains(srcIp)) {
-                                outProxy = true;
-                                ext = "srcIp:proxy";
-                            } else if (geoMgr.matchSiteDirect(host)) {
-                                outProxy = false;
-                                ext = "geosite:direct";
-                            } else {
-                                outProxy = true;
-                                ext = "geosite:proxy";
-                            }
-                        } else {
-                            outProxy = true;
-                            ext = "routeDisabled";
-                        }
-                        if (rssConf.hasRouteFlag()) {
-                            log.info("route dns {}+{} {} <- {}", srcIp, host, outProxy ? "PROXY" : "DIRECT", ext);
-                        }
-                        return outProxy ? facade.resolveHost(srcIp, host) : DnsClient.inlandClient().resolveAll(host);
-                    }
-
-                    @Override
-                    public void addWhiteList(InetAddress endpoint) {
-                        facade.addWhiteList(endpoint);
-                    }
-
-                    @Override
-                    public boolean resetUdpRelay(int relayPort) {
-                        return facade.resetUdpRelay(relayPort);
-                    }
-
-                    @Override
-                    public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
-                        return facade.claimUdpRelay(relayPort, clientAddr);
-                    }
-                });
-                socksServers.add(us, weight);
-                dnsInterceptors.add(us.getFacade(), weight);
+                UpstreamSupport support = new UpstreamSupport(socksServer, facade);
+                socksServers.add(support, weight);
+                dnsInterceptors.add(facade, weight);
             }
-            for (AuthenticEndpoint socksServer : udp2rawSvrs) {
-                int weight = Reflects.convertQuietly(socksServer.getParameters().get("w"), int.class, 0);
+            for (AuthenticEndpoint socksServer : conf.udp2rawSocksServers) {
+                int weight = weightOf(socksServer);
                 if (weight <= 0) {
                     continue;
                 }
                 udp2rawSocksServers.add(new UpstreamSupport(socksServer, firstFacade), weight);
             }
-
-            socksServers.removeAll(oldSvrs);
-            udp2rawSocksServers.removeAll(oldUdp2rawSvrs);
-            dnsInterceptors.removeAll(oldDnss);
-            for (UpstreamSupport support : oldSvrs) {
-                org.rx.net.socks.Socks5UpstreamPoolManager.INSTANCE.closeEndpoint(support.getEndpoint());
-                tryClose(support.getFacade());
+            log.info("rssConf load socksServers: {}", toJsonString(conf.socksServers));
+            log.info("rssConf load udp2rawSocksServers: {}", toJsonString(conf.udp2rawSocksServers));
+            return new RssRuntime.UpstreamSnapshot(socksServers, udp2rawSocksServers, dnsInterceptors);
+        } catch (Throwable e) {
+            for (SocksRpcContract facade : createdFacades) {
+                tryClose(facade);
             }
-            for (UpstreamSupport support : oldUdp2rawSvrs) {
-                org.rx.net.socks.Socks5UpstreamPoolManager.INSTANCE.closeEndpoint(support.getEndpoint());
-                tryClose(support.getFacade());
-            }
-
-            boolean debugFlag = rssConf.hasDebugFlag();
-            int connectTimeoutMillis = rssConf.connectTimeoutSeconds * 1000;
-            log.info("rssConf debug={}", debugFlag);
-            for (Object svrRef : svrRefs) {
-                if (svrRef instanceof ShadowsocksServer) {
-                    ShadowsocksConfig config = ((ShadowsocksServer) svrRef).getConfig();
-                    config.setDebug(debugFlag);
-                    config.setConnectTimeoutMillis(connectTimeoutMillis);
-                } else {
-                    SocksConfig config = ((SocksProxyServer) svrRef).getConfig();
-                    config.setDebug(debugFlag);
-                    config.setConnectTimeoutMillis(connectTimeoutMillis);
-                    if (config.isEnableUdp2raw()) {
-                        config.setUdp2rawClient(rssConf.udp2rawClient);
-                        config.setKcptunClient(rssConf.kcptunClient);
-                    }
-                }
-            }
-            configureDdnsSchedule(rssConf);
-            log.info("rssConf load ok");
-        });
-        watcher.raiseChange();
-
-        DnsServer dnsSvr = new DnsServer(rssConf.shadowDnsPort);
-        dnsSvr.setTtl(60 * rssConf.dnsTtlMinutes);
-        dnsSvr.setNegativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL);
-        dnsSvr.setInterceptors(dnsInterceptors);
-        dnsSvr.addHostsFile("hosts.txt");
-        nameserver = new NameserverImpl(resolveNameserverConfig(rssConf), dnsSvr);
-        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(rssConf.shadowDnsPort);
-        Sockets.injectNameService(Collections.singletonList(shadowDnsEp));
-
-        Linq<Tuple<ShadowsocksConfig, ShadowUser>> shadowUsers = Linq.from(rssConf.shadowUsers).select(shadowUser -> {
-            ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(shadowUser.getSsPort()),
-                    CipherKind.AES_256_GCM.getCipherName(), shadowUser.getSsPwd());
-            config.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
-            enableShadowIngressReusePort(config);
-            return Tuple.of(config, shadowUser);
-        });
-
-        SocksConfig inConf = new SocksConfig(resolveClientInListenAddress(rssConf, port, "rss-in-"));
-        inConf.setDebug(rssConf.hasDebugFlag());
-        inConf.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.INLAND);
-        inConf.setOptimalSettings(RssSupport.IN_OPS);
-        inConf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
-        inConf.setReadTimeoutSeconds(rssConf.tcpTimeoutSeconds);
-        inConf.setUdpReadTimeoutSeconds(rssConf.udpTimeoutSeconds);
-        inConf.setUdpRedundantMultiplier(2);
-        RssSupport.applyUdpCompressionTrial(inConf);
-        RssAuthenticator authenticator = new RssAuthenticator(shadowUsers.select(p -> p.right).toList(),
-                rssConf.socksPwd.trim(), rssConf.memoryRetentionHours);
-        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
-        log.info("rssConf socksBindPort={}, inListenAddress={}", rssConf.socksBindPort, inConf.getListenAddress());
-        TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
-            if (dstEp.getPort() == SocksRpcContract.DNS_PORT) {
-                e.setUpstream(shadowDnsUpstream);
-                e.setHandled(true);
-            }
-        };
-        SocksProxyServer inSvr = createInSvr(inConf, authenticator, firstRoute, socksServers, geoMgr);
-        svrRefs.add(inSvr);
-        RssRpcApp app = new RssRpcApp(inSvr);
-
-        SocksProxyServer inUdp2rawSvr = null;
-        SocketAddress inUdp2rawSvrAddress = null;
-        if (enableUdp2raw) {
-            SocksConfig inTunConf = Sys.deepClone(inConf);
-            inTunConf.setDebug(rssConf.hasDebugFlag());
-            inTunConf.setListenAddress(resolveClientInListenAddress(rssConf, udp2rawPort, "rss-in-tun-"));
-            inTunConf.setKcptunClient(rssConf.kcptunClient);
-            inTunConf.setUdpRedundantMultiplier(2);
-            RssSupport.applyUdpCompressionTrial(inTunConf);
-            inUdp2rawSvr = createInSvr(inTunConf, authenticator, firstRoute, udp2rawSocksServers, geoMgr);
-            inUdp2rawSvrAddress = inTunConf.getListenAddress();
-            svrRefs.add(inUdp2rawSvr);
+            throw InvalidException.sneaky(e);
         }
+    }
 
-        Action fn = () -> {
-            InetAddress addr = Sockets.parseIpAddress(geoMgr.getPublicIp());
-            eachQuietly(socksServers, p -> p.getFacade().addWhiteList(addr));
-        };
-        fn.invoke();
-        Tasks.schedulePeriod(fn, rssConf.rpcAutoWhiteListSeconds * 1000L);
+    static DnsServer createDnsServer(RSSConf conf, RandomList<DnsServer.ResolveInterceptor> dnsInterceptors) {
+        DnsServer dnsServer = new DnsServer(conf.shadowDnsPort);
+        applyDnsConfig(dnsServer, conf, dnsInterceptors);
+        dnsServer.addHostsFile("hosts.txt");
+        return dnsServer;
+    }
 
-        SocketAddress inSvrAddress = inConf.getListenAddress();
-        for (Tuple<ShadowsocksConfig, ShadowUser> tuple : shadowUsers) {
-            ShadowsocksConfig conf = tuple.left;
-            ShadowUser usr = tuple.right;
-            String authUserName = usr.getUsername();
-            String routeUserName = usr.getSocksUser();
+    static void applyDnsConfig(DnsServer dnsServer, RSSConf conf, RandomList<DnsServer.ResolveInterceptor> dnsInterceptors) {
+        dnsServer.setTtl(60 * conf.dnsTtlMinutes);
+        dnsServer.setNegativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL);
+        dnsServer.setInterceptors(dnsInterceptors);
+    }
 
-            conf.setOptimalSettings(RssSupport.SS_IN_OPS);
-            conf.setConnectTimeoutMillis(rssConf.connectTimeoutSeconds * 1000);
-            conf.setReadTimeoutSeconds(0);
-            conf.setWriteTimeoutSeconds(0);
-            conf.setUdpReadTimeoutSeconds(0);
-            conf.setUdpWriteTimeoutSeconds(0);
-            ShadowsocksServer ssSvr = new ShadowsocksServer(conf);
-            svrRefs.add(ssSvr);
+    static boolean inServerRestartRequired(RSSConf oldConf, RSSConf newConf) {
+        return oldConf == null
+                || oldConf.socksBindPort != newConf.socksBindPort
+                || oldConf.logFlags != newConf.logFlags
+                || oldConf.connectTimeoutSeconds != newConf.connectTimeoutSeconds
+                || oldConf.tcpTimeoutSeconds != newConf.tcpTimeoutSeconds
+                || oldConf.udpTimeoutSeconds != newConf.udpTimeoutSeconds
+                || !Strings.hashEquals(toJsonString(oldConf.udp2rawClient), toJsonString(newConf.udp2rawClient))
+                || !Strings.hashEquals(toJsonString(oldConf.kcptunClient), toJsonString(newConf.kcptunClient));
+    }
 
-            AuthenticEndpoint svrEp = resolveShadowEndpoint(inSvrAddress, inUdp2rawSvrAddress, rssConf.hysteriaClient, authUserName, routeUserName);
-            SocksConfig toInConf = new SocksConfig();
-            toInConf.setOptimalSettings(RssSupport.IN_OPS);
-            UpstreamSupport svrSupport = new UpstreamSupport(svrEp, null);
-            ssSvr.onTcpRoute.replace((s, e) -> {
-                UnresolvedEndpoint dstEp = e.getFirstDestination();
-                if (rssConf.hasDebugFlag()) {
-                    log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
-                }
-                e.setUpstream(new SocksTcpUpstream(dstEp, toInConf, svrSupport));
-            });
-            ssSvr.onUdpRoute.replace((s, e) -> {
-                UnresolvedEndpoint dstEp = e.getFirstDestination();
-                if (rssConf.hasDebugFlag()) {
-                    log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
-                }
-                e.setUpstream(new SocksUdpUpstream(dstEp, toInConf, svrSupport));
-            });
+    static boolean shadowServerRestartRequired(RSSConf oldConf, RSSConf newConf) {
+        return oldConf == null
+                || oldConf.logFlags != newConf.logFlags
+                || oldConf.connectTimeoutSeconds != newConf.connectTimeoutSeconds;
+    }
+
+    static boolean dnsRestartRequired(RSSConf oldConf, RSSConf newConf) {
+        return oldConf == null || oldConf.shadowDnsPort != newConf.shadowDnsPort;
+    }
+
+    static boolean nameserverRestartRequired(RSSConf oldConf, RSSConf newConf) {
+        if (oldConf == null) {
+            return true;
         }
+        NameserverConfig oldNs = oldConf.nameserver;
+        NameserverConfig newNs = newConf.nameserver;
+        return oldNs.getRegisterPort() != newNs.getRegisterPort()
+                || oldNs.getSyncPort() != newNs.getSyncPort()
+                || !Strings.hashEquals(toJsonString(oldNs.getReplicaEndpoints()), toJsonString(newNs.getReplicaEndpoints()))
+                || !Strings.hashEquals(toJsonString(oldNs.getUdpCodecAllowPrefixes()), toJsonString(newNs.getUdpCodecAllowPrefixes()));
+    }
 
-        clientInit(authenticator);
-        log.info("Server started..");
-        app.await();
+    static void configureInboundConfig(RSSConf conf, SocksConfig config, boolean udp2raw) {
+        config.setDebug(conf.hasDebugFlag());
+        config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.INLAND);
+        config.setOptimalSettings(RssSupport.IN_OPS);
+        config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
+        config.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
+        config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
+        config.setUdpRedundantMultiplier(2);
+        if (udp2raw) {
+            config.setUdp2rawClient(conf.udp2rawClient);
+            config.setKcptunClient(conf.kcptunClient);
+        }
+        RssSupport.applyUdpCompressionTrial(config);
+    }
+
+    static void configureOutboundConfig(RSSConf conf, SocksConfig config) {
+        config.setDebug(conf.hasDebugFlag());
+        config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
+        config.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
+        config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
+        applyUdpLeasePool(conf, config);
+        RssSupport.applyUdpCompressionTrial(config);
+    }
+
+    static SocksConfig createOutboundConfig(RSSConf conf, SocksConfig inConf) {
+        SocksConfig outConf = Sys.deepClone(inConf);
+        outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        outConf.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
+        outConf.setOptimalSettings(RssSupport.OUT_OPS);
+        configureOutboundConfig(conf, outConf);
+        return outConf;
+    }
+
+    static void configureShadowConfig(RSSConf conf, ShadowsocksConfig config) {
+        config.setOptimalSettings(RssSupport.SS_IN_OPS);
+        config.setDebug(conf.hasDebugFlag());
+        config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
+        config.setReadTimeoutSeconds(0);
+        config.setWriteTimeoutSeconds(0);
+        config.setUdpReadTimeoutSeconds(0);
+        config.setUdpWriteTimeoutSeconds(0);
+    }
+
+    static synchronized boolean configureAutoWhiteListSchedule(RSSConf conf, RssRuntime rt) {
+        boolean enabled = conf != null && rt != null && conf.rpcAutoWhiteListSeconds > 0;
+        int periodSeconds = enabled ? conf.rpcAutoWhiteListSeconds : 0;
+        if (autoWhiteListTask != null && (!enabled || autoWhiteListTaskPeriodSeconds != periodSeconds)) {
+            autoWhiteListTask.cancel(false);
+            autoWhiteListTask = null;
+            autoWhiteListTaskPeriodSeconds = 0;
+        }
+        if (!enabled || autoWhiteListTask != null) {
+            return false;
+        }
+        autoWhiteListTaskPeriodSeconds = periodSeconds;
+        autoWhiteListTask = Tasks.schedulePeriod(rt::addPublicIpWhiteList, periodSeconds * 1000L);
+        return true;
+    }
+
+    static synchronized void configureRrpServer(RSSConf conf) {
+        RssRuntime.RrpServerPlan plan = prepareRrpServerPlan(conf);
+        try {
+            materializePortExclusiveRrpPlan(plan);
+            commitRrpServerPlan(plan);
+        } catch (Throwable e) {
+            rollbackRrpServerPlan(plan);
+            closeRrpServerPlanQuietly(plan);
+            throw InvalidException.sneaky(e);
+        }
+    }
+
+    static RssRuntime.RrpServerPlan prepareRrpServerPlan(RSSConf conf) {
+        boolean enabled = conf != null && !Strings.isEmpty(conf.rrpToken) && conf.rrpPort != null;
+        String nextToken = enabled ? conf.rrpToken : null;
+        Integer nextPort = enabled ? conf.rrpPort : null;
+        boolean changed = !(Strings.hashEquals(rrpToken, nextToken)
+                && (rrpPort == nextPort || (rrpPort != null && rrpPort.equals(nextPort))));
+        boolean samePort = enabled && rrpPort != null && rrpPort.equals(nextPort);
+        RssRuntime.RrpServerPlan plan = new RssRuntime.RrpServerPlan(changed, enabled, samePort, nextToken, nextPort);
+        if (changed && enabled && !samePort) {
+            plan.newServer = createRrpServer(nextToken, nextPort);
+        }
+        return plan;
+    }
+
+    static void materializePortExclusiveRrpPlan(RssRuntime.RrpServerPlan plan) {
+        if (plan == null || !plan.changed || !plan.enabled || !plan.samePort || plan.newServer != null) {
+            return;
+        }
+        plan.oldServer = rrpServer;
+        plan.oldToken = rrpToken;
+        plan.oldPort = rrpPort;
+        rrpServer = null;
+        rrpToken = null;
+        rrpPort = null;
+        plan.oldDetached = true;
+        tryClose(plan.oldServer);
+        try {
+            plan.newServer = createRrpServer(plan.token, plan.port);
+        } catch (Throwable e) {
+            rollbackRrpServerPlan(plan);
+            throw InvalidException.sneaky(e);
+        }
+    }
+
+    static void commitRrpServerPlan(RssRuntime.RrpServerPlan plan) {
+        if (plan == null || !plan.changed) {
+            return;
+        }
+        RrpServer oldServer = rrpServer;
+        if (!plan.enabled) {
+            rrpServer = null;
+            rrpToken = null;
+            rrpPort = null;
+            tryClose(oldServer);
+            return;
+        }
+        if (plan.samePort) {
+            oldServer = null;
+        }
+        rrpServer = plan.newServer;
+        rrpToken = plan.token;
+        rrpPort = plan.port;
+        plan.newServer = null;
+        plan.oldServer = null;
+        plan.oldDetached = false;
+        tryClose(oldServer);
+    }
+
+    static RrpServer createRrpServer(String token, Integer port) {
+        RrpConfig c = new RrpConfig();
+        c.setToken(token);
+        c.setBindPort(port);
+        return new RrpServer(c);
+    }
+
+    static void rollbackRrpServerPlan(RssRuntime.RrpServerPlan plan) {
+        if (plan == null || !plan.oldDetached) {
+            return;
+        }
+        closeRrpServerPlanQuietly(plan);
+        try {
+            if (!Strings.isEmpty(plan.oldToken) && plan.oldPort != null) {
+                rrpServer = createRrpServer(plan.oldToken, plan.oldPort);
+                rrpToken = plan.oldToken;
+                rrpPort = plan.oldPort;
+            }
+        } catch (Throwable restoreError) {
+            log.error("rrp rollback failed port={}", plan.oldPort, restoreError);
+        } finally {
+            plan.oldServer = null;
+            plan.oldDetached = false;
+        }
+    }
+
+    static void closeRrpServerPlanQuietly(RssRuntime.RrpServerPlan plan) {
+        if (plan != null) {
+            tryClose(plan.newServer);
+            plan.newServer = null;
+        }
+    }
+
+    static void closeUpstreamsLater(RssRuntime.UpstreamSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        Tasks.setTimeout(() -> closeUpstreamsQuietly(snapshot), UPSTREAM_CLOSE_DELAY_MILLIS);
+    }
+
+    static void closeUpstreamsQuietly(RssRuntime.UpstreamSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        Set<SocksRpcContract> facades = Collections.newSetFromMap(new IdentityHashMap<SocksRpcContract, Boolean>());
+        for (UpstreamSupport support : snapshot.socksServers.aliveList()) {
+            org.rx.net.socks.Socks5UpstreamPoolManager.INSTANCE.closeEndpoint(support.getEndpoint());
+            if (support.getFacade() != null) {
+                facades.add(support.getFacade());
+            }
+        }
+        for (UpstreamSupport support : snapshot.udp2rawSocksServers.aliveList()) {
+            org.rx.net.socks.Socks5UpstreamPoolManager.INSTANCE.closeEndpoint(support.getEndpoint());
+            if (support.getFacade() != null) {
+                facades.add(support.getFacade());
+            }
+        }
+        for (SocksRpcContract facade : facades) {
+            tryClose(facade);
+        }
+    }
+
+    static void closeInServerQuietly(RssRuntime.RssInServer server) {
+        if (server != null) {
+            tryClose(server.server);
+        }
+    }
+
+    static void closeShadowServerQuietly(RssRuntime.ShadowServerRef ref) {
+        if (ref != null) {
+            tryClose(ref.server);
+        }
+    }
+
+    static void closeNameserverQuietly(NameserverImpl server) {
+        if (server != null) {
+            tryClose(server);
+        }
+    }
+
+    static void closeDnsServerQuietly(DnsServer server) {
+        if (server != null) {
+            tryClose(server);
+        }
     }
 
     public static SocketAddress resolveClientInListenAddress(RSSConf conf, int port, String localNamePrefix) {
@@ -355,34 +573,29 @@ public final class RssClient {
         return new LocalAddress(localNamePrefix + port);
     }
 
-    static SocksProxyServer createInSvr(SocksConfig inConf, Authenticator authenticator,
-                                        TripleAction<SocksProxyServer, SocksContext> firstRoute, RandomList<UpstreamSupport> socksServers,
-                                        GeoManager geoMgr) {
+    static RssRuntime.RssInServer createInSvr(RSSConf conf, SocksConfig inConf, Authenticator authenticator,
+                                              TripleAction<SocksProxyServer, SocksContext> firstRoute,
+                                              AtomicReference<RandomList<UpstreamSupport>> socksServersRef,
+                                              GeoManager geoMgr) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf);
         if (authenticator instanceof RssAuthenticator) {
             RssAuthenticator rssAuthenticator = (RssAuthenticator) authenticator;
             inSvr.setConnectionTagResolver(rssAuthenticator::resolve);
         }
-        boolean kcptun = inConf.getKcptunClient() != null;
+        SocksConfig outConf = createOutboundConfig(conf, inConf);
+        AtomicReference<SocksConfig> outConfRef = new AtomicReference<>(outConf);
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
             InetAddress srcHost = e.getSource().getAddress();
-            UpstreamSupport next = nextUpstream(socksServers, srcHost);
+            UpstreamSupport next = nextUpstream(socksServersRef.get(), srcHost);
             if (rssConf.hasDebugFlag()) {
                 log.info("route upSvr src {} -> {}", srcHost, next.getEndpoint());
             }
-            if (kcptun) {
-                return routeUpstream(inConf, next);
+            SocksConfig currentOutConf = outConfRef.get();
+            if (currentOutConf.getKcptunClient() != null) {
+                return routeUpstream(currentOutConf, next);
             }
             return next;
         };
-        SocksConfig outConf = Sys.deepClone(inConf);
-        outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
-        outConf.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
-        RssSupport.applyUdpCompressionTrial(outConf);
-        applyUdpLeasePool(rssConf, outConf);
-        if (!kcptun) {
-            outConf.setOptimalSettings(RssSupport.OUT_OPS);
-        }
         QuadraFunc<InetSocketAddress, UnresolvedEndpoint, String, Boolean> routeingFn = (srcEp, dstEp, transType) -> {
             String host = dstEp.getHost();
             boolean outProxy;
@@ -425,8 +638,9 @@ public final class RssClient {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
+            SocksConfig currentOutConf = outConfRef.get();
             if (routeingFn.apply(e.getSource(), dstEp, "TCP")) {
-                e.setUpstream(new SocksTcpUpstream(dstEp, outConf, routerFn.apply(e)));
+                e.setUpstream(new SocksTcpUpstream(dstEp, currentOutConf, routerFn.apply(e)));
             } else {
                 e.setUpstream(new Upstream(dstEp));
             }
@@ -436,14 +650,15 @@ public final class RssClient {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
+            SocksConfig currentOutConf = outConfRef.get();
             if (routeingFn.apply(e.getSource(), dstEp, "UDP")) {
-                e.setUpstream(new SocksUdpUpstream(dstEp, outConf, routerFn.apply(e)));
+                e.setUpstream(new SocksUdpUpstream(dstEp, currentOutConf, routerFn.apply(e)));
             } else {
                 e.setUpstream(new Upstream(dstEp));
             }
         });
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-        return inSvr;
+        return new RssRuntime.RssInServer(inSvr, inConf, outConfRef);
     }
 
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost) {
@@ -514,12 +729,7 @@ public final class RssClient {
         httpServer = HttpServer.getDefault().requestAsync(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH,
                 new RssClientHttpHandler(authenticator.getShadowStore(), trafficStore, authenticator.getMemoryRetentionHours()));
 
-        if (!Strings.isEmpty(rssConf.rrpToken) && rssConf.rrpPort != null) {
-            RrpConfig c = new RrpConfig();
-            c.setToken(rssConf.rrpToken);
-            c.setBindPort(rssConf.rrpPort);
-            rrpServer = new RrpServer(c);
-        }
+        configureRrpServer(rssConf);
 
         configureDdnsSchedule(rssConf);
     }

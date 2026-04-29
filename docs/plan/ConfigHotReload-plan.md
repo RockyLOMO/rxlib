@@ -308,6 +308,38 @@ mvn -pl rxlib -DskipTests compile
 
 结果：全部通过，5 个目标测试成功，模块编译成功。
 
+## 10.1 RSSConf 接入状态
+
+已接入 `RssClient`：
+
+- `RssClient.launch(...)` 使用 `YamlConfigSource<RSSConf>` 读取和监听 `conf.yml`，不再直接在文件 watcher 回调里修改运行态。
+- `RssRuntime` 已从 `RssClient` 拆出，集中承载 reload 编排、staging 资源构建、原子切换、失败回滚与旧资源关闭；`RssClient` 保留启动入口、配置校验和共享静态辅助方法。
+- `rssConf` 改为 `volatile` 发布；运行态更新成功后才替换全局配置引用。
+- 上游 socks/RPC facade 使用新快照预创建，构建失败会关闭半成品 facade；成功后通过 `AtomicReference<RandomList<UpstreamSupport>>` 切换，旧 facade 延迟关闭，降低 in-flight 请求被硬切断的概率。
+- DNS 上游热更不改 `DnsServer` 字段定义；`DnsServer` 持有稳定的 `SwitchingRandomList`，RSS reload 只替换代理内部的已构建快照，DNS 解析线程通过现有 `RandomList` API 读取最新上游。
+- `RssAuthenticator` 支持原地 `reload(...)`，认证设置用 final `AtomicReference` 发布小快照，热更 shadow 用户、内部 socks 密码与内存保留窗口，并保留同 username 的登录 IP 运行态。
+- `RssRpcApp` 内部使用 final `AtomicReference<SocksProxyServer>` 切换后端，不去掉对象引用的 final 语义，用于监听地址重建后继续处理 RPC 控制面请求。
+- 入站 `SocksConfig` 与 `ShadowsocksConfig` 不再依赖新增 volatile 字段热更；对应字段变化时重建所属 `SocksProxyServer` / `ShadowsocksServer`，出站配置通过 `AtomicReference<SocksConfig>` 发布新对象，新连接读取最新 timeout、UDP lease、kcptun/udp2raw 配置，旧连接保留创建时配置。
+- Shadowsocks 与 RRP 的同端口重建改为计划式处理：先完成可验证资源构建，端口独占场景失败时尽力回滚旧监听，成功后再统一提交运行态引用。
+- `rpcAutoWhiteListSeconds`、`ddnsJobSeconds` 支持周期变更后取消旧任务并重建。
+- `logFlags`、route 规则、connect/tcp/udp timeout、UDP lease、kcptun/udp2raw client、DDNS、RRP、shadow 用户列表、上游列表、DNS TTL、Nameserver register/sync/replica 配置已接入热更。
+
+仍需注意：
+
+- `shadowDnsPort`、`socksBindPort`、同端口 Shadowsocks 密码变化、RRP 同端口 token 变化涉及端口独占，当前按具体资源重建；同端口重建无法做到完全无中断，但失败会尽力恢复旧监听。
+- Nameserver 的 register/sync/replica 配置变化会重建 Nameserver；`shadowDnsPort` 变化会重建 DNS/Nameserver 组合。
+- 这些网络资源重建不在 Netty I/O 线程执行；运行期读路径只读已发布引用、稳定代理或新建配置对象。
+
+新增验证：
+
+```text
+mvn -pl rxlib "-Dtest=org.rx.util.rss.RssAuthenticatorTest,org.rx.util.rss.RssTest,org.rx.util.rss.RssUserTrafficStoreTest,org.rx.core.config.ConfigHotReloadTest" test
+mvn -pl rxlib "-Dtest=org.rx.net.rpc.RemotingTest" test
+mvn -pl rxlib "-Dtest=org.rx.net.dns.DnsServerIntegrationTest#udp_hostsRecord_returnsConfiguredAddress" test
+```
+
+结果：RSS/配置目标测试 41 个通过、2 个手动集成测试保持跳过；`RemotingTest` 11 个通过；DNS hosts 端到端目标用例 1 个通过。
+
 ## 11. 后续接入步骤
 
 1. 新增 `org.rx.core.config` 抽象类与事件类。

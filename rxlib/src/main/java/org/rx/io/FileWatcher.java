@@ -12,8 +12,6 @@ import org.rx.util.function.PredicateFunc;
 import java.nio.file.*;
 import java.util.concurrent.Future;
 
-import static org.rx.core.Extends.quietly;
-
 @Slf4j
 public class FileWatcher extends Disposable implements EventPublisher<FileWatcher> {
     @RequiredArgsConstructor
@@ -63,13 +61,19 @@ public class FileWatcher extends Disposable implements EventPublisher<FileWatche
 
         future = Tasks.run(() -> {
             while (!isClosed()) {
-                quietly(() -> {
+                try {
                     WatchKey key = service.take();
                     for (WatchEvent<?> event : key.pollEvents()) {
                         publishEvent(event);
                     }
                     key.reset();
-                });
+                } catch (ClosedWatchServiceException e) {
+                    return;
+                } catch (Throwable e) {
+                    if (!isClosed()) {
+                        log.error("watch {}", directoryPath, e);
+                    }
+                }
             }
         });
     }

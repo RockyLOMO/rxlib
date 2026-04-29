@@ -11,10 +11,13 @@ import org.rx.net.socks.SocksUser;
 import org.rx.net.socks.TrafficLoginInfo;
 
 import java.net.InetAddress;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.core.Extends.eq;
 
@@ -23,44 +26,62 @@ public class RssAuthenticator implements Authenticator {
     private final Map<String, ShadowUser> shadowStore = new ConcurrentHashMap<>();
     @Getter
     private final Map<String, SocksUser> socksStore = new ConcurrentHashMap<>();
-    @Getter
-    private final String socksPassword;
-    @Getter
-    private final int memoryRetentionHours;
+    private final AtomicReference<AuthSettings> settings = new AtomicReference<>(new AuthSettings(null, 24));
 
     public RssAuthenticator(List<ShadowUser> shadowUsers, String socksPassword) {
         this(shadowUsers, socksPassword, 24);
     }
 
     public RssAuthenticator(List<ShadowUser> shadowUsers, String socksPassword, int memoryRetentionHours) {
-        this.socksPassword = socksPassword;
-        this.memoryRetentionHours = Math.max(1, memoryRetentionHours);
+        reload(shadowUsers, socksPassword, memoryRetentionHours);
+        resetIp();
+        Tasks.schedulePeriod(this::resetIp, TimeUnit.HOURS.toMillis(1));
+    }
+
+    public synchronized void reload(List<ShadowUser> shadowUsers, String socksPassword, int memoryRetentionHours) {
+        if (shadowUsers == null) {
+            throw new InvalidException("shadowUsers is empty");
+        }
+        if (Strings.isEmpty(socksPassword)) {
+            throw new InvalidException("socksPassword is empty");
+        }
+        Map<String, ShadowUser> nextShadowStore = new ConcurrentHashMap<>();
+        Map<String, SocksUser> nextSocksStore = new ConcurrentHashMap<>();
+        Set<String> usernames = new HashSet<>();
         for (ShadowUser shadowUser : shadowUsers) {
             if (shadowUser == null) {
                 continue;
             }
             validateShadowUser(shadowUser);
             String username = shadowUser.getUsername();
-            shadowUser.setUsername(username);
-            ShadowUser oldShadowUser = ((ConcurrentHashMap<String, ShadowUser>) shadowStore).putIfAbsent(username, shadowUser);
-            if (oldShadowUser != null && oldShadowUser != shadowUser) {
+            if (!usernames.add(username)) {
                 throw new InvalidException("Duplicate shadow username {}", username);
             }
+            shadowUser.setUsername(username);
+            ShadowUser oldShadowUser = shadowStore.get(username);
+            if (oldShadowUser != null && oldShadowUser != shadowUser) {
+                shadowUser.getLoginIps().putAll(oldShadowUser.getLoginIps());
+                if (shadowUser.getLastResetTime() == null) {
+                    shadowUser.setLastResetTime(oldShadowUser.getLastResetTime());
+                }
+            }
+            nextShadowStore.put(username, shadowUser);
 
             String socksUserName = shadowUser.getSocksUser();
-            SocksUser socksUser = socksStore.get(socksUserName);
+            SocksUser socksUser = nextSocksStore.get(socksUserName);
             if (socksUser == null) {
-                socksUser = new SocksUser(socksUserName);
+                SocksUser oldSocksUser = socksStore.get(socksUserName);
+                socksUser = oldSocksUser != null ? oldSocksUser : new SocksUser(socksUserName);
                 socksUser.setPassword(socksPassword);
-                SocksUser oldUser = ((ConcurrentHashMap<String, SocksUser>) socksStore).putIfAbsent(socksUserName, socksUser);
-                if (oldUser != null) {
-                    socksUser = oldUser;
-                }
+                nextSocksStore.put(socksUserName, socksUser);
             }
         }
 
-        resetIp();
-        Tasks.schedulePeriod(this::resetIp, TimeUnit.HOURS.toMillis(1));
+        shadowStore.clear();
+        shadowStore.putAll(nextShadowStore);
+        socksStore.clear();
+        socksStore.putAll(nextSocksStore);
+        settings.set(new AuthSettings(socksPassword, Math.max(1, memoryRetentionHours)));
     }
 
     private void validateShadowUser(ShadowUser shadowUser) {
@@ -87,7 +108,7 @@ public class RssAuthenticator implements Authenticator {
     @Override
     public AuthResult loginResult(String username, String password) {
         ShadowUser shadowUser = shadowStore.get(username);
-        if (shadowUser == null || !eq(socksPassword, password)) {
+        if (shadowUser == null || !eq(settings.get().socksPassword, password)) {
             return null;
         }
         return resolve(shadowUser);
@@ -125,7 +146,25 @@ public class RssAuthenticator implements Authenticator {
 
     private int currentMemoryRetentionHours() {
         RSSConf conf = RssClient.rssConf;
-        return conf != null ? Math.max(1, conf.memoryRetentionHours) : memoryRetentionHours;
+        return conf != null ? Math.max(1, conf.memoryRetentionHours) : getMemoryRetentionHours();
+    }
+
+    public String getSocksPassword() {
+        return settings.get().socksPassword;
+    }
+
+    public int getMemoryRetentionHours() {
+        return settings.get().memoryRetentionHours;
+    }
+
+    static final class AuthSettings {
+        final String socksPassword;
+        final int memoryRetentionHours;
+
+        AuthSettings(String socksPassword, int memoryRetentionHours) {
+            this.socksPassword = socksPassword;
+            this.memoryRetentionHours = memoryRetentionHours;
+        }
     }
 
 }

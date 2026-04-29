@@ -474,6 +474,120 @@ public class RssTest extends AbstractTester {
         assertEquals(3000, RssClient.resolveRpcRequestTimeoutMillis(conf));
     }
 
+    @Test
+    public void normalizeAndValidateRssConfig_ClampsRuntimeFields() {
+        RSSConf conf = validRssConf();
+        conf.trafficRetentionDays = 0;
+        conf.memoryRetentionHours = 0;
+        conf.rpcMinSize = 4;
+        conf.rpcMaxSize = 1;
+        conf.connectTimeoutSeconds = -1;
+        conf.ddnsJobSeconds = 60;
+        conf.ddnsApiKey = "k";
+        conf.ddnsDomains = Collections.singletonList("a.example.com");
+
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+
+        assertEquals(1, conf.trafficRetentionDays);
+        assertEquals(1, conf.memoryRetentionHours);
+        assertEquals(4, conf.rpcMinSize);
+        assertEquals(4, conf.rpcMaxSize);
+        assertEquals(1, conf.connectTimeoutSeconds);
+        assertEquals(Collections.emptyList(), conf.udp2rawSocksServers);
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_RejectsDuplicateShadowUsers() {
+        RSSConf conf = validRssConf();
+        ShadowUser duplicate = new ShadowUser();
+        duplicate.setUsername(conf.shadowUsers.get(0).getUsername());
+        duplicate.setSsPort(2082);
+        duplicate.setSsPwd("pwd2");
+        duplicate.setSocksUser("inner2");
+        conf.shadowUsers = java.util.Arrays.asList(conf.shadowUsers.get(0), duplicate);
+
+        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+    }
+
+    @Test
+    public void configureOutboundConfig_RefreshesTimeoutAndUdpLeaseSettings() {
+        RSSConf conf = new RSSConf();
+        conf.connectTimeoutSeconds = 2;
+        conf.tcpTimeoutSeconds = 3;
+        conf.udpTimeoutSeconds = 4;
+        conf.udpLeasePoolEnabled = true;
+        conf.udpLeasePoolMinSize = 1;
+        conf.udpLeasePoolMaxSize = 5;
+        SocksConfig config = new SocksConfig();
+
+        RssClient.configureOutboundConfig(conf, config);
+
+        assertEquals(2000, config.getConnectTimeoutMillis());
+        assertEquals(3, config.getReadTimeoutSeconds());
+        assertEquals(4, config.getUdpReadTimeoutSeconds());
+        assertTrue(config.isUdpLeasePoolEnabled());
+        assertEquals(5, config.getUdpLeasePoolMaxSize());
+    }
+
+    @Test
+    public void switchingRandomList_UsesLatestDelegateWithoutReplacingOwner() {
+        RssRuntime.SwitchingRandomList<String> switching = new RssRuntime.SwitchingRandomList<>();
+        RandomList<String> first = new RandomList<>();
+        first.add("first", 1);
+        switching.setDelegate(first);
+
+        assertEquals("first", switching.next());
+
+        RandomList<String> second = new RandomList<>();
+        second.add("second", 1);
+        switching.setDelegate(second);
+
+        assertEquals("second", switching.next());
+        assertEquals(Collections.singletonList("second"), switching.aliveList());
+    }
+
+    @Test
+    public void inServerRestartRequired_DetectsOwnedConfigChanges() {
+        RSSConf oldConf = validRssConf();
+        RSSConf newConf = validRssConf();
+
+        assertTrue(!RssClient.inServerRestartRequired(oldConf, newConf));
+
+        newConf = validRssConf();
+        newConf.connectTimeoutSeconds = oldConf.connectTimeoutSeconds + 1;
+        assertTrue(RssClient.inServerRestartRequired(oldConf, newConf));
+
+        newConf = validRssConf();
+        newConf.kcptunClient = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 4093), "k", "p");
+        assertTrue(RssClient.inServerRestartRequired(oldConf, newConf));
+    }
+
+    @Test
+    public void shadowServerRestartRequired_DetectsConfigObjectChanges() {
+        RSSConf oldConf = validRssConf();
+        RSSConf newConf = validRssConf();
+
+        assertTrue(!RssClient.shadowServerRestartRequired(oldConf, newConf));
+
+        newConf.logFlags = oldConf.logFlags + 1;
+        assertTrue(RssClient.shadowServerRestartRequired(oldConf, newConf));
+    }
+
+    private RSSConf validRssConf() {
+        RSSConf conf = new RSSConf();
+        ShadowUser user = new ShadowUser();
+        user.setUsername("ss-rocky");
+        user.setSsPort(2081);
+        user.setSsPwd("pwd");
+        user.setSocksUser("inner");
+        conf.shadowUsers = Collections.singletonList(user);
+        conf.socksPwd = "socks-pwd";
+        AuthenticEndpoint endpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080), "u", "p");
+        endpoint.getParameters().put("w", "1");
+        conf.socksServers = Collections.singletonList(endpoint);
+        return conf;
+    }
+
     @SneakyThrows
     @Disabled("manual rss integration")
     @Test

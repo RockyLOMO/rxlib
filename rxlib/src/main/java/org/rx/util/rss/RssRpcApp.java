@@ -1,6 +1,5 @@
 package org.rx.util.rss;
 
-import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.socks.SocksProxyServer;
@@ -11,10 +10,19 @@ import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 
-@RequiredArgsConstructor
 public final class RssRpcApp implements SocksRpcContract {
-    final SocksProxyServer svrSide;
+    private final AtomicReference<SocksProxyServer> svrSide;
+
+    public RssRpcApp(SocksProxyServer svrSide) {
+        this.svrSide = new AtomicReference<>(Objects.requireNonNull(svrSide, "svrSide"));
+    }
+
+    public void setServer(SocksProxyServer svrSide) {
+        this.svrSide.set(Objects.requireNonNull(svrSide, "svrSide"));
+    }
 
     @Override
     public void fakeEndpoint(BigInteger hash, String endpoint) {
@@ -29,17 +37,17 @@ public final class RssRpcApp implements SocksRpcContract {
 
     @Override
     public void addWhiteList(InetAddress endpoint) {
-        svrSide.getConfig().allowWhiteList(endpoint);
+        svrSide.get().getConfig().allowWhiteList(endpoint);
     }
 
     @Override
     public boolean resetUdpRelay(int relayPort) {
-        return svrSide.resetUdpRelay(relayPort);
+        return svrSide.get().resetUdpRelay(relayPort);
     }
 
     @Override
     public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
-        return svrSide.claimUdpRelay(relayPort, clientAddr);
+        return svrSide.get().claimUdpRelay(relayPort, clientAddr);
     }
 
     @SneakyThrows
