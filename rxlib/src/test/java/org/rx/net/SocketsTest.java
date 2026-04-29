@@ -234,6 +234,7 @@ public class SocketsTest {
         address = Sockets.parseEndpoint("google.com:80");
         assertEquals("google.com", address.getHostString());
         assertEquals(80, address.getPort());
+        assertNull(address.getAddress(), "域名 endpoint 不应在本地解析");
 
         assertThrows(Exception.class, () -> Sockets.parseEndpoint("invalid"));
     }
@@ -295,6 +296,23 @@ public class SocketsTest {
         InetSocketAddress ep = Sockets.newEndpoint("127.0.0.1:8080", 9090);
         assertEquals(9090, ep.getPort());
         assertEquals("127.0.0.1", ep.getHostString());
+
+        InetSocketAddress unresolved = Sockets.newEndpoint(Sockets.parseEndpoint("example.com:8080"), 9090);
+        assertEquals(9090, unresolved.getPort());
+        assertEquals("example.com", unresolved.getHostString());
+        assertNull(unresolved.getAddress(), "域名改端口后仍保持 unresolved");
+    }
+
+    @Test
+    public void testUnresolvedEndpointKeepsDomainUnresolved() {
+        UnresolvedEndpoint endpoint = new UnresolvedEndpoint("example.com", 443);
+        InetSocketAddress address = endpoint.socketAddress();
+        assertEquals("example.com", address.getHostString());
+        assertEquals(443, address.getPort());
+        assertNull(address.getAddress(), "域名目的地必须交给远端解析");
+
+        UnresolvedEndpoint ipEndpoint = new UnresolvedEndpoint("127.0.0.1", 443);
+        assertEquals("127.0.0.1", ipEndpoint.socketAddress().getAddress().getHostAddress());
     }
 
     @Test

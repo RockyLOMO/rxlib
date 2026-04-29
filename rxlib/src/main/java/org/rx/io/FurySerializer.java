@@ -81,8 +81,7 @@ public class FurySerializer implements Serializer {
             if (local == null) {
                 local = FurySupport.sharedFuryLocal(FurySerializer.class, "serializer",
                         new ArrayList<String>(allowedClassPrefixes),
-                        fury -> FurySupport.registerDateTime(fury,
-                                (short) (REGISTER_BASE_ID + FurySupport.DATE_TIME_REGISTER_ID_OFFSET)));
+                        fury -> registerTypes(fury));
                 furyLocal = local;
             }
         }
@@ -90,8 +89,16 @@ public class FurySerializer implements Serializer {
     }
 
     Fury newFury(List<String> allowedPrefixes) {
-        return FurySupport.newFury(FurySerializer.class, allowedPrefixes,
-                fury -> FurySupport.registerDateTime(fury, (short) (REGISTER_BASE_ID + FurySupport.DATE_TIME_REGISTER_ID_OFFSET)));
+        return FurySupport.newFury(FurySerializer.class, allowedPrefixes, fury -> registerTypes(fury));
+    }
+
+    static void registerTypes(Fury fury) {
+        FurySupport.registerDateTime(fury, (short) (REGISTER_BASE_ID + FurySupport.DATE_TIME_REGISTER_ID_OFFSET));
+        FurySupport.registerInetAddress(fury,
+                (short) (REGISTER_BASE_ID + FurySupport.INET4_ADDRESS_REGISTER_ID_OFFSET),
+                (short) (REGISTER_BASE_ID + FurySupport.INET6_ADDRESS_REGISTER_ID_OFFSET));
+        FurySupport.registerInetSocketAddress(fury,
+                (short) (REGISTER_BASE_ID + FurySupport.INET_SOCKET_ADDRESS_REGISTER_ID_OFFSET));
     }
 
     @SneakyThrows

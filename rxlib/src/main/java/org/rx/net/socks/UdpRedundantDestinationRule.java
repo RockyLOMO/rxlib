@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import io.netty.util.NetUtil;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -15,7 +16,7 @@ import java.net.UnknownHostException;
  * <p>
  * {@code host} 支持：
  * <ul>
- *   <li>IPv4 / IPv6 字面量或主机名（解析为单一地址做精确匹配）</li>
+ *   <li>IPv4 / IPv6 字面量，或未解析主机名（按 host 字符串精确匹配）</li>
  *   <li>仅 IPv4 CIDR，例如 {@code 10.0.0.0/24}</li>
  * </ul>
  * {@code port == 0} 表示任意端口；否则目的端口必须一致才命中。
@@ -41,6 +42,14 @@ public class UdpRedundantDestinationRule implements Serializable {
 
     private transient volatile Compiled compiled;
     private transient volatile boolean compileFailed;
+
+    public void setHost(String host) {
+        synchronized (this) {
+            this.host = host;
+            compiled = null;
+            compileFailed = false;
+        }
+    }
 
     public void setMultiplier(int multiplier) {
         this.multiplier = Math.max(1, Math.min(5, multiplier));
@@ -74,24 +83,35 @@ public class UdpRedundantDestinationRule implements Serializable {
         if (c == null) {
             return false;
         }
-        return c.matches(destination.getAddress());
+        return c.matches(destination);
     }
 
     @Slf4j
     static final class Compiled {
         enum Kind {
-            EXACT,
+            EXACT_ADDRESS,
+            EXACT_HOST,
             IPV4_CIDR
         }
 
         private final Kind kind;
         private final InetAddress exact;
+        private final String exactHost;
         private final byte[] network4;
         private final int prefixLen;
 
         private Compiled(InetAddress exact) {
-            this.kind = Kind.EXACT;
+            this.kind = Kind.EXACT_ADDRESS;
             this.exact = exact;
+            this.exactHost = null;
+            this.network4 = null;
+            this.prefixLen = -1;
+        }
+
+        private Compiled(String exactHost) {
+            this.kind = Kind.EXACT_HOST;
+            this.exact = null;
+            this.exactHost = exactHost;
             this.network4 = null;
             this.prefixLen = -1;
         }
@@ -99,6 +119,7 @@ public class UdpRedundantDestinationRule implements Serializable {
         private Compiled(byte[] network4, int prefixLen) {
             this.kind = Kind.IPV4_CIDR;
             this.exact = null;
+            this.exactHost = null;
             this.network4 = network4;
             this.prefixLen = prefixLen;
         }
@@ -108,41 +129,93 @@ public class UdpRedundantDestinationRule implements Serializable {
                 return null;
             }
             try {
-                if (hostSpec.indexOf('/') >= 0) {
-                    String[] parts = hostSpec.split("/", 2);
-                    if (parts.length != 2) {
+                int cidrIndex = hostSpec.indexOf('/');
+                if (cidrIndex >= 0) {
+                    String netSpec = normalizeHost(hostSpec.substring(0, cidrIndex).trim());
+                    String prefixSpec = hostSpec.substring(cidrIndex + 1).trim();
+                    if (netSpec.isEmpty() || prefixSpec.isEmpty()) {
                         return null;
                     }
-                    InetAddress net = InetAddress.getByName(parts[0].trim());
-                    if (!(net instanceof Inet4Address)) {
-                        log.warn("UDP redundant rule: IPv6 CIDR not supported, host={}", hostSpec);
+                    byte[] network = NetUtil.createByteArrayFromIpAddressString(netSpec);
+                    if (network == null || network.length != 4) {
+                        log.warn("UDP redundant rule: IPv4 CIDR requires literal IPv4, host={}", hostSpec);
                         return null;
                     }
-                    int prefix = Integer.parseInt(parts[1].trim());
+                    int prefix = Integer.parseInt(prefixSpec);
                     if (prefix < 0 || prefix > 32) {
                         log.warn("UDP redundant rule: invalid IPv4 prefix {}, host={}", prefix, hostSpec);
                         return null;
                     }
-                    return new Compiled(net.getAddress(), prefix);
+                    return new Compiled(network, prefix);
                 }
-                return new Compiled(InetAddress.getByName(hostSpec));
+
+                String normalized = normalizeHost(hostSpec);
+                byte[] address = NetUtil.createByteArrayFromIpAddressString(normalized);
+                if (address != null) {
+                    return new Compiled(InetAddress.getByAddress(address));
+                }
+                return new Compiled(normalized);
             } catch (UnknownHostException | NumberFormatException e) {
                 log.warn("UDP redundant rule: bad host '{}'", hostSpec, e);
                 return null;
             }
         }
 
-        boolean matches(InetAddress addr) {
-            if (addr == null) {
+        boolean matches(InetSocketAddress destination) {
+            if (destination == null) {
                 return false;
             }
-            if (kind == Kind.EXACT) {
+            if (kind == Kind.EXACT_HOST) {
+                return normalizedHostEqualsIgnoreCase(exactHost, destination.getHostString());
+            }
+
+            InetAddress addr = destination.getAddress();
+            byte[] bytes = addr == null ? NetUtil.createByteArrayFromIpAddressString(normalizeHost(destination.getHostString())) : addr.getAddress();
+            if (bytes == null) {
+                return false;
+            }
+            if (kind == Kind.EXACT_ADDRESS) {
+                if (addr == null) {
+                    return java.util.Arrays.equals(exact.getAddress(), bytes);
+                }
                 return exact.equals(addr);
             }
-            if (!(addr instanceof Inet4Address)) {
+            if (addr != null && !(addr instanceof Inet4Address)) {
                 return false;
             }
-            return matchIpv4Cidr(addr.getAddress(), network4, prefixLen);
+            return matchIpv4Cidr(bytes, network4, prefixLen);
+        }
+
+        private static String normalizeHost(String host) {
+            if (host == null) {
+                return "";
+            }
+            String h = host.trim();
+            int len = h.length();
+            if (len > 1 && h.charAt(0) == '[' && h.charAt(len - 1) == ']') {
+                return h.substring(1, len - 1);
+            }
+            return h;
+        }
+
+        private static boolean normalizedHostEqualsIgnoreCase(String expected, String actual) {
+            if (expected == null || actual == null) {
+                return false;
+            }
+            int start = 0;
+            int end = actual.length();
+            while (start < end && actual.charAt(start) <= ' ') {
+                start++;
+            }
+            while (end > start && actual.charAt(end - 1) <= ' ') {
+                end--;
+            }
+            if (end - start > 1 && actual.charAt(start) == '[' && actual.charAt(end - 1) == ']') {
+                start++;
+                end--;
+            }
+            int len = end - start;
+            return expected.length() == len && actual.regionMatches(true, start, expected, 0, len);
         }
 
         private static boolean matchIpv4Cidr(byte[] address, byte[] network, int prefixLen) {

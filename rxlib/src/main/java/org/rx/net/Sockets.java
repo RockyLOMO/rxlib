@@ -1206,7 +1206,7 @@ public final class Sockets {
 
     @SneakyThrows
     public static InetAddress getAnyLocalAddress() {
-        return InetAddress.getByName("0.0.0.0");
+        return parseIpAddress("0.0.0.0");
     }
 
     public static InetAddress getLocalAddress() {
@@ -1268,12 +1268,17 @@ public final class Sockets {
         if (endpoint.getPort() == port) {
             return endpoint;
         }
-        return new InetSocketAddress(endpoint.getAddress(), port);
+        return newUnresolvedEndpoint(endpoint.getHostString(), port);
     }
 
     @SneakyThrows
     public static List<InetSocketAddress> newAllEndpoints(@NonNull InetSocketAddress endpoint) {
-        return Linq.from(InetAddress.getAllByName(endpoint.getHostString())).select(p -> new InetSocketAddress(p, endpoint.getPort())).toList();
+        InetAddress address = endpoint.getAddress();
+        if (address != null) {
+            return Collections.singletonList(new InetSocketAddress(address, endpoint.getPort()));
+        }
+        String host = endpoint.getHostString();
+        return Collections.singletonList(newUnresolvedEndpoint(host, endpoint.getPort()));
     }
 
     public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
@@ -1284,8 +1289,25 @@ public final class Sockets {
 
         String ip = endpoint.substring(0, i);
         int port = Integer.parseInt(endpoint.substring(i + 1));
-        return new InetSocketAddress(ip, port);
-        // return InetSocketAddress.createUnresolved(ip, port); //DNS issues
+        return newUnresolvedEndpoint(ip, port);
+    }
+
+    /**
+     * 字面量 IP 转为已解析地址；域名保持 unresolved，避免触发本机 DNS。
+     */
+    public static InetSocketAddress newUnresolvedEndpoint(@NonNull String host, int port) {
+        String h = host.trim();
+        return isValidIp(h) ? new InetSocketAddress(parseIpAddress(h), port)
+                : InetSocketAddress.createUnresolved(h, port);
+    }
+
+    @SneakyThrows
+    public static InetAddress parseIpAddress(String ip) {
+        byte[] bytes = NetUtil.createByteArrayFromIpAddressString(ip);
+        if (bytes == null) {
+            throw new InvalidException("Invalid IP address {}", ip);
+        }
+        return InetAddress.getByAddress(bytes);
     }
 
     public static String toString(InetSocketAddress endpoint) {

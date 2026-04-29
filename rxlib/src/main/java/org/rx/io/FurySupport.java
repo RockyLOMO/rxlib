@@ -2,6 +2,7 @@ package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.util.NetUtil;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.apache.fury.Fury;
 import org.apache.fury.config.CompatibleMode;
@@ -13,6 +14,11 @@ import org.rx.bean.DateTime;
 import org.rx.core.Constants;
 
 import java.io.Serializable;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,6 +36,9 @@ public final class FurySupport {
     public static final byte FRAME_VERSION = 1;
     public static final byte CODEC_ID_FURY = 1;
     public static final short DATE_TIME_REGISTER_ID_OFFSET = 1;
+    public static final short INET4_ADDRESS_REGISTER_ID_OFFSET = 2;
+    public static final short INET6_ADDRESS_REGISTER_ID_OFFSET = 3;
+    public static final short INET_SOCKET_ADDRESS_REGISTER_ID_OFFSET = 4;
     private static final ConcurrentMap<FuryLocalKey, FastThreadLocal<Fury>> SHARED_LOCALS =
             new ConcurrentHashMap<FuryLocalKey, FastThreadLocal<Fury>>();
 
@@ -103,6 +112,18 @@ public final class FurySupport {
         fury.registerSerializer(DateTime.class, new DateTimeSerializer(fury));
     }
 
+    public static void registerInetAddress(Fury fury, short inet4RegisterId, short inet6RegisterId) {
+        fury.register(Inet4Address.class, inet4RegisterId);
+        fury.registerSerializer(Inet4Address.class, new InetAddressSerializer<Inet4Address>(fury, Inet4Address.class));
+        fury.register(Inet6Address.class, inet6RegisterId);
+        fury.registerSerializer(Inet6Address.class, new InetAddressSerializer<Inet6Address>(fury, Inet6Address.class));
+    }
+
+    public static void registerInetSocketAddress(Fury fury, short registerId) {
+        fury.register(InetSocketAddress.class, registerId);
+        fury.registerSerializer(InetSocketAddress.class, new InetSocketAddressSerializer(fury));
+    }
+
     public static MemoryBuffer toMemoryBuffer(ByteBuf payload, int index, int payloadLength) {
         if (payloadLength == 0) {
             return MemoryBuffer.fromByteArray(new byte[0]);
@@ -167,6 +188,86 @@ public final class FurySupport {
             long ticks = buffer.readInt64();
             String zoneId = fury.readJavaString(buffer);
             return new DateTime(ticks, TimeZone.getTimeZone(zoneId));
+        }
+    }
+
+    static final class InetAddressSerializer<T extends InetAddress> extends org.apache.fury.serializer.Serializer<T> {
+        InetAddressSerializer(Fury fury, Class<T> type) {
+            super(fury, type);
+        }
+
+        @Override
+        public void write(MemoryBuffer buffer, T value) {
+            byte[] address = value.getAddress();
+            buffer.writeByte(address.length);
+            buffer.writeBytes(address);
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public T read(MemoryBuffer buffer) {
+            int len = buffer.readUnsignedByte();
+            if (len != 4 && len != 16) {
+                throw new IllegalArgumentException("Invalid InetAddress length " + len);
+            }
+            try {
+                return (T) InetAddress.getByAddress(buffer.readBytes(len));
+            } catch (UnknownHostException e) {
+                throw new IllegalArgumentException(e);
+            }
+        }
+    }
+
+    static final class InetSocketAddressSerializer extends org.apache.fury.serializer.Serializer<InetSocketAddress> {
+        private static final byte MODE_HOST = 0;
+        private static final byte MODE_ADDRESS = 1;
+
+        InetSocketAddressSerializer(Fury fury) {
+            super(fury, InetSocketAddress.class);
+        }
+
+        @Override
+        public void write(MemoryBuffer buffer, InetSocketAddress value) {
+            String host = value.getHostString();
+            InetAddress address = value.getAddress();
+            if (address == null || !isLiteralIp(host)) {
+                buffer.writeByte(MODE_HOST);
+                buffer.writeVarUint32(value.getPort());
+                fury.writeJavaString(buffer, host);
+                return;
+            }
+
+            byte[] bytes = address.getAddress();
+            buffer.writeByte(MODE_ADDRESS);
+            buffer.writeVarUint32(value.getPort());
+            buffer.writeByte(bytes.length);
+            buffer.writeBytes(bytes);
+        }
+
+        @Override
+        public InetSocketAddress read(MemoryBuffer buffer) {
+            int mode = buffer.readUnsignedByte();
+            int port = buffer.readVarUint32();
+            if (mode == MODE_HOST) {
+                return InetSocketAddress.createUnresolved(fury.readJavaString(buffer), port);
+            }
+            if (mode != MODE_ADDRESS) {
+                throw new IllegalArgumentException("Invalid InetSocketAddress mode " + mode);
+            }
+
+            int len = buffer.readUnsignedByte();
+            if (len != 4 && len != 16) {
+                throw new IllegalArgumentException("Invalid InetSocketAddress length " + len);
+            }
+            try {
+                return new InetSocketAddress(InetAddress.getByAddress(buffer.readBytes(len)), port);
+            } catch (UnknownHostException e) {
+                throw new IllegalArgumentException(e);
+            }
+        }
+
+        private static boolean isLiteralIp(String host) {
+            return host != null && (NetUtil.isValidIpV4Address(host) || NetUtil.isValidIpV6Address(host));
         }
     }
 

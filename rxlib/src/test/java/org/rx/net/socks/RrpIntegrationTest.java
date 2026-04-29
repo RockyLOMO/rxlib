@@ -416,6 +416,185 @@ class RrpIntegrationTest {
     }
 
     @Test
+    void clientLocalAddressIsUniquePerProxy() {
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        RrpClient.RpClientProxy p1 = null;
+        RrpClient.RpClientProxy p2 = null;
+        try {
+            p1 = new RrpClient.RpClientProxy(newProxy("p1", 19111, "u1:p1"), serverChannel);
+            p2 = new RrpClient.RpClientProxy(newProxy("p2", 19112, "u1:p1"), serverChannel);
+
+            assertNotEquals(p1.localEndpoint, p2.localEndpoint, "memory LocalAddress must be unique per proxy");
+        } finally {
+            if (p1 != null) p1.close();
+            if (p2 != null) p2.close();
+            serverChannel.close();
+        }
+    }
+
+    @Test
+    void clientExceptionCaughtClosesServerChannel() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        conf.setProxies(Collections.emptyList());
+        RrpClient client = new RrpClient(conf);
+        EmbeddedChannel ch = new EmbeddedChannel(client.new ClientHandler());
+        try {
+            releaseOutbound(ch);
+
+            ch.pipeline().fireExceptionCaught(new RuntimeException("boom"));
+            ch.runPendingTasks();
+
+            assertFalse(ch.isOpen(), "client main channel should close on exception");
+        } finally {
+            client.close();
+            ch.close();
+        }
+    }
+
+    @Test
+    void localRelayBufferQueuesUntilLocalChannelWritable() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        RrpClient client = new RrpClient(conf);
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        RrpClient.LocalRelayBuffer relayBuffer = new RrpClient.LocalRelayBuffer(client, serverChannel);
+        localChannel.attr(RrpClient.ATTR_LOCAL_RELAY_BUF).set(relayBuffer);
+        localChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.wrappedBuffer("local-relay".getBytes(StandardCharsets.US_ASCII));
+        assertTrue(relayBuffer.offer(localChannel, payload));
+        localChannel.runPendingTasks();
+
+        assertNull(localChannel.readOutbound(), "payload should stay queued while local channel is not writable");
+        assertEquals("local-relay".getBytes(StandardCharsets.US_ASCII).length, relayBuffer.pendingBytes.get());
+
+        localChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+        relayBuffer.scheduleDrain(localChannel);
+        localChannel.runPendingTasks();
+
+        ByteBuf flushed = localChannel.readOutbound();
+        assertNotNull(flushed);
+        try {
+            assertEquals("local-relay", flushed.toString(StandardCharsets.US_ASCII));
+        } finally {
+            flushed.release();
+            client.close();
+            serverChannel.close();
+            localChannel.close();
+        }
+        assertEquals(0, relayBuffer.pendingBytes.get());
+    }
+
+    @Test
+    void localRelayBufferClosesSlowLocalChannelWhenQueuedBytesOverflow() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        RrpClient client = new RrpClient(conf);
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        RrpClient.LocalRelayBuffer relayBuffer = new RrpClient.LocalRelayBuffer(client, serverChannel);
+        localChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.buffer(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
+        payload.writeZero(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
+
+        assertFalse(relayBuffer.offer(localChannel, payload));
+        localChannel.runPendingTasks();
+
+        assertFalse(localChannel.isOpen(), "slow local channel should be closed once queue cap is exceeded");
+        assertEquals(0, relayBuffer.pendingBytes.get());
+        assertNull(localChannel.readOutbound());
+        client.close();
+        serverChannel.close();
+    }
+
+    @Test
+    void serverRelayBufferQueuesUntilServerChannelWritableAndTogglesLocalRead() {
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        RrpClient.ServerRelayBuffer relayBuffer = new RrpClient.ServerRelayBuffer(localChannel);
+        serverChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.wrappedBuffer("server-relay".getBytes(StandardCharsets.US_ASCII));
+        assertTrue(relayBuffer.offer(serverChannel, payload));
+        serverChannel.runPendingTasks();
+
+        assertFalse(localChannel.config().isAutoRead(), "local reads should pause while server channel is not writable");
+        assertNull(serverChannel.readOutbound(), "payload should stay queued while server channel is not writable");
+
+        serverChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+        relayBuffer.scheduleDrain(serverChannel);
+        serverChannel.runPendingTasks();
+
+        ByteBuf flushed = serverChannel.readOutbound();
+        assertNotNull(flushed);
+        try {
+            assertEquals("server-relay", flushed.toString(StandardCharsets.US_ASCII));
+        } finally {
+            flushed.release();
+            serverChannel.close();
+            localChannel.close();
+        }
+        assertTrue(localChannel.config().isAutoRead(), "local reads should resume after queued writes drain");
+        assertEquals(0, relayBuffer.pendingBytes.get());
+    }
+
+    @Test
+    void serverRelayBufferClosesLocalChannelWhenQueuedBytesOverflow() {
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        RrpClient.ServerRelayBuffer relayBuffer = new RrpClient.ServerRelayBuffer(localChannel);
+        serverChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.buffer(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
+        payload.writeZero(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
+
+        assertFalse(relayBuffer.offer(serverChannel, payload));
+        localChannel.runPendingTasks();
+
+        assertFalse(localChannel.isOpen(), "slow server channel should close the local source once queue cap is exceeded");
+        assertEquals(0, relayBuffer.pendingBytes.get());
+        assertNull(serverChannel.readOutbound());
+        serverChannel.close();
+    }
+
+    @Test
+    void remoteChannelIdRemoveDoesNotDropReplacementChannel() {
+        EmbeddedChannel clientChannel = new EmbeddedChannel();
+        EmbeddedChannel remoteChannel = new EmbeddedChannel();
+        EmbeddedChannel replacement = new EmbeddedChannel();
+        RrpServer.RpClient rpClient = new RrpServer.RpClient(null, clientChannel);
+        RrpServer.RpClientProxy proxy = new RrpServer.RpClientProxy(null, rpClient,
+                newProxy("generated-id", 19121, "u1:p1"), new ServerBootstrap());
+        try {
+            remoteChannel.attr(RrpConfig.ATTR_SVR_CLI).set(rpClient);
+            remoteChannel.attr(RrpConfig.ATTR_SVR_PROXY).set(proxy);
+            remoteChannel.pipeline().addLast(RrpServer.RemoteServerHandler.DEFAULT);
+
+            String channelId = remoteChannel.attr(RrpServer.ATTR_REMOTE_CHANNEL_ID).get();
+            if (channelId == null) {
+                remoteChannel.pipeline().fireChannelActive();
+                channelId = remoteChannel.attr(RrpServer.ATTR_REMOTE_CHANNEL_ID).get();
+            }
+
+            assertNotNull(channelId);
+            assertEquals(remoteChannel, proxy.remoteClients.get(channelId));
+
+            proxy.remoteClients.put(channelId, replacement);
+            remoteChannel.pipeline().fireChannelInactive();
+
+            assertEquals(replacement, proxy.remoteClients.get(channelId), "inactive old channel must not remove replacement mapping");
+        } finally {
+            releaseOutbound(clientChannel);
+            clientChannel.close();
+            remoteChannel.close();
+            replacement.close();
+        }
+    }
+
+    @Test
     void serverRetryRegisterAfterBindFailureShouldSucceed() throws Exception {
         RrpConfig conf = new RrpConfig();
         conf.setToken("t");

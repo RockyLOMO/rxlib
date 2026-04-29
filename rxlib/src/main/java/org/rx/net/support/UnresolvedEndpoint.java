@@ -26,12 +26,12 @@ public class UnresolvedEndpoint implements Serializable {
     public UnresolvedEndpoint(@NonNull InetSocketAddress socketAddress) {
         host = socketAddress.getHostString();
         port = socketAddress.getPort();
-        cache = socketAddress;
+        cache = Sockets.newUnresolvedEndpoint(host, port);
     }
 
     public InetSocketAddress socketAddress() {
         if (cache == null) {
-            cache = new InetSocketAddress(host, port);
+            cache = Sockets.newUnresolvedEndpoint(host, port);
         }
         return cache;
     }

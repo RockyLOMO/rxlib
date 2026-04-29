@@ -1,6 +1,11 @@
 name: Build & Push to ssh - rssServer
 on:
   workflow_dispatch:    # 支持手动触发
+    inputs:
+      servers:
+        description: "部署目标：all 或逗号分隔 server id，例如 main,new104"
+        required: true
+        default: "all"
 
 jobs:
   build-and-push:
@@ -27,21 +32,20 @@ jobs:
         run: |
           echo "APP_MODULE=rxlib" >> $GITHUB_ENV
           echo "REMOTE_DIR=rss-svr" >> $GITHUB_ENV
-          echo "HEALTH_URL=f-li.cn:9900" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
       - name: Build with Maven
         run: |
           # 本地默认仍跑测试（见 rxlib/pom.xml）；仅在此 CI 部署步骤用命令行跳过。
-          mvn clean package -pl ${{ env.APP_MODULE }} -am -Dmaven.test.skip=true -DskipTests=true -Dmaven.javadoc.skip=true --no-transfer-progress --batch-mode
+          mvn clean package -pl "$APP_MODULE" -am -Dmaven.test.skip=true -DskipTests=true -Dmaven.javadoc.skip=true --no-transfer-progress --batch-mode
 
-          echo "target 目录完整路径: ${PWD}/${{ env.APP_MODULE }}/target"
+          echo "target 目录完整路径: ${PWD}/${APP_MODULE}/target"
           echo "=== 文件列表（详细）==="
-          ls -la ${PWD}/${{ env.APP_MODULE }}/target/
+          ls -la "${PWD}/${APP_MODULE}/target/"
           echo "=== 仅 JAR 文件 ==="
-          ls -la ${PWD}/${{ env.APP_MODULE }}/target/*.jar || echo "未找到任何 JAR 文件"
+          ls -la "${PWD}/${APP_MODULE}"/target/*.jar || echo "未找到任何 JAR 文件"
           
           # 自动查找 target 目录下的 jar 文件名（通常只有一个）
-          JAR_FULL_PATH=$(find ${PWD}/${{ env.APP_MODULE }}/target -maxdepth 1 -type f -name "*.jar" \
+          JAR_FULL_PATH=$(find "${PWD}/${APP_MODULE}/target" -maxdepth 1 -type f -name "*.jar" \
             ! -name "*-javadoc.jar" \
             ! -name "*-sources.jar" \
             ! -name "*-tests.jar" | head -n1)
@@ -53,117 +57,314 @@ jobs:
 
       - name: Copy JAR to context root
         run: |
-          cp -f ${{ env.APP_JAR_PATH }} ./app.jar.publish
-          cp deploy/${{ env.REMOTE_DIR }}/start.sh ./
-          cp deploy/${{ env.REMOTE_DIR }}/rollback.sh ./
+          cp -f "$APP_JAR_PATH" ./app.jar.publish
+          cp "deploy/${REMOTE_DIR}/start.sh" ./
+          cp "deploy/${REMOTE_DIR}/rollback.sh" ./
 
-      # 4. 复制 JAR 到远程服务器（带重试：Runner DNS 偶发超时，如 lookup on 168.63.129.16:53 i/o timeout）
-      - name: Copy JAR to server
+      # 4. 从 SSH_RSS_SVR_CONF 解析部署目标。
+      # Secret 支持两种 JSON：
+      # {"list":[{"id":"main","svrHost":"x.x.x.x","svrPort":22,"ssh_usr":"root","ssh_pwd":"***","healthUrl":"f-li.cn:9900"}]}
+      # [{"id":"new104","svrHost":"104.168.27.48","svrPort":22,"ssh_usr":"root","ssh_pwd":"***","healthUrl":"104.168.27.48:9900"}]
+      - name: Resolve deploy targets
         env:
-          SSH_RSS_SVR_HOST: ${{ secrets.SSH_RSS_SVR_HOST }}
-          SSH_RSS_SVR_PORT: ${{ secrets.SSH_RSS_SVR_PORT }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+          SSH_RSS_SVR_CONF: ${{ secrets.SSH_RSS_SVR_CONF }}
+          DEPLOY_SERVERS: ${{ github.event.inputs.servers }}
         run: |
           set -euo pipefail
+          SELECTED_FILE="${RUNNER_TEMP}/rss-server-selected-targets.jsonl"
+          export SELECTED_FILE
+
+          python3 <<'PY'
+          import json
+          import os
+          import sys
+
+          conf_text = os.environ.get("SSH_RSS_SVR_CONF", "").strip()
+          deploy_servers = os.environ.get("DEPLOY_SERVERS", "all").strip()
+          selected_file = os.environ["SELECTED_FILE"]
+
+          if not conf_text:
+              print("Error: secret SSH_RSS_SVR_CONF is empty", file=sys.stderr)
+              sys.exit(1)
+
+          try:
+              conf = json.loads(conf_text)
+          except Exception as exc:
+              print("Error: SSH_RSS_SVR_CONF is not valid JSON: %s" % exc, file=sys.stderr)
+              sys.exit(1)
+
+          servers = conf.get("list") if isinstance(conf, dict) else conf
+          if not isinstance(servers, list):
+              print("Error: SSH_RSS_SVR_CONF must be a JSON array or an object with a list array", file=sys.stderr)
+              sys.exit(1)
+
+          by_id = {}
+          for item in servers:
+              if not isinstance(item, dict):
+                  print("Error: each server config must be an object", file=sys.stderr)
+                  sys.exit(1)
+
+              server_id = str(item.get("id", "")).strip()
+              host = str(item.get("svrHost", "")).strip()
+              port = str(item.get("svrPort", "")).strip()
+              ssh_user = str(item.get("ssh_usr", "")).strip()
+              ssh_pwd = str(item.get("ssh_pwd", ""))
+              health_url = str(item.get("healthUrl") or item.get("health_url") or "").strip()
+              if not health_url and host:
+                  health_url = "%s:9900" % host
+
+              missing = []
+              for name, value in (("id", server_id), ("svrHost", host), ("svrPort", port), ("ssh_usr", ssh_user), ("ssh_pwd", ssh_pwd)):
+                  if value == "":
+                      missing.append(name)
+              if missing:
+                  print("Error: server config missing fields: %s" % ",".join(missing), file=sys.stderr)
+                  sys.exit(1)
+              if server_id in by_id:
+                  print("Error: duplicate rss server id '%s'" % server_id, file=sys.stderr)
+                  sys.exit(1)
+
+              by_id[server_id] = {
+                  "id": server_id,
+                  "svrHost": host,
+                  "svrPort": port,
+                  "ssh_usr": ssh_user,
+                  "ssh_pwd": ssh_pwd,
+                  "healthUrl": health_url,
+              }
+
+          if not by_id:
+              print("Error: SSH_RSS_SVR_CONF list is empty", file=sys.stderr)
+              sys.exit(1)
+
+          deploy_servers = "".join(deploy_servers.split()) or "all"
+          if deploy_servers == "all":
+              selected_ids = list(by_id.keys())
+          else:
+              selected_ids = [x for x in deploy_servers.split(",") if x]
+
+          unknown_ids = [x for x in selected_ids if x not in by_id]
+          if unknown_ids:
+              print("Error: unknown rss server id(s): %s" % ",".join(unknown_ids), file=sys.stderr)
+              print("Available ids:", file=sys.stderr)
+              for server_id in by_id:
+                  print("  - %s" % server_id, file=sys.stderr)
+              sys.exit(1)
+
+          with open(selected_file, "w", encoding="utf-8") as writer:
+              for server_id in selected_ids:
+                  writer.write(json.dumps(by_id[server_id], ensure_ascii=False, separators=(",", ":")) + "\n")
+
+          print("Selected deploy targets:")
+          for server_id in selected_ids:
+              item = by_id[server_id]
+              print("  - %s (%s:%s, health %s)" % (item["id"], item["svrHost"], item["svrPort"], item["healthUrl"]))
+          PY
+
+          chmod 600 "$SELECTED_FILE"
+
+          echo "RSS_SERVER_TARGETS=${SELECTED_FILE}" >> $GITHUB_ENV
+
+      - name: Install ssh client tools
+        run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq sshpass
-          HOST="$SSH_RSS_SVR_HOST"
-          PORT="$SSH_RSS_SVR_PORT"
-          USER="$SSH_USERNAME"
-          DEST="/home/${{ env.REMOTE_DIR }}/"
-          if [[ -z "${HOST:-}" || -z "${PORT:-}" || -z "${USER:-}" || -z "${SSHPASS:-}" ]]; then
-            echo "Error: SSH secrets are incomplete"
-            exit 1
-          fi
+
+      # 5. 复制 JAR 并逐台发布（带重试：Runner DNS 偶发超时，如 lookup on 168.63.129.16:53 i/o timeout）
+      - name: Deploy selected servers
+        run: |
+          set -euo pipefail
+
+          DEST="/home/${REMOTE_DIR}/"
           MAX_ATTEMPTS=5
           RETRY_DELAY_SEC=15
-          for i in $(seq 1 "$MAX_ATTEMPTS"); do
-            echo "SCP attempt $i/$MAX_ATTEMPTS -> ${USER}@${HOST}:${DEST}"
-            getent hosts "$HOST" >/dev/null 2>&1 || true
-            if sshpass -e scp -o PreferredAuthentications=password -o PubkeyAuthentication=no \
-                -o StrictHostKeyChecking=accept-new \
-                -o ConnectTimeout=30 -P "$PORT" \
-                app.jar.publish start.sh rollback.sh \
-                "${USER}@${HOST}:${DEST}"; then
-              echo "SCP succeeded."
-              exit 0
+
+          deploy_one() {
+            local target_json="$1"
+            local server_id
+            local host
+            local port
+            local ssh_user
+            local ssh_pwd
+            local ssh_pwd_b64
+            local health_url
+
+            server_id="$(TARGET_JSON="$target_json" python3 -c 'import json, os; print(json.loads(os.environ["TARGET_JSON"])["id"])')"
+            host="$(TARGET_JSON="$target_json" python3 -c 'import json, os; print(json.loads(os.environ["TARGET_JSON"])["svrHost"])')"
+            port="$(TARGET_JSON="$target_json" python3 -c 'import json, os; print(json.loads(os.environ["TARGET_JSON"])["svrPort"])')"
+            ssh_user="$(TARGET_JSON="$target_json" python3 -c 'import json, os; print(json.loads(os.environ["TARGET_JSON"])["ssh_usr"])')"
+            ssh_pwd="$(TARGET_JSON="$target_json" python3 -c 'import json, os; print(json.loads(os.environ["TARGET_JSON"])["ssh_pwd"])')"
+            ssh_pwd_b64="$(printf '%s' "$ssh_pwd" | base64 | tr -d '\n')"
+            health_url="$(TARGET_JSON="$target_json" python3 -c 'import json, os; print(json.loads(os.environ["TARGET_JSON"])["healthUrl"])')"
+
+            if [[ -z "$host" || -z "$port" || -z "$ssh_user" || -z "$ssh_pwd" || -z "$health_url" ]]; then
+              echo "Error: server '$server_id' has incomplete config"
+              return 1
             fi
-            if [[ "$i" -lt "$MAX_ATTEMPTS" ]]; then
+
+            echo "=== Deploy ${server_id} -> ${ssh_user}@${host}:${DEST} ==="
+            for i in $(seq 1 "$MAX_ATTEMPTS"); do
+              echo "SCP attempt $i/$MAX_ATTEMPTS -> ${ssh_user}@${host}:${DEST}"
+              getent hosts "$host" >/dev/null 2>&1 || true
+              if SSHPASS="$ssh_pwd" sshpass -e scp -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+                  -o StrictHostKeyChecking=accept-new \
+                  -o ConnectTimeout=30 -P "$port" \
+                  app.jar.publish start.sh rollback.sh \
+                  "${ssh_user}@${host}:${DEST}"; then
+                echo "SCP succeeded for ${server_id}."
+                break
+              fi
+              if [[ "$i" -eq "$MAX_ATTEMPTS" ]]; then
+                echo "SCP failed after $MAX_ATTEMPTS attempts for ${server_id}"
+                return 1
+              fi
               echo "SCP failed, retrying in ${RETRY_DELAY_SEC}s..."
               sleep "$RETRY_DELAY_SEC"
+            done
+
+            SSHPASS="$ssh_pwd" sshpass -e ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+              -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=30 -p "$port" "${ssh_user}@${host}" \
+              "REMOTE_DIR='${REMOTE_DIR}' SUDO_PWD_B64='${ssh_pwd_b64}' bash -s" <<'REMOTE_SCRIPT'
+          set -e
+
+          sudo_password() {
+            printf '%s' "$SUDO_PWD_B64" | base64 -d
+          }
+
+          run_as_root() {
+            if [ "$(id -u)" -eq 0 ]; then
+              "$@"
+            elif sudo -n true >/dev/null 2>&1; then
+              sudo "$@"
+            else
+              sudo_password | sudo -S "$@"
             fi
-          done
-          echo "SCP failed after $MAX_ATTEMPTS attempts"
-          exit 1
-      - name: Initial Wait for Service Startup
-        run: sleep 2s  # 等待 60 秒，支持格式如 60、60s 或 1m
+          }
 
-      # 5. 在远程服务器执行命令（示例：备份旧 JAR、停止服务、启动新服务）
-      - name: Execute remote commands
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_RSS_SVR_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_RSS_SVR_PORT }}
-          script: |
-            set -e
-            cd /home/${{ env.REMOTE_DIR }}/
-            chmod 755 start.sh
-            chmod 755 rollback.sh
-            echo "=== before publish ==="
-            ps -ef | grep "[a]pp.jar" || true
-            bash ./start.sh publish
-            echo "=== after publish ==="
-            ps -ef | grep "[a]pp.jar" || true
-            echo "Deployment completed"
+          java_major_version() {
+            if ! command -v java >/dev/null 2>&1; then
+              echo 0
+              return
+            fi
+            java -version 2>&1 | awk -F '"' '/version/ {
+              split($2, parts, ".")
+              if (parts[1] == "1") {
+                print parts[2]
+              } else {
+                print parts[1]
+              }
+              exit
+            }'
+          }
 
-      - name: Initial Wait for Service Startup
-        run: sleep 30s  # 等待 60 秒，支持格式如 60、60s 或 1m
-      - name: Health Check After Initial Delay
-        id: health-check
-        continue-on-error: true  # 允许失败后继续执行后续步骤
-        run: |
-          HOST=$(echo "${{ env.HEALTH_URL }}" | cut -d: -f1)
-          PORT=$(echo "${{ env.HEALTH_URL }}" | cut -d: -f2)
-          # 若端口未指定，默认使用常见端口（可选，根据实际需求调整或移除）
-          if [[ -z "$PORT" ]]; then
-            echo "Error: Port not specified in ENDPOINT '$ENDPOINT'."
-            echo "healthy=false" >> $GITHUB_OUTPUT
+          install_jdk17() {
+            if command -v apt-get >/dev/null 2>&1; then
+              run_as_root apt-get update -qq
+              run_as_root apt-get install -y -qq openjdk-17-jdk-headless
+            elif command -v dnf >/dev/null 2>&1; then
+              run_as_root dnf install -y java-17-openjdk-devel
+            elif command -v yum >/dev/null 2>&1; then
+              run_as_root yum install -y java-17-openjdk-devel
+            else
+              echo "Error: unsupported package manager, please install JDK 17 manually."
+              exit 1
+            fi
+          }
+
+          use_jdk17_default() {
+            if ! command -v update-alternatives >/dev/null 2>&1; then
+              return 1
+            fi
+            for java17 in \
+              /usr/lib/jvm/java-17-openjdk-amd64/bin/java \
+              /usr/lib/jvm/java-17-openjdk/bin/java \
+              /usr/lib/jvm/java-17*/bin/java; do
+              if [ -x "$java17" ]; then
+                run_as_root update-alternatives --set java "$java17" || true
+                javac17="$(dirname "$java17")/javac"
+                if [ -x "$javac17" ]; then
+                  run_as_root update-alternatives --set javac "$javac17" || true
+                fi
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          JAVA_MAJOR="$(java_major_version)"
+          if [ "$JAVA_MAJOR" != "17" ]; then
+            echo "JDK 17 is not the active java, current java major version: ${JAVA_MAJOR}."
+            if ! use_jdk17_default || [ "$(java_major_version)" != "17" ]; then
+              echo "Installing JDK 17..."
+              install_jdk17
+              use_jdk17_default || true
+            fi
+          else
+            echo "JDK 17 already installed."
+          fi
+
+          JAVA_MAJOR="$(java_major_version)"
+          if [ "$JAVA_MAJOR" != "17" ]; then
+            echo "Error: JDK 17 install check failed, current java major version: ${JAVA_MAJOR}."
             exit 1
           fi
-          
-          MAX_ATTEMPTS=20                     # 最大重试次数
-          RETRY_DELAY=10                      # 每次重试间隔（秒）
-          TIMEOUT_PER_ATTEMPT=5               # 单次连接超时（秒）
-          
-          echo "Starting TCP health check for $HOST:$PORT (max $MAX_ATTEMPTS attempts, interval ${RETRY_DELAY}s)..."
-          
-          for ((i=1; i<=MAX_ATTEMPTS; i++)); do
-            if timeout $TIMEOUT_PER_ATTEMPT bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" >/dev/null 2>&1; then
-              echo "Success: TCP port $HOST:$PORT is reachable after $i attempt(s)."
-              echo "healthy=true" >> $GITHUB_OUTPUT
-              exit 0
-            else
-              echo "Attempt $i/$MAX_ATTEMPTS: TCP port $HOST:$PORT not reachable. Retrying in ${RETRY_DELAY}s..."
-              sleep $RETRY_DELAY
+
+          cd "/home/${REMOTE_DIR}/"
+          chmod 755 start.sh
+          chmod 755 rollback.sh
+          echo "=== before publish ==="
+          ps -ef | grep "[a]pp.jar" || true
+          bash ./start.sh publish
+          echo "=== after publish ==="
+          ps -ef | grep "[a]pp.jar" || true
+          echo "Deployment completed"
+          REMOTE_SCRIPT
+
+            sleep 30s
+            health_check "$server_id" "$health_url" || {
+              echo "Health check failed for ${server_id}. Rolling back."
+              SSHPASS="$ssh_pwd" sshpass -e ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+                -o StrictHostKeyChecking=accept-new \
+                -o ConnectTimeout=30 -p "$port" "${ssh_user}@${host}" \
+                "REMOTE_DIR='${REMOTE_DIR}' bash -s" <<'REMOTE_ROLLBACK'
+          cd "/home/${REMOTE_DIR}/"
+          chmod 755 rollback.sh
+          ./rollback.sh
+          REMOTE_ROLLBACK
+              return 1
+            }
+          }
+
+          health_check() {
+            local server_id="$1"
+            local health_url="$2"
+            local host="${health_url%:*}"
+            local port="${health_url##*:}"
+            if [[ -z "$host" || -z "$port" || "$host" == "$port" ]]; then
+              echo "Error: invalid health endpoint '$health_url' for ${server_id}"
+              return 1
             fi
-          done
-          
-          echo "Failure: TCP port $HOST:$PORT is not reachable after $MAX_ATTEMPTS attempts."
-          echo "healthy=false" >> $GITHUB_OUTPUT
-          exit 1
-      - name: Rollback to latest on Health Check Failure
-        if: steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure'
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_RSS_SVR_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_RSS_SVR_PORT }}
-          script: |
-            cd /home/${{ env.REMOTE_DIR }}/
-            chmod 755 rollback.sh
-            ./rollback.sh
-            echo "Health check failed. Rolling back to latest tag."
+
+            local max_attempts=20
+            local retry_delay=10
+            local timeout_per_attempt=5
+            echo "Starting TCP health check for ${server_id}: ${host}:${port}"
+            for ((i=1; i<=max_attempts; i++)); do
+              if timeout "$timeout_per_attempt" bash -c "cat < /dev/null > /dev/tcp/$host/$port" >/dev/null 2>&1; then
+                echo "Success: TCP port ${host}:${port} is reachable after $i attempt(s)."
+                return 0
+              fi
+              echo "Attempt $i/$max_attempts: TCP port ${host}:${port} not reachable. Retrying in ${retry_delay}s..."
+              sleep "$retry_delay"
+            done
+            echo "Failure: TCP port ${host}:${port} is not reachable after ${max_attempts} attempts."
+            return 1
+          }
+
+          while IFS= read -r target_json; do
+            if [[ -z "$target_json" ]]; then
+              continue
+            fi
+            deploy_one "$target_json"
+          done < "$RSS_SERVER_TARGETS"

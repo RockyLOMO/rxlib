@@ -102,4 +102,37 @@ public class RssAuthenticatorTest {
             RssClient.rssConf = oldConf;
         }
     }
+
+    @Test
+    public void reloadUpdatesPasswordAndPreservesShadowUserRuntimeState() throws Exception {
+        ShadowUser first = new ShadowUser();
+        first.setUsername("ss-rocky");
+        first.setSsPort(1081);
+        first.setSsPwd("pwd-rocky");
+        first.setSocksUser("shared-socks");
+
+        TrafficLoginInfo loginInfo = new TrafficLoginInfo();
+        loginInfo.setLatestTime(org.rx.bean.DateTime.now());
+        first.getLoginIps().put(InetAddress.getByName("18.12.3.4"), loginInfo);
+        RssAuthenticator authenticator = new RssAuthenticator(Arrays.asList(first), "old-pwd", 24);
+
+        ShadowUser reloaded = new ShadowUser();
+        reloaded.setUsername("ss-rocky");
+        reloaded.setSsPort(1081);
+        reloaded.setSsPwd("pwd-rocky");
+        reloaded.setSocksUser("shared-socks");
+        ShadowUser added = new ShadowUser();
+        added.setUsername("ss-ccy");
+        added.setSsPort(1082);
+        added.setSsPwd("pwd-ccy");
+        added.setSocksUser("shared-socks");
+
+        authenticator.reload(Arrays.asList(reloaded, added), "new-pwd", 6);
+
+        assertTrue(authenticator.loginResult("ss-rocky", "old-pwd") == null);
+        assertNotNull(authenticator.loginResult("ss-rocky", "new-pwd"));
+        assertNotNull(authenticator.loginResult("ss-ccy", "new-pwd"));
+        assertSame(loginInfo, authenticator.getShadowStore().get("ss-rocky").getLoginIps().get(InetAddress.getByName("18.12.3.4")));
+        assertEquals(6, authenticator.getMemoryRetentionHours());
+    }
 }
