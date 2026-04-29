@@ -557,8 +557,35 @@ public class UdpRedundantTest {
         rule.setMultiplier(3);
 
         assertTrue(rule.matches(InetSocketAddress.createUnresolved("example.com", 443)));
+        assertTrue(rule.matches(InetSocketAddress.createUnresolved(" EXAMPLE.com ", 443)));
         assertFalse(rule.matches(InetSocketAddress.createUnresolved("example.com", 444)));
         assertFalse(rule.matches(InetSocketAddress.createUnresolved("other.example.com", 443)));
+    }
+
+    @Test
+    public void testDestinationRuleSetHostInvalidatesCompiledCache() {
+        UdpRedundantDestinationRule rule = new UdpRedundantDestinationRule();
+        rule.setHost("192.0.2.10");
+        rule.setPort(7777);
+
+        assertTrue(rule.matches(new InetSocketAddress("192.0.2.10", 7777)));
+
+        rule.setHost("192.0.2.11");
+
+        assertFalse(rule.matches(new InetSocketAddress("192.0.2.10", 7777)));
+        assertTrue(rule.matches(new InetSocketAddress("192.0.2.11", 7777)));
+    }
+
+    @Test
+    public void testDestinationRuleSetHostClearsCompileFailure() {
+        UdpRedundantDestinationRule rule = new UdpRedundantDestinationRule();
+        rule.setHost("example.com/24");
+
+        assertFalse(rule.matches(InetSocketAddress.createUnresolved("example.com", 1234)));
+
+        rule.setHost("Example.COM");
+
+        assertTrue(rule.matches(InetSocketAddress.createUnresolved("example.com", 1234)));
     }
 
     @Test

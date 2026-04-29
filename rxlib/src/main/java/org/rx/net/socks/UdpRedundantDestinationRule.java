@@ -10,7 +10,6 @@ import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
-import java.util.Locale;
 
 /**
  * 按目的地匹配 UDP 多倍发包倍率。多条规则时<strong>先配置者优先</strong>（列表顺序）。
@@ -43,6 +42,14 @@ public class UdpRedundantDestinationRule implements Serializable {
 
     private transient volatile Compiled compiled;
     private transient volatile boolean compileFailed;
+
+    public void setHost(String host) {
+        synchronized (this) {
+            this.host = host;
+            compiled = null;
+            compileFailed = false;
+        }
+    }
 
     public void setMultiplier(int multiplier) {
         this.multiplier = Math.max(1, Math.min(5, multiplier));
@@ -147,7 +154,7 @@ public class UdpRedundantDestinationRule implements Serializable {
                 if (address != null) {
                     return new Compiled(InetAddress.getByAddress(address));
                 }
-                return new Compiled(normalized.toLowerCase(Locale.ROOT));
+                return new Compiled(normalized);
             } catch (UnknownHostException | NumberFormatException e) {
                 log.warn("UDP redundant rule: bad host '{}'", hostSpec, e);
                 return null;
@@ -159,7 +166,7 @@ public class UdpRedundantDestinationRule implements Serializable {
                 return false;
             }
             if (kind == Kind.EXACT_HOST) {
-                return exactHost.equals(normalizeHost(destination.getHostString()).toLowerCase(Locale.ROOT));
+                return normalizedHostEqualsIgnoreCase(exactHost, destination.getHostString());
             }
 
             InetAddress addr = destination.getAddress();
@@ -189,6 +196,26 @@ public class UdpRedundantDestinationRule implements Serializable {
                 return h.substring(1, len - 1);
             }
             return h;
+        }
+
+        private static boolean normalizedHostEqualsIgnoreCase(String expected, String actual) {
+            if (expected == null || actual == null) {
+                return false;
+            }
+            int start = 0;
+            int end = actual.length();
+            while (start < end && actual.charAt(start) <= ' ') {
+                start++;
+            }
+            while (end > start && actual.charAt(end - 1) <= ' ') {
+                end--;
+            }
+            if (end - start > 1 && actual.charAt(start) == '[' && actual.charAt(end - 1) == ']') {
+                start++;
+                end--;
+            }
+            int len = end - start;
+            return expected.length() == len && actual.regionMatches(true, start, expected, 0, len);
         }
 
         private static boolean matchIpv4Cidr(byte[] address, byte[] network, int prefixLen) {
