@@ -21,6 +21,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -86,9 +87,6 @@ public class NameserverImpl implements Nameserver {
 
             doDeregister(appName, session.tcpRemoteEndpoint().getAddress(), true, true);
         });
-        rs.onPing.add((s, e) -> attrs(e.getSession().tcpRemoteEndpoint().getAddress())
-                .put("ping", String.format("%dms", (NtpClock.UTC.millis() - e.getValue().getTimestamp()) * 2)));
-
         FuryUdpClientCodec syncCodec = FuryUdpClientCodec.createDefault();
         if (config.getUdpCodecAllowPrefixes() != null) {
             for (String prefix : new ArrayList<>(config.getUdpCodecAllowPrefixes())) {
@@ -273,8 +271,38 @@ public class NameserverImpl implements Nameserver {
     List<InstanceInfo> getDiscoverInfos(List<InetAddress> hosts, List<String> instanceAttrKeys) {
         return Linq.from(hosts).select(p -> {
             Map<String, Serializable> attrs = attrs(p);
-            return new InstanceInfo(p, (String) attrs.get(RxConfig.ConfigNames.APP_ID),
-                    Linq.from(!CollectionUtils.isEmpty(instanceAttrKeys) ? instanceAttrKeys : attrs.keySet()).toMap(x -> x, attrs::get));
+            Map<String, Serializable> values = new HashMap<String, Serializable>();
+            Iterable<String> keys = !CollectionUtils.isEmpty(instanceAttrKeys) ? instanceAttrKeys : attrs.keySet();
+            for (String key : keys) {
+                values.put(key, attrs.get(key));
+            }
+            String ping = heartbeatText(heartbeatRttMillis(p));
+            if (ping != null && (CollectionUtils.isEmpty(instanceAttrKeys) || instanceAttrKeys.contains("ping"))) {
+                values.put("ping", ping);
+            }
+            return new InstanceInfo(p, (String) attrs.get(RxConfig.ConfigNames.APP_ID), values);
         }).toList();
+    }
+
+    long heartbeatRttMillis(InetAddress address) {
+        if (address == null) {
+            return -1L;
+        }
+        long best = -1L;
+        for (HybridSession session : rs.sessions().values()) {
+            InetSocketAddress endpoint = session.tcpRemoteEndpoint();
+            if (endpoint == null || !address.equals(endpoint.getAddress())) {
+                continue;
+            }
+            long rtt = session.heartbeatRttMillis();
+            if (rtt >= 0 && (best < 0 || rtt < best)) {
+                best = rtt;
+            }
+        }
+        return best;
+    }
+
+    static String heartbeatText(long rttMillis) {
+        return rttMillis < 0 ? null : Long.toString(rttMillis) + "ms";
     }
 }

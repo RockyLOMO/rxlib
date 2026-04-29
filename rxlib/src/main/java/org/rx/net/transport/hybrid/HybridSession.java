@@ -16,6 +16,14 @@ public interface HybridSession extends AutoCloseable, EventPublisher<HybridSessi
 
     InetSocketAddress udpRemoteEndpoint();
 
+    default long lastHeartbeatMillis() {
+        return 0L;
+    }
+
+    default long heartbeatRttMillis() {
+        return -1L;
+    }
+
     void send(Object packet);
 
     void send(Object packet, HybridSendOptions options);
