@@ -11,6 +11,7 @@ import io.netty.util.concurrent.Promise;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.bean.RandomList;
+import org.rx.core.cache.MemoryCache;
 import org.rx.net.transport.ClientDisconnectedException;
 
 import java.net.InetAddress;
@@ -29,6 +30,21 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DnsOptimizationTest {
+    static class BrokenInterceptorCache extends MemoryCache<String, List<InetAddress>> {
+        final AtomicInteger removeCalls = new AtomicInteger();
+
+        @Override
+        public List<InetAddress> get(Object key) {
+            throw new IllegalArgumentException("decode failed");
+        }
+
+        @Override
+        public List<InetAddress> remove(Object key) {
+            removeCalls.incrementAndGet();
+            return null;
+        }
+    }
+
     static int freePort() throws Exception {
         try (ServerSocket ss = new ServerSocket(0)) {
             return ss.getLocalPort();
@@ -47,6 +63,16 @@ class DnsOptimizationTest {
         } finally {
             ReferenceCountUtil.release(query);
         }
+    }
+
+    @Test
+    void invalidInterceptorCacheRead_isEvictedAndTreatedAsMiss() {
+        BrokenInterceptorCache cache = new BrokenInterceptorCache();
+        List<InetAddress> ips = DnsResolveCore.getCachedInterceptorIps(cache, "bad-key",
+                InetAddress.getLoopbackAddress(), "broken.example");
+
+        assertNull(ips);
+        assertEquals(1, cache.removeCalls.get());
     }
 
     @Test

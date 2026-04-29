@@ -8,8 +8,10 @@ import io.netty.util.concurrent.Promise;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
+import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
+import org.rx.core.cache.H2StoreCache;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.transport.ClientDisconnectedException;
@@ -63,7 +65,7 @@ public final class DnsResolveCore {
         DnsRecordType queryType = question.type();
         if (interceptors != null && !domain.endsWith(".lan") && (queryType == DnsRecordType.A || queryType == DnsRecordType.AAAA)) {
             String cacheKey = server.cacheKey(domain, queryType);
-            List<InetAddress> ips = server.interceptorCache.get(cacheKey);
+            List<InetAddress> ips = getCachedInterceptorIps(server.interceptorCache, cacheKey, srcIp, domain);
             if (ips != null) {
                 promise.setSuccess(newInterceptorResponse(query, isTcp, question, server, srcIp, domain, ips));
                 return promise;
@@ -104,6 +106,30 @@ public final class DnsResolveCore {
         query.retain();
         queryUpstream(upstream, query, isTcp, promise);
         return promise;
+    }
+
+    static List<InetAddress> getCachedInterceptorIps(Cache<String, List<InetAddress>> cache, String cacheKey,
+                                                     InetAddress srcIp, String domain) {
+        try {
+            return cache.get(cacheKey);
+        } catch (RuntimeException e) {
+            log.warn("dns interceptor cache invalid {}+{} key={}, evict and resolve again: {}",
+                    srcIp, domain, cacheKey, e.toString());
+            evictInterceptorCache(cache, cacheKey);
+            return null;
+        }
+    }
+
+    static void evictInterceptorCache(Cache<String, List<InetAddress>> cache, String cacheKey) {
+        try {
+            if (cache instanceof H2StoreCache) {
+                ((H2StoreCache<?, ?>) cache).fastRemove(cacheKey);
+                return;
+            }
+            cache.remove(cacheKey);
+        } catch (RuntimeException e) {
+            log.warn("dns interceptor cache evict failed key={}: {}", cacheKey, e.toString());
+        }
     }
 
     static String normalizeDomain(String questionName) {

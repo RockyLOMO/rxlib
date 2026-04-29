@@ -282,6 +282,39 @@ public class H2StoreCacheTest extends AbstractTester {
         }
     }
 
+    static class BrokenValueCacheItem extends H2CacheItem<Object, Object> {
+        private boolean failValue;
+
+        BrokenValueCacheItem(Object key, Object value, CachePolicy policy) {
+            super(key, value, policy);
+            failValue = true;
+        }
+
+        @Override
+        public Object getValue() {
+            if (failValue) {
+                throw new IllegalArgumentException("decode failed");
+            }
+            return super.getValue();
+        }
+    }
+
+    static class BrokenValueEntityDatabase extends TrackingEntityDatabase {
+        void primeExpiredBrokenValue(String key) {
+            BrokenValueCacheItem item = new BrokenValueCacheItem(key, "v1",
+                    new CachePolicy(System.currentTimeMillis() - 1, 0));
+            item.setVersion(1);
+            store.put(item.getId(), item);
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> T findById(Class<T> entityType, Serializable id) {
+            findByIdCalls.incrementAndGet();
+            return (T) store.get(id);
+        }
+    }
+
     @Test
     public void testL1CacheEviction() {
         H2StoreCache<String, String> cache = new H2StoreCache<>();
@@ -843,6 +876,35 @@ public class H2StoreCacheTest extends AbstractTester {
         cache.flush("expire-event");
 
         assertEquals(1, expiredEvents.get());
+    }
+
+    @Test
+    public void testExpiredBrokenValueRemovesWithoutDecodingWhenNoListener() {
+        BrokenValueEntityDatabase db = new BrokenValueEntityDatabase();
+        db.primeExpiredBrokenValue("expired-broken");
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
+
+        assertNull(cache.get("expired-broken"));
+        cache.flush("expired-broken");
+
+        assertFalse(db.existsById(H2CacheItem.class, CodecUtil.hash64("expired-broken")));
+        assertEquals(1, db.deleteCalls.get());
+    }
+
+    @Test
+    public void testExpiredBrokenValueStillRemovesWhenSnapshotFails() {
+        BrokenValueEntityDatabase db = new BrokenValueEntityDatabase();
+        db.primeExpiredBrokenValue("expired-broken-event");
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
+        AtomicInteger expiredEvents = new AtomicInteger();
+        cache.onExpired.add((s, e) -> expiredEvents.incrementAndGet());
+
+        assertNull(cache.get("expired-broken-event"));
+        cache.flush("expired-broken-event");
+
+        assertFalse(db.existsById(H2CacheItem.class, CodecUtil.hash64("expired-broken-event")));
+        assertEquals(1, db.deleteCalls.get());
+        assertEquals(0, expiredEvents.get());
     }
 
     @Test
