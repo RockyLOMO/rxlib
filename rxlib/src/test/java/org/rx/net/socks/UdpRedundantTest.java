@@ -550,6 +550,28 @@ public class UdpRedundantTest {
     }
 
     @Test
+    public void testDestinationRuleDomainKeepsUnresolved() {
+        UdpRedundantDestinationRule rule = new UdpRedundantDestinationRule();
+        rule.setHost("Example.COM");
+        rule.setPort(443);
+        rule.setMultiplier(3);
+
+        assertTrue(rule.matches(InetSocketAddress.createUnresolved("example.com", 443)));
+        assertFalse(rule.matches(InetSocketAddress.createUnresolved("example.com", 444)));
+        assertFalse(rule.matches(InetSocketAddress.createUnresolved("other.example.com", 443)));
+    }
+
+    @Test
+    public void testDestinationRuleCidrRejectsHostnameWithoutDnsResolve() {
+        UdpRedundantDestinationRule rule = new UdpRedundantDestinationRule();
+        rule.setHost("example.com/24");
+        rule.setPort(0);
+
+        assertFalse(rule.matches(InetSocketAddress.createUnresolved("example.com", 1234)));
+        assertFalse(rule.matches(new InetSocketAddress("93.184.216.34", 1234)));
+    }
+
+    @Test
     public void testEncoderPerDestinationResolverOverridesGlobal() {
         InetSocketAddress bump = new InetSocketAddress("198.51.100.50", 4000);
         InetSocketAddress normal = new InetSocketAddress("203.0.113.1", 4000);
