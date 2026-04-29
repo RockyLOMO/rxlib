@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -41,6 +42,7 @@ public class RrpServer extends Disposable {
     static final int MAX_REGISTER_BYTES = 1024 * 1024; // 1 MiB cap for serialized proxies
     static final int MAX_PENDING_FORWARD_BYTES = 1024 * 1024; // 1 MiB cap per remote channel
     static final AttributeKey<RemoteRelayBuffer> ATTR_REMOTE_RELAY_BUF = AttributeKey.valueOf("rRemoteRelayBuf");
+    static final AttributeKey<String> ATTR_REMOTE_CHANNEL_ID = AttributeKey.valueOf("rRemoteChannelId");
 
     static class RemoteRelayBuffer {
         final Queue<ByteBuf> pendingWrites = new ConcurrentLinkedQueue<>();
@@ -116,6 +118,7 @@ public class RrpServer extends Disposable {
         final RrpConfig.Proxy p;
         final ServerBootstrap remoteServer;
         final Map<String, Channel> remoteClients = new ConcurrentHashMap<>();
+        final AtomicLong nextRemoteChannelId = new AtomicLong();
         volatile Channel remoteServerChannel;
         volatile ChannelFuture bindFuture;
 
@@ -191,7 +194,9 @@ public class RrpServer extends Disposable {
             Channel inbound = ctx.channel();
             RpClient rpClient = Sockets.getAttr(inbound, ATTR_SVR_CLI);
             RpClientProxy rpClientProxy = Sockets.getAttr(inbound, ATTR_SVR_PROXY);
-            rpClientProxy.remoteClients.put(inbound.id().asShortText(), inbound);
+            String channelId = Long.toString(rpClientProxy.nextRemoteChannelId.incrementAndGet());
+            inbound.attr(ATTR_REMOTE_CHANNEL_ID).set(channelId);
+            rpClientProxy.remoteClients.put(channelId, inbound);
             inbound.attr(ATTR_REMOTE_RELAY_BUF).setIfAbsent(new RemoteRelayBuffer());
             rpClient.onRemoteChannelActive(inbound);
         }
@@ -206,7 +211,7 @@ public class RrpServer extends Disposable {
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
             buf.writeByte(RrpConfig.ACTION_FORWARD);
             buf.writeInt(rpClientProxy.p.remotePort);
-            String channelId = inbound.id().asShortText();
+            String channelId = inbound.attr(ATTR_REMOTE_CHANNEL_ID).get();
             byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
@@ -239,13 +244,13 @@ public class RrpServer extends Disposable {
             ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
             buf.writeByte(RrpConfig.ACTION_SYNC_CLOSE);
             buf.writeInt(rpClientProxy.p.remotePort);
-            String channelId = inbound.id().asShortText();
+            String channelId = inbound.attr(ATTR_REMOTE_CHANNEL_ID).get();
             byte[] bytes = channelId.getBytes(StandardCharsets.US_ASCII);
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
             outbound.writeAndFlush(buf);
 
-            rpClientProxy.remoteClients.remove(channelId);
+            rpClientProxy.remoteClients.remove(channelId, inbound);
         }
 
         @Override

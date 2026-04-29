@@ -28,7 +28,7 @@ import java.util.Map;
 import static org.rx.core.Extends.*;
 
 @Slf4j
-public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
+public class YamlConfiguration implements EventPublisher<YamlConfiguration>, AutoCloseable {
     static final int DEFAULT_WATCH_RETRY_TIMES = 3;
     static final long DEFAULT_WATCH_RETRY_INTERVAL_MILLIS = 80L;
 
@@ -149,6 +149,18 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration> {
         });
 
         return this;
+    }
+
+    public synchronized YamlConfiguration disableWatch() {
+        tryClose(watcher);
+        watcher = null;
+        outputFile = null;
+        return this;
+    }
+
+    @Override
+    public void close() {
+        disableWatch();
     }
 
     public synchronized void raiseChange() {
