@@ -68,6 +68,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.concurrent.ScheduledFuture;
 
 import static org.rx.core.Extends.eachQuietly;
 import static org.rx.core.Extends.tryClose;
@@ -80,6 +81,8 @@ public final class RssClient {
     static HttpServer httpServer;
     static NameserverImpl nameserver;
     static RssUserTrafficStore trafficStore;
+    static ScheduledFuture<?> ddnsTask;
+    static int ddnsTaskPeriodSeconds;
 
     private RssClient() {
     }
@@ -237,6 +240,7 @@ public final class RssClient {
                     }
                 }
             }
+            configureDdnsSchedule(rssConf);
             log.info("rssConf load ok");
         });
         watcher.raiseChange();
@@ -360,7 +364,6 @@ public final class RssClient {
             inSvr.setConnectionTagResolver(rssAuthenticator::resolve);
         }
         boolean kcptun = inConf.getKcptunClient() != null;
-        UpstreamSupport kcpUpstream = kcptun ? new UpstreamSupport(inConf.getKcptunClient(), null) : null;
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
             InetAddress srcHost = e.getSource().getAddress();
             UpstreamSupport next = nextUpstream(socksServers, srcHost);
@@ -368,8 +371,7 @@ public final class RssClient {
                 log.info("route upSvr src {} -> {}", srcHost, next.getEndpoint());
             }
             if (kcptun) {
-                kcpUpstream.setFacade(next.getFacade());
-                return kcpUpstream;
+                return routeUpstream(inConf, next);
             }
             return next;
         };
@@ -377,6 +379,7 @@ public final class RssClient {
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
         RssSupport.applyUdpCompressionTrial(outConf);
+        applyUdpLeasePool(rssConf, outConf);
         if (!kcptun) {
             outConf.setOptimalSettings(RssSupport.OUT_OPS);
         }
@@ -453,6 +456,31 @@ public final class RssClient {
         }
     }
 
+    static UpstreamSupport routeUpstream(SocksConfig inConf, UpstreamSupport next) {
+        if (inConf == null || inConf.getKcptunClient() == null) {
+            return next;
+        }
+        return new UpstreamSupport(inConf.getKcptunClient(), next.getFacade());
+    }
+
+    static void applyUdpLeasePool(RSSConf conf, SocksConfig config) {
+        if (conf == null || config == null) {
+            return;
+        }
+        config.setUdpLeasePoolEnabled(conf.udpLeasePoolEnabled);
+        if (!conf.udpLeasePoolEnabled) {
+            return;
+        }
+
+        int maxSize = Math.max(1, conf.udpLeasePoolMaxSize);
+        int minSize = Math.max(0, Math.min(conf.udpLeasePoolMinSize, maxSize));
+        config.setUdpLeasePoolMinSize(minSize);
+        config.setUdpLeasePoolMaxSize(maxSize);
+        config.setUdpLeasePoolMaxIdleMillis(Math.max(1000, conf.udpLeasePoolMaxIdleMillis));
+        config.setUdpLeaseRpcBreakerThreshold(Math.max(1, conf.udpLeaseRpcBreakerThreshold));
+        config.setUdpLeaseRpcBreakerOpenSeconds(Math.max(1, conf.udpLeaseRpcBreakerOpenSeconds));
+    }
+
     static int resolveRpcRequestTimeoutMillis(RSSConf conf) {
         int configured = conf.rpcRequestTimeoutMillis;
         if (configured > 0) {
@@ -493,23 +521,48 @@ public final class RssClient {
             rrpServer = new RrpServer(c);
         }
 
-        Tasks.schedulePeriod(() -> {
-            if (rssConf == null || CollectionUtils.isEmpty(rssConf.ddnsDomains)) {
-                return;
-            }
+        configureDdnsSchedule(rssConf);
+    }
 
-            InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
-            List<String> subDomains = Linq.from(rssConf.ddnsDomains)
-                    .where(sd -> !DnsClient.inlandClient().resolveAll(sd).contains(wanIp))
-                    .select(sd -> sd.substring(0, sd.indexOf("."))).toList();
-            if (subDomains.isEmpty()) {
-                return;
-            }
-            String oneSd = rssConf.ddnsDomains.get(0);
-            String domain = oneSd.substring(oneSd.indexOf(".") + 1);
-            String res = setDDns(rssConf.ddnsApiKey, domain, subDomains, wanIp.getHostAddress());
-            log.info("ddns set {} + {} @ {} -> {}", domain, subDomains, wanIp.getHostAddress(), res);
-        }, rssConf.ddnsJobSeconds * 1000L);
+    static boolean shouldScheduleDdns(RSSConf conf) {
+        return conf != null && conf.ddnsJobSeconds > 0 && !CollectionUtils.isEmpty(conf.ddnsDomains);
+    }
+
+    static synchronized boolean configureDdnsSchedule(RSSConf conf) {
+        boolean enabled = shouldScheduleDdns(conf);
+        int periodSeconds = enabled ? conf.ddnsJobSeconds : 0;
+        if (ddnsTask != null && (!enabled || ddnsTaskPeriodSeconds != periodSeconds)) {
+            ddnsTask.cancel(false);
+            ddnsTask = null;
+            ddnsTaskPeriodSeconds = 0;
+        }
+        if (!enabled || ddnsTask != null) {
+            return false;
+        }
+
+        ddnsTaskPeriodSeconds = periodSeconds;
+        ddnsTask = Tasks.schedulePeriod(RssClient::runDdnsJob, periodSeconds * 1000L);
+        return true;
+    }
+
+    @SneakyThrows
+    static void runDdnsJob() {
+        RSSConf conf = rssConf;
+        if (!shouldScheduleDdns(conf)) {
+            return;
+        }
+
+        InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
+        List<String> subDomains = Linq.from(conf.ddnsDomains)
+                .where(sd -> !DnsClient.inlandClient().resolveAll(sd).contains(wanIp))
+                .select(sd -> sd.substring(0, sd.indexOf("."))).toList();
+        if (subDomains.isEmpty()) {
+            return;
+        }
+        String oneSd = conf.ddnsDomains.get(0);
+        String domain = oneSd.substring(oneSd.indexOf(".") + 1);
+        String res = setDDns(conf.ddnsApiKey, domain, subDomains, wanIp.getHostAddress());
+        log.info("ddns set {} + {} @ {} -> {}", domain, subDomains, wanIp.getHostAddress(), res);
     }
 
     static void enableShadowIngressReusePort(ShadowsocksConfig config) {

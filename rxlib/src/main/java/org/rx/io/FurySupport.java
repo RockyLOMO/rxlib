@@ -2,6 +2,7 @@ package org.rx.io;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.util.concurrent.FastThreadLocal;
 import org.apache.fury.Fury;
 import org.apache.fury.config.CompatibleMode;
 import org.apache.fury.config.Language;
@@ -13,10 +14,15 @@ import org.rx.core.Constants;
 
 import java.io.Serializable;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.function.Consumer;
 
 public final class FurySupport {
@@ -24,6 +30,8 @@ public final class FurySupport {
     public static final byte FRAME_VERSION = 1;
     public static final byte CODEC_ID_FURY = 1;
     public static final short DATE_TIME_REGISTER_ID_OFFSET = 1;
+    private static final ConcurrentMap<FuryLocalKey, FastThreadLocal<Fury>> SHARED_LOCALS =
+            new ConcurrentHashMap<FuryLocalKey, FastThreadLocal<Fury>>();
 
     public static Set<String> defaultAllowedClassPrefixes() {
         LinkedHashSet<String> prefixes = new LinkedHashSet<>();
@@ -70,6 +78,24 @@ public final class FurySupport {
             registerAction.accept(fury);
         }
         return fury;
+    }
+
+    public static FastThreadLocal<Fury> sharedFuryLocal(Class<?> ownerType, String purpose,
+            List<String> allowedPrefixes, Consumer<Fury> registerAction) {
+        final FuryLocalKey key = new FuryLocalKey(ownerType, purpose, allowedPrefixes);
+        FastThreadLocal<Fury> local = SHARED_LOCALS.get(key);
+        if (local != null) {
+            return local;
+        }
+
+        FastThreadLocal<Fury> created = new FastThreadLocal<Fury>() {
+            @Override
+            protected Fury initialValue() {
+                return newFury(ownerType, key.allowedPrefixes, registerAction);
+            }
+        };
+        FastThreadLocal<Fury> old = SHARED_LOCALS.putIfAbsent(key, created);
+        return old == null ? created : old;
     }
 
     public static void registerDateTime(Fury fury, short registerId) {
@@ -155,6 +181,39 @@ public final class FurySupport {
         @Override
         public boolean checkClass(ClassResolver classResolver, String className) {
             return isAllowed(className, allowedPrefixes);
+        }
+    }
+
+    static final class FuryLocalKey {
+        final String ownerName;
+        final String purpose;
+        final List<String> allowedPrefixes;
+        final int hash;
+
+        FuryLocalKey(Class<?> ownerType, String purpose, List<String> allowedPrefixes) {
+            this.ownerName = ownerType == null ? "" : ownerType.getName();
+            this.purpose = purpose == null ? "" : purpose;
+            this.allowedPrefixes = Collections.unmodifiableList(new ArrayList<String>(allowedPrefixes));
+            this.hash = Objects.hash(ownerName, this.purpose, this.allowedPrefixes);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof FuryLocalKey)) {
+                return false;
+            }
+            FuryLocalKey that = (FuryLocalKey) obj;
+            return ownerName.equals(that.ownerName)
+                    && purpose.equals(that.purpose)
+                    && allowedPrefixes.equals(that.allowedPrefixes);
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
         }
     }
 

@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.TimeZone;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class FurySerializerTest {
@@ -56,5 +57,16 @@ class FurySerializerTest {
     void invalidFrameLooksLikeCorruptedStream() {
         assertThrows(StreamCorruptedException.class,
                 () -> new FurySerializer().deserialize(DuplexStream.wrap("", new byte[8])));
+    }
+
+    @Test
+    void serializersReuseSharedFuryLocalForSameAllowlist() {
+        FurySerializer first = new FurySerializer();
+        FurySerializer second = new FurySerializer();
+
+        first.fury();
+        second.fury();
+
+        assertSame(first.furyLocal, second.furyLocal);
     }
 }

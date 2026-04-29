@@ -1,6 +1,7 @@
 package org.rx.net;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.util.concurrent.FastThreadLocal;
 import org.apache.fury.Fury;
 import org.apache.fury.memory.MemoryBuffer;
 import org.rx.io.FurySupport;
@@ -29,6 +30,11 @@ public final class FuryCodecSupport {
 
     public static Fury newFury(Class<?> ownerType, List<String> allowedPrefixes, Consumer<Fury> registerAction) {
         return FurySupport.newFury(ownerType, allowedPrefixes, registerAction);
+    }
+
+    public static FastThreadLocal<Fury> sharedFuryLocal(Class<?> ownerType, String purpose,
+            List<String> allowedPrefixes, Consumer<Fury> registerAction) {
+        return FurySupport.sharedFuryLocal(ownerType, purpose, allowedPrefixes, registerAction);
     }
 
     public static void registerDateTime(Fury fury, short registerId) {

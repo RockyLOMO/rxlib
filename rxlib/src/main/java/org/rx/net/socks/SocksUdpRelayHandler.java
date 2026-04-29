@@ -63,6 +63,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     static final AttributeKey<LastRoute> ATTR_LAST_ROUTE = AttributeKey.valueOf("udpLastRoute");
     static final AttributeKey<MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate>> ATTR_ROUTE_HEADER_CACHE =
             AttributeKey.valueOf("udpRouteHeaderCache");
+    static final AttributeKey<UdpMetricTagCache> ATTR_UDP_METRIC_TAG_CACHE =
+            AttributeKey.valueOf("udpMetricTagCache");
     static final int MAX_PENDING_ROUTE_PACKETS = 32;
     static final int MAX_PENDING_ROUTE_BYTES = 256 * 1024;
 
@@ -103,6 +105,78 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
         boolean matches(ByteBuf buf) {
             return requestHeader.matches(buf);
+        }
+    }
+
+    static final class UdpMetricTagCache {
+        static final String TO_CLIENT = "to-client";
+        static final String TO_UPSTREAM = "to-upstream";
+        final int listenPort;
+        String toClient;
+        String toClientSocks;
+        String toClientDirect;
+        String toUpstream;
+        String toUpstreamSocks;
+        String toUpstreamDirect;
+
+        UdpMetricTagCache(int listenPort) {
+            this.listenPort = listenPort;
+        }
+
+        String tags(boolean toClientDirection, Upstream upstream) {
+            if (upstream instanceof SocksUdpUpstream) {
+                return toClientDirection ? toClientSocks() : toUpstreamSocks();
+            }
+            if (upstream != null) {
+                return toClientDirection ? toClientDirect() : toUpstreamDirect();
+            }
+            return toClientDirection ? toClient() : toUpstream();
+        }
+
+        private String toClient() {
+            if (toClient == null) {
+                toClient = base(TO_CLIENT);
+            }
+            return toClient;
+        }
+
+        private String toClientSocks() {
+            if (toClientSocks == null) {
+                toClientSocks = base(TO_CLIENT) + ",upstream=socks";
+            }
+            return toClientSocks;
+        }
+
+        private String toClientDirect() {
+            if (toClientDirect == null) {
+                toClientDirect = base(TO_CLIENT) + ",upstream=direct";
+            }
+            return toClientDirect;
+        }
+
+        private String toUpstream() {
+            if (toUpstream == null) {
+                toUpstream = base(TO_UPSTREAM);
+            }
+            return toUpstream;
+        }
+
+        private String toUpstreamSocks() {
+            if (toUpstreamSocks == null) {
+                toUpstreamSocks = base(TO_UPSTREAM) + ",upstream=socks";
+            }
+            return toUpstreamSocks;
+        }
+
+        private String toUpstreamDirect() {
+            if (toUpstreamDirect == null) {
+                toUpstreamDirect = base(TO_UPSTREAM) + ",upstream=direct";
+            }
+            return toUpstreamDirect;
+        }
+
+        private String base(String direction) {
+            return "listenPort=" + listenPort + ",direction=" + direction;
         }
     }
 
@@ -258,7 +332,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         DatagramPacket packet = new DatagramPacket(outBuf, clientAddr);
         SocksUserTraffic.recordRead(relay, sc, packet.content().readableBytes(), 1L);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
-                udpMetricTags(config, "to-client", sc != null ? sc.getUpstream() : null));
+                udpMetricTags(relay, config, true, sc != null ? sc.getUpstream() : null));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("socks5[{}] UDP relay drop response from {} to {} result={}",
                     config.getListenPort(), sender, clientAddr, result);
@@ -476,7 +550,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         DatagramPacket packet = new DatagramPacket(inBuf, upDstAddr);
         SocksUserTraffic.recordWrite(relay, context, packet.content().readableBytes(), 1L);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
-                udpMetricTags(config, "to-upstream", upstream));
+                udpMetricTags(relay, config, false, upstream));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("socks5[{}] UDP relay drop packet from {} to {}[{}] result={}",
                     config.getListenPort(), sender, upDstAddr, dstEp, result);
@@ -554,14 +628,14 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                 "reason=" + reason + ",path=client-ingress,port=" + config.getListenPort());
     }
 
-    private static String udpMetricTags(SocksConfig config, String direction, Upstream upstream) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("listenPort=").append(config.getListenPort())
-                .append(",direction=").append(direction);
-        if (upstream != null) {
-            sb.append(",upstream=").append(upstream instanceof SocksUdpUpstream ? "socks" : "direct");
+    private static String udpMetricTags(Channel relay, SocksConfig config, boolean toClient, Upstream upstream) {
+        UdpMetricTagCache cache = relay.attr(ATTR_UDP_METRIC_TAG_CACHE).get();
+        if (cache == null) {
+            UdpMetricTagCache newCache = new UdpMetricTagCache(config.getListenPort());
+            UdpMetricTagCache oldCache = relay.attr(ATTR_UDP_METRIC_TAG_CACHE).setIfAbsent(newCache);
+            cache = oldCache != null ? oldCache : newCache;
         }
-        return sb.toString();
+        return cache.tags(toClient, upstream);
     }
 
     private static int localPort(Channel relay) {

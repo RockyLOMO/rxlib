@@ -44,6 +44,12 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     static final int MAX_PENDING_ROUTE_PACKETS = 32;
     static final int MAX_PENDING_ROUTE_BYTES = 256 * 1024;
     static final int DEFAULT_OUTBOUND_IDLE_SECONDS = 120;
+    private static final String UDP_TAG_FRONTEND_OUTBOUND = "path=frontend,direction=outbound";
+    private static final String UDP_TAG_FRONTEND_OUTBOUND_SOCKS = UDP_TAG_FRONTEND_OUTBOUND + ",upstream=socks";
+    private static final String UDP_TAG_FRONTEND_OUTBOUND_DIRECT = UDP_TAG_FRONTEND_OUTBOUND + ",upstream=direct";
+    private static final String UDP_TAG_BACKEND_INBOUND = "path=backend,direction=inbound";
+    private static final String UDP_TAG_BACKEND_INBOUND_SOCKS = UDP_TAG_BACKEND_INBOUND + ",upstream=socks";
+    private static final String UDP_TAG_BACKEND_INBOUND_DIRECT = UDP_TAG_BACKEND_INBOUND + ",upstream=direct";
     static final ConcurrentHashMap<OutboundPoolKey, ChannelFuture> OUTBOUND_POOL = new ConcurrentHashMap<>();
 
     static final class RouteKey {
@@ -740,12 +746,20 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private static String udpMetricTags(String path, String direction, Upstream upstream) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("path=").append(path)
-                .append(",direction=").append(direction);
-        if (upstream != null) {
-            sb.append(",upstream=").append(upstream instanceof SocksUdpUpstream ? "socks" : "direct");
+        if ("frontend".equals(path) && "outbound".equals(direction)) {
+            if (upstream instanceof SocksUdpUpstream) {
+                return UDP_TAG_FRONTEND_OUTBOUND_SOCKS;
+            }
+            return upstream != null ? UDP_TAG_FRONTEND_OUTBOUND_DIRECT : UDP_TAG_FRONTEND_OUTBOUND;
         }
-        return sb.toString();
+        if ("backend".equals(path) && "inbound".equals(direction)) {
+            if (upstream instanceof SocksUdpUpstream) {
+                return UDP_TAG_BACKEND_INBOUND_SOCKS;
+            }
+            return upstream != null ? UDP_TAG_BACKEND_INBOUND_DIRECT : UDP_TAG_BACKEND_INBOUND;
+        }
+
+        String tags = "path=" + path + ",direction=" + direction;
+        return upstream != null ? tags + ",upstream=" + (upstream instanceof SocksUdpUpstream ? "socks" : "direct") : tags;
     }
 }

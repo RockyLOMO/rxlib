@@ -84,15 +84,12 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
 
     static abstract class FuryHandlerSupport {
         final FuryRemotingSupport support;
-        final FastThreadLocal<Fury> furyLocal = new FastThreadLocal<Fury>() {
-            @Override
-            protected Fury initialValue() {
-                return support.newFury();
-            }
-        };
+        final FastThreadLocal<Fury> furyLocal;
 
-        FuryHandlerSupport(FuryRemotingSupport support) {
+        FuryHandlerSupport(FuryRemotingSupport support, String purpose) {
             this.support = support;
+            this.furyLocal = FuryCodecSupport.sharedFuryLocal(FuryRemotingCodecFactory.class, purpose,
+                    support.allowedPrefixes, support::registerTypes);
         }
     }
 
@@ -174,12 +171,8 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
                 local = furyLocal;
                 if (local == null) {
                     final FuryRemotingSupport support = new FuryRemotingSupport(allowedPrefixes);
-                    local = new FastThreadLocal<Fury>() {
-                        @Override
-                        protected Fury initialValue() {
-                            return support.newFury();
-                        }
-                    };
+                    local = FuryCodecSupport.sharedFuryLocal(FuryRemotingCodecFactory.class, "remoting-udp",
+                            allowedPrefixes, support::registerTypes);
                     furyLocal = local;
                 }
             }
@@ -195,7 +188,7 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
         final FuryHandlerSupport handlerSupport;
 
         FuryMessageEncoder(FuryRemotingSupport support) {
-            handlerSupport = new FuryHandlerSupport(support) {
+            handlerSupport = new FuryHandlerSupport(support, "remoting-tcp-encoder") {
             };
         }
 
@@ -223,7 +216,7 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
         final FuryHandlerSupport handlerSupport;
 
         FuryMessageDecoder(FuryRemotingSupport support) {
-            handlerSupport = new FuryHandlerSupport(support) {
+            handlerSupport = new FuryHandlerSupport(support, "remoting-tcp-decoder") {
             };
         }
 

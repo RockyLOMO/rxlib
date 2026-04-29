@@ -30,6 +30,12 @@ public class RSSConf {
     public int rpcMaxSize = 6;
     public int rpcRequestTimeoutMillis = 3000;
     public int rpcAutoWhiteListSeconds = 120;
+    public boolean udpLeasePoolEnabled = true;
+    public int udpLeasePoolMinSize = 2;
+    public int udpLeasePoolMaxSize = 32;
+    public int udpLeasePoolMaxIdleMillis = 300_000;
+    public int udpLeaseRpcBreakerThreshold = 3;
+    public int udpLeaseRpcBreakerOpenSeconds = 30;
     public int shadowDnsPort = 753;
     public int dnsTtlMinutes = 600;
     public NameserverConfig nameserver = new NameserverConfig();

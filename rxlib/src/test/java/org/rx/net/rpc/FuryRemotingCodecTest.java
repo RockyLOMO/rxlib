@@ -23,6 +23,7 @@ import java.util.TimeZone;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FuryRemotingCodecTest {
@@ -65,6 +66,30 @@ class FuryRemotingCodecTest {
         Object decoded = roundTrip(clone.getCodec(), allowedPrefixes, new MethodMessage(11, "ping", new Object[]{"ok"}, "trace-11"));
         MethodMessage pack = assertInstanceOf(MethodMessage.class, decoded);
         assertEquals("ok", pack.parameters[0]);
+    }
+
+    @Test
+    void equivalentRemotingCodecsReuseSharedFuryLocal() {
+        FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
+        FuryRemotingCodecFactory.FuryRemotingUdpCodec first =
+                (FuryRemotingCodecFactory.FuryRemotingUdpCodec) factory.newCodec();
+        FuryRemotingCodecFactory.FuryRemotingUdpCodec second =
+                (FuryRemotingCodecFactory.FuryRemotingUdpCodec) factory.newCodec();
+
+        first.fury();
+        second.fury();
+
+        assertSame(first.furyLocal, second.furyLocal);
+
+        List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
+        FuryRemotingCodecFactory.FuryMessageDecoder firstDecoder =
+                new FuryRemotingCodecFactory.FuryMessageDecoder(
+                        new FuryRemotingCodecFactory.FuryRemotingSupport(new ArrayList<>(allowedPrefixes)));
+        FuryRemotingCodecFactory.FuryMessageDecoder secondDecoder =
+                new FuryRemotingCodecFactory.FuryMessageDecoder(
+                        new FuryRemotingCodecFactory.FuryRemotingSupport(new ArrayList<>(allowedPrefixes)));
+
+        assertSame(firstDecoder.handlerSupport.furyLocal, secondDecoder.handlerSupport.furyLocal);
     }
 
     @Test
