@@ -58,6 +58,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
@@ -69,6 +70,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -447,6 +449,39 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void socksTcpUpstream_FakeEndpointHashIncludesSupportEndpoint() {
+        final AtomicInteger calls = new AtomicInteger();
+        SocksRpcContract facade = new SocksRpcContract() {
+            @Override
+            public void fakeEndpoint(java.math.BigInteger hash, String realEndpoint) {
+                calls.incrementAndGet();
+            }
+
+            @Override
+            public void addWhiteList(InetAddress endpoint) {
+            }
+
+            @Override
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                return Collections.emptyList();
+            }
+        };
+        SocksConfig config = new SocksConfig();
+        String dstHost = "fake-key-" + System.nanoTime() + ".example";
+        UnresolvedEndpoint dstEp = new UnresolvedEndpoint(dstHost, 443);
+        UpstreamSupport routedA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.100", 4093)), facade);
+        UpstreamSupport routedB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.101", 4093)), facade);
+
+        UnresolvedEndpoint fakeA = new SocksTcpUpstream(dstEp, config, routedA).prepareDestination();
+        UnresolvedEndpoint fakeB = new SocksTcpUpstream(dstEp, config, routedB).prepareDestination();
+
+        assertNotEquals(fakeA.getHost(), fakeB.getHost());
+        assertTrue(fakeA.getHost().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
+        assertTrue(fakeB.getHost().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
+        assertEquals(2, calls.get());
+    }
+
+    @Test
     @SneakyThrows
     public void nextUpstream_ThrowsWhenNoServerAvailable() {
         RSSConf oldConf = RssClient.rssConf;
@@ -589,6 +624,11 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void upstreamCloseMaxWait_IsOneMinute() {
+        assertEquals(TimeUnit.MINUTES.toMillis(1), RssClient.UPSTREAM_CLOSE_MAX_WAIT_MILLIS);
+    }
+
+    @Test
     public void renderShadowUsersPage_RendersUpstreamHealth() {
         UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080), "u", "secret"), null);
         support.setConfiguredWeight(3);
@@ -618,6 +658,80 @@ public class RssTest extends AbstractTester {
         } finally {
             support.releaseConnection();
         }
+    }
+
+    @Test
+    public void renderShadowUsersPage_RendersClosingOldUpstreamReleaseWait() {
+        AuthenticEndpoint currentEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080), "cur", "secret");
+        currentEndpoint.getParameters().put("w", "1");
+        UpstreamSupport currentSupport = new UpstreamSupport(currentEndpoint, null);
+        currentSupport.setConfiguredWeight(1);
+        RandomList<UpstreamSupport> currentServers = new RandomList<>();
+        currentServers.add(currentSupport, 1);
+        RssRuntime.UpstreamSnapshot currentSnapshot = new RssRuntime.UpstreamSnapshot(currentServers,
+                new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
+                Collections.singletonList(currentEndpoint), Collections.<AuthenticEndpoint>emptyList());
+
+        AuthenticEndpoint oldEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1081), "old", "secret");
+        oldEndpoint.getParameters().put("w", "2");
+        UpstreamSupport oldSupport = new UpstreamSupport(oldEndpoint, null);
+        oldSupport.setConfiguredWeight(2);
+        oldSupport.retainConnection();
+        RandomList<UpstreamSupport> oldServers = new RandomList<>();
+        oldServers.add(oldSupport, 2);
+        RssRuntime.UpstreamSnapshot oldSnapshot = new RssRuntime.UpstreamSnapshot(oldServers,
+                new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
+                Collections.singletonList(oldEndpoint), Collections.<AuthenticEndpoint>emptyList());
+        oldSnapshot.closing = true;
+        oldSnapshot.closeDeadlineMillis = System.currentTimeMillis() + RssClient.UPSTREAM_CLOSE_MAX_WAIT_MILLIS;
+
+        RssClientHttpHandler.Query query = new RssClientHttpHandler.Query();
+        query.fromMillis = 0L;
+        query.toMillis = System.currentTimeMillis();
+        query.fromValue = "1970-01-01T00:00";
+        query.toValue = "2099-01-01T00:00";
+
+        try {
+            String html = RssClientHttpHandler.renderShadowUsersPage(Collections.<String, ShadowUser>emptyMap(), null, query,
+                    RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS, Arrays.asList(currentSnapshot, oldSnapshot));
+
+            assertTrue(html.contains("当前配置"));
+            assertTrue(html.contains("旧配置"));
+            assertTrue(html.contains("释放等待"));
+            assertTrue(html.contains("cur@127.0.0.1:1080"));
+            assertTrue(html.contains("old@127.0.0.1:1081"));
+            assertTrue(!html.contains("secret"));
+        } finally {
+            oldSupport.releaseConnection();
+        }
+    }
+
+    @Test
+    public void renderShadowUsersPage_RendersConfiguredDisabledSocksServer() {
+        AuthenticEndpoint enabledEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080), "on", "secret");
+        enabledEndpoint.getParameters().put("w", "3");
+        UpstreamSupport support = new UpstreamSupport(enabledEndpoint, null);
+        support.setConfiguredWeight(3);
+        RandomList<UpstreamSupport> servers = new RandomList<>();
+        servers.add(support, 3);
+
+        AuthenticEndpoint disabledEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1082), "off", "secret");
+        disabledEndpoint.getParameters().put("w", "0");
+        RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers, new RandomList<UpstreamSupport>(),
+                new RandomList<DnsServer.ResolveInterceptor>(), Arrays.asList(enabledEndpoint, disabledEndpoint),
+                Collections.<AuthenticEndpoint>emptyList());
+        RssClientHttpHandler.Query query = new RssClientHttpHandler.Query();
+        query.fromMillis = 0L;
+        query.toMillis = System.currentTimeMillis();
+        query.fromValue = "1970-01-01T00:00";
+        query.toValue = "2099-01-01T00:00";
+
+        String html = RssClientHttpHandler.renderShadowUsersPage(Collections.<String, ShadowUser>emptyMap(), null, query,
+                RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS, snapshot);
+
+        assertTrue(html.contains("off@127.0.0.1:1082"));
+        assertTrue(html.contains("DISABLED"));
+        assertTrue(!html.contains("secret"));
     }
 
     @Test

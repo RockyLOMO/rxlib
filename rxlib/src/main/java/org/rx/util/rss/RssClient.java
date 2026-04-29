@@ -80,7 +80,7 @@ public final class RssClient {
     static final long RSS_RELOAD_DEBOUNCE_MILLIS = 100L;
     static final long UPSTREAM_CLOSE_DELAY_MILLIS = 30_000L;
     static final long UPSTREAM_CLOSE_CHECK_MILLIS = 1_000L;
-    static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 5L * 60L * 1000L;
+    static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 60L * 1000L;
     static final long UPSTREAM_HEALTH_CHECK_PERIOD_MILLIS = 5_000L;
 
     static volatile RSSConf rssConf;
@@ -304,7 +304,8 @@ public final class RssClient {
             }
             log.info("rssConf load socksServers: {}", toJsonString(conf.socksServers));
             log.info("rssConf load udp2rawSocksServers: {}", toJsonString(conf.udp2rawSocksServers));
-            return new RssRuntime.UpstreamSnapshot(socksServers, udp2rawSocksServers, dnsInterceptors);
+            return new RssRuntime.UpstreamSnapshot(socksServers, udp2rawSocksServers, dnsInterceptors,
+                    conf.socksServers, conf.udp2rawSocksServers);
         } catch (Throwable e) {
             for (SocksRpcContract facade : createdFacades) {
                 tryClose(facade);
@@ -526,12 +527,15 @@ public final class RssClient {
             return;
         }
         snapshot.closing = true;
-        long deadline = System.currentTimeMillis() + UPSTREAM_CLOSE_DELAY_MILLIS + UPSTREAM_CLOSE_MAX_WAIT_MILLIS;
+        long now = System.currentTimeMillis();
+        long delayMillis = Math.min(UPSTREAM_CLOSE_DELAY_MILLIS, UPSTREAM_CLOSE_MAX_WAIT_MILLIS);
+        long deadline = now + UPSTREAM_CLOSE_MAX_WAIT_MILLIS;
         if (snapshot.closeDeadlineMillis <= 0L || snapshot.closeDeadlineMillis > deadline) {
             snapshot.closeDeadlineMillis = deadline;
         }
+        snapshot.closeCheckMillis = now + delayMillis;
         cancelUpstreamHealthCheck(snapshot);
-        Tasks.setTimeout(() -> closeUpstreamsWhenIdle(snapshot), UPSTREAM_CLOSE_DELAY_MILLIS);
+        Tasks.setTimeout(() -> closeUpstreamsWhenIdle(snapshot), delayMillis);
     }
 
     static void closeUpstreamsWhenIdle(RssRuntime.UpstreamSnapshot snapshot) {
@@ -548,6 +552,7 @@ public final class RssClient {
                 return;
             }
             log.info("rssConf old upstream wait activeConnections={}", active);
+            snapshot.closeCheckMillis = System.currentTimeMillis() + UPSTREAM_CLOSE_CHECK_MILLIS;
             Tasks.setTimeout(() -> closeUpstreamsWhenIdle(snapshot), UPSTREAM_CLOSE_CHECK_MILLIS);
             return;
         }

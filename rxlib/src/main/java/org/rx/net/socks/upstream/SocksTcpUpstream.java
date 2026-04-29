@@ -21,6 +21,8 @@ import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
 import java.math.BigInteger;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
@@ -71,7 +73,7 @@ public class SocksTcpUpstream extends Upstream {
         }
 
         String dstEpStr = destination.toString();
-        BigInteger hash = CodecUtil.hashUnsigned64(dstEpStr.getBytes(StandardCharsets.UTF_8));
+        BigInteger hash = fakeEndpointHash(next, dstEpStr);
         destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksRpcContract.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksRpcContract.FAKE_PORT_OBFS));
 
         Cache<BigInteger, Boolean> cache = Cache.getInstance();
@@ -90,6 +92,21 @@ public class SocksTcpUpstream extends Upstream {
             }
         }
         return destination;
+    }
+
+    static BigInteger fakeEndpointHash(UpstreamSupport support, String dstEpStr) {
+        return CodecUtil.hashUnsigned64((rssServerKey(support) + "|" + dstEpStr).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String rssServerKey(UpstreamSupport support) {
+        AuthenticEndpoint endpoint = support == null ? null : support.getEndpoint();
+        InetSocketAddress inetEndpoint = endpoint == null ? null : endpoint.getInetEndpoint();
+        if (inetEndpoint == null) {
+            return "NULL";
+        }
+        InetAddress address = inetEndpoint.getAddress();
+        String host = address == null ? inetEndpoint.getHostString() : address.getHostAddress();
+        return host + ":" + inetEndpoint.getPort();
     }
 
     public void initTransport(Channel channel) {

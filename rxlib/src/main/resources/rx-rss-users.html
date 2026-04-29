@@ -35,11 +35,13 @@
         <thead>
         <tr>
             <th>类型</th>
+            <th>配置状态</th>
             <th>Endpoint</th>
-            <th>健康状态</th>
+            <th>Ping 健康状态</th>
             <th>配置权重</th>
             <th>当前权重</th>
             <th>活跃连接</th>
+            <th>释放等待</th>
             <th>RPC</th>
         </tr>
         </thead>
@@ -47,11 +49,13 @@
         {{#each upstreams}}
         <tr>
             <td>{{type}}</td>
+            <td>{{state}}</td>
             <td>{{endpoint}}</td>
             <td>{{health}}</td>
             <td>{{configuredWeight}}</td>
             <td>{{currentWeight}}</td>
             <td>{{activeConnections}}</td>
+            <td>{{releaseWait}}</td>
             <td>{{rpc}}</td>
         </tr>
         {{/each}}
