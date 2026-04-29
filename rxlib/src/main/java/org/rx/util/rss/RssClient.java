@@ -717,9 +717,10 @@ public final class RssClient {
         AtomicReference<SocksConfig> outConfRef = new AtomicReference<>(outConf);
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
             InetAddress srcHost = e.getSource().getAddress();
-            UpstreamSupport next = nextUpstream(socksServersRef.get(), srcHost);
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            UpstreamSupport next = nextUpstream(socksServersRef.get(), srcHost, dstEp);
             if (rssConf.hasDebugFlag()) {
-                log.info("route upSvr src {} -> {}", srcHost, next.getEndpoint());
+                log.info("route upSvr src {} dst {} -> {}", srcHost, dstEp, next.getEndpoint());
             }
             SocksConfig currentOutConf = outConfRef.get();
             if (currentOutConf.getKcptunClient() != null) {
@@ -793,8 +794,16 @@ public final class RssClient {
     }
 
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost) {
+        return nextUpstream(socksServers, srcHost, null);
+    }
+
+    static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost, UnresolvedEndpoint dstEp) {
+        RSSConf conf = rssConf;
+        int steeringTtl = conf == null || conf.route == null ? 0 : conf.route.srcSteeringTTL;
         try {
-            UpstreamSupport next = socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
+            UpstreamSupport next = useSourceSteering(steeringTtl, dstEp)
+                    ? socksServers.next(srcHost, steeringTtl, true)
+                    : socksServers.next();
             if (next.isHealthy()) {
                 return next;
             }
@@ -803,6 +812,33 @@ public final class RssClient {
             throw new InvalidException("No available socks upstream for {}", srcHost);
         } catch (IllegalArgumentException e) {
             throw new InvalidException("No weighted socks upstream for {}", srcHost);
+        }
+    }
+
+    static boolean useSourceSteering(int steeringTtl, UnresolvedEndpoint dstEp) {
+        return steeringTtl > 0 && (dstEp == null || !isCommonStatelessPort(dstEp.getPort()));
+    }
+
+    static boolean isCommonStatelessPort(int port) {
+        switch (port) {
+            case 53:    // DNS
+            case 80:    // HTTP
+            case 123:   // NTP
+            case 443:   // HTTPS / HTTP3 / QUIC
+            case 853:   // DNS over TLS
+            case 3478:  // STUN / TURN
+            case 5349:  // STUNS / TURNS
+            case 8000:
+            case 8008:
+            case 8080:
+            case 8081:
+            case 8088:
+            case 8443:
+            case 8888:
+            case 19302: // Google STUN
+                return true;
+            default:
+                return false;
         }
     }
 
