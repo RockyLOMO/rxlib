@@ -15,14 +15,18 @@ import org.rx.net.transport.protocol.PingPacket;
 import org.rx.test.PersonBean;
 import org.rx.test.UserEventArgs;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.TimeZone;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -106,6 +110,56 @@ class FuryRemotingCodecTest {
         DateTime decodedDateTime = assertInstanceOf(DateTime.class, pack.parameters[0]);
         assertEquals(dateTime.getTime(), decodedDateTime.getTime());
         assertEquals(dateTime.getTimeZone().getID(), decodedDateTime.getTimeZone().getID());
+    }
+
+    @Test
+    void roundTripInetAddressReturnValueWithCustomSerializer() throws Exception {
+        RpcClientConfig<Object> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", 9530), 1);
+        FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
+        TcpChannelCodec codec = factory.newClientCodec(config);
+        List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
+
+        InetAddress ipv4 = InetAddress.getByName("198.51.100.7");
+        InetAddress ipv6 = InetAddress.getByName("2001:db8::7");
+        MethodMessage method = new MethodMessage(16, "resolveHost", new Object[]{null, null}, "trace-16");
+        method.returnValue = new ArrayList<InetAddress>(Arrays.asList(ipv4, ipv6));
+
+        Object decoded = roundTrip(codec, allowedPrefixes, method);
+        MethodMessage pack = assertInstanceOf(MethodMessage.class, decoded);
+        List<?> addresses = assertInstanceOf(List.class, pack.returnValue);
+        assertEquals(2, addresses.size());
+        assertEquals(ipv4, addresses.get(0));
+        assertEquals(ipv6, addresses.get(1));
+
+        method.returnValue = Collections.singletonList(ipv4);
+        decoded = roundTrip(codec, allowedPrefixes, method);
+        pack = assertInstanceOf(MethodMessage.class, decoded);
+        addresses = assertInstanceOf(List.class, pack.returnValue);
+        assertEquals(Collections.singletonList(ipv4), addresses);
+
+        method.returnValue = Collections.emptyList();
+        decoded = roundTrip(codec, allowedPrefixes, method);
+        pack = assertInstanceOf(MethodMessage.class, decoded);
+        addresses = assertInstanceOf(List.class, pack.returnValue);
+        assertTrue(addresses.isEmpty());
+    }
+
+    @Test
+    void roundTripUnresolvedInetSocketAddressWithoutLocalDnsResolve() {
+        RpcClientConfig<Object> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", 9531), 1);
+        FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
+        TcpChannelCodec codec = factory.newClientCodec(config);
+        List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
+
+        InetSocketAddress endpoint = InetSocketAddress.createUnresolved("example.com", 443);
+        MethodMessage method = new MethodMessage(17, "connect", new Object[]{endpoint}, "trace-17");
+
+        Object decoded = roundTrip(codec, allowedPrefixes, method);
+        MethodMessage pack = assertInstanceOf(MethodMessage.class, decoded);
+        InetSocketAddress decodedEndpoint = assertInstanceOf(InetSocketAddress.class, pack.parameters[0]);
+        assertEquals("example.com", decodedEndpoint.getHostString());
+        assertEquals(443, decodedEndpoint.getPort());
+        assertNull(decodedEndpoint.getAddress());
     }
 
     private static Object roundTrip(TcpChannelCodec codec, List<String> allowedPrefixes, Object message) {

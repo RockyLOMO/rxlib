@@ -15,6 +15,9 @@ public final class FuryCodecSupport {
     public static final byte FRAME_VERSION = FurySupport.FRAME_VERSION;
     public static final byte CODEC_ID_FURY = FurySupport.CODEC_ID_FURY;
     public static final short DATE_TIME_REGISTER_ID_OFFSET = FurySupport.DATE_TIME_REGISTER_ID_OFFSET;
+    public static final short INET4_ADDRESS_REGISTER_ID_OFFSET = FurySupport.INET4_ADDRESS_REGISTER_ID_OFFSET;
+    public static final short INET6_ADDRESS_REGISTER_ID_OFFSET = FurySupport.INET6_ADDRESS_REGISTER_ID_OFFSET;
+    public static final short INET_SOCKET_ADDRESS_REGISTER_ID_OFFSET = FurySupport.INET_SOCKET_ADDRESS_REGISTER_ID_OFFSET;
 
     public static Set<String> defaultAllowedClassPrefixes() {
         return FurySupport.defaultAllowedClassPrefixes();
@@ -39,6 +42,14 @@ public final class FuryCodecSupport {
 
     public static void registerDateTime(Fury fury, short registerId) {
         FurySupport.registerDateTime(fury, registerId);
+    }
+
+    public static void registerInetAddress(Fury fury, short inet4RegisterId, short inet6RegisterId) {
+        FurySupport.registerInetAddress(fury, inet4RegisterId, inet6RegisterId);
+    }
+
+    public static void registerInetSocketAddress(Fury fury, short registerId) {
+        FurySupport.registerInetSocketAddress(fury, registerId);
     }
 
     public static MemoryBuffer toMemoryBuffer(ByteBuf payload, int index, int payloadLength) {

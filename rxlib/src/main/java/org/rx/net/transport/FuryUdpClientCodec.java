@@ -110,8 +110,7 @@ public class FuryUdpClientCodec implements UdpClientCodec {
             if (local == null) {
                 local = FuryCodecSupport.sharedFuryLocal(FuryUdpClientCodec.class, "udp-client",
                         new ArrayList<>(allowedClassPrefixes),
-                        fury -> FuryCodecSupport.registerDateTime(fury,
-                                (short) (REGISTER_BASE_ID + FuryCodecSupport.DATE_TIME_REGISTER_ID_OFFSET)));
+                        fury -> registerTypes(fury));
                 furyLocal = local;
             }
         }
@@ -119,8 +118,16 @@ public class FuryUdpClientCodec implements UdpClientCodec {
     }
 
     Fury newFury(List<String> allowedPrefixes) {
-        return FuryCodecSupport.newFury(FuryUdpClientCodec.class, allowedPrefixes,
-                fury -> FuryCodecSupport.registerDateTime(fury, (short) (REGISTER_BASE_ID + FuryCodecSupport.DATE_TIME_REGISTER_ID_OFFSET)));
+        return FuryCodecSupport.newFury(FuryUdpClientCodec.class, allowedPrefixes, fury -> registerTypes(fury));
+    }
+
+    static void registerTypes(Fury fury) {
+        FuryCodecSupport.registerDateTime(fury, (short) (REGISTER_BASE_ID + FuryCodecSupport.DATE_TIME_REGISTER_ID_OFFSET));
+        FuryCodecSupport.registerInetAddress(fury,
+                (short) (REGISTER_BASE_ID + FuryCodecSupport.INET4_ADDRESS_REGISTER_ID_OFFSET),
+                (short) (REGISTER_BASE_ID + FuryCodecSupport.INET6_ADDRESS_REGISTER_ID_OFFSET));
+        FuryCodecSupport.registerInetSocketAddress(fury,
+                (short) (REGISTER_BASE_ID + FuryCodecSupport.INET_SOCKET_ADDRESS_REGISTER_ID_OFFSET));
     }
 
     org.apache.fury.memory.MemoryBuffer toMemoryBuffer(ByteBuf payload, int index, int payloadLength) {

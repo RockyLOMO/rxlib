@@ -1268,7 +1268,9 @@ public final class Sockets {
         if (endpoint.getPort() == port) {
             return endpoint;
         }
-        return new InetSocketAddress(endpoint.getAddress(), port);
+        InetAddress address = endpoint.getAddress();
+        return address == null ? InetSocketAddress.createUnresolved(endpoint.getHostString(), port)
+                : new InetSocketAddress(address, port);
     }
 
     @SneakyThrows
@@ -1284,8 +1286,13 @@ public final class Sockets {
 
         String ip = endpoint.substring(0, i);
         int port = Integer.parseInt(endpoint.substring(i + 1));
-        return new InetSocketAddress(ip, port);
-        // return InetSocketAddress.createUnresolved(ip, port); //DNS issues
+        return isValidIp(ip) ? new InetSocketAddress(parseIpAddress(ip), port)
+                : InetSocketAddress.createUnresolved(ip, port);
+    }
+
+    @SneakyThrows
+    private static InetAddress parseIpAddress(String ip) {
+        return InetAddress.getByAddress(NetUtil.createByteArrayFromIpAddressString(ip));
     }
 
     public static String toString(InetSocketAddress endpoint) {

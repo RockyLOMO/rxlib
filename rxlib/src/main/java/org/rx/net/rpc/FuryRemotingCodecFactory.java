@@ -79,6 +79,8 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
             fury.register(NEventArgs.class, (short) (REGISTER_BASE_ID + 8));
             fury.register(RemotingEventArgs.class, (short) (REGISTER_BASE_ID + 9));
             FuryCodecSupport.registerDateTime(fury, (short) (REGISTER_BASE_ID + 10));
+            FuryCodecSupport.registerInetAddress(fury, (short) (REGISTER_BASE_ID + 11), (short) (REGISTER_BASE_ID + 12));
+            FuryCodecSupport.registerInetSocketAddress(fury, (short) (REGISTER_BASE_ID + 13));
         }
     }
 
