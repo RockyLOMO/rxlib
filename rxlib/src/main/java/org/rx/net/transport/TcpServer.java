@@ -31,6 +31,7 @@ import org.rx.util.IdGenerator;
 
 import java.net.InetSocketAddress;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -231,6 +232,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
     final AtomicInteger clientCount = new AtomicInteger();
     ServerBootstrap bootstrap;
     Channel serverChannel;
+    List<Channel> serverChannels;
 
     @Override
     public @NonNull ThreadPool asyncScheduler() {
@@ -257,7 +259,13 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
 
     @Override
     protected void dispose() {
-        if (serverChannel != null && serverChannel.isOpen()) {
+        if (serverChannels != null) {
+            for (Channel channel : serverChannels) {
+                if (channel.isOpen()) {
+                    channel.close();
+                }
+            }
+        } else if (serverChannel != null && serverChannel.isOpen()) {
             serverChannel.close();
         }
         Sockets.closeBootstrap(bootstrap);
@@ -282,11 +290,18 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             }
             pipeline.addLast(new ClientImpl(this));
         }).option(ChannelOption.SO_REUSEADDR, true);
-        ChannelFuture bindFuture = bootstrap.bind(config.getListenPort()).syncUninterruptibly();
-        if (!bindFuture.isSuccess()) {
-            throw new InvalidException("Server bind {} failed: {}", config.getListenPort(), bindFuture.cause());
+        InetSocketAddress bindAddress = Sockets.newAnyEndpoint(config.getListenPort());
+        if (Sockets.reusePortBindCount(config, bindAddress) > 1) {
+            serverChannels = Sockets.bindChannels(bootstrap, bindAddress, config);
+            serverChannel = serverChannels.get(0);
+        } else {
+            ChannelFuture bindFuture = bootstrap.bind(config.getListenPort()).syncUninterruptibly();
+            if (!bindFuture.isSuccess()) {
+                throw new InvalidException("Server bind {} failed: {}", config.getListenPort(), bindFuture.cause());
+            }
+            serverChannel = bindFuture.channel();
+            serverChannels = Collections.singletonList(serverChannel);
         }
-        serverChannel = bindFuture.channel();
     }
 
     public String dumpClients() {

@@ -53,6 +53,9 @@ import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleAction;
 
 import java.io.OutputStream;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -84,6 +87,9 @@ public final class RssClient {
     static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 60L * 1000L;
     static final int DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS = 5;
     static final int DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD = 3;
+    static final long UPSTREAM_HEALTH_CHECK_PERIOD_MILLIS = 5_000L;
+    static final long DEFAULT_PROCESS_DRAIN_MAX_WAIT_MILLIS = 180L * 1000L;
+    static final String PROCESS_DRAIN_MAX_WAIT_PROPERTY = "app.rss.drainMaxWaitMillis";
 
     static volatile RSSConf rssConf;
     static volatile RssRuntime runtime;
@@ -114,6 +120,7 @@ public final class RssClient {
             runtime = rt;
             RssRuntime current = rt;
             source.onChanged.add((s, e) -> current.reload(e.getOldConfig(), e.getNewConfig()));
+            RssProcessControl.register();
         } catch (Throwable e) {
             tryClose(source);
             if (rt != null) {
@@ -124,6 +131,68 @@ public final class RssClient {
 
         log.info("Server started..");
         rt.await();
+    }
+
+    static long processDrainMaxWaitMillis() {
+        String configured = System.getProperty(PROCESS_DRAIN_MAX_WAIT_PROPERTY);
+        if (Strings.isBlank(configured)) {
+            return DEFAULT_PROCESS_DRAIN_MAX_WAIT_MILLIS;
+        }
+        try {
+            long value = Long.parseLong(configured);
+            return value < 0L ? DEFAULT_PROCESS_DRAIN_MAX_WAIT_MILLIS : value;
+        } catch (NumberFormatException e) {
+            log.warn("invalid rss drain max wait millis {}={}, use default {}",
+                    PROCESS_DRAIN_MAX_WAIT_PROPERTY, configured, DEFAULT_PROCESS_DRAIN_MAX_WAIT_MILLIS);
+            return DEFAULT_PROCESS_DRAIN_MAX_WAIT_MILLIS;
+        }
+    }
+
+    static void drainAndExit(String reason) {
+        RssRuntime rt = runtime;
+        if (rt == null) {
+            log.warn("rss drain signal {} without runtime, exit now", reason);
+            System.exit(0);
+            return;
+        }
+        rt.beginDrainAndExit(reason, processDrainMaxWaitMillis());
+    }
+
+    static final class RssProcessControl {
+        static final AtomicBoolean REGISTERED = new AtomicBoolean();
+
+        private RssProcessControl() {
+        }
+
+        static void register() {
+            if (!REGISTERED.compareAndSet(false, true)) {
+                return;
+            }
+            registerSignal("USR2");
+            registerSignal("TERM");
+        }
+
+        static void registerSignal(final String signalName) {
+            try {
+                Class<?> signalClass = Class.forName("sun.misc.Signal");
+                Class<?> handlerClass = Class.forName("sun.misc.SignalHandler");
+                final Object signal = signalClass.getConstructor(String.class).newInstance(signalName);
+                Object handler = Proxy.newProxyInstance(RssClient.class.getClassLoader(),
+                        new Class<?>[]{handlerClass}, new InvocationHandler() {
+                            @Override
+                            public Object invoke(Object proxy, Method method, Object[] args) {
+                                if ("handle".equals(method.getName())) {
+                                    drainAndExit(String.valueOf(signal));
+                                }
+                                return null;
+                            }
+                        });
+                signalClass.getMethod("handle", signalClass, handlerClass).invoke(null, signal, handler);
+                log.info("rss process control registered signal {}", signalName);
+            } catch (Throwable e) {
+                log.warn("rss process control signal {} unavailable", signalName, e);
+            }
+        }
     }
 
     static final class ForwardingSocksRpcContract implements SocksRpcContract {
