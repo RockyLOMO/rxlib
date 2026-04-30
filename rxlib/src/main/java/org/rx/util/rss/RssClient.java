@@ -39,6 +39,7 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcContract;
+import org.rx.net.socks.TrafficUser;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -52,7 +53,6 @@ import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleAction;
 
 import java.io.OutputStream;
-import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -69,6 +69,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.core.Extends.eachQuietly;
@@ -80,7 +81,7 @@ public final class RssClient {
     static final long RSS_RELOAD_DEBOUNCE_MILLIS = 100L;
     static final long UPSTREAM_CLOSE_DELAY_MILLIS = 30_000L;
     static final long UPSTREAM_CLOSE_CHECK_MILLIS = 1_000L;
-    static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 5L * 60L * 1000L;
+    static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 60L * 1000L;
     static final long UPSTREAM_HEALTH_CHECK_PERIOD_MILLIS = 5_000L;
 
     static volatile RSSConf rssConf;
@@ -134,7 +135,7 @@ public final class RssClient {
         }
 
         @Override
-        public void fakeEndpoint(BigInteger hash, String realEndpoint) {
+        public void fakeEndpoint(long hash, String realEndpoint) {
             delegate.fakeEndpoint(hash, realEndpoint);
         }
 
@@ -217,6 +218,10 @@ public final class RssClient {
             return false;
         }
         if (!hasWeightedSocksServer(conf.socksServers)) {
+            log.warn("rssConf socksServers has no enabled server");
+            return false;
+        }
+        if (!normalizeAndValidateSocksServerIds(conf)) {
             return false;
         }
         if (conf.rrpPort != null && conf.rrpPort <= 0) {
@@ -230,6 +235,9 @@ public final class RssClient {
                 return false;
             }
             if (!usernames.add(user.getUsername()) || !shadowPorts.add(user.getSsPort())) {
+                return false;
+            }
+            if (!normalizeAndValidateUserSocksServers(user, conf.socksServers)) {
                 return false;
             }
         }
@@ -247,13 +255,94 @@ public final class RssClient {
         return true;
     }
 
-    private static boolean hasWeightedSocksServer(List<AuthenticEndpoint> socksServers) {
-        for (AuthenticEndpoint socksServer : socksServers) {
-            if (socksServer != null && socksServer.getInetEndpoint() != null && weightOf(socksServer) > 0) {
+    private static boolean hasWeightedSocksServer(List<RSSConf.SocksServer> socksServers) {
+        for (RSSConf.SocksServer socksServer : socksServers) {
+            AuthenticEndpoint endpoint = socksServer == null ? null : socksServer.getEndpoint();
+            if (endpoint != null && endpoint.getInetEndpoint() != null && weightOf(socksServer) > 0) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean normalizeAndValidateSocksServerIds(RSSConf conf) {
+        Set<String> serverIds = new LinkedHashSet<>();
+        for (RSSConf.SocksServer socksServer : conf.socksServers) {
+            AuthenticEndpoint endpoint = socksServer == null ? null : socksServer.getEndpoint();
+            if (endpoint == null) {
+                log.warn("rssConf socksServer {} endpoint is empty", socksServer);
+                return false;
+            }
+            if (weightOf(socksServer) > 0 && endpoint.getInetEndpoint() == null) {
+                log.warn("rssConf socksServer {} enabled but endpoint is not InetSocketAddress", socksServer);
+                return false;
+            }
+            String id = trimToNull(socksServer.getId());
+            if (id == null) {
+                log.warn("rssConf socksServer {} id is empty", socksServer);
+                return false;
+            }
+            socksServer.setId(id);
+            if (id != null && !serverIds.add(id)) {
+                log.warn("rssConf duplicate socksServer id {}", id);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean normalizeAndValidateUserSocksServers(ShadowUser user, List<RSSConf.SocksServer> socksServers) {
+        if (CollectionUtils.isEmpty(user.getSocksServers())) {
+            return true;
+        }
+        LinkedHashSet<String> serverIds = new LinkedHashSet<>();
+        LinkedHashSet<String> weightedIds = new LinkedHashSet<>();
+        for (RSSConf.SocksServer socksServer : socksServers) {
+            String id = socksServer == null ? null : socksServer.getId();
+            if (id == null) {
+                continue;
+            }
+            serverIds.add(id);
+            if (weightOf(socksServer) > 0) {
+                weightedIds.add(id);
+            }
+        }
+
+        boolean hasWeighted = false;
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String serverId : user.getSocksServers()) {
+            serverId = trimToNull(serverId);
+            if (serverId == null) {
+                log.warn("rssConf shadowUser {} socksServers contains empty id", user.getUsername());
+                return false;
+            }
+            if (!serverIds.contains(serverId)) {
+                log.warn("rssConf shadowUser {} socksServer id {} not found", user.getUsername(), serverId);
+                return false;
+            }
+            if (!normalized.add(serverId)) {
+                log.warn("rssConf shadowUser {} duplicate socksServer id {}", user.getUsername(), serverId);
+                return false;
+            }
+            if (weightedIds.contains(serverId)) {
+                hasWeighted = true;
+            }
+        }
+        if (!hasWeighted) {
+            log.warn("rssConf shadowUser {} socksServers {} has no enabled server",
+                    user.getUsername(), user.getSocksServers());
+            return false;
+        }
+        user.setSocksServers(new ArrayList<String>(normalized));
+        return true;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        value = value.trim();
+        return Strings.isEmpty(value) ? null : value;
     }
 
     static int weightOf(AuthenticEndpoint endpoint) {
@@ -263,16 +352,26 @@ public final class RssClient {
         return Reflects.convertQuietly(endpoint.getParameters().get("w"), int.class, 0);
     }
 
+    static int weightOf(RSSConf.SocksServer socksServer) {
+        if (socksServer == null) {
+            return 0;
+        }
+        Integer weight = socksServer.getWeight();
+        return weight != null ? Math.max(0, weight) : 0;
+    }
+
     static RssRuntime.UpstreamSnapshot buildUpstreams(RSSConf conf, GeoManager geoMgr) {
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
         RandomList<UpstreamSupport> udp2rawSocksServers = new RandomList<>();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
         List<SocksRpcContract> createdFacades = new ArrayList<>();
+        Map<String, UpstreamSupport> supportByServerId = new LinkedHashMap<>();
 
         try {
             SocksRpcContract firstFacade = null;
-            for (AuthenticEndpoint socksServer : conf.socksServers) {
-                int weight = weightOf(socksServer);
+            for (RSSConf.SocksServer configuredServer : conf.socksServers) {
+                AuthenticEndpoint socksServer = configuredServer.getEndpoint();
+                int weight = weightOf(configuredServer);
                 if (weight <= 0) {
                     continue;
                 }
@@ -292,6 +391,9 @@ public final class RssClient {
                 support.setConfiguredWeight(weight);
                 socksServers.add(support, weight);
                 dnsInterceptors.add(facade, weight);
+                if (!Strings.isEmpty(configuredServer.getId())) {
+                    supportByServerId.put(configuredServer.getId(), support);
+                }
             }
             for (AuthenticEndpoint socksServer : conf.udp2rawSocksServers) {
                 int weight = weightOf(socksServer);
@@ -304,13 +406,39 @@ public final class RssClient {
             }
             log.info("rssConf load socksServers: {}", toJsonString(conf.socksServers));
             log.info("rssConf load udp2rawSocksServers: {}", toJsonString(conf.udp2rawSocksServers));
-            return new RssRuntime.UpstreamSnapshot(socksServers, udp2rawSocksServers, dnsInterceptors);
+            return new RssRuntime.UpstreamSnapshot(socksServers, udp2rawSocksServers, dnsInterceptors,
+                    buildUserSocksServers(conf.shadowUsers, supportByServerId), conf.socksServers, conf.udp2rawSocksServers);
         } catch (Throwable e) {
             for (SocksRpcContract facade : createdFacades) {
                 tryClose(facade);
             }
             throw InvalidException.sneaky(e);
         }
+    }
+
+    static Map<String, RandomList<UpstreamSupport>> buildUserSocksServers(List<ShadowUser> shadowUsers,
+                                                                          Map<String, UpstreamSupport> supportByServerId) {
+        if (CollectionUtils.isEmpty(shadowUsers) || supportByServerId == null || supportByServerId.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashMap<String, RandomList<UpstreamSupport>> userServers = new LinkedHashMap<>();
+        for (ShadowUser user : shadowUsers) {
+            if (user == null || CollectionUtils.isEmpty(user.getSocksServers())) {
+                continue;
+            }
+            RandomList<UpstreamSupport> servers = new RandomList<>();
+            for (String serverId : user.getSocksServers()) {
+                UpstreamSupport support = supportByServerId.get(serverId);
+                if (support != null) {
+                    servers.add(support, support.getConfiguredWeight());
+                }
+            }
+            if (!servers.isEmpty()) {
+                userServers.put(user.getUsername(), servers);
+            }
+        }
+        return userServers.isEmpty() ? Collections.<String, RandomList<UpstreamSupport>>emptyMap()
+                : Collections.unmodifiableMap(userServers);
     }
 
     static DnsServer createDnsServer(RSSConf conf, RandomList<DnsServer.ResolveInterceptor> dnsInterceptors) {
@@ -526,12 +654,15 @@ public final class RssClient {
             return;
         }
         snapshot.closing = true;
-        long deadline = System.currentTimeMillis() + UPSTREAM_CLOSE_DELAY_MILLIS + UPSTREAM_CLOSE_MAX_WAIT_MILLIS;
+        long now = System.currentTimeMillis();
+        long delayMillis = Math.min(UPSTREAM_CLOSE_DELAY_MILLIS, UPSTREAM_CLOSE_MAX_WAIT_MILLIS);
+        long deadline = now + UPSTREAM_CLOSE_MAX_WAIT_MILLIS;
         if (snapshot.closeDeadlineMillis <= 0L || snapshot.closeDeadlineMillis > deadline) {
             snapshot.closeDeadlineMillis = deadline;
         }
+        snapshot.closeCheckMillis = now + delayMillis;
         cancelUpstreamHealthCheck(snapshot);
-        Tasks.setTimeout(() -> closeUpstreamsWhenIdle(snapshot), UPSTREAM_CLOSE_DELAY_MILLIS);
+        Tasks.setTimeout(() -> closeUpstreamsWhenIdle(snapshot), delayMillis);
     }
 
     static void closeUpstreamsWhenIdle(RssRuntime.UpstreamSnapshot snapshot) {
@@ -548,6 +679,7 @@ public final class RssClient {
                 return;
             }
             log.info("rssConf old upstream wait activeConnections={}", active);
+            snapshot.closeCheckMillis = System.currentTimeMillis() + UPSTREAM_CLOSE_CHECK_MILLIS;
             Tasks.setTimeout(() -> closeUpstreamsWhenIdle(snapshot), UPSTREAM_CLOSE_CHECK_MILLIS);
             return;
         }
@@ -636,6 +768,11 @@ public final class RssClient {
         if (updateDns && snapshot != null && support.getFacade() != null) {
             setWeightIfPresent(snapshot.dnsInterceptors, support.getFacade(), weight);
         }
+        if (snapshot != null && snapshot.userSocksServers != null) {
+            for (RandomList<UpstreamSupport> userServers : snapshot.userSocksServers.values()) {
+                setWeightIfPresent(userServers, support, weight);
+            }
+        }
         DiagnosticMetrics.record("rss.upstream.health", healthy ? 1D : 0D, "endpoint=" + support.getEndpoint());
         if (previous != healthy) {
             log.info("rss upstream {} health {}", support.getEndpoint(), healthy ? "UP" : "DOWN");
@@ -670,6 +807,8 @@ public final class RssClient {
 
     static void closeInServerQuietly(RssRuntime.RssInServer server) {
         if (server != null) {
+            // 热加载旧实例可能仍有 UDP relay 残留事件，关闭前先停源地址粘滞缓存。
+            server.disableSourceSteering();
             tryClose(server.server);
         }
     }
@@ -702,6 +841,7 @@ public final class RssClient {
     static RssRuntime.RssInServer createInSvr(RSSConf conf, SocksConfig inConf, Authenticator authenticator,
                                               TripleAction<SocksProxyServer, SocksContext> firstRoute,
                                               AtomicReference<RandomList<UpstreamSupport>> socksServersRef,
+                                              AtomicReference<Map<String, RandomList<UpstreamSupport>>> userSocksServersRef,
                                               GeoManager geoMgr) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf);
         if (authenticator instanceof RssAuthenticator) {
@@ -710,11 +850,15 @@ public final class RssClient {
         }
         SocksConfig outConf = createOutboundConfig(conf, inConf);
         AtomicReference<SocksConfig> outConfRef = new AtomicReference<>(outConf);
+        AtomicBoolean sourceSteeringEnabled = new AtomicBoolean(true);
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
             InetAddress srcHost = e.getSource().getAddress();
-            UpstreamSupport next = nextUpstream(socksServersRef.get(), srcHost);
+            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            RandomList<UpstreamSupport> servers = resolveUserSocksServers(socksServersRef.get(),
+                    userSocksServersRef == null ? null : userSocksServersRef.get(), e.getUser());
+            UpstreamSupport next = nextUpstream(servers, srcHost, dstEp, sourceSteeringEnabled.get());
             if (rssConf.hasDebugFlag()) {
-                log.info("route upSvr src {} -> {}", srcHost, next.getEndpoint());
+                log.info("route upSvr src {} dst {} -> {}", srcHost, dstEp, next.getEndpoint());
             }
             SocksConfig currentOutConf = outConfRef.get();
             if (currentOutConf.getKcptunClient() != null) {
@@ -784,12 +928,35 @@ public final class RssClient {
             }
         });
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-        return new RssRuntime.RssInServer(inSvr, inConf, outConfRef);
+        return new RssRuntime.RssInServer(inSvr, inConf, outConfRef, sourceSteeringEnabled);
+    }
+
+    static RandomList<UpstreamSupport> resolveUserSocksServers(RandomList<UpstreamSupport> defaultServers,
+                                                               Map<String, RandomList<UpstreamSupport>> userServers,
+                                                               TrafficUser user) {
+        if (userServers == null || userServers.isEmpty() || user == null || user.isAnonymous()) {
+            return defaultServers;
+        }
+        RandomList<UpstreamSupport> servers = userServers.get(user.getUsername());
+        return servers == null ? defaultServers : servers;
     }
 
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost) {
+        return nextUpstream(socksServers, srcHost, null);
+    }
+
+    static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost, UnresolvedEndpoint dstEp) {
+        return nextUpstream(socksServers, srcHost, dstEp, true);
+    }
+
+    static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost,
+                                        UnresolvedEndpoint dstEp, boolean allowSourceSteering) {
+        RSSConf conf = rssConf;
+        int steeringTtl = conf == null || conf.route == null ? 0 : conf.route.srcSteeringTTL;
         try {
-            UpstreamSupport next = socksServers.next(srcHost, rssConf.route.srcSteeringTTL, true);
+            UpstreamSupport next = allowSourceSteering && useSourceSteering(steeringTtl, dstEp)
+                    ? socksServers.next(srcHost, steeringTtl, true)
+                    : socksServers.next();
             if (next.isHealthy()) {
                 return next;
             }
@@ -798,6 +965,33 @@ public final class RssClient {
             throw new InvalidException("No available socks upstream for {}", srcHost);
         } catch (IllegalArgumentException e) {
             throw new InvalidException("No weighted socks upstream for {}", srcHost);
+        }
+    }
+
+    static boolean useSourceSteering(int steeringTtl, UnresolvedEndpoint dstEp) {
+        return steeringTtl > 0 && (dstEp == null || !isCommonStatelessPort(dstEp.getPort()));
+    }
+
+    static boolean isCommonStatelessPort(int port) {
+        switch (port) {
+            case 53:    // DNS
+            case 80:    // HTTP
+            case 123:   // NTP
+            case 443:   // HTTPS / HTTP3 / QUIC
+            case 853:   // DNS over TLS
+            case 3478:  // STUN / TURN
+            case 5349:  // STUNS / TURNS
+            case 8000:
+            case 8008:
+            case 8080:
+            case 8081:
+            case 8088:
+            case 8443:
+            case 8888:
+            case 19302: // Google STUN
+                return true;
+            default:
+                return false;
         }
     }
 
@@ -1032,6 +1226,7 @@ public final class RssClient {
         payload.put("ssPort", user.getSsPort());
         payload.put("username", user.getUsername());
         payload.put("socksUser", user.getSocksUser());
+        payload.put("socksServers", user.getSocksServers());
         payload.put("ipLimit", user.getIpLimit());
         payload.put("lastResetTime", user.getLastResetTime());
         payload.put("loginIps", user.snapshotLoginIps());

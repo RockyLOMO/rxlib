@@ -5,7 +5,6 @@ import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.BooleanUtils;
-import org.rx.codec.CodecUtil;
 import org.rx.core.Arrays;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
@@ -20,13 +19,15 @@ import org.rx.net.socks.TcpWarmPoolKey;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
-import java.math.BigInteger;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class SocksTcpUpstream extends Upstream {
+    private static final long HASH_OFFSET = 0xcbf29ce484222325L;
+    private static final long HASH_PRIME = 0x100000001b3L;
     private static final AttributeKey<UpstreamSupport> ATTR_ACTIVE_SUPPORT =
             AttributeKey.valueOf("socksTcpUpstreamActiveSupport");
 
@@ -70,19 +71,21 @@ public class SocksTcpUpstream extends Upstream {
             return destination;
         }
 
-        String dstEpStr = destination.toString();
-        BigInteger hash = CodecUtil.hashUnsigned64(dstEpStr.getBytes(StandardCharsets.UTF_8));
-        destination = new UnresolvedEndpoint(String.format("%s%s", hash, SocksRpcContract.FAKE_HOST_SUFFIX), Arrays.randomNext(SocksRpcContract.FAKE_PORT_OBFS));
+        UnresolvedEndpoint realDestination = destination;
+        long hash = fakeEndpointHash(next, realDestination);
+        destination = new UnresolvedEndpoint(SocksRpcContract.fakeHost(hash), Arrays.randomNext(SocksRpcContract.FAKE_PORT_OBFS));
 
-        Cache<BigInteger, Boolean> cache = Cache.getInstance();
-        if (!cache.containsKey(hash)) {
+        Cache<Long, Boolean> cache = Cache.getInstance();
+        Long cacheKey = Long.valueOf(hash);
+        if (!cache.containsKey(cacheKey)) {
             try {
+                String dstEpStr = realDestination.toString();
                 Tasks.runAsync(() -> {
                     facade.fakeEndpoint(hash, dstEpStr);
                     return true;
                 }).whenCompleteAsync((r, e) -> {
                     if (BooleanUtils.isTrue(r)) {
-                        cache.put(hash, r, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
+                        cache.put(cacheKey, r, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
                     }
                 }).get(SocksRpcContract.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
             } catch (Exception e) {
@@ -90,6 +93,49 @@ public class SocksTcpUpstream extends Upstream {
             }
         }
         return destination;
+    }
+
+    static long fakeEndpointHash(UpstreamSupport support, UnresolvedEndpoint dstEp) {
+        long hash = mixEndpoint(HASH_OFFSET, support == null ? null : support.getEndpoint());
+        hash = mixString(hash, dstEp == null ? null : dstEp.getHost());
+        hash = mixInt(hash, dstEp == null ? 0 : dstEp.getPort());
+        return hash;
+    }
+
+    private static long mixEndpoint(long hash, AuthenticEndpoint endpoint) {
+        InetSocketAddress inetEndpoint = endpoint == null ? null : endpoint.getInetEndpoint();
+        if (inetEndpoint == null) {
+            SocketAddress address = endpoint == null ? null : endpoint.getEndpoint();
+            return mixInt(hash, address == null ? 0 : address.hashCode());
+        }
+        InetAddress address = inetEndpoint.getAddress();
+        hash = address == null ? mixString(hash, inetEndpoint.getHostString()) : mixInt(hash, address.hashCode());
+        return mixInt(hash, inetEndpoint.getPort());
+    }
+
+    private static long mixString(long hash, String value) {
+        if (value == null || value.length() == 0) {
+            return mixInt(hash, 0);
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            hash ^= c & 0xFF;
+            hash *= HASH_PRIME;
+            hash ^= c >>> 8;
+            hash *= HASH_PRIME;
+        }
+        return hash;
+    }
+
+    private static long mixInt(long hash, int value) {
+        hash ^= value & 0xFF;
+        hash *= HASH_PRIME;
+        hash ^= (value >>> 8) & 0xFF;
+        hash *= HASH_PRIME;
+        hash ^= (value >>> 16) & 0xFF;
+        hash *= HASH_PRIME;
+        hash ^= (value >>> 24) & 0xFF;
+        return hash * HASH_PRIME;
     }
 
     public void initTransport(Channel channel) {

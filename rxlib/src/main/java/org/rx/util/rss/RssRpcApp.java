@@ -6,7 +6,6 @@ import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.support.UnresolvedEndpoint;
 
-import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
@@ -25,7 +24,7 @@ public final class RssRpcApp implements SocksRpcContract {
     }
 
     @Override
-    public void fakeEndpoint(BigInteger hash, String endpoint) {
+    public void fakeEndpoint(long hash, String endpoint) {
         SocksRpcContract.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 

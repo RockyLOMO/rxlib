@@ -44,7 +44,7 @@ class SocksProxyServerIntegrationTest {
         }
 
         @Override
-        public void fakeEndpoint(java.math.BigInteger hash, String realEndpoint) {
+        public void fakeEndpoint(long hash, String realEndpoint) {
             SocksRpcContract.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(realEndpoint));
         }
 

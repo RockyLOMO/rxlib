@@ -52,8 +52,24 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         if (info.getLatestTime() == null || info.getLatestTime().before(now)) {
             info.setLatestTime(now);
         }
-        info.getRefCnt().incrementAndGet();
+        retainLogin(info, now.getTime());
         SocksUserTraffic.bind(ctx.channel(), this.trafficUser, info);
+    }
+
+    private static void retainLogin(TrafficLoginInfo info, long nowMillis) {
+        synchronized (info) {
+            if (info.getRefCnt().incrementAndGet() == 1) {
+                info.getActiveSinceMillis().set(nowMillis);
+            }
+        }
+    }
+
+    private static void releaseLogin(TrafficLoginInfo info) {
+        synchronized (info) {
+            if (info.getRefCnt().decrementAndGet() <= 0) {
+                info.getActiveSinceMillis().set(0L);
+            }
+        }
     }
 
     @Override
@@ -74,7 +90,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             if (info.getLatestTime() == null || info.getLatestTime().before(now)) {
                 info.setLatestTime(now);
             }
-            info.getRefCnt().decrementAndGet();
+            releaseLogin(info);
             info.getTotalActiveSeconds().addAndGet(elapsed / Constants.NANO_TO_MILLIS / 1000);
         }
 

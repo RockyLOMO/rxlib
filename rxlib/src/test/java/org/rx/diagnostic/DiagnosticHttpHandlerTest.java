@@ -116,6 +116,7 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("directUsedBytes=97.52 MB (102253591 bytes)"));
                 assertFalse(html.contains("directUsedBytes=97 (97.00 B).52 MB"));
                 assertTrue(html.contains("tab-link"));
+                assertFalse(html.contains("backdrop-filter"));
                 assertTrue(html.contains("metric-chart"));
                 assertTrue(html.contains("class=\"point\""));
                 assertTrue(html.contains("y-label"));

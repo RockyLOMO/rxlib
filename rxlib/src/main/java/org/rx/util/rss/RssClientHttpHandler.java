@@ -32,6 +32,7 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -173,11 +174,18 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     }
 
     static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, Query query, int memoryRetentionHours) {
-        return renderShadowUsersPage(shadowStore, trafficStore, query, memoryRetentionHours, currentUpstreamSnapshot());
+        return renderShadowUsersPage(shadowStore, trafficStore, query, memoryRetentionHours, currentUpstreamSnapshots());
     }
 
     static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, Query query,
                                         int memoryRetentionHours, RssRuntime.UpstreamSnapshot upstreamSnapshot) {
+        List<RssRuntime.UpstreamSnapshot> snapshots = upstreamSnapshot == null
+                ? Collections.<RssRuntime.UpstreamSnapshot>emptyList() : Collections.singletonList(upstreamSnapshot);
+        return renderShadowUsersPage(shadowStore, trafficStore, query, memoryRetentionHours, snapshots);
+    }
+
+    static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, Query query,
+                                        int memoryRetentionHours, List<RssRuntime.UpstreamSnapshot> upstreamSnapshots) {
         int effectiveMemoryRetentionHours = effectiveMemoryRetentionHours(memoryRetentionHours);
         int effectiveRetentionDays = trafficStore == null ? 0 : trafficStore.retentionDays();
         List<UserTrafficSummary> historyUsers = trafficStore == null ? Collections.<UserTrafficSummary>emptyList()
@@ -195,7 +203,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         List<Map<String, Object>> protocolRows = buildProtocolRows(protocolSummaries, shadowStore);
         List<Map<String, Object>> loginIpRows = buildHistoryLoginIpRows(historyIps, shadowStore);
         List<Map<String, Object>> liveIpRows = buildLiveLoginIpRows(shadowStore);
-        List<Map<String, Object>> upstreamRows = buildUpstreamRows(upstreamSnapshot);
+        List<Map<String, Object>> upstreamRows = buildUpstreamRows(upstreamSnapshots);
 
         LinkedHashMap<String, Object> vars = new LinkedHashMap<String, Object>();
         vars.put("path", SHADOW_USERS_PAGE_PATH);
@@ -263,7 +271,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
                 "从用户首次连接开始统计，空闲 IP 到期后从内存快照移除。"));
         stats.add(summaryItem("上游健康/连接", healthyUpstreams + "/" + (upstreamRows == null ? 0 : upstreamRows.size())
                         + " / " + activeUpstreamConnections,
-                "健康上游数 / 配置上游数 / 当前活跃上游连接数。"));
+                "可用上游数 / 展示上游数 / 当前活跃上游连接数，含等待释放旧配置。"));
         stats.add(summaryItem("历史用户数", userCount, "H2 中命中的用户聚合数量。"));
         stats.add(summaryItem("历史下行/上行", Bytes.readableByteSize(totalReadBytes) + " / " + Bytes.readableByteSize(totalWriteBytes),
                 "按所选时间范围聚合的总流量。"));
@@ -278,32 +286,124 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         if (snapshot == null) {
             return Collections.emptyList();
         }
+        return buildUpstreamRows(Collections.singletonList(snapshot));
+    }
+
+    static List<Map<String, Object>> buildUpstreamRows(List<RssRuntime.UpstreamSnapshot> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) {
+            return Collections.emptyList();
+        }
         List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
-        appendUpstreamRows(rows, "socks", snapshot.socksServers);
-        appendUpstreamRows(rows, "udp2raw", snapshot.udp2rawSocksServers);
+        long now = System.currentTimeMillis();
+        for (RssRuntime.UpstreamSnapshot snapshot : snapshots) {
+            if (snapshot == null || snapshot.closed) {
+                continue;
+            }
+            int snapshotActiveConnections = RssClient.activeConnectionCount(snapshot);
+            appendUpstreamRows(rows, "socks", snapshot, snapshot.socksServers, snapshot.configuredSocksServers,
+                    now, snapshotActiveConnections);
+            appendUpstreamRows(rows, "udp2raw", snapshot, snapshot.udp2rawSocksServers,
+                    snapshot.configuredUdp2rawSocksServers, now, snapshotActiveConnections);
+        }
         return rows;
     }
 
-    private static void appendUpstreamRows(List<Map<String, Object>> rows, String type, RandomList<UpstreamSupport> servers) {
-        if (servers == null) {
+    private static void appendUpstreamRows(List<Map<String, Object>> rows, String type, RssRuntime.UpstreamSnapshot snapshot,
+                                           RandomList<UpstreamSupport> servers, List<?> configuredEndpoints,
+                                           long now, int snapshotActiveConnections) {
+        List<UpstreamSupport> supports = servers == null ? Collections.<UpstreamSupport>emptyList() : servers.readOnlySnapshot();
+        if ((configuredEndpoints == null || configuredEndpoints.isEmpty()) && supports.isEmpty()) {
             return;
         }
-        for (UpstreamSupport support : servers.readOnlySnapshot()) {
-            boolean healthy = support.isHealthy();
-            int activeConnections = support.activeConnectionCount();
-            int currentWeight = currentWeight(servers, support);
-            LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
-            row.put("type", type);
-            row.put("endpoint", formatEndpoint(support.getEndpoint()));
-            row.put("health", healthy ? "UP" : "DOWN");
-            row.put("healthyValue", healthy);
-            row.put("configuredWeight", support.getConfiguredWeight());
-            row.put("currentWeight", currentWeight);
-            row.put("activeConnections", activeConnections);
-            row.put("activeConnectionsValue", activeConnections);
-            row.put("rpc", support.getFacade() == null ? "-" : "yes");
-            rows.add(row);
+        if (configuredEndpoints == null || configuredEndpoints.isEmpty()) {
+            for (UpstreamSupport support : supports) {
+                appendUpstreamRow(rows, type, snapshot, servers, null, null, support == null ? null : support.getEndpoint(),
+                        support, now, snapshotActiveConnections);
+            }
+            return;
         }
+
+        IdentityHashMap<AuthenticEndpoint, UpstreamSupport> supportByEndpoint = new IdentityHashMap<AuthenticEndpoint, UpstreamSupport>();
+        for (UpstreamSupport support : supports) {
+            if (support != null) {
+                supportByEndpoint.put(support.getEndpoint(), support);
+            }
+        }
+        for (Object configuredEndpoint : configuredEndpoints) {
+            AuthenticEndpoint endpoint = configuredEndpoint(configuredEndpoint);
+            appendUpstreamRow(rows, type, snapshot, servers, configuredEndpointId(configuredEndpoint),
+                    configuredEndpoint, endpoint, supportByEndpoint.remove(endpoint),
+                    now, snapshotActiveConnections);
+        }
+        for (UpstreamSupport support : supportByEndpoint.values()) {
+            appendUpstreamRow(rows, type, snapshot, servers, null, null, support == null ? null : support.getEndpoint(),
+                    support, now, snapshotActiveConnections);
+        }
+    }
+
+    private static void appendUpstreamRow(List<Map<String, Object>> rows, String type, RssRuntime.UpstreamSnapshot snapshot,
+                                          RandomList<UpstreamSupport> servers, String id, Object configuredEndpoint, AuthenticEndpoint endpoint,
+                                          UpstreamSupport support, long now, int snapshotActiveConnections) {
+        boolean healthy = support != null && support.isHealthy();
+        int configuredWeight = support == null ? configuredEndpointWeight(configuredEndpoint, endpoint) : support.getConfiguredWeight();
+        int activeConnections = support == null ? 0 : support.activeConnectionCount();
+        int currentWeight = support == null ? 0 : currentWeight(servers, support);
+        LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
+        row.put("type", type);
+        row.put("id", Strings.isEmpty(id) ? "-" : id);
+        row.put("state", upstreamState(snapshot));
+        row.put("endpoint", formatEndpoint(support == null ? endpoint : support.getEndpoint()));
+        row.put("health", upstreamHealth(support, configuredWeight));
+        row.put("healthyValue", healthy);
+        row.put("configuredWeight", configuredWeight);
+        row.put("currentWeight", currentWeight);
+        row.put("activeConnections", activeConnections);
+        row.put("activeConnectionsValue", activeConnections);
+        row.put("releaseWait", releaseWait(snapshot, now, snapshotActiveConnections));
+        row.put("rpc", support == null || support.getFacade() == null ? "-" : "yes");
+        rows.add(row);
+    }
+
+    private static AuthenticEndpoint configuredEndpoint(Object value) {
+        if (value instanceof RSSConf.SocksServer) {
+            return ((RSSConf.SocksServer) value).getEndpoint();
+        }
+        return value instanceof AuthenticEndpoint ? (AuthenticEndpoint) value : null;
+    }
+
+    private static String configuredEndpointId(Object value) {
+        return value instanceof RSSConf.SocksServer ? ((RSSConf.SocksServer) value).getId() : null;
+    }
+
+    private static int configuredEndpointWeight(Object value, AuthenticEndpoint endpoint) {
+        return value instanceof RSSConf.SocksServer ? RssClient.weightOf((RSSConf.SocksServer) value) : RssClient.weightOf(endpoint);
+    }
+
+    private static String upstreamState(RssRuntime.UpstreamSnapshot snapshot) {
+        return snapshot != null && snapshot.closing ? "旧配置" : "当前配置";
+    }
+
+    private static String upstreamHealth(UpstreamSupport support, int configuredWeight) {
+        if (support != null) {
+            return support.isHealthy() ? "UP" : "DOWN";
+        }
+        return configuredWeight > 0 ? "UNKNOWN" : "DISABLED";
+    }
+
+    private static String releaseWait(RssRuntime.UpstreamSnapshot snapshot, long now, int snapshotActiveConnections) {
+        if (snapshot == null || !snapshot.closing || snapshot.closed) {
+            return "-";
+        }
+        long deadline = snapshot.closeDeadlineMillis;
+        long target = deadline;
+        if (snapshotActiveConnections <= 0 && snapshot.closeCheckMillis > 0L) {
+            target = deadline > 0L ? Math.min(snapshot.closeCheckMillis, deadline) : snapshot.closeCheckMillis;
+        }
+        if (target <= 0L) {
+            return "等待释放";
+        }
+        String wait = formatDurationMillis(Math.max(0L, target - now));
+        return snapshotActiveConnections > 0 && deadline > 0L ? "<= " + wait : wait;
     }
 
     private static int currentWeight(RandomList<UpstreamSupport> servers, UpstreamSupport support) {
@@ -323,9 +423,9 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         return Strings.isEmpty(endpoint.getUsername()) ? target : endpoint.getUsername() + "@" + target;
     }
 
-    private static RssRuntime.UpstreamSnapshot currentUpstreamSnapshot() {
+    private static List<RssRuntime.UpstreamSnapshot> currentUpstreamSnapshots() {
         RssRuntime rt = RssClient.runtime;
-        return rt == null ? null : rt.upstreamSnapshot;
+        return rt == null ? Collections.<RssRuntime.UpstreamSnapshot>emptyList() : rt.upstreamSnapshots();
     }
 
     private static Map<String, Object> summaryItem(String label, Object value, String meta) {
@@ -418,12 +518,13 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         }
 
         List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
+        long now = System.currentTimeMillis();
         for (ShadowUser user : users) {
             List<Map.Entry<InetAddress, TrafficLoginInfo>> entries = new ArrayList<Map.Entry<InetAddress, TrafficLoginInfo> >(user.getLoginIps().entrySet());
             Collections.sort(entries, LOGIN_IP_COMPARATOR);
             for (Map.Entry<InetAddress, TrafficLoginInfo> entry : entries) {
                 TrafficLoginInfo info = entry.getValue();
-                long activeSeconds = info == null ? 0L : info.getTotalActiveSeconds().get();
+                long activeSeconds = liveActiveSeconds(info, now);
                 long readBytes = info == null ? 0L : info.getTotalReadBytes().get();
                 long writeBytes = info == null ? 0L : info.getTotalWriteBytes().get();
                 LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
@@ -444,6 +545,17 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             }
         }
         return rows;
+    }
+
+    static long liveActiveSeconds(TrafficLoginInfo info, long nowMillis) {
+        if (info == null) {
+            return 0L;
+        }
+        long activeSinceMillis = info.getActiveSinceMillis().get();
+        if (info.getRefCnt().get() > 0 && activeSinceMillis > 0L) {
+            return Math.max(0L, (nowMillis - activeSinceMillis) / 1000L);
+        }
+        return info.getTotalActiveSeconds().get();
     }
 
     private static String formatGeo(String ip) {
@@ -564,6 +676,17 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             return String.format(Locale.ENGLISH, "%.2f hour", hours);
         }
         return String.format(Locale.ENGLISH, "%.2f day", hours / 24D);
+    }
+
+    private static String formatDurationMillis(long millis) {
+        if (millis <= 0L) {
+            return "0 sec";
+        }
+        double seconds = millis / 1000D;
+        if (seconds < 60D) {
+            return String.format(Locale.ENGLISH, "%.1f sec", seconds);
+        }
+        return String.format(Locale.ENGLISH, "%.2f min", seconds / 60D);
     }
 
     private static String formatSpeed(long bytes, long activeSeconds) {

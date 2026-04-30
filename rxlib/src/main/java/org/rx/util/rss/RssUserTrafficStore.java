@@ -8,10 +8,12 @@ import org.rx.core.Tasks;
 import org.rx.io.EntityDatabase;
 import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficUser;
+import org.rx.util.function.BiAction;
 
-import java.net.InetAddress;
 import java.io.Serializable;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
@@ -289,7 +291,7 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
 
     private void batchSaveCounters(Iterable<Counter> counters) {
         final String sql = String.format(UPSERT_HOURLY_TRAFFIC_SQL, db.tableName(HourlyTrafficEntity.class));
-        db.withConnection(conn -> {
+        withConnection(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 int batchSize = 0;
                 for (Counter counter : counters) {
@@ -323,7 +325,7 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
 
     private void batchSaveLoginIpCounters(Iterable<LoginIpCounter> counters) {
         final String sql = String.format(UPSERT_HOURLY_LOGIN_IP_TRAFFIC_SQL, db.tableName(HourlyLoginIpTrafficEntity.class));
-        db.withConnection(conn -> {
+        withConnection(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 int batchSize = 0;
                 for (LoginIpCounter counter : counters) {
@@ -374,7 +376,7 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
         final String loginIpTable = db.tableName(HourlyLoginIpTrafficEntity.class);
         final Map<String, UserTrafficSummary> result = new ConcurrentHashMap<String, UserTrafficSummary>();
 
-        db.withConnection(conn -> {
+        withConnection(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement("SELECT username, SUM(read_bytes) AS total_read_bytes, SUM(write_bytes) AS total_write_bytes, SUM(read_packets) AS total_read_packets, SUM(write_packets) AS total_write_packets FROM "
                     + trafficTable + " WHERE hour_epoch BETWEEN ? AND ? GROUP BY username")) {
                 stmt.setLong(1, fromHour);
@@ -396,7 +398,7 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
             }
         });
 
-        db.withConnection(conn -> {
+        withConnection(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement("SELECT username, SUM(active_seconds) AS total_active_seconds, SUM(session_count) AS total_session_count, MAX(last_seen_time) AS latest_time FROM "
                     + loginIpTable + " WHERE hour_epoch BETWEEN ? AND ? GROUP BY username")) {
                 stmt.setLong(1, fromHour);
@@ -430,7 +432,7 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
         final String loginIpTable = db.tableName(HourlyLoginIpTrafficEntity.class);
         final List<LoginIpTrafficSummary> rows = new ArrayList<LoginIpTrafficSummary>();
 
-        db.withConnection(conn -> {
+        withConnection(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement("SELECT username, remote_ip, protocol, SUM(read_bytes) AS total_read_bytes, SUM(write_bytes) AS total_write_bytes, SUM(read_packets) AS total_read_packets, SUM(write_packets) AS total_write_packets, SUM(active_seconds) AS total_active_seconds, SUM(session_count) AS total_session_count, MAX(last_seen_time) AS latest_time FROM "
                     + loginIpTable + " WHERE hour_epoch BETWEEN ? AND ? GROUP BY username, remote_ip, protocol ORDER BY username ASC, protocol ASC, latest_time DESC, remote_ip ASC")) {
                 stmt.setLong(1, fromHour);
@@ -465,7 +467,7 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
         final String loginIpTable = db.tableName(HourlyLoginIpTrafficEntity.class);
         final List<ProtocolTrafficSummary> rows = new ArrayList<ProtocolTrafficSummary>();
 
-        db.withConnection(conn -> {
+        withConnection(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement("SELECT username, protocol, SUM(read_bytes) AS total_read_bytes, SUM(write_bytes) AS total_write_bytes, SUM(read_packets) AS total_read_packets, SUM(write_packets) AS total_write_packets, SUM(active_seconds) AS total_active_seconds, SUM(session_count) AS total_session_count, COUNT(DISTINCT remote_ip) AS active_ip_count, MAX(last_seen_time) AS latest_time FROM "
                     + loginIpTable + " WHERE hour_epoch BETWEEN ? AND ? GROUP BY username, protocol ORDER BY username ASC, protocol ASC")) {
                 stmt.setLong(1, fromHour);
@@ -536,6 +538,10 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
             task.cancel(false);
         }
         flushQuietly();
+    }
+
+    private void withConnection(BiAction<Connection> action) {
+        db.withConnection(action);
     }
 
     private static long normalizeFromHour(long fromMillis) {

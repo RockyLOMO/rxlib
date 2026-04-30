@@ -35,11 +35,14 @@
         <thead>
         <tr>
             <th>类型</th>
+            <th>ID</th>
+            <th>配置状态</th>
             <th>Endpoint</th>
-            <th>健康状态</th>
+            <th>Ping 健康状态</th>
             <th>配置权重</th>
             <th>当前权重</th>
             <th>活跃连接</th>
+            <th>释放等待</th>
             <th>RPC</th>
         </tr>
         </thead>
@@ -47,11 +50,14 @@
         {{#each upstreams}}
         <tr>
             <td>{{type}}</td>
+            <td>{{id}}</td>
+            <td>{{state}}</td>
             <td>{{endpoint}}</td>
             <td>{{health}}</td>
             <td>{{configuredWeight}}</td>
             <td>{{currentWeight}}</td>
             <td>{{activeConnections}}</td>
+            <td>{{releaseWait}}</td>
             <td>{{rpc}}</td>
         </tr>
         {{/each}}
@@ -78,7 +84,7 @@
             <th>SS 端口</th>
             <th>IP 限制</th>
             <th>最近活跃</th>
-            <th>活跃时长</th>
+            <th>累计会话时长</th>
             <th>平均下行速度</th>
             <th>平均上行速度</th>
             <th>下行流量</th>
@@ -121,7 +127,7 @@
             <th>SS 端口</th>
             <th>连接/来源指标</th>
             <th>会话数</th>
-            <th>活跃时长</th>
+            <th>累计会话时长</th>
             <th>平均下行速度</th>
             <th>平均上行速度</th>
             <th>下行流量</th>
@@ -164,7 +170,7 @@
             <th>来源 IP</th>
             <th>归属地</th>
             <th>最近活跃</th>
-            <th>活跃时长</th>
+            <th>累计会话时长</th>
             <th>平均下行速度</th>
             <th>平均上行速度</th>
             <th>会话数</th>
@@ -198,7 +204,7 @@
 {{#if hasLiveIps}}
 <section class="card">
     <h2>实时内存快照</h2>
-    <p class="empty">当前连接数来自内存实时状态，不落 H2；平均速度为当前周期累计值除以累计活跃时长。</p>
+    <p class="empty">当前连接数来自内存实时状态，不落 H2；在线时长按该 IP 当前连续有连接的墙钟时间计算。</p>
     <table>
         <thead>
         <tr>
@@ -209,7 +215,7 @@
             <th>归属地</th>
             <th>最近活跃</th>
             <th>当前连接数</th>
-            <th>活跃时长</th>
+            <th>当前在线时长</th>
             <th>平均下行速度</th>
             <th>平均上行速度</th>
             <th>下行流量</th>
