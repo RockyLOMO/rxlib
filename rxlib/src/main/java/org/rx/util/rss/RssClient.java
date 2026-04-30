@@ -82,7 +82,8 @@ public final class RssClient {
     static final long UPSTREAM_CLOSE_DELAY_MILLIS = 30_000L;
     static final long UPSTREAM_CLOSE_CHECK_MILLIS = 1_000L;
     static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 60L * 1000L;
-    static final long UPSTREAM_HEALTH_CHECK_PERIOD_MILLIS = 5_000L;
+    static final int DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS = 5;
+    static final int DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD = 3;
 
     static volatile RSSConf rssConf;
     static volatile RssRuntime runtime;
@@ -715,8 +716,9 @@ public final class RssClient {
         if (snapshot == null) {
             return;
         }
+        long periodMillis = upstreamHealthCheckPeriodMillis();
         snapshot.healthTask = Tasks.schedulePeriod(() -> refreshUpstreamHealth(snapshot),
-                0L, UPSTREAM_HEALTH_CHECK_PERIOD_MILLIS);
+                0L, periodMillis);
     }
 
     static void cancelUpstreamHealthCheck(RssRuntime.UpstreamSnapshot snapshot) {
@@ -762,8 +764,21 @@ public final class RssClient {
             return;
         }
         boolean previous = support.isHealthy();
-        support.setHealthy(healthy);
-        int weight = healthy ? Math.max(0, support.getConfiguredWeight()) : 0;
+        int failureThreshold = upstreamHealthFailureThreshold();
+        boolean effectiveHealthy;
+        int failureCount;
+        if (healthy) {
+            support.setHealthFailureCount(0);
+            failureCount = 0;
+            effectiveHealthy = true;
+        } else {
+            failureCount = support.getHealthFailureCount() + 1;
+            support.setHealthFailureCount(failureCount);
+            effectiveHealthy = previous && failureCount < failureThreshold;
+        }
+
+        support.setHealthy(effectiveHealthy);
+        int weight = effectiveHealthy ? Math.max(0, support.getConfiguredWeight()) : 0;
         setWeightIfPresent(servers, support, weight);
         if (updateDns && snapshot != null && support.getFacade() != null) {
             setWeightIfPresent(snapshot.dnsInterceptors, support.getFacade(), weight);
@@ -773,10 +788,27 @@ public final class RssClient {
                 setWeightIfPresent(userServers, support, weight);
             }
         }
-        DiagnosticMetrics.record("rss.upstream.health", healthy ? 1D : 0D, "endpoint=" + support.getEndpoint());
-        if (previous != healthy) {
-            log.info("rss upstream {} health {}", support.getEndpoint(), healthy ? "UP" : "DOWN");
+        DiagnosticMetrics.record("rss.upstream.health", effectiveHealthy ? 1D : 0D, "endpoint=" + support.getEndpoint());
+        DiagnosticMetrics.record("rss.upstream.health.failures", failureCount, "endpoint=" + support.getEndpoint());
+        if (!healthy && effectiveHealthy) {
+            log.warn("rss upstream {} health check failed {}/{}", support.getEndpoint(), failureCount, failureThreshold);
         }
+        if (previous != effectiveHealthy) {
+            log.info("rss upstream {} health {}", support.getEndpoint(), effectiveHealthy ? "UP" : "DOWN");
+        }
+    }
+
+    static int upstreamHealthFailureThreshold() {
+        RSSConf conf = rssConf;
+        return conf == null ? DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD
+                : Math.max(1, conf.upstreamHealthFailureThreshold);
+    }
+
+    static long upstreamHealthCheckPeriodMillis() {
+        RSSConf conf = rssConf;
+        int seconds = conf == null ? DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS
+                : Math.max(1, conf.upstreamHealthCheckSeconds);
+        return seconds * 1000L;
     }
 
     static <T> void setWeightIfPresent(RandomList<T> list, T element, int weight) {
@@ -856,7 +888,13 @@ public final class RssClient {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             RandomList<UpstreamSupport> servers = resolveUserSocksServers(socksServersRef.get(),
                     userSocksServersRef == null ? null : userSocksServersRef.get(), e.getUser());
-            UpstreamSupport next = nextUpstream(servers, srcHost, dstEp, sourceSteeringEnabled.get());
+            UpstreamSupport next;
+            try {
+                next = nextUpstream(servers, srcHost, dstEp, sourceSteeringEnabled.get());
+            } catch (InvalidException ex) {
+                String username = e.getUser() == null ? "anonymous" : e.getUser().getUsername();
+                throw new InvalidException("No socks upstream user={} src={} dst={}", username, srcHost, dstEp, ex);
+            }
             if (rssConf.hasDebugFlag()) {
                 log.info("route upSvr src {} dst {} -> {}", srcHost, dstEp, next.getEndpoint());
             }

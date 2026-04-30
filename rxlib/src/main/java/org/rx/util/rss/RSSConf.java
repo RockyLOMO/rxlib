@@ -50,6 +50,8 @@ public class RSSConf {
     public int rpcMinSize = 2;
     public int rpcMaxSize = 6;
     public int rpcRequestTimeoutMillis = 3000;
+    public int upstreamHealthCheckSeconds = RssClient.DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS;
+    public int upstreamHealthFailureThreshold = RssClient.DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD;
     public int rpcAutoWhiteListSeconds = 120;
     public boolean udpLeasePoolEnabled = true;
     public int udpLeasePoolMinSize = 2;

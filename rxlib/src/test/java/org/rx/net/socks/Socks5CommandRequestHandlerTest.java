@@ -1,7 +1,16 @@
 package org.rx.net.socks;
 
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.local.LocalAddress;
+import io.netty.handler.codec.socksx.v5.DefaultSocks5CommandRequest;
+import io.netty.handler.codec.socksx.v5.Socks5AddressType;
+import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
+import io.netty.handler.codec.socksx.v5.Socks5CommandStatus;
+import io.netty.handler.codec.socksx.v5.Socks5CommandType;
+import io.netty.handler.codec.socksx.v5.Socks5CommandResponse;
 import org.junit.jupiter.api.Test;
+import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 
@@ -12,6 +21,32 @@ import java.net.SocketAddress;
 import static org.junit.jupiter.api.Assertions.*;
 
 class Socks5CommandRequestHandlerTest {
+    @Test
+    void connect_RouteFailureRepliesFailureWithoutThrowingToTail() {
+        SocksConfig config = new SocksConfig(new LocalAddress("SOCKS5_ROUTE_FAILURE_TEST"));
+        SocksProxyServer server = new SocksProxyServer(config, null);
+        try {
+            server.onTcpRoute.replace((s, e) -> {
+                throw new InvalidException("No weighted socks upstream for {}", e.getSource().getAddress());
+            });
+
+            EmbeddedChannel channel = new EmbeddedChannel();
+            channel.attr(SocksContext.SOCKS_SVR).set(server);
+            Sockets.setOriginRemoteAddress(channel, new InetSocketAddress("101.228.2.116", 52000));
+            channel.pipeline().addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new ChannelInboundHandlerAdapter());
+            channel.pipeline().addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
+
+            assertDoesNotThrow(() -> channel.writeInbound(new DefaultSocks5CommandRequest(
+                    Socks5CommandType.CONNECT, Socks5AddressType.IPv4, "1.1.1.1", 443)));
+            Object outbound = channel.readOutbound();
+            assertTrue(outbound instanceof Socks5CommandResponse);
+            assertEquals(Socks5CommandStatus.FAILURE, ((Socks5CommandResponse) outbound).status());
+            assertFalse(channel.finishAndReleaseAll());
+        } finally {
+            server.close();
+        }
+    }
+
     @Test
     void resolveUdpRelayBindAddress_UsesAnyLocalForLoopbackControl() {
         InetSocketAddress tcpLocalAddr = new InetSocketAddress("127.0.0.1", 6885);
