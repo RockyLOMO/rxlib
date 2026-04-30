@@ -87,7 +87,6 @@ public final class RssClient {
     static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 60L * 1000L;
     static final int DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS = 5;
     static final int DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD = 3;
-    static final long UPSTREAM_HEALTH_CHECK_PERIOD_MILLIS = 5_000L;
     static final long DEFAULT_PROCESS_DRAIN_MAX_WAIT_MILLIS = 180L * 1000L;
     static final String PROCESS_DRAIN_MAX_WAIT_PROPERTY = "app.rss.drainMaxWaitMillis";
 
