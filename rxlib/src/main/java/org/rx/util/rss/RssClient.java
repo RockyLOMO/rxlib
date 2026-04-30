@@ -52,7 +52,9 @@ import org.rx.util.function.BiFunc;
 import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleAction;
 
+import java.io.File;
 import java.io.OutputStream;
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -89,7 +91,10 @@ public final class RssClient {
     static final int DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS = 5;
     static final int DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD = 3;
     static final long DEFAULT_PROCESS_DRAIN_MAX_WAIT_MILLIS = 180L * 1000L;
+    static final long DEFAULT_PROCESS_DRAIN_TOKEN_TTL_MILLIS = 120L * 1000L;
     static final String PROCESS_DRAIN_MAX_WAIT_PROPERTY = "app.rss.drainMaxWaitMillis";
+    static final String PROCESS_DRAIN_TOKEN_DIR_PROPERTY = "app.rss.drainTokenDir";
+    static final String PROCESS_DRAIN_TOKEN_TTL_PROPERTY = "app.rss.drainTokenTtlMillis";
 
     static volatile RSSConf rssConf;
     static volatile RssRuntime runtime;
@@ -149,6 +154,10 @@ public final class RssClient {
     }
 
     static void drainAndExit(String reason) {
+        if (!RssProcessControl.acceptDrainSignal(reason)) {
+            return;
+        }
+
         RssRuntime rt = runtime;
         if (rt == null) {
             log.warn("rss drain signal {} without runtime, exit now", reason);
@@ -191,6 +200,69 @@ public final class RssClient {
                 log.info("rss process control registered signal {}", signalName);
             } catch (Throwable e) {
                 log.warn("rss process control signal {} unavailable", signalName, e);
+            }
+        }
+
+        static boolean acceptDrainSignal(String reason) {
+            if (!isUsr2(reason)) {
+                return true;
+            }
+
+            File tokenFile = drainTokenFile();
+            if (!tokenFile.isFile()) {
+                log.warn("rss drain signal {} ignored, token missing file={}", reason, tokenFile.getAbsolutePath());
+                return false;
+            }
+
+            long now = System.currentTimeMillis();
+            long ageMillis = now - tokenFile.lastModified();
+            long ttlMillis = processDrainTokenTtlMillis();
+            if (ageMillis < 0L || ageMillis > ttlMillis) {
+                if (!tokenFile.delete()) {
+                    log.warn("rss drain token delete failed file={}", tokenFile.getAbsolutePath());
+                }
+                log.warn("rss drain signal {} ignored, token expired file={} ageMillis={} ttlMillis={}",
+                        reason, tokenFile.getAbsolutePath(), ageMillis, ttlMillis);
+                return false;
+            }
+
+            if (!tokenFile.delete()) {
+                log.warn("rss drain token delete failed file={}", tokenFile.getAbsolutePath());
+            }
+            log.info("rss drain signal {} accepted token={}", reason, tokenFile.getAbsolutePath());
+            return true;
+        }
+
+        static boolean isUsr2(String reason) {
+            return "SIGUSR2".equals(reason) || "USR2".equals(reason);
+        }
+
+        static File drainTokenFile() {
+            String dir = System.getProperty(PROCESS_DRAIN_TOKEN_DIR_PROPERTY);
+            if (Strings.isBlank(dir)) {
+                dir = ".drain";
+            }
+            return new File(dir, "rss-drain-" + currentProcessId() + ".token");
+        }
+
+        static String currentProcessId() {
+            String name = ManagementFactory.getRuntimeMXBean().getName();
+            int i = name.indexOf('@');
+            return i > 0 ? name.substring(0, i) : name;
+        }
+
+        static long processDrainTokenTtlMillis() {
+            String configured = System.getProperty(PROCESS_DRAIN_TOKEN_TTL_PROPERTY);
+            if (Strings.isBlank(configured)) {
+                return DEFAULT_PROCESS_DRAIN_TOKEN_TTL_MILLIS;
+            }
+            try {
+                long value = Long.parseLong(configured);
+                return value < 0L ? DEFAULT_PROCESS_DRAIN_TOKEN_TTL_MILLIS : value;
+            } catch (NumberFormatException e) {
+                log.warn("invalid rss drain token ttl millis {}={}, use default {}",
+                        PROCESS_DRAIN_TOKEN_TTL_PROPERTY, configured, DEFAULT_PROCESS_DRAIN_TOKEN_TTL_MILLIS);
+                return DEFAULT_PROCESS_DRAIN_TOKEN_TTL_MILLIS;
             }
         }
     }

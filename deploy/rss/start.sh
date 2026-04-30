@@ -22,13 +22,15 @@ REQUIRED_TCP_PORTS=("${PORT}" "${HTTP_SERVER_PORT}")
 REUSE_PORT_BIND_COUNT=${REUSE_PORT_BIND_COUNT:-2}
 STARTUP_WAIT_SECONDS=${STARTUP_WAIT_SECONDS:-45}
 DRAIN_TIMEOUT_SECONDS=${DRAIN_TIMEOUT_SECONDS:-180}
+DRAIN_TOKEN_DIR=${DRAIN_TOKEN_DIR:-.drain}
+DRAIN_TOKEN_TTL_MILLIS=${DRAIN_TOKEN_TTL_MILLIS:-120000}
 # 首次迁移时，旧二进制未开启 SO_REUSEPORT，新进程无法同端口绑定；允许一次兼容重启。
 REUSEPORT_MIGRATION_FALLBACK=${REUSEPORT_MIGRATION_FALLBACK:-1}
 DEPLOY_ID=${DEPLOY_ID:-$(date +%Y%m%d_%H%M%S)_$$}
 
 MEM_OPTIONS="-Xms2g -Xmx2g -Xss512k -XX:MaxMetaspaceSize=192m -XX:MaxDirectMemorySize=3g -XX:+UseCompressedClassPointers"
 GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
-APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.reusePortBindCount=${REUSE_PORT_BIND_COUNT} -Dapp.rss.drainMaxWaitMillis=$((DRAIN_TIMEOUT_SECONDS * 1000)) -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.inlandServers=192.168.31.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=false -Dapp.storage.h2Settings=CACHE_SIZE=16384;MAX_MEMORY_ROWS=4096;MAX_OPERATION_MEMORY=16384;WRITE_DELAY=200;AUTO_SERVER=TRUE -Dapp.storage.h2MaxConnections=6 -Dapp.diagnostic.h2Settings=CACHE_SIZE=4096;MAX_MEMORY_ROWS=1024;MAX_OPERATION_MEMORY=4096;WRITE_DELAY=1000;AUTO_SERVER=TRUE -Dapp.diagnostic.h2MaxConnections=2 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dio.netty.tryReflectionSetAccessible=true"
+APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.reusePortBindCount=${REUSE_PORT_BIND_COUNT} -Dapp.rss.drainMaxWaitMillis=$((DRAIN_TIMEOUT_SECONDS * 1000)) -Dapp.rss.drainTokenDir=${DRAIN_TOKEN_DIR} -Dapp.rss.drainTokenTtlMillis=${DRAIN_TOKEN_TTL_MILLIS} -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.inlandServers=192.168.31.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=false -Dapp.storage.h2Settings=CACHE_SIZE=16384;MAX_MEMORY_ROWS=4096;MAX_OPERATION_MEMORY=16384;WRITE_DELAY=200;AUTO_SERVER=TRUE -Dapp.storage.h2MaxConnections=6 -Dapp.diagnostic.h2Settings=CACHE_SIZE=4096;MAX_MEMORY_ROWS=1024;MAX_OPERATION_MEMORY=4096;WRITE_DELAY=1000;AUTO_SERVER=TRUE -Dapp.diagnostic.h2MaxConnections=2 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dio.netty.tryReflectionSetAccessible=true"
 JDK17_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
 DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${SCRIPT_DIR}/ -XX:ErrorFile=${SCRIPT_DIR}/hs_err_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED ${JDK17_MODULE_OPTS}"
 BACKUP_PREFIX="app.jar.backup."
@@ -281,6 +283,25 @@ last_start_looks_first_migration_conflict() {
     grep -Eiq "Address already in use|BindException|EADDRINUSE|bind .*fail|bind .*failed|Database may be already in use|database is already in use|Locked by another process|File lock|JdbcSQLNonTransientConnectionException" "${log_file}"
 }
 
+write_drain_token() {
+    local pid="$1"
+    local new_pid="$2"
+    local token_file tmp_file now
+
+    mkdir -p "${DRAIN_TOKEN_DIR}" || return 1
+    token_file="${DRAIN_TOKEN_DIR}/rss-drain-${pid}.token"
+    tmp_file="${token_file}.${DEPLOY_ID}.tmp"
+    now=$(date +%s)
+    {
+        echo "pid=${pid}"
+        echo "newPid=${new_pid}"
+        echo "deployId=${DEPLOY_ID}"
+        echo "createdAt=${now}"
+    } >"${tmp_file}" || return 1
+    chmod 600 "${tmp_file}" >/dev/null 2>&1 || true
+    mv -f "${tmp_file}" "${token_file}"
+}
+
 signal_drain_old_processes() {
     local old_pids="$1"
     local new_pid="$2"
@@ -294,6 +315,10 @@ signal_drain_old_processes() {
         fi
         if pid_alive "${pid}"; then
             echo "${YELLOW}[${LOCAL_TIME}] 通知旧进程进入 drain，PID: ${pid}${NC}"
+            if ! write_drain_token "${pid}" "${new_pid}"; then
+                echo "${RED}[${LOCAL_TIME}] 写入 drain token 失败，跳过旧进程 PID: ${pid}${NC}"
+                continue
+            fi
             kill -USR2 "${pid}" >/dev/null 2>&1 || kill -15 "${pid}" >/dev/null 2>&1 || true
             signaled=$((signaled + 1))
         fi
