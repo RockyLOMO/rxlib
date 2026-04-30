@@ -2,7 +2,6 @@ package org.rx.net.socks;
 
 import io.netty.channel.*;
 import io.netty.handler.codec.socksx.v5.*;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.*;
@@ -22,7 +21,6 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     static final DefaultSocks5CommandResponse SUCCESS_DOMAIN = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.DOMAIN);
     static final DefaultSocks5CommandResponse SUCCESS_IPv6 = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv6);
 
-    @SneakyThrows
     @Override
     protected void channelRead0(ChannelHandlerContext inbound, DefaultSocks5CommandRequest msg) {
         ChannelPipeline pipeline = inbound.pipeline();
@@ -68,8 +66,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (msg.type() == Socks5CommandType.CONNECT) {
             SocksContext e = SocksContext.getCtx(srcEp, dstEp);
             SocksUserTraffic.attach(e, user, loginInfo);
-            server.publishEvent(server.onTcpRoute, e);
-            connect(inCh, msg.dstAddrType(), e, null);
+            try {
+                server.publishEvent(server.onTcpRoute, e);
+                connect(inCh, msg.dstAddrType(), e, null);
+            } catch (Exception ex) {
+                failTcpRoute(inbound, msg.dstAddrType(), config, e, ex);
+            }
         } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
             log.debug("socks5[{}] UDP_ASSOCIATE {}", config.getListenPort(), msg);
             String idleHandlerName = ProxyChannelIdleHandler.class.getSimpleName();
@@ -145,6 +147,17 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             log.warn("Command {} not support", msg.type());
             inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
         }
+    }
+
+    private void failTcpRoute(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, SocksConfig config,
+                              SocksContext e, Exception ex) {
+        if (DiagnosticMetrics.isEnabled()) {
+            DiagnosticMetrics.record("socks.tcp.route.failure.count", 1D, "port=" + config.getListenPort());
+        }
+        log.warn("socks5[{}] TCP route {} => {} fail: {}",
+                config.getListenPort(), e.getSource(), e.getFirstDestination(), ex.toString());
+        inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType))
+                .addListener(ChannelFutureListener.CLOSE);
     }
 
     static SocketAddress resolveUdpRelayBindAddress(InetSocketAddress tcpLocalAddr) {

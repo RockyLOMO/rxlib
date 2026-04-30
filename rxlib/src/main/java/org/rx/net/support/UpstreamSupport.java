@@ -17,6 +17,7 @@ public class UpstreamSupport {
     private SocksRpcContract facade;
     private int configuredWeight;
     private volatile boolean healthy = true;
+    private volatile int healthFailureCount;
     private UpstreamSupport connectionTracker;
     private final AtomicInteger activeConnections = new AtomicInteger();
 

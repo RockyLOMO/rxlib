@@ -881,22 +881,84 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void updateUpstreamHealth_UpdatesShadowUserScopedWeights() {
-        UpstreamSupport support = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"), null);
-        support.setConfiguredWeight(1);
-        RandomList<UpstreamSupport> defaults = new RandomList<>();
-        defaults.add(support, 1);
-        RandomList<UpstreamSupport> userOnly = new RandomList<>();
-        userOnly.add(support, 1);
-        Map<String, RandomList<UpstreamSupport>> userServers = new LinkedHashMap<>();
-        userServers.put("ss-rocky", userOnly);
-        RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(defaults,
-                new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
-                userServers, Collections.<RSSConf.SocksServer>emptyList(), Collections.<AuthenticEndpoint>emptyList());
+        RSSConf oldConf = RssClient.rssConf;
+        try {
+            RSSConf conf = new RSSConf();
+            conf.upstreamHealthFailureThreshold = 1;
+            RssClient.rssConf = conf;
+            UpstreamSupport support = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"), null);
+            support.setConfiguredWeight(1);
+            RandomList<UpstreamSupport> defaults = new RandomList<>();
+            defaults.add(support, 1);
+            RandomList<UpstreamSupport> userOnly = new RandomList<>();
+            userOnly.add(support, 1);
+            Map<String, RandomList<UpstreamSupport>> userServers = new LinkedHashMap<>();
+            userServers.put("ss-rocky", userOnly);
+            RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(defaults,
+                    new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
+                    userServers, Collections.<RSSConf.SocksServer>emptyList(), Collections.<AuthenticEndpoint>emptyList());
 
-        RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
+            RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
 
-        assertEquals(0, defaults.getWeight(support));
-        assertEquals(0, userOnly.getWeight(support));
+            assertEquals(0, defaults.getWeight(support));
+            assertEquals(0, userOnly.getWeight(support));
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
+    }
+
+    @Test
+    public void updateUpstreamHealth_RequiresConsecutiveFailuresBeforeWeightZero() {
+        RSSConf oldConf = RssClient.rssConf;
+        try {
+            RSSConf conf = new RSSConf();
+            conf.upstreamHealthFailureThreshold = 3;
+            RssClient.rssConf = conf;
+            UpstreamSupport support = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"), null);
+            support.setConfiguredWeight(1);
+            RandomList<UpstreamSupport> defaults = new RandomList<>();
+            defaults.add(support, 1);
+            RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(defaults,
+                    new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>());
+
+            RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
+            RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
+
+            assertTrue(support.isHealthy());
+            assertEquals(2, support.getHealthFailureCount());
+            assertEquals(1, defaults.getWeight(support));
+
+            RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
+
+            assertTrue(!support.isHealthy());
+            assertEquals(3, support.getHealthFailureCount());
+            assertEquals(0, defaults.getWeight(support));
+
+            RssClient.updateUpstreamHealth(snapshot, defaults, support, true, true);
+
+            assertTrue(support.isHealthy());
+            assertEquals(0, support.getHealthFailureCount());
+            assertEquals(1, defaults.getWeight(support));
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
+    }
+
+    @Test
+    public void upstreamHealthCheckPeriodMillis_UsesConfiguredSeconds() {
+        RSSConf oldConf = RssClient.rssConf;
+        try {
+            RSSConf conf = new RSSConf();
+            conf.upstreamHealthCheckSeconds = 7;
+            RssClient.rssConf = conf;
+
+            assertEquals(7000L, RssClient.upstreamHealthCheckPeriodMillis());
+
+            conf.upstreamHealthCheckSeconds = 0;
+            assertEquals(1000L, RssClient.upstreamHealthCheckPeriodMillis());
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
     }
 
     @Test
