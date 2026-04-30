@@ -72,6 +72,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -1068,10 +1069,64 @@ public final class RssClient {
             }
             return nextHealthyUpstream(socksServers);
         } catch (NoSuchElementException e) {
+            UpstreamSupport next = tryNextFailOpen(socksServers, srcHost);
+            if (next != null) {
+                return next;
+            }
             throw new InvalidException("No available socks upstream for {}", srcHost);
         } catch (IllegalArgumentException e) {
+            UpstreamSupport next = tryNextFailOpen(socksServers, srcHost);
+            if (next != null) {
+                return next;
+            }
             throw new InvalidException("No weighted socks upstream for {}", srcHost);
         }
+    }
+
+    static UpstreamSupport tryNextFailOpen(RandomList<UpstreamSupport> socksServers, InetAddress srcHost) {
+        if (!upstreamFailOpenWhenAllDown()) {
+            return null;
+        }
+        UpstreamSupport next = nextConfiguredUpstream(socksServers);
+        if (next == null) {
+            return null;
+        }
+        DiagnosticMetrics.record("rss.upstream.fail_open.count", 1D, "endpoint=" + next.getEndpoint());
+        log.warn("rss upstream fail-open src {} -> {} healthFailures={}",
+                srcHost, next.getEndpoint(), next.getHealthFailureCount());
+        return next;
+    }
+
+    static boolean upstreamFailOpenWhenAllDown() {
+        RSSConf conf = rssConf;
+        return conf == null || conf.upstreamFailOpenWhenAllDown;
+    }
+
+    static UpstreamSupport nextConfiguredUpstream(RandomList<UpstreamSupport> socksServers) {
+        if (socksServers == null) {
+            return null;
+        }
+        List<UpstreamSupport> snapshot = socksServers.readOnlySnapshot();
+        int totalWeight = 0;
+        for (UpstreamSupport support : snapshot) {
+            if (support != null && support.getConfiguredWeight() > 0) {
+                totalWeight += support.getConfiguredWeight();
+            }
+        }
+        if (totalWeight <= 0) {
+            return null;
+        }
+        int value = ThreadLocalRandom.current().nextInt(totalWeight);
+        for (UpstreamSupport support : snapshot) {
+            if (support == null || support.getConfiguredWeight() <= 0) {
+                continue;
+            }
+            value -= support.getConfiguredWeight();
+            if (value < 0) {
+                return support;
+            }
+        }
+        return null;
     }
 
     static boolean useSourceSteering(int steeringTtl, UnresolvedEndpoint dstEp) {

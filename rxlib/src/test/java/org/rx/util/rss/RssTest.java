@@ -52,11 +52,13 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.IpGeolocation;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
+import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.TripleAction;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -543,6 +545,47 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    @SneakyThrows
+    public void nextUpstream_FailOpenUsesConfiguredWeightWhenRuntimeWeightsAreZero() {
+        RSSConf oldConf = RssClient.rssConf;
+        try {
+            RssClient.rssConf = new RSSConf();
+            RssClient.rssConf.upstreamFailOpenWhenAllDown = true;
+            RssClient.rssConf.route = new RSSConf.RouteConf();
+            RandomList<UpstreamSupport> servers = new RandomList<>();
+            UpstreamSupport main = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), null);
+            main.setConfiguredWeight(1);
+            main.setHealthy(false);
+            servers.add(main, 0);
+
+            assertSame(main, RssClient.nextUpstream(servers, InetAddress.getByName("61.169.146.210")));
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    public void nextUpstream_FailCloseThrowsWhenRuntimeWeightsAreZero() {
+        RSSConf oldConf = RssClient.rssConf;
+        try {
+            RssClient.rssConf = new RSSConf();
+            RssClient.rssConf.upstreamFailOpenWhenAllDown = false;
+            RssClient.rssConf.route = new RSSConf.RouteConf();
+            RandomList<UpstreamSupport> servers = new RandomList<>();
+            UpstreamSupport main = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), null);
+            main.setConfiguredWeight(1);
+            main.setHealthy(false);
+            servers.add(main, 0);
+
+            assertThrows(InvalidException.class,
+                    () -> RssClient.nextUpstream(servers, InetAddress.getByName("61.169.146.210")));
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
+    }
+
+    @Test
     public void routeUpstream_KcptunTracksSelectedServerConnections() {
         SocksConfig config = new SocksConfig();
         AuthenticEndpoint kcp = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 4093), "k", "p");
@@ -962,6 +1005,56 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void pingUpstream_ReturnsTrueForLocalRssRpcFacadeAndRestoresWeight() throws Exception {
+        int rpcPort = freePort();
+        SocksProxyServer backSvr = new SocksProxyServer(new SocksConfig(new LocalAddress("RSS_HEALTH_RPC_BACK")));
+        TcpServer rpcServer = null;
+        SocksRpcContract facade = null;
+        RSSConf oldConf = RssClient.rssConf;
+        try {
+            RSSConf conf = new RSSConf();
+            conf.upstreamHealthFailureThreshold = 3;
+            RssClient.rssConf = conf;
+            RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(rpcPort));
+            rpcServerConf.getHybridConfig().setEnableUdpDirect(false);
+            rpcServerConf.getHybridConfig().setEnableUdpHolePunch(false);
+            rpcServer = Remoting.register(new RssRpcApp(backSvr), rpcServerConf);
+
+            RpcClientConfig<SocksRpcContract> rpcClientConf = RpcClientConfig.poolMode(
+                    new InetSocketAddress("127.0.0.1", rpcPort), 1, 1);
+            rpcClientConf.getHybridConfig().setEnableUdpDirect(false);
+            rpcClientConf.getHybridConfig().setEnableUdpHolePunch(false);
+            facade = Remoting.createFacade(SocksRpcContract.class, rpcClientConf);
+            assertTrue(Remoting.ping(facade, 1000));
+
+            UpstreamSupport support = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"), facade);
+            support.setConfiguredWeight(1);
+            support.setHealthy(false);
+            support.setHealthFailureCount(3);
+            RandomList<UpstreamSupport> servers = new RandomList<>();
+            servers.add(support, 0);
+            RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers,
+                    new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>());
+
+            assertTrue(RssClient.pingUpstream(support));
+            RssClient.updateUpstreamHealth(snapshot, servers, support, true, true);
+
+            assertTrue(support.isHealthy());
+            assertEquals(0, support.getHealthFailureCount());
+            assertEquals(1, servers.getWeight(support));
+        } finally {
+            RssClient.rssConf = oldConf;
+            if (facade != null) {
+                facade.close();
+            }
+            if (rpcServer != null) {
+                rpcServer.close();
+            }
+            backSvr.close();
+        }
+    }
+
+    @Test
     public void socksServerJsonReader_RequiresObjectFormatWithWeight() {
         RSSConf conf = JSON.parseObject("{\"socksServers\":["
                 + "{\"id\":\"backup\",\"weight\":2,\"endpoint\":\"u:p@127.0.0.1:1081\"}]}", RSSConf.class);
@@ -1178,5 +1271,11 @@ public class RssTest extends AbstractTester {
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
         frontSvr.onTcpRoute.replace((s, e) -> e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null))));
         frontSvr.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null))));
+    }
+
+    private static int freePort() throws Exception {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        }
     }
 }
