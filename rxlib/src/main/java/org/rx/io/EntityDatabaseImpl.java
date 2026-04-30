@@ -57,8 +57,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         final String existsByIdSql;
         final String findByIdSql;
 
-        public SqlMeta(String primaryKey, Map<String, Tuple<Field, DbColumn>> columns
-                , String insertSql, String updateSql, String deleteSql, String selectSql) {
+        public SqlMeta(String primaryKey, Map<String, Tuple<Field, DbColumn>> columns, String insertSql, String updateSql, String deleteSql, String selectSql) {
             this.primaryKey = new AbstractMap.SimpleEntry<>(primaryKey, columns.get(primaryKey));
             this.columns = columns;
             for (Map.Entry<String, Tuple<Field, DbColumn>> entry : columns.entrySet()) {
@@ -118,9 +117,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     static final String $TABLE = "$TABLE", $CREATE_COLUMNS = "$CREATE_COLUMNS", $PK = "$PK",
             $UPDATE_COLUMNS = "$UPDATE_COLUMNS";
     static final Map<Class<?>, H2Type> H2_TYPES = new ConcurrentHashMap<>();
-    static final Serializer SERIALIZER = Serializer.DEFAULT;
+    static final Serializer SERIALIZER = Serializer.FURY;
     static final Map<Class<?>, SqlMeta> SQL_META = new ConcurrentHashMap<>();
-    //    static final AtomicInteger TX_ID = new AtomicInteger();
+    // static final AtomicInteger TX_ID = new AtomicInteger();
     static final FastThreadLocal<Connection> TL_CONN = new FastThreadLocal<>();
     static final FastThreadLocal<Integer> TL_TX = new FastThreadLocal<>();
 
@@ -160,14 +159,14 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         if (Reflects.isAssignable(fieldType, NEnum.class, false)) {
             h2Type = H2Type.INTEGER.getName();
         } else if (Reflects.isAssignable(fieldType, Decimal.class, false) || fieldType == BigDecimal.class) {
-//            h2Type = H2Type.NUMERIC.getName();
+            // h2Type = H2Type.NUMERIC.getName();
             h2Type = "NUMERIC(56, 6)";
         } else if (fieldType.isArray()) {
-//            if (fieldType.getComponentType() == Object.class) {
+            // if (fieldType.getComponentType() == Object.class) {
             h2Type = H2Type.BLOB.getName();
-//            } else {
-//                h2Type = H2Type.JAVA_OBJECT.getName();
-//            }
+            // } else {
+            // h2Type = H2Type.JAVA_OBJECT.getName();
+            // }
         } else {
             h2Type = H2_TYPES.getOrDefault(Reflects.primitiveToWrapper(fieldType), H2Type.JAVA_OBJECT).getName();
         }
@@ -176,7 +175,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     @SneakyThrows
     static void fillParams(PreparedStatement stmt, List<Object> params) {
-        for (int i = 0; i < params.size(); ) {
+        for (int i = 0; i < params.size();) {
             Object val = params.get(i++);
             if (val != null) {
                 if (val instanceof NEnum) {
@@ -204,16 +203,16 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             return Reflects.defaultValue(type);
         }
         if (type.isArray()) {
-//            if (type.getComponentType() == Object.class) {
-//                Object[] arr;
-//                Blob blob = (Blob) cell;
-//                if (blob.length() == 0) {
-//                    arr = Arrays.EMPTY_OBJECT_ARRAY;
-//                } else {
-//                    arr = SERIALIZER.deserialize(DuplexStream.wrap(null, blob.getBinaryStream()));
-//                }
-//                return arr;
-//            }
+            // if (type.getComponentType() == Object.class) {
+            // Object[] arr;
+            // Blob blob = (Blob) cell;
+            // if (blob.length() == 0) {
+            // arr = Arrays.EMPTY_OBJECT_ARRAY;
+            // } else {
+            // arr = SERIALIZER.deserialize(DuplexStream.wrap(null, blob.getBinaryStream()));
+            // }
+            // return arr;
+            // }
             Blob blob = (Blob) cell;
             if (blob.length() == 0) {
                 return null;
@@ -268,7 +267,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     JdbcConnectionPool createConnectionPool() {
         String filePath = getFilePath();
         curFilePath = filePath;
-        //http://www.h2database.com/html/commands.html#set_cache_size
+        // http://www.h2database.com/html/commands.html#set_cache_size
         String h2Settings = ifNull(this.h2Settings, RxConfig.INSTANCE.getStorage().getH2Settings());
         h2Settings = ifNull(h2Settings, "");
         String jdbcUrl = jdbcUrlMode ? filePath : String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;", filePath) + h2Settings;
@@ -351,7 +350,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         Files.deleteBefore(Files.getFullPath(p), DateTime.valueOf(DateTime.now().toString(timeRollingPattern), timeRollingPattern).addHours(-rollingHours), "*.mv.db");
     }
 
-    //region CRUD
+    // region CRUD
     @Override
     @SneakyThrows
     public <T> void save(T entity) {
@@ -562,7 +561,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
         return meta;
     }
-    //endregion
+    // endregion
 
     @Override
     public void compact() {
@@ -691,7 +690,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         for (Class<?> entityType : entityTypes) {
             createCols.setLength(0);
             String tableName = tableName(entityType);
-//            insert.setLength(0).appendFormat("INSERT INTO %s VALUES (", tableName);
+            // insert.setLength(0).appendFormat("INSERT INTO %s VALUES (", tableName);
             insert.setLength(0).appendFormat("MERGE INTO %s VALUES (", tableName);
 
             String pkName = null;
@@ -790,15 +789,15 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
     @Override
     public String tableName(Class<?> entityType) {
-//        String n = Extends.metadata(entityType);
-//        if (n != null) {
-//            return n;
-//        }
+        // String n = Extends.metadata(entityType);
+        // if (n != null) {
+        // return n;
+        // }
         return tableMapping != null ? tableMapping.apply(entityType)
                 : entityType.getSimpleName();
     }
 
-    //count - Columns require alias
+    // count - Columns require alias
     @SneakyThrows
     public static DataTable sharding(List<DataTable> queryResults, String querySql) {
         DataTable template = queryResults.get(0);
@@ -852,7 +851,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         String tableName = template.getTableName();
         StringBuilder createCols = new StringBuilder();
         StringBuilder insert = new StringBuilder();
-//        insert.appendFormat("INSERT INTO %s VALUES (", tableName);
+        // insert.appendFormat("INSERT INTO %s VALUES (", tableName);
         insert.appendFormat("MERGE INTO %s VALUES (", tableName);
 
         int len = template.getColumns().size();
@@ -890,7 +889,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
         String url = "jdbc:h2:mem:";
         try (Connection conn = DriverManager.getConnection(url);
-             Statement stmt = conn.createStatement()) {
+                Statement stmt = conn.createStatement()) {
             String sql = new StringBuilder(SQL_CREATE_TEMP_TABLE).replace($TABLE, tableName)
                     .replace($CREATE_COLUMNS, createCols.toString()).toString();
             log.debug("createMapping\n{}", sql);
@@ -922,7 +921,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
     }
 
-    //region jdbc
+    // region jdbc
     public DataTable executeQuery(String sql) {
         return executeQuery(sql, null);
     }
@@ -1037,9 +1036,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }, sql, params);
         return r;
     }
-    //endregion
+    // endregion
 
-    //region trans
+    // region trans
     @Override
     public boolean isInTransaction() {
         return TL_TX.isSet();
@@ -1092,7 +1091,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             TL_TX.set(txDepth);
             return;
         }
-        //txDepth = 0
+        // txDepth = 0
         TL_TX.remove();
         conn.close();
         TL_CONN.remove();
@@ -1108,8 +1107,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         Integer txDepth = TL_TX.getIfExists();
         if (txDepth == null) {
             throw new InvalidException("Not in transaction");
-//            log.warn("Not in transaction");
-//            return;
+            // log.warn("Not in transaction");
+            // return;
         }
 
         conn.rollback();
@@ -1118,7 +1117,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             TL_TX.set(txDepth);
             return;
         }
-        //txDepth = 0
+        // txDepth = 0
         TL_TX.remove();
         conn.close();
         TL_CONN.remove();
@@ -1302,5 +1301,5 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
         return value.replace(',', '_').replace('=', '_').replace('\r', ' ').replace('\n', ' ');
     }
-    //endregion
+    // endregion
 }
