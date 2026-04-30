@@ -55,11 +55,9 @@ public class CpuWatchman implements TimerTask {
 
     static int incrSize(ThreadPoolExecutor pool) {
         ThreadPool threadPool = asThreadPool(pool);
-        if (threadPool == null) {
-            return pool.getCorePoolSize();
-        }
-        int maxPoolSize = threadPool.maxPoolSize();
-        int poolSize = pool.getCorePoolSize() + threadPool.resizeStep();
+        int maxPoolSize = threadPool != null ? threadPool.maxPoolSize() : RxConfig.INSTANCE.threadPool.maxPoolSize;
+        int resizeStep = threadPool != null ? threadPool.resizeStep() : RxConfig.INSTANCE.threadPool.resizeStep;
+        int poolSize = pool.getCorePoolSize() + resizeStep;
         if (poolSize > maxPoolSize) {
             pool.setCorePoolSize(maxPoolSize);
             return maxPoolSize;
@@ -70,10 +68,9 @@ public class CpuWatchman implements TimerTask {
 
     static int decrSize(ThreadPoolExecutor pool) {
         ThreadPool threadPool = asThreadPool(pool);
-        if (threadPool == null) {
-            return pool.getCorePoolSize();
-        }
-        int poolSize = Math.max(threadPool.minIdleSize(), pool.getCorePoolSize() - threadPool.resizeStep());
+        int minIdleSize = threadPool != null ? threadPool.minIdleSize() : RxConfig.INSTANCE.threadPool.minIdleSize;
+        int resizeStep = threadPool != null ? threadPool.resizeStep() : RxConfig.INSTANCE.threadPool.resizeStep;
+        int poolSize = Math.max(minIdleSize, pool.getCorePoolSize() - resizeStep);
         pool.setCorePoolSize(poolSize);
         return poolSize;
     }
@@ -123,7 +120,7 @@ public class CpuWatchman implements TimerTask {
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
         }
 
-        int minIdleSize = threadPool != null ? threadPool.minIdleSize() : pool.getCorePoolSize();
+        int minIdleSize = threadPool != null ? threadPool.minIdleSize() : RxConfig.INSTANCE.threadPool.minIdleSize;
         if (pool.getCorePoolSize() > minIdleSize && cpuLoad.gt(waterMark.getHigh())) {
             if (++decrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
                 log.info("{} PoolSize={}/{}+[{}] Threshold={}[{}-{}]% decrement to {}", prefix,
@@ -135,7 +132,7 @@ public class CpuWatchman implements TimerTask {
             decrementCounter = 0;
         }
 
-        if (threadPool != null && !pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
+        if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
             if (++incrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
                 log.info("{} PoolSize={}/{}+[{}] Threshold={}[{}-{}]% increment to {}", prefix,
                         pool.getPoolSize(), pool.getCorePoolSize(), pool.getQueue().size(),
@@ -168,7 +165,7 @@ public class CpuWatchman implements TimerTask {
 
         ThreadPool threadPool = asThreadPool(pool);
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
-        int minIdleSize = threadPool != null ? threadPool.minIdleSize() : size;
+        int minIdleSize = threadPool != null ? threadPool.minIdleSize() : RxConfig.INSTANCE.threadPool.minIdleSize;
         if (size > minIdleSize && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
             if (++decrementCounter >= conf.samplingTimes) {
                 log.info("{} Threshold={}[{}-{}]% idle={} decrement to {}", prefix,
@@ -179,7 +176,7 @@ public class CpuWatchman implements TimerTask {
             decrementCounter = 0;
         }
 
-        if (threadPool != null && active >= size && cpuLoad.lt(waterMark.getLow())) {
+        if (active >= size && cpuLoad.lt(waterMark.getLow())) {
             if (++incrementCounter >= conf.samplingTimes) {
                 log.info("{} Threshold={}[{}-{}]% increment to {}", prefix,
                         cpuLoad, waterMark.getLow(), waterMark.getHigh(), incrSize(pool));
@@ -194,6 +191,9 @@ public class CpuWatchman implements TimerTask {
     }
 
     public void register(@NonNull ThreadPoolExecutor pool, @NonNull IntWaterMark waterMark) {
+        if (asThreadPool(pool) == null) {
+            pool.setCorePoolSize(RxConfig.INSTANCE.threadPool.minIdleSize);
+        }
         if (waterMark.getLow() < 0) {
             waterMark.setLow(0);
         }
