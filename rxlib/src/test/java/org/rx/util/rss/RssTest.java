@@ -804,10 +804,10 @@ public class RssTest extends AbstractTester {
     @Test
     public void normalizeAndValidateRssConfig_AcceptsShadowUserScopedSocksServers() {
         RSSConf conf = validRssConf();
-        RSSConf.SocksServer first = new RSSConf.SocksServer("primary",
-                AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080?w=1"));
-        RSSConf.SocksServer second = new RSSConf.SocksServer("backup",
-                AuthenticEndpoint.valueOf("u:p@127.0.0.1:1081?w=2"));
+        RSSConf.SocksServer first = new RSSConf.SocksServer("primary", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"));
+        RSSConf.SocksServer second = new RSSConf.SocksServer("backup", 2,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:1081"));
         conf.socksServers = Arrays.asList(first, second);
         conf.shadowUsers.get(0).setSocksServers(Collections.singletonList(" backup "));
 
@@ -825,10 +825,47 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void normalizeAndValidateRssConfig_RejectsShadowUserScopedDisabledSocksServers() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer disabled = new RSSConf.SocksServer("disabled", 0,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"));
+        conf.socksServers = Collections.singletonList(disabled);
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("disabled"));
+
+        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+    }
+
+    @Test
+    public void buildUserSocksServers_UsesOnlyScopedWeights() {
+        ShadowUser user = new ShadowUser();
+        user.setUsername("ss-rocky");
+        user.setSocksServers(Arrays.asList("a", "c"));
+        UpstreamSupport a = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"), null);
+        a.setConfiguredWeight(1);
+        UpstreamSupport b = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1081"), null);
+        b.setConfiguredWeight(2);
+        UpstreamSupport c = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1082"), null);
+        c.setConfiguredWeight(3);
+        Map<String, UpstreamSupport> supportByServerId = new LinkedHashMap<>();
+        supportByServerId.put("a", a);
+        supportByServerId.put("b", b);
+        supportByServerId.put("c", c);
+
+        RandomList<UpstreamSupport> scoped = RssClient.buildUserSocksServers(
+                Collections.singletonList(user), supportByServerId).get("ss-rocky");
+
+        assertTrue(scoped.contains(a));
+        assertTrue(!scoped.contains(b));
+        assertTrue(scoped.contains(c));
+        assertEquals(1, scoped.getWeight(a));
+        assertEquals(3, scoped.getWeight(c));
+    }
+
+    @Test
     public void resolveUserSocksServers_UsesShadowUserScopedList() {
-        UpstreamSupport first = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080?w=1"), null);
+        UpstreamSupport first = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"), null);
         first.setConfiguredWeight(1);
-        UpstreamSupport second = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1081?w=1"), null);
+        UpstreamSupport second = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1081"), null);
         second.setConfiguredWeight(1);
         RandomList<UpstreamSupport> defaults = new RandomList<>();
         defaults.add(first, 1);
@@ -844,7 +881,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void updateUpstreamHealth_UpdatesShadowUserScopedWeights() {
-        UpstreamSupport support = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080?w=1"), null);
+        UpstreamSupport support = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"), null);
         support.setConfiguredWeight(1);
         RandomList<UpstreamSupport> defaults = new RandomList<>();
         defaults.add(support, 1);
@@ -863,15 +900,16 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
-    public void socksServerJsonReader_SupportsStringAndObjectFormats() {
-        RSSConf conf = JSON.parseObject("{\"socksServers\":[\"u:p@127.0.0.1:1080?w=1\","
-                + "{\"id\":\"backup\",\"endpoint\":\"u:p@127.0.0.1:1081?w=2\"}]}", RSSConf.class);
+    public void socksServerJsonReader_RequiresObjectFormatWithWeight() {
+        RSSConf conf = JSON.parseObject("{\"socksServers\":["
+                + "{\"id\":\"backup\",\"weight\":2,\"endpoint\":\"u:p@127.0.0.1:1081\"}]}", RSSConf.class);
 
-        assertEquals(2, conf.socksServers.size());
-        assertTrue(conf.socksServers.get(0).getId() == null);
-        assertEquals(1080, conf.socksServers.get(0).getEndpoint().requireEndpoint().getPort());
-        assertEquals("backup", conf.socksServers.get(1).getId());
-        assertEquals(1081, conf.socksServers.get(1).getEndpoint().requireEndpoint().getPort());
+        assertEquals(1, conf.socksServers.size());
+        assertEquals("backup", conf.socksServers.get(0).getId());
+        assertEquals(2, RssClient.weightOf(conf.socksServers.get(0)));
+        assertEquals(1081, conf.socksServers.get(0).getEndpoint().requireEndpoint().getPort());
+        assertThrows(Exception.class, () -> JSON.parseObject(
+                "{\"socksServers\":[\"u:p@127.0.0.1:1080\"]}", RSSConf.class));
     }
 
     @Test
@@ -948,8 +986,7 @@ public class RssTest extends AbstractTester {
         conf.shadowUsers = Collections.singletonList(user);
         conf.socksPwd = "socks-pwd";
         AuthenticEndpoint endpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080), "u", "p");
-        endpoint.getParameters().put("w", "1");
-        conf.socksServers = Collections.singletonList(new RSSConf.SocksServer(endpoint));
+        conf.socksServers = Collections.singletonList(new RSSConf.SocksServer("primary", 1, endpoint));
         return conf;
     }
 

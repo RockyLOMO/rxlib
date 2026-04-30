@@ -695,7 +695,7 @@ final class RssRuntime implements AutoCloseable {
             }
             List<RSSConf.SocksServer> servers = new ArrayList<RSSConf.SocksServer>(endpoints.size());
             for (AuthenticEndpoint endpoint : endpoints) {
-                servers.add(new RSSConf.SocksServer(endpoint));
+                servers.add(new RSSConf.SocksServer(null, RssClient.weightOf(endpoint), endpoint));
             }
             return servers;
         }

@@ -23,15 +23,13 @@ public class RSSConf {
     static {
         JSONFactory.getDefaultObjectReaderProvider().register(SocksServer.class,
                 (ObjectReader<SocksServer>) (jsonReader, fieldType, fieldName, features) -> {
-                    if (jsonReader.isString()) {
-                        return new SocksServer(AuthenticEndpoint.valueOf(jsonReader.readString()));
-                    }
                     JSONObject obj = jsonReader.read(JSONObject.class);
                     if (obj == null) {
                         return null;
                     }
                     SocksServer server = new SocksServer();
                     server.setId(obj.getString("id"));
+                    server.setWeight(obj.getInteger("weight"));
                     Object endpoint = obj.get("endpoint");
                     server.setEndpoint(readSocksServerEndpoint(endpoint));
                     return server;
@@ -116,17 +114,15 @@ public class RSSConf {
         private static final long serialVersionUID = 6049607274827395471L;
 
         public String id;
+        public Integer weight;
         public AuthenticEndpoint endpoint;
 
         public SocksServer() {
         }
 
-        public SocksServer(AuthenticEndpoint endpoint) {
-            this.endpoint = endpoint;
-        }
-
-        public SocksServer(String id, AuthenticEndpoint endpoint) {
+        public SocksServer(String id, int weight, AuthenticEndpoint endpoint) {
             this.id = id;
+            this.weight = weight;
             this.endpoint = endpoint;
         }
     }
