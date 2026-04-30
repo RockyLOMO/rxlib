@@ -232,9 +232,7 @@ build_dump_opts() {
 
 build_logback_opts() {
     local slot="$1"
-    if [ -f "${SCRIPT_DIR}/logback.xml" ]; then
-        echo "-Dlogback.configurationFile=${SCRIPT_DIR}/logback.xml -DAPP_LOG_SLOT=${slot}"
-    fi
+    echo "-DAPP_LOG_SLOT=${slot}"
 }
 
 port_in_use() {
