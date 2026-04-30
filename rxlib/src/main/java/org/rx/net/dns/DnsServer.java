@@ -145,20 +145,12 @@ public class DnsServer extends Disposable {
         serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new DnsTcpPortMuxHandler(this)))
                 .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient);
         InetSocketAddress bindAddress = Sockets.newAnyEndpoint(port);
-        if (Sockets.reusePortBindCount(null, bindAddress) > 1) {
-            tcpChannels = Sockets.bindChannels(serverBootstrap, bindAddress, null);
-        } else {
-            tcpChannels = Collections.singletonList(serverBootstrap.bind(port).syncUninterruptibly().channel());
-        }
+        tcpChannels = Sockets.bindChannels(serverBootstrap, bindAddress, null);
 
         io.netty.bootstrap.Bootstrap udpBootstrap = Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(
                         DnsDatagramSourceHandler.DEFAULT, new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
                 .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient);
-        if (Sockets.reusePortBindCount(null, bindAddress) > 1) {
-            udpChannels = Sockets.bindChannels(udpBootstrap, bindAddress, null);
-        } else {
-            udpChannels = Collections.singletonList(udpBootstrap.bind(port).syncUninterruptibly().channel());
-        }
+        udpChannels = Sockets.bindChannels(udpBootstrap, bindAddress, null);
     }
 
     @Override

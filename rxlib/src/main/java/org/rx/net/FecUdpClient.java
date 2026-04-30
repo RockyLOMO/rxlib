@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.util.function.TripleAction;
 
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -40,6 +41,7 @@ public class FecUdpClient implements AutoCloseable {
     private final Bootstrap bootstrap;
     @Getter
     private final Channel channel;
+    private final List<Channel> channels;
 
     /**
      * @param bindPort 本地绑定端口，0 表示随机
@@ -62,7 +64,9 @@ public class FecUdpClient implements AutoCloseable {
             // Outbound: FecEncoder
             pipeline.addLast("fecEncoder", new FecEncoder(config));
         });
-        this.channel = bootstrap.bind(bindPort).syncUninterruptibly().channel();
+        InetSocketAddress bindAddress = Sockets.newAnyEndpoint(bindPort);
+        this.channels = Sockets.bindChannels(bootstrap, bindAddress, null);
+        this.channel = channels.get(0);
         log.info("FecUdpClient started on {}", channel.localAddress());
     }
 
@@ -105,7 +109,9 @@ public class FecUdpClient implements AutoCloseable {
 
     @Override
     public void close() {
-        channel.close().syncUninterruptibly();
+        for (Channel ch : channels) {
+            ch.close().syncUninterruptibly();
+        }
         log.info("FecUdpClient closed");
     }
 }

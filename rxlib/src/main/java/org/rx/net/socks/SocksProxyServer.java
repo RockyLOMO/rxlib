@@ -131,20 +131,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 }
             } else {
                 bootstrap = Sockets.serverBootstrap(config, this::acceptChannel);
-                if (Sockets.reusePortBindCount(config, listenAddress) > 1) {
-                    tcpChannels = Sockets.bindChannels(bootstrap.attr(SocksContext.SOCKS_SVR, this), listenAddress, config);
-                    if (onBind != null) {
-                        for (Channel channel : tcpChannels) {
-                            onBind.accept(channel);
-                        }
+                tcpChannels = Sockets.bindChannels(bootstrap.attr(SocksContext.SOCKS_SVR, this), listenAddress, config);
+                if (onBind != null) {
+                    for (Channel channel : tcpChannels) {
+                        onBind.accept(channel);
                     }
-                } else {
-                    Channel tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(listenAddress).addListener((ChannelFutureListener) f -> {
-                        if (f.isSuccess() && onBind != null) {
-                            onBind.accept(f.channel());
-                        }
-                    }).channel();
-                    tcpChannels = Collections.singletonList(tcpChannel);
                 }
             }
         }

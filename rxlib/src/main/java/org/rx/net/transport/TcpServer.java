@@ -2,7 +2,6 @@ package org.rx.net.transport;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelOption;
@@ -291,17 +290,8 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
             pipeline.addLast(new ClientImpl(this));
         }).option(ChannelOption.SO_REUSEADDR, true);
         InetSocketAddress bindAddress = Sockets.newAnyEndpoint(config.getListenPort());
-        if (Sockets.reusePortBindCount(config, bindAddress) > 1) {
-            serverChannels = Sockets.bindChannels(bootstrap, bindAddress, config);
-            serverChannel = serverChannels.get(0);
-        } else {
-            ChannelFuture bindFuture = bootstrap.bind(config.getListenPort()).syncUninterruptibly();
-            if (!bindFuture.isSuccess()) {
-                throw new InvalidException("Server bind {} failed: {}", config.getListenPort(), bindFuture.cause());
-            }
-            serverChannel = bindFuture.channel();
-            serverChannels = Collections.singletonList(serverChannel);
-        }
+        serverChannels = Sockets.bindChannels(bootstrap, bindAddress, config);
+        serverChannel = serverChannels.get(0);
     }
 
     public String dumpClients() {
