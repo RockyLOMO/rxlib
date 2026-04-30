@@ -36,6 +36,9 @@ public class SocksTcpBackendRelayHandler extends ChannelInboundHandlerAdapter {
         SocksContext sc = SocksContext.ctx(outbound);
         if (cause instanceof ProxyConnectException && Strings.lastIndexOf(cause.getMessage(), "timeout") != -1) {
             log.warn("TCP RELAY {}[{}] => {} thrown\n{}", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause.getMessage());
+        } else if (cause instanceof ProxyConnectException) {
+            log.warn("TCP RELAY {}[{}] => {} proxy connect fail {}",
+                    outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause.getMessage());
         } else {
             log.warn("TCP RELAY {}[{}] => {} thrown", outbound.remoteAddress(), outbound.localAddress(), sc.inbound.remoteAddress(), cause);
         }

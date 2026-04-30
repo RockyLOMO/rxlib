@@ -21,7 +21,6 @@ HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8082}
 REQUIRED_TCP_PORTS=("${PORT}" "${HTTP_SERVER_PORT}")
 REUSE_PORT_BIND_COUNT=${REUSE_PORT_BIND_COUNT:-2}
 STARTUP_WAIT_SECONDS=${STARTUP_WAIT_SECONDS:-45}
-MIN_STARTUP_ALIVE_SECONDS=${MIN_STARTUP_ALIVE_SECONDS:-8}
 DRAIN_TIMEOUT_SECONDS=${DRAIN_TIMEOUT_SECONDS:-180}
 # 首次迁移时，旧二进制未开启 SO_REUSEPORT，新进程无法同端口绑定；允许一次兼容重启。
 REUSEPORT_MIGRATION_FALLBACK=${REUSEPORT_MIGRATION_FALLBACK:-1}
@@ -156,6 +155,14 @@ any_required_port_in_use() {
     return 1
 }
 
+all_required_ports_in_use() {
+    local port
+    for port in "${REQUIRED_TCP_PORTS[@]}"; do
+        port_in_use "${port}" || return 1
+    done
+    return 0
+}
+
 print_required_port_status() {
     local port state
     for port in "${REQUIRED_TCP_PORTS[@]}"; do
@@ -230,10 +237,12 @@ start_new_process() {
 }
 
 wait_for_new_process() {
-    local wait_count pid
+    local require_pid_ports="${1:-0}"
+    local wait_count pid log_file
 
     wait_count=0
     NEW_PID=""
+    log_file="app-${DEPLOY_ID}.out"
     while [ ${wait_count} -lt ${STARTUP_WAIT_SECONDS} ]; do
         pid=$(deploy_pids | head -1)
         if pid_alive "${pid}"; then
@@ -242,8 +251,10 @@ wait_for_new_process() {
                 NEW_PID="${pid}"
                 return 0
             fi
-            if [ ${wait_count} -ge ${MIN_STARTUP_ALIVE_SECONDS} ]; then
-                echo "${GREEN}[${LOCAL_TIME}] 新进程存活，PID: ${pid}；当前环境无法精确校验监听 PID，继续发布${NC}"
+
+            # 无旧进程场景确认全部端口已占用；并行切换时必须确认新 PID 也完成绑定。
+            if [ "${require_pid_ports}" != "1" ] && all_required_ports_in_use; then
+                echo "${GREEN}[${LOCAL_TIME}] 新进程已绑定必需端口，PID: ${pid}${NC}"
                 NEW_PID="${pid}"
                 return 0
             fi
@@ -253,8 +264,12 @@ wait_for_new_process() {
     done
 
     echo "${RED}[${LOCAL_TIME}] 新进程启动超时或已退出 deployId=${DEPLOY_ID}${NC}"
-    if [ -f "app-${DEPLOY_ID}.out" ]; then
-        tail -n 80 "app-${DEPLOY_ID}.out" || true
+    if [ "${require_pid_ports}" = "1" ]; then
+        echo "${RED}[${LOCAL_TIME}] 未确认新进程绑定全部必需端口，保留旧进程不进入 drain${NC}"
+    fi
+    print_required_port_status
+    if [ -f "${log_file}" ]; then
+        tail -n 80 "${log_file}" || true
     fi
     return 1
 }
@@ -306,11 +321,15 @@ publish_jar() {
 }
 
 publish_with_reuseport() {
-    local old_pids new_pid
+    local old_pids new_pid require_pid_ports
     old_pids=$(process_pids)
+    require_pid_ports=0
+    if [ -n "${old_pids}" ] || any_required_port_in_use; then
+        require_pid_ports=1
+    fi
     publish_jar || return 1
     start_new_process
-    wait_for_new_process || return 1
+    wait_for_new_process "${require_pid_ports}" || return 1
     new_pid="${NEW_PID}"
     signal_drain_old_processes "${old_pids}" "${new_pid}"
     echo "${GREEN}[${LOCAL_TIME}] 发布完成，新进程 PID: ${new_pid}${NC}"
@@ -342,11 +361,15 @@ start_if_absent() {
 }
 
 rollback_release() {
-    local old_pids new_pid
+    local old_pids new_pid require_pid_ports
     old_pids=$(process_pids)
+    require_pid_ports=0
+    if [ -n "${old_pids}" ] || any_required_port_in_use; then
+        require_pid_ports=1
+    fi
     restore_latest_jar || return 1
     start_new_process
-    wait_for_new_process || return 1
+    wait_for_new_process "${require_pid_ports}" || return 1
     new_pid="${NEW_PID}"
     signal_drain_old_processes "${old_pids}" "${new_pid}"
     echo "${GREEN}[${LOCAL_TIME}] 回滚完成，新进程 PID: ${new_pid}${NC}"
