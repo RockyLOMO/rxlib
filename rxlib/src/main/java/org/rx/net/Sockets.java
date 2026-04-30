@@ -342,8 +342,8 @@ public final class Sockets {
                 return 1;
             }
         }
-        int bindCount = config == null ? 1 : config.getReusePortBindCount();
-        if (bindCount == 1) {
+        int bindCount = config == null ? -1 : config.getReusePortBindCount();
+        if (bindCount < 0) {
             bindCount = RxConfig.INSTANCE.getNet().getReusePortBindCount();
         }
         if (bindCount == 0) {

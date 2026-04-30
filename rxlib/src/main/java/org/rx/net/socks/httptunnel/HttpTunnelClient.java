@@ -17,6 +17,7 @@ import org.rx.net.http.HttpClientConfig;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -54,6 +55,7 @@ public class HttpTunnelClient extends Disposable {
     final HttpTunnelConfig config;
     final ServerBootstrap serverBootstrap;
     final Channel serverChannel;
+    final List<Channel> serverChannels;
     final HttpClient httpClient;
     final java.util.concurrent.ExecutorService clientExecutor = java.util.concurrent.Executors.newCachedThreadPool();
     final ConcurrentHashMap<Integer, TunnelConnection> connections = new ConcurrentHashMap<>();
@@ -76,14 +78,17 @@ public class HttpTunnelClient extends Disposable {
                     .addLast(new Socks5CommandRequestDecoder())
                     .addLast(new Socks5CommandHandler());
         });
-        serverChannel = serverBootstrap.bind(Sockets.newAnyEndpoint(config.getListenPort())).channel();
+        serverChannels = Sockets.bindChannels(serverBootstrap, Sockets.newAnyEndpoint(config.getListenPort()), config);
+        serverChannel = serverChannels.get(0);
 
         log.info("HttpTunnel client started, SOCKS5 port={}, tunnel={}", config.getListenPort(), config.getTunnelUrl());
     }
 
     @Override
     protected void dispose() {
-        Sockets.closeOnFlushed(serverChannel);
+        for (Channel channel : serverChannels) {
+            Sockets.closeOnFlushed(channel);
+        }
         Sockets.closeBootstrap(serverBootstrap);
         for (TunnelConnection conn : connections.values()) {
             conn.active = false;

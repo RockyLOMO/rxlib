@@ -26,7 +26,6 @@ import org.rx.net.Sockets;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -373,11 +372,7 @@ public class HttpServer extends Disposable {
                     new ServerHandler());
         });
         InetSocketAddress bindAddress = Sockets.newAnyEndpoint(port);
-        if (Sockets.reusePortBindCount(null, bindAddress) > 1) {
-            serverChannels = Sockets.bindChannels(serverBootstrap, bindAddress, null);
-        } else {
-            serverChannels = Collections.singletonList(serverBootstrap.bind(port).syncUninterruptibly().channel());
-        }
+        serverChannels = Sockets.bindChannels(serverBootstrap, bindAddress, null);
     }
 
     @Override

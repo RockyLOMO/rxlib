@@ -35,9 +35,10 @@ public class SocketConfig implements Serializable {
      * 仅在通过 {@link org.rx.net.Sockets#bindChannels(io.netty.bootstrap.ServerBootstrap, java.net.SocketAddress, SocketConfig)}
      * 或 {@link org.rx.net.Sockets#bindChannels(io.netty.bootstrap.Bootstrap, java.net.SocketAddress, SocketConfig)}
      * 绑定固定 Inet 端口时生效。
-     * 0 表示按 Sockets 推荐值自动选择；1 表示不启用；大于 1 表示显式指定 bind 数。
+     * -1 表示未设置，使用 RxConfig 全局值；0 表示按 Sockets 推荐值自动选择；
+     * 1 表示不启用；大于 1 表示显式指定 bind 数。
      */
-    private int reusePortBindCount = 1;
+    private int reusePortBindCount = -1;
     /**
      * TCP zlib 压缩级别。
      * -1 表示保持 Netty 默认值，其余取值范围为 [0, 9]。
@@ -68,7 +69,7 @@ public class SocketConfig implements Serializable {
     }
 
     public void setReusePortBindCount(int reusePortBindCount) {
-        this.reusePortBindCount = Math.max(0, reusePortBindCount);
+        this.reusePortBindCount = Math.max(-1, reusePortBindCount);
     }
 
     public SocketConfig() {

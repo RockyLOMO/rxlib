@@ -23,7 +23,6 @@ import org.rx.util.IdGenerator;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -264,16 +263,10 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         maxFragmentCount = resolved.getMaxFragmentCount();
         bootstrap = Sockets.udpBootstrap(resolved, ch -> ch.pipeline().addLast(HANDLER));
         InetSocketAddress bindAddress = Sockets.newAnyEndpoint(bindPort);
-        if (Sockets.reusePortBindCount(resolved, bindAddress) > 1) {
-            channels = Sockets.bindChannels(bootstrap, bindAddress, resolved);
-            channel = channels.get(0);
-            for (Channel ch : channels) {
-                ch.attr(OWNER).set(this);
-            }
-        } else {
-            channel = bootstrap.bind(bindPort).syncUninterruptibly().channel();
-            channel.attr(OWNER).set(this);
-            channels = Collections.singletonList(channel);
+        channels = Sockets.bindChannels(bootstrap, bindAddress, resolved);
+        channel = channels.get(0);
+        for (Channel ch : channels) {
+            ch.attr(OWNER).set(this);
         }
         localEndpoint = connectableLocalEndpoint((InetSocketAddress) channel.localAddress());
     }

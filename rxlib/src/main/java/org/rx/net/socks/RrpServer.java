@@ -119,6 +119,7 @@ public class RrpServer extends Disposable {
         final ServerBootstrap remoteServer;
         final Map<String, Channel> remoteClients = new ConcurrentHashMap<>();
         final AtomicLong nextRemoteChannelId = new AtomicLong();
+        volatile List<Channel> remoteServerChannels;
         volatile Channel remoteServerChannel;
         volatile ChannelFuture bindFuture;
 
@@ -135,7 +136,14 @@ public class RrpServer extends Disposable {
         @Override
         protected void dispose() throws Throwable {
             server.unregisterProxy(this);
-            closeChannel(remoteServerChannel);
+            List<Channel> channels = remoteServerChannels;
+            if (channels != null) {
+                for (Channel channel : channels) {
+                    closeChannel(channel);
+                }
+            } else {
+                closeChannel(remoteServerChannel);
+            }
             ChannelFuture f = bindFuture;
             if (f != null && !f.isDone()) {
                 f.cancel(false);
@@ -416,6 +424,7 @@ public class RrpServer extends Disposable {
     final Map<Channel, RpClient> clients = new ConcurrentHashMap<>();
     final Map<String, RpClientProxy> proxiesByName = new ConcurrentHashMap<>();
     final Map<Integer, RpClientProxy> proxiesByPort = new ConcurrentHashMap<>();
+    final List<Channel> serverChannels;
     Channel serverChannel;
 
     public RrpServer(@NonNull RrpConfig config) {
@@ -431,12 +440,15 @@ public class RrpServer extends Disposable {
                 })
                 .attr(ATTR_SVR, this)
                 .attr(SocketConfig.ATTR_PSEUDO_SVR, true);
-        serverChannel = bootstrap.bind(config.getBindPort()).channel();
+        serverChannels = Sockets.bindChannels(bootstrap, Sockets.newAnyEndpoint(config.getBindPort()), config);
+        serverChannel = serverChannels.get(0);
     }
 
     @Override
     protected void dispose() throws Throwable {
-        closeChannel(serverChannel);
+        for (Channel channel : serverChannels) {
+            closeChannel(channel);
+        }
         for (RpClient client : clients.values()) {
             tryClose(client);
         }
@@ -504,25 +516,21 @@ public class RrpServer extends Disposable {
                 continue;
             }
 
-            ChannelFuture bindFuture = remoteBootstrap
-                    .attr(ATTR_SVR_CLI, rpClient)
-                    .attr(ATTR_SVR_PROXY, rpClientProxy)
-                    .bind(remotePort);
-            rpClientProxy.bindFuture = bindFuture;
-            bindFuture.addListener((ChannelFutureListener) f -> {
-                if (!f.isSuccess()) {
-                    log.error("RrpServer step2 {} remote Tcp bind {} fail", clientChannel, remotePort, f.cause());
-                    tryClose(rpClientProxy);
-                    return;
-                }
-
-                rpClientProxy.remoteServerChannel = f.channel();
+            try {
+                List<Channel> bindChannels = Sockets.bindChannels(remoteBootstrap
+                        .attr(ATTR_SVR_CLI, rpClient)
+                        .attr(ATTR_SVR_PROXY, rpClientProxy), Sockets.newAnyEndpoint(remotePort), config);
+                rpClientProxy.remoteServerChannels = bindChannels;
+                rpClientProxy.remoteServerChannel = bindChannels.get(0);
                 if (rpClientProxy.isClosed() || rpClient.isClosed() || !clientChannel.isActive()) {
                     tryClose(rpClientProxy);
-                    return;
+                    continue;
                 }
                 log.debug("RrpServer step2 {} remote Tcp bind {}", clientChannel, remotePort);
-            });
+            } catch (RuntimeException e) {
+                log.error("RrpServer step2 {} remote Tcp bind {} fail", clientChannel, remotePort, e);
+                tryClose(rpClientProxy);
+            }
         }
     }
 }
