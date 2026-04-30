@@ -93,7 +93,7 @@ public class RssTest extends AbstractTester {
     };
 
     @Test
-    public void acceptDrainSignal_RequiresFreshUsr2Token() throws Exception {
+    public void acceptDrainSignal_RequiresFreshUsr1Token() throws Exception {
         String oldDir = System.getProperty(RssClient.PROCESS_DRAIN_TOKEN_DIR_PROPERTY);
         String oldTtl = System.getProperty(RssClient.PROCESS_DRAIN_TOKEN_TTL_PROPERTY);
         File dir = new File(System.getProperty("java.io.tmpdir"),
@@ -104,17 +104,18 @@ public class RssTest extends AbstractTester {
             System.clearProperty(RssClient.PROCESS_DRAIN_TOKEN_TTL_PROPERTY);
 
             File token = RssClient.RssProcessControl.drainTokenFile();
+            assertTrue(!RssClient.RssProcessControl.acceptDrainSignal("SIGUSR1"));
             assertTrue(!RssClient.RssProcessControl.acceptDrainSignal("SIGUSR2"));
             assertTrue(RssClient.RssProcessControl.acceptDrainSignal("SIGTERM"));
 
             assertTrue(token.createNewFile());
-            assertTrue(RssClient.RssProcessControl.acceptDrainSignal("SIGUSR2"));
+            assertTrue(RssClient.RssProcessControl.acceptDrainSignal("SIGUSR1"));
             assertTrue(!token.exists());
 
             assertTrue(token.createNewFile());
             assertTrue(token.setLastModified(System.currentTimeMillis() - 10_000L));
             System.setProperty(RssClient.PROCESS_DRAIN_TOKEN_TTL_PROPERTY, "1");
-            assertTrue(!RssClient.RssProcessControl.acceptDrainSignal("SIGUSR2"));
+            assertTrue(!RssClient.RssProcessControl.acceptDrainSignal("SIGUSR1"));
             assertTrue(!token.exists());
         } finally {
             if (oldDir == null) {

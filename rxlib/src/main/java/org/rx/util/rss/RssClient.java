@@ -177,7 +177,7 @@ public final class RssClient {
             if (!REGISTERED.compareAndSet(false, true)) {
                 return;
             }
-            registerSignal("USR2");
+            registerSignal("USR1");
             registerSignal("TERM");
         }
 
@@ -204,7 +204,11 @@ public final class RssClient {
         }
 
         static boolean acceptDrainSignal(String reason) {
-            if (!isUsr2(reason)) {
+            if (isJvmReservedSignal(reason)) {
+                log.warn("rss drain signal {} ignored, reserved for JVM/JFR", reason);
+                return false;
+            }
+            if (!isTokenDrainSignal(reason)) {
                 return true;
             }
 
@@ -233,7 +237,11 @@ public final class RssClient {
             return true;
         }
 
-        static boolean isUsr2(String reason) {
+        static boolean isTokenDrainSignal(String reason) {
+            return "SIGUSR1".equals(reason) || "USR1".equals(reason);
+        }
+
+        static boolean isJvmReservedSignal(String reason) {
             return "SIGUSR2".equals(reason) || "USR2".equals(reason);
         }
 
