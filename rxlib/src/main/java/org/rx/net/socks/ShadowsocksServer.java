@@ -17,6 +17,7 @@ import org.rx.core.RxConfig;
 import org.rx.core.Constants;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 //@Slf4j
 public class ShadowsocksServer extends Disposable implements EventPublisher<ShadowsocksServer> {
@@ -26,8 +27,9 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
     @Getter
     final ShadowsocksConfig config;
     final ServerBootstrap bootstrap;
-    final Channel udpChannel;
+    final List<Channel> tcpChannels;
     final List<Channel> udpChannels;
+    final AtomicInteger activeChannels = new AtomicInteger();
     private static EventExecutorGroup SHARED_CRYPTO_GROUP;
 
     private static synchronized EventExecutorGroup sharedCryptoGroup() {
@@ -43,6 +45,8 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
         EventExecutorGroup cryptoGroup = config.isUseDedicatedCryptoGroup() ? sharedCryptoGroup() : null;
 
         bootstrap = Sockets.serverBootstrap(config, channel -> {
+            activeChannels.incrementAndGet();
+            channel.closeFuture().addListener(f -> activeChannels.decrementAndGet());
             ICrypto _crypto = ICrypto.get(config.getMethod(), config.getPassword());
             _crypto.setForUdp(false);
             channel.attr(ShadowsocksConfig.CIPHER).set(_crypto);
@@ -56,7 +60,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
                 channel.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
             }
         });
-        Sockets.bindChannels(bootstrap.attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
+        tcpChannels = Sockets.bindChannels(bootstrap.attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
 
         //udp server
         udpChannels = Sockets.bindChannels(Sockets.udpBootstrap(config, ctx -> {
@@ -70,11 +74,17 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
                 ctx.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
             }
         }).attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
-        udpChannel = udpChannels.get(0);
+    }
+
+    public int activeChannelCount() {
+        return activeChannels.get();
     }
 
     @Override
     protected void dispose() {
+        for (Channel channel : tcpChannels) {
+            channel.close();
+        }
         Sockets.closeBootstrap(bootstrap);
         for (Channel channel : udpChannels) {
             channel.close();

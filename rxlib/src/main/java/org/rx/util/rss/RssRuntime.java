@@ -5,6 +5,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.RandomList;
 import org.rx.core.Strings;
+import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
@@ -55,6 +56,7 @@ final class RssRuntime implements AutoCloseable {
     final RssRpcApp app;
     final Map<String, ShadowServerRef> shadowServers = new LinkedHashMap<>();
     final CopyOnWriteArrayList<UpstreamSnapshot> closingUpstreamSnapshots = new CopyOnWriteArrayList<>();
+    final AtomicBoolean drainStarted = new AtomicBoolean();
 
     SwitchingRandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new SwitchingRandomList<>();
     volatile UpstreamSnapshot upstreamSnapshot;
@@ -236,6 +238,81 @@ final class RssRuntime implements AutoCloseable {
             closeUpstreamsQuietly(snapshot);
         }
         closingUpstreamSnapshots.clear();
+    }
+
+    synchronized void beginDrainAndExit(String reason, long maxWaitMillis) {
+        if (!drainStarted.compareAndSet(false, true)) {
+            log.info("rss runtime drain already started reason={}", reason);
+            return;
+        }
+
+        long boundedWaitMillis = Math.max(0L, maxWaitMillis);
+        long deadlineMillis = System.currentTimeMillis() + boundedWaitMillis;
+        log.warn("rss runtime drain start reason={} maxWaitMillis={}", reason, boundedWaitMillis);
+        configureAutoWhiteListSchedule(null, this);
+        configureDdnsSchedule(null);
+        closeInServerQuietly(inServer);
+        closeInServerQuietly(inUdp2rawServer);
+        for (ShadowServerRef ref : shadowServers.values()) {
+            closeShadowServerQuietly(ref);
+        }
+        closeNameserverQuietly(nameserverRef);
+        closeDnsServerQuietly(dnsSvr);
+        tryClose(RssClient.rrpServer);
+        RssClient.rrpServer = null;
+        RssClient.rrpToken = null;
+        RssClient.rrpPort = null;
+        tryClose(RssClient.httpServer);
+        RssClient.httpServer = null;
+        cancelUpstreamHealthCheck(upstreamSnapshot);
+        for (UpstreamSnapshot snapshot : closingUpstreamSnapshots) {
+            cancelUpstreamHealthCheck(snapshot);
+        }
+        scheduleDrainExit(deadlineMillis);
+    }
+
+    private void scheduleDrainExit(final long deadlineMillis) {
+        Tasks.setTimeout(() -> checkDrainExit(deadlineMillis), UPSTREAM_CLOSE_CHECK_MILLIS);
+    }
+
+    private void checkDrainExit(long deadlineMillis) {
+        int active = drainActiveConnectionCount();
+        long now = System.currentTimeMillis();
+        if (active <= 0 || now >= deadlineMillis) {
+            if (active > 0) {
+                log.warn("rss runtime drain force exit activeConnections={}", active);
+            } else {
+                log.info("rss runtime drain complete");
+            }
+            closeUpstreamsQuietly(upstreamSnapshot);
+            for (UpstreamSnapshot snapshot : closingUpstreamSnapshots) {
+                closeUpstreamsQuietly(snapshot);
+            }
+            tryClose(RssClient.trafficStore);
+            RssClient.trafficStore = null;
+            System.exit(0);
+            return;
+        }
+        log.info("rss runtime drain wait activeConnections={}", active);
+        scheduleDrainExit(deadlineMillis);
+    }
+
+    int drainActiveConnectionCount() {
+        int count = activeConnectionCount(upstreamSnapshot);
+        for (UpstreamSnapshot snapshot : closingUpstreamSnapshots) {
+            count += activeConnectionCount(snapshot);
+        }
+        if (inServer != null) {
+            count += inServer.server.activeChannelCount();
+        }
+        if (inUdp2rawServer != null) {
+            count += inUdp2rawServer.server.activeChannelCount();
+        }
+        for (ShadowServerRef ref : shadowServers.values()) {
+            count += ref.server.activeChannelCount();
+            count += ref.svrSupport.activeConnectionCount();
+        }
+        return count;
     }
 
     List<UpstreamSnapshot> upstreamSnapshots() {

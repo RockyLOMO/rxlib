@@ -137,6 +137,7 @@ public final class RxConfig {
         String NET_READ_WRITE_TIMEOUT_MILLIS = "app.net.readWriteTimeoutMillis";
         String NET_POOL_MAX_SIZE = "app.net.poolMaxSize";
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
+        String NET_REUSE_PORT_BIND_COUNT = "app.net.reusePortBindCount";
         String NET_HTTP_SERVER_PORT = "app.net.http.serverPort";
         String NET_HTTP_SERVER_TLS = "app.net.http.serverTls";
         String NET_HTTP_SERVER_CERTIFICATE_PATH = "app.net.http.serverCertificatePath";
@@ -420,6 +421,7 @@ public final class RxConfig {
         int readWriteTimeoutMillis;
         int poolMaxSize;
         int poolKeepAliveSeconds;
+        int reusePortBindCount = 1;
         HttpConfig http = new HttpConfig();
 
 
@@ -737,6 +739,7 @@ public final class RxConfig {
         net.readWriteTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.NET_READ_WRITE_TIMEOUT_MILLIS, net.readWriteTimeoutMillis);
         net.poolMaxSize = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_MAX_SIZE, net.poolMaxSize);
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, net.poolKeepAliveSeconds);
+        net.reusePortBindCount = SystemPropertyUtil.getInt(ConfigNames.NET_REUSE_PORT_BIND_COUNT, net.reusePortBindCount);
         net.http.serverPort = SystemPropertyUtil.getInt(ConfigNames.NET_HTTP_SERVER_PORT, net.http.serverPort);
         net.http.serverTls = SystemPropertyUtil.getBoolean(ConfigNames.NET_HTTP_SERVER_TLS, net.http.serverTls);
         net.http.serverCertificatePath = SystemPropertyUtil.get(ConfigNames.NET_HTTP_SERVER_CERTIFICATE_PATH, net.http.serverCertificatePath);

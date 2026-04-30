@@ -43,8 +43,8 @@ public class DnsServer extends Disposable {
     static final long DEFAULT_INTERCEPTOR_BREAKER_MILLIS = 30_000L;
     final ServerBootstrap serverBootstrap;
     final DnsClient upstreamClient;
-    final Channel tcpChannel;
-    final Channel udpChannel;
+    final List<Channel> tcpChannels;
+    final List<Channel> udpChannels;
     @Setter
     int ttl = 1800;
     @Setter
@@ -144,18 +144,31 @@ public class DnsServer extends Disposable {
         upstreamClient = new DnsClient(nameServerList);
         serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new DnsTcpPortMuxHandler(this)))
                 .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient);
-        tcpChannel = serverBootstrap.bind(port).channel();
+        InetSocketAddress bindAddress = Sockets.newAnyEndpoint(port);
+        if (Sockets.reusePortBindCount(null, bindAddress) > 1) {
+            tcpChannels = Sockets.bindChannels(serverBootstrap, bindAddress, null);
+        } else {
+            tcpChannels = Collections.singletonList(serverBootstrap.bind(port).syncUninterruptibly().channel());
+        }
 
-        udpChannel = Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(
+        io.netty.bootstrap.Bootstrap udpBootstrap = Sockets.udpBootstrap(null, channel -> channel.pipeline().addLast(
                         DnsDatagramSourceHandler.DEFAULT, new DatagramDnsQueryDecoder(), new DatagramDnsResponseEncoder(), DnsHandler.DEFAULT))
-                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient)
-                .bind(port).channel();
+                .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient);
+        if (Sockets.reusePortBindCount(null, bindAddress) > 1) {
+            udpChannels = Sockets.bindChannels(udpBootstrap, bindAddress, null);
+        } else {
+            udpChannels = Collections.singletonList(udpBootstrap.bind(port).syncUninterruptibly().channel());
+        }
     }
 
     @Override
     protected void dispose() {
-        closeChannel(tcpChannel);
-        closeChannel(udpChannel);
+        for (Channel channel : tcpChannels) {
+            closeChannel(channel);
+        }
+        for (Channel channel : udpChannels) {
+            closeChannel(channel);
+        }
         upstreamClient.close();
         Sockets.closeBootstrap(serverBootstrap);
     }

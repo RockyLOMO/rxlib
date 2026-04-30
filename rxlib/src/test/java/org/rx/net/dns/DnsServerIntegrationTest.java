@@ -1,5 +1,6 @@
 package org.rx.net.dns;
 
+import io.netty.channel.Channel;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
@@ -79,8 +80,8 @@ public class DnsServerIntegrationTest extends AbstractTester {
 
         server.close();
 
-        assertFalse(server.tcpChannel.isOpen());
-        assertFalse(server.udpChannel.isOpen());
+        assertTrue(server.tcpChannels.stream().noneMatch(Channel::isOpen));
+        assertTrue(server.udpChannels.stream().noneMatch(Channel::isOpen));
         assertTrue(server.upstreamClient.isClosed());
     }
 

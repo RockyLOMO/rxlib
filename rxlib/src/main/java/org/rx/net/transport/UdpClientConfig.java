@@ -2,12 +2,11 @@ package org.rx.net.transport;
 
 import lombok.Getter;
 import lombok.Setter;
-
-import java.io.Serializable;
+import org.rx.net.SocketConfig;
 
 @Getter
 @Setter
-public class UdpClientConfig implements Serializable {
+public class UdpClientConfig extends SocketConfig {
     private static final long serialVersionUID = -8809090357842348604L;
     private UdpClientCodec codec = FuryUdpClientCodec.createDefault();
     private int waitAckTimeoutMillis = 15 * 1000;

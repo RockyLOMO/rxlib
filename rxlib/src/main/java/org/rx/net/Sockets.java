@@ -343,6 +343,9 @@ public final class Sockets {
             }
         }
         int bindCount = config == null ? 1 : config.getReusePortBindCount();
+        if (bindCount == 1) {
+            bindCount = RxConfig.INSTANCE.getNet().getReusePortBindCount();
+        }
         if (bindCount == 0) {
             int cpuThreads = Math.max(1, Constants.CPU_THREADS);
             int reactorThreadAmount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
@@ -359,18 +362,26 @@ public final class Sockets {
     public static List<Channel> bindChannels(Bootstrap bootstrap, SocketAddress bindAddress, SocketConfig config) {
         int bindCount = reusePortBindCount(config, bindAddress);
         List<Channel> channels = new ArrayList<>(bindCount);
-        for (int i = 0; i < bindCount; i++) {
-            Bootstrap bindBootstrap = i == 0 ? bootstrap : bootstrap.clone();
-            if (bindCount > 1) {
-                bindBootstrap.option(EpollChannelOption.SO_REUSEPORT, true);
-            }
-            ChannelFuture future = bindBootstrap.bind(bindAddress);
-            future.addListener((ChannelFutureListener) f -> {
-                if (!f.isSuccess()) {
-                    log.error("UDP bind {} fail", toString(bindAddress), f.cause());
+        try {
+            for (int i = 0; i < bindCount; i++) {
+                Bootstrap bindBootstrap = i == 0 ? bootstrap : bootstrap.clone();
+                if (bindCount > 1) {
+                    bindBootstrap.option(EpollChannelOption.SO_REUSEPORT, true);
                 }
-            });
-            channels.add(future.channel());
+                ChannelFuture future = bindBootstrap.bind(bindAddress);
+                future.addListener((ChannelFutureListener) f -> {
+                    if (!f.isSuccess()) {
+                        log.error("UDP bind {} fail", toString(bindAddress), f.cause());
+                    }
+                });
+                future.syncUninterruptibly();
+                channels.add(future.channel());
+            }
+        } catch (RuntimeException e) {
+            for (Channel channel : channels) {
+                channel.close();
+            }
+            throw e;
         }
         if (bindCount > 1) {
             log.info("UDP SO_REUSEPORT enabled bindAddress={} bindCount={}", toString(bindAddress), bindCount);
@@ -385,18 +396,26 @@ public final class Sockets {
     public static List<Channel> bindChannels(ServerBootstrap bootstrap, SocketAddress bindAddress, SocketConfig config) {
         int bindCount = reusePortBindCount(config, bindAddress);
         List<Channel> channels = new ArrayList<>(bindCount);
-        for (int i = 0; i < bindCount; i++) {
-            ServerBootstrap bindBootstrap = i == 0 ? bootstrap : bootstrap.clone();
-            if (bindCount > 1) {
-                bindBootstrap.option(EpollChannelOption.SO_REUSEPORT, true);
-            }
-            ChannelFuture future = bindBootstrap.bind(bindAddress);
-            future.addListener((ChannelFutureListener) f -> {
-                if (!f.isSuccess()) {
-                    log.error("TCP bind {} fail", toString(bindAddress), f.cause());
+        try {
+            for (int i = 0; i < bindCount; i++) {
+                ServerBootstrap bindBootstrap = i == 0 ? bootstrap : bootstrap.clone();
+                if (bindCount > 1) {
+                    bindBootstrap.option(EpollChannelOption.SO_REUSEPORT, true);
                 }
-            });
-            channels.add(future.channel());
+                ChannelFuture future = bindBootstrap.bind(bindAddress);
+                future.addListener((ChannelFutureListener) f -> {
+                    if (!f.isSuccess()) {
+                        log.error("TCP bind {} fail", toString(bindAddress), f.cause());
+                    }
+                });
+                future.syncUninterruptibly();
+                channels.add(future.channel());
+            }
+        } catch (RuntimeException e) {
+            for (Channel channel : channels) {
+                channel.close();
+            }
+            throw e;
         }
         if (bindCount > 1) {
             log.info("TCP SO_REUSEPORT enabled bindAddress={} bindCount={}", toString(bindAddress), bindCount);

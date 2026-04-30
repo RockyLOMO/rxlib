@@ -24,9 +24,12 @@ import org.rx.util.function.TripleAction;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 // @Slf4j
@@ -40,10 +43,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     @Getter
     final SocksConfig config;
     final ServerBootstrap bootstrap;
-    final Channel tcpChannel;
+    final List<Channel> tcpChannels;
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
+    final AtomicInteger activeChannels = new AtomicInteger();
     // 只有压缩时一定要用
     @Setter
     private PredicateFunc<UnresolvedEndpoint> cipherRouter;
@@ -52,7 +56,16 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     private Function<String, AuthResult> connectionTagResolver;
 
     public boolean isBind() {
-        return tcpChannel != null && tcpChannel.isActive();
+        for (Channel channel : tcpChannels) {
+            if (channel.isActive()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public int activeChannelCount() {
+        return activeChannels.get();
     }
 
     // public Integer getBindPort() {
@@ -96,14 +109,14 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                     memoryAddr = new LocalAddress(this.getClass());
                 }
                 bootstrap = createMemoryServer().bootstrap;
-                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(memoryAddr).syncUninterruptibly().channel();
+                tcpChannels = Collections.singletonList(bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(memoryAddr).syncUninterruptibly().channel());
             } else {
                 if (!memoryChannel.isActive()) {
                     throw new InvalidException("memoryChannel not active");
                 }
                 acceptChannel(memoryChannel);
                 bootstrap = null;
-                tcpChannel = memoryChannel;
+                tcpChannels = Collections.singletonList(memoryChannel);
             }
         } else {
             SocketAddress listenAddress = config.getListenAddress();
@@ -112,17 +125,27 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }
             if (listenAddress instanceof LocalAddress) {
                 bootstrap = createMemoryServer().bootstrap;
-                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(listenAddress).syncUninterruptibly().channel();
+                tcpChannels = Collections.singletonList(bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(listenAddress).syncUninterruptibly().channel());
                 if (onBind != null) {
-                    onBind.accept(tcpChannel);
+                    onBind.accept(tcpChannels.get(0));
                 }
             } else {
                 bootstrap = Sockets.serverBootstrap(config, this::acceptChannel);
-                tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(listenAddress).addListener((ChannelFutureListener) f -> {
-                    if (f.isSuccess() && onBind != null) {
-                        onBind.accept(f.channel());
+                if (Sockets.reusePortBindCount(config, listenAddress) > 1) {
+                    tcpChannels = Sockets.bindChannels(bootstrap.attr(SocksContext.SOCKS_SVR, this), listenAddress, config);
+                    if (onBind != null) {
+                        for (Channel channel : tcpChannels) {
+                            onBind.accept(channel);
+                        }
                     }
-                }).channel();
+                } else {
+                    Channel tcpChannel = bootstrap.attr(SocksContext.SOCKS_SVR, this).bind(listenAddress).addListener((ChannelFutureListener) f -> {
+                        if (f.isSuccess() && onBind != null) {
+                            onBind.accept(f.channel());
+                        }
+                    }).channel();
+                    tcpChannels = Collections.singletonList(tcpChannel);
+                }
             }
         }
 
@@ -171,6 +194,8 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                 .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
         channel.attr(SocksContext.SOCKS_SVR).set(this);
+        activeChannels.incrementAndGet();
+        channel.closeFuture().addListener(f -> activeChannels.decrementAndGet());
     }
 
     @Override
@@ -181,7 +206,9 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         udpRelayRegistry.clear();
         // 内存模式传入的memoryChannel不释放
         if (bootstrap != null) {
-            Sockets.closeOnFlushed(tcpChannel);
+            for (Channel channel : tcpChannels) {
+                Sockets.closeOnFlushed(channel);
+            }
         }
         Sockets.closeBootstrap(bootstrap);
     }
