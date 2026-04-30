@@ -56,6 +56,7 @@ import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
 import org.rx.util.function.TripleAction;
 
+import java.io.File;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -90,6 +91,49 @@ public class RssTest extends AbstractTester {
             add("*qq*");
         }
     };
+
+    @Test
+    public void acceptDrainSignal_RequiresFreshUsr2Token() throws Exception {
+        String oldDir = System.getProperty(RssClient.PROCESS_DRAIN_TOKEN_DIR_PROPERTY);
+        String oldTtl = System.getProperty(RssClient.PROCESS_DRAIN_TOKEN_TTL_PROPERTY);
+        File dir = new File(System.getProperty("java.io.tmpdir"),
+                "rss-drain-token-test-" + System.nanoTime());
+        assertTrue(dir.mkdirs());
+        try {
+            System.setProperty(RssClient.PROCESS_DRAIN_TOKEN_DIR_PROPERTY, dir.getAbsolutePath());
+            System.clearProperty(RssClient.PROCESS_DRAIN_TOKEN_TTL_PROPERTY);
+
+            File token = RssClient.RssProcessControl.drainTokenFile();
+            assertTrue(!RssClient.RssProcessControl.acceptDrainSignal("SIGUSR2"));
+            assertTrue(RssClient.RssProcessControl.acceptDrainSignal("SIGTERM"));
+
+            assertTrue(token.createNewFile());
+            assertTrue(RssClient.RssProcessControl.acceptDrainSignal("SIGUSR2"));
+            assertTrue(!token.exists());
+
+            assertTrue(token.createNewFile());
+            assertTrue(token.setLastModified(System.currentTimeMillis() - 10_000L));
+            System.setProperty(RssClient.PROCESS_DRAIN_TOKEN_TTL_PROPERTY, "1");
+            assertTrue(!RssClient.RssProcessControl.acceptDrainSignal("SIGUSR2"));
+            assertTrue(!token.exists());
+        } finally {
+            if (oldDir == null) {
+                System.clearProperty(RssClient.PROCESS_DRAIN_TOKEN_DIR_PROPERTY);
+            } else {
+                System.setProperty(RssClient.PROCESS_DRAIN_TOKEN_DIR_PROPERTY, oldDir);
+            }
+            if (oldTtl == null) {
+                System.clearProperty(RssClient.PROCESS_DRAIN_TOKEN_TTL_PROPERTY);
+            } else {
+                System.setProperty(RssClient.PROCESS_DRAIN_TOKEN_TTL_PROPERTY, oldTtl);
+            }
+            File token = new File(dir, "rss-drain-" + RssClient.RssProcessControl.currentProcessId() + ".token");
+            if (token.exists()) {
+                assertTrue(token.delete());
+            }
+            assertTrue(dir.delete());
+        }
+    }
 
     @Test
     public void resolveClientInListenAddress_DefaultToLocalAddress() {
