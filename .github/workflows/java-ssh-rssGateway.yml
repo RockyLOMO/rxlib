@@ -2,6 +2,15 @@ name: Build & Push to ssh - rssGateway
 # copy logback
 on:
   workflow_dispatch:    # 支持手动触发
+    inputs:
+      deploy_mode:
+        description: 发布策略：replace 替换旧进程，coexist 新老并存
+        required: true
+        default: replace
+        type: choice
+        options:
+          - replace
+          - coexist
 #  push:
 #    branches: [ rss-17 ]
 
@@ -32,6 +41,7 @@ jobs:
           echo "APP_MODULE=rxlib" >> $GITHUB_ENV
           echo "REMOTE_DIR=rss" >> $GITHUB_ENV
           echo "HEALTH_URL=cloud.f-li.cn:6899" >> $GITHUB_ENV
+          echo "DEPLOY_MODE=${{ inputs.deploy_mode || 'replace' }}" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
       - name: Build with Maven
         run: |
@@ -60,6 +70,7 @@ jobs:
           cp -f ${{ env.APP_JAR_PATH }} ./app.jar.publish
           cp deploy/${{ env.REMOTE_DIR }}/start.sh ./
           cp deploy/${{ env.REMOTE_DIR }}/rollback.sh ./
+          cp deploy/${{ env.REMOTE_DIR }}/logback.xml ./
 
       # 4. 复制 JAR 到远程服务器
       - name: Copy JAR to server
@@ -69,7 +80,7 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT }}
-          source: app.jar.publish,start.sh,rollback.sh
+          source: app.jar.publish,start.sh,rollback.sh,logback.xml
           target: /home/${{ env.REMOTE_DIR }}/
           overwrite: true
       - name: Initial Wait for Service Startup
@@ -88,10 +99,12 @@ jobs:
             cd /home/${{ env.REMOTE_DIR }}/
             chmod 755 start.sh
             chmod 755 rollback.sh
+            chmod 644 logback.xml
             echo "=== before publish ==="
             ps -ef | grep "[a]pp.jar" || true
-            bash ./start.sh publish
+            bash ./start.sh publish "${{ inputs.deploy_mode || 'replace' }}"
             echo "=== after publish ==="
+            bash ./start.sh status
             ps -ef | grep "[a]pp.jar" || true
             echo "Deployment completed"
 
@@ -131,7 +144,7 @@ jobs:
           echo "healthy=false" >> $GITHUB_OUTPUT
           exit 1
       - name: Rollback to latest on Health Check Failure
-        if: steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure'
+        if: (steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure') && (inputs.deploy_mode == 'replace')
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -143,3 +156,8 @@ jobs:
             chmod 755 rollback.sh
             ./rollback.sh
             echo "Health check failed. Rolling back to latest tag."
+      - name: Keep coexist deployment for manual check on Health Check Failure
+        if: (steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure') && (inputs.deploy_mode == 'coexist')
+        run: |
+          echo "Health check failed in coexist mode. Old process is kept; inspect app-a/app-b logs and kill the bad slot manually."
+          exit 1

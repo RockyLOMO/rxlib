@@ -24,18 +24,35 @@ STARTUP_WAIT_SECONDS=${STARTUP_WAIT_SECONDS:-45}
 DRAIN_TIMEOUT_SECONDS=${DRAIN_TIMEOUT_SECONDS:-180}
 DRAIN_TOKEN_DIR=${DRAIN_TOKEN_DIR:-.drain}
 DRAIN_TOKEN_TTL_MILLIS=${DRAIN_TOKEN_TTL_MILLIS:-120000}
-# 首次迁移时，旧二进制未开启 SO_REUSEPORT，新进程无法同端口绑定；允许一次兼容重启。
-REUSEPORT_MIGRATION_FALLBACK=${REUSEPORT_MIGRATION_FALLBACK:-1}
+MAX_LIVE_PROCESSES=${MAX_LIVE_PROCESSES:-2}
+DEPLOY_MODE=${DEPLOY_MODE:-replace}
 DEPLOY_ID=${DEPLOY_ID:-$(date +%Y%m%d_%H%M%S)_$$}
+# 明确打开才允许旧式重启；默认绝不因新进程失败而杀掉唯一旧实例。
+REUSEPORT_MIGRATION_FALLBACK=${REUSEPORT_MIGRATION_FALLBACK:-0}
+DEPLOY_SLOTS=(a b)
+if ! [[ "${MAX_LIVE_PROCESSES}" =~ ^[0-9]+$ ]] || [ "${MAX_LIVE_PROCESSES}" -lt 1 ]; then
+    MAX_LIVE_PROCESSES=2
+fi
 
 MEM_OPTIONS="-Xms2g -Xmx2g -Xss512k -XX:MaxMetaspaceSize=192m -XX:MaxDirectMemorySize=3g -XX:+UseCompressedClassPointers"
 GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
 APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.reusePortBindCount=${REUSE_PORT_BIND_COUNT} -Dapp.rss.drainMaxWaitMillis=$((DRAIN_TIMEOUT_SECONDS * 1000)) -Dapp.rss.drainTokenDir=${DRAIN_TOKEN_DIR} -Dapp.rss.drainTokenTtlMillis=${DRAIN_TOKEN_TTL_MILLIS} -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.inlandServers=192.168.31.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=false -Dapp.storage.h2Settings=CACHE_SIZE=16384;MAX_MEMORY_ROWS=4096;MAX_OPERATION_MEMORY=16384;WRITE_DELAY=200;AUTO_SERVER=TRUE -Dapp.storage.h2MaxConnections=6 -Dapp.diagnostic.h2Settings=CACHE_SIZE=4096;MAX_MEMORY_ROWS=1024;MAX_OPERATION_MEMORY=4096;WRITE_DELAY=1000;AUTO_SERVER=TRUE -Dapp.diagnostic.h2MaxConnections=2 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dio.netty.tryReflectionSetAccessible=true"
 JDK17_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
-DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${SCRIPT_DIR}/ -XX:ErrorFile=${SCRIPT_DIR}/hs_err_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED ${JDK17_MODULE_OPTS}"
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
 JAVA_PROCESS_KEYWORD="app.jar -port=${PORT}"
+
+normalize_deploy_mode() {
+    case "${1:-replace}" in
+        replace|coexist)
+            echo "${1:-replace}"
+            ;;
+        *)
+            echo "${RED}[${LOCAL_TIME}] 无效发布策略 '${1}'，只支持 replace/coexist${NC}" >&2
+            return 1
+            ;;
+    esac
+}
 
 next_backup_file() {
     local ts index backup_file
@@ -118,6 +135,108 @@ pid_alive() {
     [ -n "${pid}" ] && kill -0 "${pid}" >/dev/null 2>&1
 }
 
+pid_args() {
+    local pid="$1"
+    ps -o args= -p "${pid}" 2>/dev/null || true
+}
+
+pid_slot() {
+    local pid="$1" slot
+    slot=$(pid_args "${pid}" | sed -n 's/.*-Dapp\.deploy\.slot=\([^ ]*\).*/\1/p' | head -1)
+    if [ -z "${slot}" ]; then
+        echo "legacy"
+    else
+        echo "${slot}"
+    fi
+}
+
+pid_deploy_id() {
+    local pid="$1"
+    pid_args "${pid}" | sed -n 's/.*-Dapp\.deploy\.id=\([^ ]*\).*/\1/p' | head -1
+}
+
+pid_elapsed_seconds() {
+    local pid="$1" elapsed
+    elapsed=$(ps -o etimes= -p "${pid}" 2>/dev/null | awk '{print $1}')
+    echo "${elapsed:-0}"
+}
+
+process_infos() {
+    local pid slot elapsed deploy_id
+    process_pids | while IFS= read -r pid; do
+        [ -z "${pid}" ] && continue
+        pid_alive "${pid}" || continue
+        slot=$(pid_slot "${pid}")
+        elapsed=$(pid_elapsed_seconds "${pid}")
+        deploy_id=$(pid_deploy_id "${pid}")
+        [ -z "${deploy_id}" ] && deploy_id="-"
+        echo "${elapsed} ${pid} ${slot} ${deploy_id}"
+    done | sort -rn
+}
+
+process_count() {
+    local infos
+    infos=$(process_infos)
+    if [ -z "${infos}" ]; then
+        echo 0
+    else
+        printf '%s\n' "${infos}" | wc -l | awk '{print $1}'
+    fi
+}
+
+oldest_process_pid() {
+    process_infos | awk 'NR==1 {print $2}'
+}
+
+print_process_status() {
+    local infos
+    infos=$(process_infos)
+    if [ -z "${infos}" ]; then
+        echo "${YELLOW}[${LOCAL_TIME}] 当前无匹配 app.jar 进程${NC}"
+        return 0
+    fi
+
+    echo "${YELLOW}[${LOCAL_TIME}] 当前进程（oldest first）:${NC}"
+    printf '%s\n' "${infos}" | while read -r elapsed pid slot deploy_id; do
+        echo "  pid=${pid} slot=${slot} elapsed=${elapsed}s deployId=${deploy_id}"
+    done
+}
+
+slot_in_use() {
+    local expected="$1"
+    process_infos | awk -v slot="${expected}" '$3 == slot {found=1} END {exit found ? 0 : 1}'
+}
+
+free_slot() {
+    local slot
+    for slot in "${DEPLOY_SLOTS[@]}"; do
+        if ! slot_in_use "${slot}"; then
+            echo "${slot}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+slot_log_file() {
+    local slot="$1"
+    echo "app-${slot}.out"
+}
+
+build_dump_opts() {
+    local slot="$1" heap_dir
+    heap_dir="${SCRIPT_DIR}/heapdump-${slot}"
+    mkdir -p "${heap_dir}" >/dev/null 2>&1 || true
+    echo "-Xlog:gc*,gc+age=trace,safepoint:file=./gc-${slot}.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${heap_dir} -XX:ErrorFile=${SCRIPT_DIR}/hs_err_${slot}_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED ${JDK17_MODULE_OPTS}"
+}
+
+build_logback_opts() {
+    local slot="$1"
+    if [ -f "${SCRIPT_DIR}/logback.xml" ]; then
+        echo "-Dlogback.configurationFile=${SCRIPT_DIR}/logback.xml -DAPP_LOG_SLOT=${slot}"
+    fi
+}
+
 port_in_use() {
     local port="${1:-$PORT}"
     if command -v ss >/dev/null 2>&1; then
@@ -132,10 +251,16 @@ port_in_use() {
 pid_listens_on() {
     local pid="$1"
     local port="$2"
-    if ! command -v ss >/dev/null 2>&1; then
-        return 1
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltnp 2>/dev/null | grep -F "pid=${pid}," | awk '{print $4}' | grep -Eq "(^|:)${port}$" && return 0
     fi
-    ss -ltnp 2>/dev/null | grep -F "pid=${pid}," | awk '{print $4}' | grep -Eq "(^|:)${port}$"
+    if command -v netstat >/dev/null 2>&1; then
+        netstat -ltnp 2>/dev/null | grep -E "[ /]${pid}/" | awk '{print $4}' | grep -Eq "(^|:)${port}$" && return 0
+    fi
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -Pan -p "${pid}" -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {found=1} END {exit found ? 0 : 1}' && return 0
+    fi
+    return 1
 }
 
 pid_listens_required_ports() {
@@ -157,14 +282,6 @@ any_required_port_in_use() {
     return 1
 }
 
-all_required_ports_in_use() {
-    local port
-    for port in "${REQUIRED_TCP_PORTS[@]}"; do
-        port_in_use "${port}" || return 1
-    done
-    return 0
-}
-
 print_required_port_status() {
     local port state
     for port in "${REQUIRED_TCP_PORTS[@]}"; do
@@ -174,113 +291,6 @@ print_required_port_status() {
         fi
         echo "${YELLOW}[${LOCAL_TIME}] port ${port}/tcp ${state}${NC}"
     done
-}
-
-kill_by_pattern() {
-    local signal="$1"
-    local pid_list pid
-
-    pid_list=$(process_pids)
-    [ -z "${pid_list}" ] && return 0
-
-    while IFS= read -r pid; do
-        [ -n "${pid}" ] && kill "${signal}" "${pid}" >/dev/null 2>&1 || true
-    done <<EOF
-${pid_list}
-EOF
-}
-
-process_exists() {
-    [ -n "$(process_pids)" ]
-}
-
-get_process_pid() {
-    process_pids | head -1
-}
-
-stop_old_process() {
-    local wait_count
-
-    if process_exists; then
-        echo "${YELLOW}[${LOCAL_TIME}] 检测到残留进程，按命令行补充终止...${NC}"
-        kill_by_pattern "-15"
-    fi
-
-    wait_count=0
-    while [ ${wait_count} -lt 15 ]; do
-        if ! any_required_port_in_use && ! process_exists; then
-            echo "${GREEN}[${LOCAL_TIME}] 旧进程已完全退出${NC}"
-            return 0
-        fi
-        sleep 1
-        wait_count=$((wait_count + 1))
-    done
-
-    if process_exists || any_required_port_in_use; then
-        echo "${YELLOW}[${LOCAL_TIME}] 旧进程未在超时内退出，执行强制终止...${NC}"
-        kill_by_pattern "-9"
-        sleep 1
-    fi
-
-    if process_exists || any_required_port_in_use; then
-        echo "${RED}[${LOCAL_TIME}] 旧进程仍未退出，请检查权限或手动处理${NC}"
-        print_required_port_status
-        return 1
-    fi
-    echo "${GREEN}[${LOCAL_TIME}] 旧进程已强制终止${NC}"
-    return 0
-}
-
-start_new_process() {
-    local log_file
-    log_file="app-${DEPLOY_ID}.out"
-    echo "${YELLOW}[${LOCAL_TIME}] 正在启动新进程 deployId=${DEPLOY_ID}, log=${log_file}${NC}"
-    nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dapp.deploy.id="${DEPLOY_ID}" -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -udp2raw=1 >"${log_file}" 2>&1 &
-}
-
-wait_for_new_process() {
-    local require_pid_ports="${1:-0}"
-    local wait_count pid log_file
-
-    wait_count=0
-    NEW_PID=""
-    log_file="app-${DEPLOY_ID}.out"
-    while [ ${wait_count} -lt ${STARTUP_WAIT_SECONDS} ]; do
-        pid=$(deploy_pids | head -1)
-        if pid_alive "${pid}"; then
-            if pid_listens_required_ports "${pid}"; then
-                echo "${GREEN}[${LOCAL_TIME}] 新进程已绑定必需端口，PID: ${pid}${NC}"
-                NEW_PID="${pid}"
-                return 0
-            fi
-
-            # 无旧进程场景确认全部端口已占用；并行切换时必须确认新 PID 也完成绑定。
-            if [ "${require_pid_ports}" != "1" ] && all_required_ports_in_use; then
-                echo "${GREEN}[${LOCAL_TIME}] 新进程已绑定必需端口，PID: ${pid}${NC}"
-                NEW_PID="${pid}"
-                return 0
-            fi
-        fi
-        sleep 1
-        wait_count=$((wait_count + 1))
-    done
-
-    echo "${RED}[${LOCAL_TIME}] 新进程启动超时或已退出 deployId=${DEPLOY_ID}${NC}"
-    if [ "${require_pid_ports}" = "1" ]; then
-        echo "${RED}[${LOCAL_TIME}] 未确认新进程绑定全部必需端口，保留旧进程不进入 drain${NC}"
-    fi
-    print_required_port_status
-    if [ -f "${log_file}" ]; then
-        tail -n 80 "${log_file}" || true
-    fi
-    return 1
-}
-
-last_start_looks_first_migration_conflict() {
-    local log_file
-    log_file="app-${DEPLOY_ID}.out"
-    [ -f "${log_file}" ] || return 1
-    grep -Eiq "Address already in use|BindException|EADDRINUSE|bind .*fail|bind .*failed|Database may be already in use|database is already in use|Locked by another process|File lock|JdbcSQLNonTransientConnectionException" "${log_file}"
 }
 
 write_drain_token() {
@@ -300,6 +310,48 @@ write_drain_token() {
     } >"${tmp_file}" || return 1
     chmod 600 "${tmp_file}" >/dev/null 2>&1 || true
     mv -f "${tmp_file}" "${token_file}"
+}
+
+wait_pid_exit() {
+    local pid="$1"
+    local timeout="$2"
+    local waited
+    waited=0
+    while [ ${waited} -lt "${timeout}" ]; do
+        if ! pid_alive "${pid}"; then
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    return 1
+}
+
+drain_process_and_wait() {
+    local pid="$1"
+    local new_pid="${2:-}"
+    local reason="${3:-旧进程}"
+
+    if [ -z "${pid}" ] || ! pid_alive "${pid}"; then
+        return 0
+    fi
+
+    echo "${YELLOW}[${LOCAL_TIME}] 通知${reason}进入 drain，PID: ${pid}${NC}"
+    if write_drain_token "${pid}" "${new_pid}"; then
+        kill -USR2 "${pid}" >/dev/null 2>&1 || kill -15 "${pid}" >/dev/null 2>&1 || true
+    else
+        echo "${RED}[${LOCAL_TIME}] 写入 drain token 失败，改用 TERM，PID: ${pid}${NC}"
+        kill -15 "${pid}" >/dev/null 2>&1 || true
+    fi
+
+    if wait_pid_exit "${pid}" "$((DRAIN_TIMEOUT_SECONDS + 5))"; then
+        echo "${GREEN}[${LOCAL_TIME}] ${reason}已退出，PID: ${pid}${NC}"
+        return 0
+    fi
+
+    echo "${YELLOW}[${LOCAL_TIME}] ${reason}未在 drain 超时内退出，执行 KILL，PID: ${pid}${NC}"
+    kill -9 "${pid}" >/dev/null 2>&1 || true
+    wait_pid_exit "${pid}" 5
 }
 
 signal_drain_old_processes() {
@@ -331,6 +383,86 @@ EOF
     fi
 }
 
+cleanup_candidate_process() {
+    local pid_list pid
+    pid_list=$(deploy_pids)
+    [ -z "${pid_list}" ] && return 0
+
+    echo "${YELLOW}[${LOCAL_TIME}] 清理启动失败的候选进程 deployId=${DEPLOY_ID}${NC}"
+    while IFS= read -r pid; do
+        [ -z "${pid}" ] && continue
+        kill -15 "${pid}" >/dev/null 2>&1 || true
+    done <<EOF
+${pid_list}
+EOF
+    sleep 2
+    while IFS= read -r pid; do
+        [ -z "${pid}" ] && continue
+        pid_alive "${pid}" && kill -9 "${pid}" >/dev/null 2>&1 || true
+    done <<EOF
+${pid_list}
+EOF
+}
+
+prepare_capacity_for_new_process() {
+    local count oldest_pid oldest_slot
+    count=$(process_count)
+    while [ "${count}" -ge "${MAX_LIVE_PROCESSES}" ]; do
+        oldest_pid=$(oldest_process_pid)
+        oldest_slot=$(pid_slot "${oldest_pid}")
+        echo "${YELLOW}[${LOCAL_TIME}] 当前已有 ${count} 个进程，先替换最旧进程 PID=${oldest_pid}, slot=${oldest_slot}${NC}"
+        drain_process_and_wait "${oldest_pid}" "" "最旧进程" || return 1
+        count=$(process_count)
+    done
+}
+
+start_new_process() {
+    local slot="$1"
+    local log_file dump_opts logback_opts
+    NEW_SLOT="${slot}"
+    log_file=$(slot_log_file "${slot}")
+    dump_opts=$(build_dump_opts "${slot}")
+    logback_opts=$(build_logback_opts "${slot}")
+    mkdir -p logs >/dev/null 2>&1 || true
+    echo "${YELLOW}[${LOCAL_TIME}] 正在启动新进程 deployId=${DEPLOY_ID}, slot=${slot}, stdout=${log_file}${NC}"
+    nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${dump_opts} ${logback_opts} -Dapp.deploy.id="${DEPLOY_ID}" -Dapp.deploy.slot="${slot}" -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -udp2raw=1 >"${log_file}" 2>&1 &
+}
+
+wait_for_new_process() {
+    local wait_count pid log_file
+
+    wait_count=0
+    NEW_PID=""
+    log_file=$(slot_log_file "${NEW_SLOT}")
+    while [ ${wait_count} -lt ${STARTUP_WAIT_SECONDS} ]; do
+        pid=$(deploy_pids | head -1)
+        if pid_alive "${pid}"; then
+            if pid_listens_required_ports "${pid}"; then
+                echo "${GREEN}[${LOCAL_TIME}] 新进程已绑定全部必需端口，PID: ${pid}, slot=${NEW_SLOT}${NC}"
+                NEW_PID="${pid}"
+                return 0
+            fi
+        fi
+        sleep 1
+        wait_count=$((wait_count + 1))
+    done
+
+    echo "${RED}[${LOCAL_TIME}] 新进程启动失败：未确认 PID 绑定全部必需端口 deployId=${DEPLOY_ID}, slot=${NEW_SLOT}${NC}"
+    print_required_port_status
+    if [ -f "${log_file}" ]; then
+        tail -n 100 "${log_file}" || true
+    fi
+    cleanup_candidate_process
+    return 1
+}
+
+last_start_looks_first_migration_conflict() {
+    local log_file
+    log_file=$(slot_log_file "${NEW_SLOT:-a}")
+    [ -f "${log_file}" ] || return 1
+    grep -Eiq "Address already in use|BindException|EADDRINUSE|bind .*fail|bind .*failed|Database may be already in use|database is already in use|Locked by another process|File lock|JdbcSQLNonTransientConnectionException" "${log_file}"
+}
+
 publish_jar() {
     if [ ! -f "app.jar.publish" ]; then
         echo "${YELLOW}[${LOCAL_TIME}] 未找到 app.jar.publish，仅执行启动/切换逻辑${NC}"
@@ -345,78 +477,106 @@ publish_jar() {
     sleep 1
 }
 
-publish_with_reuseport() {
-    local old_pids new_pid require_pid_ports
-    old_pids=$(process_pids)
-    require_pid_ports=0
-    if [ -n "${old_pids}" ] || any_required_port_in_use; then
-        require_pid_ports=1
+select_start_slot() {
+    local slot
+    slot=$(free_slot)
+    if [ -n "${slot}" ]; then
+        echo "${slot}"
+        return 0
     fi
-    publish_jar || return 1
-    start_new_process
-    wait_for_new_process "${require_pid_ports}" || return 1
+    echo "${RED}[${LOCAL_TIME}] 无可用发布槽位，请先检查残留进程${NC}" >&2
+    return 1
+}
+
+start_release() {
+    local mode="$1"
+    local label="$2"
+    local old_pids new_pid start_slot
+
+    mode=$(normalize_deploy_mode "${mode}") || return 1
+    prepare_capacity_for_new_process || return 1
+    old_pids=$(process_pids)
+    start_slot=$(select_start_slot) || return 1
+    start_new_process "${start_slot}"
+    wait_for_new_process || return 1
     new_pid="${NEW_PID}"
-    signal_drain_old_processes "${old_pids}" "${new_pid}"
-    echo "${GREEN}[${LOCAL_TIME}] 发布完成，新进程 PID: ${new_pid}${NC}"
+
+    if [ "${mode}" = "replace" ]; then
+        signal_drain_old_processes "${old_pids}" "${new_pid}"
+        echo "${GREEN}[${LOCAL_TIME}] ${label}完成：replace，新进程 PID=${new_pid}, slot=${start_slot}${NC}"
+    else
+        echo "${GREEN}[${LOCAL_TIME}] ${label}完成：coexist，新进程 PID=${new_pid}, slot=${start_slot}；旧进程保留用于人工验证${NC}"
+    fi
+    print_process_status
+}
+
+publish_release() {
+    local mode="$1"
+    publish_jar || return 1
+    start_release "${mode}" "发布"
 }
 
 publish_with_legacy_restart() {
-    echo "${YELLOW}[${LOCAL_TIME}] 同端口并行启动失败，执行首次迁移兼容重启${NC}"
-    stop_old_process || return 1
+    local slot
+    echo "${YELLOW}[${LOCAL_TIME}] 同端口并行启动失败，执行显式开启的首次迁移兼容重启${NC}"
+    slot=$(select_start_slot) || slot="a"
+    while IFS= read -r pid; do
+        drain_process_and_wait "${pid}" "" "兼容迁移旧进程" || return 1
+    done <<EOF
+$(process_pids)
+EOF
     DEPLOY_ID="${DEPLOY_ID}_legacy"
-    start_new_process
+    start_new_process "${slot}"
     wait_for_new_process || return 1
 }
 
 start_if_absent() {
-    local pid
-    if any_required_port_in_use || process_exists; then
-        pid=$(get_process_pid)
+    local start_slot
+    if process_pids | grep -q .; then
         print_required_port_status
-        if [ -n "${pid}" ]; then
-            echo "${GREEN}[${LOCAL_TIME}] ${PORT}/tcp 已运行，PID: ${pid}${NC}"
-            return 0
-        fi
+        print_process_status
+        return 0
+    fi
+    if any_required_port_in_use; then
+        print_required_port_status
         echo "${RED}[${LOCAL_TIME}] 必需端口被占用，但未找到匹配进程，请手动检查占用者${NC}"
         return 1
     fi
 
-    start_new_process
+    start_slot=$(select_start_slot) || return 1
+    start_new_process "${start_slot}"
     wait_for_new_process
 }
 
 rollback_release() {
-    local old_pids new_pid require_pid_ports
-    old_pids=$(process_pids)
-    require_pid_ports=0
-    if [ -n "${old_pids}" ] || any_required_port_in_use; then
-        require_pid_ports=1
-    fi
     restore_latest_jar || return 1
-    start_new_process
-    wait_for_new_process "${require_pid_ports}" || return 1
-    new_pid="${NEW_PID}"
-    signal_drain_old_processes "${old_pids}" "${new_pid}"
-    echo "${GREEN}[${LOCAL_TIME}] 回滚完成，新进程 PID: ${new_pid}${NC}"
+    start_release "replace" "回滚"
 }
 
 usage() {
-    echo "用法: $0 [publish|start|rollback]"
-    echo "  publish  : 发布模式，优先 SO_REUSEPORT 新旧进程并行切换"
-    echo "  start    : 启动模式，不存在则启动"
-    echo "  rollback : 回滚到 app.jar.latest，并并行切换"
+    echo "用法: $0 [publish|start|rollback|status] [replace|coexist]"
+    echo "  publish [replace] : 发布并替换旧进程；新进程端口确认失败时不动旧进程"
+    echo "  publish coexist   : 发布并保留旧进程；最多保留 ${MAX_LIVE_PROCESSES} 个进程，满员先替换最旧进程"
+    echo "  start             : 不存在匹配进程时启动"
+    echo "  rollback          : 回滚到 app.jar.latest，并按 replace 策略切换"
+    echo "  status            : 查看当前进程与端口状态"
     exit 1
 }
 
-if [ $# -ne 1 ]; then
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
     usage
 fi
 
 ACTION="$1"
+if [ $# -eq 2 ]; then
+    DEPLOY_MODE="$2"
+fi
+
 case "${ACTION}" in
     publish)
-        echo "${YELLOW}[${LOCAL_TIME}] 发布模式：SO_REUSEPORT=${REUSE_PORT_BIND_COUNT}, drain=${DRAIN_TIMEOUT_SECONDS}s${NC}"
-        if ! publish_with_reuseport; then
+        DEPLOY_MODE=$(normalize_deploy_mode "${DEPLOY_MODE}") || exit 1
+        echo "${YELLOW}[${LOCAL_TIME}] 发布模式：mode=${DEPLOY_MODE}, SO_REUSEPORT=${REUSE_PORT_BIND_COUNT}, maxLive=${MAX_LIVE_PROCESSES}, drain=${DRAIN_TIMEOUT_SECONDS}s${NC}"
+        if ! publish_release "${DEPLOY_MODE}"; then
             if [ "${REUSEPORT_MIGRATION_FALLBACK}" = "1" ] && last_start_looks_first_migration_conflict; then
                 publish_with_legacy_restart || exit 1
             else
@@ -431,6 +591,10 @@ case "${ACTION}" in
     rollback)
         echo "${YELLOW}[${LOCAL_TIME}] 回滚模式：恢复 app.jar.latest 并切换${NC}"
         rollback_release || exit 1
+        ;;
+    status)
+        print_required_port_status
+        print_process_status
         ;;
     *)
         echo "错误：无效参数 '${ACTION}'"
