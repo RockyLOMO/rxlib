@@ -270,7 +270,8 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         // http://www.h2database.com/html/commands.html#set_cache_size
         String h2Settings = ifNull(this.h2Settings, RxConfig.INSTANCE.getStorage().getH2Settings());
         h2Settings = ifNull(h2Settings, "");
-        String jdbcUrl = jdbcUrlMode ? filePath : String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;TRACE_LEVEL_FILE=0;MODE=MySQL;", filePath) + h2Settings;
+        String closeOnExit = h2Settings.toUpperCase(Locale.ENGLISH).contains("AUTO_SERVER=TRUE") ? "" : "DB_CLOSE_ON_EXIT=FALSE;";
+        String jdbcUrl = jdbcUrlMode ? filePath : String.format("jdbc:h2:%s;DB_CLOSE_DELAY=-1;%sTRACE_LEVEL_FILE=0;MODE=MySQL;", filePath, closeOnExit) + h2Settings;
         log.info("h2Settings: {}", jdbcUrlMode ? "<custom-jdbc-url>" : h2Settings);
         JdbcConnectionPool pool = JdbcConnectionPool.create(jdbcUrl, null, null);
         pool.setMaxConnections(maxConnections);
