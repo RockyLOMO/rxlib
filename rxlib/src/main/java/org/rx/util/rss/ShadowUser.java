@@ -11,6 +11,7 @@ import org.rx.net.socks.TrafficUser;
 
 import java.io.Serializable;
 import java.net.InetAddress;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,6 +27,8 @@ public class ShadowUser implements Serializable, TrafficUser {
     String username;
     // 内部转发仍复用少量 socks 用户，统计与公网 IP 限制挂在外部 SS 用户上。
     String socksUser;
+    // 为空表示使用全局 socksServers；非空时只使用这些上游 id。
+    List<String> socksServers;
     int ipLimit = -1;
     DateTime lastResetTime;
     final Map<InetAddress, TrafficLoginInfo> loginIps = new ConcurrentHashMap<>(4);

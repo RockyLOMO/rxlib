@@ -309,7 +309,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     }
 
     private static void appendUpstreamRows(List<Map<String, Object>> rows, String type, RssRuntime.UpstreamSnapshot snapshot,
-                                           RandomList<UpstreamSupport> servers, List<AuthenticEndpoint> configuredEndpoints,
+                                           RandomList<UpstreamSupport> servers, List<?> configuredEndpoints,
                                            long now, int snapshotActiveConnections) {
         List<UpstreamSupport> supports = servers == null ? Collections.<UpstreamSupport>emptyList() : servers.readOnlySnapshot();
         if ((configuredEndpoints == null || configuredEndpoints.isEmpty()) && supports.isEmpty()) {
@@ -317,7 +317,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         }
         if (configuredEndpoints == null || configuredEndpoints.isEmpty()) {
             for (UpstreamSupport support : supports) {
-                appendUpstreamRow(rows, type, snapshot, servers, support == null ? null : support.getEndpoint(),
+                appendUpstreamRow(rows, type, snapshot, servers, null, support == null ? null : support.getEndpoint(),
                         support, now, snapshotActiveConnections);
             }
             return;
@@ -329,18 +329,20 @@ public class RssClientHttpHandler implements HttpServer.Handler {
                 supportByEndpoint.put(support.getEndpoint(), support);
             }
         }
-        for (AuthenticEndpoint endpoint : configuredEndpoints) {
-            appendUpstreamRow(rows, type, snapshot, servers, endpoint, supportByEndpoint.remove(endpoint),
+        for (Object configuredEndpoint : configuredEndpoints) {
+            AuthenticEndpoint endpoint = configuredEndpoint(configuredEndpoint);
+            appendUpstreamRow(rows, type, snapshot, servers, configuredEndpointId(configuredEndpoint),
+                    endpoint, supportByEndpoint.remove(endpoint),
                     now, snapshotActiveConnections);
         }
         for (UpstreamSupport support : supportByEndpoint.values()) {
-            appendUpstreamRow(rows, type, snapshot, servers, support == null ? null : support.getEndpoint(),
+            appendUpstreamRow(rows, type, snapshot, servers, null, support == null ? null : support.getEndpoint(),
                     support, now, snapshotActiveConnections);
         }
     }
 
     private static void appendUpstreamRow(List<Map<String, Object>> rows, String type, RssRuntime.UpstreamSnapshot snapshot,
-                                          RandomList<UpstreamSupport> servers, AuthenticEndpoint endpoint,
+                                          RandomList<UpstreamSupport> servers, String id, AuthenticEndpoint endpoint,
                                           UpstreamSupport support, long now, int snapshotActiveConnections) {
         boolean healthy = support != null && support.isHealthy();
         int configuredWeight = support == null ? RssClient.weightOf(endpoint) : support.getConfiguredWeight();
@@ -348,6 +350,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         int currentWeight = support == null ? 0 : currentWeight(servers, support);
         LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
         row.put("type", type);
+        row.put("id", Strings.isEmpty(id) ? "-" : id);
         row.put("state", upstreamState(snapshot));
         row.put("endpoint", formatEndpoint(support == null ? endpoint : support.getEndpoint()));
         row.put("health", upstreamHealth(support, configuredWeight));
@@ -359,6 +362,17 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         row.put("releaseWait", releaseWait(snapshot, now, snapshotActiveConnections));
         row.put("rpc", support == null || support.getFacade() == null ? "-" : "yes");
         rows.add(row);
+    }
+
+    private static AuthenticEndpoint configuredEndpoint(Object value) {
+        if (value instanceof RSSConf.SocksServer) {
+            return ((RSSConf.SocksServer) value).getEndpoint();
+        }
+        return value instanceof AuthenticEndpoint ? (AuthenticEndpoint) value : null;
+    }
+
+    private static String configuredEndpointId(Object value) {
+        return value instanceof RSSConf.SocksServer ? ((RSSConf.SocksServer) value).getId() : null;
     }
 
     private static String upstreamState(RssRuntime.UpstreamSnapshot snapshot) {

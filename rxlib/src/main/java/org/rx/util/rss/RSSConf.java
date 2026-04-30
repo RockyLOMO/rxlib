@@ -1,25 +1,48 @@
 package org.rx.util.rss;
 
+import com.alibaba.fastjson2.JSONFactory;
+import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.reader.ObjectReader;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.nameserver.NameserverConfig;
 
+import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Getter
 @Setter
 @ToString
 public class RSSConf {
+    static {
+        JSONFactory.getDefaultObjectReaderProvider().register(SocksServer.class,
+                (ObjectReader<SocksServer>) (jsonReader, fieldType, fieldName, features) -> {
+                    if (jsonReader.isString()) {
+                        return new SocksServer(AuthenticEndpoint.valueOf(jsonReader.readString()));
+                    }
+                    JSONObject obj = jsonReader.read(JSONObject.class);
+                    if (obj == null) {
+                        return null;
+                    }
+                    SocksServer server = new SocksServer();
+                    server.setId(obj.getString("id"));
+                    Object endpoint = obj.get("endpoint");
+                    server.setEndpoint(readSocksServerEndpoint(endpoint));
+                    return server;
+                });
+    }
+
     public int logFlags;
 
     // socks
     public List<ShadowUser> shadowUsers;
-    public List<AuthenticEndpoint> socksServers;
+    public List<SocksServer> socksServers;
     // false=LocalAddress 进程内转发，true=127.0.0.1:port 真实监听
     public boolean socksBindPort;
     public String socksPwd;
@@ -67,6 +90,45 @@ public class RSSConf {
 
     public boolean hasDebugFlag() {
         return (logFlags & 2) == 2;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static AuthenticEndpoint readSocksServerEndpoint(Object endpoint) {
+        if (endpoint == null) {
+            return null;
+        }
+        if (endpoint instanceof AuthenticEndpoint) {
+            return (AuthenticEndpoint) endpoint;
+        }
+        if (endpoint instanceof String) {
+            return AuthenticEndpoint.valueOf((String) endpoint);
+        }
+        if (endpoint instanceof Map) {
+            return new JSONObject((Map<String, Object>) endpoint).to(AuthenticEndpoint.class);
+        }
+        return null;
+    }
+
+    @Getter
+    @Setter
+    @ToString
+    public static class SocksServer implements Serializable {
+        private static final long serialVersionUID = 6049607274827395471L;
+
+        public String id;
+        public AuthenticEndpoint endpoint;
+
+        public SocksServer() {
+        }
+
+        public SocksServer(AuthenticEndpoint endpoint) {
+            this.endpoint = endpoint;
+        }
+
+        public SocksServer(String id, AuthenticEndpoint endpoint) {
+            this.id = id;
+            this.endpoint = endpoint;
+        }
     }
 
     @Getter

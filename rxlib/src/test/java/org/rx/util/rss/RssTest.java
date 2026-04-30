@@ -1,5 +1,6 @@
 package org.rx.util.rss;
 
+import com.alibaba.fastjson2.JSON;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.Channel;
@@ -62,7 +63,9 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -799,6 +802,79 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void normalizeAndValidateRssConfig_AcceptsShadowUserScopedSocksServers() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer first = new RSSConf.SocksServer("primary",
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080?w=1"));
+        RSSConf.SocksServer second = new RSSConf.SocksServer("backup",
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:1081?w=2"));
+        conf.socksServers = Arrays.asList(first, second);
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList(" backup "));
+
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+        assertEquals(Collections.singletonList("backup"), conf.shadowUsers.get(0).getSocksServers());
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_RejectsUnknownShadowUserSocksServer() {
+        RSSConf conf = validRssConf();
+        conf.socksServers.get(0).setId("primary");
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("missing"));
+
+        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+    }
+
+    @Test
+    public void resolveUserSocksServers_UsesShadowUserScopedList() {
+        UpstreamSupport first = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080?w=1"), null);
+        first.setConfiguredWeight(1);
+        UpstreamSupport second = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1081?w=1"), null);
+        second.setConfiguredWeight(1);
+        RandomList<UpstreamSupport> defaults = new RandomList<>();
+        defaults.add(first, 1);
+        RandomList<UpstreamSupport> userOnly = new RandomList<>();
+        userOnly.add(second, 1);
+        Map<String, RandomList<UpstreamSupport>> userServers = new LinkedHashMap<>();
+        userServers.put("ss-rocky", userOnly);
+        ShadowUser user = new ShadowUser();
+        user.setUsername("ss-rocky");
+
+        assertSame(userOnly, RssClient.resolveUserSocksServers(defaults, userServers, user));
+    }
+
+    @Test
+    public void updateUpstreamHealth_UpdatesShadowUserScopedWeights() {
+        UpstreamSupport support = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080?w=1"), null);
+        support.setConfiguredWeight(1);
+        RandomList<UpstreamSupport> defaults = new RandomList<>();
+        defaults.add(support, 1);
+        RandomList<UpstreamSupport> userOnly = new RandomList<>();
+        userOnly.add(support, 1);
+        Map<String, RandomList<UpstreamSupport>> userServers = new LinkedHashMap<>();
+        userServers.put("ss-rocky", userOnly);
+        RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(defaults,
+                new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
+                userServers, Collections.<RSSConf.SocksServer>emptyList(), Collections.<AuthenticEndpoint>emptyList());
+
+        RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
+
+        assertEquals(0, defaults.getWeight(support));
+        assertEquals(0, userOnly.getWeight(support));
+    }
+
+    @Test
+    public void socksServerJsonReader_SupportsStringAndObjectFormats() {
+        RSSConf conf = JSON.parseObject("{\"socksServers\":[\"u:p@127.0.0.1:1080?w=1\","
+                + "{\"id\":\"backup\",\"endpoint\":\"u:p@127.0.0.1:1081?w=2\"}]}", RSSConf.class);
+
+        assertEquals(2, conf.socksServers.size());
+        assertTrue(conf.socksServers.get(0).getId() == null);
+        assertEquals(1080, conf.socksServers.get(0).getEndpoint().requireEndpoint().getPort());
+        assertEquals("backup", conf.socksServers.get(1).getId());
+        assertEquals(1081, conf.socksServers.get(1).getEndpoint().requireEndpoint().getPort());
+    }
+
+    @Test
     public void configureOutboundConfig_RefreshesTimeoutAndUdpLeaseSettings() {
         RSSConf conf = new RSSConf();
         conf.connectTimeoutSeconds = 2;
@@ -873,7 +949,7 @@ public class RssTest extends AbstractTester {
         conf.socksPwd = "socks-pwd";
         AuthenticEndpoint endpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080), "u", "p");
         endpoint.getParameters().put("w", "1");
-        conf.socksServers = Collections.singletonList(endpoint);
+        conf.socksServers = Collections.singletonList(new RSSConf.SocksServer(endpoint));
         return conf;
     }
 

@@ -50,6 +50,7 @@ final class RssRuntime implements AutoCloseable {
     final GeoManager geoMgr = GeoManager.INSTANCE;
     final AtomicReference<RandomList<UpstreamSupport>> socksServersRef = new AtomicReference<>();
     final AtomicReference<RandomList<UpstreamSupport>> udp2rawSocksServersRef = new AtomicReference<>();
+    final AtomicReference<Map<String, RandomList<UpstreamSupport>>> userSocksServersRef = new AtomicReference<>();
     final RssAuthenticator authenticator;
     final RssRpcApp app;
     final Map<String, ShadowServerRef> shadowServers = new LinkedHashMap<>();
@@ -72,6 +73,7 @@ final class RssRuntime implements AutoCloseable {
         UpstreamSnapshot snapshot = buildUpstreams(conf, geoMgr);
         socksServersRef.set(snapshot.socksServers);
         udp2rawSocksServersRef.set(snapshot.udp2rawSocksServers);
+        userSocksServersRef.set(snapshot.userSocksServers);
         dnsInterceptors.setDelegate(snapshot.dnsInterceptors);
         upstreamSnapshot = snapshot;
         startUpstreamHealthCheck(snapshot);
@@ -166,6 +168,7 @@ final class RssRuntime implements AutoCloseable {
 
             socksServersRef.set(nextUpstream.socksServers);
             udp2rawSocksServersRef.set(nextUpstream.udp2rawSocksServers);
+            userSocksServersRef.set(nextUpstream.userSocksServers);
             upstreamSnapshot = nextUpstream;
             startUpstreamHealthCheck(nextUpstream);
             nextUpstream = null;
@@ -267,7 +270,7 @@ final class RssRuntime implements AutoCloseable {
         SocksConfig inConf = new SocksConfig(resolveRuntimeListenAddress(conf, port, "rss-in-", uniqueLocalAddress));
         configureInboundConfig(conf, inConf, false);
         log.info("rssConf socksBindPort={}, inListenAddress={}", conf.socksBindPort, inConf.getListenAddress());
-        return createInSvr(conf, inConf, authenticator, this::firstRoute, socksServersRef, geoMgr);
+        return createInSvr(conf, inConf, authenticator, this::firstRoute, socksServersRef, userSocksServersRef, geoMgr);
     }
 
     private RssInServer createUdp2rawInServer(RSSConf conf) {
@@ -277,7 +280,7 @@ final class RssRuntime implements AutoCloseable {
     private RssInServer createUdp2rawInServer(RSSConf conf, boolean uniqueLocalAddress) {
         SocksConfig inTunConf = new SocksConfig(resolveRuntimeListenAddress(conf, udp2rawPort, "rss-in-tun-", uniqueLocalAddress));
         configureInboundConfig(conf, inTunConf, true);
-        return createInSvr(conf, inTunConf, authenticator, this::firstRoute, udp2rawSocksServersRef, geoMgr);
+        return createInSvr(conf, inTunConf, authenticator, this::firstRoute, udp2rawSocksServersRef, null, geoMgr);
     }
 
     private SocketAddress resolveRuntimeListenAddress(RSSConf conf, int listenPort, String localNamePrefix, boolean uniqueLocalAddress) {
@@ -632,7 +635,8 @@ final class RssRuntime implements AutoCloseable {
         final RandomList<UpstreamSupport> socksServers;
         final RandomList<UpstreamSupport> udp2rawSocksServers;
         final RandomList<DnsServer.ResolveInterceptor> dnsInterceptors;
-        final List<AuthenticEndpoint> configuredSocksServers;
+        final Map<String, RandomList<UpstreamSupport>> userSocksServers;
+        final List<RSSConf.SocksServer> configuredSocksServers;
         final List<AuthenticEndpoint> configuredUdp2rawSocksServers;
         volatile ScheduledFuture<?> healthTask;
         volatile long closeCheckMillis;
@@ -643,7 +647,8 @@ final class RssRuntime implements AutoCloseable {
         UpstreamSnapshot(RandomList<UpstreamSupport> socksServers,
                          RandomList<UpstreamSupport> udp2rawSocksServers,
                          RandomList<DnsServer.ResolveInterceptor> dnsInterceptors) {
-            this(socksServers, udp2rawSocksServers, dnsInterceptors, null, null);
+            this(socksServers, udp2rawSocksServers, dnsInterceptors,
+                    Collections.<String, RandomList<UpstreamSupport>>emptyMap(), null, null);
         }
 
         UpstreamSnapshot(RandomList<UpstreamSupport> socksServers,
@@ -651,11 +656,48 @@ final class RssRuntime implements AutoCloseable {
                          RandomList<DnsServer.ResolveInterceptor> dnsInterceptors,
                          List<AuthenticEndpoint> configuredSocksServers,
                          List<AuthenticEndpoint> configuredUdp2rawSocksServers) {
+            this(socksServers, udp2rawSocksServers, dnsInterceptors,
+                    Collections.<String, RandomList<UpstreamSupport>>emptyMap(),
+                    wrapConfiguredSocksEndpoints(configuredSocksServers), configuredUdp2rawSocksServers);
+        }
+
+        UpstreamSnapshot(RandomList<UpstreamSupport> socksServers,
+                         RandomList<UpstreamSupport> udp2rawSocksServers,
+                         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors,
+                         Map<String, RandomList<UpstreamSupport>> userSocksServers,
+                         List<RSSConf.SocksServer> configuredSocksServers,
+                         List<AuthenticEndpoint> configuredUdp2rawSocksServers) {
             this.socksServers = socksServers;
             this.udp2rawSocksServers = udp2rawSocksServers;
             this.dnsInterceptors = dnsInterceptors;
-            this.configuredSocksServers = copyConfiguredEndpoints(configuredSocksServers);
+            this.userSocksServers = copyUserSocksServers(userSocksServers);
+            this.configuredSocksServers = copyConfiguredSocksServers(configuredSocksServers);
             this.configuredUdp2rawSocksServers = copyConfiguredEndpoints(configuredUdp2rawSocksServers);
+        }
+
+        private static Map<String, RandomList<UpstreamSupport>> copyUserSocksServers(Map<String, RandomList<UpstreamSupport>> userSocksServers) {
+            if (userSocksServers == null || userSocksServers.isEmpty()) {
+                return Collections.emptyMap();
+            }
+            return Collections.unmodifiableMap(new LinkedHashMap<String, RandomList<UpstreamSupport>>(userSocksServers));
+        }
+
+        private static List<RSSConf.SocksServer> copyConfiguredSocksServers(List<RSSConf.SocksServer> servers) {
+            if (servers == null || servers.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return Collections.unmodifiableList(new ArrayList<RSSConf.SocksServer>(servers));
+        }
+
+        private static List<RSSConf.SocksServer> wrapConfiguredSocksEndpoints(List<AuthenticEndpoint> endpoints) {
+            if (endpoints == null || endpoints.isEmpty()) {
+                return Collections.emptyList();
+            }
+            List<RSSConf.SocksServer> servers = new ArrayList<RSSConf.SocksServer>(endpoints.size());
+            for (AuthenticEndpoint endpoint : endpoints) {
+                servers.add(new RSSConf.SocksServer(endpoint));
+            }
+            return servers;
         }
 
         private static List<AuthenticEndpoint> copyConfiguredEndpoints(List<AuthenticEndpoint> endpoints) {
