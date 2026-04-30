@@ -3,6 +3,7 @@
     <property name="logLevel" value="INFO"/>
     <property name="logPath" value="./logs"/>
     <property name="appName" value="rss"/>
+    <property name="appSlot" value="${APP_LOG_SLOT:-a}"/>
     <property name="days" value="1"/>
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
@@ -14,12 +15,12 @@
         </filter>
     </appender>
     <appender name="infoAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${logPath}/${appName}_info.log</file>
+        <file>${logPath}/${appName}-${appSlot}_info.log</file>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>DEBUG</level>
         </filter>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${logPath}/${appName}_info.%d{yyyyMMdd}_%i.log</fileNamePattern>
+            <fileNamePattern>${logPath}/${appName}-${appSlot}_info.%d{yyyyMMdd}_%i.log</fileNamePattern>
             <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
                 <maxFileSize>500MB</maxFileSize>
             </timeBasedFileNamingAndTriggeringPolicy>
@@ -30,12 +31,12 @@
         </encoder>
     </appender>
     <appender name="errorAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${logPath}/${appName}_error.log</file>
+        <file>${logPath}/${appName}-${appSlot}_error.log</file>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>WARN</level>
         </filter>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${logPath}/${appName}_error.%d{yyyyMMdd}_%i.log</fileNamePattern>
+            <fileNamePattern>${logPath}/${appName}-${appSlot}_error.%d{yyyyMMdd}_%i.log</fileNamePattern>
             <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
                 <maxFileSize>500MB</maxFileSize>
             </timeBasedFileNamingAndTriggeringPolicy>
