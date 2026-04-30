@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import java.net.ConnectException;
 import java.net.NoRouteToHostException;
 import java.net.UnknownHostException;
+import java.nio.channels.ClosedChannelException;
+import java.nio.channels.NotYetConnectedException;
 import java.nio.channels.UnresolvedAddressException;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -36,5 +38,13 @@ public class GlobalChannelHandlerTest {
                 GlobalChannelHandler.connectFailureSummary(new RuntimeException(new NoRouteToHostException("noroute"))));
         assertEquals("UnresolvedAddressException",
                 GlobalChannelHandler.connectFailureSummary(new UnresolvedAddressException()));
+    }
+
+    @Test
+    public void testExpectedChannelExceptions() {
+        assertTrue(GlobalChannelHandler.isExpectedChannelException(new ClosedChannelException()));
+        assertTrue(GlobalChannelHandler.isExpectedChannelException(new NotYetConnectedException()));
+        assertTrue(GlobalChannelHandler.isExpectedChannelException(new RuntimeException(new NotYetConnectedException())));
+        assertFalse(GlobalChannelHandler.isExpectedChannelException(new IllegalStateException("boom")));
     }
 }

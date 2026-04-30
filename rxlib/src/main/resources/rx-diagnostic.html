@@ -421,6 +421,9 @@
         var stayTabForms = document.querySelectorAll('form[data-stay-tab]');
 
         function activate(id) {
+            if (document.activeElement && document.activeElement.blur) {
+                document.activeElement.blur();
+            }
             if (!id || !document.getElementById(id)) {
                 id = 'overview';
             }

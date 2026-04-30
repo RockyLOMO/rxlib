@@ -3,9 +3,9 @@
     <p class="meta">Use the top Query card for time range, limit, level, keyword and order.</p>
     {{#if error}}<p class="empty">Read exception traces failed: {{error}}</p>{{/if}}
     {{#unless error}}
-    <table><thead><tr><th>Modified</th><th>Id</th><th>Level</th><th>Count</th><th>App</th><th>Thread</th><th>Messages</th><th>Stack</th></tr></thead><tbody>
-        {{#if empty}}<tr><td class="empty" colspan="8">No exception trace found in the selected range.</td></tr>{{/if}}
-        {{#each rows}}<tr><td>{{modified}}</td><td>{{id}}</td><td>{{level}}</td><td>{{count}}</td><td>{{app}}</td><td>{{thread}}</td><td>{{{messagesHtml}}}</td><td><details><summary>Stack</summary><pre>{{stackTrace}}</pre></details></td></tr>{{/each}}
+    <table><thead><tr><th>Modified</th><th>Id</th><th>Level</th><th>Count</th><th>App</th><th>Thread</th><th>Messages</th></tr></thead><tbody>
+        {{#if empty}}<tr><td class="empty" colspan="7">No exception trace found in the selected range.</td></tr>{{/if}}
+        {{#each rows}}<tr><td>{{modified}}</td><td>{{id}}</td><td>{{level}}</td><td>{{count}}</td><td>{{app}}</td><td>{{thread}}</td><td>{{{messagesHtml}}}</td></tr><tr><td colspan="7"><details><summary>Stack</summary><pre>{{stackTrace}}</pre></details></td></tr>{{/each}}
     </tbody></table>
     {{/unless}}
 </section>

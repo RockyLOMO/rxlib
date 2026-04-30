@@ -535,6 +535,33 @@ public final class Sockets {
         return level < 0 ? ZlibCodecFactory.newZlibEncoder(zlib) : ZlibCodecFactory.newZlibEncoder(zlib, level);
     }
 
+    static ChannelHandler newTcpClientCompressionEncoder(Channel channel, SocketConfig config, ZlibWrapper zlib) {
+        // 客户端 DNS/connect 失败时 Channel 还未 active，避免 JdkZlibEncoder.close() flush trailer。
+        return channel != null && channel.isActive()
+                ? newTcpCompressionEncoder(config, zlib)
+                : new ActiveTcpCompressionEncoderInstaller(config, zlib);
+    }
+
+    static final class ActiveTcpCompressionEncoderInstaller extends ChannelInboundHandlerAdapter {
+        final SocketConfig config;
+        final ZlibWrapper zlib;
+
+        ActiveTcpCompressionEncoderInstaller(SocketConfig config, ZlibWrapper zlib) {
+            this.config = config;
+            this.zlib = zlib;
+        }
+
+        @Override
+        public void channelActive(ChannelHandlerContext ctx) throws Exception {
+            ChannelPipeline pipeline = ctx.pipeline();
+            ChannelHandlerContext current = pipeline.context(this);
+            if (current != null) {
+                pipeline.replace(current.name(), current.name(), newTcpCompressionEncoder(config, zlib));
+            }
+            ctx.fireChannelActive();
+        }
+    }
+
     public static boolean hasTcpCompressionHandlers(Channel channel) {
         if (channel == null) {
             return false;
@@ -654,7 +681,7 @@ public final class Sockets {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
             if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                pipeline.addLast(ZIP_ENCODER, newTcpCompressionEncoder(config, zlib));
+                pipeline.addLast(ZIP_ENCODER, newTcpClientCompressionEncoder(channel, config, zlib));
             }
         }
 
@@ -685,7 +712,7 @@ public final class Sockets {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
             if (flags.has(TransportFlags.COMPRESS_WRITE)) {
-                pipeline.addLast(ZIP_ENCODER, newTcpCompressionEncoder(config, zlib));
+                pipeline.addLast(ZIP_ENCODER, newTcpClientCompressionEncoder(channel, config, zlib));
             }
         }
         DiagnosticMetrics.installNetIoHandler(pipeline, DiagnosticMetrics.netComponent(config,

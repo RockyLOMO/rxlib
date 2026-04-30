@@ -15,6 +15,7 @@ import io.netty.channel.epoll.EpollEventLoopGroup;
 import io.netty.handler.codec.compression.JdkZlibEncoder;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.resolver.DefaultAddressResolverGroup;
 import io.netty.resolver.dns.DnsServerAddressStreamProvider;
 import lombok.SneakyThrows;
@@ -344,6 +345,39 @@ public class SocketsTest {
         Sockets.addTcpClientHandler(channel, config);
 
         assertTrue(channel.pipeline().get(Sockets.ZIP_ENCODER) instanceof JdkZlibEncoder);
+    }
+
+    @Test
+    public void testTcpClientCompressionEncoderDefersUntilActive() throws Exception {
+        SocketConfig config = new SocketConfig();
+        config.setTransportFlags(TransportFlags.COMPRESS_WRITE.flags());
+
+        EventLoopGroup group = new NioEventLoopGroup(1);
+        Channel unconnectedChannel = new NioSocketChannel();
+        try {
+            group.register(unconnectedChannel).syncUninterruptibly();
+            assertFalse(unconnectedChannel.isActive());
+            Sockets.addTcpClientHandler(unconnectedChannel, config);
+
+            assertTrue(unconnectedChannel.pipeline().get(Sockets.ZIP_ENCODER) instanceof Sockets.ActiveTcpCompressionEncoderInstaller);
+            assertFalse(unconnectedChannel.pipeline().get(Sockets.ZIP_ENCODER) instanceof JdkZlibEncoder);
+            assertTrue(unconnectedChannel.close().syncUninterruptibly().isSuccess());
+        } finally {
+            if (unconnectedChannel.isOpen()) {
+                unconnectedChannel.close().syncUninterruptibly();
+            }
+            group.shutdownGracefully(0, 1, TimeUnit.SECONDS).syncUninterruptibly();
+        }
+
+        EmbeddedChannel channel = new EmbeddedChannel(false, false);
+        Sockets.addTcpClientHandler(channel, config);
+
+        assertTrue(channel.pipeline().get(Sockets.ZIP_ENCODER) instanceof Sockets.ActiveTcpCompressionEncoderInstaller);
+        assertFalse(channel.pipeline().get(Sockets.ZIP_ENCODER) instanceof JdkZlibEncoder);
+
+        channel.register();
+        assertTrue(channel.pipeline().get(Sockets.ZIP_ENCODER) instanceof JdkZlibEncoder);
+        channel.finishAndReleaseAll();
     }
 
     @Test
