@@ -336,7 +336,7 @@ drain_process_and_wait() {
 
     echo "${YELLOW}[${LOCAL_TIME}] 通知${reason}进入 drain，PID: ${pid}${NC}"
     if write_drain_token "${pid}" "${new_pid}"; then
-        kill -USR2 "${pid}" >/dev/null 2>&1 || kill -15 "${pid}" >/dev/null 2>&1 || true
+        kill -USR1 "${pid}" >/dev/null 2>&1 || kill -15 "${pid}" >/dev/null 2>&1 || true
     else
         echo "${RED}[${LOCAL_TIME}] 写入 drain token 失败，改用 TERM，PID: ${pid}${NC}"
         kill -15 "${pid}" >/dev/null 2>&1 || true
@@ -369,7 +369,7 @@ signal_drain_old_processes() {
                 echo "${RED}[${LOCAL_TIME}] 写入 drain token 失败，跳过旧进程 PID: ${pid}${NC}"
                 continue
             fi
-            kill -USR2 "${pid}" >/dev/null 2>&1 || kill -15 "${pid}" >/dev/null 2>&1 || true
+            kill -USR1 "${pid}" >/dev/null 2>&1 || kill -15 "${pid}" >/dev/null 2>&1 || true
             signaled=$((signaled + 1))
         fi
     done <<EOF
