@@ -267,8 +267,21 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
             return;
         }
 
-        channel.writeAndFlush(pack);
+        writeAndFlush(pack);
         log.debug("clientWrite {} {}", config.getServerEndpoint(), pack);
+    }
+
+    private void writeAndFlush(Object pack) {
+        Channel ch = channel;
+        if (ch.eventLoop().inEventLoop()) {
+            ch.writeAndFlush(pack);
+            return;
+        }
+        ch.eventLoop().execute(() -> {
+            if (ch.isActive()) {
+                ch.writeAndFlush(pack);
+            }
+        });
     }
 
     @Override

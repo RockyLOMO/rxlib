@@ -277,7 +277,8 @@ class RrpIntegrationTest {
             ch.pipeline().fireChannelActive();
 
             byte[] tokenBytes = "t".getBytes(StandardCharsets.US_ASCII);
-            byte[] data = Serializer.DEFAULT.serializeToBytes(Collections.singletonList(newProxy("jdk", 19009, "u1:p1")));
+            byte[] data = org.rx.io.JdkAndJsonSerializer.DEFAULT.serializeToBytes(
+                    Collections.singletonList(newProxy("jdk", 19009, "u1:p1")));
             ByteBuf buf = Unpooled.buffer();
             buf.writeByte(RrpConfig.ACTION_REGISTER);
             buf.writeInt(tokenBytes.length);
@@ -681,7 +682,7 @@ class RrpIntegrationTest {
         byte[] tokenBytes = token.getBytes(StandardCharsets.US_ASCII);
         buf.writeInt(tokenBytes.length);
         buf.writeBytes(tokenBytes);
-        byte[] data = Serializer.DEFAULT.serializeToBytes(Collections.singletonList(proxy));
+        byte[] data = Serializer.FURY.serializeToBytes(Collections.singletonList(proxy));
         buf.writeInt(data.length);
         buf.writeBytes(data);
         ch.writeInbound(buf);

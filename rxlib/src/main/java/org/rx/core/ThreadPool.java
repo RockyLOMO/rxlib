@@ -367,6 +367,12 @@ public class ThreadPool extends ThreadPoolExecutor {
     static final Map<Object, CompletableFuture<?>> taskSerialMap = new ConcurrentHashMap<>();
     static final Map<Object, AtomicInteger> taskSerialCountMap = new ConcurrentHashMap<>();
 
+    public static ThreadPool fixed(String poolName, int size, int queueCapacity) {
+        int fixedSize = checkSize(size);
+        return new ThreadPool(fixedSize, queueCapacity, null, poolName,
+                fixedSize, fixedSize, 1, false);
+    }
+
     public static String startTrace(String traceId) {
         return startTrace(traceId, false);
     }
@@ -504,6 +510,9 @@ public class ThreadPool extends ThreadPoolExecutor {
     // region instance members
     @Getter
     final String poolName;
+    final int minIdleSize;
+    final int maxPoolSize;
+    final int resizeStep;
     final Map<Runnable, Task<?>> taskMap = new ConcurrentHashMap<>();
     // runAsync() wrap task to AsynchronousCompletionTask, and this::execute adapt function will not work
     final Executor asyncExecutor = super::execute;
@@ -530,7 +539,12 @@ public class ThreadPool extends ThreadPoolExecutor {
      * @param queueCapacity LinkedTransferQueue 基于CAS的并发BlockingQueue的容量
      */
     public ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName) {
-        super(checkSize(initSize), RxConfig.INSTANCE.threadPool.maxDynamicSize,
+        this(initSize, queueCapacity, cpuWaterMark, poolName, 0, 0, 0, true);
+    }
+
+    private ThreadPool(int initSize, int queueCapacity, IntWaterMark cpuWaterMark, String poolName,
+            int minIdleSize, int maxPoolSize, int resizeStep, boolean allowCoreThreadTimeout) {
+        super(checkSize(initSize), resolveMaxPoolSize(initSize, minIdleSize, maxPoolSize),
                 RxConfig.INSTANCE.threadPool.keepAliveSeconds, TimeUnit.SECONDS,
                 new ThreadQueue(checkCapacity(queueCapacity)), newThreadFactory(poolName, Thread.NORM_PRIORITY), (r, executor) -> {
                     ThreadPool pool = executor instanceof ThreadPool ? (ThreadPool) executor : null;
@@ -549,9 +563,12 @@ public class ThreadPool extends ThreadPoolExecutor {
                         throw new RejectedExecutionException("ThreadPool " + poolName + " queue offer rejected");
                     }
                 });
-        super.allowCoreThreadTimeOut(true);
+        super.allowCoreThreadTimeOut(allowCoreThreadTimeout);
         ((ThreadQueue) super.getQueue()).pool = this;
         this.poolName = poolName;
+        this.minIdleSize = resolveMinIdleSize(minIdleSize);
+        this.maxPoolSize = resolveMaxPoolSize(initSize, minIdleSize, maxPoolSize);
+        this.resizeStep = resolveResizeStep(resizeStep);
 
         dynamicSizeByCpuLoad(cpuWaterMark);
     }
@@ -569,6 +586,33 @@ public class ThreadPool extends ThreadPoolExecutor {
             capacity = Constants.CPU_THREADS * 64;
         }
         return capacity;
+    }
+
+    private static int resolveMinIdleSize(int minIdleSize) {
+        int configured = minIdleSize > 0 ? minIdleSize : RxConfig.INSTANCE.threadPool.minIdleSize;
+        return Math.max(1, configured);
+    }
+
+    private static int resolveMaxPoolSize(int initSize, int minIdleSize, int maxPoolSize) {
+        int configured = maxPoolSize > 0 ? maxPoolSize : RxConfig.INSTANCE.threadPool.maxPoolSize;
+        return Math.max(checkSize(initSize), Math.max(resolveMinIdleSize(minIdleSize), configured));
+    }
+
+    private static int resolveResizeStep(int resizeStep) {
+        int configured = resizeStep > 0 ? resizeStep : RxConfig.INSTANCE.threadPool.resizeStep;
+        return Math.max(1, configured);
+    }
+
+    int minIdleSize() {
+        return minIdleSize;
+    }
+
+    int maxPoolSize() {
+        return maxPoolSize;
+    }
+
+    int resizeStep() {
+        return resizeStep;
     }
 
     public void dynamicSizeByCpuLoad(IntWaterMark cpuWaterMark) {

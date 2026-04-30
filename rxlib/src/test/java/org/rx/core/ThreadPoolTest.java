@@ -71,6 +71,67 @@ public class ThreadPoolTest extends AbstractTester {
     }
 
     @Test
+    public void threadPoolCopiesResizeConfigOnConstruction() {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        int oldMinIdleSize = conf.getMinIdleSize();
+        int oldMaxPoolSize = conf.getMaxPoolSize();
+        int oldResizeStep = conf.getResizeStep();
+        try {
+            conf.setMinIdleSize(2);
+            conf.setMaxPoolSize(4);
+            conf.setResizeStep(1);
+
+            ThreadPool p = createPool(2, 64);
+            CpuWatchman.INSTANCE.unregister(p);
+
+            assertEquals(2, p.minIdleSize());
+            assertEquals(4, p.maxPoolSize());
+            assertEquals(1, p.resizeStep());
+
+            conf.setMinIdleSize(8);
+            conf.setMaxPoolSize(100);
+            conf.setResizeStep(50);
+
+            assertEquals(3, CpuWatchman.incrSize(p));
+            assertEquals(2, CpuWatchman.decrSize(p));
+        } finally {
+            conf.setMinIdleSize(oldMinIdleSize);
+            conf.setMaxPoolSize(oldMaxPoolSize);
+            conf.setResizeStep(oldResizeStep);
+            if (pool != null) {
+                CpuWatchman.INSTANCE.unregister(pool);
+            }
+        }
+    }
+
+    @Test
+    public void threadPoolNormalizesResizeConfigDefaults() {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        int oldMinIdleSize = conf.getMinIdleSize();
+        int oldMaxPoolSize = conf.getMaxPoolSize();
+        int oldResizeStep = conf.getResizeStep();
+        try {
+            conf.setMinIdleSize(0);
+            conf.setMaxPoolSize(0);
+            conf.setResizeStep(0);
+
+            ThreadPool p = createPool(2, 64);
+            CpuWatchman.INSTANCE.unregister(p);
+
+            assertEquals(1, p.minIdleSize());
+            assertEquals(2, p.maxPoolSize());
+            assertEquals(1, p.resizeStep());
+        } finally {
+            conf.setMinIdleSize(oldMinIdleSize);
+            conf.setMaxPoolSize(oldMaxPoolSize);
+            conf.setResizeStep(oldResizeStep);
+            if (pool != null) {
+                CpuWatchman.INSTANCE.unregister(pool);
+            }
+        }
+    }
+
+    @Test
     public void testCoreThreadsAllowTimeout() {
         ThreadPool p = createPool(2, 64);
         assertTrue(p.allowsCoreThreadTimeOut());

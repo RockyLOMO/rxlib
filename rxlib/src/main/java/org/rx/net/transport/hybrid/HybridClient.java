@@ -27,7 +27,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 
 public final class HybridClient implements AutoCloseable, EventPublisher<HybridClient> {
-    static final ThreadPool SCHEDULER = new ThreadPool(Sockets.ReactorNames.RPC);
+    static final ThreadPool SCHEDULER = Sockets.newRpcScheduler();
 
     public final Delegate<HybridClient, EventArgs> onConnected = Delegate.create();
     public final Delegate<HybridClient, EventArgs> onDisconnected = Delegate.create();

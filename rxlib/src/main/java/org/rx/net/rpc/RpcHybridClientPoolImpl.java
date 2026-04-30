@@ -9,6 +9,8 @@ import org.rx.core.Sys;
 import org.rx.net.transport.hybrid.HybridClient;
 import org.rx.net.transport.hybrid.HybridConfig;
 
+import java.util.function.Consumer;
+
 @Slf4j
 @RequiredArgsConstructor
 class RpcHybridClientPoolImpl extends Disposable implements RpcHybridClientPool {
@@ -45,8 +47,31 @@ class RpcHybridClientPoolImpl extends Disposable implements RpcHybridClientPool 
 
     @Override
     public HybridClient returnClient(HybridClient client) {
-        checkNotClosed();
-        pool.recycle(client);
+        if (client == null) {
+            return null;
+        }
+        if (isClosed()) {
+            client.close();
+            return null;
+        }
+        try {
+            pool.recycle(client);
+        } catch (Throwable e) {
+            if (!isClosed()) {
+                throw org.rx.exception.InvalidException.sneaky(e);
+            }
+            client.close();
+        }
         return null;
+    }
+
+    @Override
+    public boolean isHealthy() {
+        return !isClosed() && pool.anyMatch(HybridClient::isConnected);
+    }
+
+    @Override
+    public void forEachClient(Consumer<HybridClient> consumer) {
+        pool.forEach(consumer);
     }
 }

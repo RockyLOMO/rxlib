@@ -69,7 +69,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
                 return;
             }
             if (owner.isClosed()) {
-                channel.writeAndFlush(pack);
+                writeAndFlush(pack);
                 log.debug("serverWrite (server closing) {} {}", channel.remoteAddress(), pack);
                 return;
             }
@@ -81,8 +81,21 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
                 return;
             }
 
-            channel.writeAndFlush(pack);
+            writeAndFlush(pack);
             log.debug("serverWrite {} {}", channel.remoteAddress(), pack);
+        }
+
+        private void writeAndFlush(Object pack) {
+            Channel ch = channel;
+            if (ch.eventLoop().inEventLoop()) {
+                ch.writeAndFlush(pack);
+                return;
+            }
+            ch.eventLoop().execute(() -> {
+                if (ch.isActive()) {
+                    ch.writeAndFlush(pack);
+                }
+            });
         }
 
         @Override
@@ -204,7 +217,7 @@ public class TcpServer extends Disposable implements EventPublisher<TcpServer> {
         }
     }
 
-    static final ThreadPool SCHEDULER = new ThreadPool(Sockets.ReactorNames.RPC);
+    static final ThreadPool SCHEDULER = Sockets.newRpcScheduler();
     public final Delegate<TcpServer, TcpServerEventArgs<Object>> onConnected = Delegate.create(),
             onDisconnected = Delegate.create(),
             onSend = Delegate.create(),

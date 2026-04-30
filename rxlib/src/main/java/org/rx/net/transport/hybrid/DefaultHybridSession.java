@@ -29,6 +29,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.rx.core.Extends.quietly;
 
 final class DefaultHybridSession implements HybridSession {
+    static final int UNKNOWN_ENCODED_BYTES = -1;
+
     final Delegate<HybridSession, NEventArgs<Object>> onSend = Delegate.create();
     final Delegate<HybridSession, NEventArgs<Object>> onReceive = Delegate.create();
     final HybridConfig config;
@@ -120,6 +122,12 @@ final class DefaultHybridSession implements HybridSession {
         Object resolvedPacket = args.getValue();
         HybridSendOptions resolved = options == null ? HybridSendOptions.DEFAULT : options;
         long seq = sequence.incrementAndGet();
+        if (shouldSendTcpWithoutUdpSizing(resolved)) {
+            sendTcp(seq, resolvedPacket, UNKNOWN_ENCODED_BYTES);
+            CompletableFuture<Void> done = CompletableFuture.completedFuture(null);
+            return new HybridSendResult(HybridRoute.TCP, HybridRoute.TCP, seq, UNKNOWN_ENCODED_BYTES, 0, done, done, false);
+        }
+
         int encodedBytes = encodedSize(resolvedPacket);
         HybridRoute route = routePolicy.select(routeState, encodedBytes, config.getUdpSmallPacketThresholdBytes(), resolved);
         if (route == HybridRoute.UDP) {
@@ -131,6 +139,10 @@ final class DefaultHybridSession implements HybridSession {
         sendTcp(seq, resolvedPacket, encodedBytes);
         CompletableFuture<Void> done = CompletableFuture.completedFuture(null);
         return new HybridSendResult(route, HybridRoute.TCP, seq, encodedBytes, 0, done, done, false);
+    }
+
+    boolean shouldSendTcpWithoutUdpSizing(HybridSendOptions options) {
+        return (options != null && options.isForceTcp()) || routeState != HybridRouteState.UDP_READY;
     }
 
     boolean trySendUdp(long seq, Object packet, HybridSendOptions options) {
@@ -163,7 +175,7 @@ final class DefaultHybridSession implements HybridSession {
                     ackFuture.complete(null);
                     return;
                 }
-                if (onUdpSendFailure(seq, packet, options, e)) {
+                if (onUdpSendFailure(seq, packet, options, encodedBytes, e)) {
                     hybridResult.setActualRoute(HybridRoute.TCP);
                     ackFuture.complete(null);
                 } else {
@@ -174,7 +186,7 @@ final class DefaultHybridSession implements HybridSession {
         } catch (Throwable e) {
             udpInflight.decrementAndGet();
             metrics.udpWriteDrops.increment();
-            boolean fallback = onUdpSendFailure(seq, packet, options, e);
+            boolean fallback = onUdpSendFailure(seq, packet, options, encodedBytes, e);
             CompletableFuture<Void> failed = new CompletableFuture<>();
             failed.completeExceptionally(e);
             CompletableFuture<Void> ackFuture = fallback ? CompletableFuture.completedFuture(null) : failed;
@@ -183,7 +195,7 @@ final class DefaultHybridSession implements HybridSession {
         }
     }
 
-    boolean onUdpSendFailure(long seq, Object packet, HybridSendOptions options, Throwable error) {
+    boolean onUdpSendFailure(long seq, Object packet, HybridSendOptions options, int encodedBytes, Throwable error) {
         if (error instanceof TimeoutException || error.getCause() instanceof TimeoutException) {
             metrics.udpAckTimeouts.increment();
         }
@@ -193,7 +205,7 @@ final class DefaultHybridSession implements HybridSession {
         if (options.isFallbackToTcpOnUdpFailure() && isConnected()) {
             try {
                 metrics.udpFallbackToTcp.increment();
-                sendTcp(seq, packet, encodedSize(packet));
+                sendTcp(seq, packet, encodedBytes);
                 return true;
             } catch (Throwable ignored) {
                 return false;
@@ -210,7 +222,9 @@ final class DefaultHybridSession implements HybridSession {
         ensureOpen();
         tcpClient.send(new HybridTcpData(sessionId, seq, 0, packet));
         metrics.tcpSendPackets.increment();
-        metrics.tcpSendBytes.add(encodedBytes);
+        if (encodedBytes >= 0) {
+            metrics.tcpSendBytes.add(encodedBytes);
+        }
     }
 
     void receiveTcp(HybridTcpData data) {

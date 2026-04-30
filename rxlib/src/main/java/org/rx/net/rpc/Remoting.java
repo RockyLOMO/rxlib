@@ -62,6 +62,7 @@ import static org.rx.bean.$.$;
 import static org.rx.core.Extends.as;
 import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.tryAs;
+import static org.rx.core.Extends.tryClose;
 import static org.rx.core.Sys.proxy;
 import static org.rx.core.Sys.toJsonString;
 
@@ -126,15 +127,7 @@ public final class Remoting {
                 return p.fastInvokeSuper();
             }
             if (Reflects.isCloseMethod(m)) {
-                facadeRefs.remove(p.getProxyObject());
-                synchronized (ref.sync) {
-                    if (ref.sync.v != null) {
-                        clearClient(ref.sync.v);
-                        ref.subscribedEvents.clear();
-                        ref.sync.v.close();
-                        ref.sync.v = null;
-                    }
-                }
+                closeFacade(p.getProxyObject(), ref);
                 return null;
             }
 
@@ -267,8 +260,43 @@ public final class Remoting {
         return facade;
     }
 
+    private static void closeFacade(Object proxyObject, ClientRef ref) {
+        synchronized (facadeRefs) {
+            facadeRefs.remove(proxyObject);
+        }
+
+        HybridClient client;
+        synchronized (ref.sync) {
+            client = ref.sync.v;
+            ref.sync.v = null;
+            ref.subscribedEvents.clear();
+        }
+        if (client != null) {
+            clearClient(client);
+            client.close();
+        }
+        releaseClientPoolIfUnused(ref.config);
+    }
+
     public static boolean ping(Object facade) {
         return ping(facade, 0);
+    }
+
+    public static boolean isHealthy(Object facade) {
+        ClientRef ref = facadeRefs.get(facade);
+        if (ref == null) {
+            return false;
+        }
+
+        HybridClient client;
+        synchronized (ref.sync) {
+            client = ref.sync.v;
+        }
+        if (client != null) {
+            return isClientHealthy(client);
+        }
+        RpcHybridClientPool pool = clientPools.get(ref.config);
+        return pool != null && pool.isHealthy();
     }
 
     public static boolean ping(Object facade, int timeoutMillis) {
@@ -318,6 +346,43 @@ public final class Remoting {
             }
             return new RpcHybridClientPoolImpl(config);
         });
+    }
+
+    private static void releaseClientPoolIfUnused(RpcClientConfig<?> config) {
+        if (hasFacadeForConfig(config)) {
+            return;
+        }
+        RpcHybridClientPool pool = clientPools.remove(config);
+        if (pool == null) {
+            return;
+        }
+        pool.forEachClient(Remoting::clearClient);
+        tryClose(pool);
+    }
+
+    private static boolean hasFacadeForConfig(RpcClientConfig<?> config) {
+        synchronized (facadeRefs) {
+            for (ClientRef ref : facadeRefs.values()) {
+                if (ref.config == config) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isClientHealthy(HybridClient client) {
+        if (client == null || !client.isConnected()) {
+            return false;
+        }
+        HybridSession session = currentSession(client);
+        if (session == null || !session.isConnected()) {
+            return false;
+        }
+        int heartbeatTimeoutSeconds = client.getConfig().getTcpClientConfig().getHeartbeatTimeout();
+        long lastHeartbeatMillis = session.lastHeartbeatMillis();
+        return heartbeatTimeoutSeconds <= 0 || lastHeartbeatMillis <= 0L
+                || System.currentTimeMillis() - lastHeartbeatMillis <= heartbeatTimeoutSeconds * 2000L;
     }
 
     private static HybridClient borrowFacadeClient(ClientRef ref, Object proxyObject, RpcHybridClientPool pool) {

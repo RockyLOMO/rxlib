@@ -67,7 +67,7 @@ public class RemotingTest extends AbstractTester {
             return null;
         }
 
-        void close() {
+        public void close() {
             client.close();
         }
     }
@@ -277,6 +277,30 @@ public class RemotingTest extends AbstractTester {
             downFacade.close();
             closeClientPool(downConfig);
         }
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void closingFacade_releasesPooledClientPool() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        UserManagerImpl impl = new UserManagerImpl();
+        startServer(impl, endpoint);
+
+        RpcClientConfig<UserManager> config = RpcClientConfig.poolMode(endpoint, 1, 1);
+        config.setRequestTimeoutMillis(1000);
+        UserManager facade = Remoting.createFacade(UserManager.class, config);
+
+        assertTrue(Remoting.ping(facade, 1000));
+        assertTrue(Remoting.isHealthy(facade));
+        assertTrue(Remoting.clientPools.containsKey(config));
+
+        facade.close();
+
+        assertFalse(Remoting.facadeRefs.containsKey(facade));
+        assertFalse(Remoting.clientPools.containsKey(config));
+        assertFalse(Remoting.isHealthy(facade));
     }
 
     @Test

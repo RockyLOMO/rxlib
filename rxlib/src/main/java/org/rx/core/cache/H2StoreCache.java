@@ -9,6 +9,7 @@ import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
+import org.rx.io.Serializer;
 import org.rx.third.guava.AbstractSequentialIterator;
 
 import java.util.*;
@@ -29,6 +30,10 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     static final long DEFAULT_RETRY_DELAY_MILLIS = 200;
     static final long DEFAULT_L1_CACHE_MAX_SIZE = 2048L;
     static final AtomicInteger CACHE_COUNTER = new AtomicInteger();
+
+    static long furyHash(Object value) {
+        return CodecUtil.hash64(Serializer.FURY.serializeToBytes(value));
+    }
 
     enum TombstoneValue {
         INSTANCE
@@ -632,7 +637,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             }
         }
 
-        long valueHash = CodecUtil.hash64(value);
+        long valueHash = furyHash(value);
         Long cursor = null;
         int batchSize = Math.max(1, prefetchCount);
         while (true) {
@@ -1485,7 +1490,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
 
     @SuppressWarnings(NON_UNCHECKED)
     H2CacheItem<TK, TV> findPersisted(Object key) {
-        H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, CodecUtil.hash64(key));
+        H2CacheItem<TK, TV> item = db.findById(H2CacheItem.class, furyHash(key));
         return item != null && Objects.equals(key, item.getKey()) ? item : null;
     }
 
@@ -1541,6 +1546,6 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     }
 
     static String buildRegionNamespace(String keyPrefix) {
-        return "KP@" + Long.toHexString(CodecUtil.hash64(keyPrefix));
+        return "KP@" + Long.toHexString(furyHash(keyPrefix));
     }
 }
