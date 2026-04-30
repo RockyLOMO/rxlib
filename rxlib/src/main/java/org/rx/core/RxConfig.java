@@ -51,9 +51,9 @@ public final class RxConfig {
         String THREAD_POOL_MAX_TRACE_DEPTH = "app.threadPool.maxTraceDepth";
         String THREAD_POOL_SAMPLING_PERIOD = "app.threadPool.samplingPeriod";
         String THREAD_POOL_SAMPLING_TIMES = "app.threadPool.samplingTimes";
-        String THREAD_POOL_MIN_DYNAMIC_SIZE = "app.threadPool.minDynamicSize";
-        String THREAD_POOL_MAX_DYNAMIC_SIZE = "app.threadPool.maxDynamicSize";
-        String THREAD_POOL_RESIZE_QUANTITY = "app.threadPool.resizeQuantity";
+        String THREAD_POOL_MIN_IDLE_SIZE = "app.threadPool.minIdleSize";
+        String THREAD_POOL_MAX_POOL_SIZE = "app.threadPool.maxPoolSize";
+        String THREAD_POOL_RESIZE_STEP = "app.threadPool.resizeStep";
 
         String PHYSICAL_MEMORY_USAGE_WARNING = "app.cache.physicalMemoryUsageWarningThreshold";
         String CACHE_PROVIDER = "app.cache.provider";
@@ -208,9 +208,9 @@ public final class RxConfig {
         int cpuLoadWarningThreshold;
         long samplingPeriod;
         int samplingTimes;
-        int minDynamicSize;
-        int maxDynamicSize;
-        int resizeQuantity;
+        int minIdleSize;
+        int maxPoolSize;
+        int resizeStep;
     }
 
     @Getter
@@ -582,6 +582,9 @@ public final class RxConfig {
 
     void afterSet() {
         threadPool.replicas = Math.max(1, threadPool.replicas);
+        threadPool.minIdleSize = Math.max(1, threadPool.minIdleSize);
+        threadPool.maxPoolSize = Math.max(threadPool.minIdleSize, threadPool.maxPoolSize);
+        threadPool.resizeStep = Math.max(1, threadPool.resizeStep);
         if (net.poolMaxSize <= 0) {
             net.poolMaxSize = Math.max(10, Constants.CPU_THREADS * 2);
         }
@@ -641,9 +644,9 @@ public final class RxConfig {
         threadPool.cpuLoadWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_CPU_LOAD_WARNING, threadPool.cpuLoadWarningThreshold);
         threadPool.samplingPeriod = SystemPropertyUtil.getLong(ConfigNames.THREAD_POOL_SAMPLING_PERIOD, threadPool.samplingPeriod);
         threadPool.samplingTimes = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_SAMPLING_TIMES, threadPool.samplingTimes);
-        threadPool.minDynamicSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MIN_DYNAMIC_SIZE, threadPool.minDynamicSize);
-        threadPool.maxDynamicSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_DYNAMIC_SIZE, threadPool.maxDynamicSize);
-        threadPool.resizeQuantity = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_QUANTITY, threadPool.resizeQuantity);
+        threadPool.minIdleSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MIN_IDLE_SIZE, threadPool.minIdleSize);
+        threadPool.maxPoolSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_POOL_SIZE, threadPool.maxPoolSize);
+        threadPool.resizeStep = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_STEP, threadPool.resizeStep);
 
         cache.physicalMemoryUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.PHYSICAL_MEMORY_USAGE_WARNING, cache.physicalMemoryUsageWarningThreshold);
         String v = SystemPropertyUtil.get(ConfigNames.CACHE_PROVIDER);

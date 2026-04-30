@@ -4,7 +4,8 @@ import org.rx.core.Arrays;
 import org.rx.core.Constants;
 
 public interface Serializer {
-    Serializer DEFAULT = new FurySerializer();
+    Serializer DEFAULT = new JdkAndJsonSerializer();
+    Serializer FURY = new FurySerializer();
 
     default <T> byte[] serializeToBytes(T[] obj) {
         if (Arrays.isEmpty(obj)) {

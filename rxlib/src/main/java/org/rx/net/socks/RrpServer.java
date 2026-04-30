@@ -314,7 +314,7 @@ public class RrpServer extends Disposable {
                     }
                     byte[] data = new byte[len];
                     buf.readBytes(data, 0, len);
-                    List<RrpConfig.Proxy> pList = Serializer.DEFAULT.deserializeFromBytes(data);
+                    List<RrpConfig.Proxy> pList = Serializer.FURY.deserializeFromBytes(data);
                     server.register(clientChannel, pList);
                 } else if (action == RrpConfig.ACTION_FORWARD) {
                     //step6

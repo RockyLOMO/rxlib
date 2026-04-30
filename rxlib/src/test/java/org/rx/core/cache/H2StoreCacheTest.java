@@ -4,7 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.bean.DataTable;
-import org.rx.codec.CodecUtil;
 import org.rx.core.CachePolicy;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityDatabaseImpl;
@@ -114,7 +113,7 @@ public class H2StoreCacheTest extends AbstractTester {
         }
 
         Object persistedValue(Object key) {
-            H2CacheItem<Object, Object> item = store.get(CodecUtil.hash64(key));
+            H2CacheItem<Object, Object> item = store.get(H2StoreCache.furyHash(key));
             return item == null ? null : item.getValue();
         }
 
@@ -369,7 +368,7 @@ public class H2StoreCacheTest extends AbstractTester {
             cache.syncPut("collision-key", "other", null);
             String tableName = db.tableName(H2CacheItem.class);
             db.executeUpdate(String.format("UPDATE %s SET val_idx=%d WHERE id=%d", tableName,
-                    CodecUtil.hash64("target"), CodecUtil.hash64("collision-key")));
+                    H2StoreCache.furyHash("target"), H2StoreCache.furyHash("collision-key")));
 
             assertFalse(cache.containsValue("target"));
 
@@ -887,7 +886,7 @@ public class H2StoreCacheTest extends AbstractTester {
         assertNull(cache.get("expired-broken"));
         cache.flush("expired-broken");
 
-        assertFalse(db.existsById(H2CacheItem.class, CodecUtil.hash64("expired-broken")));
+        assertFalse(db.existsById(H2CacheItem.class, H2StoreCache.furyHash("expired-broken")));
         assertEquals(1, db.deleteCalls.get());
     }
 
@@ -902,7 +901,7 @@ public class H2StoreCacheTest extends AbstractTester {
         assertNull(cache.get("expired-broken-event"));
         cache.flush("expired-broken-event");
 
-        assertFalse(db.existsById(H2CacheItem.class, CodecUtil.hash64("expired-broken-event")));
+        assertFalse(db.existsById(H2CacheItem.class, H2StoreCache.furyHash("expired-broken-event")));
         assertEquals(1, db.deleteCalls.get());
         assertEquals(0, expiredEvents.get());
     }

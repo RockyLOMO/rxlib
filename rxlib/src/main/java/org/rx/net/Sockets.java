@@ -310,6 +310,12 @@ public final class Sockets {
         });
     }
 
+    public static ThreadPool newRpcScheduler() {
+        int threads = Math.max(4, Constants.CPU_THREADS * 2);
+        int queueCapacity = Math.max(1024, Constants.CPU_THREADS * 256);
+        return ThreadPool.fixed(ReactorNames.RPC, threads, queueCapacity);
+    }
+
     // Don't use executor
     private static EventLoopGroup newEventLoop(int threadAmount) {
         return Epoll.isAvailable() ? new EpollEventLoopGroup(threadAmount) : new NioEventLoopGroup(threadAmount);

@@ -98,6 +98,29 @@ class RxConfigTest {
     }
 
     @Test
+    void refreshFrom_acceptsRenamedThreadPoolResizeProps() {
+        RxConfig conf = RxConfig.INSTANCE;
+        int oldMinIdleSize = conf.threadPool.getMinIdleSize();
+        int oldMaxPoolSize = conf.threadPool.getMaxPoolSize();
+        int oldResizeStep = conf.threadPool.getResizeStep();
+        try {
+            Map<String, Object> props = new HashMap<>();
+            props.put(RxConfig.ConfigNames.THREAD_POOL_MIN_IDLE_SIZE, 4);
+            props.put(RxConfig.ConfigNames.THREAD_POOL_MAX_POOL_SIZE, 8);
+            props.put(RxConfig.ConfigNames.THREAD_POOL_RESIZE_STEP, 5);
+            conf.refreshFrom(props);
+            assertEquals(4, conf.threadPool.getMinIdleSize());
+            assertEquals(8, conf.threadPool.getMaxPoolSize());
+            assertEquals(5, conf.threadPool.getResizeStep());
+        } finally {
+            conf.threadPool.setMinIdleSize(oldMinIdleSize);
+            conf.threadPool.setMaxPoolSize(oldMaxPoolSize);
+            conf.threadPool.setResizeStep(oldResizeStep);
+            conf.refreshFrom(Collections.<String, Object>emptyMap());
+        }
+    }
+
+    @Test
     void refreshFrom_initializesDefaultHttpServerWhenPortConfigured() throws Exception {
         assumeTrue(HttpServer.getDefault() == null);
         RxConfig conf = RxConfig.INSTANCE;

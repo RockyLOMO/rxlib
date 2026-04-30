@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 
 import static org.rx.core.Extends.tryClose;
 
@@ -149,6 +150,25 @@ public class ObjectPool<T> extends Disposable {
 
     public int idleSize() {
         return sharedIdleCount.get();
+    }
+
+    public boolean anyMatch(@NonNull PredicateFunc<T> predicate) {
+        for (IdentityWrapper<T> wrapper : conf.keySet()) {
+            T instance = wrapper.instance;
+            if (instance != null && predicate.test(instance)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void forEach(@NonNull Consumer<T> consumer) {
+        for (IdentityWrapper<T> wrapper : conf.keySet()) {
+            T instance = wrapper.instance;
+            if (instance != null) {
+                consumer.accept(instance);
+            }
+        }
     }
 
     public void setValidationPeriod(long validationPeriod) {

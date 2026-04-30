@@ -21,9 +21,9 @@ app:
     cpuLoadWarningThreshold: 80
     samplingPeriod: 3000
     samplingTimes: 2
-    minDynamicSize: 1
-    maxDynamicSize: 1000
-    resizeQuantity: 2
+    minIdleSize: 1
+    maxPoolSize: 1000
+    resizeStep: 2
   cache:
     physicalMemoryUsageWarningThreshold: 95
     provider: org.rx.core.cache.MemoryCache

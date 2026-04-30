@@ -753,7 +753,7 @@ public final class RssClient {
         if (facade instanceof ForwardingSocksRpcContract) {
             facade = ((ForwardingSocksRpcContract) facade).delegate;
         }
-        return Remoting.ping(facade);
+        return Remoting.isHealthy(facade);
     }
 
     static void updateUpstreamHealth(RssRuntime.UpstreamSnapshot snapshot, RandomList<UpstreamSupport> servers,
