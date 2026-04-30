@@ -68,6 +68,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.core.Extends.eachQuietly;
@@ -674,6 +675,8 @@ public final class RssClient {
 
     static void closeInServerQuietly(RssRuntime.RssInServer server) {
         if (server != null) {
+            // 热加载旧实例可能仍有 UDP relay 残留事件，关闭前先停源地址粘滞缓存。
+            server.disableSourceSteering();
             tryClose(server.server);
         }
     }
@@ -714,10 +717,11 @@ public final class RssClient {
         }
         SocksConfig outConf = createOutboundConfig(conf, inConf);
         AtomicReference<SocksConfig> outConfRef = new AtomicReference<>(outConf);
+        AtomicBoolean sourceSteeringEnabled = new AtomicBoolean(true);
         BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
             InetAddress srcHost = e.getSource().getAddress();
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            UpstreamSupport next = nextUpstream(socksServersRef.get(), srcHost, dstEp);
+            UpstreamSupport next = nextUpstream(socksServersRef.get(), srcHost, dstEp, sourceSteeringEnabled.get());
             if (rssConf.hasDebugFlag()) {
                 log.info("route upSvr src {} dst {} -> {}", srcHost, dstEp, next.getEndpoint());
             }
@@ -789,7 +793,7 @@ public final class RssClient {
             }
         });
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-        return new RssRuntime.RssInServer(inSvr, inConf, outConfRef);
+        return new RssRuntime.RssInServer(inSvr, inConf, outConfRef, sourceSteeringEnabled);
     }
 
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost) {
@@ -797,10 +801,15 @@ public final class RssClient {
     }
 
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost, UnresolvedEndpoint dstEp) {
+        return nextUpstream(socksServers, srcHost, dstEp, true);
+    }
+
+    static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost,
+                                        UnresolvedEndpoint dstEp, boolean allowSourceSteering) {
         RSSConf conf = rssConf;
         int steeringTtl = conf == null || conf.route == null ? 0 : conf.route.srcSteeringTTL;
         try {
-            UpstreamSupport next = useSourceSteering(steeringTtl, dstEp)
+            UpstreamSupport next = allowSourceSteering && useSourceSteering(steeringTtl, dstEp)
                     ? socksServers.next(srcHost, steeringTtl, true)
                     : socksServers.next();
             if (next.isHealthy()) {

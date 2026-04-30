@@ -500,12 +500,13 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         }
 
         List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
+        long now = System.currentTimeMillis();
         for (ShadowUser user : users) {
             List<Map.Entry<InetAddress, TrafficLoginInfo>> entries = new ArrayList<Map.Entry<InetAddress, TrafficLoginInfo> >(user.getLoginIps().entrySet());
             Collections.sort(entries, LOGIN_IP_COMPARATOR);
             for (Map.Entry<InetAddress, TrafficLoginInfo> entry : entries) {
                 TrafficLoginInfo info = entry.getValue();
-                long activeSeconds = info == null ? 0L : info.getTotalActiveSeconds().get();
+                long activeSeconds = liveActiveSeconds(info, now);
                 long readBytes = info == null ? 0L : info.getTotalReadBytes().get();
                 long writeBytes = info == null ? 0L : info.getTotalWriteBytes().get();
                 LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
@@ -526,6 +527,17 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             }
         }
         return rows;
+    }
+
+    static long liveActiveSeconds(TrafficLoginInfo info, long nowMillis) {
+        if (info == null) {
+            return 0L;
+        }
+        long activeSinceMillis = info.getActiveSinceMillis().get();
+        if (info.getRefCnt().get() > 0 && activeSinceMillis > 0L) {
+            return Math.max(0L, (nowMillis - activeSinceMillis) / 1000L);
+        }
+        return info.getTotalActiveSeconds().get();
     }
 
     private static String formatGeo(String ip) {

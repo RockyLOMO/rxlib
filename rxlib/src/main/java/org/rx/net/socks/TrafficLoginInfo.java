@@ -17,6 +17,7 @@ public class TrafficLoginInfo implements Serializable {
 
     DateTime latestTime;
     final AtomicInteger refCnt = new AtomicInteger();
+    final AtomicLong activeSinceMillis = new AtomicLong();
     final AtomicLong totalActiveSeconds = new AtomicLong();
     final AtomicLong totalReadBytes = new AtomicLong();
     final AtomicLong totalWriteBytes = new AtomicLong();

@@ -123,6 +123,28 @@ class RssClientWeightedRoutingTest {
     }
 
     @Test
+    void nextUpstream_DisablesSourceSteeringForClosingOldInstance() throws Exception {
+        RSSConf oldConf = RssClient.rssConf;
+        try {
+            RssClient.rssConf = rssConfWithSteeringTtl(60);
+            UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
+            UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
+            RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
+            InetAddress source = InetAddress.getByName("10.250.0.10");
+            UnresolvedEndpoint ssh = new UnresolvedEndpoint("example.com", 22);
+
+            assertSame(primary, RssClient.nextUpstream(servers, source, ssh, true));
+            servers.setWeight(primary, 0);
+            servers.setWeight(backup, 1);
+
+            assertSame(backup, RssClient.nextUpstream(servers, source, ssh, false),
+                    "热加载旧实例关闭 source steering 后不应继续命中同源 IP 粘滞缓存");
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
+    }
+
+    @Test
     void commonStatelessPortList_CoversHttpAndFrequentlyStatelessProtocols() {
         assertTrue(RssClient.isCommonStatelessPort(80));
         assertTrue(RssClient.isCommonStatelessPort(443));

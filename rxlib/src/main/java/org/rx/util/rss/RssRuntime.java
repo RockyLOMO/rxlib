@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.core.Extends.eachQuietly;
@@ -498,11 +499,18 @@ final class RssRuntime implements AutoCloseable {
         final SocksProxyServer server;
         final SocksConfig inConf;
         final AtomicReference<SocksConfig> outConfRef;
+        final AtomicBoolean sourceSteeringEnabled;
 
-        RssInServer(SocksProxyServer server, SocksConfig inConf, AtomicReference<SocksConfig> outConfRef) {
+        RssInServer(SocksProxyServer server, SocksConfig inConf, AtomicReference<SocksConfig> outConfRef,
+                    AtomicBoolean sourceSteeringEnabled) {
             this.server = server;
             this.inConf = inConf;
             this.outConfRef = outConfRef;
+            this.sourceSteeringEnabled = sourceSteeringEnabled;
+        }
+
+        void disableSourceSteering() {
+            sourceSteeringEnabled.set(false);
         }
     }
 

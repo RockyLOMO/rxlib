@@ -202,6 +202,21 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void liveActiveSeconds_UsesCurrentOnlineWindowForActiveConnections() {
+        TrafficLoginInfo info = new TrafficLoginInfo();
+        long now = System.currentTimeMillis();
+        info.getTotalActiveSeconds().set(TimeUnit.HOURS.toSeconds(10));
+        info.getRefCnt().set(3);
+        info.getActiveSinceMillis().set(now - TimeUnit.HOURS.toMillis(3));
+
+        assertEquals(TimeUnit.HOURS.toSeconds(3), RssClientHttpHandler.liveActiveSeconds(info, now));
+
+        info.getRefCnt().set(0);
+        info.getActiveSinceMillis().set(0L);
+        assertEquals(TimeUnit.HOURS.toSeconds(10), RssClientHttpHandler.liveActiveSeconds(info, now));
+    }
+
+    @Test
     public void rssClientHttpHandler_RejectsMissingAuthorizationLikeDiagnosticPage() {
         String oldRtoken = RxConfig.INSTANCE.getRtoken();
         try {
