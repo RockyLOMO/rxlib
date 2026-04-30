@@ -15,12 +15,37 @@ import java.io.File;
 import java.net.ServerSocket;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Base64;
 import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class DiagnosticHttpHandlerTest {
+    @Test
+    public void exceptionTraceStackUsesFullWidthRow() {
+        Map<String, Object> row = new HashMap<String, Object>();
+        row.put("modified", "2026-04-30 16:00:00");
+        row.put("id", "1");
+        row.put("level", "SYSTEM");
+        row.put("count", "1");
+        row.put("app", "rxlib");
+        row.put("thread", "eventLoop");
+        row.put("messagesHtml", "message");
+        row.put("stackTrace", "java.lang.IllegalStateException\n\tat org.rx.Test.run(Test.java:1)");
+
+        Map<String, Object> vars = new HashMap<String, Object>();
+        vars.put("error", "");
+        vars.put("empty", Boolean.FALSE);
+        vars.put("rows", Collections.singletonList(row));
+
+        String html = HttpServer.renderHtmlTemplate("rx-diagnostic-exceptions.html", vars);
+        assertTrue(html.contains("<th>Modified</th><th>Id</th><th>Level</th><th>Count</th><th>App</th><th>Thread</th><th>Messages</th></tr>"));
+        assertTrue(html.contains("<tr><td colspan=\"7\"><details><summary>Stack</summary><pre>java.lang.IllegalStateException"));
+    }
+
     @Test
     public void diagnosticPageRequiresBasicAuthAndReadsH2() throws Exception {
         DiagnosticConfig config = memConfig("diag_http");
@@ -116,6 +141,7 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("directUsedBytes=97.52 MB (102253591 bytes)"));
                 assertFalse(html.contains("directUsedBytes=97 (97.00 B).52 MB"));
                 assertTrue(html.contains("tab-link"));
+                assertTrue(html.contains("document.activeElement.blur()"));
                 assertFalse(html.contains("backdrop-filter"));
                 assertTrue(html.contains("metric-chart"));
                 assertTrue(html.contains("class=\"point\""));
