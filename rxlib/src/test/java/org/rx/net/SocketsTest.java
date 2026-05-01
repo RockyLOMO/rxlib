@@ -47,19 +47,19 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class SocketsTest {
-    private final List<String> originalOutlandServers = new ArrayList<>(RxConfig.INSTANCE.getNet().getDns().getOutlandServers());
+    private final List<String> originalRemoteServers = new ArrayList<>(RxConfig.INSTANCE.getNet().getDns().getRemoteServers());
 
     @AfterEach
     void restoreTcpDnsResolver() throws Exception {
-        RxConfig.INSTANCE.getNet().getDns().getOutlandServers().clear();
-        RxConfig.INSTANCE.getNet().getDns().getOutlandServers().addAll(originalOutlandServers);
-        for (String fieldName : new String[]{"tcpInlandDnsAddressResolverGroup", "tcpOutlandDnsAddressResolverGroup"}) {
+        RxConfig.INSTANCE.getNet().getDns().getRemoteServers().clear();
+        RxConfig.INSTANCE.getNet().getDns().getRemoteServers().addAll(originalRemoteServers);
+        for (String fieldName : new String[]{"tcpDirectDnsAddressResolverGroup", "tcpRemoteDnsAddressResolverGroup"}) {
             Field field = Sockets.class.getDeclaredField(fieldName);
             field.setAccessible(true);
             field.set(null, null);
         }
-        closeAndClearDnsClient("inlandClient");
-        closeAndClearDnsClient("outlandClient");
+        closeAndClearDnsClient("directClient");
+        closeAndClearDnsClient("remoteClient");
     }
 
     private static void closeAndClearDnsClient(String fieldName) throws Exception {
@@ -419,11 +419,11 @@ public class SocketsTest {
     }
 
     @Test
-    public void testTcpDnsResolverUsesConfiguredOutlandDns() throws Exception {
-        RxConfig.INSTANCE.getNet().getDns().getOutlandServers().clear();
-        RxConfig.INSTANCE.getNet().getDns().getOutlandServers().add("127.0.0.1:5353");
+    public void testTcpDnsResolverUsesConfiguredRemoteDns() throws Exception {
+        RxConfig.INSTANCE.getNet().getDns().getRemoteServers().clear();
+        RxConfig.INSTANCE.getNet().getDns().getRemoteServers().add("127.0.0.1:5353");
 
-        Object resolverGroup = Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.OUTLAND);
+        Object resolverGroup = Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.REMOTE);
         Field builderField = resolverGroup.getClass().getDeclaredField("dnsResolverBuilder");
         builderField.setAccessible(true);
         Object builder = builderField.get(resolverGroup);
@@ -450,20 +450,20 @@ public class SocketsTest {
     }
 
     @Test
-    public void testBootstrapInlandDnsModeUsesInlandResolver() {
+    public void testBootstrapDirectDnsModeUsesDirectResolver() {
         SocksConfig config = new SocksConfig();
-        config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.INLAND);
+        config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.DIRECT);
 
         Bootstrap bootstrap = Sockets.bootstrap(config, ch -> {
         });
-        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.INLAND), bootstrap.config().resolver());
+        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), bootstrap.config().resolver());
     }
 
     @Test
-    public void testBootstrapDefaultUsesSystemResolver() {
+    public void testBootstrapDefaultUsesDirectResolver() {
         Bootstrap bootstrap = Sockets.bootstrap(new SocketConfig(), ch -> {
         });
-        assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
+        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), bootstrap.config().resolver());
     }
 
     private DiagnosticConfig memDiagnosticConfig(String name) {

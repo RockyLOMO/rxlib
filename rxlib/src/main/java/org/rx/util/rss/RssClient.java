@@ -313,7 +313,9 @@ public final class RssClient {
             if (conf.hasRouteFlag()) {
                 log.info("route dns {}+{} {} <- {}", srcIp, host, outProxy ? "PROXY" : "DIRECT", ext);
             }
-            return outProxy ? delegate.resolveHost(srcIp, host) : DnsClient.inlandClient().resolveAll(host);
+            List<InetAddress> result = outProxy ? delegate.resolveHost(srcIp, host) : DnsClient.directClient().resolveAll(host);
+            // RSS Client 禁止把未命中的域名透传给本地系统 DNS；空结果由 DNS Server 转 NXDOMAIN。
+            return result == null ? Collections.<InetAddress>emptyList() : result;
         }
 
         @Override
@@ -639,7 +641,7 @@ public final class RssClient {
 
     static void configureInboundConfig(RSSConf conf, SocksConfig config, boolean udp2raw) {
         config.setDebug(conf.hasDebugFlag());
-        config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.INLAND);
+        config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.DIRECT);
         config.setOptimalSettings(RssSupport.IN_OPS);
         config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
         config.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
@@ -1342,7 +1344,7 @@ public final class RssClient {
 
         InetAddress wanIp = Sockets.parseIpAddress(GeoManager.INSTANCE.getPublicIp());
         List<String> subDomains = Linq.from(conf.ddnsDomains)
-                .where(sd -> !DnsClient.inlandClient().resolveAll(sd).contains(wanIp))
+                .where(sd -> !DnsClient.directClient().resolveAll(sd).contains(wanIp))
                 .select(sd -> sd.substring(0, sd.indexOf("."))).toList();
         if (subDomains.isEmpty()) {
             return;

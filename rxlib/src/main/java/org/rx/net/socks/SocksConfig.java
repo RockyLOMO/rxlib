@@ -21,7 +21,7 @@ import java.util.Set;
 @ToString
 public class SocksConfig extends SocketConfig {
     public enum TcpAsyncDnsMode {
-        SYSTEM, INLAND, OUTLAND
+        SYSTEM, DIRECT, REMOTE
     }
 
     public static final int DEF_READ_TIMEOUT_SECONDS = 60 * 4;
@@ -38,9 +38,9 @@ public class SocksConfig extends SocketConfig {
     /**
      * TCP 出站建连时的 DNS 解析策略。
      * SYSTEM: 不指定 Netty 异步 DNS，退回 Bootstrap 默认解析；
-     * INLAND/OUTLAND: 使用 Netty 异步 DNS，并分别走 RxConfig 配置的 inland/outland 服务器。
+     * DIRECT/REMOTE: 使用 Netty 异步 DNS，并分别走直连/远程 DNS Client。
      */
-    private TcpAsyncDnsMode tcpAsyncDnsMode = TcpAsyncDnsMode.SYSTEM;
+    private TcpAsyncDnsMode tcpAsyncDnsMode = TcpAsyncDnsMode.DIRECT;
     @Getter(AccessLevel.NONE)
     @ToString.Exclude
     private transient volatile Set<InetAddress> whiteList;

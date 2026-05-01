@@ -31,7 +31,7 @@ public final class RssRpcApp implements SocksRpcContract {
     @SneakyThrows
     @Override
     public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
-        return DnsClient.outlandClient().resolveAll(host);
+        return DnsClient.remoteClient().resolveAll(host);
     }
 
     @Override

@@ -730,6 +730,43 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void forwardingDns_routeDisabledNullRemoteResultDoesNotFallbackToLocalDns() throws Exception {
+        RSSConf old = RssClient.rssConf;
+        RSSConf conf = validRssConf();
+        conf.route.enable = false;
+        AtomicInteger calls = new AtomicInteger();
+        SocksRpcContract delegate = new SocksRpcContract() {
+            @Override
+            public void fakeEndpoint(long hash, String realEndpoint) {
+            }
+
+            @Override
+            public void addWhiteList(InetAddress endpoint) {
+            }
+
+            @Override
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                calls.incrementAndGet();
+                return null;
+            }
+        };
+
+        try {
+            RssClient.rssConf = conf;
+            RssClient.ForwardingSocksRpcContract contract =
+                    new RssClient.ForwardingSocksRpcContract(delegate, null);
+
+            List<InetAddress> result = contract.resolveHost(
+                    InetAddress.getByAddress(new byte[]{10, 0, 0, 1}), "www.google.com");
+
+            assertEquals(1, calls.get());
+            assertTrue(result.isEmpty());
+        } finally {
+            RssClient.rssConf = old;
+        }
+    }
+
+    @Test
     public void upstreamCloseMaxWait_IsOneMinute() {
         assertEquals(TimeUnit.MINUTES.toMillis(1), RssClient.UPSTREAM_CLOSE_MAX_WAIT_MILLIS);
     }

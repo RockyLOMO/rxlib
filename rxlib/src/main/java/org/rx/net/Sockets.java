@@ -132,50 +132,47 @@ public final class Sockets {
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
-    /** 共享 TCP Bootstrap 可选解析器：走 inland DNS。 */
-    static volatile AddressResolverGroup<InetSocketAddress> tcpInlandDnsAddressResolverGroup;
-    /** 共享 TCP Bootstrap 可选解析器：走 outland DNS。 */
-    static volatile AddressResolverGroup<InetSocketAddress> tcpOutlandDnsAddressResolverGroup;
+    /** 共享 TCP Bootstrap 解析器：走直连 DNS Client。 */
+    static volatile AddressResolverGroup<InetSocketAddress> tcpDirectDnsAddressResolverGroup;
+    /** 共享 TCP Bootstrap 解析器：走远程 DNS Client。 */
+    static volatile AddressResolverGroup<InetSocketAddress> tcpRemoteDnsAddressResolverGroup;
 
     static AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup(SocketConfig config) {
         if (!(config instanceof SocksConfig)) {
-            return DefaultAddressResolverGroup.INSTANCE;
+            return tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT);
         }
 
         SocksConfig socksConfig = (SocksConfig) config;
         SocksConfig.TcpAsyncDnsMode mode = socksConfig.getTcpAsyncDnsMode();
-        if (mode == null || mode == SocksConfig.TcpAsyncDnsMode.SYSTEM) {
-            return DefaultAddressResolverGroup.INSTANCE;
-        }
-        return tcpDnsAddressResolverGroup(mode);
+        return tcpDnsAddressResolverGroup(mode == null ? SocksConfig.TcpAsyncDnsMode.DIRECT : mode);
     }
 
     static AddressResolverGroup<InetSocketAddress> tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode mode) {
         if (mode == null || mode == SocksConfig.TcpAsyncDnsMode.SYSTEM) {
             return DefaultAddressResolverGroup.INSTANCE;
         }
-        if (mode == SocksConfig.TcpAsyncDnsMode.INLAND) {
-            AddressResolverGroup<InetSocketAddress> g = tcpInlandDnsAddressResolverGroup;
+        if (isDirectDnsMode(mode)) {
+            AddressResolverGroup<InetSocketAddress> g = tcpDirectDnsAddressResolverGroup;
             if (g != null) {
                 return g;
             }
             synchronized (Sockets.class) {
-                if (tcpInlandDnsAddressResolverGroup == null) {
-                    tcpInlandDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.INLAND);
+                if (tcpDirectDnsAddressResolverGroup == null) {
+                    tcpDirectDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT);
                 }
-                return tcpInlandDnsAddressResolverGroup;
+                return tcpDirectDnsAddressResolverGroup;
             }
         }
-        if (mode == SocksConfig.TcpAsyncDnsMode.OUTLAND) {
-            AddressResolverGroup<InetSocketAddress> g = tcpOutlandDnsAddressResolverGroup;
+        if (isRemoteDnsMode(mode)) {
+            AddressResolverGroup<InetSocketAddress> g = tcpRemoteDnsAddressResolverGroup;
             if (g != null) {
                 return g;
             }
             synchronized (Sockets.class) {
-                if (tcpOutlandDnsAddressResolverGroup == null) {
-                    tcpOutlandDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.OUTLAND);
+                if (tcpRemoteDnsAddressResolverGroup == null) {
+                    tcpRemoteDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.REMOTE);
                 }
-                return tcpOutlandDnsAddressResolverGroup;
+                return tcpRemoteDnsAddressResolverGroup;
             }
         }
         return DefaultAddressResolverGroup.INSTANCE;
@@ -184,12 +181,12 @@ public final class Sockets {
     private static AddressResolverGroup<InetSocketAddress> buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode mode) {
         DnsClient client;
         Collection<InetSocketAddress> nameServerList;
-        if (mode == SocksConfig.TcpAsyncDnsMode.INLAND) {
-            client = DnsClient.inlandClient();
-            nameServerList = DnsClient.inlandNameServers();
+        if (isDirectDnsMode(mode)) {
+            client = DnsClient.directClient();
+            nameServerList = DnsClient.directNameServers();
         } else {
-            client = DnsClient.outlandClient();
-            nameServerList = DnsClient.outlandNameServers();
+            client = DnsClient.remoteClient();
+            nameServerList = DnsClient.remoteNameServers();
         }
 
         DnsNameResolverBuilder nb = new DnsNameResolverBuilder()
@@ -207,6 +204,14 @@ public final class Sockets {
             log.info("TCP DNS resolver use {} {}", mode, CollectionUtils.isEmpty(nameServerList) ? "platformDefault" : nameServerList);
         }
         return new DnsAddressResolverGroup(nb);
+    }
+
+    private static boolean isDirectDnsMode(SocksConfig.TcpAsyncDnsMode mode) {
+        return mode == SocksConfig.TcpAsyncDnsMode.DIRECT;
+    }
+
+    private static boolean isRemoteDnsMode(SocksConfig.TcpAsyncDnsMode mode) {
+        return mode == SocksConfig.TcpAsyncDnsMode.REMOTE;
     }
 
     public static CompletableFuture<InetSocketAddress> resolveUdpEndpointAsync(InetSocketAddress endpoint, SocketConfig config) {
@@ -235,10 +240,10 @@ public final class Sockets {
 
     static DnsClient udpDnsClient(SocketConfig config) {
         if (config instanceof SocksConfig
-                && ((SocksConfig) config).getTcpAsyncDnsMode() == SocksConfig.TcpAsyncDnsMode.OUTLAND) {
-            return DnsClient.outlandClient();
+                && isRemoteDnsMode(((SocksConfig) config).getTcpAsyncDnsMode())) {
+            return DnsClient.remoteClient();
         }
-        return DnsClient.inlandClient();
+        return DnsClient.directClient();
     }
     
     public static LengthFieldBasedFrameDecoder intLengthFieldDecoder() {

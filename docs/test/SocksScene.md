@@ -27,6 +27,8 @@ socks5 client -> SocksServerProxy A(广域网ip a), udp associate -> udp2raw cli
 
 ## 场景4
 ShadowsocksClient(广域网ip c) -> ShadowsocksServer(广域网ip a) -> SocksServerProxy A(广域网ip a), udp associate -> SocksServerProxy B(广域网ip b), udp -> dest
+- RSS Client DNS 路径：仅当 geo 规则确认域名直连时使用直连 DNS Client；其他域名必须通过 RPC 调用 RSS Server，由远程 DNS Client 解析，避免本地 DNS 污染。
+- TCP/UDP 建连路径：直连分支使用 Netty Bootstrap 直连 DNS Client；代理分支保持域名未解析并交给上游/远端处理。
 - 对应用例：
   - `org.rx.net.socks.ShadowsocksServerIntegrationTest#shadowsocksUdpRelay_e2e`
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_e2e`
