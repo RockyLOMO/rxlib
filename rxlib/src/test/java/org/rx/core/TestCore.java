@@ -672,18 +672,23 @@ public class TestCore extends AbstractTester {
 //                "  socksUser: hysteriaR\n" +
 //                "  ipLimit: -1\n" +
 //                "socksServers:\n" +
-//                "- youfanX:5PXx0^JNMOgvn3P658@202.91.34.9:9900?w=8\n" +
-//                "- youfanX:5PXx0^JNMOgvn3P658@185.201.226.191:9900?\n" +
-//                "udp2rawSocksServers:\n" +
-//                "- youfanX:5PXx0^JNMOgvn3P658@202.91.34.9:9910?w=8\n" +
-//                "hysteriaClient: 127.0.0.1:1090\n" +
+//                "- id: primary\n" +
+//                "  weight: 8\n" +
+//                "  endpoint: youfanX:5PXx0^JNMOgvn3P658@202.91.34.9:9900\n" +
+//                "- id: udp2raw-a\n" +
+//                "  weight: 8\n" +
+//                "  endpoint: youfanX:5PXx0^JNMOgvn3P658@202.91.34.9:9910\n" +
+//                "  udp2raw: true\n" +
+//                "  tcpClient: youfanX:5PXx0^JNMOgvn3P658@127.0.0.1:4093\n" +
+//                "- id: hysteria-a\n" +
+//                "  weight: 1\n" +
+//                "  endpoint: youfanX:5PXx0^JNMOgvn3P658@185.201.226.191:9900\n" +
+//                "  tcpClient: 127.0.0.1:1090\n" +
 //                "socksPwd: 202002\n" +
 //                "tcpTimeoutSeconds: 120\n" +
 //                "udpTimeoutSeconds: 1200\n" +
 //                "rpcMaxSize: 10\n" +
 //                "rpcAutoWhiteListSeconds: 240\n" +
-//                "udp2rawClient: 127.0.0.1:4095\n" +
-//                "kcptunClient: youfanX:5PXx0^JNMOgvn3P658@127.0.0.1:4093\n" +
 //                "enableRoute: true\n" +
 //                "routeDstGeoSiteDirectRules:\n" +
 //                "- domain:f-li.cn\n" +
