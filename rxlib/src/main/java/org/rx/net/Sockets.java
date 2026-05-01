@@ -416,11 +416,17 @@ public final class Sockets {
                 future.syncUninterruptibly();
                 channels.add(future.channel());
             }
-        } catch (RuntimeException e) {
+        } catch (Throwable e) {
             for (Channel channel : channels) {
                 channel.close();
             }
-            throw e;
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException) e;
+            }
+            if (e instanceof Error) {
+                throw (Error) e;
+            }
+            throw new RuntimeException(e);
         }
         if (bindCount > 1) {
             log.info("UDP SO_REUSEPORT enabled bindAddress={} bindCount={}", toString(bindAddress), bindCount);
@@ -450,11 +456,17 @@ public final class Sockets {
                 future.syncUninterruptibly();
                 channels.add(future.channel());
             }
-        } catch (RuntimeException e) {
+        } catch (Throwable e) {
             for (Channel channel : channels) {
                 channel.close();
             }
-            throw e;
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException) e;
+            }
+            if (e instanceof Error) {
+                throw (Error) e;
+            }
+            throw new RuntimeException(e);
         }
         if (bindCount > 1) {
             log.info("TCP SO_REUSEPORT enabled bindAddress={} bindCount={}", toString(bindAddress), bindCount);

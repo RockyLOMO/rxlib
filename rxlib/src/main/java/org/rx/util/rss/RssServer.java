@@ -29,8 +29,7 @@ public final class RssServer {
     }
 
     public static void launch(Map<String, String> options, int port) {
-        boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
-        int udp2rawPort = port + 10;
+        Integer udp2rawPort = Reflects.convertQuietly(options.get("udp2rawPort"), Integer.class);
         boolean debugFlag = "1".equals(options.get("debug"));
         AuthenticEndpoint shadowUser = Reflects.convertQuietly(options.get("shadowUser"), AuthenticEndpoint.class);
         if (shadowUser == null) {
@@ -52,7 +51,7 @@ public final class RssServer {
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-        if (enableUdp2raw) {
+        if (udp2rawPort != null && udp2rawPort > 0) {
             SocksConfig outTunConf = Sys.deepClone(outConf);
             outTunConf.setDebug(debugFlag);
             outTunConf.setListenAddress(Sockets.newAnyEndpoint(udp2rawPort));

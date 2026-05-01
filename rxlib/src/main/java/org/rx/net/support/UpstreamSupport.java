@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class UpstreamSupport {
     private AuthenticEndpoint endpoint;
     private SocksRpcContract facade;
+    private AuthenticEndpoint tcpClient;
     private int configuredWeight;
     private volatile boolean healthy = true;
     private volatile int healthFailureCount;
