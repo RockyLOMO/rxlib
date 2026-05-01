@@ -130,6 +130,19 @@ deploy_pids() {
     pgrep -f "app.deploy.id=${DEPLOY_ID}" 2>/dev/null || true
 }
 
+candidate_pids() {
+    if [ -n "${STARTED_PID:-}" ] && pid_args "${STARTED_PID}" | grep -Fq "app.deploy.id=${DEPLOY_ID}"; then
+        echo "${STARTED_PID}"
+    fi
+    deploy_pids | while IFS= read -r pid; do
+        [ -z "${pid}" ] && continue
+        if [ -n "${STARTED_PID:-}" ] && [ "${pid}" = "${STARTED_PID}" ]; then
+            continue
+        fi
+        echo "${pid}"
+    done
+}
+
 pid_alive() {
     local pid="$1"
     [ -n "${pid}" ] && kill -0 "${pid}" >/dev/null 2>&1
@@ -246,9 +259,45 @@ port_in_use() {
     return 1
 }
 
+listener_inodes_for_port() {
+    local port="$1" port_hex
+    printf -v port_hex '%04X' "${port}"
+    awk -v port_hex="${port_hex}" '
+        $4 == "0A" {
+            split($2, local_addr, ":")
+            if (toupper(local_addr[2]) == port_hex) {
+                print $10
+            }
+        }
+    ' /proc/net/tcp /proc/net/tcp6 2>/dev/null | sort -u
+}
+
+pid_listens_on_procfs() {
+    local pid="$1"
+    local port="$2"
+    local inodes fd link inode
+
+    [ -d "/proc/${pid}/fd" ] || return 1
+    inodes=$(listener_inodes_for_port "${port}")
+    [ -n "${inodes}" ] || return 1
+
+    for fd in /proc/"${pid}"/fd/*; do
+        link=$(readlink "${fd}" 2>/dev/null) || continue
+        case "${link}" in
+            socket:\[*\])
+                inode=${link#socket:[}
+                inode=${inode%]}
+                printf '%s\n' "${inodes}" | grep -Fxq "${inode}" && return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
 pid_listens_on() {
     local pid="$1"
     local port="$2"
+    pid_listens_on_procfs "${pid}" "${port}" && return 0
     if command -v ss >/dev/null 2>&1; then
         ss -ltnp 2>/dev/null | grep -F "pid=${pid}," | awk '{print $4}' | grep -Eq "(^|:)${port}$" && return 0
     fi
@@ -383,7 +432,7 @@ EOF
 
 cleanup_candidate_process() {
     local pid_list pid
-    pid_list=$(deploy_pids)
+    pid_list=$(candidate_pids)
     [ -z "${pid_list}" ] && return 0
 
     echo "${YELLOW}[${LOCAL_TIME}] 清理启动失败的候选进程 deployId=${DEPLOY_ID}${NC}"
@@ -424,6 +473,7 @@ start_new_process() {
     mkdir -p logs >/dev/null 2>&1 || true
     echo "${YELLOW}[${LOCAL_TIME}] 正在启动新进程 deployId=${DEPLOY_ID}, slot=${slot}, stdout=${log_file}${NC}"
     nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${dump_opts} ${logback_opts} -Dapp.deploy.id="${DEPLOY_ID}" -Dapp.deploy.slot="${slot}" -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -udp2raw=1 >"${log_file}" 2>&1 &
+    STARTED_PID=$!
 }
 
 wait_for_new_process() {
@@ -433,14 +483,18 @@ wait_for_new_process() {
     NEW_PID=""
     log_file=$(slot_log_file "${NEW_SLOT}")
     while [ ${wait_count} -lt ${STARTUP_WAIT_SECONDS} ]; do
-        pid=$(deploy_pids | head -1)
-        if pid_alive "${pid}"; then
-            if pid_listens_required_ports "${pid}"; then
-                echo "${GREEN}[${LOCAL_TIME}] 新进程已绑定全部必需端口，PID: ${pid}, slot=${NEW_SLOT}${NC}"
-                NEW_PID="${pid}"
-                return 0
+        while IFS= read -r pid; do
+            [ -z "${pid}" ] && continue
+            if pid_alive "${pid}"; then
+                if pid_listens_required_ports "${pid}"; then
+                    echo "${GREEN}[${LOCAL_TIME}] 新进程已绑定全部必需端口，PID: ${pid}, slot=${NEW_SLOT}${NC}"
+                    NEW_PID="${pid}"
+                    return 0
+                fi
             fi
-        fi
+        done <<EOF
+$(candidate_pids)
+EOF
         sleep 1
         wait_count=$((wait_count + 1))
     done
