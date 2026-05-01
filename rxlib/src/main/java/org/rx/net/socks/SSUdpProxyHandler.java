@@ -209,8 +209,8 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
     private static DatagramPacket buildOutboundPacket(SocksContext sc, Channel outbound, UnresolvedEndpoint dstEp, ByteBuf payload) {
         Upstream upstream = sc.getUpstream();
-        InetSocketAddress udpRelayAddr = relayAddress(upstream, outbound);
         if (upstream instanceof SocksUdpUpstream) {
+            InetSocketAddress udpRelayAddr = ((SocksUdpUpstream) upstream).selectUdpRelayAddress(outbound);
             if (udpRelayAddr == null) {
                 return null;
             }
@@ -602,10 +602,11 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             ByteBuf outBuf = out.content();
             InetSocketAddress udpRelayAddr = relayAddress(binding.representativeUpstream, outbound);
             if (udpRelayAddr != null) {
-                if (!udpRelayAddr.equals(out.sender())) {
+                SocksUdpUpstream socksUpstream = (SocksUdpUpstream) binding.representativeUpstream;
+                if (!socksUpstream.ownsUdpRelayAddress(outbound, out.sender())) {
                     DiagnosticMetrics.record("ss.udp.unexpected.sender.count", 1D,
                             "path=backend,upstream=socks");
-                    log.warn("SS UDP discard packet from unexpected relay sender {}, expected {}", out.sender(), udpRelayAddr);
+                    log.warn("SS UDP discard packet from unexpected relay sender {}, expected group primary {}", out.sender(), udpRelayAddr);
                     return;
                 }
                 if (!UdpManager.isValidSocks5UdpPacket(outBuf)) {

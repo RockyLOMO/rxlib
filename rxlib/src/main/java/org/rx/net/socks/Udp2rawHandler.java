@@ -11,6 +11,7 @@ import org.rx.core.cache.MemoryCache;
 import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -243,7 +244,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         ByteBuf outBuf = in.content();
         InetSocketAddress dstEp = sender;
 
-        if (sc != null && sc.getUpstream() instanceof org.rx.net.socks.upstream.SocksUdpUpstream && ((org.rx.net.socks.upstream.SocksUdpUpstream) sc.getUpstream()).getUdpRelayAddress(relay) != null) {
+        if (sc != null && sc.getUpstream() instanceof SocksUdpUpstream && ((SocksUdpUpstream) sc.getUpstream()).getUdpRelayAddress(relay) != null) {
             outBuf.retain();
         } else {
             outBuf = UdpManager.socks5Encode(outBuf.retain(), dstEp);
@@ -272,8 +273,8 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                                        InetSocketAddress clientEp, SocksContext context,
                                        InetSocketAddress udp2rawClient, SocksConfig config) {
         Upstream upstream = context.getUpstream();
-        InetSocketAddress targetAddr = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream
-                ? ((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
+        InetSocketAddress targetAddr = upstream instanceof SocksUdpUpstream
+                ? ((SocksUdpUpstream) upstream).selectUdpRelayAddress(relay) : null;
         if (targetAddr == null) {
             targetAddr = udp2rawClient;
         }
@@ -288,7 +289,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (ctxMap == null) {
             relay.attr(ATTR_CTX_MAP).set(ctxMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap());
         }
-        ctxMap.put(targetAddr, context);
+        registerRelayTargets(relay, upstream, targetAddr, context, ctxMap);
 
         UnresolvedEndpoint upDstEp = upstream.getDestination();
         ByteBufAllocator allocator = ctx.alloc();
@@ -316,10 +317,10 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                                        SocksContext context, ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
                                        SocksConfig config) {
         Upstream upstream = context.getUpstream();
-        InetSocketAddress udpRelayAddr = upstream instanceof org.rx.net.socks.upstream.SocksUdpUpstream
-                ? ((org.rx.net.socks.upstream.SocksUdpUpstream) upstream).getUdpRelayAddress(relay) : null;
+        InetSocketAddress udpRelayAddr = upstream instanceof SocksUdpUpstream
+                ? ((SocksUdpUpstream) upstream).selectUdpRelayAddress(relay) : null;
         InetSocketAddress upDstAddr = udpRelayAddr != null ? udpRelayAddr : upstream.getDestination().socketAddress();
-        ctxMap.put(upDstAddr, context);
+        registerRelayTargets(relay, upstream, upDstAddr, context, ctxMap);
 
         ByteBuf outBuf;
         UnresolvedEndpoint upDstEp;
@@ -336,6 +337,23 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
         SocksUserTraffic.recordWrite(relay, context, outBuf.readableBytes(), 1L);
         relay.writeAndFlush(new DatagramPacket(outBuf, upDstAddr));
+    }
+
+    private static void registerRelayTargets(Channel relay, Upstream upstream, InetSocketAddress selected,
+                                             SocksContext context,
+                                             ConcurrentMap<InetSocketAddress, SocksContext> ctxMap) {
+        if (upstream instanceof SocksUdpUpstream) {
+            InetSocketAddress[] relayAddresses = ((SocksUdpUpstream) upstream).snapshotUdpRelayAddresses(relay);
+            if (relayAddresses.length == 0) {
+                ctxMap.put(selected, context);
+                return;
+            }
+            for (InetSocketAddress relayAddress : relayAddresses) {
+                ctxMap.put(relayAddress, context);
+            }
+            return;
+        }
+        ctxMap.put(selected, context);
     }
 
     //endregion

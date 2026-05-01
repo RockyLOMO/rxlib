@@ -73,6 +73,11 @@ public class SocksConfig extends SocketConfig {
      * 仅对代理链上的隧道对端生效，用于回收多倍发包带来的带宽开销。
      */
     private UdpCompressConfig udpCompress;
+    /**
+     * UDP SOCKS5 upstream 端口跳跃配置。
+     * 默认关闭；开启后同一逻辑 upstream 可持有多个远端 UDP relay 端口。
+     */
+    private UdpPortHoppingConfig udpPortHopping;
 
     public SocksConfig() {}
 
@@ -250,6 +255,50 @@ public class SocksConfig extends SocketConfig {
             udpRedundant = new UdpRedundantConfig();
         }
         return udpRedundant.getDestinationRules();
+    }
+
+    public boolean isUdpPortHoppingEnabled() {
+        return udpPortHopping != null && udpPortHopping.isEnabled() && udpPortHopping.getHopCount() > 1;
+    }
+
+    public void setUdpPortHoppingEnabled(boolean enabled) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setEnabled(enabled);
+    }
+
+    public int getUdpPortHoppingHopCount() {
+        return udpPortHopping != null ? udpPortHopping.getHopCount() : 1;
+    }
+
+    public void setUdpPortHoppingHopCount(int hopCount) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setHopCount(hopCount);
+    }
+
+    public int getUdpPortHoppingMinActiveHops() {
+        return udpPortHopping != null ? udpPortHopping.getMinActiveHops() : 1;
+    }
+
+    public void setUdpPortHoppingMinActiveHops(int minActiveHops) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setMinActiveHops(minActiveHops);
+    }
+
+    public UdpPortHoppingMode getUdpPortHoppingMode() {
+        return udpPortHopping != null ? udpPortHopping.getMode() : UdpPortHoppingMode.ROUND_ROBIN;
+    }
+
+    public void setUdpPortHoppingMode(UdpPortHoppingMode mode) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setMode(mode);
     }
 
     public boolean isUdpCompressEnabled() {

@@ -829,6 +829,59 @@ class SocksProxyServerIntegrationTest {
 
     @Test
     @SneakyThrows
+    @Timeout(value = 25)
+    void shadowsocksUdpRelay_socks5_chained_withPortHopping_e2e() {
+        int proxyBPort = 15460;
+        int proxyAPort = 15461;
+        int ssPort = 15462;
+
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        SocksProxyServer proxyB = new SocksProxyServer(configB);
+
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        SocksProxyServer proxyA = new SocksProxyServer(configA);
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
+                org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "port-hop-pwd");
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+
+        UpstreamSupport supportA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyAPort), null, null), null);
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
+
+        ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyAPort), supportA)));
+        proxyA.onUdpRoute.replace((s, e) -> {
+            SocksConfig bConf = new SocksConfig(proxyBPort);
+            bConf.setUdpPortHoppingEnabled(true);
+            bConf.setUdpPortHoppingHopCount(3);
+            bConf.setUdpPortHoppingMinActiveHops(3);
+            e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), bConf, supportB));
+        });
+
+        try {
+            Thread.sleep(1000);
+            org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword(), true);
+            DatagramSocket clientSock = new DatagramSocket();
+            clientSock.setSoTimeout(5000);
+            try {
+                assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-port-hop-1");
+                waitForCondition(() -> proxyB.udpRelayRegistry.size() >= 3, 5000,
+                        "proxyB should allocate multiple UDP relay ports for port hopping");
+                assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-port-hop-2");
+                assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-port-hop-3");
+            } finally {
+                clientSock.close();
+            }
+        } finally {
+            ssServer.close();
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
     @Timeout(value = 20)
     void shadowsocksUdpRelay_sameDestinationDifferentClientPorts_e2e() {
         int proxyBPort = 15320;

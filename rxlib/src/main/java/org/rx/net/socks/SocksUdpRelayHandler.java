@@ -516,7 +516,19 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             return;
         }
 
-        ctxMap.put(upDstAddr, context);
+        Upstream upstream = context.getUpstream();
+        if (upstream instanceof SocksUdpUpstream) {
+            InetSocketAddress[] relayAddresses = ((SocksUdpUpstream) upstream).snapshotUdpRelayAddresses(relay);
+            if (relayAddresses.length == 0) {
+                ctxMap.put(upDstAddr, context);
+            } else {
+                for (InetSocketAddress relayAddress : relayAddresses) {
+                    ctxMap.put(relayAddress, context);
+                }
+            }
+        } else {
+            ctxMap.put(upDstAddr, context);
+        }
         routeMap.put(dstEp, context);
         relay.attr(ATTR_LAST_ROUTE).set(new LastRoute(routeHeaderTemplate(relay, dstEp), context));
         recordCacheSizes(relay, ctxMap, routeMap, "route-ready");
@@ -573,7 +585,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
             SocksContext context, boolean retained) {
         Upstream upstream = context.getUpstream();
-        InetSocketAddress upDstAddr = resolveUpstreamTarget(relay, upstream);
+        InetSocketAddress upDstAddr = upstream instanceof SocksUdpUpstream
+                ? ((SocksUdpUpstream) upstream).selectUdpRelayAddress(relay)
+                : resolveUpstreamTarget(relay, upstream);
         if (upDstAddr == null) {
             if (retained) {
                 Bytes.release(inBuf);

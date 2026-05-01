@@ -7,12 +7,17 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.local.LocalAddress;
 import io.netty.channel.socket.DatagramPacket;
 import org.junit.jupiter.api.Test;
+import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.upstream.Upstream;
+import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.support.UpstreamSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,6 +32,47 @@ class SocksUdpRelayHandlerTest {
         @Override
         public CompletableFuture<Void> initChannelAsync(Channel channel) {
             return readyFuture;
+        }
+    }
+
+    static final class FakePortHoppingUpstream extends SocksUdpUpstream {
+        final InetSocketAddress[] relayAddresses;
+        final AtomicInteger nextIndex = new AtomicInteger();
+
+        FakePortHoppingUpstream(UnresolvedEndpoint dstEp, SocksConfig config, InetSocketAddress... relayAddresses) {
+            super(dstEp, config, new UpstreamSupport(new AuthenticEndpoint(relayAddresses[0]), null));
+            this.relayAddresses = relayAddresses;
+        }
+
+        @Override
+        public CompletableFuture<Void> initChannelAsync(Channel channel) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public InetSocketAddress getUdpRelayAddress(Channel channel) {
+            return relayAddresses[0];
+        }
+
+        @Override
+        public InetSocketAddress selectUdpRelayAddress(Channel channel) {
+            int index = nextIndex.getAndIncrement();
+            return relayAddresses[index % relayAddresses.length];
+        }
+
+        @Override
+        public InetSocketAddress[] snapshotUdpRelayAddresses(Channel channel) {
+            return relayAddresses;
+        }
+
+        @Override
+        public boolean ownsUdpRelayAddress(Channel channel, InetSocketAddress sender) {
+            for (InetSocketAddress relayAddress : relayAddresses) {
+                if (relayAddress.equals(sender)) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -125,5 +171,72 @@ class SocksUdpRelayHandlerTest {
             relay.finishAndReleaseAll();
             server.close();
         }
+    }
+
+    @Test
+    void socksUdpUpstreamRegistersAndRotatesPortHoppingRelays() throws Exception {
+        SocksConfig config = new SocksConfig(new LocalAddress("UDP_PORT_HOPPING_TEST"));
+        config.getWhiteList();
+        SocksProxyServer server = new SocksProxyServer(config);
+        EmbeddedChannel relay = new EmbeddedChannel(SocksUdpRelayHandler.DEFAULT);
+        try {
+            InetSocketAddress firstRelay = new InetSocketAddress("127.0.0.1", 23001);
+            InetSocketAddress secondRelay = new InetSocketAddress("127.0.0.1", 23002);
+            FakePortHoppingUpstream upstream = new FakePortHoppingUpstream(
+                    new UnresolvedEndpoint("127.0.0.1", 15302), config, firstRelay, secondRelay);
+            server.onUdpRoute.replace((s, e) -> e.setUpstream(upstream));
+            relay.attr(SocksContext.SOCKS_SVR).set(server);
+
+            InetSocketAddress clientAddr = new InetSocketAddress("127.0.0.1", 22003);
+            assertDoesNotThrow(() -> relay.writeInbound(socks5Packet(clientAddr, "hop-1")));
+            DatagramPacket first = readOutbound(relay);
+            assertNotNull(first);
+            try {
+                assertEquals(firstRelay, first.recipient());
+            } finally {
+                first.release();
+            }
+
+            ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(SocksUdpRelayHandler.ATTR_CTX_MAP).get();
+            assertNotNull(ctxMap);
+            assertTrue(ctxMap.containsKey(firstRelay));
+            assertTrue(ctxMap.containsKey(secondRelay));
+
+            assertDoesNotThrow(() -> relay.writeInbound(socks5Packet(clientAddr, "hop-2")));
+            DatagramPacket second = readOutbound(relay);
+            assertNotNull(second);
+            try {
+                assertEquals(secondRelay, second.recipient());
+            } finally {
+                second.release();
+            }
+        } finally {
+            relay.finishAndReleaseAll();
+            server.close();
+        }
+    }
+
+    private static DatagramPacket socks5Packet(InetSocketAddress clientAddr, String payload) {
+        ByteBuf packetBuf = Unpooled.buffer();
+        packetBuf.writeZero(3);
+        packetBuf.writeByte(0x01);
+        packetBuf.writeBytes(new byte[]{127, 0, 0, 1});
+        packetBuf.writeShort(15302);
+        packetBuf.writeBytes(payload.getBytes(StandardCharsets.UTF_8));
+        return new DatagramPacket(packetBuf, new InetSocketAddress("127.0.0.1", 1080), clientAddr);
+    }
+
+    private static DatagramPacket readOutbound(EmbeddedChannel relay) throws InterruptedException {
+        DatagramPacket outbound = null;
+        long deadline = System.currentTimeMillis() + 3000L;
+        while (System.currentTimeMillis() < deadline && outbound == null) {
+            relay.runPendingTasks();
+            relay.runScheduledPendingTasks();
+            outbound = relay.readOutbound();
+            if (outbound == null) {
+                Thread.sleep(20L);
+            }
+        }
+        return outbound;
     }
 }
