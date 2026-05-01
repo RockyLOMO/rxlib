@@ -53,6 +53,8 @@ public class RSSConf {
     public int udpTimeoutSeconds = 60 * 10;
     public int rpcMinSize = 2;
     public int rpcMaxSize = 6;
+    // RSS Server RPC 固定端口；0 表示按同 host 首个 socksServer 端口 +1 推导。
+    public int rpcPort;
     public int rpcRequestTimeoutMillis = 3000;
     public int upstreamHealthCheckSeconds = RssClient.DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS;
     public int upstreamHealthFailureThreshold = RssClient.DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD;

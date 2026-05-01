@@ -894,6 +894,70 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void buildRpcEndpointsByServerHost_ReusesNormalRpcPortForSameHostTunServer() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer normal = new RSSConf.SocksServer("main", 9,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9900"));
+        RSSConf.SocksServer tun = new RSSConf.SocksServer("main-tun", 1,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9910"));
+        tun.setUdp2raw(true);
+        tun.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        conf.socksServers = Arrays.asList(normal, tun);
+
+        Map<String, InetSocketAddress> endpoints = RssClient.buildRpcEndpointsByServerHost(conf);
+        InetSocketAddress tunRpc = RssClient.resolveRpcEndpoint(conf, tun.getEndpoint().requireEndpoint(), endpoints);
+
+        assertEquals("202.91.34.9", tunRpc.getHostString());
+        assertEquals(9901, tunRpc.getPort());
+    }
+
+    @Test
+    public void buildRpcEndpointsByServerHost_UsesConfiguredFixedRpcPort() {
+        RSSConf conf = validRssConf();
+        conf.rpcPort = 9901;
+        RSSConf.SocksServer normal = new RSSConf.SocksServer("main", 9,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9900"));
+        RSSConf.SocksServer tun = new RSSConf.SocksServer("main-tun", 1,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9910"));
+        tun.setUdp2raw(true);
+        tun.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        conf.socksServers = Arrays.asList(normal, tun);
+
+        Map<String, InetSocketAddress> endpoints = RssClient.buildRpcEndpointsByServerHost(conf);
+
+        assertEquals(9901, RssClient.resolveRpcEndpoint(conf, normal.getEndpoint().requireEndpoint(), endpoints).getPort());
+        assertEquals(9901, RssClient.resolveRpcEndpoint(conf, tun.getEndpoint().requireEndpoint(), endpoints).getPort());
+    }
+
+    @Test
+    public void buildUpstreams_ReusesRpcFacadeAndAggregatesDnsWeightForSameHost() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer main = new RSSConf.SocksServer("main", 9,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9900"));
+        RSSConf.SocksServer backup = new RSSConf.SocksServer("backup", 1,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9902"));
+        RSSConf.SocksServer tun = new RSSConf.SocksServer("main-tun", 1,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9910"));
+        tun.setUdp2raw(true);
+        tun.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        conf.socksServers = Arrays.asList(main, backup, tun);
+
+        RssRuntime.UpstreamSnapshot snapshot = null;
+        try {
+            snapshot = RssClient.buildUpstreams(conf, org.rx.net.support.GeoManager.INSTANCE);
+            UpstreamSupport mainSupport = snapshot.socksServers.get(0);
+            UpstreamSupport backupSupport = snapshot.socksServers.get(1);
+            UpstreamSupport tunSupport = snapshot.udp2rawSocksServers.get(0);
+
+            assertSame(mainSupport.getFacade(), backupSupport.getFacade());
+            assertSame(mainSupport.getFacade(), tunSupport.getFacade());
+            assertEquals(10, snapshot.dnsInterceptors.getWeight(mainSupport.getFacade()));
+        } finally {
+            RssClient.closeUpstreamsQuietly(snapshot);
+        }
+    }
+
+    @Test
     public void normalizeAndValidateRssConfig_ClampsRuntimeFields() {
         RSSConf conf = validRssConf();
         conf.trafficRetentionDays = 0;
