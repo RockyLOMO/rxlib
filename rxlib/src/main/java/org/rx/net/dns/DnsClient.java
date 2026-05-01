@@ -12,6 +12,7 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.RxConfig;
+import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 
 import java.net.InetAddress;
@@ -40,43 +41,55 @@ public class DnsClient extends Disposable {
         }
     }
 
-    static volatile DnsClient inlandClient, outlandClient;
+    static volatile DnsClient directClient, remoteClient;
 
-    public static DnsClient inlandClient() {
-        if (inlandClient == null) {
+    public static DnsClient directClient() {
+        if (directClient == null) {
             synchronized (DnsClient.class) {
-                if (inlandClient == null) {
-                    inlandClient = new DnsClient(inlandNameServers());
+                if (directClient == null) {
+                    directClient = new DnsClient(directNameServers(), localSystemFallback());
                 }
             }
         }
-        return inlandClient;
+        return directClient;
     }
 
-    public static DnsClient outlandClient() {
-        if (outlandClient == null) {
+    public static DnsClient remoteClient() {
+        if (remoteClient == null) {
             synchronized (DnsClient.class) {
-                if (outlandClient == null) {
-                    outlandClient = new DnsClient(outlandNameServers());
+                if (remoteClient == null) {
+                    remoteClient = new DnsClient(remoteNameServers(), localSystemFallback());
                 }
             }
         }
-        return outlandClient;
+        return remoteClient;
     }
 
-    public static List<InetSocketAddress> inlandNameServers() {
-        return parseNameServers(RxConfig.INSTANCE.getNet().getDns().getInlandServers());
+    public static List<InetSocketAddress> directNameServers() {
+        return parseNameServers(RxConfig.INSTANCE.getNet().getDns().getDirectServers());
     }
 
-    public static List<InetSocketAddress> outlandNameServers() {
-        return parseNameServers(RxConfig.INSTANCE.getNet().getDns().getOutlandServers());
+    public static List<InetSocketAddress> remoteNameServers() {
+        return parseNameServers(RxConfig.INSTANCE.getNet().getDns().getRemoteServers());
     }
 
     public static DnsServerAddressStreamProvider nameServerProvider(Collection<InetSocketAddress> nameServerList) {
+        return nameServerProvider(nameServerList, localSystemFallback());
+    }
+
+    public static DnsServerAddressStreamProvider nameServerProvider(Collection<InetSocketAddress> nameServerList,
+                                                                    boolean localSystemFallback) {
         if (nameServerList == null || nameServerList.isEmpty()) {
-            return DnsServerAddressStreamProviders.platformDefault();
+            if (localSystemFallback) {
+                return DnsServerAddressStreamProviders.platformDefault();
+            }
+            throw new InvalidException("Empty dns server list and local system fallback disabled");
         }
         return new DnsServerAddressStreamProviderImpl(new LinkedHashSet<>(nameServerList));
+    }
+
+    public static boolean localSystemFallback() {
+        return RxConfig.INSTANCE.getNet().getDns().isLocalSystemFallback();
     }
 
     static List<InetSocketAddress> parseNameServers(Collection<String> endpoints) {
@@ -106,7 +119,11 @@ public class DnsClient extends Disposable {
     final DnsNameResolver nameResolver;
 
     public DnsClient(@NonNull Collection<InetSocketAddress> nameServerList) {
-        nameServerProvider = nameServerProvider(nameServerList);
+        this(nameServerList, localSystemFallback());
+    }
+
+    public DnsClient(@NonNull Collection<InetSocketAddress> nameServerList, boolean localSystemFallback) {
+        nameServerProvider = nameServerProvider(nameServerList, localSystemFallback);
         nameResolver = new DnsNameResolverBuilder(Sockets.reactor(Sockets.ReactorNames.SHARED_UDP, false).next())
                 .nameServerProvider(nameServerProvider)
                 .channelType(Sockets.udpChannelClass())

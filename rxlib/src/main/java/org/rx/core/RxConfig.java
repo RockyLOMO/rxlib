@@ -149,8 +149,9 @@ public final class RxConfig {
         String NTP_SYNC_PERIOD = "app.net.ntp.syncPeriod";
         String NTP_TIMEOUT_MILLIS = "app.net.ntp.timeoutMillis";
         String NTP_SERVERS = "app.net.ntp.servers";
-        String DNS_INLAND_SERVERS = "app.net.dns.inlandServers";
-        String DNS_OUTLAND_SERVERS = "app.net.dns.outlandServers";
+        String DNS_DIRECT_SERVERS = "app.net.dns.directServers";
+        String DNS_REMOTE_SERVERS = "app.net.dns.remoteServers";
+        String DNS_LOCAL_SYSTEM_FALLBACK = "app.net.dns.localSystemFallback";
         String DNS_DOH_ENABLED = "app.net.dns.dohEnabled";
         String DNS_DOH_PATH = "app.net.dns.dohPath";
         String DNS_DOH_ALLOW_PLAIN_HTTP = "app.net.dns.dohAllowPlainHttp";
@@ -462,8 +463,9 @@ public final class RxConfig {
     @Setter
     @ToString
     public static class DnsConfig {
-        final List<String> inlandServers = newConcurrentList(true);
-        final List<String> outlandServers = newConcurrentList(true);
+        final List<String> directServers = newConcurrentList(true);
+        final List<String> remoteServers = newConcurrentList(true);
+        boolean localSystemFallback;
         boolean dohEnabled;
         String dohPath = "/dns-query";
         boolean dohAllowPlainHttp;
@@ -607,8 +609,8 @@ public final class RxConfig {
 //        Map<String, Object> sysProps = new HashMap<>((Map) System.getProperties());
 //        reset(net.lanIps, ConfigNames.NET_LAN_IPS);
 //        reset(net.ntp.servers, ConfigNames.NTP_SERVERS);
-//        reset(net.dns.inlandServers, ConfigNames.DNS_INLAND_SERVERS);
-//        reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
+//        reset(net.dns.directServers, ConfigNames.DNS_DIRECT_SERVERS);
+//        reset(net.dns.remoteServers, ConfigNames.DNS_REMOTE_SERVERS);
 //        String v = SystemPropertyUtil.get(ConfigNames.JSON_SKIP_TYPES);
 //        if (v != null) {
 //            jsonSkipTypes.clear();
@@ -618,8 +620,8 @@ public final class RxConfig {
 //
 //        sysProps.remove(ConfigNames.NET_LAN_IPS);
 //        sysProps.remove(ConfigNames.NTP_SERVERS);
-//        sysProps.remove(ConfigNames.DNS_INLAND_SERVERS);
-//        sysProps.remove(ConfigNames.DNS_OUTLAND_SERVERS);
+//        sysProps.remove(ConfigNames.DNS_DIRECT_SERVERS);
+//        sysProps.remove(ConfigNames.DNS_REMOTE_SERVERS);
 //        sysProps.remove(ConfigNames.JSON_SKIP_TYPES);
 //
 //        refreshFrom(sysProps);
@@ -754,8 +756,9 @@ public final class RxConfig {
         net.ntp.timeoutMillis = SystemPropertyUtil.getLong(ConfigNames.NTP_TIMEOUT_MILLIS, net.ntp.timeoutMillis);
         reset(net.ntp.servers, ConfigNames.NTP_SERVERS);
 
-        reset(net.dns.inlandServers, ConfigNames.DNS_INLAND_SERVERS);
-        reset(net.dns.outlandServers, ConfigNames.DNS_OUTLAND_SERVERS);
+        reset(net.dns.directServers, ConfigNames.DNS_DIRECT_SERVERS);
+        reset(net.dns.remoteServers, ConfigNames.DNS_REMOTE_SERVERS);
+        net.dns.localSystemFallback = SystemPropertyUtil.getBoolean(ConfigNames.DNS_LOCAL_SYSTEM_FALLBACK, net.dns.localSystemFallback);
         net.dns.dohEnabled = SystemPropertyUtil.getBoolean(ConfigNames.DNS_DOH_ENABLED, net.dns.dohEnabled);
         net.dns.dohPath = SystemPropertyUtil.get(ConfigNames.DNS_DOH_PATH, net.dns.dohPath);
         net.dns.dohAllowPlainHttp = SystemPropertyUtil.getBoolean(ConfigNames.DNS_DOH_ALLOW_PLAIN_HTTP, net.dns.dohAllowPlainHttp);

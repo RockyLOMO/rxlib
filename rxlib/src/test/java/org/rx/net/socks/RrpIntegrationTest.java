@@ -12,6 +12,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.rx.io.FurySerializer;
+import org.rx.io.JdkAndJsonSerializer;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
 import org.rx.net.support.EndpointTracer;
@@ -277,7 +279,7 @@ class RrpIntegrationTest {
             ch.pipeline().fireChannelActive();
 
             byte[] tokenBytes = "t".getBytes(StandardCharsets.US_ASCII);
-            byte[] data = org.rx.io.JdkAndJsonSerializer.DEFAULT.serializeToBytes(
+            byte[] data = JdkAndJsonSerializer.DEFAULT.serializeToBytes(
                     Collections.singletonList(newProxy("jdk", 19009, "u1:p1")));
             ByteBuf buf = Unpooled.buffer();
             buf.writeByte(RrpConfig.ACTION_REGISTER);
@@ -682,7 +684,7 @@ class RrpIntegrationTest {
         byte[] tokenBytes = token.getBytes(StandardCharsets.US_ASCII);
         buf.writeInt(tokenBytes.length);
         buf.writeBytes(tokenBytes);
-        byte[] data = Serializer.FURY.serializeToBytes(Collections.singletonList(proxy));
+        byte[] data = FurySerializer.DEFAULT.serializeToBytes(Collections.singletonList(proxy));
         buf.writeInt(data.length);
         buf.writeBytes(data);
         ch.writeInbound(buf);

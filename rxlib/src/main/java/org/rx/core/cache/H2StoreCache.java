@@ -9,6 +9,7 @@ import org.rx.codec.CodecUtil;
 import org.rx.core.*;
 import org.rx.io.EntityDatabase;
 import org.rx.io.EntityQueryLambda;
+import org.rx.io.FurySerializer;
 import org.rx.io.Serializer;
 import org.rx.third.guava.AbstractSequentialIterator;
 
@@ -32,7 +33,7 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
     static final AtomicInteger CACHE_COUNTER = new AtomicInteger();
 
     static long furyHash(Object value) {
-        return CodecUtil.hash64(Serializer.FURY.serializeToBytes(value));
+        return CodecUtil.hash64(FurySerializer.DEFAULT.serializeToBytes(value));
     }
 
     enum TombstoneValue {

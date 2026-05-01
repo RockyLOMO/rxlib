@@ -15,6 +15,7 @@ import java.util.Set;
 
 public class FurySerializer implements Serializer {
     static final short REGISTER_BASE_ID = 3400;
+    public static final FurySerializer DEFAULT = new FurySerializer();
     final Set<String> allowedClassPrefixes = FurySupport.defaultAllowedClassPrefixes();
     transient volatile FastThreadLocal<Fury> furyLocal;
 

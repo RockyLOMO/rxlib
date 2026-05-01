@@ -222,14 +222,14 @@ public class DnsServerIntegrationTest extends AbstractTester {
                 }
             }, 6000);
 
-            DnsClient inlandClient = DnsClient.inlandClient();
+            DnsClient directClient = DnsClient.directClient();
             InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
-            List<InetAddress> currentIps = inlandClient.resolveAll(host_devops);
+            List<InetAddress> currentIps = directClient.resolveAll(host_devops);
             System.out.println("ddns: " + wanIp + " = " + currentIps);
             //注入InetAddress.getAllByName()变更要查询的dnsServer的地址，支持非53端口
             Sockets.injectNameService(Collections.singletonList(localNsEp));
 
-            List<InetAddress> wanResult = inlandClient.resolveAll(host_devops);
+            List<InetAddress> wanResult = directClient.resolveAll(host_devops);
             InetAddress[] localResult = InetAddress.getAllByName(host_devops);
             System.out.println("wanResolve: " + wanResult + " != " + toJsonString(localResult));
             assert !wanResult.get(0).equals(localResult[0]);

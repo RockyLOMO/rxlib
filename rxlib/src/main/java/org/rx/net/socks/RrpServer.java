@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.exception.InvalidException;
+import org.rx.io.FurySerializer;
 import org.rx.io.Serializer;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
@@ -322,7 +323,7 @@ public class RrpServer extends Disposable {
                     }
                     byte[] data = new byte[len];
                     buf.readBytes(data, 0, len);
-                    List<RrpConfig.Proxy> pList = Serializer.FURY.deserializeFromBytes(data);
+                    List<RrpConfig.Proxy> pList = FurySerializer.DEFAULT.deserializeFromBytes(data);
                     server.register(clientChannel, pList);
                 } else if (action == RrpConfig.ACTION_FORWARD) {
                     //step6

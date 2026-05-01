@@ -137,11 +137,11 @@ public class DnsServer extends Disposable {
 
     //AES or TLS mainly for TCP
     public DnsServer(int port, Collection<InetSocketAddress> nameServerList) {
-        if (nameServerList == null) {
-            nameServerList = Collections.emptyList();
+        if (nameServerList == null || nameServerList.isEmpty()) {
+            nameServerList = DnsClient.directNameServers();
         }
 
-        upstreamClient = new DnsClient(nameServerList);
+        upstreamClient = new DnsClient(nameServerList, DnsClient.localSystemFallback());
         serverBootstrap = Sockets.serverBootstrap(channel -> channel.pipeline().addLast(new DnsTcpPortMuxHandler(this)))
                 .attr(ATTR_SVR, this).attr(ATTR_UPSTREAM, upstreamClient);
         InetSocketAddress bindAddress = Sockets.newAnyEndpoint(port);

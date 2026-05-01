@@ -43,7 +43,7 @@ public final class RssServer {
         SocksConfig outConf = new SocksConfig(port);
         outConf.setDebug(debugFlag);
         outConf.setWhiteListEnabled(true);
-        outConf.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.OUTLAND);
+        outConf.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.REMOTE);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         outConf.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
         outConf.setOptimalSettings(RssSupport.OUT_OPS);
