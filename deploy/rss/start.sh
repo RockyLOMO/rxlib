@@ -472,7 +472,7 @@ start_new_process() {
     logback_opts=$(build_logback_opts "${slot}")
     mkdir -p logs >/dev/null 2>&1 || true
     echo "${YELLOW}[${LOCAL_TIME}] 正在启动新进程 deployId=${DEPLOY_ID}, slot=${slot}, stdout=${log_file}${NC}"
-    nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${dump_opts} ${logback_opts} -Dapp.deploy.id="${DEPLOY_ID}" -Dapp.deploy.slot="${slot}" -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -udp2raw=1 >"${log_file}" 2>&1 &
+    nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${dump_opts} ${logback_opts} -Dapp.deploy.id="${DEPLOY_ID}" -Dapp.deploy.slot="${slot}" -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} >"${log_file}" 2>&1 &
     STARTED_PID=$!
 }
 

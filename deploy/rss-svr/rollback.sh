@@ -17,6 +17,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd $SCRIPT_DIR
 
 PORT=${PORT:-9900}
+UDP2RAW_PORT=${UDP2RAW_PORT:-9910}
 HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8082}
 REQUIRED_TCP_PORTS=("${PORT}" "${HTTP_SERVER_PORT}")
 MEM_OPTIONS="-Xms192m -Xmx192m -Xss256k -XX:MaxMetaspaceSize=96m -XX:MaxDirectMemorySize=640m -XX:+UseCompressedClassPointers"
@@ -224,6 +225,10 @@ stop_old_process || exit 1
 restore_latest_jar || exit 1
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程，HttpServer 端口 ${HTTP_SERVER_PORT}/tcp..."
-nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 -udp2raw=1 -debug=0 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >>"${APP_LOG_FILE}" 2>&1 &
+UDP2RAW_ARG=""
+if [ -n "${UDP2RAW_PORT}" ]; then
+  UDP2RAW_ARG="-udp2rawPort=${UDP2RAW_PORT}"
+fi
+nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 ${UDP2RAW_ARG} -debug=0 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >>"${APP_LOG_FILE}" 2>&1 &
 APP_PID=$!
 wait_for_startup "${APP_PID}" || exit 1
