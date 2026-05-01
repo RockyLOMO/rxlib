@@ -73,6 +73,7 @@ import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -89,6 +90,7 @@ public final class Sockets {
         ACCEPTED,
         CHANNEL_INACTIVE,
         CHANNEL_UNWRITABLE,
+        UNRESOLVED_RECIPIENT,
         PENDING_OVERLIMIT,
         WRITE_THROWN
     }
@@ -205,6 +207,38 @@ public final class Sockets {
             log.info("TCP DNS resolver use {} {}", mode, CollectionUtils.isEmpty(nameServerList) ? "platformDefault" : nameServerList);
         }
         return new DnsAddressResolverGroup(nb);
+    }
+
+    public static CompletableFuture<InetSocketAddress> resolveUdpEndpointAsync(InetSocketAddress endpoint, SocketConfig config) {
+        CompletableFuture<InetSocketAddress> result = new CompletableFuture<>();
+        if (endpoint == null || !endpoint.isUnresolved()) {
+            result.complete(endpoint);
+            return result;
+        }
+
+        String host = endpoint.getHostString();
+        io.netty.util.concurrent.Future<InetAddress> resolveFuture = udpDnsClient(config).resolveAsync(host);
+        resolveFuture.addListener(f -> {
+            if (!f.isSuccess()) {
+                result.completeExceptionally(f.cause());
+                return;
+            }
+            InetAddress address = (InetAddress) f.getNow();
+            if (address == null) {
+                result.completeExceptionally(new UnknownHostException(host));
+                return;
+            }
+            result.complete(new InetSocketAddress(address, endpoint.getPort()));
+        });
+        return result;
+    }
+
+    static DnsClient udpDnsClient(SocketConfig config) {
+        if (config instanceof SocksConfig
+                && ((SocksConfig) config).getTcpAsyncDnsMode() == SocksConfig.TcpAsyncDnsMode.OUTLAND) {
+            return DnsClient.outlandClient();
+        }
+        return DnsClient.inlandClient();
     }
     
     public static LengthFieldBasedFrameDecoder intLengthFieldDecoder() {
@@ -1000,6 +1034,13 @@ public final class Sockets {
         if (!channel.isActive()) {
             releaseUdpPacket(packet, metricPrefix, tags, "inactive", 0, 0);
             return UdpWriteResult.CHANNEL_INACTIVE;
+        }
+
+        InetSocketAddress recipient = packet.recipient();
+        if (recipient != null && recipient.isUnresolved()) {
+            releaseUdpPacket(packet, metricPrefix, tags, "unresolved-recipient", 0, udpWriteLimitBytes(channel));
+            log.warn("UDP write drop unresolved recipient channel={} recipient={}", channel, recipient);
+            return UdpWriteResult.UNRESOLVED_RECIPIENT;
         }
 
         AtomicInteger pendingBytes = udpPendingWriteBytesState(channel);

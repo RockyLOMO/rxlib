@@ -160,6 +160,22 @@ public class SocketsTest {
     }
 
     @Test
+    public void testUdpWriteDropsUnresolvedRecipientBeforeWrite() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(Sockets.ATTR_UDP_WRITE_LIMIT_BYTES).set(128);
+
+        ByteBuf payload = Unpooled.copiedBuffer("udp-unresolved", StandardCharsets.UTF_8);
+        DatagramPacket packet = new DatagramPacket(payload, InetSocketAddress.createUnresolved("example.invalid", 53));
+
+        assertEquals(Sockets.UdpWriteResult.UNRESOLVED_RECIPIENT,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=unresolved"));
+        assertEquals(0, payload.refCnt());
+        assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+        assertNull(channel.readOutbound());
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
     public void testUdpWriteDropsWhenChannelUnwritable() {
         EmbeddedChannel channel = new EmbeddedChannel();
         channel.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);

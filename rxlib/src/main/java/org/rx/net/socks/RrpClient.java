@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.Tuple;
 import org.rx.core.Disposable;
 import org.rx.core.Sys;
+import org.rx.io.FurySerializer;
 import org.rx.io.Serializer;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
@@ -401,7 +402,7 @@ public class RrpClient extends AbstractTcpReconnectClient {
                 buf.writeInt(tokenData.length);
                 buf.writeBytes(tokenData);
             }
-            byte[] bytes = Serializer.FURY.serializeToBytes(config.getProxies());
+            byte[] bytes = FurySerializer.DEFAULT.serializeToBytes(config.getProxies());
             buf.writeInt(bytes.length);
             buf.writeBytes(bytes);
             serverChannel.writeAndFlush(buf).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);

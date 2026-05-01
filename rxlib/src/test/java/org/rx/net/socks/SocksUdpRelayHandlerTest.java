@@ -80,4 +80,50 @@ class SocksUdpRelayHandlerTest {
             server.close();
         }
     }
+
+    @Test
+    void resolvesDomainBeforeDirectUdpWrite() throws Exception {
+        SocksConfig config = new SocksConfig(new LocalAddress("UDP_DOMAIN_DIRECT_TEST"));
+        config.getWhiteList();
+        SocksProxyServer server = new SocksProxyServer(config);
+        EmbeddedChannel relay = new EmbeddedChannel(SocksUdpRelayHandler.DEFAULT);
+        try {
+            relay.attr(SocksContext.SOCKS_SVR).set(server);
+
+            InetSocketAddress clientAddr = new InetSocketAddress("127.0.0.1", 22002);
+            ByteBuf packetBuf = Unpooled.buffer();
+            packetBuf.writeZero(3);
+            UdpManager.encode(packetBuf, "localhost", 15301);
+            packetBuf.writeBytes("domain-udp".getBytes(StandardCharsets.UTF_8));
+
+            DatagramPacket inbound = new DatagramPacket(packetBuf,
+                    new InetSocketAddress("127.0.0.1", 1080), clientAddr);
+
+            assertDoesNotThrow(() -> relay.writeInbound(inbound));
+
+            DatagramPacket outbound = null;
+            long deadline = System.currentTimeMillis() + 3000L;
+            while (System.currentTimeMillis() < deadline && outbound == null) {
+                relay.runPendingTasks();
+                relay.runScheduledPendingTasks();
+                outbound = relay.readOutbound();
+                if (outbound == null) {
+                    Thread.sleep(20L);
+                }
+            }
+            assertNotNull(outbound, "域名目的地解析完成后应写出首包");
+            try {
+                assertFalse(outbound.recipient().isUnresolved(), "UDP recipient 不能保持 unresolved");
+                assertEquals(15301, outbound.recipient().getPort());
+                byte[] payload = new byte[outbound.content().readableBytes()];
+                outbound.content().readBytes(payload);
+                assertEquals("domain-udp", new String(payload, StandardCharsets.UTF_8));
+            } finally {
+                outbound.release();
+            }
+        } finally {
+            relay.finishAndReleaseAll();
+            server.close();
+        }
+    }
 }
