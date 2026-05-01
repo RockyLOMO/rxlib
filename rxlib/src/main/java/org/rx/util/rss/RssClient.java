@@ -70,6 +70,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -357,6 +358,10 @@ public final class RssClient {
         conf.udpTimeoutSeconds = Math.max(0, conf.udpTimeoutSeconds);
         conf.rpcMinSize = Math.max(1, conf.rpcMinSize);
         conf.rpcMaxSize = Math.max(conf.rpcMinSize, conf.rpcMaxSize);
+        if (conf.rpcPort < 0 || conf.rpcPort > 65535) {
+            log.warn("rssConf rpcPort {} invalid", conf.rpcPort);
+            return false;
+        }
         conf.rpcRequestTimeoutMillis = Math.max(0, conf.rpcRequestTimeoutMillis);
         conf.rpcAutoWhiteListSeconds = Math.max(0, conf.rpcAutoWhiteListSeconds);
         conf.shadowDnsPort = Math.max(1, conf.shadowDnsPort);
@@ -581,11 +586,12 @@ public final class RssClient {
         RandomList<UpstreamSupport> udp2rawSocksServers = new RandomList<>();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
         List<SocksRpcContract> createdFacades = new ArrayList<>();
+        Map<String, SocksRpcContract> facadeByRpcEndpoint = new LinkedHashMap<>();
+        Map<String, InetSocketAddress> rpcEndpointByServerHost = buildRpcEndpointsByServerHost(conf);
         Map<String, UpstreamSupport> supportByServerId = new LinkedHashMap<>();
         Map<String, UpstreamSupport> udp2rawSupportByServerId = new LinkedHashMap<>();
 
         try {
-            SocksRpcContract firstFacade = null;
             for (RSSConf.SocksServer configuredServer : conf.socksServers) {
                 AuthenticEndpoint socksServer = configuredServer.getEndpoint();
                 int weight = weightOf(configuredServer);
@@ -596,22 +602,13 @@ public final class RssClient {
                     continue;
                 }
                 InetSocketAddress socksServerEp = socksServer.requireEndpoint();
-                RpcClientConfig<SocksRpcContract> rpcConf = RpcClientConfig.poolMode(
-                        Sockets.newEndpoint(socksServerEp, socksServerEp.getPort() + 1),
-                        conf.rpcMinSize, conf.rpcMaxSize);
-                rpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(conf));
-                TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
-                tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
-                SocksRpcContract facade = new ForwardingSocksRpcContract(Remoting.createFacade(SocksRpcContract.class, rpcConf), geoMgr);
-                createdFacades.add(facade);
-                if (firstFacade == null) {
-                    firstFacade = facade;
-                }
+                SocksRpcContract facade = getOrCreateRpcFacade(conf, geoMgr, socksServerEp,
+                        rpcEndpointByServerHost, facadeByRpcEndpoint, createdFacades);
                 UpstreamSupport support = new UpstreamSupport(socksServer, facade);
                 support.setConfiguredWeight(weight);
                 support.setTcpClient(configuredServer.getTcpClient());
                 socksServers.add(support, weight);
-                dnsInterceptors.add(facade, weight);
+                addDnsInterceptorWeight(dnsInterceptors, facade, weight);
                 if (!Strings.isEmpty(configuredServer.getId())) {
                     supportByServerId.put(configuredServer.getId(), support);
                 }
@@ -625,7 +622,10 @@ public final class RssClient {
                 if (weight <= 0) {
                     continue;
                 }
-                UpstreamSupport support = new UpstreamSupport(socksServer, firstFacade);
+                InetSocketAddress socksServerEp = socksServer.requireEndpoint();
+                SocksRpcContract facade = getOrCreateRpcFacade(conf, geoMgr, socksServerEp,
+                        rpcEndpointByServerHost, facadeByRpcEndpoint, createdFacades);
+                UpstreamSupport support = new UpstreamSupport(socksServer, facade);
                 support.setConfiguredWeight(weight);
                 support.setTcpClient(configuredServer.getTcpClient());
                 udp2rawSocksServers.add(support, weight);
@@ -647,6 +647,89 @@ public final class RssClient {
             }
             throw InvalidException.sneaky(e);
         }
+    }
+
+    static void addDnsInterceptorWeight(RandomList<DnsServer.ResolveInterceptor> dnsInterceptors,
+                                        SocksRpcContract facade, int weight) {
+        if (dnsInterceptors == null || facade == null || weight <= 0) {
+            return;
+        }
+        int nextWeight = weight;
+        if (dnsInterceptors.contains(facade)) {
+            nextWeight += dnsInterceptors.getWeight(facade);
+        }
+        dnsInterceptors.add(facade, nextWeight);
+    }
+
+    static Map<String, InetSocketAddress> buildRpcEndpointsByServerHost(RSSConf conf) {
+        LinkedHashMap<String, InetSocketAddress> endpoints = new LinkedHashMap<>();
+        addRpcEndpointsByMode(conf, endpoints, ServerRouteMode.SOCKS);
+        addRpcEndpointsByMode(conf, endpoints, null);
+        return endpoints;
+    }
+
+    private static void addRpcEndpointsByMode(RSSConf conf, Map<String, InetSocketAddress> endpoints,
+                                              ServerRouteMode preferredMode) {
+        if (conf == null || CollectionUtils.isEmpty(conf.socksServers)) {
+            return;
+        }
+        for (RSSConf.SocksServer server : conf.socksServers) {
+            if (server == null || weightOf(server) <= 0 || server.getEndpoint() == null) {
+                continue;
+            }
+            if (preferredMode != null && routeMode(server) != preferredMode) {
+                continue;
+            }
+            InetSocketAddress endpoint = server.getEndpoint().getInetEndpoint();
+            if (endpoint == null) {
+                continue;
+            }
+            String hostKey = rpcHostKey(endpoint);
+            if (!endpoints.containsKey(hostKey)) {
+                endpoints.put(hostKey, Sockets.newEndpoint(endpoint, resolveRpcPort(conf, endpoint)));
+            }
+        }
+    }
+
+    static InetSocketAddress resolveRpcEndpoint(RSSConf conf, InetSocketAddress socksServerEp,
+                                                Map<String, InetSocketAddress> rpcEndpointByServerHost) {
+        InetSocketAddress endpoint = rpcEndpointByServerHost == null ? null : rpcEndpointByServerHost.get(rpcHostKey(socksServerEp));
+        return endpoint != null ? endpoint : Sockets.newEndpoint(socksServerEp, resolveRpcPort(conf, socksServerEp));
+    }
+
+    static int resolveRpcPort(RSSConf conf, InetSocketAddress socksServerEp) {
+        return conf != null && conf.rpcPort > 0 ? conf.rpcPort : socksServerEp.getPort() + 1;
+    }
+
+    private static SocksRpcContract getOrCreateRpcFacade(RSSConf conf, GeoManager geoMgr,
+                                                        InetSocketAddress socksServerEp,
+                                                        Map<String, InetSocketAddress> rpcEndpointByServerHost,
+                                                        Map<String, SocksRpcContract> facadeByRpcEndpoint,
+                                                        List<SocksRpcContract> createdFacades) {
+        InetSocketAddress rpcEndpoint = resolveRpcEndpoint(conf, socksServerEp, rpcEndpointByServerHost);
+        String rpcKey = endpointKey(rpcEndpoint);
+        SocksRpcContract facade = facadeByRpcEndpoint.get(rpcKey);
+        if (facade != null) {
+            return facade;
+        }
+
+        RpcClientConfig<SocksRpcContract> rpcConf = RpcClientConfig.poolMode(
+                rpcEndpoint, conf.rpcMinSize, conf.rpcMaxSize);
+        rpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(conf));
+        TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
+        tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
+        facade = new ForwardingSocksRpcContract(Remoting.createFacade(SocksRpcContract.class, rpcConf), geoMgr);
+        facadeByRpcEndpoint.put(rpcKey, facade);
+        createdFacades.add(facade);
+        return facade;
+    }
+
+    private static String rpcHostKey(InetSocketAddress endpoint) {
+        return endpoint.getHostString().toLowerCase(Locale.ROOT);
+    }
+
+    private static String endpointKey(InetSocketAddress endpoint) {
+        return rpcHostKey(endpoint) + ":" + endpoint.getPort();
     }
 
     private static List<RSSConf.SocksServer> collectConfiguredSocksServers(RSSConf conf, ServerRouteMode routeMode) {
@@ -1054,7 +1137,8 @@ public final class RssClient {
         int weight = effectiveHealthy ? Math.max(0, support.getConfiguredWeight()) : 0;
         setWeightIfPresent(servers, support, weight);
         if (updateDns && snapshot != null && support.getFacade() != null) {
-            setWeightIfPresent(snapshot.dnsInterceptors, support.getFacade(), weight);
+            setWeightIfPresent(snapshot.dnsInterceptors, support.getFacade(),
+                    healthyDnsInterceptorWeight(snapshot, support.getFacade()));
         }
         if (snapshot != null && snapshot.userSocksServers != null) {
             for (RandomList<UpstreamSupport> userServers : snapshot.userSocksServers.values()) {
@@ -1074,6 +1158,19 @@ public final class RssClient {
         if (previous != effectiveHealthy) {
             log.info("rss upstream {} health {}", support.getEndpoint(), effectiveHealthy ? "UP" : "DOWN");
         }
+    }
+
+    static int healthyDnsInterceptorWeight(RssRuntime.UpstreamSnapshot snapshot, SocksRpcContract facade) {
+        if (snapshot == null || facade == null || snapshot.socksServers == null) {
+            return 0;
+        }
+        int weight = 0;
+        for (UpstreamSupport support : snapshot.socksServers.readOnlySnapshot()) {
+            if (support != null && support.getFacade() == facade && support.isHealthy()) {
+                weight += Math.max(0, support.getConfiguredWeight());
+            }
+        }
+        return weight;
     }
 
     static int upstreamHealthFailureThreshold() {
