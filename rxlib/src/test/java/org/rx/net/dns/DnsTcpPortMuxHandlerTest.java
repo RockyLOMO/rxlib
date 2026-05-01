@@ -11,6 +11,7 @@ import io.netty.util.ReferenceCountUtil;
 import org.junit.jupiter.api.Test;
 import org.rx.net.Sockets;
 
+import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.util.Collections;
@@ -18,15 +19,23 @@ import java.util.Collections;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DnsTcpPortMuxHandlerTest {
-    static int freePort() throws Exception {
-        try (ServerSocket ss = new ServerSocket(0)) {
-            return ss.getLocalPort();
+    static int freeDnsPort() throws Exception {
+        for (int i = 0; i < 16; i++) {
+            try (ServerSocket tcp = new ServerSocket(0)) {
+                int port = tcp.getLocalPort();
+                try (DatagramSocket udp = new DatagramSocket(port)) {
+                    return port;
+                }
+            } catch (Exception e) {
+                // DNS server binds TCP and UDP on the same port; retry if either side is busy.
+            }
         }
+        throw new IllegalStateException("No free TCP/UDP DNS port");
     }
 
     @Test
     void dnsTcpFirstPacket_installsDnsPipeline() throws Exception {
-            DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
         try {
             EmbeddedChannel channel = new EmbeddedChannel(new DnsTcpPortMuxHandler(server));
             ByteBuf packet = Unpooled.buffer();
@@ -44,7 +53,7 @@ class DnsTcpPortMuxHandlerTest {
 
     @Test
     void plainHttpFirstPacket_installsHttpPipelineWhenAllowed() throws Exception {
-        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
         try {
             DnsDoHConfig config = new DnsDoHConfig();
             config.setAllowPlainHttp(true);
@@ -63,7 +72,7 @@ class DnsTcpPortMuxHandlerTest {
 
     @Test
     void tlsClientHelloFirstPacket_installsSslPipeline() throws Exception {
-        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
         try {
             DnsDoHConfig config = new DnsDoHConfig();
             config.setSslContext(Sockets.getSelfSignedTls());

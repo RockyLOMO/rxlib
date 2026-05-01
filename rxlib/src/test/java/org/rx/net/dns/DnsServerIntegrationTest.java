@@ -8,14 +8,14 @@ import org.junit.jupiter.api.Timeout;
 import org.rx.AbstractTester;
 import org.rx.bean.RandomList;
 import org.rx.core.Arrays;
-import org.rx.core.Tasks;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksRpcContract;
-import org.rx.net.support.GeoManager;
 
+import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.List;
@@ -23,7 +23,6 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.rx.core.Sys.toJsonString;
 
 /**
  * DnsServer + DnsHandler 端到端：静态 hosts、拦截器缓存、解析完成后 {@link DnsServer#resolvingKeys} 应被清空。
@@ -32,10 +31,18 @@ import static org.rx.core.Sys.toJsonString;
 @Slf4j
 public class DnsServerIntegrationTest extends AbstractTester {
 
-    static int freePort() throws Exception {
-        try (ServerSocket ss = new ServerSocket(0)) {
-            return ss.getLocalPort();
+    static int freeDnsPort() throws Exception {
+        for (int i = 0; i < 16; i++) {
+            try (ServerSocket tcp = new ServerSocket(0)) {
+                int port = tcp.getLocalPort();
+                try (DatagramSocket udp = new DatagramSocket(port)) {
+                    return port;
+                }
+            } catch (Exception e) {
+                // DNS server binds TCP and UDP on the same port; retry if either side is busy.
+            }
         }
+        throw new IllegalStateException("No free TCP/UDP DNS port");
     }
 
     @Slf4j
@@ -64,7 +71,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
 
     @Test
     void setInterceptors_empty_clearsResolverState() throws Exception {
-        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
         try {
             server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(Collections.emptyList()));
             assertNull(server.interceptors);
@@ -76,7 +83,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
 
     @Test
     void close_releasesChannelsAndUpstreamResolver() throws Exception {
-        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
 
         server.close();
 
@@ -87,7 +94,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
 
     @Test
     void removeHosts_unknownHost_doesNotCreateMapEntry() throws Exception {
-        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
         try {
             InetAddress lo = InetAddress.getLoopbackAddress();
             assertFalse(server.removeHosts("nonexistent.example", Collections.singletonList(lo)));
@@ -100,7 +107,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
 
     @Test
     void addHosts_addOrUpdate_sameIp_updatesWeight() throws Exception {
-        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
         try {
             InetAddress lo = InetAddress.getLoopbackAddress();
             String host = "w.example";
@@ -118,7 +125,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
 
     @Test
     void negativeTtl_defaultIs5() throws Exception {
-        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
         try {
             assertEquals(DnsServer.DEFAULT_NEGATIVE_TTL, server.getNegativeTtl());
             server.setNegativeTtl(60);
@@ -130,7 +137,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
 
     @Test
     void addHostsFile_missingFile_skips() throws Exception {
-        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
         try {
             String missing = Paths.get("target", "missing-hosts-" + UUID.randomUUID() + ".txt").toString();
             assertDoesNotThrow(() -> server.addHostsFile(missing));
@@ -143,7 +150,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
     @Test
     @Timeout(45)
     void udp_hostsRecord_returnsConfiguredAddress() throws Exception {
-        int dnsPort = freePort();
+        int dnsPort = freeDnsPort();
         InetAddress loop = InetAddress.getByName("127.0.0.1");
         String name = "it-hosts-only.example";
         DnsServer server = new DnsServer(dnsPort, Collections.emptyList());
@@ -162,7 +169,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
     @Test
     @Timeout(60)
     void interceptor_secondQueryUsesCache_singleResolveHost() throws Exception {
-        int dnsPort = freePort();
+        int dnsPort = freeDnsPort();
         InetAddress shadow = InetAddress.getByName("198.51.100.77");
         String name = "it-cache-" + UUID.randomUUID() + ".example";
         AtomicInteger resolveCalls = new AtomicInteger();
@@ -191,56 +198,47 @@ public class DnsServerIntegrationTest extends AbstractTester {
     @SneakyThrows
     @Test
     public void dns() {
-        String host_devops = "baidu.com";
-        InetSocketAddress nsEp = Sockets.parseEndpoint("114.114.114.114:53");
-        InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:853");
+        String host_devops = "dns-it-" + UUID.randomUUID() + ".example";
+        String injectedHost = "dns-injected-" + UUID.randomUUID() + ".example";
+        int dnsPort = freeDnsPort();
+        InetSocketAddress localNsEp = Sockets.parseEndpoint("127.0.0.1:" + dnsPort);
 
         final InetAddress ip2 = InetAddress.getByName("2.2.2.2");
         final InetAddress ip4 = InetAddress.getByName("4.4.4.4");
         final InetAddress aopIp = InetAddress.getByName("1.2.3.4");
-        DnsServer server = new DnsServer(localNsEp.getPort(), Collections.singletonList(nsEp));
-        try {
+        DnsServer server = new DnsServer(localNsEp.getPort(), Collections.emptyList());
+        try (DnsClient client = new DnsClient(Collections.singletonList(localNsEp))) {
             server.setInterceptors(new RandomList<>(Collections.singletonList(new MyContract(aopIp))));
             server.setHostsTtl(5);
             server.setEnableHostsWeight(false);
             server.addHosts(host_devops, 2, Arrays.toList(ip2, ip4));
+            server.addHosts(injectedHost, 1, Collections.singletonList(ip4));
 
             //hostTtl
-            DnsClient client = new DnsClient(Collections.singletonList(localNsEp));
             List<InetAddress> result = client.resolveAll(host_devops);
             System.out.println("eq: " + result);
-            assert result.contains(ip2) && result.contains(ip4);
-            Tasks.setTimeout(() -> {
-                try {
-                    server.removeHosts(host_devops, Collections.singletonList(ip2));
+            assertTrue(result.contains(ip2) && result.contains(ip4));
 
-                    List<InetAddress> x = client.resolveAll(host_devops);
-                    System.out.println(toJsonString(x));
-                    assert x.contains(ip4);
-                } finally {
-                    _notify();
-                }
-            }, 6000);
+            Thread.sleep(6000);
+            server.removeHosts(host_devops, Collections.singletonList(ip2));
+            List<InetAddress> x = client.resolveAll(host_devops);
+            assertTrue(x.contains(ip4));
 
-            DnsClient directClient = DnsClient.directClient();
-            InetAddress wanIp = InetAddress.getByName(GeoManager.INSTANCE.getPublicIp());
-            List<InetAddress> currentIps = directClient.resolveAll(host_devops);
-            System.out.println("ddns: " + wanIp + " = " + currentIps);
             //注入InetAddress.getAllByName()变更要查询的dnsServer的地址，支持非53端口
             Sockets.injectNameService(Collections.singletonList(localNsEp));
 
-            List<InetAddress> wanResult = directClient.resolveAll(host_devops);
-            InetAddress[] localResult = InetAddress.getAllByName(host_devops);
-            System.out.println("wanResolve: " + wanResult + " != " + toJsonString(localResult));
-            assert !wanResult.get(0).equals(localResult[0]);
+            InetAddress[] localResult = InetAddress.getAllByName(injectedHost);
+            assertEquals(ip4, localResult[0]);
 
-            server.addHostsFile(path("hosts.txt"));
-            assert client.resolve(host_cloud).equals(InetAddress.getByName("192.168.31.7"));
+            java.nio.file.Path hostsFile = Paths.get("target", "hosts-" + UUID.randomUUID() + ".txt");
+            java.nio.file.Files.write(hostsFile,
+                    Collections.singletonList("192.168.31.7 " + host_cloud), StandardCharsets.US_ASCII);
+            server.addHostsFile(hostsFile.toString());
+            assertEquals(InetAddress.getByName("192.168.31.7"), client.resolve(host_cloud));
 
-            assert client.resolve("www.baidu.com").equals(aopIp);
-
-            _wait();
+            assertEquals(aopIp, client.resolve("www.baidu.com"));
         } finally {
+            Sockets.injectNameService((srcIp, host) -> null);
             server.close();
         }
     }

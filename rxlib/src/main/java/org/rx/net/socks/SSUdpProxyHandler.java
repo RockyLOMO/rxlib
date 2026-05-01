@@ -6,6 +6,7 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.AttributeKey;
 import io.netty.util.concurrent.EventExecutor;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Tasks;
 import org.rx.core.cache.MemoryCache;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
@@ -478,34 +479,50 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             ConcurrentMap<RouteKey, RouteInitState> routeInitMap) {
         try {
             SocksContext context = SocksContext.getCtx(routeKey.source, routeKey.destination);
-            server.publishEvent(server.onUdpRoute, context);
-            Upstream upstream = context.getUpstream();
-            if (upstream == null) {
-                throw new IllegalStateException("SS UDP route upstream is null for " + routeKey.destination);
-            }
-            ChannelFuture outboundFuture = acquireOutboundChannel(inbound, server, routeKey, upstream);
-            outboundFuture.addListener((ChannelFutureListener) f -> {
-                if (!f.isSuccess()) {
-                    runOnExecutor(routeExecutor, () -> onRouteInitFailure(routeKey, initState, routeInitMap, f.cause()));
+            Tasks.runAsync(() -> {
+                server.publishEvent(server.onUdpRoute, context);
+                return context;
+            }).whenComplete((routeContext, routeError) -> runOnExecutor(routeExecutor, () -> {
+                if (routeError != null) {
+                    onRouteInitFailure(routeKey, initState, routeInitMap, routeError);
                     return;
                 }
 
-                Channel outbound = f.channel();
-                CompletableFuture<Void> readyFuture;
-                try {
-                    readyFuture = upstream.initChannelAsync(outbound);
-                } catch (Throwable e) {
-                    readyFuture = new CompletableFuture<>();
-                    readyFuture.completeExceptionally(e);
+                Upstream upstream = routeContext.getUpstream();
+                if (upstream == null) {
+                    onRouteInitFailure(routeKey, initState, routeInitMap,
+                            new IllegalStateException("SS UDP route upstream is null for " + routeKey.destination));
+                    return;
                 }
-                readyFuture.whenComplete((v, error) -> runOnExecutor(routeExecutor, () -> {
-                    if (error != null) {
-                        onRouteInitFailure(routeKey, initState, routeInitMap, error);
-                        return;
-                    }
-                    onRouteInitSuccess(inbound, routeExecutor, server, routeKey, context, outboundFuture, initState, routeMap, routeInitMap);
-                }));
-            });
+
+                try {
+                    ChannelFuture outboundFuture = acquireOutboundChannel(inbound, server, routeKey, upstream);
+                    outboundFuture.addListener((ChannelFutureListener) f -> {
+                        if (!f.isSuccess()) {
+                            runOnExecutor(routeExecutor, () -> onRouteInitFailure(routeKey, initState, routeInitMap, f.cause()));
+                            return;
+                        }
+
+                        Channel outbound = f.channel();
+                        CompletableFuture<Void> readyFuture;
+                        try {
+                            readyFuture = upstream.initChannelAsync(outbound);
+                        } catch (Throwable e) {
+                            readyFuture = new CompletableFuture<>();
+                            readyFuture.completeExceptionally(e);
+                        }
+                        readyFuture.whenComplete((v, error) -> runOnExecutor(routeExecutor, () -> {
+                            if (error != null) {
+                                onRouteInitFailure(routeKey, initState, routeInitMap, error);
+                                return;
+                            }
+                            onRouteInitSuccess(inbound, routeExecutor, server, routeKey, routeContext, outboundFuture, initState, routeMap, routeInitMap);
+                        }));
+                    });
+                } catch (Throwable e) {
+                    onRouteInitFailure(routeKey, initState, routeInitMap, e);
+                }
+            }));
         } catch (Throwable e) {
             runOnExecutor(routeExecutor, () -> onRouteInitFailure(routeKey, initState, routeInitMap, e));
         }
