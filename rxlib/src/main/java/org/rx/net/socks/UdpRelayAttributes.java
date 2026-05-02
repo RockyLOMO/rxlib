@@ -47,10 +47,7 @@ public final class UdpRelayAttributes {
 
     public static boolean shouldEncode(Channel channel, InetSocketAddress recipient) {
         ConcurrentMap<InetSocketAddress, Boolean> peers = channel.attr(ATTR_REDUNDANT_PEERS).get();
-        if (peers == null) {
-            return true;
-        }
-        return recipient != null && peers.containsKey(normalize(recipient));
+        return peers != null && recipient != null && peers.containsKey(normalize(recipient));
     }
 
     static InetSocketAddress normalize(InetSocketAddress address) {

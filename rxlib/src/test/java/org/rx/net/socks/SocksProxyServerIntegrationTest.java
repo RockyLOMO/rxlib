@@ -44,12 +44,14 @@ class SocksProxyServerIntegrationTest {
         }
 
         @Override
-        public void fakeEndpoint(long hash, String realEndpoint) {
+        public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            SocksRpcContract.requireValidRpcToken(token);
             SocksRpcContract.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(realEndpoint));
         }
 
         @Override
-        public void addWhiteList(InetAddress endpoint) {
+        public void addWhiteList(InetAddress endpoint, String token) {
+            SocksRpcContract.requireValidRpcToken(token);
             server.getConfig().getWhiteList().add(endpoint);
         }
 
@@ -63,43 +65,43 @@ class SocksProxyServerIntegrationTest {
         }
 
         @Override
-        public boolean resetUdpRelay(int relayPort) {
-            return server.resetUdpRelay(relayPort);
+        public boolean resetUdpRelay(int relayPort, String token) {
+            return server.resetUdpRelay(relayPort, token);
         }
 
         @Override
-        public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
-            return server.claimUdpRelay(relayPort, clientAddr);
+        public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr, String token) {
+            return server.claimUdpRelay(relayPort, clientAddr, token);
         }
 
         @Override
-        public SocksRpcCapabilities capabilities() {
-            return server.socksRpcCapabilities();
+        public SocksRpcCapabilities capabilities(String token) {
+            return server.socksRpcCapabilities(token);
         }
 
         @Override
-        public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
-            return server.openUdpRelayGroup(request);
+        public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request, String token) {
+            return server.openUdpRelayGroup(request, token);
         }
 
         @Override
-        public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
-            return server.addUdpRelays(groupId, count);
+        public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count, String token) {
+            return server.addUdpRelays(groupId, count, token);
         }
 
         @Override
-        public boolean removeUdpRelay(String groupId, int relayPort) {
-            return server.removeUdpRelay(groupId, relayPort);
+        public boolean removeUdpRelay(String groupId, int relayPort, String token) {
+            return server.removeUdpRelay(groupId, relayPort, token);
         }
 
         @Override
-        public boolean heartbeatUdpRelayGroup(String groupId) {
-            return server.heartbeatUdpRelayGroup(groupId);
+        public boolean heartbeatUdpRelayGroup(String groupId, String token) {
+            return server.heartbeatUdpRelayGroup(groupId, token);
         }
 
         @Override
-        public boolean closeUdpRelayGroup(String groupId) {
-            return server.closeUdpRelayGroup(groupId);
+        public boolean closeUdpRelayGroup(String groupId, String token) {
+            return server.closeUdpRelayGroup(groupId, token);
         }
     }
 
@@ -149,6 +151,28 @@ class SocksProxyServerIntegrationTest {
             Sockets.closeBootstrap(tcpEchoBootstrap);
         if (udpEchoChannel != null)
             udpEchoChannel.close();
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
+    void rpcControlRejectsInvalidToken() {
+        SocksProxyServer proxy = new SocksProxyServer(new SocksConfig(0));
+        try {
+            UdpRelayGroupOpenRequest request = new UdpRelayGroupOpenRequest();
+            request.setInitialRelayCount(1);
+            request.setMinActiveRelays(1);
+            request.setMaxRelayCount(1);
+
+            assertThrows(SecurityException.class, () -> proxy.socksRpcCapabilities("bad-token"));
+            assertThrows(SecurityException.class, () -> proxy.openUdpRelayGroup(request, "bad-token"));
+            assertThrows(SecurityException.class, () -> proxy.addUdpRelays("missing", 1, "bad-token"));
+            assertThrows(SecurityException.class, () -> proxy.removeUdpRelay("missing", 1, "bad-token"));
+            assertThrows(SecurityException.class, () -> proxy.heartbeatUdpRelayGroup("missing", "bad-token"));
+            assertThrows(SecurityException.class, () -> proxy.closeUdpRelayGroup("missing", "bad-token"));
+        } finally {
+            proxy.close();
+        }
     }
 
     @Test

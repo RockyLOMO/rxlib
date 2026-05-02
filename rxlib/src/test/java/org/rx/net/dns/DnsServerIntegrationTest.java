@@ -54,7 +54,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
         }
 
         @Override
-        public void fakeEndpoint(long hash, String realEndpoint) {
+        public void fakeEndpoint(long hash, String realEndpoint, String token) {
         }
 
         @SneakyThrows
@@ -65,7 +65,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
         }
 
         @Override
-        public void addWhiteList(InetAddress endpoint) {
+        public void addWhiteList(InetAddress endpoint, String token) {
         }
     }
 

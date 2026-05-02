@@ -69,6 +69,7 @@ public class UdpRedundantTest {
         int multiplier = 3;
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(multiplier, 0);
         EmbeddedChannel channel = new EmbeddedChannel(encoder);
+        registerRedundantPeer(channel);
 
         ByteBuf data = Unpooled.copiedBuffer("hello".getBytes());
         channel.writeOutbound(new DatagramPacket(data, REMOTE));
@@ -89,6 +90,7 @@ public class UdpRedundantTest {
     public void testRedundantPacketsUseContiguousBuffer() {
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0);
         EmbeddedChannel channel = new EmbeddedChannel(encoder);
+        registerRedundantPeer(channel);
 
         ByteBuf data = Unpooled.copiedBuffer("compat".getBytes(StandardCharsets.UTF_8));
         channel.writeOutbound(new DatagramPacket(data, REMOTE));
@@ -126,6 +128,7 @@ public class UdpRedundantTest {
         // Test that memory optimization works correctly with ByteBuf slices
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0);
         EmbeddedChannel channel = new EmbeddedChannel(encoder);
+        registerRedundantPeer(channel);
 
         // Create a larger payload to verify slice optimization
         String largeData = "This is a larger payload to test memory optimization with ByteBuf slices";
@@ -154,6 +157,7 @@ public class UdpRedundantTest {
     public void testEncoderReleasesOriginalDatagramPacket() {
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(2, 0);
         EmbeddedChannel channel = new EmbeddedChannel(encoder);
+        registerRedundantPeer(channel);
 
         ByteBuf payload = Unpooled.directBuffer(8);
         payload.writeBytes("ping".getBytes(StandardCharsets.UTF_8));
@@ -198,6 +202,21 @@ public class UdpRedundantTest {
             out.release();
         }
         assertNull(channel.readOutbound());
+    }
+
+    @Test
+    public void testEncoderDoesNotApplyWithoutPeerMap() {
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0);
+        EmbeddedChannel channel = new EmbeddedChannel(encoder);
+
+        ByteBuf payload = Unpooled.copiedBuffer("plain-no-peers".getBytes(StandardCharsets.UTF_8));
+        channel.writeOutbound(new DatagramPacket(payload, REMOTE));
+
+        DatagramPacket out = channel.readOutbound();
+        assertNotNull(out);
+        assertEquals("plain-no-peers", out.content().toString(StandardCharsets.UTF_8));
+        out.release();
+        assertNull(channel.readOutbound(), "未初始化 peer map 时必须 fail-close，不能默认加 RDNT");
     }
 
     // ===================== Decoder 测试 =====================
@@ -486,6 +505,7 @@ public class UdpRedundantTest {
         UdpRedundantStats stats = new UdpRedundantStats(2, 1, 5, 0, 0.20, 0.05, 1);
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(stats);
         EmbeddedChannel channel = new EmbeddedChannel(encoder);
+        registerRedundantPeer(channel);
 
         // 初始 multiplier=2，应该产生 2 个包
         ByteBuf data = Unpooled.copiedBuffer("test".getBytes());
@@ -610,6 +630,8 @@ public class UdpRedundantTest {
         };
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(2, 0, r);
         EmbeddedChannel ch = new EmbeddedChannel(encoder);
+        UdpRelayAttributes.addRedundantPeer(ch, bump);
+        UdpRelayAttributes.addRedundantPeer(ch, normal);
 
         ByteBuf b1 = Unpooled.copiedBuffer("a".getBytes(StandardCharsets.UTF_8));
         ch.writeOutbound(new DatagramPacket(b1, bump));
@@ -635,6 +657,7 @@ public class UdpRedundantTest {
         UdpRedundantMultiplierResolver r = dest -> dest.getPort() == 7 ? 1 : UdpRedundantMultiplierResolver.NO_MATCH;
         UdpRedundantEncoder encoder = new UdpRedundantEncoder(3, 0, r);
         EmbeddedChannel ch = new EmbeddedChannel(encoder);
+        UdpRelayAttributes.addRedundantPeer(ch, new InetSocketAddress("127.0.0.1", 7));
 
         ByteBuf small = Unpooled.copiedBuffer("x".getBytes(StandardCharsets.UTF_8));
         ch.writeOutbound(new DatagramPacket(small, new InetSocketAddress("127.0.0.1", 7)));
@@ -676,6 +699,10 @@ public class UdpRedundantTest {
                 stats.recordReceived();
             }
         }
+    }
+
+    private static void registerRedundantPeer(EmbeddedChannel channel) {
+        UdpRelayAttributes.addRedundantPeer(channel, REMOTE);
     }
 
     /**

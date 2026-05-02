@@ -170,7 +170,7 @@ public class SocksUdpUpstream extends Upstream {
                                Socks5UpstreamPoolManager poolManager, SocksConfig socksConfig) {
         try {
             InetSocketAddress clientAddr = resolveClaimClientAddress(channel, lease);
-            boolean ok = facade.claimUdpRelay(lease.getRelayPort(), clientAddr);
+            boolean ok = facade.claimUdpRelay(lease.getRelayPort(), clientAddr, SocksRpcContract.rpcToken());
             if (ok) {
                 poolManager.onUdpRpcSuccess(poolKey());
                 DiagnosticMetrics.record("socks.udp.lease.pool.claim.count", 1D,
@@ -307,7 +307,7 @@ public class SocksUdpUpstream extends Upstream {
         }
 
         try {
-            SocksRpcCapabilities capabilities = facade.capabilities();
+            SocksRpcCapabilities capabilities = facade.capabilities(SocksRpcContract.rpcToken());
             if (capabilities == null || !capabilities.has(SocksRpcCapabilities.UDP_RELAY_GROUP)) {
                 return handleRpcRelayGroupUnavailable(socksConfig, "unsupported", null);
             }
@@ -333,7 +333,7 @@ public class SocksUdpUpstream extends Upstream {
             request.setMaxRelayCount(maxRelayCount);
             request.setIdleTimeoutMillis(socksConfig.getUdpRelayGroupIdleMillis());
 
-            UdpRelayGroupOpenResult result = facade.openUdpRelayGroup(request);
+            UdpRelayGroupOpenResult result = facade.openUdpRelayGroup(request, SocksRpcContract.rpcToken());
             if (result == null || !result.isSupported() || !result.isSuccess()) {
                 String reason = result == null ? "null-result"
                         : !result.isSupported() ? "unsupported"
@@ -341,7 +341,8 @@ public class SocksUdpUpstream extends Upstream {
                 return handleRpcRelayGroupUnavailable(socksConfig, reason, null);
             }
 
-            RpcRelayGroupControl control = new RpcRelayGroupControl(facade, result.getGroupId(), result.getToken());
+            String controlToken = result.getToken() != null ? result.getToken() : SocksRpcContract.rpcToken();
+            RpcRelayGroupControl control = new RpcRelayGroupControl(facade, result.getGroupId(), controlToken);
             SessionHolder[] holders = toRpcHolders(control, result.getRelays());
             if (holders.length < minActive) {
                 control.closeGroup();
@@ -417,11 +418,8 @@ public class SocksUdpUpstream extends Upstream {
         if (udpLocalAddr.getAddress() != null && !udpLocalAddr.getAddress().isAnyLocalAddress()) {
             return udpLocalAddr;
         }
-        InetSocketAddress serverAddress = next.getEndpoint().getInetEndpoint();
-        if (serverAddress != null && serverAddress.getAddress() != null
-                && !serverAddress.getAddress().isAnyLocalAddress()) {
-            return new InetSocketAddress(serverAddress.getAddress(), udpLocalAddr.getPort());
-        }
+        // any-local 只说明本地 UDP socket 尚未暴露实际出口地址，不能用上游 server IP 猜 clientAddr。
+        // 让服务端 relay 以首个真实 UDP sender 建立 client lock，避免公网部署下锁到错误地址。
         return null;
     }
 
@@ -875,7 +873,7 @@ public class SocksUdpUpstream extends Upstream {
         Tasks.runAsync(() -> {
             boolean ok = false;
             try {
-                ok = facade.resetUdpRelay(active.lease.getRelayPort());
+                ok = facade.resetUdpRelay(active.lease.getRelayPort(), SocksRpcContract.rpcToken());
                 if (ok) {
                     DiagnosticMetrics.record("socks.udp.lease.pool.reset.count", 1D,
                             "key=" + poolKey() + ",result=success");
@@ -934,7 +932,7 @@ public class SocksUdpUpstream extends Upstream {
                 return UdpRelayGroupUpdateResult.fail("GROUP_CLOSED", "group is closed");
             }
             try {
-                return facade.addUdpRelays(groupId, count);
+                return facade.addUdpRelays(groupId, count, token);
             } catch (Throwable e) {
                 DiagnosticMetrics.record("socks.udp.relay.group.add.count", 1D,
                         "result=fail,reason=rpc-error");
@@ -950,7 +948,7 @@ public class SocksUdpUpstream extends Upstream {
                 return false;
             }
             try {
-                return facade.removeUdpRelay(groupId, relayPort);
+                return facade.removeUdpRelay(groupId, relayPort, token);
             } catch (Throwable e) {
                 DiagnosticMetrics.record("socks.udp.relay.group.remove.count", 1D,
                         "result=fail,reason=rpc-error");
@@ -963,7 +961,7 @@ public class SocksUdpUpstream extends Upstream {
                 return false;
             }
             try {
-                return facade.heartbeatUdpRelayGroup(groupId);
+                return facade.heartbeatUdpRelayGroup(groupId, token);
             } catch (Throwable e) {
                 DiagnosticMetrics.record("socks.udp.relay.group.heartbeat.count", 1D,
                         "result=fail,reason=rpc-error");
@@ -976,7 +974,7 @@ public class SocksUdpUpstream extends Upstream {
                 return true;
             }
             try {
-                return facade.closeUdpRelayGroup(groupId);
+                return facade.closeUdpRelayGroup(groupId, token);
             } catch (Throwable e) {
                 DiagnosticMetrics.record("socks.udp.relay.group.close.count", 1D,
                         "result=fail,reason=rpc-error");

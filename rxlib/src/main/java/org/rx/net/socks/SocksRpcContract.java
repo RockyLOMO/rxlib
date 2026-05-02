@@ -2,6 +2,7 @@ package org.rx.net.socks;
 
 import org.rx.core.Arrays;
 import org.rx.core.Cache;
+import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.core.cache.H2StoreCache;
 import org.rx.net.dns.DnsServer;
@@ -44,39 +45,54 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
         }
     }
 
-    void fakeEndpoint(long hash, String realEndpoint);
+    static String rpcToken() {
+        return RxConfig.INSTANCE.getRtoken();
+    }
 
-    void addWhiteList(InetAddress endpoint);
+    static boolean isValidRpcToken(String token) {
+        String expected = RxConfig.INSTANCE.getRtoken();
+        return !Strings.isEmpty(expected) && expected.equals(token);
+    }
 
-    default SocksRpcCapabilities capabilities() {
+    static void requireValidRpcToken(String token) {
+        if (!isValidRpcToken(token)) {
+            throw new SecurityException("invalid rpc token");
+        }
+    }
+
+    void fakeEndpoint(long hash, String realEndpoint, String token);
+
+    void addWhiteList(InetAddress endpoint, String token);
+
+    default SocksRpcCapabilities capabilities(String token) {
         return SocksRpcCapabilities.EMPTY;
     }
 
-    default boolean resetUdpRelay(int relayPort) {
+    default boolean resetUdpRelay(int relayPort, String token) {
         return false;
     }
 
-    default boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
+    default boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr, String token) {
         return false;
     }
 
-    default UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
+    default UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request, String token) {
         return UdpRelayGroupOpenResult.unsupported();
     }
 
-    default UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
+    default UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count, String token) {
         return UdpRelayGroupUpdateResult.unsupported();
     }
 
-    default boolean removeUdpRelay(String groupId, int relayPort) {
+    default boolean removeUdpRelay(String groupId, int relayPort, String token) {
         return false;
     }
 
-    default boolean heartbeatUdpRelayGroup(String groupId) {
+    default boolean heartbeatUdpRelayGroup(String groupId, String token) {
         return false;
     }
 
-    default boolean closeUdpRelayGroup(String groupId) {
+    default boolean closeUdpRelayGroup(String groupId, String token) {
         return false;
     }
 

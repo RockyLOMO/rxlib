@@ -491,11 +491,11 @@ public class RssTest extends AbstractTester {
         AuthenticEndpoint upstream = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1090), "u", "p");
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint) {
+            public void fakeEndpoint(long hash, String realEndpoint, String token) {
             }
 
             @Override
-            public void addWhiteList(InetAddress endpoint) {
+            public void addWhiteList(InetAddress endpoint, String token) {
             }
 
             @Override
@@ -520,12 +520,12 @@ public class RssTest extends AbstractTester {
         final AtomicInteger calls = new AtomicInteger();
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint) {
+            public void fakeEndpoint(long hash, String realEndpoint, String token) {
                 calls.incrementAndGet();
             }
 
             @Override
-            public void addWhiteList(InetAddress endpoint) {
+            public void addWhiteList(InetAddress endpoint, String token) {
             }
 
             @Override
@@ -656,11 +656,11 @@ public class RssTest extends AbstractTester {
         AtomicInteger closeCount = new AtomicInteger();
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint) {
+            public void fakeEndpoint(long hash, String realEndpoint, String token) {
             }
 
             @Override
-            public void addWhiteList(InetAddress endpoint) {
+            public void addWhiteList(InetAddress endpoint, String token) {
             }
 
             @Override
@@ -696,11 +696,11 @@ public class RssTest extends AbstractTester {
         AtomicInteger closeCount = new AtomicInteger();
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint) {
+            public void fakeEndpoint(long hash, String realEndpoint, String token) {
             }
 
             @Override
-            public void addWhiteList(InetAddress endpoint) {
+            public void addWhiteList(InetAddress endpoint, String token) {
             }
 
             @Override
@@ -739,11 +739,11 @@ public class RssTest extends AbstractTester {
         AtomicInteger calls = new AtomicInteger();
         SocksRpcContract delegate = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint) {
+            public void fakeEndpoint(long hash, String realEndpoint, String token) {
             }
 
             @Override
-            public void addWhiteList(InetAddress endpoint) {
+            public void addWhiteList(InetAddress endpoint, String token) {
             }
 
             @Override

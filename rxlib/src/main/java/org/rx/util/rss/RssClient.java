@@ -290,8 +290,8 @@ public final class RssClient {
         }
 
         @Override
-        public void fakeEndpoint(long hash, String realEndpoint) {
-            delegate.fakeEndpoint(hash, realEndpoint);
+        public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            delegate.fakeEndpoint(hash, realEndpoint, token);
         }
 
         @Override
@@ -324,48 +324,48 @@ public final class RssClient {
         }
 
         @Override
-        public void addWhiteList(InetAddress endpoint) {
-            delegate.addWhiteList(endpoint);
+        public void addWhiteList(InetAddress endpoint, String token) {
+            delegate.addWhiteList(endpoint, token);
         }
 
         @Override
-        public boolean resetUdpRelay(int relayPort) {
-            return delegate.resetUdpRelay(relayPort);
+        public boolean resetUdpRelay(int relayPort, String token) {
+            return delegate.resetUdpRelay(relayPort, token);
         }
 
         @Override
-        public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
-            return delegate.claimUdpRelay(relayPort, clientAddr);
+        public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr, String token) {
+            return delegate.claimUdpRelay(relayPort, clientAddr, token);
         }
 
         @Override
-        public SocksRpcCapabilities capabilities() {
-            return delegate.capabilities();
+        public SocksRpcCapabilities capabilities(String token) {
+            return delegate.capabilities(token);
         }
 
         @Override
-        public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
-            return delegate.openUdpRelayGroup(request);
+        public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request, String token) {
+            return delegate.openUdpRelayGroup(request, token);
         }
 
         @Override
-        public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
-            return delegate.addUdpRelays(groupId, count);
+        public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count, String token) {
+            return delegate.addUdpRelays(groupId, count, token);
         }
 
         @Override
-        public boolean removeUdpRelay(String groupId, int relayPort) {
-            return delegate.removeUdpRelay(groupId, relayPort);
+        public boolean removeUdpRelay(String groupId, int relayPort, String token) {
+            return delegate.removeUdpRelay(groupId, relayPort, token);
         }
 
         @Override
-        public boolean heartbeatUdpRelayGroup(String groupId) {
-            return delegate.heartbeatUdpRelayGroup(groupId);
+        public boolean heartbeatUdpRelayGroup(String groupId, String token) {
+            return delegate.heartbeatUdpRelayGroup(groupId, token);
         }
 
         @Override
-        public boolean closeUdpRelayGroup(String groupId) {
-            return delegate.closeUdpRelayGroup(groupId);
+        public boolean closeUdpRelayGroup(String groupId, String token) {
+            return delegate.closeUdpRelayGroup(groupId, token);
         }
 
         @Override

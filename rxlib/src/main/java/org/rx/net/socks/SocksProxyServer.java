@@ -242,6 +242,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         });
     }
 
+    public boolean resetUdpRelay(int relayPort, String token) {
+        validateRpcToken(token, "reset");
+        return resetUdpRelay(relayPort);
+    }
+
     public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
         if (DiagnosticMetrics.isEnabled()) {
             DiagnosticMetrics.record("socks.udp.relay.claim.count", 1D, "port=" + relayPort);
@@ -252,28 +257,78 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         });
     }
 
+    public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr, String token) {
+        validateRpcToken(token, "claim");
+        return claimUdpRelay(relayPort, clientAddr);
+    }
+
     public SocksRpcCapabilities socksRpcCapabilities() {
         return udpRelayGroupManager.capabilities();
+    }
+
+    public SocksRpcCapabilities socksRpcCapabilities(String token) {
+        validateRpcToken(token, "capabilities");
+        return socksRpcCapabilities();
     }
 
     public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
         return udpRelayGroupManager.open(request);
     }
 
+    public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request, String token) {
+        validateRpcToken(token, "open-group");
+        UdpRelayGroupOpenResult result = openUdpRelayGroup(request);
+        if (result != null && result.isSuccess()) {
+            result.setToken(token);
+        }
+        return result;
+    }
+
     public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
         return udpRelayGroupManager.addUdpRelays(groupId, count);
+    }
+
+    public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count, String token) {
+        validateRpcToken(token, "add-relay");
+        return addUdpRelays(groupId, count);
     }
 
     public boolean removeUdpRelay(String groupId, int relayPort) {
         return udpRelayGroupManager.removeUdpRelay(groupId, relayPort);
     }
 
+    public boolean removeUdpRelay(String groupId, int relayPort, String token) {
+        validateRpcToken(token, "remove-relay");
+        return removeUdpRelay(groupId, relayPort);
+    }
+
     public boolean heartbeatUdpRelayGroup(String groupId) {
         return udpRelayGroupManager.heartbeat(groupId);
     }
 
+    public boolean heartbeatUdpRelayGroup(String groupId, String token) {
+        validateRpcToken(token, "heartbeat");
+        return heartbeatUdpRelayGroup(groupId);
+    }
+
     public boolean closeUdpRelayGroup(String groupId) {
         return udpRelayGroupManager.close(groupId);
+    }
+
+    public boolean closeUdpRelayGroup(String groupId, String token) {
+        validateRpcToken(token, "close-group");
+        return closeUdpRelayGroup(groupId);
+    }
+
+    private void validateRpcToken(String token, String action) {
+        try {
+            SocksRpcContract.requireValidRpcToken(token);
+        } catch (SecurityException e) {
+            if (DiagnosticMetrics.isEnabled()) {
+                DiagnosticMetrics.record("socks.rpc.auth.fail.count", 1D, "action=" + action);
+            }
+            throw e;
+        }
     }
 
     @SneakyThrows

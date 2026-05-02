@@ -28,7 +28,8 @@ public final class RssRpcApp implements SocksRpcContract {
     }
 
     @Override
-    public void fakeEndpoint(long hash, String endpoint) {
+    public void fakeEndpoint(long hash, String endpoint, String token) {
+        SocksRpcContract.requireValidRpcToken(token);
         SocksRpcContract.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(endpoint));
     }
 
@@ -39,48 +40,49 @@ public final class RssRpcApp implements SocksRpcContract {
     }
 
     @Override
-    public void addWhiteList(InetAddress endpoint) {
+    public void addWhiteList(InetAddress endpoint, String token) {
+        SocksRpcContract.requireValidRpcToken(token);
         svrSide.get().getConfig().allowWhiteList(endpoint);
     }
 
     @Override
-    public boolean resetUdpRelay(int relayPort) {
-        return svrSide.get().resetUdpRelay(relayPort);
+    public boolean resetUdpRelay(int relayPort, String token) {
+        return svrSide.get().resetUdpRelay(relayPort, token);
     }
 
     @Override
-    public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
-        return svrSide.get().claimUdpRelay(relayPort, clientAddr);
+    public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr, String token) {
+        return svrSide.get().claimUdpRelay(relayPort, clientAddr, token);
     }
 
     @Override
-    public SocksRpcCapabilities capabilities() {
-        return svrSide.get().socksRpcCapabilities();
+    public SocksRpcCapabilities capabilities(String token) {
+        return svrSide.get().socksRpcCapabilities(token);
     }
 
     @Override
-    public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
-        return svrSide.get().openUdpRelayGroup(request);
+    public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request, String token) {
+        return svrSide.get().openUdpRelayGroup(request, token);
     }
 
     @Override
-    public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
-        return svrSide.get().addUdpRelays(groupId, count);
+    public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count, String token) {
+        return svrSide.get().addUdpRelays(groupId, count, token);
     }
 
     @Override
-    public boolean removeUdpRelay(String groupId, int relayPort) {
-        return svrSide.get().removeUdpRelay(groupId, relayPort);
+    public boolean removeUdpRelay(String groupId, int relayPort, String token) {
+        return svrSide.get().removeUdpRelay(groupId, relayPort, token);
     }
 
     @Override
-    public boolean heartbeatUdpRelayGroup(String groupId) {
-        return svrSide.get().heartbeatUdpRelayGroup(groupId);
+    public boolean heartbeatUdpRelayGroup(String groupId, String token) {
+        return svrSide.get().heartbeatUdpRelayGroup(groupId, token);
     }
 
     @Override
-    public boolean closeUdpRelayGroup(String groupId) {
-        return svrSide.get().closeUdpRelayGroup(groupId);
+    public boolean closeUdpRelayGroup(String groupId, String token) {
+        return svrSide.get().closeUdpRelayGroup(groupId, token);
     }
 
     @SneakyThrows

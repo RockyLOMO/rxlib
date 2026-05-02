@@ -34,6 +34,7 @@ public class UdpRedundantEncoderPerformanceTest {
         channel.pipeline().addLast(encoder);
         
         InetSocketAddress recipient = new InetSocketAddress("127.0.0.1", 8080);
+        UdpRelayAttributes.addRedundantPeer(channel, recipient);
         ByteBuf payload = createTestPayload(TEST_PACKET_SIZE);
         
         // 预热
@@ -81,6 +82,7 @@ public class UdpRedundantEncoderPerformanceTest {
         channel.pipeline().addLast(encoder);
         
         InetSocketAddress recipient = new InetSocketAddress("127.0.0.1", 8080);
+        UdpRelayAttributes.addRedundantPeer(channel, recipient);
         ByteBuf originalPayload = createTestPayload(TEST_PACKET_SIZE);
         
         // 记录原始payload的引用计数
@@ -130,6 +132,7 @@ public class UdpRedundantEncoderPerformanceTest {
         channel.pipeline().addLast(new UdpRedundantEncoder(TEST_MULTIPLIER, 0, null));
 
         InetSocketAddress recipient = new InetSocketAddress("127.0.0.1", 8080);
+        UdpRelayAttributes.addRedundantPeer(channel, recipient);
         ByteBuf payload = createTestPayload(TEST_PACKET_SIZE);
 
         channel.pipeline().write(new DatagramPacket(payload, recipient));
@@ -155,6 +158,7 @@ public class UdpRedundantEncoderPerformanceTest {
         channel.pipeline().addLast(encoder);
         
         InetSocketAddress recipient = new InetSocketAddress("127.0.0.1", 8080);
+        UdpRelayAttributes.addRedundantPeer(channel, recipient);
         ByteBuf payload = createTestPayload(TEST_PACKET_SIZE);
         
         long startTime = System.nanoTime();
@@ -198,6 +202,7 @@ public class UdpRedundantEncoderPerformanceTest {
         channel.pipeline().addLast(encoder);
         
         InetSocketAddress recipient = new InetSocketAddress("127.0.0.1", 8080);
+        UdpRelayAttributes.addRedundantPeer(channel, recipient);
         
         // 记录初始内存使用
         long initialMemory = PooledByteBufAllocator.DEFAULT.metric().usedDirectMemory();
@@ -245,6 +250,7 @@ public class UdpRedundantEncoderPerformanceTest {
         EmbeddedChannel optimizedChannel = new EmbeddedChannel();
         UdpRedundantEncoder optimizedEncoder = new UdpRedundantEncoder(TEST_MULTIPLIER, 0, null);
         optimizedChannel.pipeline().addLast(optimizedEncoder);
+        UdpRelayAttributes.addRedundantPeer(optimizedChannel, recipient);
         
         long optimizedTime = measureEncodingTime(optimizedChannel, payload, recipient);
         

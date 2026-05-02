@@ -81,7 +81,7 @@ public class SocksTcpUpstream extends Upstream {
             try {
                 String dstEpStr = realDestination.toString();
                 Tasks.runAsync(() -> {
-                    facade.fakeEndpoint(hash, dstEpStr);
+                    facade.fakeEndpoint(hash, dstEpStr, SocksRpcContract.rpcToken());
                     return true;
                 }).whenCompleteAsync((r, e) -> {
                     if (BooleanUtils.isTrue(r)) {
