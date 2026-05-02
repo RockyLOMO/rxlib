@@ -369,6 +369,17 @@ public class SocksConfig extends SocketConfig {
         udpPortHopping.setAdaptiveScaleUpCooldownMillis(adaptiveScaleUpCooldownMillis);
     }
 
+    public int getUdpPortHoppingReplenishDelayMillis() {
+        return udpPortHopping != null ? udpPortHopping.getReplenishDelayMillis() : 1000;
+    }
+
+    public void setUdpPortHoppingReplenishDelayMillis(int replenishDelayMillis) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setReplenishDelayMillis(replenishDelayMillis);
+    }
+
     public boolean isUdpCompressEnabled() {
         return udpCompress != null && udpCompress.isEnabled();
     }

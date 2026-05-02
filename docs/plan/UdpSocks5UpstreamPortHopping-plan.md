@@ -9,13 +9,14 @@
 - 已支持固定 `hopCount` 和自适应动态 `hopCount` 两种模式；自适应模式从 `minHopCount` 起步，按双向累计流量或 active 时间逐步扩容到 `maxHopCount`。
 - `SocksUdpRelayHandler`、`SSUdpProxyHandler`、`Udp2rawHandler` 已改为发送时选择 relay、回包时识别 group 内任意 relay。
 - 默认关闭；`enabled=false` 或 `hopCount=1` 时保持旧行为。
-- 第一版采用“任一 hop control channel 关闭则整组失效并由下一次 route 重新初始化”的保守策略，不做单 hop 异步补洞。
+- 已合并下一阶段 P0/P1：配置层对超过推荐值 `4` 的 hop 输出 warn；lease pool 增加 borrow/claim/reset/idle/borrowed 指标；ctxMap 按 relay 地址快照精确清理；单 hop control channel 关闭时先摘除该 holder，active hop 数满足 `minActiveHops` 时继续转发并异步补洞，低于阈值才整组失效。
 
 未实现内容：
 
 - `spreadRedundantCopies` 仍为二期预留，不会把同一个 RDNT 冗余组拆到多个远端 relay 端口。
 - 动态 `hopCount` 当前只做 group 生命周期内的在线扩容；不做在线收缩。连接关闭、route 失效或 group 重建后会重新从 `minHopCount` 起步。
-- 单 hop 权重降级、按丢包率补洞、跨 relay 共享去重窗口暂未实现。
+- 单 hop 权重降级、按丢包率动态调整、跨 relay 共享去重窗口暂未实现。
+- P2 私有 batch UDP relay 申请按本轮执行要求暂不实现，只保留设计方向。
 
 ## 背景
 
@@ -114,8 +115,11 @@ public enum UdpPortHoppingMode {
 - `long getUdpPortHoppingAdaptiveScaleUpBytes()`
 - `long getUdpPortHoppingAdaptiveScaleUpActiveMillis()`
 - `int getUdpPortHoppingAdaptiveScaleUpCooldownMillis()`
+- `int getUdpPortHoppingReplenishDelayMillis()`
 
 默认 `enabled=false`、`hopCount=1`，保证现有行为不变。建议第一期限制 `hopCount` 到 `[1, 8]`，避免对 Proxy B 产生过多 TCP control channel 和 UDP relay channel。
+
+实现上允许 `MAX_HOP_COUNT=8`，但推荐线上默认不超过 `4`。`maxHopCount>4` 或固定模式 `adaptive=false && hopCount>4` 时会输出 warn，提醒控制通道和远端 UDP relay 端口会线性膨胀。
 
 自适应模式默认不生效；必须同时满足：
 
@@ -129,6 +133,26 @@ public enum UdpPortHoppingMode {
 `spreadRedundantCopies` 第一期开关保留但不启用，避免误开导致目标收到重复包。当前代码没有接入该开关，行为恒等于 `false`。
 
 ## 详细使用方式
+
+### 推荐自适应开启方式
+
+普通游戏、语音、DNS 和低中等 UDP 流量建议以 1 hop 起步，只让热点 route 扩容：
+
+```java
+SocksConfig bConf = new SocksConfig(proxyBPort);
+bConf.setUdpPortHoppingEnabled(true);
+bConf.setUdpPortHoppingAdaptive(true);
+bConf.setUdpPortHoppingMinHopCount(1);
+bConf.setUdpPortHoppingMaxHopCount(2);
+bConf.setUdpPortHoppingMinActiveHops(1);
+bConf.setUdpPortHoppingMode(UdpPortHoppingMode.ROUND_ROBIN);
+bConf.setUdpPortHoppingAdaptiveScaleUpBytes(8L * 1024L * 1024L);
+bConf.setUdpPortHoppingAdaptiveScaleUpActiveMillis(90_000L);
+bConf.setUdpPortHoppingAdaptiveScaleUpCooldownMillis(1500);
+bConf.setUdpPortHoppingReplenishDelayMillis(1000);
+```
+
+持续大流量 UDP 可把 `maxHopCount` 调到 `3`，并把扩容阈值降到 `4 MiB / 60 秒`。除非已经确认链路存在强端口级限速，不建议默认超过 `3`。
 
 ### 最小开启方式
 
@@ -151,9 +175,11 @@ proxyA.onUdpRoute.replace((s, e) -> {
 });
 ```
 
-推荐值：
+固定模式建议：
 
-- `hopCount=2~4`：常规防单端口限速优先从 3 开始。
+- `hopCount=2~3`：仅用于明确需要端口分散的白名单 route 或压测。
+- `hopCount=4`：已经接近推荐上限，需观察 Proxy B control channel、UDP relay port 和堆外内存。
+- `hopCount>4`：代码允许但会输出 warn，不建议作为默认线上配置。
 - `minActiveHops=1`：更偏可用性，部分端口建立失败时仍可降级转发。
 - `minActiveHops=hopCount`：更偏严格端口分散，拿不满端口就让 route init 失败。
 - `mode=ROUND_ROBIN`：默认推荐，热点路径只递增索引，行为稳定。
@@ -161,7 +187,7 @@ proxyA.onUdpRoute.replace((s, e) -> {
 
 ### 自适应动态 hop count
 
-自适应模式适合低流量会话先少占资源，高流量或长时间活跃会话再逐步扩容。当前实现只在线增加 hop，不在线减少 hop；会话结束或 group 因 control channel 关闭而重建后，会重新从 `minHopCount` 起步。
+自适应模式适合低流量会话先少占资源，高流量或长时间活跃会话再逐步扩容。当前实现只在线增加 hop，不在线减少 hop；会话结束、route 失效或 group 重建后会重新从 `minHopCount` 起步。单个 hop control channel 关闭时会先摘除该 holder，active hop 仍满足 `minActiveHops` 时继续服务并异步补洞。
 
 ```java
 SocksConfig upstreamConfig = new SocksConfig(proxyBPort);
@@ -178,6 +204,8 @@ upstreamConfig.setUdpPortHoppingAdaptiveScaleUpBytes(4L * 1024L * 1024L);
 upstreamConfig.setUdpPortHoppingAdaptiveScaleUpActiveMillis(60_000L);
 // 防止阈值连续命中时短时间内重复 acquire。
 upstreamConfig.setUdpPortHoppingAdaptiveScaleUpCooldownMillis(1000);
+// 单 hop 摘除后补洞失败的重试冷却。
+upstreamConfig.setUdpPortHoppingReplenishDelayMillis(1000);
 ```
 
 阈值语义：
@@ -190,7 +218,7 @@ upstreamConfig.setUdpPortHoppingAdaptiveScaleUpCooldownMillis(1000);
 
 推荐值：
 
-- `minHopCount=1`、`maxHopCount=3~4`：常规游戏/语音 UDP 场景。
+- `minHopCount=1`、`maxHopCount=2~3`：常规游戏/语音 UDP 场景。
 - `adaptiveScaleUpBytes=2~8 MiB`：按带宽压力扩容，适合防单端口流量计量。
 - `adaptiveScaleUpActiveMillis=30_000~120_000`：按长连接活跃时间扩容，适合持续会话。
 - 如果只想按流量扩容，把 `adaptiveScaleUpActiveMillis` 保持 0；如果只想按时间扩容，把 `adaptiveScaleUpBytes` 保持 0。
@@ -258,9 +286,11 @@ UpstreamSupport supportB = new UpstreamSupport(
 
 建议：
 
-- `udpLeasePoolMinSize >= hopCount`，避免首次端口跳跃仍大量走慢路径建连。
-- `udpLeasePoolMaxSize` 至少为 `并发客户端数 * hopCount` 的保守上限，避免 borrow 饥饿。
+- `udpLeasePoolMinSize` 按预热热点 route 数估算，而不是按总 route 数粗暴放大。
+- `udpLeasePoolMaxSize = 峰值热点 route 数 * maxHopCount`，例如总 route 1000、热点 route 50、`maxHopCount=3` 时先设 `128~192`。
 - 没有 facade、breaker 打开、claim 失败时会自动回退慢路径 `UDP_ASSOCIATE`。
+- pool 耗尽不会阻塞 EventLoop；borrow/claim/reset 都在控制面慢路径执行。
+- 已补充 `idle/borrowed/borrow/claim/reset/recycle/breaker` 相关指标，便于观察命中率和脏连接丢弃。
 
 ### 与 UDP 多倍发包联用
 
@@ -304,7 +334,7 @@ mvn -pl rxlib test "-Dtest=SocksUdpRelayHandlerTest,SocksUdpUpstreamPortHoppingT
 - Proxy B 的 `udpRelayRegistry.size()` 应不小于 `hopCount` 或 `minActiveHops`。
 - 抓包观察 A->B UDP recipient port，应在多个 Proxy B relay 端口之间轮换。
 - 客户端只应收到一份业务响应；真实 UDP 目标不应收到同一逻辑包的跨端口重复副本。
-- 监控关注 `socks.udp.porthop.group.active.count`、`socks.udp.porthop.acquire.count`、UDP drop、堆外内存、连接数、吞吐和延迟。
+- 监控关注 `socks.udp.porthop.group.active.count`、`socks.udp.porthop.acquire.count`、`socks.udp.porthop.replenish.count`、`socks.udp.lease.pool.idle.count`、`socks.udp.lease.pool.borrowed.count`、UDP drop、堆外内存、连接数、吞吐和延迟。
 
 ### 故障与降级行为
 
@@ -312,7 +342,9 @@ mvn -pl rxlib test "-Dtest=SocksUdpRelayHandlerTest,SocksUdpUpstreamPortHoppingT
 - `hopCount=1`：即使 `enabled=true`，也等价旧行为。
 - 初始化拿到的 active hop 数低于 `minActiveHops`：route init 失败，pending UDP 包释放。
 - 初始化拿到的 active hop 数大于等于 `minActiveHops` 但小于 `hopCount`：以已有 hop 降级运行。
-- 任一 hop control channel 关闭：当前整组失效，清理 route cache；后续新包重新初始化 group。
+- 任一 hop control channel 关闭：先从 group 小数组中摘除该 holder，清理对应 relayAddr 的 `ctxMap` 和 RDNT peer。
+- 摘除后 active hop 数仍大于等于 `minActiveHops`：继续转发，并在后台异步补洞；补洞失败不影响已有 hop，后续流量按 `replenishDelayMillis` 冷却重试。
+- 摘除后 active hop 数低于 `minActiveHops`：整组失效，清理 route cache；后续新包重新初始化 group。
 - pooled holder：relay channel 关闭时异步 `resetUdpRelay`，成功后 recycle，失败则 close。
 - 非 pooled holder：关闭 `Socks5UdpSession` 和 `Socks5Client`。
 
@@ -403,10 +435,14 @@ flowchart TD
     E --> F["解析 SOCKS5 UDP response header"]
     F --> G["还原真实源地址和 payload"]
     G --> H["写回 ShadowsocksClient / SOCKS5 client"]
-    I["任一 control channel close"] --> J["invalidateGroup"]
-    J --> K["清空 group attr"]
-    K --> L["cleanup routeMap / ctxMap / pending route"]
-    L --> M["关闭或 reset/recycle group 内所有 holder"]
+    I["任一 control channel close"] --> J["SessionGroup.removeHolder"]
+    J --> K["删除该 relayAddr 的 ctxMap 和 redundant peer"]
+    K --> L{"active hop >= minActiveHops?"}
+    L -- "是" --> M["继续转发并异步 replenish"]
+    L -- "否" --> N["invalidateGroup"]
+    N --> O["清空 group attr"]
+    O --> P["按 relay 快照 cleanup ctxMap / routeMap / pending route"]
+    P --> Q["关闭或 reset/recycle 剩余 holder"]
 ```
 
 ## 数据结构实现
@@ -425,11 +461,15 @@ final class SessionGroup {
     long totalBytes;
     long nextScaleUpBytes;
     long nextScaleUpAtMillis;
+    int targetHopCount;
 
     InetSocketAddress selectRelayAddress();
     boolean containsRelayAddress(InetSocketAddress sender);
     InetSocketAddress primaryRelayAddress();
     boolean tryBeginScaleUp(long nowMillis);
+    boolean removeHolder(SessionHolder holder);
+    boolean shouldInvalidate(int minActiveHops);
+    boolean tryBeginReplenish(long nowMillis, int delayMillis);
     void addHolder(SessionHolder holder);
 }
 ```
@@ -439,7 +479,7 @@ final class SessionGroup {
 - `SessionGroup` 绑定到 UDP outbound/relay channel 的 attr 上。
 - `selectRelayAddress()` 只在 channel 的 EventLoop 上调用，使用普通 `int nextIndex`，不需要 `AtomicInteger`。
 - 固定模式下 `holders` 初始化后按数组保存；自适应扩容只在 EventLoop 回调里复制一次小数组追加 holder，不在每包发送路径复制。
-- 第一版任一 holder control channel 关闭时整组失效，清理 route cache；后续新包重新初始化 group。
+- 任一 holder control channel 关闭时先从小数组中 copy-on-write 摘除；active hop 足够则继续服务并异步补洞，不足才整组失效。
 - channel close 时关闭或回收全部 holder。
 - `recordUdpTraffic` 在发送/回包路径只做 `long` 累加和阈值判断；真正 `UDP_ASSOCIATE` 或 lease claim 在 `Tasks.runAsync` 慢路径执行。
 
@@ -452,6 +492,7 @@ final class SessionGroup {
 - `selectUdpRelayAddress(Channel channel)`：发送路径选择本次报文使用的 relay。
 - `ownsUdpRelayAddress(Channel channel, InetSocketAddress sender)`：回包路径判断 sender 是否属于该 upstream group。
 - `snapshotUdpRelayAddresses(Channel channel)`：路由初始化时把所有 relay 地址注册进 ctxMap。
+- `snapshotAllRelayAddresses()`：group 失效清理时使用，包含已经 inactive 但仍需从 `ctxMap` 删除的 relay 地址。
 
 ## 实现步骤
 
@@ -477,7 +518,8 @@ final class SessionGroup {
   - 单次只追加 1 个 holder，达到 `maxHopCount` 后停止。
 - `bindHolder` 演进为 `bindGroup`：
   - 对每个 control channel 注册 close listener；
-  - 任一 holder 失效时整组失效，清理 route cache 并释放 upstream retain；
+  - 任一 holder 失效时先摘除单 hop，active hop 不足 `minActiveHops` 才清理 route cache 并释放 upstream retain；
+  - active hop 足够时启动异步 replenish，成功后把新 relayAddr 立即注册到 `ctxMap` 和 redundant peer；
   - relay channel 关闭时关闭或 reset/recycle group 内全部 holder。
 
 ### 3. `SocksUdpRelayHandler` 改造
@@ -487,7 +529,7 @@ final class SessionGroup {
 - `writeClientPacket` 会把本次选中的 relay 地址补进 `ctxMap`，保证自适应扩容后的新 relay 回包能正确进入 upstream response 分支。
 - `writeClientPacket` 和 `handleDestResponse` 会调用 `recordUdpTraffic`，用于自适应字节阈值。
 - `handleDestResponse` 不再只依赖 primary relay；只要 `ctxMap.get(sender)` 命中就按 upstream response 处理。
-- `cleanupInvalidatedRoute` 清理该 upstream 对应的全部 relay 地址，而不是只清理单个 `relayAddress`。
+- `cleanupInvalidatedRoute` 使用 group relay 地址快照精确删除 `SocksUdpRelayHandler` 和 `Udp2rawHandler` 的 `ctxMap`，避免 `ctxMap.entrySet()` 全局扫描放大多 hop 清理抖动。
 
 ### 4. `SSUdpProxyHandler` 场景4改造
 
@@ -532,11 +574,12 @@ udpRelayAddr.equals(out.sender())
 - 发送路径只读 EventLoop 内的 group 数组，不等待 future，不做 RPC。
 - 自适应扩容的 acquire 也走 `Tasks.runAsync`，完成后回到原 channel EventLoop 追加 holder；同一 group 通过 `expanding` 标记保证只有一个扩容任务运行。
 - `claim/reset` 仍通过远端 relay 的 EventLoop 执行，保持与 `channelRead0` 串行。
+- 单 hop close listener 回到 relay channel 的 EventLoop 后执行摘除、ctxMap 清理和补洞调度。
 - channel close 时：
   - 非 pooled holder 关闭 `Socks5UdpSession` 和 `Socks5Client`；
   - pooled holder 先异步 `resetUdpRelay`，成功后 recycle，否则 close；
   - group attr 清空，route cache 清理。
-- 单个 hop control channel close 时当前直接让整组失效；补洞留给后续演进。
+- 单个 hop control channel close 时 active hop 足够则继续服务；补洞 acquire 仍走 `Tasks.runAsync`，完成后回 EventLoop 追加 holder。
 
 ## 背压与流量控制
 
@@ -569,7 +612,12 @@ udpRelayAddr.equals(out.sender())
 - `socks.udp.porthop.group.active.count`：每个 group 当前 active hop 数。
 - `socks.udp.porthop.acquire.count`：按 `result=success|partial|fail` 标记。
 - `socks.udp.porthop.adaptive.scale.count`：自适应扩容结果，按 `result=success|fail|skip` 和原因标记。
-- `socks.udp.lease.borrow.count`、`socks.udp.lease.rpc.fail.count` 继续复用现有 lease pool 指标。
+- `socks.udp.porthop.replenish.count`：单 hop 摘除后的补洞结果，按 `result=success|fail|skip` 和原因标记。
+- `socks.udp.lease.pool.borrow.count`：lease pool borrow 命中/耗尽，按 `result=hit|miss` 标记。
+- `socks.udp.lease.pool.claim.count`：`claimUdpRelay` 结果，按 `result=success|fail|error` 标记。
+- `socks.udp.lease.pool.reset.count`：`resetUdpRelay` 结果，按 `result=success|fail|error` 标记。
+- `socks.udp.lease.pool.idle.count`、`socks.udp.lease.pool.borrowed.count`：当前空闲和借出 lease 数。
+- `socks.udp.lease.pool.recycle.count`、`socks.udp.lease.rpc.fail.count`、`socks.udp.lease.breaker.open.count` 继续复用现有 lease pool 指标。
 - 必须保留核心网络指标：堆外内存占用、活跃连接数、UDP 吞吐、UDP drop、端到端延迟。
 
 ## 测试计划
@@ -581,8 +629,11 @@ udpRelayAddr.equals(out.sender())
   - `sessionGroupSkipsClosedRelayAddress`
   - `adaptiveSessionGroupScalesByTrafficThresholdStep`
   - `adaptiveSessionGroupScalesByActiveTimeThresholdStep`
+  - `sessionGroupRemovesHolderAndKeepsReplenishTarget`
+  - `sessionGroupReplenishUsesCooldown`
   - `adaptivePortHoppingConfigEnablesSingleHopStart`
 - `SocksUdpRelayHandlerTest#socksUdpUpstreamRegistersAndRotatesPortHoppingRelays`
+- `SocksUdpRelayHandlerTest#upstreamRelayAddAndRemoveMaintainsCtxMapPrecisely`
 - `SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withPortHopping_e2e`
 
 ### 单元测试
@@ -592,16 +643,19 @@ udpRelayAddr.equals(out.sender())
   - inactive holder 被跳过；
   - 自适应模式达到字节阈值后只触发单步扩容；
   - 自适应模式达到 active 时间阈值后只触发单步扩容；
+  - 单 hop 摘除后 `targetHopCount` 不下降，后续可按冷却补洞；
   - 单 hop 起步、`maxHopCount > 1` 时 `isUdpPortHoppingEnabled()` 仍为 true；
   - 低于 `minActiveHops` 初始化失败并释放已获取 holder。
 - `ownsUdpRelayAddress`：
   - 命中 group 内任意 relay；
   - 不命中未知 sender；
   - unresolved/normalized 地址语义正确。
-- `SocksUdpRelayHandler`：
+- `SocksUdpRelayHandler` / `Udp2rawHandler`：
   - route ready 后 `ctxMap` 注册多个 relay 地址；
+  - 自适应扩容或补洞新增 relayAddr 后立即注册到 `ctxMap`；
+  - 单 hop 摘除只删除该 relayAddr，不清理 routeMap；
   - 任意 relay 地址回包都进入 upstream response 分支；
-  - upstream group invalidated 后多个 relay 地址都被清理。
+  - upstream group invalidated 后按 relay 快照精确清理多个 relay 地址，避免全局扫描。
 - `SSUdpProxyHandler.UdpBackendRelayHandler`：
   - 多 relay sender 可通过校验；
   - 未知 sender 被 drop 并记录指标。
@@ -621,7 +675,7 @@ udpRelayAddr.equals(out.sender())
 - 自适应模式下初始 relay 数应等于 `minHopCount`，超过流量或时间阈值后逐步增长且不超过 `maxHopCount`。
 - 客户端只收到一份正确响应，不因端口跳跃产生重复回包。
 - 开启多倍发包后现有去重仍生效，真实 UDP echo 端不收到跨 relay 重复包。
-- 关闭某个 hop control channel 后，当前预期为整组失效并下一次 route 重新建组。
+- 关闭某个 hop control channel 后，active hop 仍满足 `minActiveHops` 时业务不中断并异步补洞；低于阈值才整组失效并下一次 route 重新建组。
 
 回归用例：
 
@@ -637,6 +691,7 @@ udpRelayAddr.equals(out.sender())
 - 默认配置下所有现有 SOCKS5/ShadowSocks UDP 测试行为不变。
 - 开启 `udpPortHopping.enabled=true` 且 `hopCount=3` 时，场景4 能稳定通过。
 - 开启 `udpPortHopping.adaptive=true` 且 `minHopCount=1/maxHopCount=4` 时，初始单 hop 可转发，达到阈值后异步扩容，不阻塞 I/O 线程。
+- 3 hop route 中断 1 个 control channel 且 `minActiveHops<=2` 时，失效 relayAddr 从 `ctxMap` 删除，剩余 hop 继续转发并异步补洞。
 - 多倍发包与端口跳跃同时开启时，单个远端 relay 端口流量下降，整体成功率不低于不开端口跳跃（待专项集成测试补充）。
 - 无 ByteBuf 泄漏；Netty leak detector 在相关测试中无报错。
 - I/O 线程无阻塞 RPC、无同步建连、无阻塞 DNS。
@@ -648,9 +703,57 @@ udpRelayAddr.equals(out.sender())
 - 自适应阈值过低导致快速打满 `maxHopCount`：设置 `adaptiveScaleUpCooldownMillis`，并建议从 MiB 级流量或 30 秒以上 active 阈值开始。
 - 在线收缩若直接关闭单个 holder，可能和 in-flight 回包、ctxMap、RDNT 去重窗口交错：当前不做在线收缩，依赖 route/group 生命周期重建回到 `minHopCount`。
 - NAT 映射不稳定：所有 hop 共享同一个本地 UDP channel source port，远端 `claim` 锁定同一个 clientAddr，减少 NAT 变量。
-- 某个 relay 端口被单独丢弃或限速：轮换选择会自然绕过部分流量，后续可按 drop/timeout 做权重降级。
+- 某个 relay 端口被单独丢弃或限速：当前 control close 可摘除并补洞；无 close 的软限速仍只靠轮换自然摊薄，后续可按 drop/timeout 做权重降级。
 - 跨端口冗余副本会让目标收到重复包：第一期明确不做，二期必须先实现共享去重。
 - lease pool 与异步 reset 交错泄漏 control channel：沿用现有 reset 成功才 recycle 的规则，失败直接 close。
+
+## 合并后的分阶段执行清单
+
+本节合并自 `UdpSocks5UpstreamPortHopping-executable-plan.md`，并按当前代码状态更新。
+
+### 阶段 A：配置和默认策略固化（已完成）
+
+- [x] 文档明确推荐 `adaptive=true,minHopCount=1,maxHopCount=2~3,minActiveHops=1`。
+- [x] `maxHopCount>4` 或固定 `hopCount>4` 输出 warn。
+- [x] 固定 hop 示例改为仅建议白名单 route 或压测使用。
+- [x] 补充 active hop、acquire、scale、replenish、lease pool 指标名称。
+
+### 阶段 B：lease pool 观测和保护（已完成）
+
+- [x] 增加 borrow/claim/reset/idle/borrowed/recycle 指标。
+- [x] pool 耗尽不阻塞 EventLoop，回退慢路径 `UDP_ASSOCIATE`。
+- [x] breaker open 后自动回退慢路径。
+- [x] reset 失败时 close/discard lease，不回收脏连接。
+
+### 阶段 C：ctxMap 清理优化（已完成）
+
+- [x] 每个 group 可输出 relayAddr 快照。
+- [x] 扩容或补洞新增 relayAddr 后立即注册到 `ctxMap`。
+- [x] route 清理按本 group relayAddr 精确删除，避免全局扫描 `ctxMap`。
+- [x] 增加精确清理单元测试。
+
+### 阶段 D：单 hop 摘除 + 补洞（已完成）
+
+- [x] `SessionGroup.removeHolder()`。
+- [x] control close 不再默认整组失效。
+- [x] active hop 足够时继续服务。
+- [x] 后台异步 replenish。
+- [x] active hop 不足才 invalidate group。
+
+### 阶段 E：batch relay 私有协议（本轮不执行）
+
+- [ ] 设计 `claimUdpRelays/resetUdpRelays` RPC。
+- [ ] Proxy B 批量创建 relay port。
+- [ ] Proxy A 一个 control channel 绑定多个 relay。
+- [ ] 不支持 batch 时回退标准 SOCKS5。
+- [ ] 压测对比 TCP control 数量下降比例。
+
+### 阶段 F：跨 relay RDNT 去重（后续评估）
+
+- [ ] 设计跨 relay routeId。
+- [ ] Proxy B 多 relay 共享去重窗口。
+- [ ] 启用 `spreadRedundantCopies`。
+- [ ] 验证真实目标不收到重复 payload。
 
 ## 推荐落地顺序
 
@@ -660,4 +763,5 @@ udpRelayAddr.equals(out.sender())
 4. lease pool 多 lease claim/reset 支持。
 5. 自适应动态 `hopCount` 配置、阈值统计、异步扩容和处理器侧流量记录。
 6. 单元测试与场景4集成测试。
-7. 观察指标后再评估二期 `spreadRedundantCopies`、单 hop 补洞、在线收缩和跨 relay 共享去重。
+7. 单 hop 摘除、补洞、ctxMap 精确清理和 lease pool 观测指标（已完成）。
+8. 观察指标后再评估二期 `spreadRedundantCopies`、在线收缩、跨 relay 共享去重；P2 私有 batch UDP relay 申请本轮暂不执行。

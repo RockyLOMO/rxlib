@@ -16,6 +16,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -213,6 +214,71 @@ class SocksUdpRelayHandlerTest {
         } finally {
             relay.finishAndReleaseAll();
             server.close();
+        }
+    }
+
+    @Test
+    void upstreamRelayAddAndRemoveMaintainsCtxMapPrecisely() {
+        EmbeddedChannel relay = new EmbeddedChannel(SocksUdpRelayHandler.DEFAULT);
+        try {
+            InetSocketAddress firstRelay = new InetSocketAddress("127.0.0.1", 23101);
+            InetSocketAddress secondRelay = new InetSocketAddress("127.0.0.1", 23102);
+            InetSocketAddress staleRelay = new InetSocketAddress("127.0.0.1", 23103);
+            SocksConfig config = new SocksConfig(new LocalAddress("UDP_PORT_HOPPING_CLEANUP_TEST"));
+            FakePortHoppingUpstream upstream = new FakePortHoppingUpstream(
+                    new UnresolvedEndpoint("127.0.0.1", 15303), config, firstRelay, secondRelay);
+            SocksContext context = SocksContext.getCtx(new InetSocketAddress("127.0.0.1", 22103),
+                    new UnresolvedEndpoint("127.0.0.1", 15303));
+            context.setUpstream(upstream);
+
+            ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = new ConcurrentHashMap<>();
+            ctxMap.put(firstRelay, context);
+            ctxMap.put(secondRelay, context);
+            ctxMap.put(staleRelay, context);
+            relay.attr(SocksUdpRelayHandler.ATTR_CTX_MAP).set(ctxMap);
+            ConcurrentMap<InetSocketAddress, SocksContext> udp2rawCtxMap = new ConcurrentHashMap<>();
+            udp2rawCtxMap.put(firstRelay, context);
+            udp2rawCtxMap.put(secondRelay, context);
+            udp2rawCtxMap.put(staleRelay, context);
+            relay.attr(Udp2rawHandler.ATTR_CTX_MAP).set(udp2rawCtxMap);
+
+            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = new ConcurrentHashMap<>();
+            UnresolvedEndpoint routeKey = new UnresolvedEndpoint("127.0.0.1", 15303);
+            routeMap.put(routeKey, context);
+            relay.attr(SocksUdpRelayHandler.ATTR_ROUTE_MAP).set(routeMap);
+            ConcurrentMap<UnresolvedEndpoint, SocksContext> udp2rawRouteMap = new ConcurrentHashMap<>();
+            udp2rawRouteMap.put(routeKey, context);
+            relay.attr(Udp2rawHandler.ATTR_ROUTE_MAP).set(udp2rawRouteMap);
+            relay.attr(SocksUdpRelayHandler.ATTR_LAST_ROUTE).set(
+                    new SocksUdpRelayHandler.LastRoute(UdpManager.socks5HeaderTemplate(routeKey), context));
+
+            InetSocketAddress replenishedRelay = new InetSocketAddress("127.0.0.1", 23104);
+            SocksUdpRelayHandler.onUpstreamRelayAdded(relay, replenishedRelay, upstream);
+            relay.runPendingTasks();
+            assertSame(context, ctxMap.get(replenishedRelay));
+            assertSame(context, udp2rawCtxMap.get(replenishedRelay));
+
+            SocksUdpRelayHandler.onUpstreamRelayRemoved(relay, secondRelay, upstream);
+            relay.runPendingTasks();
+            assertFalse(ctxMap.containsKey(secondRelay));
+            assertFalse(udp2rawCtxMap.containsKey(secondRelay));
+            assertSame(context, routeMap.get(routeKey), "单 hop 摘除不能清理 routeMap");
+            assertSame(context, udp2rawRouteMap.get(routeKey), "单 hop 摘除不能清理 udp2raw routeMap");
+
+            SocksUdpRelayHandler.onUpstreamSessionInvalidated(relay,
+                    new InetSocketAddress[]{firstRelay, replenishedRelay}, upstream);
+            relay.runPendingTasks();
+            assertFalse(ctxMap.containsKey(firstRelay));
+            assertFalse(ctxMap.containsKey(replenishedRelay));
+            assertSame(context, ctxMap.get(staleRelay), "session cleanup 只清理传入快照内的 relayAddr");
+            assertFalse(routeMap.containsKey(routeKey));
+            assertFalse(udp2rawCtxMap.containsKey(firstRelay));
+            assertFalse(udp2rawCtxMap.containsKey(replenishedRelay));
+            assertSame(context, udp2rawCtxMap.get(staleRelay), "udp2raw session cleanup 只清理传入快照内的 relayAddr");
+            assertFalse(udp2rawRouteMap.containsKey(routeKey));
+            assertNull(relay.attr(SocksUdpRelayHandler.ATTR_LAST_ROUTE).get());
+        } finally {
+            relay.finishAndReleaseAll();
         }
     }
 

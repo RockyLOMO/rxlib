@@ -85,6 +85,50 @@ class SocksUdpUpstreamPortHoppingTest {
     }
 
     @Test
+    void sessionGroupRemovesHolderAndKeepsReplenishTarget() {
+        InetSocketAddress first = new InetSocketAddress("127.0.0.1", 25001);
+        InetSocketAddress second = new InetSocketAddress("127.0.0.1", 25002);
+        InetSocketAddress third = new InetSocketAddress("127.0.0.1", 25003);
+        SocksUdpUpstream.SessionHolder firstHolder = holder(first, false);
+        SocksUdpUpstream.SessionHolder secondHolder = holder(second, false);
+        SocksUdpUpstream.SessionHolder thirdHolder = holder(third, false);
+        SocksUdpUpstream.SessionGroup group = new SocksUdpUpstream.SessionGroup(new SocksUdpUpstream.SessionHolder[]{
+                firstHolder,
+                secondHolder,
+                thirdHolder
+        }, UdpPortHoppingMode.ROUND_ROBIN, 3);
+
+        assertTrue(group.removeHolder(secondHolder));
+        assertEquals(2, group.holderCount());
+        assertEquals(2, group.activeCount());
+        assertTrue(group.needsReplenish());
+        assertFalse(group.shouldInvalidate(2));
+        assertTrue(group.shouldInvalidate(3));
+        assertFalse(group.containsRelayAddress(second));
+        assertArrayEquals(new InetSocketAddress[]{first, third}, group.snapshotRelayAddresses());
+
+        group.addHolder(holder(second, false));
+        assertEquals(3, group.holderCount());
+        assertFalse(group.needsReplenish());
+    }
+
+    @Test
+    void sessionGroupReplenishUsesCooldown() {
+        InetSocketAddress first = new InetSocketAddress("127.0.0.1", 26001);
+        SocksUdpUpstream.SessionGroup group = new SocksUdpUpstream.SessionGroup(new SocksUdpUpstream.SessionHolder[]{
+                holder(first, false)
+        }, UdpPortHoppingMode.ROUND_ROBIN, 2);
+
+        long now = group.createdAtMillis;
+        assertTrue(group.needsReplenish());
+        assertTrue(group.tryBeginReplenish(now, 1000));
+        assertFalse(group.tryBeginReplenish(now + 1, 1000));
+        group.finishReplenish(false, now + 1);
+        assertFalse(group.tryBeginReplenish(now + 500, 1000));
+        assertTrue(group.tryBeginReplenish(now + 1001, 1000));
+    }
+
+    @Test
     void adaptivePortHoppingConfigEnablesSingleHopStart() {
         SocksConfig config = new SocksConfig();
         config.setUdpPortHoppingEnabled(true);
@@ -92,12 +136,14 @@ class SocksUdpUpstreamPortHoppingTest {
         config.setUdpPortHoppingMinHopCount(1);
         config.setUdpPortHoppingMaxHopCount(4);
         config.setUdpPortHoppingAdaptiveScaleUpBytes(4096L);
+        config.setUdpPortHoppingReplenishDelayMillis(1500);
 
         assertTrue(config.isUdpPortHoppingEnabled());
         assertTrue(config.isUdpPortHoppingAdaptive());
         assertEquals(1, config.getUdpPortHoppingMinHopCount());
         assertEquals(4, config.getUdpPortHoppingMaxHopCount());
         assertEquals(4096L, config.getUdpPortHoppingAdaptiveScaleUpBytes());
+        assertEquals(1500, config.getUdpPortHoppingReplenishDelayMillis());
     }
 
     private static SocksUdpUpstream.SessionHolder holder(InetSocketAddress relayAddr, boolean closed) {

@@ -3,6 +3,7 @@ package org.rx.net.socks;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.Serializable;
 
@@ -12,9 +13,11 @@ import java.io.Serializable;
 @Getter
 @Setter
 @ToString
+@Slf4j
 public class UdpPortHoppingConfig implements Serializable {
     private static final long serialVersionUID = 1L;
     public static final int MAX_HOP_COUNT = 8;
+    public static final int RECOMMENDED_MAX_HOP_COUNT = 4;
 
     private boolean enabled;
     private byte hopCount = 1;
@@ -43,6 +46,7 @@ public class UdpPortHoppingConfig implements Serializable {
 
     public void setHopCount(int hopCount) {
         this.hopCount = (byte) Math.max(1, Math.min(MAX_HOP_COUNT, hopCount));
+        warnLargeHopCount("hopCount", this.hopCount, !adaptive);
         if (maxHopCount < this.hopCount) {
             maxHopCount = this.hopCount;
         }
@@ -60,6 +64,11 @@ public class UdpPortHoppingConfig implements Serializable {
         if (adaptive && maxHopCount < hopCount) {
             maxHopCount = hopCount;
         }
+        if (!adaptive) {
+            warnLargeHopCount("hopCount", hopCount, true);
+        } else {
+            warnLargeHopCount("maxHopCount", maxHopCount, false);
+        }
     }
 
     public void setMinHopCount(int minHopCount) {
@@ -71,6 +80,7 @@ public class UdpPortHoppingConfig implements Serializable {
 
     public void setMaxHopCount(int maxHopCount) {
         this.maxHopCount = (byte) Math.max(1, Math.min(MAX_HOP_COUNT, maxHopCount));
+        warnLargeHopCount("maxHopCount", this.maxHopCount, false);
         if (minHopCount > this.maxHopCount) {
             minHopCount = this.maxHopCount;
         }
@@ -94,5 +104,18 @@ public class UdpPortHoppingConfig implements Serializable {
 
     public void setReplenishDelayMillis(int replenishDelayMillis) {
         this.replenishDelayMillis = Math.max(0, replenishDelayMillis);
+    }
+
+    private static void warnLargeHopCount(String name, int value, boolean fixedMode) {
+        if (value <= RECOMMENDED_MAX_HOP_COUNT) {
+            return;
+        }
+        if (fixedMode) {
+            log.warn("UDP port hopping fixed {}={} exceeds recommended {}, control channels and relay ports grow linearly",
+                    name, value, RECOMMENDED_MAX_HOP_COUNT);
+        } else {
+            log.warn("UDP port hopping {}={} exceeds recommended {}, use only for confirmed port-level throttling",
+                    name, value, RECOMMENDED_MAX_HOP_COUNT);
+        }
     }
 }

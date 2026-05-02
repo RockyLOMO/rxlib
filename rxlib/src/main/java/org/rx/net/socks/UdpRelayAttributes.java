@@ -35,6 +35,16 @@ public final class UdpRelayAttributes {
         initRedundantPeers(channel).put(normalize(address), Boolean.TRUE);
     }
 
+    public static void removeRedundantPeer(Channel channel, InetSocketAddress address) {
+        if (channel == null || address == null) {
+            return;
+        }
+        ConcurrentMap<InetSocketAddress, Boolean> peers = channel.attr(ATTR_REDUNDANT_PEERS).get();
+        if (peers != null) {
+            peers.remove(normalize(address));
+        }
+    }
+
     public static boolean shouldEncode(Channel channel, InetSocketAddress recipient) {
         ConcurrentMap<InetSocketAddress, Boolean> peers = channel.attr(ATTR_REDUNDANT_PEERS).get();
         if (peers == null) {

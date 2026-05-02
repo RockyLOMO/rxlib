@@ -143,17 +143,54 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         final AuthenticEndpoint serverEndpoint;
         final long effectiveIdleMillis;
         final ObjectPool<Socks5UdpLease> delegate;
+        final AtomicInteger borrowedLeases = new AtomicInteger();
 
         public Socks5UdpLease borrow() {
             try {
-                return delegate.borrow();
+                Socks5UdpLease lease = delegate.borrow();
+                if (lease != null) {
+                    borrowedLeases.incrementAndGet();
+                    DiagnosticMetrics.record("socks.udp.lease.pool.borrow.count", 1D,
+                            "key=" + key + ",result=hit");
+                    recordState("borrow-hit");
+                }
+                return lease;
             } catch (TimeoutException e) {
+                DiagnosticMetrics.record("socks.udp.lease.pool.borrow.count", 1D,
+                        "key=" + key + ",result=miss");
+                recordState("borrow-miss");
                 return null;
             }
         }
 
         public void recycle(Socks5UdpLease lease) {
+            borrowedLeases.updateAndGet(v -> v > 0 ? v - 1 : 0);
             delegate.recycle(lease);
+            DiagnosticMetrics.record("socks.udp.lease.pool.recycle.count", 1D,
+                    "key=" + key + ",result=success");
+            recordState("recycle");
+        }
+
+        public void discard(Socks5UdpLease lease) {
+            borrowedLeases.updateAndGet(v -> v > 0 ? v - 1 : 0);
+            if (lease != null) {
+                lease.close();
+                try {
+                    delegate.recycle(lease);
+                } catch (Throwable e) {
+                    log.warn("discard udp lease fail {}", key, e);
+                }
+            }
+            DiagnosticMetrics.record("socks.udp.lease.pool.recycle.count", 1D,
+                    "key=" + key + ",result=discard");
+            recordState("discard");
+        }
+
+        void recordState(String action) {
+            DiagnosticMetrics.record("socks.udp.lease.pool.idle.count", delegate.idleSize(),
+                    "key=" + key + ",action=" + action);
+            DiagnosticMetrics.record("socks.udp.lease.pool.borrowed.count", borrowedLeases.get(),
+                    "key=" + key + ",action=" + action);
         }
 
         @Override

@@ -84,6 +84,7 @@ public class SocksUdpUpstream extends Upstream {
             return null;
         }
         InetSocketAddress relayAddress = group.selectRelayAddress();
+        maybeReplenishGroup(channel, group);
         maybeExpandGroup(channel, group);
         return relayAddress;
     }
@@ -107,6 +108,7 @@ public class SocksUdpUpstream extends Upstream {
             return;
         }
         group.recordBytes(bytes);
+        maybeReplenishGroup(channel, group);
         maybeExpandGroup(channel, group);
     }
 
@@ -156,10 +158,16 @@ public class SocksUdpUpstream extends Upstream {
             boolean ok = facade.claimUdpRelay(lease.getRelayPort(), clientAddr);
             if (ok) {
                 poolManager.onUdpRpcSuccess(poolKey());
+                DiagnosticMetrics.record("socks.udp.lease.pool.claim.count", 1D,
+                        "key=" + poolKey() + ",result=success");
                 return true;
             }
+            DiagnosticMetrics.record("socks.udp.lease.pool.claim.count", 1D,
+                    "key=" + poolKey() + ",result=fail");
             poolManager.onUdpRpcFailure(poolKey(), socksConfig, "claim", null);
         } catch (Exception e) {
+            DiagnosticMetrics.record("socks.udp.lease.pool.claim.count", 1D,
+                    "key=" + poolKey() + ",result=error");
             poolManager.onUdpRpcFailure(poolKey(), socksConfig, "claim", e);
         }
         return false;
@@ -198,7 +206,7 @@ public class SocksUdpUpstream extends Upstream {
                     if (claimRelay(channel, lease, facade, poolManager, socksConfig)) {
                         return SessionHolder.pooled(pool, lease);
                     }
-                    tryClose(lease);
+                    pool.discard(lease);
                 }
             }
         }
@@ -218,7 +226,7 @@ public class SocksUdpUpstream extends Upstream {
         SocksConfig socksConfig = (SocksConfig) config;
         int hopCount = resolveInitialHopCount(socksConfig);
         if (hopCount <= 1) {
-            return newSessionGroup(new SessionHolder[]{acquireHolder(channel)}, socksConfig);
+            return newSessionGroup(new SessionHolder[]{acquireHolder(channel)}, socksConfig, 1);
         }
 
         int minActive = Math.max(1, Math.min(hopCount, socksConfig.getUdpPortHoppingMinActiveHops()));
@@ -256,7 +264,7 @@ public class SocksUdpUpstream extends Upstream {
             DiagnosticMetrics.record("socks.udp.porthop.acquire.count", 1D,
                     "result=success,active=" + count + ",requested=" + hopCount);
         }
-        return newSessionGroup(Arrays.copyOf(holders, count), socksConfig);
+        return newSessionGroup(Arrays.copyOf(holders, count), socksConfig, hopCount);
     }
 
     private static int resolveInitialHopCount(SocksConfig socksConfig) {
@@ -269,15 +277,16 @@ public class SocksUdpUpstream extends Upstream {
         return clampHopCount(hopCount);
     }
 
-    private static SessionGroup newSessionGroup(SessionHolder[] holders, SocksConfig socksConfig) {
+    private static SessionGroup newSessionGroup(SessionHolder[] holders, SocksConfig socksConfig, int targetHopCount) {
         if (!socksConfig.isUdpPortHoppingEnabled()) {
-            return new SessionGroup(holders, UdpPortHoppingMode.ROUND_ROBIN);
+            return new SessionGroup(holders, UdpPortHoppingMode.ROUND_ROBIN, targetHopCount);
         }
         return new SessionGroup(holders, socksConfig.getUdpPortHoppingMode(),
                 socksConfig.isUdpPortHoppingAdaptive(),
                 socksConfig.getUdpPortHoppingAdaptiveScaleUpBytes(),
                 socksConfig.getUdpPortHoppingAdaptiveScaleUpActiveMillis(),
-                socksConfig.getUdpPortHoppingAdaptiveScaleUpCooldownMillis());
+                socksConfig.getUdpPortHoppingAdaptiveScaleUpCooldownMillis(),
+                targetHopCount);
     }
 
     private static int clampHopCount(int hopCount) {
@@ -360,7 +369,11 @@ public class SocksUdpUpstream extends Upstream {
             return;
         }
         if (holder.pooled) {
-            tryClose(holder.lease);
+            if (holder.pool != null) {
+                holder.pool.discard(holder.lease);
+            } else {
+                tryClose(holder.lease);
+            }
             return;
         }
         tryClose(holder.session);
@@ -406,8 +419,28 @@ public class SocksUdpUpstream extends Upstream {
         Channel controlChannel = holder.controlChannel();
         if (controlChannel != null) {
             controlChannel.closeFuture().addListener(f ->
-                    channel.eventLoop().execute(() -> invalidateGroup(channel, group, false, "control-close")));
+                    channel.eventLoop().execute(() -> handleHolderClosed(channel, group, holder)));
         }
+    }
+
+    private void handleHolderClosed(Channel channel, SessionGroup group, SessionHolder holder) {
+        SessionGroup active = channel.attr(ATTR_UDP_SESSION).get();
+        if (active != group || holder == null || !group.removeHolder(holder)) {
+            return;
+        }
+
+        UdpRelayAttributes.removeRedundantPeer(channel, holder.relayAddr);
+        SocksUdpRelayHandler.onUpstreamRelayRemoved(channel, holder.relayAddr, this);
+        closeHolder(holder);
+        recordGroupActiveCount(channel, group, "hop-remove");
+
+        SocksConfig socksConfig = (SocksConfig) config;
+        int minActive = Math.max(1, socksConfig.getUdpPortHoppingMinActiveHops());
+        if (group.shouldInvalidate(minActive)) {
+            invalidateGroup(channel, group, false, "control-close-min-active");
+            return;
+        }
+        maybeReplenishGroup(channel, group);
     }
 
     private void maybeExpandGroup(Channel channel, SessionGroup group) {
@@ -415,11 +448,81 @@ public class SocksUdpUpstream extends Upstream {
         if (!socksConfig.isUdpPortHoppingAdaptive()) {
             return;
         }
+        if (group.needsReplenish()) {
+            return;
+        }
         int maxHopCount = clampHopCount(socksConfig.getUdpPortHoppingMaxHopCount());
         if (group.holderCount() >= maxHopCount || !group.tryBeginScaleUp(System.currentTimeMillis())) {
             return;
         }
         Tasks.runAsync(() -> expandGroupOffLoop(channel, group, maxHopCount));
+    }
+
+    private void maybeReplenishGroup(Channel channel, SessionGroup group) {
+        if (!group.needsReplenish()) {
+            return;
+        }
+        SocksConfig socksConfig = (SocksConfig) config;
+        if (!group.tryBeginReplenish(System.currentTimeMillis(), socksConfig.getUdpPortHoppingReplenishDelayMillis())) {
+            return;
+        }
+        Tasks.runAsync(() -> replenishGroupOffLoop(channel, group));
+    }
+
+    private void replenishGroupOffLoop(Channel channel, SessionGroup group) {
+        SessionHolder holder = null;
+        Throwable error = null;
+        try {
+            if (group.needsReplenish()) {
+                holder = acquireHolder(channel);
+            }
+        } catch (Throwable e) {
+            error = e;
+        }
+
+        final SessionHolder finalHolder = holder;
+        final Throwable finalError = error;
+        channel.eventLoop().execute(() -> completeGroupReplenish(channel, group, finalHolder, finalError));
+    }
+
+    private void completeGroupReplenish(Channel channel, SessionGroup group, SessionHolder holder, Throwable error) {
+        boolean success = false;
+        try {
+            SessionGroup active = channel.attr(ATTR_UDP_SESSION).get();
+            if (active != group || !channel.isActive() || !group.isValid() || !group.needsReplenish()) {
+                closeHolder(holder);
+                return;
+            }
+            if (error != null) {
+                log.warn("UDP upstream port hopping replenish failed for {}", next.getEndpoint(), error);
+                DiagnosticMetrics.record("socks.udp.porthop.replenish.count", 1D,
+                        "result=fail,reason=acquire");
+                return;
+            }
+            if (holder == null || !holder.isValid()) {
+                closeHolder(holder);
+                DiagnosticMetrics.record("socks.udp.porthop.replenish.count", 1D,
+                        "result=fail,reason=invalid");
+                return;
+            }
+            if (group.containsRelayAddress(holder.relayAddr)) {
+                closeHolder(holder);
+                DiagnosticMetrics.record("socks.udp.porthop.replenish.count", 1D,
+                        "result=skip,reason=duplicate");
+                return;
+            }
+
+            group.addHolder(holder);
+            UdpRelayAttributes.addRedundantPeer(channel, holder.relayAddr);
+            SocksUdpRelayHandler.onUpstreamRelayAdded(channel, holder.relayAddr, this);
+            registerControlCloseListener(channel, group, holder);
+            recordGroupActiveCount(channel, group, "replenish");
+            DiagnosticMetrics.record("socks.udp.porthop.replenish.count", 1D,
+                    "result=success,hops=" + group.holderCount());
+            success = true;
+        } finally {
+            group.finishReplenish(success, System.currentTimeMillis());
+        }
     }
 
     private void expandGroupOffLoop(Channel channel, SessionGroup group, int maxHopCount) {
@@ -468,6 +571,7 @@ public class SocksUdpUpstream extends Upstream {
 
             group.addHolder(holder);
             UdpRelayAttributes.addRedundantPeer(channel, holder.relayAddr);
+            SocksUdpRelayHandler.onUpstreamRelayAdded(channel, holder.relayAddr, this);
             registerControlCloseListener(channel, group, holder);
             recordGroupActiveCount(channel, group, "adaptive-scale-up");
             DiagnosticMetrics.record("socks.udp.porthop.adaptive.scale.count", 1D,
@@ -484,9 +588,10 @@ public class SocksUdpUpstream extends Upstream {
             if (active != group) {
                 return;
             }
+            InetSocketAddress[] relayAddresses = active.snapshotAllRelayAddresses();
             relay.attr(ATTR_UDP_SESSION).set(null);
             active.releaseActive();
-            SocksUdpRelayHandler.onUpstreamSessionInvalidated(relay, null, this);
+            SocksUdpRelayHandler.onUpstreamSessionInvalidated(relay, relayAddresses, this);
             DiagnosticMetrics.record("socks.udp.session.invalidate.count", 1D,
                     "reason=" + reason + ",pooled=" + active.hasPooledHolder() + ",hops=" + active.holders.length);
 
@@ -522,7 +627,11 @@ public class SocksUdpUpstream extends Upstream {
 
         SocksRpcContract facade = next.getFacade();
         if (facade == null) {
-            tryClose(active.lease);
+            if (active.pool != null) {
+                active.pool.discard(active.lease);
+            } else {
+                tryClose(active.lease);
+            }
             return;
         }
 
@@ -531,11 +640,17 @@ public class SocksUdpUpstream extends Upstream {
             try {
                 ok = facade.resetUdpRelay(active.lease.getRelayPort());
                 if (ok) {
+                    DiagnosticMetrics.record("socks.udp.lease.pool.reset.count", 1D,
+                            "key=" + poolKey() + ",result=success");
                     Socks5UpstreamPoolManager.INSTANCE.onUdpRpcSuccess(poolKey());
                 } else {
+                    DiagnosticMetrics.record("socks.udp.lease.pool.reset.count", 1D,
+                            "key=" + poolKey() + ",result=fail");
                     Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", null);
                 }
             } catch (Throwable e) {
+                DiagnosticMetrics.record("socks.udp.lease.pool.reset.count", 1D,
+                        "key=" + poolKey() + ",result=error");
                 Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", e);
             }
 
@@ -544,7 +659,11 @@ public class SocksUdpUpstream extends Upstream {
                 pool.recycle(active.lease);
                 return;
             }
-            tryClose(active.lease);
+            if (pool != null) {
+                pool.discard(active.lease);
+            } else {
+                tryClose(active.lease);
+            }
         });
     }
 
@@ -571,22 +690,36 @@ public class SocksUdpUpstream extends Upstream {
         final long createdAtMillis;
         final AtomicBoolean activeRetained = new AtomicBoolean();
         final AtomicBoolean expanding = new AtomicBoolean();
+        final AtomicBoolean replenishing = new AtomicBoolean();
         volatile UpstreamSupport activeSupport;
+        volatile int targetHopCount;
         int nextIndex;
         long totalBytes;
         long nextScaleUpBytes;
         long nextScaleUpAtMillis;
         long lastScaleUpAttemptAtMillis;
+        long lastReplenishAttemptAtMillis;
 
         SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode) {
-            this(holders, mode, false, 0L, 0L, 0);
+            this(holders, mode, holders != null ? holders.length : 0);
+        }
+
+        SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode, int targetHopCount) {
+            this(holders, mode, false, 0L, 0L, 0, targetHopCount);
         }
 
         SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode, boolean adaptive,
                      long scaleUpBytes, long scaleUpActiveMillis, int scaleUpCooldownMillis) {
+            this(holders, mode, adaptive, scaleUpBytes, scaleUpActiveMillis, scaleUpCooldownMillis,
+                    holders != null ? holders.length : 0);
+        }
+
+        SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode, boolean adaptive,
+                     long scaleUpBytes, long scaleUpActiveMillis, int scaleUpCooldownMillis, int targetHopCount) {
             this.holders = holders != null ? holders : new SessionHolder[0];
             this.mode = mode != null ? mode : UdpPortHoppingMode.ROUND_ROBIN;
             this.adaptive = adaptive;
+            this.targetHopCount = Math.max(this.holders.length, targetHopCount);
             this.scaleUpBytes = Math.max(0L, scaleUpBytes);
             this.scaleUpActiveMillis = Math.max(0L, scaleUpActiveMillis);
             this.scaleUpCooldownMillis = Math.max(0L, scaleUpCooldownMillis);
@@ -675,6 +808,79 @@ public class SocksUdpUpstream extends Upstream {
             SessionHolder[] next = Arrays.copyOf(current, current.length + 1);
             next[current.length] = holder;
             holders = next;
+            if (targetHopCount < next.length) {
+                targetHopCount = next.length;
+            }
+        }
+
+        boolean removeHolder(SessionHolder holder) {
+            if (holder == null) {
+                return false;
+            }
+            SessionHolder[] current = holders;
+            int index = -1;
+            for (int i = 0; i < current.length; i++) {
+                if (current[i] == holder) {
+                    index = i;
+                    break;
+                }
+            }
+            if (index < 0) {
+                return false;
+            }
+            SessionHolder[] next = new SessionHolder[current.length - 1];
+            if (index > 0) {
+                System.arraycopy(current, 0, next, 0, index);
+            }
+            if (index + 1 < current.length) {
+                System.arraycopy(current, index + 1, next, index, current.length - index - 1);
+            }
+            holders = next;
+            return true;
+        }
+
+        boolean shouldInvalidate(int minActiveHops) {
+            return activeCount() < Math.max(1, minActiveHops);
+        }
+
+        boolean needsReplenish() {
+            return holderCount() < targetHopCount;
+        }
+
+        boolean tryBeginReplenish(long nowMillis, int replenishDelayMillis) {
+            if (!needsReplenish()) {
+                return false;
+            }
+            if (replenishDelayMillis > 0
+                    && lastReplenishAttemptAtMillis > 0L
+                    && nowMillis - lastReplenishAttemptAtMillis < replenishDelayMillis) {
+                return false;
+            }
+            if (!replenishing.compareAndSet(false, true)) {
+                return false;
+            }
+            lastReplenishAttemptAtMillis = nowMillis;
+            return true;
+        }
+
+        void finishReplenish(boolean success, long nowMillis) {
+            if (success && holderCount() >= targetHopCount) {
+                lastReplenishAttemptAtMillis = 0L;
+            } else {
+                lastReplenishAttemptAtMillis = nowMillis;
+            }
+            replenishing.set(false);
+        }
+
+        InetSocketAddress[] snapshotAllRelayAddresses() {
+            InetSocketAddress[] addresses = new InetSocketAddress[holders.length];
+            int count = 0;
+            for (SessionHolder holder : holders) {
+                if (holder != null && holder.relayAddr != null) {
+                    addresses[count++] = holder.relayAddr;
+                }
+            }
+            return count == addresses.length ? addresses : Arrays.copyOf(addresses, count);
         }
 
         void recordBytes(int bytes) {

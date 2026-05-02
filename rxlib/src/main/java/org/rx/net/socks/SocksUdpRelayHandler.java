@@ -475,7 +475,56 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         if (relay == null || upstream == null) {
             return;
         }
-        runOnRelayLoop(relay, () -> cleanupInvalidatedRoute(relay, relayAddress, upstream));
+        InetSocketAddress[] relayAddresses = relayAddress != null
+                ? new InetSocketAddress[]{relayAddress}
+                : upstream instanceof SocksUdpUpstream
+                ? ((SocksUdpUpstream) upstream).snapshotUdpRelayAddresses(relay)
+                : null;
+        onUpstreamSessionInvalidated(relay, relayAddresses, upstream);
+    }
+
+    public static void onUpstreamSessionInvalidated(Channel relay, InetSocketAddress[] relayAddresses, Upstream upstream) {
+        if (relay == null || upstream == null) {
+            return;
+        }
+        runOnRelayLoop(relay, () -> cleanupInvalidatedRoute(relay, relayAddresses, upstream));
+    }
+
+    public static void onUpstreamRelayRemoved(Channel relay, InetSocketAddress relayAddress, Upstream upstream) {
+        if (relay == null || relayAddress == null || upstream == null) {
+            return;
+        }
+        runOnRelayLoop(relay, () -> {
+            ConcurrentMap<InetSocketAddress, SocksContext> current = relay.attr(ATTR_CTX_MAP).get();
+            ConcurrentMap<InetSocketAddress, SocksContext> udp2rawCurrent = relay.attr(Udp2rawHandler.ATTR_CTX_MAP).get();
+            int removed = removeRelayAddress(current, relayAddress, upstream)
+                    + removeRelayAddress(udp2rawCurrent, relayAddress, upstream);
+            if (removed > 0) {
+                DiagnosticMetrics.record("socks.udp.session.cleanup.count", 1D,
+                        "action=hop-remove,port=" + localPort(relay));
+            }
+            recordCacheSizes(relay, current, relay.attr(ATTR_ROUTE_MAP).get(), "hop-remove");
+        });
+    }
+
+    public static void onUpstreamRelayAdded(Channel relay, InetSocketAddress relayAddress, Upstream upstream) {
+        if (relay == null || relayAddress == null || upstream == null) {
+            return;
+        }
+        runOnRelayLoop(relay, () -> {
+            SocksContext context = findRouteContext(relay, upstream);
+            if (context != null) {
+                ctxMap(relay).put(relayAddress, context);
+                recordCacheSizes(relay, relay.attr(ATTR_CTX_MAP).get(), relay.attr(ATTR_ROUTE_MAP).get(), "hop-add");
+            }
+            SocksContext udp2rawContext = findRouteContext(relay, Udp2rawHandler.ATTR_ROUTE_MAP, upstream);
+            if (udp2rawContext != null) {
+                ConcurrentMap<InetSocketAddress, SocksContext> current = relay.attr(Udp2rawHandler.ATTR_CTX_MAP).get();
+                if (current != null) {
+                    current.put(relayAddress, udp2rawContext);
+                }
+            }
+        });
     }
 
     private void beginRouteInit(Channel relay, SocksProxyServer server, InetSocketAddress clientOriginAddr,
@@ -687,35 +736,19 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
     }
 
-    private static void cleanupInvalidatedRoute(Channel relay, InetSocketAddress relayAddress, Upstream upstream) {
+    private static void cleanupInvalidatedRoute(Channel relay, InetSocketAddress[] relayAddresses, Upstream upstream) {
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+        ConcurrentMap<InetSocketAddress, SocksContext> udp2rawCtxMap = relay.attr(Udp2rawHandler.ATTR_CTX_MAP).get();
         ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> udp2rawRouteMap = relay.attr(Udp2rawHandler.ATTR_ROUTE_MAP).get();
         ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap = relay.attr(ATTR_ROUTE_INIT_MAP).get();
         int removedCtx = 0, removedRoute = 0, removedPending = 0;
 
-        if (ctxMap != null) {
-            if (relayAddress != null) {
-                SocksContext ctx = ctxMap.get(relayAddress);
-                if (ctx != null && ctx.getUpstream() == upstream && ctxMap.remove(relayAddress, ctx)) {
-                    removedCtx++;
-                }
-            }
-            for (Map.Entry<InetSocketAddress, SocksContext> entry : ctxMap.entrySet()) {
-                SocksContext ctx = entry.getValue();
-                if (ctx != null && ctx.getUpstream() == upstream && ctxMap.remove(entry.getKey(), ctx)) {
-                    removedCtx++;
-                }
-            }
-        }
+        removedCtx += cleanupCtxMap(ctxMap, relayAddresses, upstream);
+        removedCtx += cleanupCtxMap(udp2rawCtxMap, relayAddresses, upstream);
 
-        if (routeMap != null) {
-            for (Map.Entry<UnresolvedEndpoint, SocksContext> entry : routeMap.entrySet()) {
-                SocksContext ctx = entry.getValue();
-                if (ctx != null && ctx.getUpstream() == upstream && routeMap.remove(entry.getKey(), ctx)) {
-                    removedRoute++;
-                }
-            }
-        }
+        removedRoute += cleanupRouteMap(routeMap, upstream);
+        removedRoute += cleanupRouteMap(udp2rawRouteMap, upstream);
 
         if (routeInitMap != null) {
             for (Map.Entry<UnresolvedEndpoint, RouteInitState> entry : routeInitMap.entrySet()) {
@@ -738,6 +771,78 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                     "action=session-cleanup,port=" + localPort(relay));
         }
         recordCacheSizes(relay, ctxMap, routeMap, "session-cleanup");
+    }
+
+    private static int removeRelayAddress(ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
+            InetSocketAddress relayAddress, Upstream upstream) {
+        if (ctxMap == null || relayAddress == null) {
+            return 0;
+        }
+        SocksContext ctx = ctxMap.get(relayAddress);
+        if (ctx != null && ctx.getUpstream() == upstream && ctxMap.remove(relayAddress, ctx)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    private static int cleanupCtxMap(ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
+            InetSocketAddress[] relayAddresses, Upstream upstream) {
+        int removed = 0;
+        if (ctxMap == null) {
+            return 0;
+        }
+        if (relayAddresses != null && relayAddresses.length > 0) {
+            for (InetSocketAddress relayAddress : relayAddresses) {
+                removed += removeRelayAddress(ctxMap, relayAddress, upstream);
+            }
+            return removed;
+        }
+        if (upstream instanceof SocksUdpUpstream) {
+            return 0;
+        }
+        for (Map.Entry<InetSocketAddress, SocksContext> entry : ctxMap.entrySet()) {
+            SocksContext ctx = entry.getValue();
+            if (ctx != null && ctx.getUpstream() == upstream && ctxMap.remove(entry.getKey(), ctx)) {
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    private static int cleanupRouteMap(ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap, Upstream upstream) {
+        int removed = 0;
+        if (routeMap == null) {
+            return 0;
+        }
+        for (Map.Entry<UnresolvedEndpoint, SocksContext> entry : routeMap.entrySet()) {
+            SocksContext ctx = entry.getValue();
+            if (ctx != null && ctx.getUpstream() == upstream && routeMap.remove(entry.getKey(), ctx)) {
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    private static SocksContext findRouteContext(Channel relay, Upstream upstream) {
+        LastRoute lastRoute = relay.attr(ATTR_LAST_ROUTE).get();
+        if (lastRoute != null && lastRoute.context != null && lastRoute.context.getUpstream() == upstream) {
+            return lastRoute.context;
+        }
+        return findRouteContext(relay, ATTR_ROUTE_MAP, upstream);
+    }
+
+    private static SocksContext findRouteContext(Channel relay,
+            AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> routeMapKey, Upstream upstream) {
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(routeMapKey).get();
+        if (routeMap == null) {
+            return null;
+        }
+        for (SocksContext context : routeMap.values()) {
+            if (context != null && context.getUpstream() == upstream) {
+                return context;
+            }
+        }
+        return null;
     }
 
     private static void recordCacheSizes(Channel relay, ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
