@@ -206,7 +206,7 @@ public class SocksUdpUpstream extends Upstream {
                 && !tcpLocalAddr.getAddress().isAnyLocalAddress()) {
             return new InetSocketAddress(tcpLocalAddr.getAddress(), udpLocalAddr.getPort());
         }
-        return udpLocalAddr;
+        return null;
     }
 
     private SessionHolder acquireHolder(Channel channel) {
@@ -671,12 +671,17 @@ public class SocksUdpUpstream extends Upstream {
         }
         SocksConfig socksConfig = (SocksConfig) config;
         long intervalMillis = socksConfig.getUdpRelayGroupHeartbeatMillis();
+        int failureThreshold = socksConfig.getUdpRelayControlFailureThreshold();
         if (intervalMillis <= 0L || !group.tryBeginHeartbeat(System.currentTimeMillis(), intervalMillis)) {
             return;
         }
         Tasks.runAsync(() -> {
             boolean ok = group.rpcControl.heartbeat();
-            channel.eventLoop().execute(() -> group.finishHeartbeat(ok));
+            channel.eventLoop().execute(() -> {
+                if (group.finishHeartbeat(ok, failureThreshold)) {
+                    invalidateGroup(channel, group, false, "heartbeat-fail");
+                }
+            });
         });
     }
 
@@ -1005,6 +1010,7 @@ public class SocksUdpUpstream extends Upstream {
         long lastScaleUpAttemptAtMillis;
         long lastReplenishAttemptAtMillis;
         long lastHeartbeatAtMillis;
+        int heartbeatFailures;
 
         SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode) {
             this(holders, mode, holders != null ? holders.length : 0);
@@ -1203,10 +1209,16 @@ public class SocksUdpUpstream extends Upstream {
             return true;
         }
 
-        void finishHeartbeat(boolean success) {
+        boolean finishHeartbeat(boolean success, int failureThreshold) {
             DiagnosticMetrics.record("socks.udp.relay.group.heartbeat.count", 1D,
                     "result=" + (success ? "success" : "fail"));
+            if (success) {
+                heartbeatFailures = 0;
+            } else {
+                heartbeatFailures++;
+            }
             heartbeating.set(false);
+            return !success && heartbeatFailures >= Math.max(1, failureThreshold);
         }
 
         InetSocketAddress[] snapshotAllRelayAddresses() {

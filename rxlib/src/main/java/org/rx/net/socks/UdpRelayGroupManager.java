@@ -83,7 +83,7 @@ final class UdpRelayGroupManager extends Disposable {
         DiagnosticMetrics.record("socks.udp.relay.group.open.count", 1D,
                 "result=success,relays=" + opened.size());
         recordState("open");
-        return UdpRelayGroupOpenResult.success(group.groupId, group.token, group.expireAtMillis(), opened);
+        return UdpRelayGroupOpenResult.success(group.groupId, group.dataPlaneToken, group.expireAtMillis(), opened);
     }
 
     UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
@@ -268,7 +268,8 @@ final class UdpRelayGroupManager extends Disposable {
 
     static final class UdpRelayGroup {
         final String groupId;
-        final String token;
+        // 仅为未来 RXUDP 数据面 header/MAC 预留；RPC 控制面授权统一校验 app.rtoken。
+        final String dataPlaneToken;
         final InetSocketAddress clientAddr;
         final UnresolvedEndpoint firstDestination;
         final int maxRelayCount;
@@ -278,10 +279,10 @@ final class UdpRelayGroupManager extends Disposable {
         volatile long lastActiveAtMillis;
         volatile boolean closed;
 
-        UdpRelayGroup(String groupId, String token, InetSocketAddress clientAddr,
+        UdpRelayGroup(String groupId, String dataPlaneToken, InetSocketAddress clientAddr,
                 UnresolvedEndpoint firstDestination, int maxRelayCount, long idleTimeoutMillis, long now) {
             this.groupId = groupId;
-            this.token = token;
+            this.dataPlaneToken = dataPlaneToken;
             this.clientAddr = clientAddr;
             this.firstDestination = firstDestination;
             this.maxRelayCount = maxRelayCount;

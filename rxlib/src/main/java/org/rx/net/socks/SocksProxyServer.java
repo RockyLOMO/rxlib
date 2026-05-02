@@ -350,6 +350,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @SuppressWarnings("unchecked")
     private void clearUdpRelayState(Channel relay, InetSocketAddress clientAddr) {
+        InetSocketAddress lockedClientAddr = isConcreteClientAddress(clientAddr) ? clientAddr : null;
         if (relay.pipeline().get(Udp2rawHandler.class) != null) {
             ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(Udp2rawHandler.ATTR_CTX_MAP).get();
             if (ctxMap != null) {
@@ -359,13 +360,19 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             if (routeMap != null) {
                 routeMap.clear();
             }
-            relay.attr(Udp2rawHandler.ATTR_CLIENT_ADDR).set(clientAddr);
+            relay.attr(Udp2rawHandler.ATTR_CLIENT_ADDR).set(lockedClientAddr);
         } else {
             SocksUdpRelayHandler.clearRelayState(relay);
-            relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientAddr);
+            relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(lockedClientAddr);
         }
         relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(null);
-        relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(Boolean.TRUE);
+        relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(lockedClientAddr != null);
+    }
+
+    private static boolean isConcreteClientAddress(InetSocketAddress clientAddr) {
+        return clientAddr != null
+                && clientAddr.getAddress() != null
+                && !clientAddr.getAddress().isAnyLocalAddress();
     }
 
 }

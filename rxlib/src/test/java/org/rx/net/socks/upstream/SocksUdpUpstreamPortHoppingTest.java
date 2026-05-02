@@ -1,7 +1,9 @@
 package org.rx.net.socks.upstream;
 
+import io.netty.channel.Channel;
 import org.junit.jupiter.api.Test;
 import org.rx.net.socks.Socks5Client;
+import org.rx.net.socks.Socks5Client.Socks5UdpLease;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.UdpPortHoppingMode;
 
@@ -144,6 +146,44 @@ class SocksUdpUpstreamPortHoppingTest {
         assertEquals(4, config.getUdpPortHoppingMaxHopCount());
         assertEquals(4096L, config.getUdpPortHoppingAdaptiveScaleUpBytes());
         assertEquals(1500, config.getUdpPortHoppingReplenishDelayMillis());
+    }
+
+    @Test
+    void resolveClaimClientAddressDoesNotReturnAnyLocalAddress() {
+        Channel udpChannel = mock(Channel.class);
+        when(udpChannel.localAddress()).thenReturn(new InetSocketAddress("0.0.0.0", 30000));
+
+        assertNull(SocksUdpUpstream.resolveClaimClientAddress(udpChannel, null));
+    }
+
+    @Test
+    void resolveClaimClientAddressUsesTcpLocalAddressWhenUdpIsAnyLocal() {
+        Channel udpChannel = mock(Channel.class);
+        when(udpChannel.localAddress()).thenReturn(new InetSocketAddress("0.0.0.0", 30000));
+        Channel tcpControl = mock(Channel.class);
+        when(tcpControl.localAddress()).thenReturn(new InetSocketAddress("192.0.2.10", 40000));
+        Socks5UdpLease lease = mock(Socks5UdpLease.class);
+        when(lease.getTcpControl()).thenReturn(tcpControl);
+
+        InetSocketAddress actual = SocksUdpUpstream.resolveClaimClientAddress(udpChannel, lease);
+
+        assertNotNull(actual);
+        assertEquals("192.0.2.10", actual.getAddress().getHostAddress());
+        assertEquals(30000, actual.getPort());
+    }
+
+    @Test
+    void sessionGroupHeartbeatFailureThresholdRequiresConsecutiveFailures() {
+        SocksUdpUpstream.SessionGroup group = new SocksUdpUpstream.SessionGroup(new SocksUdpUpstream.SessionHolder[]{
+                holder(new InetSocketAddress("127.0.0.1", 27001), false)
+        }, UdpPortHoppingMode.ROUND_ROBIN);
+
+        assertFalse(group.finishHeartbeat(false, 3));
+        assertFalse(group.finishHeartbeat(false, 3));
+        assertFalse(group.finishHeartbeat(true, 3));
+        assertFalse(group.finishHeartbeat(false, 3));
+        assertFalse(group.finishHeartbeat(false, 3));
+        assertTrue(group.finishHeartbeat(false, 3));
     }
 
     private static SocksUdpUpstream.SessionHolder holder(InetSocketAddress relayAddr, boolean closed) {

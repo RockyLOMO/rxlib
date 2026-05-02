@@ -178,6 +178,33 @@ class SocksProxyServerIntegrationTest {
     @Test
     @SneakyThrows
     @Timeout(value = 15)
+    void claimUdpRelayWithNullClientDoesNotLockRelay() {
+        SocksConfig config = new SocksConfig(0);
+        SocksProxyServer proxy = new SocksProxyServer(config);
+        Channel relay = null;
+        try {
+            relay = Sockets.udpBootstrap(config, ch -> ch.pipeline().addLast(SocksUdpRelayHandler.DEFAULT))
+                    .attr(SocksContext.SOCKS_SVR, proxy)
+                    .bind(Sockets.newAnyEndpoint(0))
+                    .sync()
+                    .channel();
+            proxy.registerUdpRelay(relay);
+
+            int relayPort = ((InetSocketAddress) relay.localAddress()).getPort();
+            assertTrue(proxy.claimUdpRelay(relayPort, null, SocksRpcContract.rpcToken()));
+            assertNull(relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).get());
+            assertFalse(Boolean.TRUE.equals(relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).get()));
+        } finally {
+            if (relay != null) {
+                relay.close().syncUninterruptibly();
+            }
+            proxy.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 15)
     void socks5TcpConnect_withPasswordAuth_e2e() {
         int proxyPort = 15280;
         SocksUser usr = new SocksUser("u1");
