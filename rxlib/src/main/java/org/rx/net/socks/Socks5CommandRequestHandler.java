@@ -84,7 +84,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             final InetSocketAddress clientTcpAddr = Sockets.getOriginRemoteAddress(tcpControl);
             final InetSocketAddress tcpPeerAddr = Sockets.getRemoteAddress(tcpControl);
             final boolean udp2raw = config.isEnableUdp2raw();
-            final boolean redundantClientPeer = clientTcpAddr != null && tcpPeerAddr != null && !clientTcpAddr.equals(tcpPeerAddr);
+            final boolean redundantClientPeer = UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config)
+                    && clientTcpAddr != null && tcpPeerAddr != null && !clientTcpAddr.equals(tcpPeerAddr);
 
             InetSocketAddress tcpLocalAddr = Sockets.getLocalAddress(tcpControl);
             SocketAddress udpBindAddr = resolveUdpRelayBindAddress(tcpLocalAddr);
@@ -105,7 +106,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
             udpFuture.channel().attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(clientTcpAddr);
             udpFuture.channel().attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(Boolean.FALSE);
-            UdpRelayAttributes.initRedundantPeers(udpFuture.channel());
+            if (redundantClientPeer) {
+                UdpRelayAttributes.initRedundantPeers(udpFuture.channel());
+            }
             udpFuture.channel().attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).set(redundantClientPeer);
 
             udpFuture.channel().closeFuture().addListener(f -> {

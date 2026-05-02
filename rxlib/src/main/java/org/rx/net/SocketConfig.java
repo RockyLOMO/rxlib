@@ -40,6 +40,14 @@ public class SocketConfig implements Serializable {
      */
     private int reusePortBindCount = -1;
     /**
+     * UDP channel 写侧 pending 字节软上限。0 表示退回旧的 WBM/default 逻辑。
+     */
+    private int udpWriteLimitBytes = 1024 * 1024;
+    /**
+     * 共享 UDP inbound 回写时的单源 pending 字节软上限。0 表示关闭单源限制。
+     */
+    private int udpWritePerSourceLimitBytes = 256 * 1024;
+    /**
      * TCP zlib 压缩级别。
      * -1 表示保持 Netty 默认值，其余取值范围为 [0, 9]。
      */
@@ -70,6 +78,14 @@ public class SocketConfig implements Serializable {
 
     public void setReusePortBindCount(int reusePortBindCount) {
         this.reusePortBindCount = Math.max(-1, reusePortBindCount);
+    }
+
+    public void setUdpWriteLimitBytes(int udpWriteLimitBytes) {
+        this.udpWriteLimitBytes = Math.max(0, udpWriteLimitBytes);
+    }
+
+    public void setUdpWritePerSourceLimitBytes(int udpWritePerSourceLimitBytes) {
+        this.udpWritePerSourceLimitBytes = Math.max(0, udpWritePerSourceLimitBytes);
     }
 
     public SocketConfig() {

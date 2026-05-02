@@ -5,9 +5,12 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageDecoder;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.diagnostic.DiagnosticMetrics;
 
 import java.net.InetSocketAddress;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -122,6 +125,8 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
      * 按 sender 地址维护去重窗口
      */
     private final ConcurrentHashMap<InetSocketAddress, DeduplicationWindow> windows = new ConcurrentHashMap<>();
+    private final int maxWindows;
+    private final int cleanupMaxScan;
 
     /**
      * 自适应统计（可选），为 null 时不采集
@@ -139,6 +144,8 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
      */
     private int cleanupCounter = 0;
     private static final int CLEANUP_INTERVAL = 1024;
+    static final int DEFAULT_MAX_WINDOWS = 4096;
+    static final int DEFAULT_CLEANUP_MAX_SCAN = 128;
 
     /**
      * 无自适应统计的构造
@@ -151,7 +158,13 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
      * @param stats 自适应统计对象，为 null 时不采集
      */
     public UdpRedundantDecoder(UdpRedundantStats stats) {
+        this(stats, DEFAULT_MAX_WINDOWS, DEFAULT_CLEANUP_MAX_SCAN);
+    }
+
+    UdpRedundantDecoder(UdpRedundantStats stats, int maxWindows, int cleanupMaxScan) {
         this.stats = stats;
+        this.maxWindows = Math.max(1, maxWindows);
+        this.cleanupMaxScan = Math.max(1, cleanupMaxScan);
     }
 
     @Override
@@ -178,7 +191,15 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
         int seqId = content.readInt(); // sequenceId
 
         InetSocketAddress sender = msg.sender();
-        DeduplicationWindow window = windows.computeIfAbsent(sender, k -> new DeduplicationWindow());
+        if (sender == null) {
+            recordDrop("missing-sender");
+            return;
+        }
+        DeduplicationWindow window = windowFor(sender);
+        if (window == null) {
+            recordDrop("window-full");
+            return;
+        }
 
         // 使用 int → long 的无符号扩展，避免 int 溢出导致序列号回绕问题
         long seqLong = seqId & 0xFFFFFFFFL;
@@ -188,8 +209,15 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
             stats.recordReceived();
         }
 
+        // 定期做有界清理，避免 EventLoop 上全量扫描造成长尾。
+        if (++cleanupCounter >= CLEANUP_INTERVAL) {
+            cleanupCounter = 0;
+            cleanupStaleWindows(cleanupMaxScan);
+        }
+
         if (!window.checkAndMark(seqLong)) {
             // 重复包，丢弃
+            recordDrop("duplicate");
             if (log.isDebugEnabled()) {
                 log.debug("UDP redundant discard duplicate seq={} from {}", seqId, sender);
             }
@@ -204,19 +232,50 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
         // 新包：构造剥离 header 后的 DatagramPacket 传递到下游
         out.add(new DatagramPacket(content.retain(), msg.recipient(), sender));
 
-        // 定期清理过期窗口
-        if (++cleanupCounter >= CLEANUP_INTERVAL) {
-            cleanupCounter = 0;
-            cleanupStaleWindows();
-        }
     }
 
     /**
      * 清理长时间未活跃的 sender 窗口，防止内存泄漏
      */
-    private void cleanupStaleWindows() {
+    private void cleanupStaleWindows(int maxScan) {
         long now = System.nanoTime();
-        windows.entrySet().removeIf(entry -> (now - entry.getValue().lastAccessNanos) > WINDOW_EXPIRE_NANOS);
+        int scanned = 0;
+        int removed = 0;
+        Iterator<Map.Entry<InetSocketAddress, DeduplicationWindow>> it = windows.entrySet().iterator();
+        while (it.hasNext() && scanned++ < maxScan) {
+            Map.Entry<InetSocketAddress, DeduplicationWindow> entry = it.next();
+            if ((now - entry.getValue().lastAccessNanos) > WINDOW_EXPIRE_NANOS
+                    && windows.remove(entry.getKey(), entry.getValue())) {
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            DiagnosticMetrics.record("udp.redundant.decoder.window.count", windows.size(), "action=cleanup");
+        }
+    }
+
+    private DeduplicationWindow windowFor(InetSocketAddress sender) {
+        DeduplicationWindow window = windows.get(sender);
+        if (window != null) {
+            return window;
+        }
+        if (windows.size() >= maxWindows) {
+            cleanupStaleWindows(cleanupMaxScan);
+            if (windows.size() >= maxWindows) {
+                return null;
+            }
+        }
+        DeduplicationWindow created = new DeduplicationWindow();
+        DeduplicationWindow old = windows.putIfAbsent(sender, created);
+        DeduplicationWindow result = old != null ? old : created;
+        if (old == null) {
+            DiagnosticMetrics.record("udp.redundant.decoder.window.count", windows.size(), "action=add");
+        }
+        return result;
+    }
+
+    private static void recordDrop(String reason) {
+        DiagnosticMetrics.record("udp.redundant.decoder.drop.count", 1D, "reason=" + reason);
     }
 
     @Override

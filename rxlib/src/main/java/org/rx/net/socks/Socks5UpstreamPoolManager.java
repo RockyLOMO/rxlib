@@ -151,13 +151,13 @@ public final class Socks5UpstreamPoolManager extends Disposable {
                 if (lease != null) {
                     borrowedLeases.incrementAndGet();
                     DiagnosticMetrics.record("socks.udp.lease.pool.borrow.count", 1D,
-                            "key=" + key + ",result=hit");
+                            "result=hit");
                     recordState("borrow-hit");
                 }
                 return lease;
             } catch (TimeoutException e) {
                 DiagnosticMetrics.record("socks.udp.lease.pool.borrow.count", 1D,
-                        "key=" + key + ",result=miss");
+                        "result=miss");
                 recordState("borrow-miss");
                 return null;
             }
@@ -167,7 +167,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
             borrowedLeases.updateAndGet(v -> v > 0 ? v - 1 : 0);
             delegate.recycle(lease);
             DiagnosticMetrics.record("socks.udp.lease.pool.recycle.count", 1D,
-                    "key=" + key + ",result=success");
+                    "result=success");
             recordState("recycle");
         }
 
@@ -182,15 +182,15 @@ public final class Socks5UpstreamPoolManager extends Disposable {
                 }
             }
             DiagnosticMetrics.record("socks.udp.lease.pool.recycle.count", 1D,
-                    "key=" + key + ",result=discard");
+                    "result=discard");
             recordState("discard");
         }
 
         void recordState(String action) {
             DiagnosticMetrics.record("socks.udp.lease.pool.idle.count", delegate.idleSize(),
-                    "key=" + key + ",action=" + action);
+                    "action=" + action);
             DiagnosticMetrics.record("socks.udp.lease.pool.borrowed.count", borrowedLeases.get(),
-                    "key=" + key + ",action=" + action);
+                    "action=" + action);
         }
 
         @Override
@@ -229,7 +229,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         long idleHint = upstream.resolveRelayIdleHintMillis();
         if (idleHint > 0 && idleHint < 1000L) {
             if (DiagnosticMetrics.isEnabled()) {
-                DiagnosticMetrics.record("socks.udp.lease.disabled.count", 1D, "key=" + upstream.poolKey() + ",reason=remote-idle");
+                DiagnosticMetrics.record("socks.udp.lease.disabled.count", 1D, "reason=remote-idle");
             }
             return null;
         }
@@ -262,14 +262,14 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         AtomicInteger failures = udpRpcFailures.computeIfAbsent(key, k -> new AtomicInteger());
         int count = failures.incrementAndGet();
         if (DiagnosticMetrics.isEnabled()) {
-            DiagnosticMetrics.record("socks.udp.lease.rpc.fail.count", 1D, "key=" + key + ",phase=" + phase + ",count=" + count);
+            DiagnosticMetrics.record("socks.udp.lease.rpc.fail.count", 1D, "phase=" + phase);
         }
         if (count >= config.getUdpLeaseRpcBreakerThreshold()) {
             breakerCache.put(key, Boolean.TRUE,
                     CachePolicy.absolute(config.getUdpLeaseRpcBreakerOpenSeconds()));
             failures.set(0);
             if (DiagnosticMetrics.isEnabled()) {
-                DiagnosticMetrics.record("socks.udp.lease.breaker.open.count", 1D, "key=" + key);
+                DiagnosticMetrics.record("socks.udp.lease.breaker.open.count", 1D, "action=open");
             }
         }
         if (cause != null) {

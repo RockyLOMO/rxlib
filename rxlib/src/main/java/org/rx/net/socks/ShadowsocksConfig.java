@@ -29,4 +29,19 @@ public class ShadowsocksConfig extends SocketConfig {
     private int writeTimeoutSeconds;
     private int udpReadTimeoutSeconds = SocksConfig.DEF_UDP_READ_TIMEOUT_SECONDS;
     private int udpWriteTimeoutSeconds;
+    private int udpOutboundPoolMaxSize = 8192;
+    private int udpOutboundPoolWarnSize = 4096;
+    private int udpOutboundPoolMaxPerSource = 256;
+
+    public void setUdpOutboundPoolMaxSize(int udpOutboundPoolMaxSize) {
+        this.udpOutboundPoolMaxSize = Math.max(0, udpOutboundPoolMaxSize);
+    }
+
+    public void setUdpOutboundPoolWarnSize(int udpOutboundPoolWarnSize) {
+        this.udpOutboundPoolWarnSize = Math.max(0, udpOutboundPoolWarnSize);
+    }
+
+    public void setUdpOutboundPoolMaxPerSource(int udpOutboundPoolMaxPerSource) {
+        this.udpOutboundPoolMaxPerSource = Math.max(0, udpOutboundPoolMaxPerSource);
+    }
 }

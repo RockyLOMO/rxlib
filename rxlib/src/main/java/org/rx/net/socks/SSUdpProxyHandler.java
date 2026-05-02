@@ -23,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -40,18 +41,21 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             AttributeKey.valueOf("ssUdpSocks5HeaderCache");
     static final AttributeKey<MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate>> ATTR_ADDRESS_HEADER_CACHE =
             AttributeKey.valueOf("ssUdpAddressHeaderCache");
+    static final AttributeKey<ConcurrentMap<InetSocketAddress, AtomicInteger>> ATTR_UDP_PENDING_WRITE_BYTES_BY_SOURCE =
+            AttributeKey.valueOf("ssUdpPendingWriteBytesBySource");
     static final String REDUNDANT_DECODER_NAME = "SS_UDP_REDUNDANT_DECODER";
     static final String COMPRESS_DECODER_NAME = "SS_UDP_COMPRESS_DECODER";
     static final int MAX_PENDING_ROUTE_PACKETS = 32;
     static final int MAX_PENDING_ROUTE_BYTES = 256 * 1024;
     static final int DEFAULT_OUTBOUND_IDLE_SECONDS = 120;
-    private static final String UDP_TAG_FRONTEND_OUTBOUND = "path=frontend,direction=outbound";
-    private static final String UDP_TAG_FRONTEND_OUTBOUND_SOCKS = UDP_TAG_FRONTEND_OUTBOUND + ",upstream=socks";
-    private static final String UDP_TAG_FRONTEND_OUTBOUND_DIRECT = UDP_TAG_FRONTEND_OUTBOUND + ",upstream=direct";
-    private static final String UDP_TAG_BACKEND_INBOUND = "path=backend,direction=inbound";
-    private static final String UDP_TAG_BACKEND_INBOUND_SOCKS = UDP_TAG_BACKEND_INBOUND + ",upstream=socks";
-    private static final String UDP_TAG_BACKEND_INBOUND_DIRECT = UDP_TAG_BACKEND_INBOUND + ",upstream=direct";
+    private static final String UDP_TAG_FRONTEND_OUTBOUND = "path=frontend,flow=to-upstream";
+    private static final String UDP_TAG_FRONTEND_OUTBOUND_SOCKS = UDP_TAG_FRONTEND_OUTBOUND + ",mode=socks";
+    private static final String UDP_TAG_FRONTEND_OUTBOUND_DIRECT = UDP_TAG_FRONTEND_OUTBOUND + ",mode=direct";
+    private static final String UDP_TAG_BACKEND_INBOUND = "path=backend,flow=to-client";
+    private static final String UDP_TAG_BACKEND_INBOUND_SOCKS = UDP_TAG_BACKEND_INBOUND + ",mode=socks";
+    private static final String UDP_TAG_BACKEND_INBOUND_DIRECT = UDP_TAG_BACKEND_INBOUND + ",mode=direct";
     static final ConcurrentHashMap<OutboundPoolKey, ChannelFuture> OUTBOUND_POOL = new ConcurrentHashMap<>();
+    static final ConcurrentHashMap<OutboundSourceKey, AtomicInteger> OUTBOUND_POOL_SOURCE_COUNTS = new ConcurrentHashMap<>();
 
     static final class RouteKey {
         final InetSocketAddress source;
@@ -114,13 +118,16 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     static final class OutboundPoolKey {
         final ChannelId inboundId;
         final InetSocketAddress source;
+        final OutboundSourceKey sourceKey;
         final Class<?> upstreamType;
         final Object affinity;
         final int hash;
+        final AtomicBoolean sourceReleased = new AtomicBoolean();
 
         OutboundPoolKey(Channel inbound, InetSocketAddress source, Upstream upstream) {
             this.inboundId = inbound.id();
             this.source = source;
+            this.sourceKey = new OutboundSourceKey(inbound, source);
             this.upstreamType = upstream.getClass();
             this.affinity = upstream instanceof SocksUdpUpstream ? ((SocksUdpUpstream) upstream).poolKey() : upstream.getConfig();
             this.hash = (((inboundId.hashCode() * 31) + Objects.hashCode(source)) * 31 + upstreamType.hashCode()) * 31 + Objects.hashCode(affinity);
@@ -139,6 +146,36 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                     && Objects.equals(source, that.source)
                     && Objects.equals(upstreamType, that.upstreamType)
                     && Objects.equals(affinity, that.affinity);
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+    }
+
+    static final class OutboundSourceKey {
+        final ChannelId inboundId;
+        final InetSocketAddress source;
+        final int hash;
+
+        OutboundSourceKey(Channel inbound, InetSocketAddress source) {
+            this.inboundId = inbound.id();
+            this.source = source;
+            this.hash = 31 * inboundId.hashCode() + Objects.hashCode(source);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof OutboundSourceKey)) {
+                return false;
+            }
+            OutboundSourceKey that = (OutboundSourceKey) o;
+            return Objects.equals(inboundId, that.inboundId)
+                    && Objects.equals(source, that.source);
         }
 
         @Override
@@ -211,11 +248,13 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     private static DatagramPacket buildOutboundPacket(SocksContext sc, Channel outbound, UnresolvedEndpoint dstEp, ByteBuf payload) {
         Upstream upstream = sc.getUpstream();
         if (upstream instanceof SocksUdpUpstream) {
-            InetSocketAddress udpRelayAddr = ((SocksUdpUpstream) upstream).selectUdpRelayAddress(outbound);
+            UdpManager.HeaderTemplate headerTemplate = socks5HeaderTemplate(sc.inbound, dstEp);
+            int trafficBytes = payload.readableBytes() + headerTemplate.length();
+            InetSocketAddress udpRelayAddr = ((SocksUdpUpstream) upstream).selectUdpRelayAddressAndRecord(outbound, trafficBytes);
             if (udpRelayAddr == null) {
                 return null;
             }
-            return new DatagramPacket(UdpManager.socks5Encode(payload, socks5HeaderTemplate(sc.inbound, dstEp)), udpRelayAddr);
+            return new DatagramPacket(UdpManager.socks5Encode(payload, headerTemplate), udpRelayAddr);
         }
         return new DatagramPacket(payload, upstream.getDestination().socketAddress());
     }
@@ -283,10 +322,6 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             recordUdpDrop("build-failed", srcEp, dstEp, null, bytes);
             log.warn("SS UDP relay not ready for {}, drop packet from {}", dstEp, srcEp);
             return;
-        }
-        int trafficBytes = packet.content().readableBytes();
-        if (sc.getUpstream() instanceof SocksUdpUpstream) {
-            ((SocksUdpUpstream) sc.getUpstream()).recordUdpTraffic(outbound, trafficBytes);
         }
         InetSocketAddress udpRelayAddr = relayAddress(sc.getUpstream(), outbound);
         Sockets.UdpWriteResult result = Sockets.writeUdp(outbound, packet, "ss.udp",
@@ -359,18 +394,17 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         }).attr(ShadowsocksConfig.SVR, server).bind(0);
         chf.addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                OUTBOUND_POOL.remove(key, chf);
-                recordOutboundPool("open-fail");
+                if (!removeOutboundPool(key, chf, "bind-fail")) {
+                    releaseOutboundSource(key);
+                    recordOutboundPoolClose("bind-fail");
+                }
             }
         });
         chf.channel().closeFuture().addListener(f -> {
-            if (OUTBOUND_POOL.remove(key, chf)) {
-                recordOutboundPool("close");
-            }
+            removeOutboundPool(key, chf, "close");
         });
         inbound.closeFuture().addListener(f -> {
-            if (OUTBOUND_POOL.remove(key, chf) && chf.channel().isOpen()) {
-                recordOutboundPool("inbound-close");
+            if (removeOutboundPool(key, chf, "inbound-close") && chf.channel().isOpen()) {
                 chf.channel().close();
             }
         });
@@ -379,13 +413,38 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
     private ChannelFuture acquireOutboundChannel(Channel inbound, ShadowsocksServer server, RouteKey routeKey, Upstream upstream) {
         OutboundPoolKey key = new OutboundPoolKey(inbound, routeKey.source, upstream);
+        ChannelFuture existing = OUTBOUND_POOL.get(key);
+        if (existing != null) {
+            return existing;
+        }
+
+        ShadowsocksConfig config = server.config;
+        int poolSize = OUTBOUND_POOL.size();
+        int maxSize = config.getUdpOutboundPoolMaxSize();
+        if (maxSize > 0 && poolSize >= maxSize) {
+            recordOutboundPoolOpen("full");
+            recordUdpDrop("outbound-pool-full", routeKey.source, routeKey.destination, null, 0);
+            return inbound.newFailedFuture(new IllegalStateException("SS UDP outbound pool full"));
+        }
+        int warnSize = config.getUdpOutboundPoolWarnSize();
+        if (warnSize > 0 && poolSize >= warnSize) {
+            DiagnosticMetrics.record("ss.udp.outbound.pool.warn.count", 1D, "result=warn");
+        }
+        if (!reserveOutboundSource(key, config.getUdpOutboundPoolMaxPerSource())) {
+            recordOutboundPoolOpen("per-source-full");
+            recordUdpDrop("outbound-pool-per-source-full", routeKey.source, routeKey.destination, null, 0);
+            return inbound.newFailedFuture(new IllegalStateException("SS UDP outbound pool source full"));
+        }
+
         AtomicBoolean created = new AtomicBoolean();
         ChannelFuture channelFuture = OUTBOUND_POOL.computeIfAbsent(key, k -> {
             created.set(true);
             return openOutboundChannel(inbound, server, upstream, routeKey.source, k);
         });
         if (created.get()) {
-            recordOutboundPool("open");
+            recordOutboundPoolOpen("success");
+        } else {
+            releaseOutboundSource(key);
         }
         return channelFuture;
     }
@@ -599,6 +658,56 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         initState.pendingBytes = 0;
     }
 
+    static boolean reserveSourcePending(Channel inbound, InetSocketAddress source, int bytes, int limitBytes) {
+        if (inbound == null || source == null || bytes <= 0 || limitBytes <= 0) {
+            return true;
+        }
+        AtomicInteger counter = sourcePendingMap(inbound).computeIfAbsent(source, k -> new AtomicInteger());
+        int pending = counter.addAndGet(bytes);
+        if (pending <= limitBytes) {
+            return true;
+        }
+        releaseSourcePending(inbound, source, bytes);
+        return false;
+    }
+
+    static void releaseSourcePending(Channel inbound, InetSocketAddress source, int bytes) {
+        if (inbound == null || source == null || bytes <= 0) {
+            return;
+        }
+        ConcurrentMap<InetSocketAddress, AtomicInteger> map = inbound.attr(ATTR_UDP_PENDING_WRITE_BYTES_BY_SOURCE).get();
+        if (map == null) {
+            return;
+        }
+        AtomicInteger counter = map.get(source);
+        if (counter == null) {
+            return;
+        }
+        int pending = counter.addAndGet(-bytes);
+        if (pending <= 0) {
+            map.remove(source, counter);
+        }
+    }
+
+    static int sourcePendingBytes(Channel inbound, InetSocketAddress source) {
+        ConcurrentMap<InetSocketAddress, AtomicInteger> map = inbound.attr(ATTR_UDP_PENDING_WRITE_BYTES_BY_SOURCE).get();
+        if (map == null) {
+            return 0;
+        }
+        AtomicInteger counter = map.get(source);
+        return counter == null ? 0 : Math.max(0, counter.get());
+    }
+
+    private static ConcurrentMap<InetSocketAddress, AtomicInteger> sourcePendingMap(Channel inbound) {
+        ConcurrentMap<InetSocketAddress, AtomicInteger> map = inbound.attr(ATTR_UDP_PENDING_WRITE_BYTES_BY_SOURCE).get();
+        if (map != null) {
+            return map;
+        }
+        ConcurrentMap<InetSocketAddress, AtomicInteger> newMap = new ConcurrentHashMap<>();
+        ConcurrentMap<InetSocketAddress, AtomicInteger> oldMap = inbound.attr(ATTR_UDP_PENDING_WRITE_BYTES_BY_SOURCE).setIfAbsent(newMap);
+        return oldMap != null ? oldMap : newMap;
+    }
+
     @Slf4j
     @ChannelHandler.Sharable
     public static class UdpBackendRelayHandler extends SimpleChannelInboundHandler<DatagramPacket> {
@@ -626,7 +735,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 SocksUdpUpstream socksUpstream = (SocksUdpUpstream) binding.representativeUpstream;
                 if (!socksUpstream.ownsUdpRelayAddress(outbound, out.sender())) {
                     DiagnosticMetrics.record("ss.udp.unexpected.sender.count", 1D,
-                            "path=backend,upstream=socks");
+                            "path=backend,mode=socks");
                     log.warn("SS UDP discard packet from unexpected relay sender {}, expected group primary {}", out.sender(), udpRelayAddr);
                     return;
                 }
@@ -644,11 +753,29 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 responseDst = new UnresolvedEndpoint(realDstEp.getHostString(), realDstEp.getPort());
             }
 
-            DatagramPacket packet = new DatagramPacket(UdpManager.prependAddress(ctx.alloc(), outBuf,
-                    addressHeaderTemplate(binding.inbound, realDstEp)), srcEp);
+            UdpManager.HeaderTemplate responseHeader = addressHeaderTemplate(binding.inbound, realDstEp);
+            int responseBytes = outBuf.readableBytes() + responseHeader.length();
+            if (!reserveSourcePending(binding.inbound, srcEp, responseBytes,
+                    server.config.getUdpWritePerSourceLimitBytes())) {
+                DiagnosticMetrics.record("ss.udp.drop.count", 1D,
+                        "reason=per-source-pending-overlimit,path=backend");
+                log.warn("SS UDP drop response {} => {} due to per-source pending overlimit bytes={}",
+                        realDstEp, srcEp, responseBytes);
+                return;
+            }
+
+            DatagramPacket packet;
+            try {
+                packet = new DatagramPacket(UdpManager.prependAddress(ctx.alloc(), outBuf, responseHeader), srcEp);
+            } catch (Throwable e) {
+                releaseSourcePending(binding.inbound, srcEp, responseBytes);
+                throw e;
+            }
             Sockets.UdpWriteResult result = Sockets.writeUdp(binding.inbound, packet, "ss.udp",
-                    udpMetricTags("backend", "inbound", binding.representativeUpstream));
+                    udpMetricTags("backend", "inbound", binding.representativeUpstream),
+                    f -> releaseSourcePending(binding.inbound, srcEp, responseBytes));
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
+                releaseSourcePending(binding.inbound, srcEp, responseBytes);
                 log.warn("SS UDP drop response {} => {} result={}", realDstEp, srcEp, result);
                 return;
             }
@@ -729,28 +856,72 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         return oldMap != null ? oldMap : newMap;
     }
 
-    private static void recordOutboundPool(String action) {
-        DiagnosticMetrics.record("ss.udp.outbound.pool.size", OUTBOUND_POOL.size(), "action=" + action);
+    private static boolean removeOutboundPool(OutboundPoolKey key, ChannelFuture chf, String reason) {
+        if (OUTBOUND_POOL.remove(key, chf)) {
+            releaseOutboundSource(key);
+            recordOutboundPoolClose(reason);
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean reserveOutboundSource(OutboundPoolKey key, int maxPerSource) {
+        if (maxPerSource <= 0) {
+            return true;
+        }
+        AtomicInteger count = OUTBOUND_POOL_SOURCE_COUNTS.computeIfAbsent(key.sourceKey, k -> new AtomicInteger());
+        int current = count.incrementAndGet();
+        if (current <= maxPerSource) {
+            return true;
+        }
+        releaseOutboundSourceCount(key.sourceKey, count);
+        return false;
+    }
+
+    private static void releaseOutboundSource(OutboundPoolKey key) {
+        if (key.sourceReleased.compareAndSet(false, true)) {
+            AtomicInteger count = OUTBOUND_POOL_SOURCE_COUNTS.get(key.sourceKey);
+            releaseOutboundSourceCount(key.sourceKey, count);
+        }
+    }
+
+    private static void releaseOutboundSourceCount(OutboundSourceKey key, AtomicInteger count) {
+        if (count == null) {
+            return;
+        }
+        int remaining = count.decrementAndGet();
+        if (remaining <= 0) {
+            OUTBOUND_POOL_SOURCE_COUNTS.remove(key, count);
+        }
+    }
+
+    private static void recordOutboundPoolOpen(String result) {
+        DiagnosticMetrics.record("ss.udp.outbound.pool.open.count", 1D, "result=" + result);
+        DiagnosticMetrics.record("ss.udp.outbound.pool.size", OUTBOUND_POOL.size(), "action=open");
+    }
+
+    private static void recordOutboundPoolClose(String reason) {
+        DiagnosticMetrics.record("ss.udp.outbound.pool.close.count", 1D, "reason=" + reason);
+        DiagnosticMetrics.record("ss.udp.outbound.pool.size", OUTBOUND_POOL.size(), "action=close");
     }
 
     private static void recordRouteCacheSizes(Channel inbound, ConcurrentMap<RouteKey, SocksContext> routeMap, Channel outbound) {
-        int listenPort = localPort(inbound);
         DiagnosticMetrics.record("ss.udp.route.cache.size", routeMap.size(),
-                "action=update,scope=inbound,listenPort=" + listenPort);
+                "action=update,scope=inbound");
         ConcurrentMap<UnresolvedEndpoint, SocksContext> outboundRouteMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
         if (outboundRouteMap != null) {
             DiagnosticMetrics.record("ss.udp.outbound.route.cache.size", outboundRouteMap.size(),
-                    "action=update,scope=outbound,listenPort=" + listenPort);
+                    "action=update,scope=outbound");
         }
         MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> socks5Cache = inbound.attr(ATTR_SOCKS5_HEADER_CACHE).get();
         if (socks5Cache != null) {
             DiagnosticMetrics.record("ss.udp.header.cache.size", socks5Cache.size(),
-                    "kind=socks5,scope=inbound,listenPort=" + listenPort);
+                    "kind=socks5,scope=inbound");
         }
         MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> addressCache = inbound.attr(ATTR_ADDRESS_HEADER_CACHE).get();
         if (addressCache != null) {
             DiagnosticMetrics.record("ss.udp.header.cache.size", addressCache.size(),
-                    "kind=address,scope=inbound,listenPort=" + listenPort);
+                    "kind=address,scope=inbound");
         }
     }
 
@@ -761,11 +932,6 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
     private static int readableBytesOf(ByteBuf buf) {
         return buf != null && buf.refCnt() > 0 ? buf.readableBytes() : 0;
-    }
-
-    private static int localPort(Channel channel) {
-        java.net.SocketAddress localAddress = channel.localAddress();
-        return localAddress instanceof InetSocketAddress ? ((InetSocketAddress) localAddress).getPort() : -1;
     }
 
     private static String udpMetricTags(String path, String direction, Upstream upstream) {
@@ -782,7 +948,8 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             return upstream != null ? UDP_TAG_BACKEND_INBOUND_DIRECT : UDP_TAG_BACKEND_INBOUND;
         }
 
-        String tags = "path=" + path + ",direction=" + direction;
-        return upstream != null ? tags + ",upstream=" + (upstream instanceof SocksUdpUpstream ? "socks" : "direct") : tags;
+        String flow = "outbound".equals(direction) ? "to-upstream" : "inbound".equals(direction) ? "to-client" : direction;
+        String tags = "path=" + path + ",flow=" + flow;
+        return upstream != null ? tags + ",mode=" + (upstream instanceof SocksUdpUpstream ? "socks" : "direct") : tags;
     }
 }

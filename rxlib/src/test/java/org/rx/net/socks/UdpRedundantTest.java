@@ -219,6 +219,24 @@ public class UdpRedundantTest {
         assertNull(channel.readOutbound(), "未初始化 peer map 时必须 fail-close，不能默认加 RDNT");
     }
 
+    @Test
+    public void testEncoderDelayedCopiesFallbackToInlineWhenPendingLimitReached() {
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(2, 1000, null, 0);
+        EmbeddedChannel channel = new EmbeddedChannel(encoder);
+        registerRedundantPeer(channel);
+
+        ByteBuf payload = Unpooled.copiedBuffer("delay-inline".getBytes(StandardCharsets.UTF_8));
+        channel.writeOutbound(new DatagramPacket(payload, REMOTE));
+
+        DatagramPacket first = channel.readOutbound();
+        assertNotNull(first);
+        first.release();
+        DatagramPacket fallback = channel.readOutbound();
+        assertNotNull(fallback, "pending 超限时延迟副本应降级为立即写，避免堆积 scheduled task");
+        fallback.release();
+        assertNull(channel.readOutbound());
+    }
+
     // ===================== Decoder 测试 =====================
 
     @Test
@@ -399,13 +417,40 @@ public class UdpRedundantTest {
         assertNull(channel.readInbound()); // 应该被丢弃
     }
 
+    @Test
+    public void testDecoderDropsRdntWhenWindowFull() {
+        UdpRedundantDecoder decoder = new UdpRedundantDecoder(null, 1, 1);
+        EmbeddedChannel channel = new EmbeddedChannel(decoder);
+        InetSocketAddress sender1 = new InetSocketAddress("127.0.0.1", 10001);
+        InetSocketAddress sender2 = new InetSocketAddress("127.0.0.1", 10002);
+
+        sendPacketWithSeq(channel, 1, "first", sender1);
+        DatagramPacket first = channel.readInbound();
+        assertNotNull(first);
+        first.release();
+
+        sendPacketWithSeq(channel, 2, "second", sender2);
+        assertNull(channel.readInbound(), "sender window 达到上限时新的 RDNT sender 应丢弃，避免重复包透传");
+
+        ByteBuf plain = Unpooled.copiedBuffer("plain".getBytes(StandardCharsets.UTF_8));
+        channel.writeInbound(new DatagramPacket(plain, LOCAL, sender2));
+        DatagramPacket passthrough = channel.readInbound();
+        assertNotNull(passthrough, "非 RDNT 包在 window 满时仍应透传");
+        assertEquals("plain", passthrough.content().toString(StandardCharsets.UTF_8));
+        passthrough.release();
+    }
+
     // 辅助方法：发送带序列号的数据包
     private void sendPacketWithSeq(EmbeddedChannel channel, int seqId, String data) {
+        sendPacketWithSeq(channel, seqId, data, LOCAL);
+    }
+
+    private void sendPacketWithSeq(EmbeddedChannel channel, int seqId, String data, InetSocketAddress sender) {
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(UdpRedundantEncoder.HEADER_MAGIC);
         buf.writeInt(seqId);
         buf.writeBytes(data.getBytes());
-        channel.writeInbound(new DatagramPacket(buf, REMOTE, LOCAL));
+        channel.writeInbound(new DatagramPacket(buf, REMOTE, sender));
     }
 
     // ===================== Stats 自适应测试 =====================
@@ -685,6 +730,30 @@ public class UdpRedundantTest {
 
         UdpRedundantMultiplierResolver res = cfg.buildUdpRedundantMultiplierResolver();
         assertEquals(2, res.resolve(new InetSocketAddress("192.0.2.10", 9999)));
+    }
+
+    @Test
+    public void testRpcRelayGroupAddsClientSenderAsRedundantPeerWhenEnabled() {
+        SocksConfig config = new SocksConfig();
+        config.setUdpRedundantMultiplier(2);
+        EmbeddedChannel relay = new EmbeddedChannel();
+        InetSocketAddress client = new InetSocketAddress("127.0.0.1", 53000);
+
+        assertTrue(UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config));
+        UdpRelayAttributes.initRedundantPeers(relay);
+        UdpRelayAttributes.addRedundantPeer(relay, client);
+
+        assertTrue(UdpRelayAttributes.shouldEncode(relay, client));
+    }
+
+    @Test
+    public void testRpcRelayGroupDoesNotTrackClientPeerWhenRedundantDisabled() {
+        SocksConfig config = new SocksConfig();
+        EmbeddedChannel relay = new EmbeddedChannel();
+        InetSocketAddress client = new InetSocketAddress("127.0.0.1", 53001);
+
+        assertFalse(UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config));
+        assertFalse(UdpRelayAttributes.shouldEncode(relay, client));
     }
 
     // ===================== 辅助方法 =====================

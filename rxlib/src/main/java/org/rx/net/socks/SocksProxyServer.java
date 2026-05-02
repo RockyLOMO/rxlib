@@ -222,19 +222,19 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         }
         udpRelayRegistry.put(local.getPort(), relay);
         if (DiagnosticMetrics.isEnabled()) {
-            DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=register,port=" + local.getPort());
+            DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=register");
         }
         relay.closeFuture().addListener(f -> {
             udpRelayRegistry.remove(local.getPort(), relay);
             if (DiagnosticMetrics.isEnabled()) {
-                DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=close,port=" + local.getPort());
+                DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=close");
             }
         });
     }
 
     public boolean resetUdpRelay(int relayPort) {
         if (DiagnosticMetrics.isEnabled()) {
-            DiagnosticMetrics.record("socks.udp.relay.reset.count", 1D, "port=" + relayPort);
+            DiagnosticMetrics.record("socks.udp.relay.reset.count", 1D, "action=reset");
         }
         return withUdpRelay(relayPort, relay -> {
             clearUdpRelayState(relay, null);
@@ -249,7 +249,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
         if (DiagnosticMetrics.isEnabled()) {
-            DiagnosticMetrics.record("socks.udp.relay.claim.count", 1D, "port=" + relayPort);
+            DiagnosticMetrics.record("socks.udp.relay.claim.count", 1D, "action=claim");
         }
         return withUdpRelay(relayPort, relay -> {
             clearUdpRelayState(relay, clientAddr);

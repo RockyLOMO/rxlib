@@ -1043,6 +1043,11 @@ public final class Sockets {
      * 2) 基于每个 channel 的待完成写入字节数做软上限保护
      */
     public static UdpWriteResult writeUdp(Channel channel, DatagramPacket packet, String metricPrefix, String tags) {
+        return writeUdp(channel, packet, metricPrefix, tags, null);
+    }
+
+    public static UdpWriteResult writeUdp(Channel channel, DatagramPacket packet, String metricPrefix, String tags,
+                                          ChannelFutureListener completionListener) {
         if (channel == null || packet == null) {
             return UdpWriteResult.WRITE_THROWN;
         }
@@ -1082,6 +1087,13 @@ public final class Sockets {
                             appendUdpMetricTags(tags, "reason=write-fail,limitBucket=" + udpLimitBucket(limitBytes)));
                     log.warn("UDP write fail channel={} recipient={}", channel, packet.recipient(), f.cause());
                 }
+                if (completionListener != null) {
+                    try {
+                        completionListener.operationComplete(f);
+                    } catch (Exception e) {
+                        log.warn("UDP write completion listener failed channel={}", channel, e);
+                    }
+                }
             });
             return UdpWriteResult.ACCEPTED;
         } catch (Throwable e) {
@@ -1104,6 +1116,9 @@ public final class Sockets {
         }
 
         SocketConfig config = channel.attr(SocketConfig.ATTR_CONF).get();
+        if (config != null && config.getUdpWriteLimitBytes() > 0) {
+            return config.getUdpWriteLimitBytes();
+        }
         OptimalSettings op = config == null ? OptimalSettings.EMPTY : ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         WriteBufferWaterMark waterMark = op.writeBufferWaterMark;
         if (waterMark != null) {
@@ -1153,6 +1168,26 @@ public final class Sockets {
             return extra;
         }
         return tags + "," + extra;
+    }
+
+    public static String udpMetricTags(String component, String path, String flow, String result, String reason) {
+        StringBuilder b = new StringBuilder(64);
+        appendUdpMetricTag(b, "component", component);
+        appendUdpMetricTag(b, "path", path);
+        appendUdpMetricTag(b, "flow", flow);
+        appendUdpMetricTag(b, "result", result);
+        appendUdpMetricTag(b, "reason", reason);
+        return b.toString();
+    }
+
+    private static void appendUdpMetricTag(StringBuilder b, String name, String value) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        if (b.length() > 0) {
+            b.append(',');
+        }
+        b.append(name).append('=').append(value);
     }
 
     private static String udpLimitBucket(int limitBytes) {

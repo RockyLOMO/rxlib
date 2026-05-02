@@ -8,6 +8,7 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.ScheduledFuture;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.diagnostic.DiagnosticMetrics;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
@@ -49,10 +50,12 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
      * 自适应调整周期（秒）
      */
     static final int ADJUST_INTERVAL_SECONDS = 2;
+    static final int DEFAULT_MAX_PENDING_DELAYED_COPIES = 4096;
 
     // 静态模式字段
     private final int fixedMultiplier;
     private final int intervalMicros;
+    private final int maxPendingDelayedCopies;
 
     // 自适应模式字段
     private final UdpRedundantStats stats;
@@ -61,6 +64,7 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
     private final UdpRedundantMultiplierResolver perDestination;
 
     private final AtomicInteger seqGenerator = new AtomicInteger();
+    private final AtomicInteger pendingDelayedCopies = new AtomicInteger();
 
     /**
      * 静态模式构造
@@ -78,6 +82,11 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
      * @param perDestination 可为 null；未命中规则时使用 {@code multiplier}
      */
     public UdpRedundantEncoder(int multiplier, int intervalMicros, UdpRedundantMultiplierResolver perDestination) {
+        this(multiplier, intervalMicros, perDestination, DEFAULT_MAX_PENDING_DELAYED_COPIES);
+    }
+
+    UdpRedundantEncoder(int multiplier, int intervalMicros, UdpRedundantMultiplierResolver perDestination,
+                        int maxPendingDelayedCopies) {
         if (multiplier < 1 || multiplier > 5) {
             throw new IllegalArgumentException("multiplier must be in [1, 5], got " + multiplier);
         }
@@ -85,6 +94,7 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
         this.intervalMicros = Math.max(0, intervalMicros);
         this.stats = null;
         this.perDestination = perDestination;
+        this.maxPendingDelayedCopies = Math.max(0, maxPendingDelayedCopies);
     }
 
     /**
@@ -107,6 +117,7 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
         this.fixedMultiplier = 0;
         this.intervalMicros = stats.getIntervalMicros();
         this.perDestination = perDestination;
+        this.maxPendingDelayedCopies = DEFAULT_MAX_PENDING_DELAYED_COPIES;
     }
 
     private int effectiveMultiplier(InetSocketAddress recipient) {
@@ -174,13 +185,35 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
                         final int copyIndex = i;
                         final ByteBuf copy = packetBuf.retainedDuplicate();
                         long delayMicros = (long) intervalMicros * copyIndex;
+                        if (pendingDelayedCopies.incrementAndGet() > maxPendingDelayedCopies) {
+                            pendingDelayedCopies.decrementAndGet();
+                            recordDelayedCopy("inline");
+                            writeRedundantCopy(ctx, seqId, copy, recipient);
+                            ctx.flush();
+                            continue;
+                        }
                         try {
                             ctx.executor().schedule(() -> {
-                                writeRedundantCopy(ctx, seqId, copy, recipient);
-                                ctx.flush();
+                                try {
+                                    if (!ctx.channel().isActive()) {
+                                        copy.release();
+                                        recordDelayedCopy("drop");
+                                        return;
+                                    }
+                                    writeRedundantCopy(ctx, seqId, copy, recipient);
+                                    ctx.flush();
+                                } finally {
+                                    int pending = pendingDelayedCopies.decrementAndGet();
+                                    DiagnosticMetrics.record("udp.redundant.delayed.pending.count",
+                                            Math.max(0, pending), "state=after-run");
+                                }
                             }, delayMicros, TimeUnit.MICROSECONDS);
+                            recordDelayedCopy("scheduled");
+                            DiagnosticMetrics.record("udp.redundant.delayed.pending.count",
+                                    pendingDelayedCopies.get(), "state=scheduled");
                         } catch (Exception e) {
                             copy.release();
+                            pendingDelayedCopies.decrementAndGet();
                             throw e;
                         }
                     }
@@ -247,5 +280,9 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
             adjustTimer.cancel(false);
             adjustTimer = null;
         }
+    }
+
+    private static void recordDelayedCopy(String result) {
+        DiagnosticMetrics.record("udp.redundant.delayed.copy.count", 1D, "result=" + result);
     }
 }

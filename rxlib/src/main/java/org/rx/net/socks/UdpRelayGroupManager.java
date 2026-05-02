@@ -81,7 +81,7 @@ final class UdpRelayGroupManager extends Disposable {
         }
 
         DiagnosticMetrics.record("socks.udp.relay.group.open.count", 1D,
-                "result=success,relays=" + opened.size());
+                "result=success");
         recordState("open");
         return UdpRelayGroupOpenResult.success(group.groupId, group.dataPlaneToken, group.expireAtMillis(), opened);
     }
@@ -101,7 +101,7 @@ final class UdpRelayGroupManager extends Disposable {
         }
         List<UdpRelayEndpoint> endpoints = addRelays(group, addCount);
         DiagnosticMetrics.record("socks.udp.relay.group.add.count", 1D,
-                "result=" + (endpoints.isEmpty() ? "fail" : "success") + ",relays=" + endpoints.size());
+                "result=" + (endpoints.isEmpty() ? "fail" : "success"));
         recordState("add");
         return UdpRelayGroupUpdateResult.success(group.expireAtMillis(), endpoints);
     }
@@ -178,8 +178,14 @@ final class UdpRelayGroupManager extends Disposable {
             relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(group.clientAddr);
             relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(group.clientAddr);
             relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(group.clientAddr != null);
-            UdpRelayAttributes.initRedundantPeers(relay);
-            relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).set(Boolean.FALSE);
+            boolean redundantClientPeer = UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config);
+            if (redundantClientPeer) {
+                UdpRelayAttributes.initRedundantPeers(relay);
+                if (group.clientAddr != null) {
+                    UdpRelayAttributes.addRedundantPeer(relay, group.clientAddr);
+                }
+            }
+            relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).set(redundantClientPeer);
 
             if (!future.awaitUninterruptibly(BIND_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS) || !future.isSuccess()) {
                 Throwable cause = future.cause();

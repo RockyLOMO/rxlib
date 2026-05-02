@@ -50,6 +50,15 @@ public final class UdpRelayAttributes {
         return peers != null && recipient != null && peers.containsKey(normalize(recipient));
     }
 
+    public static boolean shouldTrackClientAsRedundantPeer(SocksConfig config) {
+        if (config == null) {
+            return false;
+        }
+        return config.getUdpRedundantMultiplier() > 1
+                || config.isUdpRedundantAdaptive()
+                || config.hasUdpRedundantDestinationRules();
+    }
+
     static InetSocketAddress normalize(InetSocketAddress address) {
         if (address == null) {
             return null;

@@ -114,17 +114,12 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     static final class UdpMetricTagCache {
         static final String TO_CLIENT = "to-client";
         static final String TO_UPSTREAM = "to-upstream";
-        final int listenPort;
         String toClient;
         String toClientSocks;
         String toClientDirect;
         String toUpstream;
         String toUpstreamSocks;
         String toUpstreamDirect;
-
-        UdpMetricTagCache(int listenPort) {
-            this.listenPort = listenPort;
-        }
 
         String tags(boolean toClientDirection, Upstream upstream) {
             if (upstream instanceof SocksUdpUpstream) {
@@ -145,14 +140,14 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
         private String toClientSocks() {
             if (toClientSocks == null) {
-                toClientSocks = base(TO_CLIENT) + ",upstream=socks";
+                toClientSocks = base(TO_CLIENT) + ",mode=socks";
             }
             return toClientSocks;
         }
 
         private String toClientDirect() {
             if (toClientDirect == null) {
-                toClientDirect = base(TO_CLIENT) + ",upstream=direct";
+                toClientDirect = base(TO_CLIENT) + ",mode=direct";
             }
             return toClientDirect;
         }
@@ -166,20 +161,20 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
         private String toUpstreamSocks() {
             if (toUpstreamSocks == null) {
-                toUpstreamSocks = base(TO_UPSTREAM) + ",upstream=socks";
+                toUpstreamSocks = base(TO_UPSTREAM) + ",mode=socks";
             }
             return toUpstreamSocks;
         }
 
         private String toUpstreamDirect() {
             if (toUpstreamDirect == null) {
-                toUpstreamDirect = base(TO_UPSTREAM) + ",upstream=direct";
+                toUpstreamDirect = base(TO_UPSTREAM) + ",mode=direct";
             }
             return toUpstreamDirect;
         }
 
         private String base(String direction) {
-            return "listenPort=" + listenPort + ",direction=" + direction;
+            return "path=relay,flow=" + direction;
         }
     }
 
@@ -502,7 +497,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                     + removeRelayAddress(udp2rawCurrent, relayAddress, upstream);
             if (removed > 0) {
                 DiagnosticMetrics.record("socks.udp.session.cleanup.count", 1D,
-                        "action=hop-remove,port=" + localPort(relay));
+                        "action=hop-remove");
             }
             recordCacheSizes(relay, current, relay.attr(ATTR_ROUTE_MAP).get(), "hop-remove");
         });
@@ -696,9 +691,15 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             SocksContext context, boolean retained) {
         Upstream upstream = context.getUpstream();
         SocksUdpUpstream socksUpstream = upstream instanceof SocksUdpUpstream ? (SocksUdpUpstream) upstream : null;
-        InetSocketAddress upDstAddr = socksUpstream != null
-                ? socksUpstream.selectUdpRelayAddress(relay)
-                : resolveUpstreamTarget(relay, upstream);
+        int trafficBytes = 0;
+        InetSocketAddress upDstAddr;
+        if (socksUpstream != null) {
+            inBuf.resetReaderIndex();
+            trafficBytes = inBuf.readableBytes();
+            upDstAddr = socksUpstream.selectUdpRelayAddressAndRecord(relay, trafficBytes);
+        } else {
+            upDstAddr = resolveUpstreamTarget(relay, upstream);
+        }
         if (upDstAddr == null) {
             if (retained) {
                 Bytes.release(inBuf);
@@ -711,7 +712,6 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
 
         if (socksUpstream != null) {
-            inBuf.resetReaderIndex();
             registerRelayAddressIfMissing(relay, upDstAddr, context);
         }
         EndpointTracer.UDP.link(clientOriginAddr, relay);
@@ -724,9 +724,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                     config.getListenPort(), inBuf.readableBytes(), sender, upDstAddr, dstEp);
         }
         DatagramPacket packet = new DatagramPacket(inBuf, upDstAddr);
-        int trafficBytes = packet.content().readableBytes();
-        if (socksUpstream != null) {
-            socksUpstream.recordUdpTraffic(relay, trafficBytes);
+        if (trafficBytes == 0) {
+            trafficBytes = packet.content().readableBytes();
         }
         SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
@@ -769,7 +768,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
         if (removedCtx > 0 || removedRoute > 0 || removedPending > 0) {
             DiagnosticMetrics.record("socks.udp.session.cleanup.count", 1D,
-                    "action=session-cleanup,port=" + localPort(relay));
+                    "action=session-cleanup");
         }
         recordCacheSizes(relay, ctxMap, routeMap, "session-cleanup");
     }
@@ -848,34 +847,28 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
     private static void recordCacheSizes(Channel relay, ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
             ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap, String action) {
-        SocksProxyServer server = Sockets.getAttr(relay, SocksContext.SOCKS_SVR);
-        int port = server != null ? server.config.getListenPort() : -1;
         if (ctxMap != null) {
-            DiagnosticMetrics.record("socks.udp.ctx.cache.size", ctxMap.size(), "action=" + action + ",port=" + port);
+            DiagnosticMetrics.record("socks.udp.ctx.cache.size", ctxMap.size(), "action=" + action);
         }
         if (routeMap != null) {
-            DiagnosticMetrics.record("socks.udp.route.cache.size", routeMap.size(), "action=" + action + ",port=" + port);
+            DiagnosticMetrics.record("socks.udp.route.cache.size", routeMap.size(), "action=" + action);
         }
     }
 
     private static void recordDrop(String reason, InetSocketAddress sender, InetSocketAddress clientOriginAddr,
             SocksConfig config, int bytes) {
         DiagnosticMetrics.record("socks.udp.drop.count", 1D,
-                "reason=" + reason + ",path=client-ingress,port=" + config.getListenPort());
+                "reason=" + reason + ",path=client-ingress");
     }
 
     private static String udpMetricTags(Channel relay, SocksConfig config, boolean toClient, Upstream upstream) {
         UdpMetricTagCache cache = relay.attr(ATTR_UDP_METRIC_TAG_CACHE).get();
         if (cache == null) {
-            UdpMetricTagCache newCache = new UdpMetricTagCache(config.getListenPort());
+            UdpMetricTagCache newCache = new UdpMetricTagCache();
             UdpMetricTagCache oldCache = relay.attr(ATTR_UDP_METRIC_TAG_CACHE).setIfAbsent(newCache);
             cache = oldCache != null ? oldCache : newCache;
         }
         return cache.tags(toClient, upstream);
     }
 
-    private static int localPort(Channel relay) {
-        java.net.SocketAddress localAddress = relay.localAddress();
-        return localAddress instanceof InetSocketAddress ? ((InetSocketAddress) localAddress).getPort() : -1;
-    }
 }

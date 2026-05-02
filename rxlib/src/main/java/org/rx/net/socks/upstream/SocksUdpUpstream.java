@@ -92,14 +92,19 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     public InetSocketAddress selectUdpRelayAddress(Channel channel) {
+        return selectUdpRelayAddressAndRecord(channel, 0);
+    }
+
+    public InetSocketAddress selectUdpRelayAddressAndRecord(Channel channel, int bytes) {
         SessionGroup group = activeGroup(channel);
         if (group == null) {
             return null;
         }
         InetSocketAddress relayAddress = group.selectRelayAddress();
-        maybeReplenishGroup(channel, group);
-        maybeExpandGroup(channel, group);
-        maybeHeartbeatGroup(channel, group);
+        if (bytes > 0) {
+            group.recordBytes(bytes);
+        }
+        maintainGroup(channel, group);
         return relayAddress;
     }
 
@@ -122,6 +127,10 @@ public class SocksUdpUpstream extends Upstream {
             return;
         }
         group.recordBytes(bytes);
+        maintainGroup(channel, group);
+    }
+
+    private void maintainGroup(Channel channel, SessionGroup group) {
         maybeReplenishGroup(channel, group);
         maybeExpandGroup(channel, group);
         maybeHeartbeatGroup(channel, group);
@@ -174,15 +183,15 @@ public class SocksUdpUpstream extends Upstream {
             if (ok) {
                 poolManager.onUdpRpcSuccess(poolKey());
                 DiagnosticMetrics.record("socks.udp.lease.pool.claim.count", 1D,
-                        "key=" + poolKey() + ",result=success");
+                        "result=success");
                 return true;
             }
             DiagnosticMetrics.record("socks.udp.lease.pool.claim.count", 1D,
-                    "key=" + poolKey() + ",result=fail");
+                    "result=fail");
             poolManager.onUdpRpcFailure(poolKey(), socksConfig, "claim", null);
         } catch (Exception e) {
             DiagnosticMetrics.record("socks.udp.lease.pool.claim.count", 1D,
-                    "key=" + poolKey() + ",result=error");
+                    "result=error");
             poolManager.onUdpRpcFailure(poolKey(), socksConfig, "claim", e);
         }
         return false;
@@ -350,7 +359,7 @@ public class SocksUdpUpstream extends Upstream {
             }
             onRpcRelayGroupSuccess(key);
             DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D,
-                    "mode=rss_rpc,relays=" + holders.length);
+                    "mode=rss_rpc");
             return newSessionGroup(holders, socksConfig, initialCount, control);
         } catch (Throwable e) {
             onRpcRelayGroupFailure(key, socksConfig, "open", e);
@@ -432,7 +441,7 @@ public class SocksUdpUpstream extends Upstream {
         AtomicInteger failures = RPC_RELAY_GROUP_FAILURES.computeIfAbsent(key, k -> new AtomicInteger());
         int count = failures.incrementAndGet();
         DiagnosticMetrics.record("socks.udp.relay.group.open.count", 1D,
-                "result=fail,phase=" + phase + ",count=" + count);
+                "result=fail,phase=" + phase);
         if (count < socksConfig.getUdpRelayControlFailureThreshold()) {
             if (cause != null) {
                 log.warn("RX UDP relay group {} fail {}", phase, key, cause);
@@ -443,7 +452,7 @@ public class SocksUdpUpstream extends Upstream {
         int seconds = (int) Math.max(1L, (socksConfig.getUdpRelayControlBreakerOpenMillis() + 999L) / 1000L);
         RPC_RELAY_GROUP_BREAKER.put(key, Boolean.TRUE, CachePolicy.absolute(seconds));
         DiagnosticMetrics.record("socks.udp.relay.control.breaker.count", 1D,
-                "action=open,key=" + key);
+                "action=open");
         if (cause != null) {
             log.warn("RX UDP relay group breaker open after {} failures {}", count, key, cause);
         }
@@ -734,7 +743,7 @@ public class SocksUdpUpstream extends Upstream {
             registerControlCloseListener(channel, group, holder);
             recordGroupActiveCount(channel, group, "replenish");
             DiagnosticMetrics.record("socks.udp.porthop.replenish.count", 1D,
-                    "result=success,hops=" + group.holderCount());
+                    "result=success");
             success = true;
         } finally {
             group.finishReplenish(success, System.currentTimeMillis());
@@ -811,7 +820,7 @@ public class SocksUdpUpstream extends Upstream {
             registerControlCloseListener(channel, group, holder);
             recordGroupActiveCount(channel, group, "adaptive-scale-up");
             DiagnosticMetrics.record("socks.udp.porthop.adaptive.scale.count", 1D,
-                    "result=success,hops=" + group.holderCount());
+                    "result=success");
             success = true;
         } finally {
             group.finishScaleUp(success, System.currentTimeMillis());
@@ -829,7 +838,7 @@ public class SocksUdpUpstream extends Upstream {
             active.releaseActive();
             SocksUdpRelayHandler.onUpstreamSessionInvalidated(relay, relayAddresses, this);
             DiagnosticMetrics.record("socks.udp.session.invalidate.count", 1D,
-                    "reason=" + reason + ",pooled=" + active.hasPooledHolder() + ",hops=" + active.holders.length);
+                    "reason=" + reason + ",pooled=" + active.hasPooledHolder());
 
             if (!resetPooledLease) {
                 closeGroup(active, false);
@@ -845,10 +854,8 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private void recordGroupActiveCount(Channel channel, SessionGroup group, String action) {
-        int localPort = channel.localAddress() instanceof InetSocketAddress
-                ? ((InetSocketAddress) channel.localAddress()).getPort() : -1;
         DiagnosticMetrics.record("socks.udp.porthop.group.active.count", group.activeCount(),
-                "action=" + action + ",port=" + localPort);
+                "action=" + action);
     }
 
     private void closeAfterRelayClose(SessionHolder active) {
@@ -881,16 +888,16 @@ public class SocksUdpUpstream extends Upstream {
                 ok = facade.resetUdpRelay(active.lease.getRelayPort(), SocksRpcContract.rpcToken());
                 if (ok) {
                     DiagnosticMetrics.record("socks.udp.lease.pool.reset.count", 1D,
-                            "key=" + poolKey() + ",result=success");
+                            "result=success");
                     Socks5UpstreamPoolManager.INSTANCE.onUdpRpcSuccess(poolKey());
                 } else {
                     DiagnosticMetrics.record("socks.udp.lease.pool.reset.count", 1D,
-                            "key=" + poolKey() + ",result=fail");
+                            "result=fail");
                     Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", null);
                 }
             } catch (Throwable e) {
                 DiagnosticMetrics.record("socks.udp.lease.pool.reset.count", 1D,
-                        "key=" + poolKey() + ",result=error");
+                        "result=error");
                 Socks5UpstreamPoolManager.INSTANCE.onUdpRpcFailure(poolKey(), (SocksConfig) config, "reset", e);
             }
 
