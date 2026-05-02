@@ -284,6 +284,10 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             log.warn("SS UDP relay not ready for {}, drop packet from {}", dstEp, srcEp);
             return;
         }
+        int trafficBytes = packet.content().readableBytes();
+        if (sc.getUpstream() instanceof SocksUdpUpstream) {
+            ((SocksUdpUpstream) sc.getUpstream()).recordUdpTraffic(outbound, trafficBytes);
+        }
         InetSocketAddress udpRelayAddr = relayAddress(sc.getUpstream(), outbound);
         Sockets.UdpWriteResult result = Sockets.writeUdp(outbound, packet, "ss.udp",
                 udpMetricTags("frontend", "outbound", sc.getUpstream()));
@@ -632,6 +636,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                     log.warn("SS UDP discard invalid socks5 relay packet from {}, size={}", out.sender(), outBuf.readableBytes());
                     return;
                 }
+                socksUpstream.recordUdpTraffic(outbound, outBuf.readableBytes());
                 responseDst = UdpManager.socks5Decode(outBuf);
                 realDstEp = responseDst.socketAddress();
             } else {

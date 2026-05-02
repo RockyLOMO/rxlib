@@ -258,7 +258,9 @@ public class SocksConfig extends SocketConfig {
     }
 
     public boolean isUdpPortHoppingEnabled() {
-        return udpPortHopping != null && udpPortHopping.isEnabled() && udpPortHopping.getHopCount() > 1;
+        return udpPortHopping != null && udpPortHopping.isEnabled()
+                && (udpPortHopping.getHopCount() > 1
+                || (udpPortHopping.isAdaptive() && udpPortHopping.getMaxHopCount() > 1));
     }
 
     public void setUdpPortHoppingEnabled(boolean enabled) {
@@ -299,6 +301,72 @@ public class SocksConfig extends SocketConfig {
             udpPortHopping = new UdpPortHoppingConfig();
         }
         udpPortHopping.setMode(mode);
+    }
+
+    public boolean isUdpPortHoppingAdaptive() {
+        return udpPortHopping != null && udpPortHopping.isAdaptive();
+    }
+
+    public void setUdpPortHoppingAdaptive(boolean adaptive) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setAdaptive(adaptive);
+    }
+
+    public int getUdpPortHoppingMinHopCount() {
+        return udpPortHopping != null ? udpPortHopping.getMinHopCount() : 1;
+    }
+
+    public void setUdpPortHoppingMinHopCount(int minHopCount) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setMinHopCount(minHopCount);
+    }
+
+    public int getUdpPortHoppingMaxHopCount() {
+        return udpPortHopping != null ? udpPortHopping.getMaxHopCount() : 1;
+    }
+
+    public void setUdpPortHoppingMaxHopCount(int maxHopCount) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setMaxHopCount(maxHopCount);
+    }
+
+    public long getUdpPortHoppingAdaptiveScaleUpBytes() {
+        return udpPortHopping != null ? udpPortHopping.getAdaptiveScaleUpBytes() : 0L;
+    }
+
+    public void setUdpPortHoppingAdaptiveScaleUpBytes(long adaptiveScaleUpBytes) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setAdaptiveScaleUpBytes(adaptiveScaleUpBytes);
+    }
+
+    public long getUdpPortHoppingAdaptiveScaleUpActiveMillis() {
+        return udpPortHopping != null ? udpPortHopping.getAdaptiveScaleUpActiveMillis() : 0L;
+    }
+
+    public void setUdpPortHoppingAdaptiveScaleUpActiveMillis(long adaptiveScaleUpActiveMillis) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setAdaptiveScaleUpActiveMillis(adaptiveScaleUpActiveMillis);
+    }
+
+    public int getUdpPortHoppingAdaptiveScaleUpCooldownMillis() {
+        return udpPortHopping != null ? udpPortHopping.getAdaptiveScaleUpCooldownMillis() : 1000;
+    }
+
+    public void setUdpPortHoppingAdaptiveScaleUpCooldownMillis(int adaptiveScaleUpCooldownMillis) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setAdaptiveScaleUpCooldownMillis(adaptiveScaleUpCooldownMillis);
     }
 
     public boolean isUdpCompressEnabled() {

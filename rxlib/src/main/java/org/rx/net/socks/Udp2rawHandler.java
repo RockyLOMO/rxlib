@@ -261,7 +261,11 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             if (config.isDebug()) {
                 log.info("UDP2RAW[{}] server recv {}bytes {} => {}", config.getListenPort(), outBufCom.readableBytes(), dstEp, clientAddr);
             }
-            SocksUserTraffic.recordRead(relay, sc, outBufCom.readableBytes(), 1L);
+            int trafficBytes = outBufCom.readableBytes();
+            if (sc != null && sc.getUpstream() instanceof SocksUdpUpstream) {
+                ((SocksUdpUpstream) sc.getUpstream()).recordUdpTraffic(relay, trafficBytes);
+            }
+            SocksUserTraffic.recordRead(relay, sc, trafficBytes, 1L);
             relay.writeAndFlush(new DatagramPacket(outBufCom, clientAddr));
         } catch (Throwable e) {
             Bytes.release(outBufCom);
@@ -304,7 +308,11 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             if (config.isDebug()) {
                 log.info("UDP2RAW[{}] client send {}bytes {} => {}[{}]", config.getListenPort(), outBuf.readableBytes(), clientEp, targetAddr, upDstEp);
             }
-            SocksUserTraffic.recordWrite(relay, context, outBuf.readableBytes(), 1L);
+            int trafficBytes = outBuf.readableBytes();
+            if (upstream instanceof SocksUdpUpstream) {
+                ((SocksUdpUpstream) upstream).recordUdpTraffic(relay, trafficBytes);
+            }
+            SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
             relay.writeAndFlush(new DatagramPacket(outBuf, targetAddr));
         } catch (Throwable ex) {
             Bytes.release(outBuf);
@@ -335,7 +343,11 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         if (config.isDebug()) {
             log.info("UDP2RAW[{}] server send {}bytes {}[{}] => {}", config.getListenPort(), outBuf.readableBytes(), sender, clientEp, upDstEp);
         }
-        SocksUserTraffic.recordWrite(relay, context, outBuf.readableBytes(), 1L);
+        int trafficBytes = outBuf.readableBytes();
+        if (upstream instanceof SocksUdpUpstream) {
+            ((SocksUdpUpstream) upstream).recordUdpTraffic(relay, trafficBytes);
+        }
+        SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
         relay.writeAndFlush(new DatagramPacket(outBuf, upDstAddr));
     }
 

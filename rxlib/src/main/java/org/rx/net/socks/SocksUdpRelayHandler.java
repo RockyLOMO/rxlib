@@ -320,7 +320,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         SocksConfig config = server.config;
         ByteBuf outBuf = in.content();
 
-        if (sc != null && sc.getUpstream() instanceof SocksUdpUpstream && ((SocksUdpUpstream) sc.getUpstream()).getUdpRelayAddress(relay) != null) {
+        boolean socksUpstreamResponse = sc != null && sc.getUpstream() instanceof SocksUdpUpstream
+                && ((SocksUdpUpstream) sc.getUpstream()).getUdpRelayAddress(relay) != null;
+        if (socksUpstreamResponse) {
             // Response from next-hop SOCKS server: already has SOCKS5 header
             outBuf.retain();
         } else {
@@ -333,7 +335,11 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                     config.getListenPort(), outBuf.readableBytes(), sender, clientAddr);
         }
         DatagramPacket packet = new DatagramPacket(outBuf, clientAddr);
-        SocksUserTraffic.recordRead(relay, sc, packet.content().readableBytes(), 1L);
+        int trafficBytes = packet.content().readableBytes();
+        if (socksUpstreamResponse) {
+            ((SocksUdpUpstream) sc.getUpstream()).recordUdpTraffic(relay, trafficBytes);
+        }
+        SocksUserTraffic.recordRead(relay, sc, trafficBytes, 1L);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
                 udpMetricTags(relay, config, true, sc != null ? sc.getUpstream() : null));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
@@ -350,6 +356,14 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         ConcurrentMap<InetSocketAddress, SocksContext> newMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap();
         ConcurrentMap<InetSocketAddress, SocksContext> oldMap = relay.attr(ATTR_CTX_MAP).setIfAbsent(newMap);
         return oldMap != null ? oldMap : newMap;
+    }
+
+    private static void registerRelayAddressIfMissing(Channel relay, InetSocketAddress relayAddress, SocksContext context) {
+        ConcurrentMap<InetSocketAddress, SocksContext> current = relay.attr(ATTR_CTX_MAP).get();
+        if (current != null && current.get(relayAddress) == context) {
+            return;
+        }
+        ctxMap(relay).put(relayAddress, context);
     }
 
     private static ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap(Channel relay) {
@@ -631,8 +645,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
             SocksContext context, boolean retained) {
         Upstream upstream = context.getUpstream();
-        InetSocketAddress upDstAddr = upstream instanceof SocksUdpUpstream
-                ? ((SocksUdpUpstream) upstream).selectUdpRelayAddress(relay)
+        SocksUdpUpstream socksUpstream = upstream instanceof SocksUdpUpstream ? (SocksUdpUpstream) upstream : null;
+        InetSocketAddress upDstAddr = socksUpstream != null
+                ? socksUpstream.selectUdpRelayAddress(relay)
                 : resolveUpstreamTarget(relay, upstream);
         if (upDstAddr == null) {
             if (retained) {
@@ -645,8 +660,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             return;
         }
 
-        if (upstream instanceof SocksUdpUpstream) {
+        if (socksUpstream != null) {
             inBuf.resetReaderIndex();
+            registerRelayAddressIfMissing(relay, upDstAddr, context);
         }
         EndpointTracer.UDP.link(clientOriginAddr, relay);
         if (!retained) {
@@ -658,7 +674,11 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                     config.getListenPort(), inBuf.readableBytes(), sender, upDstAddr, dstEp);
         }
         DatagramPacket packet = new DatagramPacket(inBuf, upDstAddr);
-        SocksUserTraffic.recordWrite(relay, context, packet.content().readableBytes(), 1L);
+        int trafficBytes = packet.content().readableBytes();
+        if (socksUpstream != null) {
+            socksUpstream.recordUdpTraffic(relay, trafficBytes);
+        }
+        SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
                 udpMetricTags(relay, config, false, upstream));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {

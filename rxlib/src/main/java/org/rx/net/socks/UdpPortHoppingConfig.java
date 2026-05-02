@@ -19,6 +19,21 @@ public class UdpPortHoppingConfig implements Serializable {
     private boolean enabled;
     private byte hopCount = 1;
     private byte minActiveHops = 1;
+    /**
+     * 自适应模式从 minHopCount 起步，达到阈值后逐步增加到 maxHopCount。
+     */
+    private boolean adaptive;
+    private byte minHopCount = 1;
+    private byte maxHopCount = 1;
+    /**
+     * 双向累计 UDP 字节达到该步长后扩容 1 个 hop；0 表示不按流量扩容。
+     */
+    private long adaptiveScaleUpBytes;
+    /**
+     * group 活跃时长达到该步长后扩容 1 个 hop；0 表示不按时间扩容。
+     */
+    private long adaptiveScaleUpActiveMillis;
+    private int adaptiveScaleUpCooldownMillis = 1000;
     private UdpPortHoppingMode mode = UdpPortHoppingMode.ROUND_ROBIN;
     private int replenishDelayMillis = 1000;
     /**
@@ -28,13 +43,49 @@ public class UdpPortHoppingConfig implements Serializable {
 
     public void setHopCount(int hopCount) {
         this.hopCount = (byte) Math.max(1, Math.min(MAX_HOP_COUNT, hopCount));
+        if (maxHopCount < this.hopCount) {
+            maxHopCount = this.hopCount;
+        }
         if (minActiveHops > this.hopCount) {
             minActiveHops = this.hopCount;
         }
     }
 
     public void setMinActiveHops(int minActiveHops) {
-        this.minActiveHops = (byte) Math.max(1, Math.min(hopCount, minActiveHops));
+        this.minActiveHops = (byte) Math.max(1, Math.min(MAX_HOP_COUNT, minActiveHops));
+    }
+
+    public void setAdaptive(boolean adaptive) {
+        this.adaptive = adaptive;
+        if (adaptive && maxHopCount < hopCount) {
+            maxHopCount = hopCount;
+        }
+    }
+
+    public void setMinHopCount(int minHopCount) {
+        this.minHopCount = (byte) Math.max(1, Math.min(MAX_HOP_COUNT, minHopCount));
+        if (maxHopCount < this.minHopCount) {
+            maxHopCount = this.minHopCount;
+        }
+    }
+
+    public void setMaxHopCount(int maxHopCount) {
+        this.maxHopCount = (byte) Math.max(1, Math.min(MAX_HOP_COUNT, maxHopCount));
+        if (minHopCount > this.maxHopCount) {
+            minHopCount = this.maxHopCount;
+        }
+    }
+
+    public void setAdaptiveScaleUpBytes(long adaptiveScaleUpBytes) {
+        this.adaptiveScaleUpBytes = Math.max(0L, adaptiveScaleUpBytes);
+    }
+
+    public void setAdaptiveScaleUpActiveMillis(long adaptiveScaleUpActiveMillis) {
+        this.adaptiveScaleUpActiveMillis = Math.max(0L, adaptiveScaleUpActiveMillis);
+    }
+
+    public void setAdaptiveScaleUpCooldownMillis(int adaptiveScaleUpCooldownMillis) {
+        this.adaptiveScaleUpCooldownMillis = Math.max(0, adaptiveScaleUpCooldownMillis);
     }
 
     public void setMode(UdpPortHoppingMode mode) {
