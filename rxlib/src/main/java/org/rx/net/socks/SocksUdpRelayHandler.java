@@ -5,6 +5,7 @@ import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Tasks;
 import org.rx.core.cache.MemoryCache;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
@@ -473,30 +474,52 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             if (context == null) {
                 context = SocksContext.getCtx(clientOriginAddr, dstEp);
                 SocksUserTraffic.attachFromChannel(context, relay);
-                server.publishEvent(server.onUdpRoute, context);
+                final SocksContext newContext = context;
+                Tasks.runAsync(() -> {
+                    server.publishEvent(server.onUdpRoute, newContext);
+                    return newContext;
+                }).whenComplete((routeContext, routeError) -> runOnRelayLoop(relay, () -> {
+                    if (routeError != null) {
+                        onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, routeError);
+                        return;
+                    }
+                    initState.context = routeContext;
+                    continueRouteInit(relay, dstEp, routeContext, initState, ctxMap, routeMap, routeInitMap);
+                }));
+                return;
             }
+            continueRouteInit(relay, dstEp, context, initState, ctxMap, routeMap, routeInitMap);
+        } catch (Throwable e) {
+            runOnRelayLoop(relay, () -> onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, e));
+        }
+    }
+
+    private void continueRouteInit(Channel relay, UnresolvedEndpoint dstEp, SocksContext context,
+            RouteInitState initState, ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
+            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
+            ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
+        try {
             Upstream upstream = context.getUpstream();
             if (upstream == null) {
                 throw new IllegalStateException("UDP route upstream is null for " + dstEp);
             }
-            final SocksContext finalContext = context;
             CompletableFuture<Void> readyFuture = upstream.initChannelAsync(relay);
             readyFuture.whenComplete((v, error) -> runOnRelayLoop(relay, () -> {
                 if (error != null) {
                     onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, error);
                     return;
                 }
-                resolveUpstreamTargetAsync(relay, finalContext).whenComplete((upDstAddr, resolveError) ->
+                resolveUpstreamTargetAsync(relay, context).whenComplete((upDstAddr, resolveError) ->
                         runOnRelayLoop(relay, () -> {
                             if (resolveError != null) {
                                 onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, resolveError);
                                 return;
                             }
-                            onRouteInitSuccess(relay, dstEp, upDstAddr, finalContext, initState, ctxMap, routeMap, routeInitMap);
+                            onRouteInitSuccess(relay, dstEp, upDstAddr, context, initState, ctxMap, routeMap, routeInitMap);
                         }));
             }));
         } catch (Throwable e) {
-            runOnRelayLoop(relay, () -> onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, e));
+            onRouteInitFailure(relay, dstEp, initState, routeMap, routeInitMap, e);
         }
     }
 
@@ -579,6 +602,29 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             Bytes.release(packet.content);
         }
         initState.pendingBytes = 0;
+    }
+
+    static void clearRelayState(Channel relay) {
+        ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+        if (ctxMap != null) {
+            ctxMap.clear();
+        }
+        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        if (routeMap != null) {
+            routeMap.clear();
+        }
+        ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap = relay.attr(ATTR_ROUTE_INIT_MAP).get();
+        if (routeInitMap != null) {
+            for (RouteInitState state : routeInitMap.values()) {
+                releasePending(state);
+            }
+            routeInitMap.clear();
+        }
+        ConcurrentMap<UnresolvedEndpoint, InetSocketAddress> directTargetMap = relay.attr(ATTR_DIRECT_TARGET_MAP).get();
+        if (directTargetMap != null) {
+            directTargetMap.clear();
+        }
+        relay.attr(ATTR_LAST_ROUTE).set(null);
     }
 
     private void writeClientPacket(Channel relay, ByteBuf inBuf, InetSocketAddress sender,

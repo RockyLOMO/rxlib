@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.Sockets;
 import org.rx.net.nameserver.NameserverConfig;
 
 import java.io.Serializable;
@@ -32,6 +33,9 @@ public class RSSConf {
                     server.setWeight(obj.getInteger("weight"));
                     Object endpoint = obj.get("endpoint");
                     server.setEndpoint(readSocksServerEndpoint(endpoint));
+                    server.setUdp2raw(Boolean.TRUE.equals(obj.getBoolean("udp2raw")));
+                    server.setTcpClient(readSocksServerEndpoint(obj.get("tcpClient")));
+                    server.setUdp2rawClient(readSocketAddress(obj.get("udp2rawClient")));
                     return server;
                 });
     }
@@ -49,6 +53,8 @@ public class RSSConf {
     public int udpTimeoutSeconds = 60 * 10;
     public int rpcMinSize = 2;
     public int rpcMaxSize = 6;
+    // RSS Server RPC 固定端口；0 表示按同 host 首个 socksServer 端口 +1 推导。
+    public int rpcPort;
     public int rpcRequestTimeoutMillis = 3000;
     public int upstreamHealthCheckSeconds = RssClient.DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS;
     public int upstreamHealthFailureThreshold = RssClient.DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD;
@@ -69,12 +75,6 @@ public class RSSConf {
     // rrp
     public String rrpToken;
     public Integer rrpPort;
-
-    public List<AuthenticEndpoint> udp2rawSocksServers;
-    public InetSocketAddress udp2rawClient;
-    // 传递后tcp走kcptun
-    public AuthenticEndpoint kcptunClient;
-    public AuthenticEndpoint hysteriaClient;
 
     // route
     public RouteConf route = new RouteConf();
@@ -110,6 +110,19 @@ public class RSSConf {
         return null;
     }
 
+    private static InetSocketAddress readSocketAddress(Object endpoint) {
+        if (endpoint == null) {
+            return null;
+        }
+        if (endpoint instanceof InetSocketAddress) {
+            return (InetSocketAddress) endpoint;
+        }
+        if (endpoint instanceof String) {
+            return Sockets.parseEndpoint((String) endpoint);
+        }
+        return null;
+    }
+
     @Getter
     @Setter
     @ToString
@@ -119,6 +132,12 @@ public class RSSConf {
         public String id;
         public Integer weight;
         public AuthenticEndpoint endpoint;
+        // 标记该上游作为 udp2raw 入口上游。
+        public boolean udp2raw;
+        // TCP 走 kcptun/hysteria 等客户端时仅覆盖 endpoint 地址；账号密码默认沿用当前 socksServer。
+        public AuthenticEndpoint tcpClient;
+        // UDP 固定 udp2raw 目标预留字段；当前 UDP 仍按 SOCKS5 UDP 路由处理。
+        public InetSocketAddress udp2rawClient;
 
         public SocksServer() {
         }

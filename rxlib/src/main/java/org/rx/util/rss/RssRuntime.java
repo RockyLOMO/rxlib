@@ -45,13 +45,13 @@ import static org.rx.util.rss.RssClient.*;
 
 @Slf4j
 final class RssRuntime implements AutoCloseable {
-    final boolean enableUdp2raw;
     final int port;
     final int udp2rawPort;
     final GeoManager geoMgr = GeoManager.INSTANCE;
     final AtomicReference<RandomList<UpstreamSupport>> socksServersRef = new AtomicReference<>();
     final AtomicReference<RandomList<UpstreamSupport>> udp2rawSocksServersRef = new AtomicReference<>();
     final AtomicReference<Map<String, RandomList<UpstreamSupport>>> userSocksServersRef = new AtomicReference<>();
+    final AtomicReference<Map<String, RandomList<UpstreamSupport>>> udp2rawUserSocksServersRef = new AtomicReference<>();
     final RssAuthenticator authenticator;
     final RssRpcApp app;
     final Map<String, ShadowServerRef> shadowServers = new LinkedHashMap<>();
@@ -67,8 +67,7 @@ final class RssRuntime implements AutoCloseable {
     volatile RssInServer inUdp2rawServer;
     volatile RSSConf activeConf;
 
-    RssRuntime(Map<String, String> options, int port, RSSConf conf) {
-        enableUdp2raw = "1".equals(options.get("udp2raw"));
+    RssRuntime(int port, RSSConf conf) {
         this.port = port;
         udp2rawPort = port + 10;
 
@@ -76,6 +75,7 @@ final class RssRuntime implements AutoCloseable {
         socksServersRef.set(snapshot.socksServers);
         udp2rawSocksServersRef.set(snapshot.udp2rawSocksServers);
         userSocksServersRef.set(snapshot.userSocksServers);
+        udp2rawUserSocksServersRef.set(snapshot.udp2rawUserSocksServers);
         dnsInterceptors.setDelegate(snapshot.dnsInterceptors);
         upstreamSnapshot = snapshot;
         startUpstreamHealthCheck(snapshot);
@@ -89,7 +89,7 @@ final class RssRuntime implements AutoCloseable {
 
         authenticator = new RssAuthenticator(conf.shadowUsers, conf.socksPwd.trim(), conf.memoryRetentionHours);
         inServer = createPrimaryInServer(conf);
-        if (enableUdp2raw) {
+        if (hasUdp2rawSocksServer(conf)) {
             inUdp2rawServer = createUdp2rawInServer(conf);
         }
         app = new RssRpcApp(inServer.server);
@@ -171,6 +171,7 @@ final class RssRuntime implements AutoCloseable {
             socksServersRef.set(nextUpstream.socksServers);
             udp2rawSocksServersRef.set(nextUpstream.udp2rawSocksServers);
             userSocksServersRef.set(nextUpstream.userSocksServers);
+            udp2rawUserSocksServersRef.set(nextUpstream.udp2rawUserSocksServers);
             upstreamSnapshot = nextUpstream;
             startUpstreamHealthCheck(nextUpstream);
             nextUpstream = null;
@@ -310,7 +311,9 @@ final class RssRuntime implements AutoCloseable {
         }
         for (ShadowServerRef ref : shadowServers.values()) {
             count += ref.server.activeChannelCount();
-            count += ref.svrSupport.activeConnectionCount();
+            for (UpstreamSupport support : ref.routePlan.supports.readOnlySnapshot()) {
+                count += support.activeConnectionCount();
+            }
         }
         return count;
     }
@@ -357,7 +360,8 @@ final class RssRuntime implements AutoCloseable {
     private RssInServer createUdp2rawInServer(RSSConf conf, boolean uniqueLocalAddress) {
         SocksConfig inTunConf = new SocksConfig(resolveRuntimeListenAddress(conf, udp2rawPort, "rss-in-tun-", uniqueLocalAddress));
         configureInboundConfig(conf, inTunConf, true);
-        return createInSvr(conf, inTunConf, authenticator, this::firstRoute, udp2rawSocksServersRef, null, geoMgr);
+        return createInSvr(conf, inTunConf, authenticator, this::firstRoute,
+                udp2rawSocksServersRef, udp2rawUserSocksServersRef, geoMgr);
     }
 
     private SocketAddress resolveRuntimeListenAddress(RSSConf conf, int listenPort, String localNamePrefix, boolean uniqueLocalAddress) {
@@ -378,7 +382,7 @@ final class RssRuntime implements AutoCloseable {
                 closeInServerQuietly(plan.oldUdp2rawServer);
             }
             plan.newInServer = createPrimaryInServer(conf, true);
-            if (enableUdp2raw) {
+            if (hasUdp2rawSocksServer(conf)) {
                 plan.newUdp2rawServer = createUdp2rawInServer(conf, true);
             }
             return plan;
@@ -421,7 +425,7 @@ final class RssRuntime implements AutoCloseable {
         }
         try {
             RssInServer restoredInServer = createPrimaryInServer(activeConf, true);
-            RssInServer restoredUdp2rawServer = enableUdp2raw ? createUdp2rawInServer(activeConf, true) : null;
+            RssInServer restoredUdp2rawServer = hasUdp2rawSocksServer(activeConf) ? createUdp2rawInServer(activeConf, true) : null;
             inServer = restoredInServer;
             inUdp2rawServer = restoredUdp2rawServer;
             app.setServer(restoredInServer.server);
@@ -464,7 +468,8 @@ final class RssRuntime implements AutoCloseable {
         server.outConfRef.set(createOutboundConfig(conf, server.inConf));
     }
 
-    private ShadowServersPlan buildShadowServers(RSSConf conf, RssInServer targetInServer, RssInServer targetUdp2rawServer, boolean forceRebuild) {
+    private ShadowServersPlan buildShadowServers(RSSConf conf, RssInServer targetInServer,
+                                                 RssInServer targetUdp2rawServer, boolean forceRebuild) {
         ShadowServersPlan plan = new ShadowServersPlan();
         List<ShadowRestart> samePortRestarts = new ArrayList<>();
         try {
@@ -472,19 +477,18 @@ final class RssRuntime implements AutoCloseable {
             SocketAddress inUdp2rawAddress = targetUdp2rawServer == null ? null : targetUdp2rawServer.inConf.getListenAddress();
             for (ShadowUser usr : conf.shadowUsers) {
                 String username = usr.getUsername();
-                AuthenticEndpoint endpoint = resolveShadowEndpoint(inSvrAddress, inUdp2rawAddress,
-                        conf.hysteriaClient, username, usr.getSocksUser());
+                ShadowRoutePlan routePlan = resolveShadowRoutePlan(conf, usr, inSvrAddress, inUdp2rawAddress);
                 ShadowServerRef oldRef = shadowServers.get(username);
-                if (oldRef != null && oldRef.matches(usr, endpoint, forceRebuild)) {
+                if (oldRef != null && oldRef.matches(usr, routePlan.signature, forceRebuild)) {
                     plan.next.put(username, oldRef);
                     continue;
                 }
 
                 if (oldRef != null && oldRef.ssPort == usr.getSsPort()) {
-                    samePortRestarts.add(new ShadowRestart(usr, oldRef, endpoint));
+                    samePortRestarts.add(new ShadowRestart(usr, oldRef, routePlan));
                     continue;
                 }
-                ShadowServerRef ref = createShadowServer(conf, usr, endpoint);
+                ShadowServerRef ref = createShadowServer(conf, usr, routePlan);
                 plan.created.add(ref);
                 plan.next.put(username, ref);
             }
@@ -492,7 +496,7 @@ final class RssRuntime implements AutoCloseable {
                 // 同端口密码变化无法双实例并行绑定，只能接受短暂不可用窗口。
                 closeShadowServerQuietly(restart.oldRef);
                 plan.stopped.add(restart);
-                ShadowServerRef ref = createShadowServer(conf, restart.user, restart.endpoint);
+                ShadowServerRef ref = createShadowServer(conf, restart.user, restart.routePlan);
                 plan.created.add(ref);
                 plan.next.put(restart.user.getUsername(), ref);
             }
@@ -529,7 +533,7 @@ final class RssRuntime implements AutoCloseable {
             user.setUsername(oldRef.username);
             user.setSsPort(oldRef.ssPort);
             user.setSsPwd(oldRef.ssPwd);
-            ShadowServerRef restored = createShadowServer(activeConf, user, oldRef.endpoint);
+            ShadowServerRef restored = createShadowServer(activeConf, user, oldRef.routePlan);
             shadowServers.put(restored.username, restored);
         } catch (Throwable e) {
             log.error("restore shadow server failed user={} port={}", oldRef.username, oldRef.ssPort, e);
@@ -548,7 +552,25 @@ final class RssRuntime implements AutoCloseable {
         shadowServers.putAll(next);
     }
 
-    private ShadowServerRef createShadowServer(RSSConf conf, ShadowUser usr, AuthenticEndpoint endpoint) {
+    private ShadowRoutePlan resolveShadowRoutePlan(RSSConf conf, ShadowUser usr,
+                                                   SocketAddress inSvrAddress, SocketAddress inUdp2rawAddress) {
+        ServerRouteMode mode = userRouteMode(usr, conf.socksServers);
+        if (mode == ServerRouteMode.TCP_CLIENT) {
+            RandomList<UpstreamSupport> directServers = buildUserTcpClientServers(usr, conf.socksServers);
+            if (directServers.isEmpty()) {
+                throw new InvalidException("No tcpClient upstream user={}", usr.getUsername());
+            }
+            return ShadowRoutePlan.direct(directServers);
+        }
+        if (mode == ServerRouteMode.UDP2RAW && inUdp2rawAddress == null) {
+            throw new InvalidException("No udp2raw in server user={}", usr.getUsername());
+        }
+        AuthenticEndpoint endpoint = resolveShadowEndpoint(inSvrAddress, inUdp2rawAddress,
+                usr.getUsername(), mode == ServerRouteMode.UDP2RAW);
+        return ShadowRoutePlan.viaLocal(endpoint);
+    }
+
+    private ShadowServerRef createShadowServer(RSSConf conf, ShadowUser usr, ShadowRoutePlan routePlan) {
         ShadowsocksConfig ssConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(usr.getSsPort()),
                 CipherKind.AES_256_GCM.getCipherName(), usr.getSsPwd());
         configureShadowConfig(conf, ssConf);
@@ -556,10 +578,10 @@ final class RssRuntime implements AutoCloseable {
         ShadowsocksServer ssSvr = new ShadowsocksServer(ssConf);
         SocksConfig toInConf = new SocksConfig();
         toInConf.setOptimalSettings(RssSupport.IN_OPS);
-        UpstreamSupport svrSupport = new UpstreamSupport(endpoint, null);
-        ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(), endpoint, ssSvr, svrSupport);
+        ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(), routePlan, ssSvr);
         ssSvr.onTcpRoute.replace((s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
+            UpstreamSupport svrSupport = routePlan.nextSupport();
             if (rssConf.hasDebugFlag()) {
                 log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
@@ -567,6 +589,7 @@ final class RssRuntime implements AutoCloseable {
         });
         ssSvr.onUdpRoute.replace((s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
+            UpstreamSupport svrSupport = routePlan.nextSupport();
             if (rssConf.hasDebugFlag()) {
                 log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
@@ -608,42 +631,70 @@ final class RssRuntime implements AutoCloseable {
         }
     }
 
+    static final class ShadowRoutePlan {
+        final String signature;
+        final RandomList<UpstreamSupport> supports;
+
+        private ShadowRoutePlan(String signature, RandomList<UpstreamSupport> supports) {
+            this.signature = signature;
+            this.supports = supports;
+        }
+
+        static ShadowRoutePlan viaLocal(AuthenticEndpoint endpoint) {
+            RandomList<UpstreamSupport> supports = new RandomList<>();
+            UpstreamSupport support = new UpstreamSupport(endpoint, null);
+            support.setConfiguredWeight(1);
+            supports.add(support, 1);
+            return new ShadowRoutePlan(toJsonString(endpoint), supports);
+        }
+
+        static ShadowRoutePlan direct(RandomList<UpstreamSupport> supports) {
+            List<String> signatureParts = new ArrayList<>();
+            for (UpstreamSupport support : supports.readOnlySnapshot()) {
+                signatureParts.add(support.getConfiguredWeight() + "@" + support.getEndpoint());
+            }
+            return new ShadowRoutePlan(toJsonString(signatureParts), supports);
+        }
+
+        UpstreamSupport nextSupport() {
+            return supports.next();
+        }
+    }
+
     static final class ShadowServerRef {
         final String username;
         final int ssPort;
         final String ssPwd;
-        final AuthenticEndpoint endpoint;
+        final ShadowRoutePlan routePlan;
         final ShadowsocksServer server;
-        final UpstreamSupport svrSupport;
 
-        ShadowServerRef(String username, int ssPort, String ssPwd, AuthenticEndpoint endpoint,
-                        ShadowsocksServer server, UpstreamSupport svrSupport) {
+        ShadowServerRef(String username, int ssPort, String ssPwd, ShadowRoutePlan routePlan,
+                        ShadowsocksServer server) {
             this.username = username;
             this.ssPort = ssPort;
             this.ssPwd = ssPwd;
-            this.endpoint = endpoint;
+            this.routePlan = routePlan;
             this.server = server;
-            this.svrSupport = svrSupport;
         }
 
-        boolean matches(ShadowUser user, AuthenticEndpoint nextEndpoint, boolean forceRebuild) {
+        boolean matches(ShadowUser user, String nextRouteSignature, boolean forceRebuild) {
             return !forceRebuild
                     && user != null
                     && ssPort == user.getSsPort()
                     && Strings.hashEquals(ssPwd, user.getSsPwd())
-                    && Strings.hashEquals(toJsonString(endpoint), toJsonString(nextEndpoint));
+                    && Strings.hashEquals(routePlan.signature, nextRouteSignature);
         }
     }
 
     static final class ShadowRestart {
         final ShadowUser user;
         final ShadowServerRef oldRef;
-        final AuthenticEndpoint endpoint;
+        final ShadowRoutePlan routePlan;
 
-        ShadowRestart(ShadowUser user, ShadowServerRef oldRef, AuthenticEndpoint endpoint) {
+        ShadowRestart(ShadowUser user, ShadowServerRef oldRef, ShadowRoutePlan routePlan) {
             this.user = user;
             this.oldRef = oldRef;
-            this.endpoint = endpoint;
+            this.routePlan = routePlan;
         }
     }
 
@@ -713,8 +764,9 @@ final class RssRuntime implements AutoCloseable {
         final RandomList<UpstreamSupport> udp2rawSocksServers;
         final RandomList<DnsServer.ResolveInterceptor> dnsInterceptors;
         final Map<String, RandomList<UpstreamSupport>> userSocksServers;
+        final Map<String, RandomList<UpstreamSupport>> udp2rawUserSocksServers;
         final List<RSSConf.SocksServer> configuredSocksServers;
-        final List<AuthenticEndpoint> configuredUdp2rawSocksServers;
+        final List<RSSConf.SocksServer> configuredUdp2rawSocksServers;
         volatile ScheduledFuture<?> healthTask;
         volatile long closeCheckMillis;
         volatile long closeDeadlineMillis;
@@ -725,6 +777,7 @@ final class RssRuntime implements AutoCloseable {
                          RandomList<UpstreamSupport> udp2rawSocksServers,
                          RandomList<DnsServer.ResolveInterceptor> dnsInterceptors) {
             this(socksServers, udp2rawSocksServers, dnsInterceptors,
+                    Collections.<String, RandomList<UpstreamSupport>>emptyMap(),
                     Collections.<String, RandomList<UpstreamSupport>>emptyMap(), null, null);
         }
 
@@ -735,21 +788,25 @@ final class RssRuntime implements AutoCloseable {
                          List<AuthenticEndpoint> configuredUdp2rawSocksServers) {
             this(socksServers, udp2rawSocksServers, dnsInterceptors,
                     Collections.<String, RandomList<UpstreamSupport>>emptyMap(),
-                    wrapConfiguredSocksEndpoints(configuredSocksServers), configuredUdp2rawSocksServers);
+                    Collections.<String, RandomList<UpstreamSupport>>emptyMap(),
+                    wrapConfiguredSocksEndpoints(configuredSocksServers),
+                    wrapConfiguredSocksEndpoints(configuredUdp2rawSocksServers));
         }
 
         UpstreamSnapshot(RandomList<UpstreamSupport> socksServers,
                          RandomList<UpstreamSupport> udp2rawSocksServers,
                          RandomList<DnsServer.ResolveInterceptor> dnsInterceptors,
                          Map<String, RandomList<UpstreamSupport>> userSocksServers,
+                         Map<String, RandomList<UpstreamSupport>> udp2rawUserSocksServers,
                          List<RSSConf.SocksServer> configuredSocksServers,
-                         List<AuthenticEndpoint> configuredUdp2rawSocksServers) {
+                         List<RSSConf.SocksServer> configuredUdp2rawSocksServers) {
             this.socksServers = socksServers;
             this.udp2rawSocksServers = udp2rawSocksServers;
             this.dnsInterceptors = dnsInterceptors;
             this.userSocksServers = copyUserSocksServers(userSocksServers);
+            this.udp2rawUserSocksServers = copyUserSocksServers(udp2rawUserSocksServers);
             this.configuredSocksServers = copyConfiguredSocksServers(configuredSocksServers);
-            this.configuredUdp2rawSocksServers = copyConfiguredEndpoints(configuredUdp2rawSocksServers);
+            this.configuredUdp2rawSocksServers = copyConfiguredSocksServers(configuredUdp2rawSocksServers);
         }
 
         private static Map<String, RandomList<UpstreamSupport>> copyUserSocksServers(Map<String, RandomList<UpstreamSupport>> userSocksServers) {
@@ -777,12 +834,6 @@ final class RssRuntime implements AutoCloseable {
             return servers;
         }
 
-        private static List<AuthenticEndpoint> copyConfiguredEndpoints(List<AuthenticEndpoint> endpoints) {
-            if (endpoints == null || endpoints.isEmpty()) {
-                return Collections.emptyList();
-            }
-            return Collections.unmodifiableList(new ArrayList<AuthenticEndpoint>(endpoints));
-        }
     }
 
     static final class RrpServerPlan {

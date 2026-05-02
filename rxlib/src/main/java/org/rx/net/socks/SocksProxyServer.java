@@ -279,14 +279,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }
             relay.attr(Udp2rawHandler.ATTR_CLIENT_ADDR).set(clientAddr);
         } else {
-            ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(SocksUdpRelayHandler.ATTR_CTX_MAP).get();
-            if (ctxMap != null) {
-                ctxMap.clear();
-            }
-            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(SocksUdpRelayHandler.ATTR_ROUTE_MAP).get();
-            if (routeMap != null) {
-                routeMap.clear();
-            }
+            SocksUdpRelayHandler.clearRelayState(relay);
             relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientAddr);
         }
         relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(null);

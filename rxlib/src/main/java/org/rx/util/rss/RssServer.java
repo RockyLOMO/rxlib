@@ -29,12 +29,16 @@ public final class RssServer {
     }
 
     public static void launch(Map<String, String> options, int port) {
-        boolean enableUdp2raw = "1".equals(options.get("udp2raw"));
-        int udp2rawPort = port + 10;
+        Integer udp2rawPort = Reflects.convertQuietly(options.get("udp2rawPort"), Integer.class);
+        Integer rpcPort = Reflects.convertQuietly(options.get("rpcPort"), Integer.class);
         boolean debugFlag = "1".equals(options.get("debug"));
         AuthenticEndpoint shadowUser = Reflects.convertQuietly(options.get("shadowUser"), AuthenticEndpoint.class);
         if (shadowUser == null) {
             log.info("Invalid shadowUser arg");
+            return;
+        }
+        if (rpcPort != null && (rpcPort <= 0 || rpcPort > 65535)) {
+            log.info("Invalid rpcPort arg");
             return;
         }
         SocksUser ssUser = new SocksUser(shadowUser.getUsername());
@@ -52,7 +56,7 @@ public final class RssServer {
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-        if (enableUdp2raw) {
+        if (udp2rawPort != null && udp2rawPort > 0) {
             SocksConfig outTunConf = Sys.deepClone(outConf);
             outTunConf.setDebug(debugFlag);
             outTunConf.setListenAddress(Sockets.newAnyEndpoint(udp2rawPort));
@@ -62,7 +66,8 @@ public final class RssServer {
             outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         }
 
-        RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(port + 1));
+        int actualRpcPort = rpcPort == null ? port + 1 : rpcPort;
+        RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(actualRpcPort));
         rpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
         RssRpcApp app = new RssRpcApp(outSvr);
         Remoting.register(app, rpcConf);

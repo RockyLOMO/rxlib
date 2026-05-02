@@ -435,7 +435,7 @@ public class RssTest extends AbstractTester {
     @Test
     public void resolveShadowEndpoint_TunFallsBackToSocksServerWithoutUdp2raw() {
         SocketAddress inSvrAddress = new LocalAddress("rss-in-6885");
-        AuthenticEndpoint endpoint = RssClient.resolveShadowEndpoint(inSvrAddress, null, null, "ss-user", "tun-a");
+        AuthenticEndpoint endpoint = RssClient.resolveShadowEndpoint(inSvrAddress, null, "ss-user", true);
 
         assertSame(inSvrAddress, endpoint.getEndpoint());
         assertEquals("ss-user", endpoint.getParameters().get(org.rx.net.socks.SocksConnectionTagRegistry.PARAM_NAME));
@@ -485,9 +485,9 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
-    public void routeUpstream_KcptunReturnsIndependentSupportWithSelectedFacade() {
+    public void routeUpstream_TcpClientReturnsIndependentSupportWithSelectedFacade() {
         SocksConfig config = new SocksConfig();
-        AuthenticEndpoint kcp = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 4093), "k", "p");
+        AuthenticEndpoint tcpClient = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 4093), null, null);
         AuthenticEndpoint upstream = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1090), "u", "p");
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
@@ -504,12 +504,14 @@ public class RssTest extends AbstractTester {
             }
         };
         UpstreamSupport next = new UpstreamSupport(upstream, facade);
-        config.setKcptunClient(kcp);
+        next.setTcpClient(tcpClient);
 
         UpstreamSupport routed = RssClient.routeUpstream(config, next);
 
         assertTrue(routed != next);
-        assertSame(kcp, routed.getEndpoint());
+        assertEquals(new InetSocketAddress("127.0.0.1", 4093), routed.getEndpoint().getEndpoint());
+        assertEquals("u", routed.getEndpoint().getUsername());
+        assertEquals("p", routed.getEndpoint().getPassword());
         assertSame(facade, routed.getFacade());
     }
 
@@ -631,12 +633,12 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
-    public void routeUpstream_KcptunTracksSelectedServerConnections() {
+    public void routeUpstream_TcpClientTracksSelectedServerConnections() {
         SocksConfig config = new SocksConfig();
-        AuthenticEndpoint kcp = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 4093), "k", "p");
+        AuthenticEndpoint tcpClient = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 4093), "k", "p");
         AuthenticEndpoint upstream = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1090), "u", "p");
         UpstreamSupport next = new UpstreamSupport(upstream, null);
-        config.setKcptunClient(kcp);
+        next.setTcpClient(tcpClient);
 
         UpstreamSupport routed = RssClient.routeUpstream(config, next);
         routed.retainConnection();
@@ -892,6 +894,70 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void buildRpcEndpointsByServerHost_ReusesNormalRpcPortForSameHostTunServer() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer normal = new RSSConf.SocksServer("main", 9,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9900"));
+        RSSConf.SocksServer tun = new RSSConf.SocksServer("main-tun", 1,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9910"));
+        tun.setUdp2raw(true);
+        tun.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        conf.socksServers = Arrays.asList(normal, tun);
+
+        Map<String, InetSocketAddress> endpoints = RssClient.buildRpcEndpointsByServerHost(conf);
+        InetSocketAddress tunRpc = RssClient.resolveRpcEndpoint(conf, tun.getEndpoint().requireEndpoint(), endpoints);
+
+        assertEquals("202.91.34.9", tunRpc.getHostString());
+        assertEquals(9901, tunRpc.getPort());
+    }
+
+    @Test
+    public void buildRpcEndpointsByServerHost_UsesConfiguredFixedRpcPort() {
+        RSSConf conf = validRssConf();
+        conf.rpcPort = 9901;
+        RSSConf.SocksServer normal = new RSSConf.SocksServer("main", 9,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9900"));
+        RSSConf.SocksServer tun = new RSSConf.SocksServer("main-tun", 1,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9910"));
+        tun.setUdp2raw(true);
+        tun.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        conf.socksServers = Arrays.asList(normal, tun);
+
+        Map<String, InetSocketAddress> endpoints = RssClient.buildRpcEndpointsByServerHost(conf);
+
+        assertEquals(9901, RssClient.resolveRpcEndpoint(conf, normal.getEndpoint().requireEndpoint(), endpoints).getPort());
+        assertEquals(9901, RssClient.resolveRpcEndpoint(conf, tun.getEndpoint().requireEndpoint(), endpoints).getPort());
+    }
+
+    @Test
+    public void buildUpstreams_ReusesRpcFacadeAndAggregatesDnsWeightForSameHost() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer main = new RSSConf.SocksServer("main", 9,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9900"));
+        RSSConf.SocksServer backup = new RSSConf.SocksServer("backup", 1,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9902"));
+        RSSConf.SocksServer tun = new RSSConf.SocksServer("main-tun", 1,
+                AuthenticEndpoint.valueOf("u:p@202.91.34.9:9910"));
+        tun.setUdp2raw(true);
+        tun.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        conf.socksServers = Arrays.asList(main, backup, tun);
+
+        RssRuntime.UpstreamSnapshot snapshot = null;
+        try {
+            snapshot = RssClient.buildUpstreams(conf, org.rx.net.support.GeoManager.INSTANCE);
+            UpstreamSupport mainSupport = snapshot.socksServers.get(0);
+            UpstreamSupport backupSupport = snapshot.socksServers.get(1);
+            UpstreamSupport tunSupport = snapshot.udp2rawSocksServers.get(0);
+
+            assertSame(mainSupport.getFacade(), backupSupport.getFacade());
+            assertSame(mainSupport.getFacade(), tunSupport.getFacade());
+            assertEquals(10, snapshot.dnsInterceptors.getWeight(mainSupport.getFacade()));
+        } finally {
+            RssClient.closeUpstreamsQuietly(snapshot);
+        }
+    }
+
+    @Test
     public void normalizeAndValidateRssConfig_ClampsRuntimeFields() {
         RSSConf conf = validRssConf();
         conf.trafficRetentionDays = 0;
@@ -910,7 +976,7 @@ public class RssTest extends AbstractTester {
         assertEquals(4, conf.rpcMinSize);
         assertEquals(4, conf.rpcMaxSize);
         assertEquals(1, conf.connectTimeoutSeconds);
-        assertEquals(Collections.emptyList(), conf.udp2rawSocksServers);
+        assertEquals(1, conf.socksServers.size());
     }
 
     @Test
@@ -938,6 +1004,97 @@ public class RssTest extends AbstractTester {
 
         assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
         assertEquals(Collections.singletonList("backup"), conf.shadowUsers.get(0).getSocksServers());
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_AcceptsTunUserScopedUdp2rawSocksServers() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer udp2raw = new RSSConf.SocksServer("tun-a", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
+        udp2raw.setUdp2raw(true);
+        udp2raw.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), udp2raw);
+        conf.shadowUsers.get(0).setSocksUser("inner");
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList(" tun-a "));
+
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+        assertEquals(Collections.singletonList("tun-a"), conf.shadowUsers.get(0).getSocksServers());
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_RejectsUdp2rawServerWithoutTcpClient() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer udp2raw = new RSSConf.SocksServer("tun-a", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
+        udp2raw.setUdp2raw(true);
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), udp2raw);
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("tun-a"));
+
+        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_RejectsMixedUdp2rawAndNormalSocksServers() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer udp2raw = new RSSConf.SocksServer("tun-a", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
+        udp2raw.setUdp2raw(true);
+        udp2raw.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), udp2raw);
+        conf.shadowUsers.get(0).setSocksServers(Arrays.asList("primary", "tun-a"));
+
+        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_AcceptsMultipleUdp2rawServersForOneUser() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer first = new RSSConf.SocksServer("tun-a", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
+        first.setUdp2raw(true);
+        first.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        RSSConf.SocksServer second = new RSSConf.SocksServer("tun-b", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9920"));
+        second.setUdp2raw(true);
+        second.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), first, second);
+        conf.shadowUsers.get(0).setSocksServers(Arrays.asList("tun-a", "tun-b"));
+
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+        assertEquals(Arrays.asList("tun-a", "tun-b"), conf.shadowUsers.get(0).getSocksServers());
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_AcceptsShadowUserScopedTcpClientSocksServers() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer hysteria = new RSSConf.SocksServer("hysteria-a", 2,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9900"));
+        hysteria.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:1080"));
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), hysteria);
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("hysteria-a"));
+
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+        assertEquals(RssClient.ServerRouteMode.TCP_CLIENT,
+                RssClient.userRouteMode(conf.shadowUsers.get(0), conf.socksServers));
+        RandomList<UpstreamSupport> directServers = RssClient.buildUserTcpClientServers(
+                conf.shadowUsers.get(0), conf.socksServers);
+        UpstreamSupport routed = directServers.next();
+        assertEquals(new InetSocketAddress("127.0.0.1", 1080), routed.getEndpoint().getEndpoint());
+        assertEquals("u", routed.getEndpoint().getUsername());
+        assertEquals("p", routed.getEndpoint().getPassword());
+        assertEquals(2, routed.getConfiguredWeight());
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_RejectsMixedTcpClientAndNormalSocksServers() {
+        RSSConf conf = validRssConf();
+        RSSConf.SocksServer hysteria = new RSSConf.SocksServer("hysteria-a", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9900"));
+        hysteria.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:1080"));
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), hysteria);
+        conf.shadowUsers.get(0).setSocksServers(Arrays.asList("primary", "hysteria-a"));
+
+        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
     }
 
     @Test
@@ -1019,14 +1176,20 @@ public class RssTest extends AbstractTester {
             userOnly.add(support, 1);
             Map<String, RandomList<UpstreamSupport>> userServers = new LinkedHashMap<>();
             userServers.put("ss-rocky", userOnly);
+            Map<String, RandomList<UpstreamSupport>> udp2rawUserServers = new LinkedHashMap<>();
+            RandomList<UpstreamSupport> udp2rawUserOnly = new RandomList<>();
+            udp2rawUserOnly.add(support, 1);
+            udp2rawUserServers.put("ss-rocky", udp2rawUserOnly);
             RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(defaults,
                     new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
-                    userServers, Collections.<RSSConf.SocksServer>emptyList(), Collections.<AuthenticEndpoint>emptyList());
+                    userServers, udp2rawUserServers,
+                    Collections.<RSSConf.SocksServer>emptyList(), Collections.<RSSConf.SocksServer>emptyList());
 
             RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
 
             assertEquals(0, defaults.getWeight(support));
             assertEquals(0, userOnly.getWeight(support));
+            assertEquals(0, udp2rawUserOnly.getWeight(support));
         } finally {
             RssClient.rssConf = oldConf;
         }
@@ -1198,7 +1361,15 @@ public class RssTest extends AbstractTester {
         assertTrue(RssClient.inServerRestartRequired(oldConf, newConf));
 
         newConf = validRssConf();
-        newConf.kcptunClient = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 4093), "k", "p");
+        newConf.udpTimeoutSeconds = oldConf.udpTimeoutSeconds + 1;
+        assertTrue(RssClient.inServerRestartRequired(oldConf, newConf));
+
+        newConf = validRssConf();
+        RSSConf.SocksServer udp2raw = new RSSConf.SocksServer("udp2raw", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
+        udp2raw.setUdp2raw(true);
+        udp2raw.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        newConf.socksServers = Arrays.asList(newConf.socksServers.get(0), udp2raw);
         assertTrue(RssClient.inServerRestartRequired(oldConf, newConf));
     }
 
