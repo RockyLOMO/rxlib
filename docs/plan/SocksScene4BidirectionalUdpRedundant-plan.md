@@ -40,6 +40,25 @@ ShadowsocksClient(ip c)
 | 5 | 端口跳跃资源线性增长 | 先忽略 |
 | 6 | spreadRedundantCopies / 跨 relay shared dedup | 先忽略 |
 
+### 2.1 当前代码核验结果
+
+已按当前代码核验，问题 1、2、3、4、7、8、9 仍存在，计划需要继续推进。关键证据：
+
+- 问题 1：`SocksUdpUpstream.selectUdpRelayAddress(...)` 与 `recordUdpTraffic(...)` 仍各自执行 `maybeReplenishGroup / maybeExpandGroup / maybeHeartbeatGroup`，`SSUdpProxyHandler` 与 `SocksUdpRelayHandler` 主路径仍存在 select + record 双调用。
+- 问题 2：`UdpRedundantEncoder intervalMicros > 0` 仍按每个冗余副本调用 `ctx.executor().schedule(...)`，未限制 delayed task 数。
+- 问题 3：`UdpRedundantDecoder.windows` 仍是无容量上限的 `ConcurrentHashMap<InetSocketAddress, DeduplicationWindow>`，过期清理仍是全量 `removeIf`。
+- 问题 4：`UdpRelayGroupManager.bindRelay(...)` 仍固定 `ATTR_REDUNDANT_CLIENT_PEER=false`，RPC relay group 的 B -> A 回包方向仍不会登记 A 的 sender 作为 RDNT peer。
+- 问题 7：`SSUdpProxyHandler.OUTBOUND_POOL` 仍只有 close/idle 被动回收，没有全局容量和 per-source 新建限制。
+- 问题 8：`Sockets.DEFAULT_UDP_WRITE_LIMIT_BYTES` 仍是 256KB，`SocketConfig` 还没有独立 UDP write limit，SS inbound 也没有 per-source pending soft limit。
+- 问题 9：UDP 指标仍存在 `port/listenPort/key/relays/count` 等 tag，至少 `SocksProxyServer`、`SocksUdpRelayHandler`、`SSUdpProxyHandler`、`SocksUdpUpstream`、`Socks5UpstreamPoolManager` 需要统一收敛。
+
+本次文档修正点：
+
+- `udp2raw` 路径也存在 select + record 双调用，但本计划继续保持“不纳入 udp2raw 重构类”的边界，验收口径只覆盖场景4 SS/SOCKS UDP 主链路。
+- `UdpRedundantEncoder` 明确为非 `@Sharable`，delayed copy pending 计数应保持每 channel/每 encoder 实例，不允许做成 static 全局计数。
+- `SSUdpProxyHandler` per-source 计数不能只以 `InetSocketAddress` 为 key，必须包含 inbound channel 身份，避免多个 SS inbound 或源端口复用时相互污染。
+- 指标 tag 收敛范围补充 `SocksUdpUpstream` 与 `Socks5UpstreamPoolManager`，否则问题 9 不能完整闭环。
+
 ## 3. 总体原则
 
 必须保持：
@@ -129,6 +148,8 @@ public static boolean shouldTrackClientAsRedundantPeer(SocksConfig config) {
 }
 ```
 
+该判断必须与 `Sockets.addUdpOptimizationHandlers(...)` 中是否安装 RDNT handler 的条件保持一致，避免“未安装 encoder 但仍维护 peer map”的无效开销。
+
 文件：
 
 ```text
@@ -154,11 +175,15 @@ relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).set(redundantClientPee
 rxlib/src/main/java/org/rx/net/socks/Socks5CommandRequestHandler.java
 ```
 
-标准 UDP_ASSOCIATE 路径同步收敛：
+标准 UDP_ASSOCIATE 路径同步收敛，并去掉当前无冗余配置时仍初始化 peer map 的多余分配：
 
 ```java
 final boolean redundantClientPeer = UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config)
         && clientTcpAddr != null && tcpPeerAddr != null && !clientTcpAddr.equals(tcpPeerAddr);
+if (redundantClientPeer) {
+    UdpRelayAttributes.initRedundantPeers(udpFuture.channel());
+}
+udpFuture.channel().attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).set(redundantClientPeer);
 ```
 
 如果后续确认本地普通 SOCKS5 client 场景也需要回程 RDNT，再考虑放宽为：
@@ -211,9 +236,11 @@ atomic/cooldown 判断
 replenish / expand / heartbeat 判断
 ```
 
+同类 select + record 双调用在 `Udp2rawHandler` 中也存在；但 `udp2raw` 已声明不纳入本计划，因此第一期只修场景4 SS/SOCKS UDP 主链路，不把 `udp2raw` 计入本计划验收。
+
 ### 5.2 目标
 
-每个 UDP 包最多执行一轮 group maintenance。
+场景4 SS/SOCKS UDP 主链路中，每个 UDP 包最多执行一轮 group maintenance。
 
 ### 5.3 实施方案
 
@@ -267,6 +294,7 @@ public void recordUdpTraffic(Channel channel, int bytes) {
 
 - `SSUdpProxyHandler.buildOutboundPacket(...)` / `writePacketNow(...)`：避免 select 后再 record，改为一次性传入 `trafficBytes`。
 - `SocksUdpRelayHandler.writeClientPacket(...)`：同样避免 select + record 双调用。
+- `Udp2rawHandler` 本期不改，后续 udp2raw 重构时用同一 API 收敛。
 
 注意：如果 packet 构造前还不知道最终 bytes，可以先按 `payload.readableBytes() + socks5 header length` 估算；差异只影响自适应扩容阈值，不影响正确性。
 
@@ -306,6 +334,8 @@ private final AtomicInteger pendingDelayedCopies = new AtomicInteger();
 private static final int DEFAULT_MAX_PENDING_DELAYED_COPIES = 4096;
 ```
 
+`UdpRedundantEncoder` 当前明确不可 `@Sharable`，因此该字段是每 channel 级别；不要改成 static 全局计数，否则会让不同 UDP channel 互相影响。
+
 2. `intervalMicros > 0` 且 pending 超限时降级为立即写：
 
 ```java
@@ -323,6 +353,8 @@ ctx.executor().schedule(() -> {
     }
 }, delayMicros, TimeUnit.MICROSECONDS);
 ```
+
+`schedule(...)` 抛异常时必须释放本次 `copy` 并回退 pending；延迟任务执行体必须用 `finally` 回退 pending，避免 handler close 或写异常后计数泄漏。
 
 3. 默认建议配置：
 
@@ -467,14 +499,14 @@ if (OUTBOUND_POOL.size() >= config.getUdpOutboundPoolMaxSize()) {
 维护低成本计数：
 
 ```java
-ConcurrentMap<InetSocketAddress, AtomicInteger> OUTBOUND_POOL_SOURCE_COUNTS
+ConcurrentMap<OutboundSourceKey, AtomicInteger> OUTBOUND_POOL_SOURCE_COUNTS
 ```
 
-open 成功 +1，close/remove -1。
+`OutboundSourceKey` 至少包含 inbound channel 身份和 `srcEp`，不能只用 `InetSocketAddress`，否则多个 SS inbound 或 NAT 源端口复用会互相污染。open 成功 +1，close/remove -1。
 
 3. 超过 per-source 限制时只拒绝新建，不关闭已有 active channel。
 
-4. channel close、inbound close、bind fail 都必须回收 source count，避免计数泄漏。
+4. channel close、inbound close、bind fail 都必须回收 source count，避免计数泄漏；建议封装一次性 release 方法，防止多个 listener 重复扣减。
 
 ### 8.4 指标
 
@@ -539,7 +571,7 @@ AttributeKey<ConcurrentMap<InetSocketAddress, AtomicInteger>> ATTR_UDP_PENDING_W
 reserveSourcePending(binding.inbound, srcEp, bytes, perSourceLimit)
 ```
 
-write listener 回退 per-source pending。全局 `Sockets.writeUdp` 仍保留，per-source 是额外保护。
+write listener 回退 per-source pending；早期 drop、构造异常、`Sockets.writeUdp` 拒绝时也必须回退。全局 `Sockets.writeUdp` 仍保留，per-source 是额外保护。
 
 ### 9.4 默认建议
 
@@ -572,6 +604,7 @@ port
 bytes
 pendingBytes
 limitBytes
+key
 ```
 
 放入 metric tags，会导致每包或每 endpoint 生成新 series，生产环境会撑爆指标存储。
@@ -607,7 +640,10 @@ client=...
 port=动态端口
 bytes=...
 pendingBytes=...
+key=包含上游地址/端口的动态 key
 ```
+
+`listenPort`、relay port、port hopping 端口也按动态端口处理，不进入 UDP metric tag；如需定位具体端点，只进入日志。
 
 ### 10.4 实施方案
 
@@ -618,6 +654,8 @@ rxlib/src/main/java/org/rx/net/Sockets.java
 rxlib/src/main/java/org/rx/net/socks/SSUdpProxyHandler.java
 rxlib/src/main/java/org/rx/net/socks/SocksUdpRelayHandler.java
 rxlib/src/main/java/org/rx/net/socks/SocksProxyServer.java
+rxlib/src/main/java/org/rx/net/socks/upstream/SocksUdpUpstream.java
+rxlib/src/main/java/org/rx/net/socks/Socks5UpstreamPoolManager.java
 rxlib/src/main/java/org/rx/net/socks/UdpRelayGroupManager.java
 rxlib/src/main/java/org/rx/net/socks/UdpRedundantEncoder.java
 rxlib/src/main/java/org/rx/net/socks/UdpRedundantDecoder.java
@@ -648,6 +686,7 @@ log.warn("UDP drop reason={} sender={} recipient={} bytes={} pending={} limit={}
 - 新增低基数 tag helper。
 - 替换现有高基数 UDP metric tags。
 - endpoint 信息转移到日志。
+- 覆盖 `SocksUdpUpstream` / `Socks5UpstreamPoolManager` 中的 UDP lease、porthop、relay group 指标 tag。
 
 ### PR 2：双向 RDNT 修复
 
@@ -688,7 +727,7 @@ log.warn("UDP drop reason={} sender={} recipient={} bytes={} pending={} limit={}
 
 ```text
 SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withRpcRelayGroup_bidirectionalUdpRedundant_e2e
-SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withUdpRedundantOnProxyAB_e2e
+SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withUdpRedundantOnProxyAB_bidirectional_e2e
 UdpRedundantTest#rpcRelayGroupAddsClientSenderAsRedundantPeerWhenEnabled
 UdpRedundantTest#rpcRelayGroupDoesNotTrackClientPeerWhenRedundantDisabled
 UdpRedundantTest#decoderDropsRdntWhenWindowFull
@@ -709,7 +748,7 @@ mvn -pl rxlib test \
 
 ```bash
 mvn -pl rxlib test \
-  "-Dtest=SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withRpcRelayGroup_bidirectionalUdpRedundant_e2e,SSUdpProxyHandlerTest,SocketsTest" \
+  "-Dtest=SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withRpcRelayGroup_bidirectionalUdpRedundant_e2e+shadowsocksUdpRelay_socks5_chained_withUdpRedundantOnProxyAB_bidirectional_e2e,SSUdpProxyHandlerTest,SocketsTest" \
   "-Dmaven.test.skip=false"
 ```
 
@@ -741,12 +780,12 @@ mvn -pl rxlib test \
 必须满足：
 
 ```text
-每包不再触发两轮 SocksUdpUpstream maintenance。
+本计划覆盖的 SS/SOCKS UDP 主链路每包不再触发两轮 SocksUdpUpstream maintenance。
 intervalMicros > 0 时 delayed scheduled task 有上限，超限降级或受控丢弃。
 UdpRedundantDecoder sender window 有上限，异常 sender 高基数不会无限增长。
 SS outbound pool 有全局和 per-source 新建限制，close 后计数回收。
 UDP write pending limit 可配置，SS inbound 单源不能挤占全局。
-UDP metrics 不产生 endpoint/bytes/port 高基数 series。
+UDP metrics 不产生 endpoint/bytes/port/key 高基数 series。
 ```
 
 ### 13.3 不应发生
