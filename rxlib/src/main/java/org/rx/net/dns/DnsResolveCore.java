@@ -17,11 +17,12 @@ import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.transport.ClientDisconnectedException;
 
 import java.io.IOException;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.concurrent.TimeoutException;
 
@@ -134,18 +135,95 @@ public final class DnsResolveCore {
 
     static String normalizeDomain(String questionName) {
         int len = questionName.length();
-        String domain = len > 0 && questionName.charAt(len - 1) == '.' ? questionName.substring(0, len - 1) : questionName;
-        return domain.toLowerCase(Locale.ROOT);
+        if (len == 0) {
+            return questionName;
+        }
+
+        int end = questionName.charAt(len - 1) == '.' ? len - 1 : len;
+        boolean trimDot = end != len;
+        boolean hasUpper = false;
+        for (int i = 0; i < end; i++) {
+            char c = questionName.charAt(i);
+            if (c >= 'A' && c <= 'Z') {
+                hasUpper = true;
+                break;
+            }
+        }
+
+        if (!trimDot && !hasUpper) {
+            return questionName;
+        }
+        String normalized = trimDot ? questionName.substring(0, end) : questionName;
+        return hasUpper ? asciiLower(normalized) : normalized;
+    }
+
+    static String asciiLower(String value) {
+        int len = value.length();
+        int firstUpper = -1;
+        for (int i = 0; i < len; i++) {
+            char c = value.charAt(i);
+            if (c >= 'A' && c <= 'Z') {
+                firstUpper = i;
+                break;
+            }
+        }
+        if (firstUpper < 0) {
+            return value;
+        }
+
+        char[] chars = value.toCharArray();
+        for (int i = firstUpper; i < len; i++) {
+            char c = chars[i];
+            if (c >= 'A' && c <= 'Z') {
+                chars[i] = (char) (c + 32);
+            }
+        }
+        return new String(chars);
+    }
+
+    static void cacheInterceptorResultByFamily(DnsServer server, String domain, List<InetAddress> resolvedIps) {
+        List<InetAddress> aRecords = filterByType(resolvedIps, DnsRecordType.A);
+        List<InetAddress> aaaaRecords = filterByType(resolvedIps, DnsRecordType.AAAA);
+        server.interceptorCache.put(server.cacheKey(domain, DnsRecordType.A), aRecords,
+                CachePolicy.absolute(aRecords.isEmpty() ? server.negativeTtl : server.ttl));
+        server.interceptorCache.put(server.cacheKey(domain, DnsRecordType.AAAA), aaaaRecords,
+                CachePolicy.absolute(aaaaRecords.isEmpty() ? server.negativeTtl : server.ttl));
+    }
+
+    static List<InetAddress> filterByType(List<InetAddress> ips, DnsRecordType queryType) {
+        if (CollectionUtils.isEmpty(ips)) {
+            return Collections.emptyList();
+        }
+        List<InetAddress> filtered = null;
+        for (int i = 0; i < ips.size(); i++) {
+            InetAddress ip = ips.get(i);
+            boolean ipv6 = ip instanceof Inet6Address;
+            boolean match = (queryType == DnsRecordType.AAAA) == ipv6;
+            if (!match) {
+                if (filtered == null) {
+                    filtered = new ArrayList<InetAddress>(ips.size());
+                    for (int j = 0; j < i; j++) {
+                        filtered.add(ips.get(j));
+                    }
+                }
+                continue;
+            }
+            if (filtered != null) {
+                filtered.add(ip);
+            }
+        }
+        return filtered == null ? ips : filtered.isEmpty() ? Collections.<InetAddress>emptyList() : filtered;
     }
 
     private static DefaultDnsResponse newInterceptorResponse(DefaultDnsQuery query, boolean isTcp, DefaultDnsQuestion question,
                                                             DnsServer server, InetAddress srcIp, String domain,
                                                             List<InetAddress> ips) {
-        if (CollectionUtils.isEmpty(ips)) {
+        List<InetAddress> familyIps = filterByType(ips, question.type());
+        if (CollectionUtils.isEmpty(familyIps)) {
             logQuery(srcIp, domain, "EMPTY");
             return DnsMessageUtil.newErrorResponse(query, DnsResponseCode.NXDOMAIN);
         }
-        DefaultDnsResponse response = DnsMessageUtil.newAddressResponse(query, isTcp, question, server.ttl, ips);
+        DefaultDnsResponse response = DnsMessageUtil.newAddressResponse(query, isTcp, question, server.ttl, familyIps);
         logQuery(srcIp, domain, response.count(DnsSection.ANSWER), "SHADOW");
         return response;
     }
@@ -160,9 +238,7 @@ public final class DnsResolveCore {
             try {
                 resolvedIps = resolveByInterceptorWithFailover(server, interceptors, srcIp, domain);
                 if (resolvedIps != null) {
-                    CachePolicy policy = CachePolicy.absolute(resolvedIps.isEmpty() ? server.negativeTtl : server.ttl);
-                    server.interceptorCache.put(server.cacheKey(domain, DnsRecordType.A), resolvedIps, policy);
-                    server.interceptorCache.put(server.cacheKey(domain, DnsRecordType.AAAA), resolvedIps, policy);
+                    cacheInterceptorResultByFamily(server, domain, resolvedIps);
                 }
                 resolvePromise.trySuccess(resolvedIps);
                 if (resolvedIps == null) {

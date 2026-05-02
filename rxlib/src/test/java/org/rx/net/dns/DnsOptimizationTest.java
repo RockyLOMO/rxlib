@@ -11,6 +11,7 @@ import io.netty.util.concurrent.Promise;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.bean.RandomList;
+import org.rx.core.CachePolicy;
 import org.rx.core.cache.MemoryCache;
 import org.rx.net.transport.ClientDisconnectedException;
 
@@ -20,9 +21,11 @@ import java.net.ServerSocket;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,6 +48,16 @@ class DnsOptimizationTest {
         }
     }
 
+    static class RecordingInterceptorCache extends MemoryCache<String, List<InetAddress>> {
+        final Map<String, CachePolicy> policies = new ConcurrentHashMap<String, CachePolicy>();
+
+        @Override
+        public List<InetAddress> put(String key, List<InetAddress> value, CachePolicy policy) {
+            policies.put(key, policy);
+            return super.put(key, value, policy);
+        }
+    }
+
     static int freePort() throws Exception {
         try (ServerSocket ss = new ServerSocket(0)) {
             return ss.getLocalPort();
@@ -52,8 +65,12 @@ class DnsOptimizationTest {
     }
 
     static DefaultDnsResponse resolveOnce(DnsServer server, String host) throws Exception {
+        return resolveOnce(server, host, DnsRecordType.A);
+    }
+
+    static DefaultDnsResponse resolveOnce(DnsServer server, String host, DnsRecordType type) throws Exception {
         DefaultDnsQuery query = new DefaultDnsQuery(1);
-        query.addRecord(DnsSection.QUESTION, new DefaultDnsQuestion(host, DnsRecordType.A));
+        query.addRecord(DnsSection.QUESTION, new DefaultDnsQuestion(host, type));
         try {
             Promise<DefaultDnsResponse> promise = DnsResolveCore.resolve(server, server.upstreamClient,
                     InetAddress.getLoopbackAddress(), query, true, GlobalEventExecutor.INSTANCE);
@@ -76,6 +93,23 @@ class DnsOptimizationTest {
     }
 
     @Test
+    void normalizeDomainShouldReturnSameInstanceForLowercaseWithoutTrailingDot() {
+        String input = "example.com";
+
+        assertSame(input, DnsResolveCore.normalizeDomain(input));
+    }
+
+    @Test
+    void normalizeDomainShouldTrimTrailingDot() {
+        assertEquals("example.com", DnsResolveCore.normalizeDomain("example.com."));
+    }
+
+    @Test
+    void normalizeDomainShouldAsciiLowercase() {
+        assertEquals("example.com", DnsResolveCore.normalizeDomain("Example.COM."));
+    }
+
+    @Test
     void aAndAaaaShouldUseDifferentResolveKey() throws Exception {
         DnsServer server = new DnsServer(freePort(), Collections.emptyList());
         try {
@@ -84,6 +118,127 @@ class DnsOptimizationTest {
 
             assertNotEquals(aKey, aaaaKey);
             assertEquals(aKey, server.resolveKey("example.com", DnsRecordType.A));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void aQueryShouldNotPolluteAaaaCacheWithIpv4OnlyResult() throws Exception {
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        try {
+            String host = "ipv4-only-" + UUID.randomUUID() + ".example";
+            InetAddress ipv4 = InetAddress.getByName("198.51.100.11");
+            AtomicInteger calls = new AtomicInteger();
+            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(Collections.singletonList((srcIp, lookupHost) -> {
+                calls.incrementAndGet();
+                return Collections.singletonList(ipv4);
+            })));
+            server.interceptorCache = new RecordingInterceptorCache();
+
+            DefaultDnsResponse a = resolveOnce(server, host, DnsRecordType.A);
+            try {
+                assertEquals(1, a.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(a);
+            }
+            assertEquals(Collections.singletonList(ipv4), server.interceptorCache.get(server.cacheKey(host, DnsRecordType.A)));
+            assertTrue(server.interceptorCache.get(server.cacheKey(host, DnsRecordType.AAAA)).isEmpty());
+
+            DefaultDnsResponse aaaa = resolveOnce(server, host, DnsRecordType.AAAA);
+            try {
+                assertEquals(0, aaaa.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(aaaa);
+            }
+            assertEquals(1, calls.get(), "AAAA 命中空族类缓存后不应再次调用 interceptor");
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void aaaaQueryShouldNotPolluteACacheWithIpv6OnlyResult() throws Exception {
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        try {
+            String host = "ipv6-only-" + UUID.randomUUID() + ".example";
+            InetAddress ipv6 = InetAddress.getByName("2001:db8::11");
+            AtomicInteger calls = new AtomicInteger();
+            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(Collections.singletonList((srcIp, lookupHost) -> {
+                calls.incrementAndGet();
+                return Collections.singletonList(ipv6);
+            })));
+            server.interceptorCache = new RecordingInterceptorCache();
+
+            DefaultDnsResponse aaaa = resolveOnce(server, host, DnsRecordType.AAAA);
+            try {
+                assertEquals(1, aaaa.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(aaaa);
+            }
+            assertTrue(server.interceptorCache.get(server.cacheKey(host, DnsRecordType.A)).isEmpty());
+            assertEquals(Collections.singletonList(ipv6), server.interceptorCache.get(server.cacheKey(host, DnsRecordType.AAAA)));
+
+            DefaultDnsResponse a = resolveOnce(server, host, DnsRecordType.A);
+            try {
+                assertEquals(0, a.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(a);
+            }
+            assertEquals(1, calls.get(), "A 命中空族类缓存后不应再次调用 interceptor");
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void mixedInterceptorResultShouldPopulateAAndAaaaSeparately() throws Exception {
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        try {
+            String host = "mixed-" + UUID.randomUUID() + ".example";
+            InetAddress ipv4 = InetAddress.getByName("198.51.100.12");
+            InetAddress ipv6 = InetAddress.getByName("2001:db8::12");
+            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(
+                    Collections.singletonList((srcIp, lookupHost) -> Arrays.asList(ipv4, ipv6))));
+            server.interceptorCache = new RecordingInterceptorCache();
+
+            DefaultDnsResponse response = resolveOnce(server, host, DnsRecordType.A);
+            try {
+                assertEquals(1, response.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(response);
+            }
+            assertEquals(Collections.singletonList(ipv4), server.interceptorCache.get(server.cacheKey(host, DnsRecordType.A)));
+            assertEquals(Collections.singletonList(ipv6), server.interceptorCache.get(server.cacheKey(host, DnsRecordType.AAAA)));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void emptyFamilyCacheShouldUseNegativeTtl() throws Exception {
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        try {
+            String host = "negative-family-" + UUID.randomUUID() + ".example";
+            InetAddress ipv4 = InetAddress.getByName("198.51.100.13");
+            RecordingInterceptorCache cache = new RecordingInterceptorCache();
+            server.setTtl(30);
+            server.setNegativeTtl(1);
+            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(
+                    Collections.singletonList((srcIp, lookupHost) -> Collections.singletonList(ipv4))));
+            server.interceptorCache = cache;
+
+            DefaultDnsResponse response = resolveOnce(server, host, DnsRecordType.A);
+            try {
+                assertEquals(1, response.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(response);
+            }
+
+            long aTtl = cache.policies.get(server.cacheKey(host, DnsRecordType.A)).ttl();
+            long aaaaTtl = cache.policies.get(server.cacheKey(host, DnsRecordType.AAAA)).ttl();
+            assertTrue(aTtl > 20_000L, "非空族类 cache 应使用正常 TTL");
+            assertTrue(aaaaTtl > 0L && aaaaTtl <= 1_000L, "空族类 cache 应使用 negativeTtl");
         } finally {
             server.close();
         }

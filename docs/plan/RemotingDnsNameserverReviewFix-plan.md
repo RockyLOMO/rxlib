@@ -59,12 +59,13 @@ DNSServer review 第一个问题暂不处理：
 2. `resolvingKeys` 已移除，仅保留 `resolvingPromises`。
 3. `DnsServer` 的 `addHosts/removeHosts/getHosts/getAllHosts/cacheKey/resolveKey` 已统一走 normalize。
 4. `DoHServerHandler` response body 已增加 `handedOff` 异常释放保护。
+5. `normalizeDomain` 已改为 ASCII 扫描的保守低分配实现，小写无尾点域名直接返回原对象。
+6. interceptor 解析结果已按 A/AAAA 地址族拆分后分别写入 cache，空族类使用 `negativeTtl`。
 
 复查结论：
 
 - queryType coalescing 已修复。
-- `normalizeDomain` 当前实现仍会在 DNS 热路径产生不必要 `String` 分配，需要按本文档待办 1 优化。
-- A/AAAA cache 写入仍有残留风险：一次 interceptor 解析结果仍同时写入 A 与 AAAA cache，需按本文档待办 2 继续修复。
+- DNS normalize 与 A/AAAA cache 族类污染问题已按本文档待办 1/2 修复。
 
 ### 3.3 Nameserver
 
@@ -75,14 +76,15 @@ DNSServer review 第一个问题暂不处理：
 3. replica 同步已引入 `ReplicaSnapshot` / `ReplicaFullSync` DTO，避免直接发送 live concurrent map/set。
 4. 已引入 `replicaVersion`、`lastAppliedReplicaVersion` 与周期 full sync。
 5. instance attrs key 已从单纯 `InetAddress` 改为 `appName#ip`。
+6. replica packet 已增加 `sourceId`，接收端改为按 source 维护最后应用版本。
 
 复查结论：
 
 - 原始泄漏和 live collection 序列化问题已明显改善。
-- replica version 当前是单机本地递增 long，跨节点版本没有 sourceId 维度，严格说不能全局比较。需要按本文档待办 3 做 source-aware version。
+- replica version 已改为 source-aware，避免不同节点本地递增版本互相误判 stale。
 - full sync 当前可用于最终收敛，但如果 packet 较大，仍存在 UDP 分片/丢包风险。后续可考虑 TCP/RPC 拉取全量快照。
 
-## 4. 待办 1：DNS normalizeDomain 保守优化
+## 4. 已完成 1：DNS normalizeDomain 保守优化
 
 ### 4.1 当前问题
 
@@ -192,7 +194,7 @@ static String asciiLower(String s) {
 
 注意：第 1 个测试可用 `assertSame(input, normalizeDomain(input))`，确保常见路径零分配。
 
-## 5. 待办 2：A/AAAA interceptor cache 写入按地址族拆分
+## 5. 已完成 2：A/AAAA interceptor cache 写入按地址族拆分
 
 ### 5.1 当前残留风险
 
@@ -247,7 +249,7 @@ server.interceptorCache.put(server.cacheKey(domain, DnsRecordType.AAAA), aaaaRec
 3. `mixedInterceptorResultShouldPopulateAAndAaaaSeparately`
 4. `emptyFamilyCacheShouldUseNegativeTtl`
 
-## 6. 待办 3：Nameserver replica version 改为 source-aware
+## 6. 已完成 3：Nameserver replica version 改为 source-aware
 
 ### 6.1 当前风险
 

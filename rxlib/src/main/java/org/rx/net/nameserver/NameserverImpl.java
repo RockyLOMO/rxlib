@@ -38,6 +38,7 @@ public class NameserverImpl implements Nameserver {
     @ToString
     static class DeregisterInfo implements Serializable {
         private static final long serialVersionUID = 713672672746841635L;
+        final String sourceId;
         final long version;
         final String appName;
         final InetAddress address;
@@ -47,6 +48,7 @@ public class NameserverImpl implements Nameserver {
     @ToString
     static class ReplicaSnapshot implements Serializable {
         private static final long serialVersionUID = -5790980112424307032L;
+        final String sourceId;
         final long version;
         final Set<InetSocketAddress> serverEndpoints;
         final Map<Object, Map<String, Serializable>> attrs;
@@ -56,6 +58,7 @@ public class NameserverImpl implements Nameserver {
     @ToString
     static class ReplicaFullSync implements Serializable {
         private static final long serialVersionUID = 1660036726413927370L;
+        final String sourceId;
         final long version;
         final Set<InetSocketAddress> serverEndpoints;
         final Map<String, List<InetAddress>> hosts;
@@ -74,8 +77,9 @@ public class NameserverImpl implements Nameserver {
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
     // key String -> appName or appName#ip instance key
     final Map<Object, Map<String, Serializable>> attrs = new ConcurrentHashMap<>();
+    final String replicaSourceId = RxConfig.INSTANCE.getId();
     final AtomicLong replicaVersion = new AtomicLong();
-    volatile long lastAppliedReplicaVersion;
+    final Map<String, Long> lastAppliedReplicaVersions = new ConcurrentHashMap<String, Long>();
     ScheduledFuture<?> replicaFullSyncTask;
 
     int getSyncPort() {
@@ -135,7 +139,7 @@ public class NameserverImpl implements Nameserver {
                     attrs(entry.getKey()).putAll(entry.getValue());
                 }
             }) && !tryAs(packet, DeregisterInfo.class, p -> {
-                if (acceptIncrementalVersion(p.version)) {
+                if (acceptReplicaVersion(p.sourceId, p.version)) {
                     doDeregister(p.appName, p.address, false, false);
                 }
             })) {
@@ -180,7 +184,7 @@ public class NameserverImpl implements Nameserver {
         dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, Linq.from(svrEps).select(InetSocketAddress::getAddress).toList());
         Set<InetSocketAddress> snapshot = new HashSet<InetSocketAddress>(svrEps);
         publishEventAsync(EVENT_CLIENT_SYNC, new NEventArgs<Set<InetSocketAddress>>(snapshot));
-        ReplicaSnapshot packet = new ReplicaSnapshot(nextReplicaVersion(), snapshot, null);
+        ReplicaSnapshot packet = new ReplicaSnapshot(replicaSourceId, nextReplicaVersion(), snapshot, null);
         Tasks.setTimeout(() -> {
             for (InetSocketAddress ssAddr : serverEndpoints) {
                 ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet);
@@ -197,7 +201,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     public void syncAttributes() {
-        ReplicaSnapshot packet = new ReplicaSnapshot(nextReplicaVersion(), null, snapshotAttrs());
+        ReplicaSnapshot packet = new ReplicaSnapshot(replicaSourceId, nextReplicaVersion(), null, snapshotAttrs());
         Tasks.setTimeout(() -> {
             for (InetSocketAddress ssAddr : svrEps) {
                 ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet);
@@ -245,7 +249,7 @@ public class NameserverImpl implements Nameserver {
                 publishEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, false, instanceAttrs(appName, addr)));
             }
             if (shouldSync) {
-                syncDeregister(new DeregisterInfo(nextReplicaVersion(), appName, addr));
+                syncDeregister(new DeregisterInfo(replicaSourceId, nextReplicaVersion(), appName, addr));
             }
         }
     }
@@ -343,16 +347,16 @@ public class NameserverImpl implements Nameserver {
         return replicaVersion.incrementAndGet();
     }
 
-    boolean acceptIncrementalVersion(long version) {
-        if (version <= 0) {
+    boolean acceptReplicaVersion(String sourceId, long version) {
+        if (sourceId == null || version <= 0) {
             return true;
         }
-        long last = lastAppliedReplicaVersion;
-        if (version <= last) {
-            log.debug("ignore stale replica version {} <= {}", version, last);
+        Long last = lastAppliedReplicaVersions.get(sourceId);
+        if (last != null && version <= last) {
+            log.debug("ignore stale replica {} version {} <= {}", sourceId, version, last);
             return false;
         }
-        lastAppliedReplicaVersion = version;
+        lastAppliedReplicaVersions.put(sourceId, version);
         return true;
     }
 
@@ -376,7 +380,7 @@ public class NameserverImpl implements Nameserver {
         if (svrEps.isEmpty()) {
             return;
         }
-        ReplicaFullSync packet = new ReplicaFullSync(nextReplicaVersion(), new HashSet<InetSocketAddress>(svrEps),
+        ReplicaFullSync packet = new ReplicaFullSync(replicaSourceId, nextReplicaVersion(), new HashSet<InetSocketAddress>(svrEps),
                 snapshotHosts(), snapshotAttrs());
         for (InetSocketAddress ssAddr : packet.serverEndpoints) {
             quietly(() -> ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet));
@@ -384,7 +388,7 @@ public class NameserverImpl implements Nameserver {
     }
 
     void applySnapshot(ReplicaSnapshot packet) {
-        if (!acceptIncrementalVersion(packet.version)) {
+        if (!acceptReplicaVersion(packet.sourceId, packet.version)) {
             return;
         }
         if (packet.serverEndpoints != null) {
@@ -394,8 +398,8 @@ public class NameserverImpl implements Nameserver {
     }
 
     void applyFullSync(ReplicaFullSync packet) {
-        if (packet.version > lastAppliedReplicaVersion) {
-            lastAppliedReplicaVersion = packet.version;
+        if (!acceptReplicaVersion(packet.sourceId, packet.version)) {
+            return;
         }
         if (packet.serverEndpoints != null) {
             syncRegister(packet.serverEndpoints);

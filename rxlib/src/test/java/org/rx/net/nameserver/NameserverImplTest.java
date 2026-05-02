@@ -21,6 +21,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -136,7 +137,7 @@ class NameserverImplTest {
             Map<String, List<InetAddress>> hosts = new HashMap<String, List<InetAddress>>();
             hosts.put("new-app", Collections.singletonList(newIp));
 
-            server.applyFullSync(new NameserverImpl.ReplicaFullSync(1L, Collections.<InetSocketAddress>emptySet(),
+            server.applyFullSync(new NameserverImpl.ReplicaFullSync("source-a", 1L, Collections.<InetSocketAddress>emptySet(),
                     hosts, Collections.<Object, Map<String, Serializable>>emptyMap()));
 
             assertTrue(server.discover("old-app").isEmpty());
@@ -159,6 +160,68 @@ class NameserverImplTest {
 
             assertEquals("a", server.discover("app-a", Collections.singletonList("zone")).get(0).getAttributes().get("zone"));
             assertEquals("b", server.discover("app-b", Collections.singletonList("zone")).get(0).getAttributes().get("zone"));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void replicaVersionShouldBeTrackedPerSource() throws Exception {
+        NameserverImpl server = newServer(freePort(), freePort(), freePort());
+        try {
+            assertTrue(server.acceptReplicaVersion("source-a", 10L));
+            assertFalse(server.acceptReplicaVersion("source-a", 10L));
+            assertEquals(Long.valueOf(10L), server.lastAppliedReplicaVersions.get("source-a"));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void lowerVersionFromDifferentSourceShouldBeAccepted() throws Exception {
+        NameserverImpl server = newServer(freePort(), freePort(), freePort());
+        try {
+            assertTrue(server.acceptReplicaVersion("source-a", 10L));
+            assertTrue(server.acceptReplicaVersion("source-b", 1L));
+            assertEquals(Long.valueOf(10L), server.lastAppliedReplicaVersions.get("source-a"));
+            assertEquals(Long.valueOf(1L), server.lastAppliedReplicaVersions.get("source-b"));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void lowerVersionFromSameSourceShouldBeIgnored() throws Exception {
+        NameserverImpl server = newServer(freePort(), freePort(), freePort());
+        try {
+            assertTrue(server.acceptReplicaVersion("source-a", 10L));
+            assertFalse(server.acceptReplicaVersion("source-a", 9L));
+            assertEquals(Long.valueOf(10L), server.lastAppliedReplicaVersions.get("source-a"));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void fullSyncShouldNotOverwriteNewerSameSourceState() throws Exception {
+        NameserverImpl server = newServer(freePort(), freePort(), freePort());
+        try {
+            InetAddress currentIp = InetAddress.getByName("127.0.0.2");
+            server.getDnsServer().addHosts("current-app", 1, Collections.singletonList(currentIp));
+            assertTrue(server.acceptReplicaVersion("source-a", 10L));
+
+            Map<String, List<InetAddress>> staleHosts = new HashMap<String, List<InetAddress>>();
+            staleHosts.put("stale-app", Collections.singletonList(InetAddress.getByName("127.0.0.3")));
+            server.applyFullSync(new NameserverImpl.ReplicaFullSync("source-a", 9L,
+                    Collections.<InetSocketAddress>emptySet(), staleHosts,
+                    Collections.<Object, Map<String, Serializable>>emptyMap()));
+
+            assertEquals(currentIp, server.discover("current-app").get(0));
+            assertTrue(server.discover("stale-app").isEmpty());
         } finally {
             server.close();
         }
