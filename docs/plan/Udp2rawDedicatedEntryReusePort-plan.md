@@ -1,354 +1,396 @@
-# Udp2raw 固定入口 + SO_REUSEPORT + per-client NAT-A UDP relay 重构计划
+# Udp2raw 场景4固定入口 + sourceEndpoint 透传 + NAT-A UDP 重构计划
 
 ## 背景
 
-`udp2raw` 场景下，client -> server 的 UDP 数据必须打到一个固定的 server 入口端口。当前 `Udp2rawHandler` 仍沿用了标准 SOCKS5 `UDP_ASSOCIATE` 的模型：每条 TCP control connection 动态创建一个 per-client UDP relay channel，并把该 channel 的随机本地端口通告给客户端。
-
-这对标准 SOCKS5 UDP 是合理的，但对 `udp2raw` server 入口不合适：
+`docs/test/SocksScene.md` 中已有两个相关链路：
 
 ```text
-标准 SOCKS5 UDP:
-client --UDP_ASSOCIATE--> server 动态分配 UDP relay port
-client UDP 包发到动态 relay port
+udp2raw场景:
+socks5 client -> SocksServerProxy A(广域网ip a), udp associate
+  -> udp2raw client(广域网ip a)
+  -> udp2raw server(广域网ip b)
+  -> SocksServerProxy B(广域网ip b), udp -> dest
 
-udp2raw:
-client UDP 包必须发到 server 固定 udp2raw port
-server 入口需要高吞吐，最好用 SO_REUSEPORT 多 bind
-server 再按 client sourceEndpoint 独立创建出站 UDP channel，保证 NAT A
+场景4:
+ShadowsocksClient(广域网ip c)
+  -> ShadowsocksServer(广域网ip a)
+  -> SocksServerProxy A(广域网ip a), udp associate
+  -> SocksServerProxy B(广域网ip b), udp -> dest
 ```
 
-本计划目标是在保持 client 侧尽量少改的前提下，重构 server 侧 `udp2raw` UDP 数据面。
+本次目标是把场景4的 A->B UDP 代理链路通过 udp2raw 固定入口承载：
 
-## 当前实现 review
+```text
+socks5client / ss client
+  -> RSS Client 侧 SocksProxyServer
+  -> SocksUdpUpstream 把原始 client sourceEndpoint 写入 udp2raw 数据包
+  -> udp2raw client
+  -> Internet
+  -> udp2raw server
+  -> RSS Server 侧 SocksProxyServer UDP 固定入口
+  -> 解包，按包内 client sourceEndpoint 创建独立 UDP NAT channel
+  -> dest
+```
 
-### 1. `Udp2rawHandler` 目前是 per-relay-channel 状态模型
+核心不是按 `DatagramPacket.sender()` 建业务 session，而是按 udp2raw 包内透传的 `client sourceEndpoint` 建 server 侧出站 UDP channel。`DatagramPacket.sender()` 只代表 udp2raw client/peer 的公网地址，用于回包写回 udp2raw 对端、NAT rebinding 更新和安全校验。
 
-当前 `Udp2rawHandler` 是 `@Sharable` handler，但状态放在 Netty `Channel.attr` 上：
+## Git 历史 review 结论
 
-- `ATTR_CLIENT_ADDR`：当前 UDP relay 绑定/确认的 client 地址。
-- `ATTR_CTX_MAP`：upstream `InetSocketAddress -> SocksContext`，用于回包识别。
-- `ATTR_ROUTE_MAP`：目标地址 `UnresolvedEndpoint -> SocksContext`，用于路由缓存。
+### 1. 旧版 `Udp2rawHandler` 已经具备 sourceEndpoint 透传雏形
 
-类注释也明确写着它安装在 `Socks5CommandRequestHandler` 为 `UDP_ASSOCIATE` 创建的 dedicated UDP channel 上，即“一条 TCP control connection 对应一个 UDP relay channel”。
-
-这个模型适合标准 SOCKS5 UDP；但如果把同一个 `Udp2rawHandler` 直接挂到固定入口端口上，会有几个问题：
-
-- `ATTR_CLIENT_ADDR` 只能表达一个 client，无法承载多个 client sourceEndpoint。
-- `ATTR_CTX_MAP/ATTR_ROUTE_MAP` 是 channel 级别；`SO_REUSEPORT` 多入口 channel 下，同一固定端口会有多份分散状态。
-- 当前 server mode 的出站包直接用入口 `relay` channel 发往真实目标或上游 relay；如果入口是固定端口，会导致所有 client 共享同一个本地 UDP 源端口，破坏 NAT A 语义。
-- 入口 channel 上的 redundant peers / client lock 不能直接复用，否则 shared entry 可能把不同 client 的 peer 状态混在一起。
-
-### 2. `Socks5CommandRequestHandler` 当前总是动态创建 UDP relay
-
-`UDP_ASSOCIATE` 分支当前逻辑是：
-
-1. 根据 TCP control 本地地址选择 UDP bind address。
-2. `Sockets.udpBootstrap(config, ...)` 创建 UDP channel。
-3. 绑定到端口 `0` 或指定本地 IP 的端口 `0`。
-4. 安装 `Udp2rawHandler.DEFAULT` 或 `SocksUdpRelayHandler.DEFAULT`。
-5. 把动态绑定出的 UDP 端口返回给 SOCKS5 client。
-
-这个路径会继续保留给标准 SOCKS5 UDP 和 client 本地侧使用；但 server 侧 `udp2raw` 固定入口不应该依赖该动态端口模型。
-
-### 3. `SocksProxyServer` 已有 UDP relay registry，但不适合固定入口多 bind
-
-`SocksProxyServer.registerUdpRelay(Channel relay)` 以 `localPort -> Channel` 注册动态 relay。对于 `SO_REUSEPORT` 同端口多 channel，这个 map 会被同一个 port 覆盖，不适合作为 fixed udp2raw entry 的状态容器。
-
-因此 fixed entry 应该有独立生命周期和独立集合，例如：
+历史提交 `30ffa37f67daf5c93bf03463d01e0e80c4f3cded` 的 `Udp2rawHandler` 里，client mode 大致流程是：
 
 ```java
-private final Udp2rawEntryManager udp2rawEntryManager;
+InetSocketAddress clientEp = sender;
+UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
+SocksContext e = SocksContext.getCtx(clientEp, dstEp);
+server.raiseEvent(server.onUdpRoute, e);
+Upstream upstream = e.getUpstream();
+UnresolvedEndpoint upDstEp = upstream.getDestination();
+
+header.writeShort(STREAM_MAGIC);
+header.writeByte(STREAM_VERSION);
+UdpManager.encode(header, clientEp);
+UdpManager.encode(header, upDstEp);
+outBuf.addComponents(true, header, inBuf.retain());
+relay.writeAndFlush(new DatagramPacket(outBuf, udp2rawClient));
 ```
 
-不要把多个 fixed entry channel 混进现有 `udpRelayRegistry`。
+server mode 则是：
 
-### 4. `Sockets` 已有可复用的 SO_REUSEPORT 机制
+```java
+UnresolvedEndpoint clientEp = UdpManager.decode(inBuf);
+UnresolvedEndpoint dstEp = UdpManager.decode(inBuf);
+SocksContext e = SocksContext.getCtx(clientEp.socketAddress(), dstEp);
+e.udp2rawClient = sender;
+server.raiseEvent(server.onUdpRoute, e);
+relay.writeAndFlush(new DatagramPacket(inBuf.retain(), upDstAddr));
+```
 
-`Sockets.bindChannels(Bootstrap, bindAddress, config)` 已经统一处理 UDP `SO_REUSEPORT` 多 bind：
+这套思路和本次需求一致：A 侧把原始 client sourceEndpoint 写入 udp2raw 包，B 侧解包后按这个 sourceEndpoint 构造 `SocksContext`，并把 UDP 发往真实目的地。
 
-- 仅 Linux epoll 可用。
-- 仅固定 `InetSocketAddress` 且 port > 0 时启用。
-- `reusePortBindCount == 0` 时按 CPU / reactor 线程数估算。
-- `bindCount > 1` 时设置 `EpollChannelOption.SO_REUSEPORT=true`。
+但旧实现仍然直接复用同一个 `relay` channel 发往 upstream/dest，因此如果这个 `relay` 是 server 固定入口，就会让所有 client 共享同一个本地 UDP 源端口，无法保证 NAT A。
 
-所以新设计不需要在 `Udp2rawHandler` 中重复判断 epoll，只要 server fixed entry 使用固定端口并走 `Sockets.bindChannels(Bootstrap, ...)` 即可。
+### 2. 当前实现已经改成 per UDP relay channel 状态模型
 
-## 设计目标
+当前 `Udp2rawHandler` 的类注释明确写着它是 per-client UDP relay handler，安装在 `Socks5CommandRequestHandler` 为 `UDP_ASSOCIATE` 创建的 dedicated UDP channel 上。状态也放在 channel attr 上：
 
-- server 侧开启 `udp2raw` 时，`SocksProxyServer` 启动一个专用 UDP fixed entry。
-- fixed entry 支持 `SO_REUSEPORT` 多 channel 绑定，提升高并发 UDP 收包吞吐。
-- fixed entry 只负责：
-  - 验证/解包 `udp2raw` header；
-  - 按 `client sourceEndpoint` 分派到 session；
-  - 把 session 回包通过固定入口端口发回 client。
-- 每个 client sourceEndpoint 独立创建一个 NAT channel：
-  - 出站发往真实 UDP destination 或下一跳 SOCKS5 UDP relay；
-  - 接收真实 destination / upstream 回包；
-  - 保证不同 client 在服务端表现为不同 UDP 源端口，即 NAT A。
-- client 侧尽量不改，继续把本地 SOCKS5 UDP 包 wrap 成 `udp2raw` 后发送到 `config.udp2rawClient`。
-- 与现有 `SocksUdpUpstream`、UDP port hopping、UDP 多倍发送、UDP 压缩、RX RPC relay group 兼容。
-- 标准 SOCKS5 UDP 逻辑不受影响；未开启 server fixed entry 时保持当前行为。
+- `ATTR_CLIENT_ADDR`
+- `ATTR_CTX_MAP`
+- `ATTR_ROUTE_MAP`
 
-## 非目标
+当前 `Socks5CommandRequestHandler` 的 `UDP_ASSOCIATE` 分支会动态创建一个 UDP channel，并把该动态端口返回给 SOCKS5 client。这个模型适合标准 SOCKS5 UDP，也适合 client 本地侧 udp2raw wrap channel；但不适合 server 侧固定 udp2raw UDP 入口。
 
-- 不把 fixed udp2raw entry 做成标准 SOCKS5 `UDP_ASSOCIATE` 返回端口。
-- 不在 fixed entry channel 上复用 per-client `ATTR_CLIENT_ADDR`。
-- 不让多个 client 共享同一个出站 UDP NAT channel。
-- 不改变 `udp2raw` wire header 的基本语义。
-- 第一阶段不做跨 client / 跨 entry channel 的复杂负载迁移；只做按 sourceEndpoint 建 session。
+### 3. 现有 reuseport 基础设施可直接复用
+
+`Sockets.bindChannels(Bootstrap, bindAddress, config)` 已经统一处理 UDP `SO_REUSEPORT` 多 bind：Linux epoll + 固定 `InetSocketAddress` + 固定 port 时，可以按 `reusePortBindCount` 绑定多个 UDP channel。
+
+所以本次不需要在 `Udp2rawHandler` 内硬写 epoll 逻辑，只需要让 server fixed entry 使用固定 UDP bind address，并走 `Sockets.bindChannels(Bootstrap, ...)`。
+
+## 修正后的核心设计判断
+
+### 1. session key 应优先使用包内 sourceEndpoint，而不是 UDP sender
+
+上一版计划里把 `DatagramPacket.sender()` 当成 primary `sourceEndpoint`，这对普通 UDP 入口成立，但对场景4不够准确。
+
+在目标链路中，B 侧看到的 UDP sender 是：
+
+```text
+udp2raw client / A 侧公网地址
+```
+
+而真正需要 NAT A 隔离的是：
+
+```text
+socks5client / ss client 的原始 sourceEndpoint
+```
+
+因此 fixed entry 的业务 session key 应为：
+
+```java
+Udp2rawSessionKey {
+    InetSocketAddress udp2rawPeer;      // DatagramPacket.sender(), 用于防碰撞和回包
+    InetSocketAddress clientSource;     // 包内 decode 出来的 clientEp/sourceEndpoint
+}
+```
+
+如果确认同一个 udp2raw peer 下不会出现重复的 client private endpoint，也可以先用 `clientSource` 作为主 key；更稳妥的第一版建议用 `(udp2rawPeer, clientSource)` 复合 key，避免两个不同 udp2raw peer 都上报 `192.168.1.2:50000` 这类私网 sourceEndpoint 时互相覆盖。
+
+### 2. fixed entry 只做入口和回包，不直接出站到 dest
+
+server fixed UDP entry 的本地端口是固定的，且可能有 `SO_REUSEPORT` 多个 channel。它不能直接发往真实 `dest`：
+
+```text
+错误:
+clientA -> fixedEntry:40000 -> dest
+clientB -> fixedEntry:40000 -> dest
+```
+
+真实目标看到的都是 `server:40000`，NAT A 语义丢失。
+
+正确做法：
+
+```text
+clientA -> fixedEntry:40000 -> natChannelA:51001 -> dest
+clientB -> fixedEntry:40000 -> natChannelB:51002 -> dest
+```
+
+回包：
+
+```text
+dest -> natChannelA:51001 -> fixedEntry:40000 -> udp2rawPeerA -> clientA
+dest -> natChannelB:51002 -> fixedEntry:40000 -> udp2rawPeerB -> clientB
+```
+
+即：
+
+- 出站到真实目标或 upstream relay：必须用 per-client NAT channel。
+- 回 udp2raw client：必须用 fixed entry channel，这样对端看到的仍是固定入口 port。
+
+### 3. wire 协议沿用旧实现语义
+
+udp2raw 数据包结构继续保持：
+
+```text
+STREAM_MAGIC short
+STREAM_VERSION byte
+clientSourceEndpoint encoded by UdpManager.encode
+upstream/destination endpoint encoded by UdpManager.encode
+payload
+```
+
+client 侧：
+
+- 从本地 SOCKS5 UDP 包解析 `dstEp`。
+- 用 `EndpointTracer.UDP.find(sender)` 或 `sender` 得到原始 `clientSourceEndpoint`。
+- 将 `clientSourceEndpoint + upstream/dstEp + payload` 写入 udp2raw 包。
+
+server 侧：
+
+- 从 udp2raw 包 decode `clientSourceEndpoint`。
+- decode `dstEp`。
+- 以 `(udp2rawPeer, clientSourceEndpoint)` 找或建 `Udp2rawSession`。
+- 用 session 的 NAT channel 发往 `dstEp` 或 route 后的 upstream。
 
 ## 推荐架构
 
 ```text
-client local SOCKS5 UDP relay
-  -> wrap udp2raw
-  -> server fixed udp2raw UDP port, SO_REUSEPORT N channels
-  -> Udp2rawEntryHandler
-  -> Udp2rawEntryManager.sessions[sourceEndpoint]
-  -> Udp2rawSession.natChannel, one per client sourceEndpoint
-  -> real UDP destination / SocksUdpUpstream selected relay
+RSS Client / Proxy A side
+=========================
+SOCKS5 UDP client packet
+  -> SocksProxyServer A UDP_ASSOCIATE dynamic relay
+  -> Udp2rawClientRelayHandler
+       decode socks5 dstEp
+       resolve original sourceEndpoint = EndpointTracer.UDP.find(sender) ?: sender
+       route if needed, get upstream/dstEp
+       encode udp2raw header: sourceEndpoint + upstream/dstEp
+  -> udp2rawClient fixed remote address
 
-real UDP destination / upstream relay
-  -> Udp2rawSession.natChannel
-  -> wrap udp2raw response
-  -> write by fixed entry channel
-  -> client sourceEndpoint
+Internet
+========
+udp2raw client -> udp2raw server
+
+RSS Server / Proxy B side
+=========================
+SocksProxyServer B starts fixed UDP entry
+  -> SO_REUSEPORT N entry channels bound to same udp2raw UDP port
+  -> Udp2rawServerEntryHandler
+       verify magic/version
+       decode sourceEndpoint
+       decode dstEp
+       key = (udp2rawPeer sender, sourceEndpoint)
+       session = manager.getOrCreate(key)
+       session.handleClientPacket(entryChannel, udp2rawPeer, sourceEndpoint, dstEp, payload)
+  -> Udp2rawSession.natChannel, one per key
+       route to direct dest or SocksUdpUpstream
+       write UDP from independent local port
+  -> dest
+
+Response
+========
+dest / upstream relay
+  -> session.natChannel
+  -> Udp2rawSessionHandler wraps response with sourceEndpoint
+  -> session.lastEntryChannel.write(DatagramPacket(to udp2rawPeer))
+  -> udp2raw client
+  -> RSS Client local UDP relay
+  -> socks5/ss client
 ```
 
-### 关键点：入口 channel 和 NAT channel 分离
+## 类拆分建议
 
-不要用 fixed entry channel 直接发往真实目标。
+### 1. `Udp2rawCodec`
 
-原因：fixed entry 的本地端口是所有 client 共享的固定端口，如果直接出站：
+抽出纯协议编解码，避免 client/server handler 重复操作 ByteBuf。
 
-```text
-clientA -> fixedEntry:40000 -> target
-clientB -> fixedEntry:40000 -> target
-```
-
-真实目标看到的都是同一个 server UDP 源端口，NAT A 会退化。
-
-新方案应变为：
-
-```text
-clientA -> fixedEntry:40000 -> natChannelA:51001 -> target
-clientB -> fixedEntry:40000 -> natChannelB:51002 -> target
-```
-
-回包时：
-
-```text
-target -> natChannelA:51001 -> fixedEntry:40000 -> clientA
-target -> natChannelB:51002 -> fixedEntry:40000 -> clientB
-```
-
-这样 client 仍只看到 server fixed udp2raw port，真实目标则看到每个 client 独立的服务端 UDP 源端口。
-
-## 新增/调整配置建议
-
-在 `SocksConfig` 中增加 server fixed entry 配置，保持默认关闭或复用现有 `enableUdp2raw` 语义：
+职责：
 
 ```java
-/** udp2raw server fixed UDP entry bind address; null means reuse listenAddress host + listenPort. */
-private InetSocketAddress udp2rawListenAddress;
+final class Udp2rawCodec {
+    static final short STREAM_MAGIC = -21264;
+    static final byte STREAM_VERSION = 1;
 
-/** fixed entry idle session timeout; default reuse udpReadTimeoutSeconds. */
-private int udp2rawSessionIdleSeconds;
-
-/** max active sourceEndpoint sessions; 0 means unlimited or use safe default. */
-private int udp2rawMaxSessions = 0;
+    static boolean hasMagic(ByteBuf in);
+    static Udp2rawFrame decodeRequest(ByteBuf in);
+    static ByteBuf encodeRequest(ByteBufAllocator alloc,
+                                 InetSocketAddress clientSource,
+                                 UnresolvedEndpoint dstEp,
+                                 ByteBuf payload);
+    static ByteBuf encodeResponse(ByteBufAllocator alloc,
+                                  InetSocketAddress clientSource,
+                                  ByteBuf payload);
+}
 ```
 
-建议语义：
+`Udp2rawFrame` 至少包含：
+
+```java
+final class Udp2rawFrame {
+    InetSocketAddress clientSource;
+    UnresolvedEndpoint destination;
+    ByteBuf payload;
+}
+```
+
+### 2. `Udp2rawClientRelayHandler`
+
+保留当前 client mode 的核心逻辑，但明确它只跑在 RSS Client / Proxy A 本地的动态 UDP relay channel 上。
+
+核心逻辑：
 
 ```text
-config.isEnableUdp2raw() && config.getUdp2rawClient() == null
-  -> server mode: SocksProxyServer startup binds dedicated fixed udp2raw UDP entry
+local app -> SOCKS5 UDP packet
+  -> decode dstEp
+  -> clientSource = EndpointTracer.UDP.find(sender) ?: sender
+  -> route / SocksContext
+  -> target = config.udp2rawClient 或 SocksUdpUpstream selected relay
+  -> encode sourceEndpoint + dstEp + payload
+  -> write to udp2raw target
 
-config.isEnableUdp2raw() && config.getUdp2rawClient() != null
-  -> client mode: local UDP_ASSOCIATE channel 继续按当前逻辑 wrap 到 udp2rawClient
+udp2raw server response
+  -> decode clientSource
+  -> write payload back to clientSource socketAddress
 ```
 
-`udp2rawListenAddress == null` 时，默认使用：
+注意：client 侧仍可继续使用现有 per-relay channel 状态，因为这是本地 `UDP_ASSOCIATE` 创建的独立 UDP channel，不是 server fixed shared entry。
 
-- TCP `listenAddress` 的 host；
-- TCP `listenPort` 的 port；
-- UDP 与 TCP 可共享同一个数字端口，不冲突。
+### 3. `Udp2rawServerEntryManager`
 
-如果不希望 UDP 与 TCP 同端口，可显式设置 `udp2rawListenAddress`。
-
-## 核心类设计
-
-### 1. `Udp2rawEntryManager`
-
-归属于 `SocksProxyServer`，负责 fixed entry 生命周期和 session 管理。
+归属于 `SocksProxyServer`，只在 server mode 启动。
 
 建议字段：
 
 ```java
-final class Udp2rawEntryManager implements AutoCloseable {
+final class Udp2rawServerEntryManager implements AutoCloseable {
     private final SocksProxyServer server;
-    private final ConcurrentMap<InetSocketAddress, Udp2rawSession> sessions = new ConcurrentHashMap<>();
-    private final List<Channel> entryChannels = new CopyOnWriteArrayList<>();
+    private final ConcurrentMap<Udp2rawSessionKey, Udp2rawSession> sessions;
+    private final List<Channel> entryChannels;
 
     void start();
-    Udp2rawSession getOrCreate(Channel entryChannel, InetSocketAddress sourceEndpoint, UnresolvedEndpoint clientEp);
-    void touch(Udp2rawSession session);
-    void closeSession(InetSocketAddress sourceEndpoint, String reason);
+    Udp2rawSession getOrCreate(Channel entryChannel,
+                               InetSocketAddress udp2rawPeer,
+                               InetSocketAddress clientSource);
+    void closeSession(Udp2rawSessionKey key, String reason);
     void close();
 }
 ```
 
 职责：
 
-- 用 `Sockets.udpBootstrap(config, ...)` 创建 fixed entry bootstrap。
-- 用 `Sockets.bindChannels(bootstrap, udp2rawListenAddress, config)` 完成多 bind。
-- 每个 entry channel pipeline 安装：
-  - UDP 压缩/冗余相关基础 handler；
-  - `Udp2rawEntryHandler`。
-- 维护 `sourceEndpoint -> Udp2rawSession`。
-- session idle 清理，关闭 session NAT channel。
-- server dispose 时关闭所有 entry channel 和 session channel。
+- 根据 `udp2rawListenAddress` 或 `listenAddress/listenPort` 解析 fixed UDP bind address。
+- 用 `Sockets.udpBootstrap(config, ...)` 创建 UDP bootstrap。
+- 用 `Sockets.bindChannels(bootstrap, fixedBindAddress, config)` 绑定 fixed entry，多 bind 自动走 reuseport。
+- 每个 entry channel 安装 `Udp2rawServerEntryHandler`。
+- 管理 `(udp2rawPeer, clientSource) -> Udp2rawSession`。
+- session idle 清理。
+- server dispose 时关闭 entry channels 和 sessions。
 
-注意：fixed entry 多 channel 不能注册到现有 `udpRelayRegistry`，否则同端口多 channel 会互相覆盖。
+不要把 fixed entry channel 注册进现有 `udpRelayRegistry`，因为 `udpRelayRegistry` 是 `localPort -> Channel`，同一个 reuseport 端口会覆盖。
 
-### 2. `Udp2rawEntryHandler`
+### 4. `Udp2rawServerEntryHandler`
 
-只挂在 fixed entry channel 上，尽量保持无状态。
+挂在 fixed entry channel 上，尽量无业务状态。
 
-处理 server inbound：
+处理流程：
 
 ```text
-DatagramPacket from client sourceEndpoint
-  -> 校验 STREAM_MAGIC / STREAM_VERSION
-  -> decode clientEp
-  -> decode dstEp
-  -> manager.getOrCreate(sourceEndpoint, clientEp)
-  -> session.handleClientPacket(entryChannel, payload, clientEp, dstEp)
+DatagramPacket in from udp2rawPeer
+  -> if magic/version invalid: drop
+  -> clientSource = decode first endpoint
+  -> dstEp = decode second endpoint
+  -> sessionKey = (udp2rawPeer, clientSource)
+  -> session = manager.getOrCreate(entryChannel, udp2rawPeer, clientSource)
+  -> session.updatePeer(entryChannel, udp2rawPeer)
+  -> session.handleClientPacket(payload, dstEp)
 ```
 
-关键约束：
+entry channel 级别不要保存：
 
-- 不使用 `ATTR_CLIENT_ADDR` 作为 channel 级 client lock。
-- 不使用 entry channel 的 `ATTR_CTX_MAP/ATTR_ROUTE_MAP` 表示业务 route。
-- 不把不同 client 的 redundant peer 写到同一个 entry channel attr。
-- 支持同一 sourceEndpoint 后续包可能落到不同 reuseport channel：session 内保存 `lastEntryChannel`，每次收到包更新，回包优先从最近 entry channel 写回。
+- 单一 `ATTR_CLIENT_ADDR`
+- 业务 `routeMap`
+- 业务 `ctxMap`
+- 多 client redundant peers
 
-### 3. `Udp2rawSession`
+### 5. `Udp2rawSession`
 
-每个 client sourceEndpoint 一个实例。
+每个 `(udp2rawPeer, clientSource)` 一个 session。
 
 建议字段：
 
 ```java
 final class Udp2rawSession implements AutoCloseable {
-    final InetSocketAddress sourceEndpoint;
-    volatile InetSocketAddress clientOriginAddr;
+    final Udp2rawSessionKey key;
+    final SocksProxyServer server;
+
     volatile Channel entryChannel;
+    volatile InetSocketAddress udp2rawPeer;
     volatile Channel natChannel;
+    volatile long lastActiveMillis;
+
     final ConcurrentMap<InetSocketAddress, SocksContext> ctxMap;
     final ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap;
     final ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap;
-    volatile long lastActiveMillis;
 }
 ```
 
 职责：
 
-- 首包创建独立 `natChannel`，绑定端口 `0`。
-- `natChannel` 只用于出站到真实 destination / upstream relay 和接收对应回包。
-- `natChannel` pipeline 安装 `Udp2rawSessionHandler`。
-- 在 `natChannel.attr(SocksContext.SOCKS_SVR)` 绑定 server，便于复用现有 upstream init / traffic 逻辑。
-- `SocksUdpUpstream.initChannelAsync(natChannel)` 继续可用；UDP port hopping / RX RPC relay group 的 session group 也挂在这个 per-client channel 上。
+- 首包创建独立 `natChannel`，绑定随机本地 UDP 端口。
+- 所有发往真实目标或 upstream relay 的数据都从 `natChannel` 出站。
+- 所有回 client 的数据都从 `entryChannel` 出站到 `udp2rawPeer`。
+- `natChannel.attr(SocksContext.SOCKS_SVR).set(server)`，方便复用 upstream init / traffic 逻辑。
+- `SocksUdpUpstream.initChannelAsync(natChannel)` 继续可用。
 
-### 4. `Udp2rawSessionHandler`
+### 6. `Udp2rawSessionHandler`
 
-只挂在 per-client NAT channel 上。
+挂在 per-client NAT channel 上。
 
-处理 NAT channel inbound：
-
-```text
-DatagramPacket from real destination / upstream relay
-  -> 用 session.ctxMap 按 sender 找 SocksContext
-  -> 如果是 SocksUdpUpstream 回包，按现有 SOCKS5 UDP 语义处理
-  -> wrap udp2raw response: STREAM_MAGIC + VERSION + client/source endpoint + payload
-  -> 通过 session.entryChannel writeAndFlush 到 session.sourceEndpoint
-```
-
-注意：回 client 必须通过 fixed entry channel 写出，不能通过 NAT channel 写出，否则 client 看到的 server source port 会变成随机 NAT port，不再是 udp2raw fixed entry port。
-
-## 路由初始化建议
-
-当前 `Udp2rawHandler` 的 route 初始化比 `SocksUdpRelayHandler` 简单：命中陌生 dst 后直接创建 `SocksContext`、同步 `publishEvent`，然后 `initChannelAsync` 完成后发当前包。
-
-建议这次重构顺便迁移到类似 `SocksUdpRelayHandler` 的异步 route init 模型：
-
-- `routeMap`：ready route。
-- `routeInitMap`：正在初始化的 route。
-- `PendingPacket`：初始化期间短暂缓存首批 UDP 包。
-- 限制：`MAX_PENDING_ROUTE_PACKETS = 32`、`MAX_PENDING_ROUTE_BYTES = 256 * 1024` 可沿用。
-- `publishEvent(server.onUdpRoute, ctx)` 放到异步线程，避免阻塞 EventLoop。
-- 完成后回到 session NAT channel 的 EventLoop flush pending。
-
-这样可以避免高并发首包同时创建多份相同 route，也减少 EventLoop 被业务路由逻辑阻塞的风险。
-
-## 与 UDP port hopping / RX RPC relay group 的关系
-
-### 当前 port hopping 仍放在 `SocksUdpUpstream` 层
-
-server fixed entry 不应该自己做 port hopping。它只负责入口和 session 分派。
-
-当 route upstream 是 `SocksUdpUpstream` 时：
-
-```java
-InetSocketAddress relayAddr = socksUdpUpstream.selectUdpRelayAddress(session.natChannel);
-```
-
-选择出的 relay 地址注册到 `session.ctxMap`，用于 upstream 回包识别。
-
-这样现有能力继续成立：
-
-- 标准 SOCKS5 兼容模式：多条 UDP_ASSOCIATE control channel。
-- 两端 rxlib 且支持 `SocksRpcContract`：优先使用 RX RPC relay group。
-- 任意一端不支持扩展：按现有 fallback 回退标准 SOCKS5。
-
-### ctxMap 必须是 session 级别
-
-不要把 upstream relay 地址注册到 fixed entry channel 的 ctxMap。
-
-正确关系：
+处理来自 dest/upstream 的回包：
 
 ```text
-sourceEndpoint A -> Udp2rawSession A -> ctxMapA[upstreamRelay1] = routeContext
-sourceEndpoint B -> Udp2rawSession B -> ctxMapB[upstreamRelay1] = routeContext
+DatagramPacket from dest/upstream
+  -> sc = session.ctxMap.get(sender)
+  -> direct response: socks5Encode(payload, sender)
+  -> socks upstream response: payload already has SOCKS5 UDP header
+  -> encode udp2raw response header with session.key.clientSource
+  -> entryChannel.writeAndFlush(packet to session.udp2rawPeer)
 ```
 
-即使两个 session 都选择了同一个 remote relay port，回包也会先回到各自 NAT channel，因为 NAT channel 的本地源端口不同；不会需要 fixed entry 级别做 demux。
+注意：回包只需要带 `clientSourceEndpoint`，因为 client 侧收到后要把 payload 投递回本地 app；如果沿用当前实现，也可以保留只 encode clientSource 的 response 格式。
 
-## 与 UDP 多倍发送的关系
+## SocksProxyServer 接入点
 
-当前 UDP 多倍发送依赖 channel 上的 peer/去重状态。fixed entry 是 shared channel，不能直接复用 per-client peer 集合，否则可能串 client。
+### server mode 启动 fixed entry
 
-建议：
+建议语义：
 
-1. client -> server 方向：client 侧保持当前逻辑；本地 per-client UDP relay channel 仍可安装现有 redundant/compress handler。
-2. server fixed entry 收包：只接收、解包、按 sourceEndpoint 分派，不在 shared entry 上维护 client peer 集合。
-3. server -> client 方向：如果需要多倍发包，优先在 `Udp2rawSession` 层实现 `writeToClient(session, buf)`，只对 `session.sourceEndpoint` 做重复发送，不能使用 entry channel 全局 peers。
-4. server -> upstream / real destination 方向：走 `session.natChannel`，可继续复用 upstream port hopping 和已有 UDP 写限流。
+```text
+config.isEnableUdp2raw() && config.getUdp2rawClient() == null
+  -> RSS Server / Proxy B: start fixed udp2raw UDP entry
 
-第一阶段可以先保证“不开启 server->client 多倍发包时正确”；再补 per-session redundant writer。
-
-## 兼容策略
-
-### 标准 SOCKS5 UDP 不变
-
-`Socks5CommandRequestHandler` 当前 `UDP_ASSOCIATE` 的动态 relay channel 逻辑保留，用于：
-
-- 普通 SOCKS5 UDP client。
-- client 本地侧 `udp2raw` wrap channel。
-- upstream 标准 SOCKS5 fallback。
-
-### udp2raw server entry 独立启动
+config.isEnableUdp2raw() && config.getUdp2rawClient() != null
+  -> RSS Client / Proxy A: keep client relay handler, send to udp2rawClient
+```
 
 `SocksProxyServer` 构造完成 TCP bind 后：
 
@@ -358,132 +400,269 @@ if (config.isEnableUdp2raw() && config.getUdp2rawClient() == null) {
 }
 ```
 
-`dispose()` 中先关闭 `udp2rawEntryManager`，再关闭动态 UDP relay registry。
+`dispose()`：
 
-### 旧 `Udp2rawHandler` 迁移方式
+```java
+tryClose(udp2rawEntryManager);
+// then close dynamic udpRelayRegistry
+```
 
-建议不要一次性硬改成完全不同语义。可以拆分：
+### UDP_ASSOCIATE 分支保持兼容
 
-- `Udp2rawCodec`：保留 magic/version、encode/decode clientEp/dstEp 工具方法。
-- `Udp2rawClientRelayHandler`：保留当前 client mode 逻辑。
-- `Udp2rawEntryHandler`：server fixed entry 新 handler。
-- `Udp2rawSessionHandler`：server per-client NAT channel handler。
+`Socks5CommandRequestHandler` 的动态 UDP relay 创建逻辑继续保留，用于：
 
-如果为了降低 diff，也可以短期保留 `Udp2rawHandler` 兼容旧测试，但新 server fixed entry 不再直接使用它。
+- 普通 SOCKS5 UDP。
+- RSS Client / Proxy A 本地 udp2raw client relay。
+- upstream fallback 标准 SOCKS5 UDP_ASSOCIATE。
+
+但当 server fixed entry 已启用时，B 侧不依赖 `UDP_ASSOCIATE` 返回动态端口给 udp2raw client。udp2raw client 永远发固定 entry address。
+
+## 配置建议
+
+在 `SocksConfig` 中增加：
+
+```java
+private InetSocketAddress udp2rawListenAddress;
+private int udp2rawSessionIdleSeconds;
+private int udp2rawMaxSessions;
+```
+
+默认规则：
+
+- `udp2rawListenAddress == null`：使用 `listenAddress` 的 host + `listenPort` 作为 UDP fixed entry。
+- `udp2rawSessionIdleSeconds <= 0`：复用 `udpReadTimeoutSeconds`。
+- `udp2rawMaxSessions <= 0`：使用安全默认值，例如 `65536` 或按配置不限制，但建议公网场景必须有上限。
+
+示例：
+
+```java
+SocksConfig serverConf = new SocksConfig(Sockets.newAnyEndpoint(1080));
+serverConf.setEnableUdp2raw(true);
+serverConf.setUdp2rawClient(null); // server mode
+serverConf.setUdp2rawListenAddress(Sockets.newAnyEndpoint(4096));
+serverConf.setReusePortBindCount(0); // Linux epoll 下按 CPU/reactor 估算
+serverConf.setUdp2rawSessionIdleSeconds(300);
+serverConf.setUdp2rawMaxSessions(65536);
+```
+
+## 与 SocksUdpUpstream / port hopping / RPC relay group 的关系
+
+server fixed entry 不直接做 port hopping。port hopping 仍属于 `SocksUdpUpstream`。
+
+但 channel 参数必须从 fixed entry channel 改成 session NAT channel：
+
+```java
+routeContext.getUpstream().initChannelAsync(session.natChannel);
+InetSocketAddress relayAddr = socksUdpUpstream.selectUdpRelayAddress(session.natChannel);
+```
+
+这样每个 client sourceEndpoint 在 B 侧都有独立 upstream session group / relay group 视图，符合 NAT A。
+
+如果 route 直连：
+
+```text
+session.natChannel -> dest
+```
+
+如果 route 到下一跳 SOCKS5 upstream：
+
+```text
+session.natChannel -> selected SOCKS5 UDP relay port
+```
+
+`ctxMap` 必须是 session 级别：
+
+```text
+sessionA.ctxMap[dest or relayAddr] = contextA
+sessionB.ctxMap[dest or relayAddr] = contextB
+```
+
+不要把这些状态放在 fixed entry channel attr 上。
+
+## 与 UDP 多倍发送/压缩的关系
+
+### client -> server
+
+RSS Client / Proxy A 的动态 UDP relay channel 仍是 per-client 的，可以继续用现有 UDP redundant/compress handler。它把完整 udp2raw payload 发给固定 server entry。
+
+### server fixed entry
+
+fixed entry 是 shared channel，不能复用全局 peer 列表：
+
+- 不使用 `ATTR_REDUNDANT_CLIENT_PEER` 存多个 client。
+- 不在 entry channel 上维护 per-client RDNT 去重窗口。
+- 如果需要对 server -> udp2rawPeer 的回包做多倍发送，应在 `Udp2rawSession.writeToPeer` 中按 session 独立处理。
+
+### server -> dest/upstream
+
+走 `session.natChannel`，可以继续复用现有 UDP write limit、upstream port hopping、RPC relay group。
+
+## 路由初始化建议
+
+第一阶段可以沿用旧版简单 route 模型：
+
+```text
+首包 decode dstEp
+  -> SocksContext.getCtx(clientSource, dstEp)
+  -> publishEvent(onUdpRoute)
+  -> upstream.initChannelAsync(session.natChannel)
+  -> write
+```
+
+但建议同步引入 `SocksUdpRelayHandler` 已经成熟的 pending route init 模型：
+
+- `routeMap`：ready route。
+- `routeInitMap`：正在初始化 route。
+- `PendingPacket`：首包和短时间 burst 缓存。
+- 限制 pending 包数和字节数。
+- `publishEvent` 不阻塞 EventLoop。
+
+session 级别缓存 key 建议为：
+
+```text
+(clientSourceEndpoint, dstEp) within one Udp2rawSession
+```
+
+因为一个 client sourceEndpoint 可以访问多个 UDP 目标。
 
 ## 实施步骤
 
-### P0：配置和生命周期骨架
+### P0：文档和测试基线
 
-- `SocksConfig` 增加 `udp2rawListenAddress / udp2rawSessionIdleSeconds / udp2rawMaxSessions`。
-- `SocksProxyServer` 增加 `Udp2rawEntryManager` 字段。
-- server mode `enableUdp2raw && udp2rawClient == null` 时启动 fixed UDP entry。
-- `dispose()` 完整关闭 entry channels 和 sessions。
+- 保留当前标准 SOCKS5 UDP 测试。
+- 明确新增场景4 udp2raw 链路测试名，例如：
+  - `socks5UdpRelay_udp2raw_fixedEntry_sourceEndpointNatA_e2e`
+  - `shadowsocksUdpRelay_udp2raw_fixedEntry_sameDestinationDifferentClientPorts_e2e`
+- 验证旧版 `30ffa37` 的 wire 语义：request 包带 `clientSource + dstEp`，response 包带 `clientSource`。
 
-### P1：fixed entry + session 分派
+### P1：协议 codec 和 client handler 清理
 
-- 新增 `Udp2rawEntryManager`。
-- 新增 `Udp2rawEntryHandler`。
-- 使用 `Sockets.bindChannels(Bootstrap, fixedUdpAddress, config)` 绑定固定 UDP port。
-- 以 `DatagramPacket.sender()` 作为 primary `sourceEndpoint` key。
-- 每个 sourceEndpoint 创建 `Udp2rawSession`。
-- session idle timeout 关闭 NAT channel 并从 map 移除。
+- 新增 `Udp2rawCodec`。
+- 将当前 `Udp2rawHandler` 的 client mode 抽为 `Udp2rawClientRelayHandler` 或保留方法但明确只服务 client relay。
+- client 侧继续从 `EndpointTracer.UDP.find(sender)` 或 `sender` 获取原始 sourceEndpoint。
+- client 侧写包必须包含：`sourceEndpoint + dstEp + payload`。
 
-### P2：per-client NAT channel
+### P2：server fixed entry 生命周期
 
-- 新增 `Udp2rawSessionHandler`。
-- 每个 session 创建独立 UDP `natChannel`，绑定端口 `0`。
-- client packet 通过 `natChannel` 发往真实目的地或 upstream relay。
-- destination/upstream 回包由 `natChannel` 收到后，经 fixed entry channel wrap 回 client。
-- 确保所有 ByteBuf retain/release 清晰，跨 channel write 时不泄漏。
+- 新增 `Udp2rawServerEntryManager`。
+- `SocksProxyServer` server mode 启动 fixed entry。
+- fixed entry 走 `Sockets.bindChannels(Bootstrap, fixedUdpAddress, config)`，获得 reuseport 多入口。
+- fixed entry 不注册到 `udpRelayRegistry`。
 
-### P3：路由初始化和 upstream 兼容
+### P3：按包内 sourceEndpoint 创建 session
 
-- 将 `routeMap/ctxMap/routeInitMap` 下沉到 `Udp2rawSession`。
-- 复用或抽取 `SocksUdpRelayHandler` 的 pending route init 模型。
-- `SocksUdpUpstream.initChannelAsync(session.natChannel)` 继续支持：
-  - UDP port hopping；
-  - lease pool；
-  - RX RPC relay group；
-  - fallback 标准 SOCKS5。
-- upstream relay add/remove 回调需要能清理 session 级 ctxMap；不要只清理 fixed entry channel attr。
+- 新增 `Udp2rawSessionKey(udp2rawPeer, clientSource)`。
+- 新增 `Udp2rawSession`。
+- fixed entry 收包后 decode `clientSource`，用 session key get/create。
+- `DatagramPacket.sender()` 只更新 `session.udp2rawPeer` 和 `session.entryChannel`。
+- session idle 清理。
 
-### P4：UDP 多倍发送适配
+### P4：per-client NAT channel
 
-- 禁止 fixed entry channel 使用全局 `ATTR_REDUNDANT_CLIENT_PEER` 存多个 client peer。
-- 如需 server->client 多倍发送，新增 per-session writer。
-- 验证 RDNT 去重窗口不因 fixed entry 多 client 混用而串流。
+- 每个 session 首包创建独立 `natChannel`，bind `0`。
+- `natChannel` 出站到 dest/upstream。
+- `natChannel` 收到回包后，通过 fixed entry wrap 回 `udp2rawPeer`。
+- 确保回包的 UDP 源端口仍是 fixed entry port。
 
-### P5：指标、保护和测试
+### P5：upstream 和 port hopping 兼容
 
-新增指标建议：
+- `SocksUdpUpstream.initChannelAsync` 参数改为 `session.natChannel`。
+- `selectUdpRelayAddress` / `snapshotUdpRelayAddresses` 都用 session channel。
+- upstream relay add/remove 清理 session 的 ctxMap，不清理 fixed entry channel attr。
+- RX RPC relay group fallback 保持现有策略。
+
+### P6：保护、指标和压测
+
+新增指标：
 
 - `socks.udp2raw.entry.bind.count`
 - `socks.udp2raw.session.active.count`
 - `socks.udp2raw.session.create.count`
-- `socks.udp2raw.session.close.count,reason=idle|entry-close|nat-close|error`
-- `socks.udp2raw.route.init.count,result=success|fail|pending-overflow`
-- `socks.udp2raw.drop.count,reason=bad-magic|bad-version|max-sessions|nat-not-ready|write-fail`
-- `socks.udp2raw.write.count,direction=to-client|to-upstream`
+- `socks.udp2raw.session.close.count,reason=idle|entry-close|nat-close|max-sessions|error`
+- `socks.udp2raw.drop.count,reason=bad-magic|bad-version|bad-endpoint|max-sessions|route-init-fail|nat-not-ready|write-fail`
+- `socks.udp2raw.write.count,direction=to-peer|to-dest|from-dest`
 
-保护建议：
+保护：
 
-- `udp2rawMaxSessions` 防止伪造 sourceEndpoint 打爆 NAT channel。
-- `pending route` 包数/字节上限。
-- session idle timeout 默认复用 `udpReadTimeoutSeconds`。
-- fixed entry bind 失败时 server 构造失败或明确 warn 后关闭已绑定 channel，避免半启动。
+- `udp2rawMaxSessions`。
+- bad packet 快速丢弃。
+- per-route pending bytes/packets 上限。
+- session idle timeout。
+- fixed entry bind 失败要关闭已绑定 channel，避免半启动。
 
 ## 测试计划
 
 ### 单元测试
 
-- `Udp2rawEntryManager` fixed port bind：
-  - Linux epoll + fixed port + `reusePortBindCount>1` 时 entry channel 数量正确。
-  - port=0 时不启用 reuseport。
-- sourceEndpoint session：
-  - 同一个 sender 命中同一个 session。
-  - 不同 sender 创建不同 session。
-  - session idle 后关闭 NAT channel 并移除 map。
-- bad packet：
-  - magic/version 错误丢弃。
-  - payload 不完整丢弃。
+- `Udp2rawCodec`：request encode/decode，response encode/decode。
+- `Udp2rawSessionKey`：不同 udp2raw peer + 相同 private clientSource 不冲突。
+- `Udp2rawServerEntryManager`：same key 命中同一 session，different clientSource 创建不同 session。
+- bad magic/version/drop。
 
 ### 集成测试
 
-- `client udp2raw -> server fixed entry -> UDP echo/DNS` 正常返回。
-- 两个 client sourceEndpoint 并发访问同一个 echo server，echo server 看到两个不同的 server UDP 源端口，证明 NAT A。
-- 开启 `reusePortBindCount=2/4` 后，多 entry channel 能同时收包，session 不串。
-- 开启 `SocksUdpUpstream` port hopping 后，session NAT channel 能在多个 upstream UDP relay port 之间轮换。
-- 对端不支持 `SocksRpcContract` 时 fallback 到标准 SOCKS5 UDP_ASSOCIATE。
-- 开启 UDP 多倍发送时，不会把 clientA 的响应发给 clientB。
+1. **基础 fixed entry**
 
-### 压测观察
+```text
+socks5client -> RSS Client SocksProxyServer -> udp2raw client
+  -> udp2raw server fixed entry -> RSS Server SocksProxyServer -> UDP echo
+```
 
-- fixed entry PPS。
-- session active 数。
-- NAT channel 数与 fd 数。
-- direct memory / pending write bytes。
-- UDP drop reason 分布。
-- upstream port hopping active hop 数。
-- tail latency：p50/p95/p99。
+验证 echo 正常返回。
+
+2. **NAT A**
+
+两个不同 client sourceEndpoint 访问同一个 UDP echo server：
+
+```text
+clientA:portA -> dest:53
+clientB:portB -> dest:53
+```
+
+验证 echo server 看到两个不同的 server UDP 源端口。
+
+3. **fixed entry 回包源端口**
+
+验证 udp2raw client 收到的回包源端口仍是 server fixed entry port，而不是 session NAT channel port。
+
+4. **reuseport**
+
+`reusePortBindCount=2/4`，多个 fixed entry channel 同端口绑定，session 状态不因 channel 切换而丢失。
+
+5. **port hopping / RPC relay group**
+
+开启 `SocksUdpUpstream` port hopping，验证 `session.natChannel` 可以轮换多个 upstream UDP relay port，并且回包正确归属到对应 session。
+
+6. **场景4 shadowsocks 链路**
+
+```text
+ShadowsocksClient -> ShadowsocksServer -> SocksProxyServer A
+  -> udp2raw client -> udp2raw server fixed entry -> SocksProxyServer B -> dest
+```
+
+覆盖：
+
+- DNS 远程解析路径。
+- same destination different client ports。
+- UDP redundant/compress 开启后不串包。
 
 ## 风险点
 
-1. **reuseport 多 entry channel 的状态一致性**：状态必须集中在 manager/session，不能放 entry channel attr。
-2. **ByteBuf 生命周期**：entry channel -> natChannel、natChannel -> entry channel 都是跨 channel 写，必须明确 retain/release。
-3. **EventLoop 线程亲和**：session 状态最好由 natChannel eventLoop 串行维护，manager 只做 sourceEndpoint map 和调度。
-4. **client NAT rebinding**：sourceEndpoint 变化会创建新 session。第一阶段接受该行为；后续可按 decoded clientEp + token 做迁移。
-5. **安全与资源上限**：fixed UDP port 暴露在公网，必须有 max sessions、idle、bad packet drop 指标。
-6. **多倍发送串流风险**：shared entry 上不能放全局 peer 列表。
-7. **现有 RPC 控制面清理**：upstream relay remove/add 回调要适配 session channel，不要只找旧的 per-relay channel attr。
+1. **session key 选择错误**：如果按 UDP sender 建 session，多个原始 client 会被合并；必须按包内 sourceEndpoint 建 session，并建议带上 udp2rawPeer 防碰撞。
+2. **fixed entry 直接出站**：会破坏 NAT A，必须通过 per-client NAT channel。
+3. **reuseport 多 channel 状态分散**：业务状态必须在 manager/session，不放 entry channel attr。
+4. **回包端口错误**：回 udp2raw client 必须从 fixed entry channel 写，不从 natChannel 写。
+5. **ByteBuf 生命周期**：entry -> natChannel、natChannel -> entry 都跨 channel，必须明确 retain/release。
+6. **UDP redundant 状态串流**：fixed entry 不能使用全局 peer list；需要 per-session 处理。
+7. **私网 sourceEndpoint 冲突**：不同 udp2raw peer 可能携带相同私网 sourceEndpoint，建议 session key 包含 udp2rawPeer。
 
 ## 验收标准
 
-- 开启 `enableUdp2raw` 且 server mode 时，server 启动后固定 UDP port 可用；Linux epoll + fixed port 可按配置多 bind。
-- client 侧无需知道 server 动态 UDP relay port，只配置固定 `udp2rawClient` 即可。
-- 每个 client sourceEndpoint 在 server 侧有独立 NAT channel。
-- 真实 UDP destination 看到不同 client 对应不同 server UDP 源端口。
-- 回 client 的 UDP 包源端口仍是 fixed udp2raw entry port。
-- 标准 SOCKS5 UDP 和未开启 udp2raw 的路径完全不变。
-- 与 UDP port hopping / RX RPC relay group fallback 兼容。
-- 高并发下无明显 ByteBuf leak、session 泄漏、跨 client 串包。
+- 场景4链路能通过 udp2raw client/server 固定入口转发 UDP。
+- RSS Client/Proxy A 发出的 udp2raw request 包内包含原始 client sourceEndpoint。
+- RSS Server/Proxy B fixed entry 按包内 sourceEndpoint 创建独立 NAT channel。
+- 同一 dest 下，不同 client sourceEndpoint 在 dest 侧表现为不同 server UDP 源端口。
+- udp2raw client 收到回包时，server 源端口仍是 fixed entry port。
+- Linux epoll + fixed port 下可以启用 `SO_REUSEPORT` 多入口。
+- 标准 SOCKS5 UDP 和 client 本地 udp2raw relay 行为不回退。
+- 与 UDP port hopping、RX RPC relay group fallback、UDP compress/redundant 兼容。
