@@ -8,6 +8,7 @@ import org.rx.net.transport.hybrid.HybridConfig;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
 
 @Getter
 @Setter
@@ -21,6 +22,8 @@ public class RpcServerConfig {
     private final List<Integer> eventBroadcastVersions = new ArrayList<Integer>();
     private short eventComputeVersion = EVENT_DISABLE_COMPUTE;
     private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
+    private Executor executor;
+    private boolean executorForPing;
 
     public RpcServerConfig(TcpServerConfig tcpConfig) {
         this(new HybridConfig());

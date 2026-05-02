@@ -22,10 +22,13 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.core.Extends.*;
 
@@ -35,8 +38,28 @@ public class NameserverImpl implements Nameserver {
     @ToString
     static class DeregisterInfo implements Serializable {
         private static final long serialVersionUID = 713672672746841635L;
+        final long version;
         final String appName;
         final InetAddress address;
+    }
+
+    @RequiredArgsConstructor
+    @ToString
+    static class ReplicaSnapshot implements Serializable {
+        private static final long serialVersionUID = -5790980112424307032L;
+        final long version;
+        final Set<InetSocketAddress> serverEndpoints;
+        final Map<Object, Map<String, Serializable>> attrs;
+    }
+
+    @RequiredArgsConstructor
+    @ToString
+    static class ReplicaFullSync implements Serializable {
+        private static final long serialVersionUID = 1660036726413927370L;
+        final long version;
+        final Set<InetSocketAddress> serverEndpoints;
+        final Map<String, List<InetAddress>> hosts;
+        final Map<Object, Map<String, Serializable>> attrs;
     }
 
     static final String NAME = "nameserver";
@@ -49,8 +72,11 @@ public class NameserverImpl implements Nameserver {
     long syncDelay = 500;
     final UdpClient ss;
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
-    //key String -> appName, InetAddress -> instance addr
+    // key String -> appName or appName#ip instance key
     final Map<Object, Map<String, Serializable>> attrs = new ConcurrentHashMap<>();
+    final AtomicLong replicaVersion = new AtomicLong();
+    volatile long lastAppliedReplicaVersion;
+    ScheduledFuture<?> replicaFullSyncTask;
 
     int getSyncPort() {
         if (config.getSyncPort() > 0) {
@@ -61,7 +87,7 @@ public class NameserverImpl implements Nameserver {
 
     public Map<String, List<InstanceInfo>> getInstances() {
         return Linq.from(rs.sessions().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"),
-                (k, p) -> getDiscoverInfos(p.select(x -> x.tcpRemoteEndpoint().getAddress()).toList(), Collections.emptyList()));
+                (k, p) -> getDiscoverInfos(k, p.select(x -> x.tcpRemoteEndpoint().getAddress()).toList(), Collections.emptyList()));
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
@@ -97,15 +123,29 @@ public class NameserverImpl implements Nameserver {
         ss.onReceive.add((s, e) -> {
             Object packet = e.getValue().packet;
             log.info("[{}] Replica {}", getSyncPort(), packet);
+            if (tryAs(packet, ReplicaFullSync.class, this::applyFullSync)) {
+                return;
+            }
+            if (tryAs(packet, ReplicaSnapshot.class, this::applySnapshot)) {
+                return;
+            }
             if (!tryAs(packet, Map.class, p -> {
                 Map<Object, Map<String, Serializable>> sync = (Map<Object, Map<String, Serializable>>) p;
                 for (Map.Entry<Object, Map<String, Serializable>> entry : sync.entrySet()) {
                     attrs(entry.getKey()).putAll(entry.getValue());
                 }
-            }) && !tryAs(packet, DeregisterInfo.class, p -> doDeregister(p.appName, p.address, false, false))) {
+            }) && !tryAs(packet, DeregisterInfo.class, p -> {
+                if (acceptIncrementalVersion(p.version)) {
+                    doDeregister(p.appName, p.address, false, false);
+                }
+            })) {
                 syncRegister((Set<InetSocketAddress>) packet);
             }
         });
+        long fullSyncPeriodMillis = config.getReplicaFullSyncPeriodMillis();
+        if (fullSyncPeriodMillis > 0) {
+            replicaFullSyncTask = Tasks.schedulePeriod(this::syncFullSnapshot, fullSyncPeriodMillis);
+        }
         registerHttpPage();
     }
 
@@ -121,6 +161,10 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public void close() {
+        if (replicaFullSyncTask != null) {
+            replicaFullSyncTask.cancel(false);
+            replicaFullSyncTask = null;
+        }
         quietly(rs::close);
         quietly(ss::close);
         if (ownDnsServer) {
@@ -134,10 +178,12 @@ public class NameserverImpl implements Nameserver {
         }
 
         dnsServer.addHosts(NAME, RandomList.DEFAULT_WEIGHT, Linq.from(svrEps).select(InetSocketAddress::getAddress).toList());
-        publishEventAsync(EVENT_CLIENT_SYNC, new NEventArgs<>(svrEps));
+        Set<InetSocketAddress> snapshot = new HashSet<InetSocketAddress>(svrEps);
+        publishEventAsync(EVENT_CLIENT_SYNC, new NEventArgs<Set<InetSocketAddress>>(snapshot));
+        ReplicaSnapshot packet = new ReplicaSnapshot(nextReplicaVersion(), snapshot, null);
         Tasks.setTimeout(() -> {
             for (InetSocketAddress ssAddr : serverEndpoints) {
-                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), svrEps);
+                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet);
             }
         }, syncDelay, svrEps, Constants.TIMER_REPLACE_FLAG);
     }
@@ -151,9 +197,10 @@ public class NameserverImpl implements Nameserver {
     }
 
     public void syncAttributes() {
+        ReplicaSnapshot packet = new ReplicaSnapshot(nextReplicaVersion(), null, snapshotAttrs());
         Tasks.setTimeout(() -> {
             for (InetSocketAddress ssAddr : svrEps) {
-                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), attrs);
+                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet);
             }
         }, syncDelay, attrs, Constants.TIMER_REPLACE_FLAG);
     }
@@ -174,7 +221,7 @@ public class NameserverImpl implements Nameserver {
 
     void doRegister(String appName, int weight, InetAddress addr) {
         if (dnsServer.addHosts(appName, weight, Collections.singletonList(addr))) {
-            publishEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, true, attrs(addr)));
+            publishEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, true, instanceAttrs(appName, addr)));
         }
     }
 
@@ -195,10 +242,10 @@ public class NameserverImpl implements Nameserver {
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("deregister {}", appName);
             if (dnsServer.removeHosts(appName, Collections.singletonList(addr))) {
-                publishEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, false, attrs(addr)));
+                publishEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, false, instanceAttrs(appName, addr)));
             }
             if (shouldSync) {
-                syncDeregister(new DeregisterInfo(appName, addr));
+                syncDeregister(new DeregisterInfo(nextReplicaVersion(), appName, addr));
             }
         }
     }
@@ -221,14 +268,14 @@ public class NameserverImpl implements Nameserver {
     @Override
     public <T extends Serializable> void instanceAttr(String appName, String key, T value) {
         RemotingContext ctx = RemotingContext.context();
-        attrs(ctx.getClient().tcpRemoteEndpoint().getAddress()).put(key, value);
+        attrs(instanceKey(appName, ctx.getClient().tcpRemoteEndpoint().getAddress())).put(key, value);
         syncAttributes();
     }
 
     @Override
     public <T extends Serializable> T instanceAttr(String appName, String key) {
         RemotingContext ctx = RemotingContext.context();
-        return (T) attrs(ctx.getClient().tcpRemoteEndpoint().getAddress()).get(key);
+        return (T) attrs(instanceKey(appName, ctx.getClient().tcpRemoteEndpoint().getAddress())).get(key);
     }
 
     @Override
@@ -252,7 +299,7 @@ public class NameserverImpl implements Nameserver {
     @Override
     public List<InstanceInfo> discover(@NonNull String appName, List<String> instanceAttrKeys) {
         List<InetAddress> hosts = dnsServer.getHosts(appName);
-        return getDiscoverInfos(hosts, instanceAttrKeys);
+        return getDiscoverInfos(appName, hosts, instanceAttrKeys);
     }
 
     @Override
@@ -265,12 +312,12 @@ public class NameserverImpl implements Nameserver {
             RemotingContext ctx = RemotingContext.context();
             hosts.remove(ctx.getClient().tcpRemoteEndpoint().getAddress());
         }
-        return getDiscoverInfos(hosts, instanceAttrKeys);
+        return getDiscoverInfos(appName, hosts, instanceAttrKeys);
     }
 
-    List<InstanceInfo> getDiscoverInfos(List<InetAddress> hosts, List<String> instanceAttrKeys) {
+    List<InstanceInfo> getDiscoverInfos(String appName, List<InetAddress> hosts, List<String> instanceAttrKeys) {
         return Linq.from(hosts).select(p -> {
-            Map<String, Serializable> attrs = attrs(p);
+            Map<String, Serializable> attrs = instanceAttrs(appName, p);
             Map<String, Serializable> values = new HashMap<String, Serializable>();
             Iterable<String> keys = !CollectionUtils.isEmpty(instanceAttrKeys) ? instanceAttrKeys : attrs.keySet();
             for (String key : keys) {
@@ -282,6 +329,93 @@ public class NameserverImpl implements Nameserver {
             }
             return new InstanceInfo(p, (String) attrs.get(RxConfig.ConfigNames.APP_ID), values);
         }).toList();
+    }
+
+    String instanceKey(String appName, InetAddress address) {
+        return appName + "#" + address.getHostAddress();
+    }
+
+    Map<String, Serializable> instanceAttrs(String appName, InetAddress address) {
+        return attrs(instanceKey(appName, address));
+    }
+
+    long nextReplicaVersion() {
+        return replicaVersion.incrementAndGet();
+    }
+
+    boolean acceptIncrementalVersion(long version) {
+        if (version <= 0) {
+            return true;
+        }
+        long last = lastAppliedReplicaVersion;
+        if (version <= last) {
+            log.debug("ignore stale replica version {} <= {}", version, last);
+            return false;
+        }
+        lastAppliedReplicaVersion = version;
+        return true;
+    }
+
+    Map<Object, Map<String, Serializable>> snapshotAttrs() {
+        Map<Object, Map<String, Serializable>> snapshot = new HashMap<Object, Map<String, Serializable>>();
+        for (Map.Entry<Object, Map<String, Serializable>> entry : attrs.entrySet()) {
+            snapshot.put(entry.getKey(), new HashMap<String, Serializable>(entry.getValue()));
+        }
+        return snapshot;
+    }
+
+    Map<String, List<InetAddress>> snapshotHosts() {
+        Map<String, List<InetAddress>> snapshot = new HashMap<String, List<InetAddress>>();
+        for (Map.Entry<String, RandomList<InetAddress>> entry : dnsServer.getHosts().entrySet()) {
+            snapshot.put(entry.getKey(), new ArrayList<InetAddress>(entry.getValue()));
+        }
+        return snapshot;
+    }
+
+    void syncFullSnapshot() {
+        if (svrEps.isEmpty()) {
+            return;
+        }
+        ReplicaFullSync packet = new ReplicaFullSync(nextReplicaVersion(), new HashSet<InetSocketAddress>(svrEps),
+                snapshotHosts(), snapshotAttrs());
+        for (InetSocketAddress ssAddr : packet.serverEndpoints) {
+            quietly(() -> ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet));
+        }
+    }
+
+    void applySnapshot(ReplicaSnapshot packet) {
+        if (!acceptIncrementalVersion(packet.version)) {
+            return;
+        }
+        if (packet.serverEndpoints != null) {
+            syncRegister(packet.serverEndpoints);
+        }
+        mergeAttrs(packet.attrs);
+    }
+
+    void applyFullSync(ReplicaFullSync packet) {
+        if (packet.version > lastAppliedReplicaVersion) {
+            lastAppliedReplicaVersion = packet.version;
+        }
+        if (packet.serverEndpoints != null) {
+            syncRegister(packet.serverEndpoints);
+        }
+        if (packet.hosts != null) {
+            dnsServer.getHosts().clear();
+            for (Map.Entry<String, List<InetAddress>> entry : packet.hosts.entrySet()) {
+                dnsServer.addHosts(entry.getKey(), RandomList.DEFAULT_WEIGHT, entry.getValue());
+            }
+        }
+        mergeAttrs(packet.attrs);
+    }
+
+    void mergeAttrs(Map<Object, Map<String, Serializable>> sync) {
+        if (sync == null) {
+            return;
+        }
+        for (Map.Entry<Object, Map<String, Serializable>> entry : sync.entrySet()) {
+            attrs(entry.getKey()).putAll(entry.getValue());
+        }
     }
 
     long heartbeatRttMillis(InetAddress address) {

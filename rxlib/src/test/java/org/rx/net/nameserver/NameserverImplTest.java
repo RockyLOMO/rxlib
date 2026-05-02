@@ -11,9 +11,13 @@ import org.rx.net.rpc.RpcClientConfig;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.io.Serializable;
+import java.util.HashMap;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -91,6 +95,77 @@ class NameserverImplTest {
 
     @Test
     @Timeout(20)
+    void disposeShouldCancelHealthTask() throws Exception {
+        NameserverClient client = new NameserverClient("dispose-health");
+        NameserverClient.NsInfo tuple = new NameserverClient.NsInfo(new InetSocketAddress("127.0.0.1", freePort()));
+        ScheduledFuture<?> future = org.rx.core.Tasks.schedulePeriod(() -> {
+        }, 60_000L);
+        tuple.healthTask = future;
+        client.holder.add(tuple);
+
+        client.close();
+
+        assertTrue(future.isCancelled(), "NameserverClient close 应取消 healthTask");
+    }
+
+    @Test
+    @Timeout(20)
+    void replicaSyncShouldUseAttrsSnapshot() throws Exception {
+        NameserverImpl server = newServer(freePort(), freePort(), freePort());
+        try {
+            Map<String, Serializable> appAttrs = server.attrs("app");
+            appAttrs.put("version", "v1");
+
+            Map<Object, Map<String, Serializable>> snapshot = server.snapshotAttrs();
+            appAttrs.put("version", "v2");
+
+            assertEquals("v1", snapshot.get("app").get("version"));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void replicaFullSyncShouldApplyHostsSnapshot() throws Exception {
+        NameserverImpl server = newServer(freePort(), freePort(), freePort());
+        try {
+            InetAddress oldIp = InetAddress.getByName("127.0.0.1");
+            InetAddress newIp = InetAddress.getByName("127.0.0.2");
+            server.getDnsServer().addHosts("old-app", Collections.singletonList(oldIp.getHostAddress()).toArray(new String[0]));
+            Map<String, List<InetAddress>> hosts = new HashMap<String, List<InetAddress>>();
+            hosts.put("new-app", Collections.singletonList(newIp));
+
+            server.applyFullSync(new NameserverImpl.ReplicaFullSync(1L, Collections.<InetSocketAddress>emptySet(),
+                    hosts, Collections.<Object, Map<String, Serializable>>emptyMap()));
+
+            assertTrue(server.discover("old-app").isEmpty());
+            assertEquals(newIp, server.discover("new-app").get(0));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void instanceAttrsShouldNotConflictBySameIpDifferentApp() throws Exception {
+        NameserverImpl server = newServer(freePort(), freePort(), freePort());
+        try {
+            InetAddress loop = InetAddress.getLoopbackAddress();
+            server.getDnsServer().addHosts("app-a", 1, Collections.singletonList(loop));
+            server.getDnsServer().addHosts("app-b", 1, Collections.singletonList(loop));
+            server.attrs(server.instanceKey("app-a", loop)).put("zone", "a");
+            server.attrs(server.instanceKey("app-b", loop)).put("zone", "b");
+
+            assertEquals("a", server.discover("app-a", Collections.singletonList("zone")).get(0).getAttributes().get("zone"));
+            assertEquals("b", server.discover("app-b", Collections.singletonList("zone")).get(0).getAttributes().get("zone"));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
     void registersHttpPageOnDefaultHttpServer() throws Exception {
         RxConfig.HttpConfig httpConfig = RxConfig.INSTANCE.getNet().getHttp();
         int oldPort = httpConfig.getServerPort();
@@ -149,6 +224,7 @@ class NameserverImplTest {
         config.setDnsPort(dnsPort);
         config.setRegisterPort(registerPort);
         config.setSyncPort(syncPort);
+        config.setReplicaFullSyncPeriodMillis(0);
         return new NameserverImpl(config);
     }
 

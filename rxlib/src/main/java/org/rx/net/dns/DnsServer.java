@@ -59,8 +59,6 @@ public class DnsServer extends Disposable {
     RandomList<ResolveInterceptor> interceptors;
     Cache<String, List<InetAddress>> interceptorCache;
     final Cache<String, String> domainKeyCache = new MemoryCache<>(b -> b.maximumSize(4096));
-    // Tracks keys currently being resolved to prevent thundering-herd cache stampede
-    final Set<String> resolvingKeys = ConcurrentHashMap.newKeySet();
     final Map<String, Promise<List<InetAddress>>> resolvingPromises = new ConcurrentHashMap<>();
     final Map<ResolveInterceptor, Long> interceptorBreakerUntil = new ConcurrentHashMap<>();
     @Setter
@@ -176,6 +174,7 @@ public class DnsServer extends Disposable {
     }
 
     public List<InetAddress> getHosts(String host) {
+        host = normalizeHost(host);
         RandomList<InetAddress> ips = hosts.get(host);
         if (CollectionUtils.isEmpty(ips)) {
             return Collections.emptyList();
@@ -187,6 +186,7 @@ public class DnsServer extends Disposable {
     }
 
     public List<InetAddress> getAllHosts(String host) {
+        host = normalizeHost(host);
         RandomList<InetAddress> ips = hosts.get(host);
         if (CollectionUtils.isEmpty(ips)) {
             return Collections.emptyList();
@@ -195,16 +195,24 @@ public class DnsServer extends Disposable {
     }
 
     String cacheKey(String domain) {
-        return domainKeyCache.get(domain, k -> DOMAIN_PREFIX.concat(k));
+        final String normalized = normalizeHost(domain);
+        return domainKeyCache.get(normalized, k -> DOMAIN_PREFIX.concat(k));
     }
 
     String cacheKey(String domain, DnsRecordType queryType) {
-        return domainKeyCache.get(queryType.name() + ":" + domain,
-                k -> DOMAIN_PREFIX.concat("int:").concat(queryType.name()).concat(":").concat(domain));
+        final String normalized = normalizeHost(domain);
+        return domainKeyCache.get(queryType.name() + ":" + normalized,
+                k -> DOMAIN_PREFIX.concat("int:").concat(queryType.name()).concat(":").concat(normalized));
     }
 
-    String resolveKey(String domain) {
-        return domainKeyCache.get("*:" + domain, k -> DOMAIN_PREFIX.concat("int:*:").concat(domain));
+    String resolveKey(String domain, DnsRecordType queryType) {
+        final String normalized = normalizeHost(domain);
+        return domainKeyCache.get("*:" + queryType.name() + ":" + normalized,
+                k -> DOMAIN_PREFIX.concat("int:*:").concat(queryType.name()).concat(":").concat(normalized));
+    }
+
+    String normalizeHost(String host) {
+        return DnsResolveCore.normalizeDomain(host);
     }
 
     public DnsServer enableDoH(DnsDoHConfig config) {
@@ -231,6 +239,7 @@ public class DnsServer extends Disposable {
 
     public boolean addHosts(@NonNull String host, int weight, @NonNull Collection<InetAddress> ips) {
         boolean changed = false;
+        host = normalizeHost(host);
         RandomList<InetAddress> list = hosts.computeIfAbsent(host, k -> new RandomList<>());
         for (InetAddress ip : Linq.from(ips).distinct()) {
             // addOrUpdate holds RandomList's own write lock — no external synchronized needed
@@ -242,6 +251,7 @@ public class DnsServer extends Disposable {
     }
 
     public boolean removeHosts(@NonNull String host, Collection<InetAddress> ips) {
+        host = normalizeHost(host);
         RandomList<InetAddress> list = hosts.get(host);
         if (list == null) {
             return false;

@@ -21,6 +21,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.concurrent.TimeoutException;
 
@@ -71,12 +72,11 @@ public final class DnsResolveCore {
                 return promise;
             }
 
-            String resolveKey = server.resolveKey(domain);
+            String resolveKey = server.resolveKey(domain, queryType);
             Promise<List<InetAddress>> newResolve = new DefaultPromise<>(executor);
             Promise<List<InetAddress>> resolvePromise = server.resolvingPromises.putIfAbsent(resolveKey, newResolve);
             if (resolvePromise == null) {
                 resolvePromise = newResolve;
-                server.resolvingKeys.add(resolveKey);
                 resolveByInterceptor(server, upstream, interceptors, srcIp, domain, resolveKey, query, isTcp, resolvePromise, promise);
             } else {
                 query.retain();
@@ -134,7 +134,8 @@ public final class DnsResolveCore {
 
     static String normalizeDomain(String questionName) {
         int len = questionName.length();
-        return len > 0 && questionName.charAt(len - 1) == '.' ? questionName.substring(0, len - 1) : questionName;
+        String domain = len > 0 && questionName.charAt(len - 1) == '.' ? questionName.substring(0, len - 1) : questionName;
+        return domain.toLowerCase(Locale.ROOT);
     }
 
     private static DefaultDnsResponse newInterceptorResponse(DefaultDnsQuery query, boolean isTcp, DefaultDnsQuestion question,
@@ -180,7 +181,6 @@ public final class DnsResolveCore {
                     query.release();
                 }
                 server.resolvingPromises.remove(resolveKey, resolvePromise);
-                server.resolvingKeys.remove(resolveKey);
             }
         });
     }

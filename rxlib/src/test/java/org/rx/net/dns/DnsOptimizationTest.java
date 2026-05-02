@@ -76,6 +76,20 @@ class DnsOptimizationTest {
     }
 
     @Test
+    void aAndAaaaShouldUseDifferentResolveKey() throws Exception {
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        try {
+            String aKey = server.resolveKey("Example.COM.", DnsRecordType.A);
+            String aaaaKey = server.resolveKey("example.com", DnsRecordType.AAAA);
+
+            assertNotEquals(aKey, aaaaKey);
+            assertEquals(aKey, server.resolveKey("example.com", DnsRecordType.A));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
     void getHosts_returnsCachedReadOnlySnapshotUntilMutation() throws Exception {
         DnsServer server = new DnsServer(freePort(), Collections.emptyList());
         InetAddress ip1 = InetAddress.getByName("127.0.0.1");
@@ -147,7 +161,7 @@ class DnsOptimizationTest {
             start.countDown();
             assertTrue(resolving.await(10, TimeUnit.SECONDS));
             Thread.sleep(200);
-            assertEquals(1, resolveCalls.get(), "并发相同域名请求应只触发一次 resolveHost");
+            assertEquals(2, resolveCalls.get(), "并发相同域名请求应按 A/AAAA 各合并一次 resolveHost");
 
             release.countDown();
             assertTrue(done.await(10, TimeUnit.SECONDS));

@@ -16,6 +16,11 @@ public interface TcpClient extends AutoCloseable, EventPublisher<TcpClient> {
 
     InetSocketAddress getRemoteEndpoint();
 
+    default InetSocketAddress getLocalEndpoint() {
+        Channel channel = getChannel();
+        return channel == null ? null : (InetSocketAddress) channel.localAddress();
+    }
+
     void connect(InetSocketAddress remoteEp) throws TimeoutException;
 
     Future<Void> connectAsync(InetSocketAddress remoteEp);

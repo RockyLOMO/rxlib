@@ -78,8 +78,13 @@ public final class NameserverClient extends Disposable {
     protected void dispose() {
         group.remove(holder);
         for (NsInfo tuple : holder) {
+            if (tuple.healthTask != null) {
+                tuple.healthTask.cancel(false);
+                tuple.healthTask = null;
+            }
             tryClose(tuple.ns);
         }
+        holder.clear();
     }
 
     public void waitInject() throws TimeoutException {
@@ -132,7 +137,7 @@ public final class NameserverClient extends Disposable {
                             registerInstanceAttrs(tuple.ns);
                             reInject();
                             circuitContinue(false);
-                        }, DEFAULT_RETRY_PERIOD, appName, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
+                        }, DEFAULT_RETRY_PERIOD, tuple, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
                     }
                 };
                 RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(regEp, 0);

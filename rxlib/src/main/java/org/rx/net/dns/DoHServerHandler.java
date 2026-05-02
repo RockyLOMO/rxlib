@@ -75,15 +75,23 @@ public class DoHServerHandler extends SimpleChannelInboundHandler<FullHttpReques
                     dnsResponse = DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL);
                 }
                 ByteBuf body = ctx.alloc().buffer(Math.max(64, dnsResponse.count(io.netty.handler.codec.dns.DnsSection.ANSWER) * 32));
-                DoHMessageCodec.encodeResponse(body, dnsResponse);
-                FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, body);
-                response.headers().set(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_DNS);
-                response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, body.readableBytes());
-                if (!HttpUtil.isKeepAlive(request)) {
-                    ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-                } else {
-                    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-                    ctx.writeAndFlush(response);
+                boolean handedOff = false;
+                try {
+                    DoHMessageCodec.encodeResponse(body, dnsResponse);
+                    FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, body);
+                    handedOff = true;
+                    response.headers().set(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_DNS);
+                    response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, body.readableBytes());
+                    if (!HttpUtil.isKeepAlive(request)) {
+                        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                    } else {
+                        response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+                        ctx.writeAndFlush(response);
+                    }
+                } finally {
+                    if (!handedOff) {
+                        body.release();
+                    }
                 }
             } finally {
                 ReferenceCountUtil.release(dnsResponse);
