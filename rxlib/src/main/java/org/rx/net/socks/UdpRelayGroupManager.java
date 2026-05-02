@@ -182,7 +182,7 @@ final class UdpRelayGroupManager extends Disposable {
             if (redundantClientPeer) {
                 UdpRelayAttributes.initRedundantPeers(relay);
                 if (group.clientAddr != null) {
-                    UdpRelayAttributes.addRedundantPeer(relay, group.clientAddr);
+                    UdpRelayAttributes.addRedundantClientPeerIfChanged(relay, group.clientAddr);
                 }
             }
             relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).set(redundantClientPeer);

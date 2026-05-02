@@ -246,6 +246,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         // Confirm / update the client address on first real packet
         InetSocketAddress clientAddr = relay.attr(ATTR_CLIENT_ADDR).get();
         boolean locked = Boolean.TRUE.equals(relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).get());
+        boolean clientChanged = false;
         if (locked) {
             if (clientAddr == null || !clientAddr.equals(sender)) {
                 recordDrop("unexpected-client", sender, clientOriginAddr, config, inBuf.readableBytes());
@@ -253,9 +254,12 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             }
         } else if (clientAddr == null || !clientAddr.equals(sender)) {
             relay.attr(ATTR_CLIENT_ADDR).set(sender);
+            clientChanged = true;
         }
         if (Boolean.TRUE.equals(relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).get())) {
-            UdpRelayAttributes.addRedundantPeer(relay, sender);
+            if (clientChanged || relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_ADDR).get() == null) {
+                UdpRelayAttributes.addRedundantClientPeerIfChanged(relay, sender);
+            }
         }
 
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = ctxMap(relay);

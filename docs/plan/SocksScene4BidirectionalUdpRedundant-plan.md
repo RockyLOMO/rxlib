@@ -40,9 +40,9 @@ ShadowsocksClient(ip c)
 | 5 | 端口跳跃资源线性增长 | 先忽略 |
 | 6 | spreadRedundantCopies / 跨 relay shared dedup | 先忽略 |
 
-### 2.1 当前代码核验结果
+### 2.1 首次代码核验结果（主体问题已修复）
 
-已按当前代码核验，问题 1、2、3、4、7、8、9 仍存在，计划需要继续推进。关键证据：
+以下为 2026-05-02 首次代码核验记录。当时问题 1、2、3、4、7、8、9 仍存在，因此形成本计划主体修复项。关键证据：
 
 - 问题 1：`SocksUdpUpstream.selectUdpRelayAddress(...)` 与 `recordUdpTraffic(...)` 仍各自执行 `maybeReplenishGroup / maybeExpandGroup / maybeHeartbeatGroup`，`SSUdpProxyHandler` 与 `SocksUdpRelayHandler` 主路径仍存在 select + record 双调用。
 - 问题 2：`UdpRedundantEncoder intervalMicros > 0` 仍按每个冗余副本调用 `ctx.executor().schedule(...)`，未限制 delayed task 数。
@@ -58,6 +58,24 @@ ShadowsocksClient(ip c)
 - `UdpRedundantEncoder` 明确为非 `@Sharable`，delayed copy pending 计数应保持每 channel/每 encoder 实例，不允许做成 static 全局计数。
 - `SSUdpProxyHandler` per-source 计数不能只以 `InetSocketAddress` 为 key，必须包含 inbound channel 身份，避免多个 SS inbound 或源端口复用时相互污染。
 - 指标 tag 收敛范围补充 `SocksUdpUpstream` 与 `Socks5UpstreamPoolManager`，否则问题 9 不能完整闭环。
+
+### 2.2 当前修改进度（截至 2026-05-03）
+
+主体 7 项已完成并通过定向验证；master 二次 review follow-up 的 4 项也已合并到本计划并完成修复。
+
+| 编号 | 当前状态 | 落地说明 |
+| --- | --- | --- |
+| 1 | 已完成 | `SocksUdpUpstream.selectUdpRelayAddressAndRecord(...)` 合并选择、流量记录与 group maintenance；SS/SOCKS UDP 主链路不再每包两轮 maintenance。 |
+| 2 | 已完成 | `UdpRedundantEncoder` 对 `intervalMicros > 0` 的 delayed copy 增加 pending 上限，超限降级为立即写。 |
+| 3 | 已完成 | `UdpRedundantDecoder` 增加 sender window 上限和 bounded cleanup，window 满时 RDNT 包丢弃、非 RDNT 包透传。 |
+| 4 | 已完成 | RPC relay group 下按配置登记 client sender 为 RDNT peer，A -> B 与 B -> A 双向具备 RDNT 条件。 |
+| 7 | 已完成 | `SSUdpProxyHandler.OUTBOUND_POOL` 增加全局上限、告警阈值、per-source 新建限制和 close/bind fail/inbound close 回收。 |
+| 8 | 已完成 | `SocketConfig` 增加 UDP write limit 与 per-source soft limit；SS inbound 回包写入前做 per-source pending 保护。 |
+| 9 | 已完成 | UDP 指标 tag 收敛为低基数，不再携带 endpoint、动态端口、bytes、pool key 等高基数字段。 |
+| F1 | 已完成 | `SocksUdpRelayHandler` 只在 client sender 首次确认或变化时登记 RDNT client peer，避免每包 `InetSocketAddress` 分配和 CHM put。 |
+| F2 | 已完成 | `SocksConfig.udpRedundantTrackClientPeer` 显式控制标准 SOCKS5 fallback 下 B -> A RDNT，默认 false，避免普通 SOCKS5 client 被误打 RDNT。 |
+| F3 | 已完成 | `UdpRedundantEncoder` / `UdpRedundantDecoder` 对 delayed copy、pending、duplicate/window 指标增加 1/64 采样，计数类指标按倍率补偿。 |
+| F4 | 已完成 | `SSUdpProxyHandler.acquireOutboundChannel(...)` 对 `computeIfAbsent/openOutboundChannel` 抛异常增加 source count 兜底释放。 |
 
 ## 3. 总体原则
 
@@ -822,7 +840,63 @@ udpOutboundPoolMaxSize=4096
 udpOutboundPoolMaxPerSource=128
 ```
 
-## 15. 最终结论
+新增 follow-up 配置：
+
+```properties
+# 仅在 rxlib A<->B 标准 SOCKS5 fallback 链路的 B 侧开启
+udpRedundantTrackClientPeer=false
+```
+
+场景4如果需要标准 SOCKS5 fallback 下也保证 B -> A RDNT：
+
+```properties
+# Proxy B
+udpRedundantTrackClientPeer=true
+```
+
+## 15. master 二次 review follow-up 合并
+
+`docs/plan/SocksScene4BidirectionalUdpRedundant-followup.md` 中补充的 4 项已合并到本计划，实施边界如下：
+
+| 编号 | 问题 | 修复状态 | 关键变更 |
+| --- | --- | --- | --- |
+| F1 | B 侧双向 RDNT 后每包重复 `addRedundantPeer` | 已修复 | 新增 `UdpRelayAttributes.addRedundantClientPeerIfChanged(...)` 和 `ATTR_REDUNDANT_CLIENT_ADDR`，`SocksUdpRelayHandler` 只在 client sender 首次确认或变化时更新 peer。 |
+| F2 | 标准 SOCKS5 fallback 下 B -> A RDNT 仍依赖 `clientTcpAddr != tcpPeerAddr` 启发式 | 已修复 | `SocksConfig` 新增 `udpRedundantTrackClientPeer`；`Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(...)` 支持显式开启，同时默认保持 false。 |
+| F3 | RDNT duplicate/delayed copy 指标低基数但仍高频 record | 已修复 | Encoder/Decoder 内部增加 1/64 固定采样；计数类指标用采样倍率补偿，pending/window gauge 记录采样时的当前值。 |
+| F4 | `OUTBOUND_POOL` source count 在 open 抛异常时可能泄漏 | 已修复 | `acquireOutboundChannel(...)` 包裹 `computeIfAbsent`，异常路径调用 `releaseOutboundSource(...)` 并记录 `result=error`。 |
+
+新增/调整测试：
+
+```text
+SocksUdpRelayHandlerTest#redundantClientPeerAddedOnlyWhenClientSenderChanges
+Socks5CommandRequestHandlerTest#redundantClientPeerTrackingRequiresExplicitFallbackFlagForSamePeer
+Socks5CommandRequestHandlerTest#redundantClientPeerTrackingKeepsExistingDifferentPeerHeuristic
+SSUdpProxyHandlerTest#outboundPoolSourceCountReleasedWhenOpenThrows
+UdpRedundantTest#testEncoderDelayedCopyMetricsAreSampled
+UdpRedundantTest#testDecoderDuplicateMetricsAreSampled
+```
+
+本次 follow-up 验证命令：
+
+```bash
+mvn -pl rxlib test \
+  "-Dtest=UdpRedundantTest,SSUdpProxyHandlerTest,SocksUdpRelayHandlerTest,Socks5CommandRequestHandlerTest" \
+  "-Dmaven.test.skip=false"
+```
+
+验证结果：54 个测试通过，0 failure，0 error。
+
+相关集成回归命令：
+
+```bash
+mvn -pl rxlib test \
+  "-Dtest=SocksProxyServerIntegrationTest#socks5UdpRelay_chained_withUdpRedundant_plainReplyToClient_e2e+shadowsocksUdpRelay_socks5_chained_withUdpRedundantOnProxyA_e2e+shadowsocksUdpRelay_socks5_chained_withUdpCompressAndRedundantOnProxyAB_e2e+shadowsocksUdpRelay_socks5_chained_withRpcRelayGroup_e2e" \
+  "-Dmaven.test.skip=false"
+```
+
+验证结果：4 个集成测试通过，0 failure，0 error。
+
+## 16. 最终结论
 
 本计划不是单点修复 B -> A RDNT，而是覆盖 review 中除问题 5、问题 6 以外的 7 个修改项：
 
@@ -834,6 +908,10 @@ udpOutboundPoolMaxPerSource=128
 7. 治理 SS outbound pool 容量与生命周期
 8. UDP write limit 配置化 + SS inbound per-source soft limit
 9. 收敛 UDP metrics 高基数 tags
+F1. 避免 B 侧每包重复登记 RDNT client peer
+F2. 标准 SOCKS5 fallback 下通过显式配置支持 B -> A RDNT
+F3. RDNT 高频 metrics 采样
+F4. OUTBOUND_POOL source count 异常路径兜底释放
 ```
 
-其中问题 4 是功能正确性 P0，问题 9 是生产可观测性 P0，建议优先进入实现。
+其中问题 4 是功能正确性 P0，问题 9 是生产可观测性 P0；截至 2026-05-03，主体 7 项与 follow-up 4 项均已完成定向验证。

@@ -12,6 +12,7 @@ public final class UdpRelayAttributes {
     static final AttributeKey<InetSocketAddress> ATTR_CLIENT_ORIGIN_ADDR = AttributeKey.valueOf("udpClientOriginAddr");
     static final AttributeKey<ConcurrentMap<InetSocketAddress, Boolean>> ATTR_REDUNDANT_PEERS = AttributeKey.valueOf("udpRedundantPeers");
     static final AttributeKey<Boolean> ATTR_REDUNDANT_CLIENT_PEER = AttributeKey.valueOf("udpRedundantClientPeer");
+    static final AttributeKey<InetSocketAddress> ATTR_REDUNDANT_CLIENT_ADDR = AttributeKey.valueOf("udpRedundantClientAddr");
 
     private UdpRelayAttributes() {
     }
@@ -32,7 +33,20 @@ public final class UdpRelayAttributes {
         if (channel == null || address == null) {
             return;
         }
-        initRedundantPeers(channel).put(normalize(address), Boolean.TRUE);
+        addNormalizedRedundantPeer(channel, normalize(address));
+    }
+
+    public static void addRedundantClientPeerIfChanged(Channel channel, InetSocketAddress address) {
+        if (channel == null || address == null) {
+            return;
+        }
+        InetSocketAddress normalized = normalize(address);
+        InetSocketAddress current = channel.attr(ATTR_REDUNDANT_CLIENT_ADDR).get();
+        if (normalized.equals(current)) {
+            return;
+        }
+        addNormalizedRedundantPeer(channel, normalized);
+        channel.attr(ATTR_REDUNDANT_CLIENT_ADDR).set(normalized);
     }
 
     public static void removeRedundantPeer(Channel channel, InetSocketAddress address) {
@@ -67,5 +81,9 @@ public final class UdpRelayAttributes {
             return new InetSocketAddress(address.getAddress(), address.getPort());
         }
         return InetSocketAddress.createUnresolved(address.getHostString(), address.getPort());
+    }
+
+    private static void addNormalizedRedundantPeer(Channel channel, InetSocketAddress normalizedAddress) {
+        initRedundantPeers(channel).put(normalizedAddress, Boolean.TRUE);
     }
 }

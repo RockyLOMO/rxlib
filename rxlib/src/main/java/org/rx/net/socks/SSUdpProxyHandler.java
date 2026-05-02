@@ -384,7 +384,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         });
     }
 
-    private ChannelFuture openOutboundChannel(Channel inbound, ShadowsocksServer server, Upstream upstream,
+    ChannelFuture openOutboundChannel(Channel inbound, ShadowsocksServer server, Upstream upstream,
             InetSocketAddress srcEp, OutboundPoolKey key) {
         ChannelFuture chf = Sockets.udpBootstrap(upstream.getConfig(), ob -> {
             ob.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(srcEp);
@@ -411,7 +411,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         return chf;
     }
 
-    private ChannelFuture acquireOutboundChannel(Channel inbound, ShadowsocksServer server, RouteKey routeKey, Upstream upstream) {
+    ChannelFuture acquireOutboundChannel(Channel inbound, ShadowsocksServer server, RouteKey routeKey, Upstream upstream) {
         OutboundPoolKey key = new OutboundPoolKey(inbound, routeKey.source, upstream);
         ChannelFuture existing = OUTBOUND_POOL.get(key);
         if (existing != null) {
@@ -436,17 +436,23 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             return inbound.newFailedFuture(new IllegalStateException("SS UDP outbound pool source full"));
         }
 
-        AtomicBoolean created = new AtomicBoolean();
-        ChannelFuture channelFuture = OUTBOUND_POOL.computeIfAbsent(key, k -> {
-            created.set(true);
-            return openOutboundChannel(inbound, server, upstream, routeKey.source, k);
-        });
-        if (created.get()) {
-            recordOutboundPoolOpen("success");
-        } else {
+        try {
+            AtomicBoolean created = new AtomicBoolean();
+            ChannelFuture channelFuture = OUTBOUND_POOL.computeIfAbsent(key, k -> {
+                created.set(true);
+                return openOutboundChannel(inbound, server, upstream, routeKey.source, k);
+            });
+            if (created.get()) {
+                recordOutboundPoolOpen("success");
+            } else {
+                releaseOutboundSource(key);
+            }
+            return channelFuture;
+        } catch (Throwable e) {
             releaseOutboundSource(key);
+            recordOutboundPoolOpen("error");
+            throw e;
         }
-        return channelFuture;
     }
 
     private static void bindRouteContext(Channel inbound, ChannelFuture outboundFuture, SocksContext context) {

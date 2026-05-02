@@ -237,6 +237,15 @@ public class UdpRedundantTest {
         assertNull(channel.readOutbound());
     }
 
+    @Test
+    public void testEncoderDelayedCopyMetricsAreSampled() {
+        UdpRedundantEncoder encoder = new UdpRedundantEncoder(2, 1000);
+        for (int i = 1; i < UdpRedundantEncoder.METRIC_SAMPLE_RATE; i++) {
+            assertFalse(encoder.shouldSampleMetric());
+        }
+        assertTrue(encoder.shouldSampleMetric());
+    }
+
     // ===================== Decoder 测试 =====================
 
     @Test
@@ -438,6 +447,15 @@ public class UdpRedundantTest {
         assertNotNull(passthrough, "非 RDNT 包在 window 满时仍应透传");
         assertEquals("plain", passthrough.content().toString(StandardCharsets.UTF_8));
         passthrough.release();
+    }
+
+    @Test
+    public void testDecoderDuplicateMetricsAreSampled() {
+        UdpRedundantDecoder decoder = new UdpRedundantDecoder();
+        for (int i = 1; i < UdpRedundantDecoder.METRIC_SAMPLE_RATE; i++) {
+            assertFalse(decoder.shouldSampleMetric());
+        }
+        assertTrue(decoder.shouldSampleMetric());
     }
 
     // 辅助方法：发送带序列号的数据包

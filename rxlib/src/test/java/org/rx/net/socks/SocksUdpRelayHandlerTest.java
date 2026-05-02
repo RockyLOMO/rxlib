@@ -62,6 +62,11 @@ class SocksUdpRelayHandlerTest {
         }
 
         @Override
+        public InetSocketAddress selectUdpRelayAddressAndRecord(Channel channel, int bytes) {
+            return selectUdpRelayAddress(channel);
+        }
+
+        @Override
         public InetSocketAddress[] snapshotUdpRelayAddresses(Channel channel) {
             return relayAddresses;
         }
@@ -211,6 +216,49 @@ class SocksUdpRelayHandlerTest {
             } finally {
                 second.release();
             }
+        } finally {
+            relay.finishAndReleaseAll();
+            server.close();
+        }
+    }
+
+    @Test
+    void redundantClientPeerAddedOnlyWhenClientSenderChanges() throws Exception {
+        SocksConfig config = new SocksConfig(new LocalAddress("UDP_REDUNDANT_CLIENT_PEER_CHANGE_TEST"));
+        config.getWhiteList();
+        SocksProxyServer server = new SocksProxyServer(config);
+        EmbeddedChannel relay = new EmbeddedChannel(SocksUdpRelayHandler.DEFAULT);
+        try {
+            relay.attr(SocksContext.SOCKS_SVR).set(server);
+            relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_CLIENT_PEER).set(Boolean.TRUE);
+            UdpRelayAttributes.initRedundantPeers(relay);
+
+            InetSocketAddress senderA = new InetSocketAddress("127.0.0.1", 22101);
+            assertDoesNotThrow(() -> relay.writeInbound(socks5Packet(senderA, "rdnt-a1")));
+            DatagramPacket first = readOutbound(relay);
+            assertNotNull(first);
+            first.release();
+
+            ConcurrentMap<InetSocketAddress, Boolean> peers = relay.attr(UdpRelayAttributes.ATTR_REDUNDANT_PEERS).get();
+            assertNotNull(peers);
+            assertEquals(1, peers.size());
+            assertTrue(peers.containsKey(UdpRelayAttributes.normalize(senderA)));
+
+            assertDoesNotThrow(() -> relay.writeInbound(socks5Packet(senderA, "rdnt-a2")));
+            DatagramPacket second = readOutbound(relay);
+            assertNotNull(second);
+            second.release();
+            assertEquals(1, peers.size());
+
+            InetSocketAddress senderB = new InetSocketAddress("127.0.0.1", 22102);
+            assertDoesNotThrow(() -> relay.writeInbound(socks5Packet(senderB, "rdnt-b1")));
+            DatagramPacket third = readOutbound(relay);
+            assertNotNull(third);
+            third.release();
+
+            assertEquals(2, peers.size());
+            assertTrue(peers.containsKey(UdpRelayAttributes.normalize(senderB)));
+            assertEquals(senderB, relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).get());
         } finally {
             relay.finishAndReleaseAll();
             server.close();

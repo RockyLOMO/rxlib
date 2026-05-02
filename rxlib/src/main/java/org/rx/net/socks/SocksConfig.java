@@ -69,6 +69,11 @@ public class SocksConfig extends SocketConfig {
      */
     private UdpRedundantConfig udpRedundant;
     /**
+     * 是否允许 UDP relay 把真实 client UDP sender 登记为 RDNT peer。
+     * 仅建议在 rxlib A<->B 标准 SOCKS5 fallback 链路的 B 侧开启。
+     */
+    private boolean udpRedundantTrackClientPeer;
+    /**
      * UDP 单包压缩配置。
      * 仅对代理链上的隧道对端生效，用于回收多倍发包带来的带宽开销。
      */

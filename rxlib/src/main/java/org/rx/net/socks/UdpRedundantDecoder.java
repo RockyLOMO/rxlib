@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * UDP 多倍发包解码器（入站 Handler）
@@ -127,6 +128,7 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
     private final ConcurrentHashMap<InetSocketAddress, DeduplicationWindow> windows = new ConcurrentHashMap<>();
     private final int maxWindows;
     private final int cleanupMaxScan;
+    private final AtomicInteger metricSampleCounter = new AtomicInteger();
 
     /**
      * 自适应统计（可选），为 null 时不采集
@@ -146,6 +148,7 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
     private static final int CLEANUP_INTERVAL = 1024;
     static final int DEFAULT_MAX_WINDOWS = 4096;
     static final int DEFAULT_CLEANUP_MAX_SCAN = 128;
+    static final int METRIC_SAMPLE_RATE = 64;
 
     /**
      * 无自适应统计的构造
@@ -250,7 +253,7 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
             }
         }
         if (removed > 0) {
-            DiagnosticMetrics.record("udp.redundant.decoder.window.count", windows.size(), "action=cleanup");
+            recordWindowCount("cleanup");
         }
     }
 
@@ -269,13 +272,25 @@ public class UdpRedundantDecoder extends MessageToMessageDecoder<DatagramPacket>
         DeduplicationWindow old = windows.putIfAbsent(sender, created);
         DeduplicationWindow result = old != null ? old : created;
         if (old == null) {
-            DiagnosticMetrics.record("udp.redundant.decoder.window.count", windows.size(), "action=add");
+            recordWindowCount("add");
         }
         return result;
     }
 
-    private static void recordDrop(String reason) {
-        DiagnosticMetrics.record("udp.redundant.decoder.drop.count", 1D, "reason=" + reason);
+    boolean shouldSampleMetric() {
+        return (metricSampleCounter.incrementAndGet() & (METRIC_SAMPLE_RATE - 1)) == 0;
+    }
+
+    private void recordDrop(String reason) {
+        if (DiagnosticMetrics.isEnabled() && shouldSampleMetric()) {
+            DiagnosticMetrics.record("udp.redundant.decoder.drop.count", METRIC_SAMPLE_RATE, "reason=" + reason);
+        }
+    }
+
+    private void recordWindowCount(String action) {
+        if (DiagnosticMetrics.isEnabled() && shouldSampleMetric()) {
+            DiagnosticMetrics.record("udp.redundant.decoder.window.count", windows.size(), "action=" + action);
+        }
     }
 
     @Override

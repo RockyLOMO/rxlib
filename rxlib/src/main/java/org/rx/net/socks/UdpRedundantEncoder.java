@@ -51,6 +51,7 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
      */
     static final int ADJUST_INTERVAL_SECONDS = 2;
     static final int DEFAULT_MAX_PENDING_DELAYED_COPIES = 4096;
+    static final int METRIC_SAMPLE_RATE = 64;
 
     // 静态模式字段
     private final int fixedMultiplier;
@@ -65,6 +66,7 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
 
     private final AtomicInteger seqGenerator = new AtomicInteger();
     private final AtomicInteger pendingDelayedCopies = new AtomicInteger();
+    private final AtomicInteger metricSampleCounter = new AtomicInteger();
 
     /**
      * 静态模式构造
@@ -204,13 +206,11 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
                                     ctx.flush();
                                 } finally {
                                     int pending = pendingDelayedCopies.decrementAndGet();
-                                    DiagnosticMetrics.record("udp.redundant.delayed.pending.count",
-                                            Math.max(0, pending), "state=after-run");
+                                    recordDelayedPending(Math.max(0, pending), "after-run");
                                 }
                             }, delayMicros, TimeUnit.MICROSECONDS);
                             recordDelayedCopy("scheduled");
-                            DiagnosticMetrics.record("udp.redundant.delayed.pending.count",
-                                    pendingDelayedCopies.get(), "state=scheduled");
+                            recordDelayedPending(pendingDelayedCopies.get(), "scheduled");
                         } catch (Exception e) {
                             copy.release();
                             pendingDelayedCopies.decrementAndGet();
@@ -282,7 +282,19 @@ public class UdpRedundantEncoder extends ChannelOutboundHandlerAdapter {
         }
     }
 
-    private static void recordDelayedCopy(String result) {
-        DiagnosticMetrics.record("udp.redundant.delayed.copy.count", 1D, "result=" + result);
+    boolean shouldSampleMetric() {
+        return (metricSampleCounter.incrementAndGet() & (METRIC_SAMPLE_RATE - 1)) == 0;
+    }
+
+    private void recordDelayedCopy(String result) {
+        if (DiagnosticMetrics.isEnabled() && shouldSampleMetric()) {
+            DiagnosticMetrics.record("udp.redundant.delayed.copy.count", METRIC_SAMPLE_RATE, "result=" + result);
+        }
+    }
+
+    private void recordDelayedPending(int pending, String state) {
+        if (DiagnosticMetrics.isEnabled() && shouldSampleMetric()) {
+            DiagnosticMetrics.record("udp.redundant.delayed.pending.count", pending, "state=" + state);
+        }
     }
 }

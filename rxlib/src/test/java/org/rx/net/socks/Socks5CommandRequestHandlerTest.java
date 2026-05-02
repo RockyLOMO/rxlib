@@ -82,6 +82,31 @@ class Socks5CommandRequestHandlerTest {
     }
 
     @Test
+    void redundantClientPeerTrackingRequiresExplicitFallbackFlagForSamePeer() {
+        SocksConfig config = new SocksConfig();
+        config.setUdpRedundantMultiplier(2);
+        InetSocketAddress client = new InetSocketAddress("127.0.0.1", 25001);
+
+        assertFalse(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, client, client));
+
+        config.setUdpRedundantTrackClientPeer(true);
+        assertTrue(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, client, client));
+    }
+
+    @Test
+    void redundantClientPeerTrackingKeepsExistingDifferentPeerHeuristic() {
+        SocksConfig config = new SocksConfig();
+        config.setUdpRedundantMultiplier(2);
+        InetSocketAddress origin = new InetSocketAddress("10.0.0.2", 25002);
+        InetSocketAddress peer = new InetSocketAddress("127.0.0.1", 25002);
+
+        assertTrue(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer));
+
+        config.setUdpRedundantMultiplier(1);
+        assertFalse(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer));
+    }
+
+    @Test
     void maybeBypassTcpCompression_DoesNotRemoveLiveHandlers() throws Exception {
         SocksConfig config = new SocksConfig();
         config.setTransportFlags(TransportFlags.COMPRESS_BOTH.flags());
