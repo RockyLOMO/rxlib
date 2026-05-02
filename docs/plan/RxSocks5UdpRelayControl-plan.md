@@ -17,6 +17,14 @@ N 个 hop ≈ N 条 TCP control channel + N 个 UDP relay port
 
 可以实现，而且建议长期优先走 `RssRpcApp / SocksRpcContract` 扩展，而不是修改标准 SOCKS5 `UDP_ASSOCIATE` 状态机。
 
+本轮执行结果：
+
+- 已完成 RSS RPC relay group 第一阶段实现，暂不实现 `RX_SOCKS5_BATCH`。
+- `SocksRpcContract` 已增加默认 capability 和 UDP relay group 方法，旧实现默认 `unsupported`，不破坏二进制兼容语义。
+- `SocksUdpUpstream` 已接入 `AUTO/RSS_RPC/SOCKS5_COMPAT` 模式选择；默认 `AUTO + udpRelayControlFallbackToSocks5=true`。
+- 兼容结论已验证：没有 `SocksRpcContract` facade、对端不是 rxlib、旧版本 capability 不支持或 RPC 调用失败时，都会回退标准 SOCKS5 `UDP_ASSOCIATE` 模式。
+- 执行结果已合并到 `UdpSocks5UpstreamPortHopping-plan.md`。
+
 推荐最终形态：
 
 ```text
@@ -641,40 +649,40 @@ bConf.setUdpRelayGroupHeartbeatMillis(30_000L);
 
 ### 阶段 A：RPC 能力协商
 
-- [ ] 新增 `SocksRpcCapabilities`。
-- [ ] `SocksRpcContract` 增加默认 `capabilities()`。
-- [ ] `RssRpcApp` 实现 capabilities。
-- [ ] `SocksUdpUpstream` 在 `AUTO` 模式下探测 capability。
-- [ ] capability 不支持时自动回退当前 SOCKS5 兼容模式。
+- [x] 新增 `SocksRpcCapabilities`。
+- [x] `SocksRpcContract` 增加默认 `capabilities()`。
+- [x] `RssRpcApp` 实现 capabilities。
+- [x] `SocksUdpUpstream` 在 `AUTO` 模式下探测 capability。
+- [x] capability 不支持时自动回退当前 SOCKS5 兼容模式。
 
 ### 阶段 B：服务端 RelayGroupManager
 
-- [ ] 新增 `UdpRelayGroupManager`。
-- [ ] 支持 `open/add/remove/heartbeat/close`。
-- [ ] Proxy B 侧维护 `groupId -> group` 和 `relayPort -> entry`。
-- [ ] 支持 idle timeout 自动回收。
-- [ ] 数据面继续使用 SOCKS5 UDP header。
+- [x] 新增 `UdpRelayGroupManager`。
+- [x] 支持 `open/add/remove/heartbeat/close`。
+- [x] Proxy B 侧维护 `groupId -> group` 和 `relayPort -> entry`。
+- [x] 支持 idle timeout 自动回收。
+- [x] 数据面继续使用 SOCKS5 UDP header。
 
 ### 阶段 C：RssRpcApp 扩展
 
-- [ ] `SocksRpcContract` 增加 group 默认方法。
-- [ ] `RssRpcApp` 调用 `SocksProxyServer` 的 group 管理方法。
-- [ ] 保持旧实现默认 unsupported，不破坏第三方/旧版本。
+- [x] `SocksRpcContract` 增加 group 默认方法。
+- [x] `RssRpcApp` 调用 `SocksProxyServer` 的 group 管理方法。
+- [x] 保持旧实现默认 unsupported，不破坏第三方/旧版本。
 
 ### 阶段 D：SocksUdpUpstream 接入 RSS_RPC 模式
 
-- [ ] 新增 `UdpRelayControlMode` 配置。
-- [ ] `acquireGroup()` 优先尝试 `acquireRpcRelayGroup()`。
-- [ ] RPC group holder 支持 `select/snapshot/contains/remove/add`。
-- [ ] 自适应扩容改为 `addUdpRelays(groupId, 1)`。
-- [ ] group close 调用 `closeUdpRelayGroup(groupId)`。
-- [ ] 失败按 `fallbackToSocks5` 决定是否回退。
+- [x] 新增 `UdpRelayControlMode` 配置。
+- [x] `acquireGroup()` 优先尝试 `acquireRpcRelayGroup()`。
+- [x] RPC group holder 支持 `select/snapshot/contains/remove/add`。
+- [x] 自适应扩容改为 `addUdpRelays(groupId, 1)`。
+- [x] group close 调用 `closeUdpRelayGroup(groupId)`。
+- [x] 失败按 `fallbackToSocks5` 决定是否回退。
 
 ### 阶段 E：breaker 与观测
 
-- [ ] RPC 连续失败打开 breaker。
-- [ ] breaker 打开期间 `AUTO` 直接走 SOCKS5 兼容模式。
-- [ ] 增加 group open/add/remove/close/heartbeat 指标。
+- [x] RPC 连续失败打开 breaker。
+- [x] breaker 打开期间 `AUTO` 直接走 SOCKS5 兼容模式。
+- [x] 增加 group open/add/remove/close/heartbeat 指标。
 - [ ] 压测对比 TCP control channel 数量。
 
 ### 阶段 F：跨 relay RDNT 共享去重窗口

@@ -48,11 +48,35 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
 
     void addWhiteList(InetAddress endpoint);
 
+    default SocksRpcCapabilities capabilities() {
+        return SocksRpcCapabilities.EMPTY;
+    }
+
     default boolean resetUdpRelay(int relayPort) {
         return false;
     }
 
     default boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
+        return false;
+    }
+
+    default UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
+        return UdpRelayGroupOpenResult.unsupported();
+    }
+
+    default UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
+        return UdpRelayGroupUpdateResult.unsupported();
+    }
+
+    default boolean removeUdpRelay(String groupId, int relayPort) {
+        return false;
+    }
+
+    default boolean heartbeatUdpRelayGroup(String groupId) {
+        return false;
+    }
+
+    default boolean closeUdpRelayGroup(String groupId) {
         return false;
     }
 

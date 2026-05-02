@@ -4,7 +4,9 @@ import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
+import org.rx.core.cache.MemoryCache;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.Socks5Client;
@@ -13,7 +15,13 @@ import org.rx.net.socks.Socks5Client.Socks5UdpSession;
 import org.rx.net.socks.SocksUdpRelayHandler;
 import org.rx.net.socks.Socks5UpstreamPoolManager;
 import org.rx.net.socks.SocksConfig;
+import org.rx.net.socks.SocksRpcCapabilities;
 import org.rx.net.socks.SocksRpcContract;
+import org.rx.net.socks.UdpRelayControlMode;
+import org.rx.net.socks.UdpRelayEndpoint;
+import org.rx.net.socks.UdpRelayGroupOpenRequest;
+import org.rx.net.socks.UdpRelayGroupOpenResult;
+import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.UdpRelayAttributes;
 import org.rx.net.socks.UdpLeasePoolKey;
 import org.rx.net.socks.UdpPortHoppingConfig;
@@ -26,9 +34,12 @@ import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.core.Extends.tryClose;
 
@@ -39,6 +50,8 @@ public class SocksUdpUpstream extends Upstream {
     private static final AttributeKey<CompletableFuture<SessionGroup>> ATTR_UDP_SESSION_INIT =
             AttributeKey.valueOf("socksUdpUpstreamSessionInit");
     private static final InetSocketAddress[] EMPTY_RELAY_ADDRESSES = new InetSocketAddress[0];
+    private static final MemoryCache<UdpLeasePoolKey, Boolean> RPC_RELAY_GROUP_BREAKER = new MemoryCache<>();
+    private static final ConcurrentMap<UdpLeasePoolKey, AtomicInteger> RPC_RELAY_GROUP_FAILURES = new ConcurrentHashMap<>();
 
     private final UpstreamSupport next;
 
@@ -86,6 +99,7 @@ public class SocksUdpUpstream extends Upstream {
         InetSocketAddress relayAddress = group.selectRelayAddress();
         maybeReplenishGroup(channel, group);
         maybeExpandGroup(channel, group);
+        maybeHeartbeatGroup(channel, group);
         return relayAddress;
     }
 
@@ -110,6 +124,7 @@ public class SocksUdpUpstream extends Upstream {
         group.recordBytes(bytes);
         maybeReplenishGroup(channel, group);
         maybeExpandGroup(channel, group);
+        maybeHeartbeatGroup(channel, group);
     }
 
     private SessionGroup activeGroup(Channel channel) {
@@ -225,6 +240,10 @@ public class SocksUdpUpstream extends Upstream {
 
         SocksConfig socksConfig = (SocksConfig) config;
         int hopCount = resolveInitialHopCount(socksConfig);
+        SessionGroup rpcGroup = acquireRpcRelayGroup(channel, socksConfig, hopCount);
+        if (rpcGroup != null) {
+            return rpcGroup;
+        }
         if (hopCount <= 1) {
             return newSessionGroup(new SessionHolder[]{acquireHolder(channel)}, socksConfig, 1);
         }
@@ -267,6 +286,171 @@ public class SocksUdpUpstream extends Upstream {
         return newSessionGroup(Arrays.copyOf(holders, count), socksConfig, hopCount);
     }
 
+    private SessionGroup acquireRpcRelayGroup(Channel channel, SocksConfig socksConfig, int hopCount) {
+        UdpRelayControlMode mode = socksConfig.getUdpRelayControlMode();
+        if (mode == UdpRelayControlMode.SOCKS5_COMPAT || mode == UdpRelayControlMode.RX_SOCKS5_BATCH) {
+            return null;
+        }
+        if (mode == UdpRelayControlMode.AUTO && !socksConfig.isUdpPortHoppingEnabled()) {
+            return null;
+        }
+        UdpLeasePoolKey key = poolKey();
+        if (mode == UdpRelayControlMode.AUTO && RPC_RELAY_GROUP_BREAKER.containsKey(key)) {
+            DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D,
+                    "mode=socks5_compat,reason=breaker");
+            return null;
+        }
+
+        SocksRpcContract facade = next.getFacade();
+        if (facade == null) {
+            return handleRpcRelayGroupUnavailable(socksConfig, "facade-null", null);
+        }
+
+        try {
+            SocksRpcCapabilities capabilities = facade.capabilities();
+            if (capabilities == null || !capabilities.has(SocksRpcCapabilities.UDP_RELAY_GROUP)) {
+                return handleRpcRelayGroupUnavailable(socksConfig, "unsupported", null);
+            }
+
+            int initialCount = Math.max(1, hopCount);
+            int minActive = Math.max(1, Math.min(initialCount, socksConfig.getUdpPortHoppingMinActiveHops()));
+            int maxRelayCount = socksConfig.isUdpPortHoppingAdaptive()
+                    ? Math.max(initialCount, socksConfig.getUdpPortHoppingMaxHopCount())
+                    : initialCount;
+            maxRelayCount = Math.min(clampHopCount(maxRelayCount), Math.max(1, socksConfig.getUdpRelayControlMaxRelaysPerGroup()));
+            if (capabilities.getMaxRelaysPerGroup() > 0) {
+                maxRelayCount = Math.min(maxRelayCount, capabilities.getMaxRelaysPerGroup());
+            }
+            initialCount = Math.min(initialCount, maxRelayCount);
+            minActive = Math.min(minActive, initialCount);
+
+            UdpRelayGroupOpenRequest request = new UdpRelayGroupOpenRequest();
+            request.setClientId(key.toString());
+            request.setClientAddr(resolveRpcClientAddress(channel));
+            request.setFirstDestination(destination);
+            request.setInitialRelayCount(initialCount);
+            request.setMinActiveRelays(minActive);
+            request.setMaxRelayCount(maxRelayCount);
+            request.setIdleTimeoutMillis(socksConfig.getUdpRelayGroupIdleMillis());
+
+            UdpRelayGroupOpenResult result = facade.openUdpRelayGroup(request);
+            if (result == null || !result.isSupported() || !result.isSuccess()) {
+                String reason = result == null ? "null-result"
+                        : !result.isSupported() ? "unsupported"
+                        : result.getErrorCode();
+                return handleRpcRelayGroupUnavailable(socksConfig, reason, null);
+            }
+
+            RpcRelayGroupControl control = new RpcRelayGroupControl(facade, result.getGroupId(), result.getToken());
+            SessionHolder[] holders = toRpcHolders(control, result.getRelays());
+            if (holders.length < minActive) {
+                control.closeGroup();
+                return handleRpcRelayGroupUnavailable(socksConfig, "min-active", null);
+            }
+            onRpcRelayGroupSuccess(key);
+            DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D,
+                    "mode=rss_rpc,relays=" + holders.length);
+            return newSessionGroup(holders, socksConfig, initialCount, control);
+        } catch (Throwable e) {
+            onRpcRelayGroupFailure(key, socksConfig, "open", e);
+            return handleRpcRelayGroupUnavailable(socksConfig, "error", e);
+        }
+    }
+
+    private SessionGroup handleRpcRelayGroupUnavailable(SocksConfig socksConfig, String reason, Throwable error) {
+        UdpRelayControlMode mode = socksConfig.getUdpRelayControlMode();
+        if ((mode == UdpRelayControlMode.RSS_RPC || mode == UdpRelayControlMode.AUTO)
+                && !socksConfig.isUdpRelayControlFallbackToSocks5()) {
+            throw new IllegalStateException("RX UDP relay group unavailable: " + reason, error);
+        }
+        if (mode == UdpRelayControlMode.RSS_RPC || mode == UdpRelayControlMode.AUTO) {
+            DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D,
+                    "mode=fallback,reason=" + reason);
+            if (error != null) {
+                log.warn("RX UDP relay group unavailable for {}, fallback={}",
+                        next.getEndpoint(), socksConfig.isUdpRelayControlFallbackToSocks5(), error);
+            }
+        }
+        return null;
+    }
+
+    private SessionHolder[] toRpcHolders(RpcRelayGroupControl control, java.util.List<UdpRelayEndpoint> endpoints) {
+        if (endpoints == null || endpoints.isEmpty()) {
+            return new SessionHolder[0];
+        }
+        SessionHolder[] holders = new SessionHolder[endpoints.size()];
+        int count = 0;
+        for (UdpRelayEndpoint endpoint : endpoints) {
+            if (endpoint == null) {
+                continue;
+            }
+            InetSocketAddress relayAddress = normalizeRpcRelayAddress(endpoint.getRelayAddress());
+            if (relayAddress != null && !containsRelayAddress(holders, count, relayAddress)) {
+                holders[count++] = SessionHolder.rpc(control, endpoint.getRelayId(), relayAddress);
+            }
+        }
+        return count == holders.length ? holders : Arrays.copyOf(holders, count);
+    }
+
+    private InetSocketAddress normalizeRpcRelayAddress(InetSocketAddress relayAddress) {
+        if (relayAddress == null) {
+            return null;
+        }
+        if (relayAddress.getAddress() == null || relayAddress.getAddress().isAnyLocalAddress()) {
+            InetSocketAddress serverAddress = next.getEndpoint().getInetEndpoint();
+            if (serverAddress != null) {
+                if (serverAddress.getAddress() != null) {
+                    return new InetSocketAddress(serverAddress.getAddress(), relayAddress.getPort());
+                }
+                return InetSocketAddress.createUnresolved(serverAddress.getHostString(), relayAddress.getPort());
+            }
+        }
+        return relayAddress;
+    }
+
+    private InetSocketAddress resolveRpcClientAddress(Channel channel) {
+        InetSocketAddress udpLocalAddr = channel.localAddress() instanceof InetSocketAddress
+                ? (InetSocketAddress) channel.localAddress() : null;
+        if (udpLocalAddr == null) {
+            return null;
+        }
+        if (udpLocalAddr.getAddress() != null && !udpLocalAddr.getAddress().isAnyLocalAddress()) {
+            return udpLocalAddr;
+        }
+        InetSocketAddress serverAddress = next.getEndpoint().getInetEndpoint();
+        if (serverAddress != null && serverAddress.getAddress() != null
+                && !serverAddress.getAddress().isAnyLocalAddress()) {
+            return new InetSocketAddress(serverAddress.getAddress(), udpLocalAddr.getPort());
+        }
+        return null;
+    }
+
+    private void onRpcRelayGroupSuccess(UdpLeasePoolKey key) {
+        RPC_RELAY_GROUP_FAILURES.remove(key);
+        RPC_RELAY_GROUP_BREAKER.remove(key);
+    }
+
+    private void onRpcRelayGroupFailure(UdpLeasePoolKey key, SocksConfig socksConfig, String phase, Throwable cause) {
+        AtomicInteger failures = RPC_RELAY_GROUP_FAILURES.computeIfAbsent(key, k -> new AtomicInteger());
+        int count = failures.incrementAndGet();
+        DiagnosticMetrics.record("socks.udp.relay.group.open.count", 1D,
+                "result=fail,phase=" + phase + ",count=" + count);
+        if (count < socksConfig.getUdpRelayControlFailureThreshold()) {
+            if (cause != null) {
+                log.warn("RX UDP relay group {} fail {}", phase, key, cause);
+            }
+            return;
+        }
+        failures.set(0);
+        int seconds = (int) Math.max(1L, (socksConfig.getUdpRelayControlBreakerOpenMillis() + 999L) / 1000L);
+        RPC_RELAY_GROUP_BREAKER.put(key, Boolean.TRUE, CachePolicy.absolute(seconds));
+        DiagnosticMetrics.record("socks.udp.relay.control.breaker.count", 1D,
+                "action=open,key=" + key);
+        if (cause != null) {
+            log.warn("RX UDP relay group breaker open after {} failures {}", count, key, cause);
+        }
+    }
+
     private static int resolveInitialHopCount(SocksConfig socksConfig) {
         if (!socksConfig.isUdpPortHoppingEnabled()) {
             return 1;
@@ -278,15 +462,21 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private static SessionGroup newSessionGroup(SessionHolder[] holders, SocksConfig socksConfig, int targetHopCount) {
+        return newSessionGroup(holders, socksConfig, targetHopCount, null);
+    }
+
+    private static SessionGroup newSessionGroup(SessionHolder[] holders, SocksConfig socksConfig,
+            int targetHopCount, RpcRelayGroupControl control) {
         if (!socksConfig.isUdpPortHoppingEnabled()) {
-            return new SessionGroup(holders, UdpPortHoppingMode.ROUND_ROBIN, targetHopCount);
+            return new SessionGroup(holders, UdpPortHoppingMode.ROUND_ROBIN, targetHopCount, control);
         }
         return new SessionGroup(holders, socksConfig.getUdpPortHoppingMode(),
                 socksConfig.isUdpPortHoppingAdaptive(),
                 socksConfig.getUdpPortHoppingAdaptiveScaleUpBytes(),
                 socksConfig.getUdpPortHoppingAdaptiveScaleUpActiveMillis(),
                 socksConfig.getUdpPortHoppingAdaptiveScaleUpCooldownMillis(),
-                targetHopCount);
+                targetHopCount,
+                control);
     }
 
     private static int clampHopCount(int hopCount) {
@@ -368,6 +558,10 @@ public class SocksUdpUpstream extends Upstream {
         if (holder == null) {
             return;
         }
+        if (holder.rpcControl != null) {
+            holder.rpcControl.removeRelay(holder.relayAddr != null ? holder.relayAddr.getPort() : 0);
+            return;
+        }
         if (holder.pooled) {
             if (holder.pool != null) {
                 holder.pool.discard(holder.lease);
@@ -382,6 +576,10 @@ public class SocksUdpUpstream extends Upstream {
 
     private void closeGroup(SessionGroup group, boolean resetPooledLease) {
         if (group == null) {
+            return;
+        }
+        if (group.rpcControl != null) {
+            group.rpcControl.closeGroup();
             return;
         }
         SessionHolder[] holders = group.holders;
@@ -469,12 +667,27 @@ public class SocksUdpUpstream extends Upstream {
         Tasks.runAsync(() -> replenishGroupOffLoop(channel, group));
     }
 
+    private void maybeHeartbeatGroup(Channel channel, SessionGroup group) {
+        if (group.rpcControl == null) {
+            return;
+        }
+        SocksConfig socksConfig = (SocksConfig) config;
+        long intervalMillis = socksConfig.getUdpRelayGroupHeartbeatMillis();
+        if (intervalMillis <= 0L || !group.tryBeginHeartbeat(System.currentTimeMillis(), intervalMillis)) {
+            return;
+        }
+        Tasks.runAsync(() -> {
+            boolean ok = group.rpcControl.heartbeat();
+            channel.eventLoop().execute(() -> group.finishHeartbeat(ok));
+        });
+    }
+
     private void replenishGroupOffLoop(Channel channel, SessionGroup group) {
         SessionHolder holder = null;
         Throwable error = null;
         try {
             if (group.needsReplenish()) {
-                holder = acquireHolder(channel);
+                holder = acquireAdditionalHolder(channel, group);
             }
         } catch (Throwable e) {
             error = e;
@@ -530,7 +743,7 @@ public class SocksUdpUpstream extends Upstream {
         Throwable error = null;
         try {
             if (group.holderCount() < maxHopCount) {
-                holder = acquireHolder(channel);
+                holder = acquireAdditionalHolder(channel, group);
             }
         } catch (Throwable e) {
             error = e;
@@ -539,6 +752,26 @@ public class SocksUdpUpstream extends Upstream {
         final SessionHolder finalHolder = holder;
         final Throwable finalError = error;
         channel.eventLoop().execute(() -> completeGroupExpand(channel, group, finalHolder, finalError, maxHopCount));
+    }
+
+    private SessionHolder acquireAdditionalHolder(Channel channel, SessionGroup group) {
+        if (group != null && group.rpcControl != null) {
+            return acquireRpcRelay(group.rpcControl);
+        }
+        return acquireHolder(channel);
+    }
+
+    private SessionHolder acquireRpcRelay(RpcRelayGroupControl control) {
+        UdpRelayGroupUpdateResult result = control.addRelays(1);
+        if (result == null || !result.isSupported() || !result.isSuccess()
+                || result.getRelays() == null || result.getRelays().isEmpty()) {
+            throw new IllegalStateException("RX UDP relay group add failed");
+        }
+        SessionHolder[] holders = toRpcHolders(control, result.getRelays());
+        if (holders.length == 0) {
+            throw new IllegalStateException("RX UDP relay group add returned no usable relay");
+        }
+        return holders[0];
     }
 
     private void completeGroupExpand(Channel channel, SessionGroup group, SessionHolder holder,
@@ -619,6 +852,10 @@ public class SocksUdpUpstream extends Upstream {
         if (active == null) {
             return;
         }
+        if (active.rpcControl != null) {
+            active.rpcControl.closeGroup();
+            return;
+        }
         if (!active.pooled) {
             tryClose(active.session);
             tryClose(active.client);
@@ -680,6 +917,74 @@ public class SocksUdpUpstream extends Upstream {
         return a.getHostString().equalsIgnoreCase(b.getHostString());
     }
 
+    static final class RpcRelayGroupControl {
+        final SocksRpcContract facade;
+        final String groupId;
+        final String token;
+        final AtomicBoolean closed = new AtomicBoolean();
+
+        RpcRelayGroupControl(SocksRpcContract facade, String groupId, String token) {
+            this.facade = facade;
+            this.groupId = groupId;
+            this.token = token;
+        }
+
+        UdpRelayGroupUpdateResult addRelays(int count) {
+            if (closed.get()) {
+                return UdpRelayGroupUpdateResult.fail("GROUP_CLOSED", "group is closed");
+            }
+            try {
+                return facade.addUdpRelays(groupId, count);
+            } catch (Throwable e) {
+                DiagnosticMetrics.record("socks.udp.relay.group.add.count", 1D,
+                        "result=fail,reason=rpc-error");
+                if (e instanceof RuntimeException) {
+                    throw (RuntimeException) e;
+                }
+                throw new IllegalStateException(e);
+            }
+        }
+
+        boolean removeRelay(int relayPort) {
+            if (relayPort <= 0 || closed.get()) {
+                return false;
+            }
+            try {
+                return facade.removeUdpRelay(groupId, relayPort);
+            } catch (Throwable e) {
+                DiagnosticMetrics.record("socks.udp.relay.group.remove.count", 1D,
+                        "result=fail,reason=rpc-error");
+                return false;
+            }
+        }
+
+        boolean heartbeat() {
+            if (closed.get()) {
+                return false;
+            }
+            try {
+                return facade.heartbeatUdpRelayGroup(groupId);
+            } catch (Throwable e) {
+                DiagnosticMetrics.record("socks.udp.relay.group.heartbeat.count", 1D,
+                        "result=fail,reason=rpc-error");
+                return false;
+            }
+        }
+
+        boolean closeGroup() {
+            if (!closed.compareAndSet(false, true)) {
+                return true;
+            }
+            try {
+                return facade.closeUdpRelayGroup(groupId);
+            } catch (Throwable e) {
+                DiagnosticMetrics.record("socks.udp.relay.group.close.count", 1D,
+                        "result=fail,reason=rpc-error");
+                return false;
+            }
+        }
+    }
+
     static final class SessionGroup {
         volatile SessionHolder[] holders;
         final UdpPortHoppingMode mode;
@@ -688,9 +993,11 @@ public class SocksUdpUpstream extends Upstream {
         final long scaleUpActiveMillis;
         final long scaleUpCooldownMillis;
         final long createdAtMillis;
+        final RpcRelayGroupControl rpcControl;
         final AtomicBoolean activeRetained = new AtomicBoolean();
         final AtomicBoolean expanding = new AtomicBoolean();
         final AtomicBoolean replenishing = new AtomicBoolean();
+        final AtomicBoolean heartbeating = new AtomicBoolean();
         volatile UpstreamSupport activeSupport;
         volatile int targetHopCount;
         int nextIndex;
@@ -699,23 +1006,36 @@ public class SocksUdpUpstream extends Upstream {
         long nextScaleUpAtMillis;
         long lastScaleUpAttemptAtMillis;
         long lastReplenishAttemptAtMillis;
+        long lastHeartbeatAtMillis;
 
         SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode) {
             this(holders, mode, holders != null ? holders.length : 0);
         }
 
         SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode, int targetHopCount) {
-            this(holders, mode, false, 0L, 0L, 0, targetHopCount);
+            this(holders, mode, targetHopCount, null);
+        }
+
+        SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode, int targetHopCount,
+                RpcRelayGroupControl rpcControl) {
+            this(holders, mode, false, 0L, 0L, 0, targetHopCount, rpcControl);
         }
 
         SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode, boolean adaptive,
                      long scaleUpBytes, long scaleUpActiveMillis, int scaleUpCooldownMillis) {
             this(holders, mode, adaptive, scaleUpBytes, scaleUpActiveMillis, scaleUpCooldownMillis,
-                    holders != null ? holders.length : 0);
+                    holders != null ? holders.length : 0, null);
         }
 
         SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode, boolean adaptive,
                      long scaleUpBytes, long scaleUpActiveMillis, int scaleUpCooldownMillis, int targetHopCount) {
+            this(holders, mode, adaptive, scaleUpBytes, scaleUpActiveMillis, scaleUpCooldownMillis,
+                    targetHopCount, null);
+        }
+
+        SessionGroup(SessionHolder[] holders, UdpPortHoppingMode mode, boolean adaptive,
+                     long scaleUpBytes, long scaleUpActiveMillis, int scaleUpCooldownMillis, int targetHopCount,
+                     RpcRelayGroupControl rpcControl) {
             this.holders = holders != null ? holders : new SessionHolder[0];
             this.mode = mode != null ? mode : UdpPortHoppingMode.ROUND_ROBIN;
             this.adaptive = adaptive;
@@ -723,7 +1043,9 @@ public class SocksUdpUpstream extends Upstream {
             this.scaleUpBytes = Math.max(0L, scaleUpBytes);
             this.scaleUpActiveMillis = Math.max(0L, scaleUpActiveMillis);
             this.scaleUpCooldownMillis = Math.max(0L, scaleUpCooldownMillis);
+            this.rpcControl = rpcControl;
             this.createdAtMillis = System.currentTimeMillis();
+            this.lastHeartbeatAtMillis = this.createdAtMillis;
             this.nextScaleUpBytes = this.scaleUpBytes;
             this.nextScaleUpAtMillis = this.scaleUpActiveMillis > 0
                     ? createdAtMillis + this.scaleUpActiveMillis : Long.MAX_VALUE;
@@ -872,6 +1194,23 @@ public class SocksUdpUpstream extends Upstream {
             replenishing.set(false);
         }
 
+        boolean tryBeginHeartbeat(long nowMillis, long intervalMillis) {
+            if (nowMillis - lastHeartbeatAtMillis < intervalMillis) {
+                return false;
+            }
+            if (!heartbeating.compareAndSet(false, true)) {
+                return false;
+            }
+            lastHeartbeatAtMillis = nowMillis;
+            return true;
+        }
+
+        void finishHeartbeat(boolean success) {
+            DiagnosticMetrics.record("socks.udp.relay.group.heartbeat.count", 1D,
+                    "result=" + (success ? "success" : "fail"));
+            heartbeating.set(false);
+        }
+
         InetSocketAddress[] snapshotAllRelayAddresses() {
             InetSocketAddress[] addresses = new InetSocketAddress[holders.length];
             int count = 0;
@@ -947,6 +1286,8 @@ public class SocksUdpUpstream extends Upstream {
         final Socks5UdpLease lease;
         final Socks5UpstreamPoolManager.UdpLeasePool pool;
         final InetSocketAddress relayAddr;
+        final RpcRelayGroupControl rpcControl;
+        final String relayId;
         final boolean pooled;
 
         static SessionHolder session(Socks5Client client, Socks5UdpSession session) {
@@ -957,17 +1298,32 @@ public class SocksUdpUpstream extends Upstream {
             return new SessionHolder(null, null, lease, pool, lease.getRelayAddress(), true);
         }
 
+        static SessionHolder rpc(RpcRelayGroupControl control, String relayId, InetSocketAddress relayAddr) {
+            return new SessionHolder(null, null, null, null, relayAddr, false, control, relayId);
+        }
+
         SessionHolder(Socks5Client client, Socks5UdpSession session, Socks5UdpLease lease,
                       Socks5UpstreamPoolManager.UdpLeasePool pool, InetSocketAddress relayAddr, boolean pooled) {
+            this(client, session, lease, pool, relayAddr, pooled, null, null);
+        }
+
+        SessionHolder(Socks5Client client, Socks5UdpSession session, Socks5UdpLease lease,
+                      Socks5UpstreamPoolManager.UdpLeasePool pool, InetSocketAddress relayAddr, boolean pooled,
+                      RpcRelayGroupControl rpcControl, String relayId) {
             this.client = client;
             this.session = session;
             this.lease = lease;
             this.pool = pool;
             this.relayAddr = relayAddr;
             this.pooled = pooled;
+            this.rpcControl = rpcControl;
+            this.relayId = relayId;
         }
 
         boolean isValid() {
+            if (rpcControl != null) {
+                return relayAddr != null && !rpcControl.closed.get();
+            }
             if (!pooled) {
                 return session != null && !session.isClosed();
             }

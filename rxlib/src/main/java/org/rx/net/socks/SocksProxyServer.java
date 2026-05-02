@@ -47,6 +47,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
+    private final UdpRelayGroupManager udpRelayGroupManager;
     final AtomicInteger activeChannels = new AtomicInteger();
     // 只有压缩时一定要用
     @Setter
@@ -101,6 +102,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                              boolean enableMemoryChannel, Channel memoryChannel) {
         this.config = config;
         this.authenticator = authenticator;
+        this.udpRelayGroupManager = new UdpRelayGroupManager(this);
 
         if (enableMemoryChannel) {
             if (memoryChannel == null) {
@@ -191,6 +193,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @Override
     protected void dispose() {
+        udpRelayGroupManager.close();
         for (Channel relay : udpRelayRegistry.values()) {
             Sockets.closeOnFlushed(relay);
         }
@@ -247,6 +250,30 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             clearUdpRelayState(relay, clientAddr);
             return true;
         });
+    }
+
+    public SocksRpcCapabilities socksRpcCapabilities() {
+        return udpRelayGroupManager.capabilities();
+    }
+
+    public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
+        return udpRelayGroupManager.open(request);
+    }
+
+    public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
+        return udpRelayGroupManager.addUdpRelays(groupId, count);
+    }
+
+    public boolean removeUdpRelay(String groupId, int relayPort) {
+        return udpRelayGroupManager.removeUdpRelay(groupId, relayPort);
+    }
+
+    public boolean heartbeatUdpRelayGroup(String groupId) {
+        return udpRelayGroupManager.heartbeat(groupId);
+    }
+
+    public boolean closeUdpRelayGroup(String groupId) {
+        return udpRelayGroupManager.close(groupId);
     }
 
     @SneakyThrows

@@ -38,8 +38,12 @@ import org.rx.net.socks.SocksConnectionTagRegistry;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksProxyServer;
+import org.rx.net.socks.SocksRpcCapabilities;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.TrafficUser;
+import org.rx.net.socks.UdpRelayGroupOpenRequest;
+import org.rx.net.socks.UdpRelayGroupOpenResult;
+import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -332,6 +336,36 @@ public final class RssClient {
         @Override
         public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
             return delegate.claimUdpRelay(relayPort, clientAddr);
+        }
+
+        @Override
+        public SocksRpcCapabilities capabilities() {
+            return delegate.capabilities();
+        }
+
+        @Override
+        public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
+            return delegate.openUdpRelayGroup(request);
+        }
+
+        @Override
+        public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
+            return delegate.addUdpRelays(groupId, count);
+        }
+
+        @Override
+        public boolean removeUdpRelay(String groupId, int relayPort) {
+            return delegate.removeUdpRelay(groupId, relayPort);
+        }
+
+        @Override
+        public boolean heartbeatUdpRelayGroup(String groupId) {
+            return delegate.heartbeatUdpRelayGroup(groupId);
+        }
+
+        @Override
+        public boolean closeUdpRelayGroup(String groupId) {
+            return delegate.closeUdpRelayGroup(groupId);
         }
 
         @Override

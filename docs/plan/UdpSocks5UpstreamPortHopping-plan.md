@@ -10,13 +10,15 @@
 - `SocksUdpRelayHandler`、`SSUdpProxyHandler`、`Udp2rawHandler` 已改为发送时选择 relay、回包时识别 group 内任意 relay。
 - 默认关闭；`enabled=false` 或 `hopCount=1` 时保持旧行为。
 - 已合并下一阶段 P0/P1：配置层对超过推荐值 `4` 的 hop 输出 warn；lease pool 增加 borrow/claim/reset/idle/borrowed 指标；ctxMap 按 relay 地址快照精确清理；单 hop control channel 关闭时先摘除该 holder，active hop 数满足 `minActiveHops` 时继续转发并异步补洞，低于阈值才整组失效。
+- 已合并 `RxSocks5UdpRelayControl-plan.md` 第一阶段：新增 `UdpRelayControlMode`、`SocksRpcCapabilities`、UDP relay group RPC DTO；`SocksRpcContract`/`RssRpcApp` 支持能力协商、open/add/remove/heartbeat/close；Proxy B 增加 `UdpRelayGroupManager`；Proxy A 的 `SocksUdpUpstream` 在 `AUTO/RSS_RPC` 下可用 1 条 RPC 控制会话管理多个远端 UDP relay port。
+- 兼容结论：`AUTO` 默认只在存在 `SocksRpcContract` facade 且 capability 支持 `UDP_RELAY_GROUP` 时启用 RSS RPC relay group；如果没有 facade、对端旧版本不支持扩展、RPC 调用失败，或两端任意一端不是 rxlib，则默认 `udpRelayControlFallbackToSocks5=true` 回退标准 SOCKS5 `UDP_ASSOCIATE` 模式。
 
 未实现内容：
 
 - `spreadRedundantCopies` 仍为二期预留，不会把同一个 RDNT 冗余组拆到多个远端 relay 端口。
 - 动态 `hopCount` 当前只做 group 生命周期内的在线扩容；不做在线收缩。连接关闭、route 失效或 group 重建后会重新从 `minHopCount` 起步。
 - 单 hop 权重降级、按丢包率动态调整、跨 relay 共享去重窗口暂未实现。
-- P2 私有 batch UDP relay 申请按本轮执行要求暂不实现，只保留设计方向。
+- 私有 SOCKS5 batch command（`RX_SOCKS5_BATCH`）按本轮执行要求暂不实现，只保留设计方向；长期优先使用 RSS RPC 控制面。
 
 ## 背景
 
@@ -131,6 +133,37 @@ public enum UdpPortHoppingMode {
 固定模式继续使用 `hopCount`；自适应模式使用 `minHopCount` 作为初始获取数量，并把 `maxHopCount` 作为在线扩容上限。`minActiveHops` 仍只约束本次初始化必须拿到的最小可用 holder 数，实际会被当前初始 `hopCount` 限制。
 
 `spreadRedundantCopies` 第一期开关保留但不启用，避免误开导致目标收到重复包。当前代码没有接入该开关，行为恒等于 `false`。
+
+### RX RPC relay group 控制配置
+
+本轮新增 `SocksConfig` 控制面配置：
+
+```java
+private UdpRelayControlMode udpRelayControlMode = UdpRelayControlMode.AUTO;
+private boolean udpRelayControlFallbackToSocks5 = true;
+private int udpRelayControlMaxRelaysPerGroup = 4;
+private long udpRelayGroupIdleMillis = 300_000L;
+private long udpRelayGroupHeartbeatMillis = 30_000L;
+private int udpRelayControlFailureThreshold = 5;
+private long udpRelayControlBreakerOpenMillis = 60_000L;
+```
+
+模式语义：
+
+- `AUTO`：端口跳跃开启时先探测 `next.getFacade()` 和 `SocksRpcCapabilities.UDP_RELAY_GROUP`；支持则走 RSS RPC relay group，不支持或异常则按 `udpRelayControlFallbackToSocks5` 回退。
+- `SOCKS5_COMPAT`：强制标准 SOCKS5，每个 hop 使用一条 `UDP_ASSOCIATE` control channel。
+- `RSS_RPC`：强制优先走 `SocksRpcContract` relay group；`udpRelayControlFallbackToSocks5=false` 时 RPC 不可用会直接让 route init 失败。
+- `RX_SOCKS5_BATCH`：预留，当前不实现。
+
+兼容判断：
+
+```text
+有 SocksRpcContract facade 且 capabilities 支持 UDP_RELAY_GROUP
+  -> RSS_RPC：1 条 RPC 控制会话 + N 个 UDP relay port
+
+没有 facade / 对端旧版本无 capabilities / 第三方 SOCKS5 / RPC 调用失败
+  -> 默认回退 SOCKS5_COMPAT：N 条 UDP_ASSOCIATE control channel + N 个 UDP relay port
+```
 
 ## 详细使用方式
 
@@ -291,6 +324,32 @@ UpstreamSupport supportB = new UpstreamSupport(
 - 没有 facade、breaker 打开、claim 失败时会自动回退慢路径 `UDP_ASSOCIATE`。
 - pool 耗尽不会阻塞 EventLoop；borrow/claim/reset 都在控制面慢路径执行。
 - 已补充 `idle/borrowed/borrow/claim/reset/recycle/breaker` 相关指标，便于观察命中率和脏连接丢弃。
+
+### 与 RX RPC relay group 联用
+
+当 Proxy A 和 Proxy B 两端都是 rxlib，并且 Proxy A 的 `UpstreamSupport` 提供 `SocksRpcContract` facade 时，`AUTO` 模式会优先使用 `SocksRpcContract.openUdpRelayGroup`：
+
+```java
+SocksConfig bConf = new SocksConfig(proxyBPort);
+bConf.setUdpPortHoppingEnabled(true);
+bConf.setUdpPortHoppingHopCount(3);
+bConf.setUdpPortHoppingMinActiveHops(3);
+bConf.setUdpRelayControlMode(UdpRelayControlMode.AUTO);
+bConf.setUdpRelayControlFallbackToSocks5(true);
+
+UpstreamSupport supportB = new UpstreamSupport(
+        new AuthenticEndpoint(new InetSocketAddress("proxy-b.example.com", proxyBPort), null, null),
+        rpcFacade);
+```
+
+执行结果：
+
+- `SocksRpcCapabilities` 默认空能力，旧实现或第三方不会误启用私有控制面。
+- `RssRpcApp` 只做 facade 转发，具体 relay group 生命周期由 `SocksProxyServer/UdpRelayGroupManager` 管理。
+- Proxy B 的 `UdpRelayGroupManager` 会绑定 N 个真实 UDP relay port，数据面仍复用 SOCKS5 UDP header 和 `SocksUdpRelayHandler`。
+- Proxy A 的 `SocksUdpUpstream.SessionGroup` 可持有 RPC relay holder；自适应扩容通过 `addUdpRelays(groupId, 1)` 追加 relay，整组关闭调用 `closeUdpRelayGroup(groupId)`。
+- group heartbeat 按 `udpRelayGroupHeartbeatMillis` 在流量路径上异步触发，不阻塞 EventLoop；服务端 idle timeout 负责兜底清理。
+- 无 facade、capability 不支持、RPC open/add 失败或 breaker 打开时，默认回退标准 SOCKS5 兼容模式。
 
 ### 与 UDP 多倍发包联用
 
@@ -618,6 +677,12 @@ udpRelayAddr.equals(out.sender())
 - `socks.udp.lease.pool.reset.count`：`resetUdpRelay` 结果，按 `result=success|fail|error` 标记。
 - `socks.udp.lease.pool.idle.count`、`socks.udp.lease.pool.borrowed.count`：当前空闲和借出 lease 数。
 - `socks.udp.lease.pool.recycle.count`、`socks.udp.lease.rpc.fail.count`、`socks.udp.lease.breaker.open.count` 继续复用现有 lease pool 指标。
+- `socks.udp.relay.control.mode.count{mode=rss_rpc|socks5_compat|fallback}`：控制面模式选择与回退。
+- `socks.udp.relay.group.open.count{result=success|fail}`：RPC relay group 打开结果。
+- `socks.udp.relay.group.active.count`、`socks.udp.relay.group.relay.count`：服务端 group 数与 relay port 数。
+- `socks.udp.relay.group.add.count{result=success|fail}`、`socks.udp.relay.group.remove.count{result=success|fail}`。
+- `socks.udp.relay.group.heartbeat.count{result=success|fail}`、`socks.udp.relay.group.close.count{result=success|fail|timeout}`。
+- `socks.udp.relay.control.breaker.count{action=open}`：RPC relay group breaker。
 - 必须保留核心网络指标：堆外内存占用、活跃连接数、UDP 吞吐、UDP drop、端到端延迟。
 
 ## 测试计划
@@ -635,6 +700,7 @@ udpRelayAddr.equals(out.sender())
 - `SocksUdpRelayHandlerTest#socksUdpUpstreamRegistersAndRotatesPortHoppingRelays`
 - `SocksUdpRelayHandlerTest#upstreamRelayAddAndRemoveMaintainsCtxMapPrecisely`
 - `SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withPortHopping_e2e`
+- `SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withRpcRelayGroup_e2e`
 
 ### 单元测试
 
@@ -665,6 +731,7 @@ udpRelayAddr.equals(out.sender())
 优先新增或扩展：
 
 - `SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withPortHopping_e2e`（已实现）
+- `SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withRpcRelayGroup_e2e`（已实现）
 - `SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withUdpRedundantAndPortHopping_e2e`
 - `SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_withLeasePoolAndPortHopping_e2e`
 
@@ -676,6 +743,8 @@ udpRelayAddr.equals(out.sender())
 - 客户端只收到一份正确响应，不因端口跳跃产生重复回包。
 - 开启多倍发包后现有去重仍生效，真实 UDP echo 端不收到跨 relay 重复包。
 - 关闭某个 hop control channel 后，active hop 仍满足 `minActiveHops` 时业务不中断并异步补洞；低于阈值才整组失效并下一次 route 重新建组。
+- RSS RPC 模式下 `hopCount=3` 时 Proxy B 分配至少 3 个 UDP relay port，且 Proxy B 不产生标准 SOCKS5 `UDP_ASSOCIATE` TCP control channel。
+- 无 facade 的端口跳跃回归仍走标准 SOCKS5 多 `UDP_ASSOCIATE`，行为与兼容模式一致。
 
 回归用例：
 
@@ -740,7 +809,18 @@ udpRelayAddr.equals(out.sender())
 - [x] 后台异步 replenish。
 - [x] active hop 不足才 invalidate group。
 
-### 阶段 E：batch relay 私有协议（本轮不执行）
+### 阶段 E：RX RPC relay group 控制面（已完成）
+
+- [x] 新增 `UdpRelayControlMode`、`SocksRpcCapabilities` 和 UDP relay group DTO。
+- [x] `SocksRpcContract` 增加默认 `capabilities/open/add/remove/heartbeat/close` 方法，旧实现默认 unsupported。
+- [x] `RssRpcApp` 转发 relay group RPC 到 `SocksProxyServer`。
+- [x] Proxy B 新增 `UdpRelayGroupManager`，支持 group open/add/remove/heartbeat/close 和 idle timeout 回收。
+- [x] Proxy A `SocksUdpUpstream` 在 `AUTO/RSS_RPC` 下优先尝试 RPC relay group。
+- [x] RPC holder 支持自适应扩容 `addUdpRelays(groupId, 1)`、整组关闭 `closeUdpRelayGroup(groupId)`。
+- [x] 无 facade、capability 不支持、RPC 失败或 breaker 打开时默认回退标准 SOCKS5。
+- [x] 新增 RPC relay group 指标与 e2e 验证。
+
+### 阶段 F：batch relay 私有 SOCKS5 command（本轮不执行）
 
 - [ ] 设计 `claimUdpRelays/resetUdpRelays` RPC。
 - [ ] Proxy B 批量创建 relay port。
@@ -748,7 +828,7 @@ udpRelayAddr.equals(out.sender())
 - [ ] 不支持 batch 时回退标准 SOCKS5。
 - [ ] 压测对比 TCP control 数量下降比例。
 
-### 阶段 F：跨 relay RDNT 去重（后续评估）
+### 阶段 G：跨 relay RDNT 去重（后续评估）
 
 - [ ] 设计跨 relay routeId。
 - [ ] Proxy B 多 relay 共享去重窗口。
@@ -764,4 +844,5 @@ udpRelayAddr.equals(out.sender())
 5. 自适应动态 `hopCount` 配置、阈值统计、异步扩容和处理器侧流量记录。
 6. 单元测试与场景4集成测试。
 7. 单 hop 摘除、补洞、ctxMap 精确清理和 lease pool 观测指标（已完成）。
-8. 观察指标后再评估二期 `spreadRedundantCopies`、在线收缩、跨 relay 共享去重；P2 私有 batch UDP relay 申请本轮暂不执行。
+8. RX RPC relay group 控制面（已完成）：两端都是 rxlib 时把多 hop 控制面从 N 条 TCP 降为 1 条 RPC 控制会话。
+9. 观察指标后再评估二期 `spreadRedundantCopies`、在线收缩、跨 relay 共享去重；私有 SOCKS5 batch command 本轮暂不执行。

@@ -78,6 +78,16 @@ public class SocksConfig extends SocketConfig {
      * 默认关闭；开启后同一逻辑 upstream 可持有多个远端 UDP relay 端口。
      */
     private UdpPortHoppingConfig udpPortHopping;
+    /**
+     * UDP relay 控制面选择。AUTO 下优先尝试 rxlib RPC group，失败按 fallback 配置回退标准 SOCKS5。
+     */
+    private UdpRelayControlMode udpRelayControlMode = UdpRelayControlMode.AUTO;
+    private boolean udpRelayControlFallbackToSocks5 = true;
+    private int udpRelayControlMaxRelaysPerGroup = 4;
+    private long udpRelayGroupIdleMillis = 300_000L;
+    private long udpRelayGroupHeartbeatMillis = 30_000L;
+    private int udpRelayControlFailureThreshold = 5;
+    private long udpRelayControlBreakerOpenMillis = 60_000L;
 
     public SocksConfig() {}
 
@@ -378,6 +388,31 @@ public class SocksConfig extends SocketConfig {
             udpPortHopping = new UdpPortHoppingConfig();
         }
         udpPortHopping.setReplenishDelayMillis(replenishDelayMillis);
+    }
+
+    public void setUdpRelayControlMode(UdpRelayControlMode udpRelayControlMode) {
+        this.udpRelayControlMode = udpRelayControlMode != null ? udpRelayControlMode : UdpRelayControlMode.AUTO;
+    }
+
+    public void setUdpRelayControlMaxRelaysPerGroup(int udpRelayControlMaxRelaysPerGroup) {
+        this.udpRelayControlMaxRelaysPerGroup = Math.max(1,
+                Math.min(UdpPortHoppingConfig.MAX_HOP_COUNT, udpRelayControlMaxRelaysPerGroup));
+    }
+
+    public void setUdpRelayGroupIdleMillis(long udpRelayGroupIdleMillis) {
+        this.udpRelayGroupIdleMillis = Math.max(1_000L, udpRelayGroupIdleMillis);
+    }
+
+    public void setUdpRelayGroupHeartbeatMillis(long udpRelayGroupHeartbeatMillis) {
+        this.udpRelayGroupHeartbeatMillis = Math.max(1_000L, udpRelayGroupHeartbeatMillis);
+    }
+
+    public void setUdpRelayControlFailureThreshold(int udpRelayControlFailureThreshold) {
+        this.udpRelayControlFailureThreshold = Math.max(1, udpRelayControlFailureThreshold);
+    }
+
+    public void setUdpRelayControlBreakerOpenMillis(long udpRelayControlBreakerOpenMillis) {
+        this.udpRelayControlBreakerOpenMillis = Math.max(1_000L, udpRelayControlBreakerOpenMillis);
     }
 
     public boolean isUdpCompressEnabled() {

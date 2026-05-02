@@ -71,6 +71,36 @@ class SocksProxyServerIntegrationTest {
         public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
             return server.claimUdpRelay(relayPort, clientAddr);
         }
+
+        @Override
+        public SocksRpcCapabilities capabilities() {
+            return server.socksRpcCapabilities();
+        }
+
+        @Override
+        public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
+            return server.openUdpRelayGroup(request);
+        }
+
+        @Override
+        public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
+            return server.addUdpRelays(groupId, count);
+        }
+
+        @Override
+        public boolean removeUdpRelay(String groupId, int relayPort) {
+            return server.removeUdpRelay(groupId, relayPort);
+        }
+
+        @Override
+        public boolean heartbeatUdpRelayGroup(String groupId) {
+            return server.heartbeatUdpRelayGroup(groupId);
+        }
+
+        @Override
+        public boolean closeUdpRelayGroup(String groupId) {
+            return server.closeUdpRelayGroup(groupId);
+        }
     }
 
     static final int TCP_ECHO_PORT = 15299;
@@ -870,6 +900,61 @@ class SocksProxyServerIntegrationTest {
                         "proxyB should allocate multiple UDP relay ports for port hopping");
                 assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-port-hop-2");
                 assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-port-hop-3");
+            } finally {
+                clientSock.close();
+            }
+        } finally {
+            ssServer.close();
+            proxyA.close();
+            proxyB.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 25)
+    void shadowsocksUdpRelay_socks5_chained_withRpcRelayGroup_e2e() {
+        int proxyBPort = 15463;
+        int proxyAPort = 15464;
+        int ssPort = 15465;
+
+        SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.getWhiteList();
+        SocksProxyServer proxyB = new SocksProxyServer(configB);
+
+        SocksConfig configA = new SocksConfig(proxyAPort);
+        configA.getWhiteList();
+        SocksProxyServer proxyA = new SocksProxyServer(configA);
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
+                org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "rpc-port-hop-pwd");
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+
+        UpstreamSupport supportA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyAPort), null, null), null);
+        UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), new LocalRpcFacade(proxyB));
+
+        ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyAPort), supportA)));
+        proxyA.onUdpRoute.replace((s, e) -> {
+            SocksConfig bConf = new SocksConfig(proxyBPort);
+            bConf.setUdpPortHoppingEnabled(true);
+            bConf.setUdpPortHoppingHopCount(3);
+            bConf.setUdpPortHoppingMinActiveHops(3);
+            bConf.setUdpRelayControlMode(UdpRelayControlMode.AUTO);
+            e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), bConf, supportB));
+        });
+
+        try {
+            Thread.sleep(1000);
+            org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ssConfig.getMethod(), ssConfig.getPassword(), true);
+            DatagramSocket clientSock = new DatagramSocket();
+            clientSock.setSoTimeout(5000);
+            try {
+                assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-1");
+                waitForCondition(() -> proxyB.udpRelayRegistry.size() >= 3, 5000,
+                        "proxyB should allocate RPC managed UDP relay group");
+                assertEquals(0, proxyB.activeChannelCount(), "RPC relay group must not create standard SOCKS5 TCP control channels on proxyB");
+                assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-2");
+                assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-3");
             } finally {
                 clientSock.close();
             }

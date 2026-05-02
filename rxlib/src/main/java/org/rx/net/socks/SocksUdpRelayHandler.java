@@ -194,6 +194,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket in) throws Exception {
         Channel relay = ctx.channel();
+        UdpRelayGroupManager.touch(relay);
         InetSocketAddress sender = in.sender();
 
         // If sender is a known upstream address, this is a response from destination.
