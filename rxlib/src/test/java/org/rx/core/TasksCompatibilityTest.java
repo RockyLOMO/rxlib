@@ -11,15 +11,12 @@ public class TasksCompatibilityTest {
     @Test
     void completableFutureAsyncPoolPatchDisabledByDefault() throws Exception {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
-        boolean old = conf.isPatchCompletableFutureAsyncPool();
-        conf.setPatchCompletableFutureAsyncPool(false);
-        Method method = Tasks.class.getDeclaredMethod("initCompletableFutureAsyncPool");
-        method.setAccessible(true);
-        try {
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setPatchCompletableFutureAsyncPool(false);
+            Method method = Tasks.class.getDeclaredMethod("initCompletableFutureAsyncPool");
+            method.setAccessible(true);
             Boolean patched = (Boolean) method.invoke(null);
             assertFalse(patched);
-        } finally {
-            conf.setPatchCompletableFutureAsyncPool(old);
         }
 
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {

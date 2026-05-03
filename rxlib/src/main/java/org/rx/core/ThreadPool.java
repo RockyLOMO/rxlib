@@ -17,8 +17,10 @@ import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -348,6 +350,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         final StackTraceElement[] stackTrace;
         volatile boolean skipExecution;
         volatile boolean singleLockAcquired;
+        volatile boolean threadLocalMapSet;
+        volatile InternalThreadLocalMap oldThreadLocalMap;
 
         private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
@@ -479,12 +483,19 @@ public class ThreadPool extends ThreadPoolExecutor {
      */
     @SuppressWarnings("unchecked")
     private static final ThreadLocal<InternalThreadLocalMap> SLOW_THREAD_LOCAL_MAP;
+    private static final Constructor<InternalThreadLocalMap> INTERNAL_THREAD_LOCAL_MAP_CONSTRUCTOR;
+    private static final Field INDEXED_VARIABLES_FIELD;
 
     static {
         try {
             SLOW_THREAD_LOCAL_MAP = (ThreadLocal<InternalThreadLocalMap>) FieldUtils.readStaticField(
                     InternalThreadLocalMap.class, "slowThreadLocalMap", true);
+            INTERNAL_THREAD_LOCAL_MAP_CONSTRUCTOR = InternalThreadLocalMap.class.getDeclaredConstructor();
+            INTERNAL_THREAD_LOCAL_MAP_CONSTRUCTOR.setAccessible(true);
+            INDEXED_VARIABLES_FIELD = FieldUtils.getDeclaredField(InternalThreadLocalMap.class, "indexedVariables", true);
         } catch (IllegalAccessException e) {
+            throw new ExceptionInInitializerError(e);
+        } catch (NoSuchMethodException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
@@ -994,7 +1005,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
         // TransmittableThreadLocal
         if (task.parent != null) {
-            setThreadLocalMap(t, task.parent);
+            task.oldThreadLocalMap = getThreadLocalMap(t);
+            task.threadLocalMapSet = true;
+            setThreadLocalMap(t, copyThreadLocalMap(task.parent));
         }
         if (flags.has(RunFlag.THREAD_TRACE)) {
             startTrace(task.traceId);
@@ -1039,8 +1052,10 @@ public class ThreadPool extends ThreadPoolExecutor {
                 log.debug("CTX release {} -> {}", id, task.flags.name());
             }
         }
-        if (task.parent != null) {
-            setThreadLocalMap(Thread.currentThread(), null);
+        if (task.threadLocalMapSet) {
+            setThreadLocalMap(Thread.currentThread(), task.oldThreadLocalMap);
+            task.oldThreadLocalMap = null;
+            task.threadLocalMapSet = false;
         }
         if (flags.has(RunFlag.THREAD_TRACE)) {
             endTrace();
@@ -1074,6 +1089,25 @@ public class ThreadPool extends ThreadPoolExecutor {
         } finally {
             afterExecute(r, error);
         }
+    }
+
+    private InternalThreadLocalMap getThreadLocalMap(Thread t) {
+        if (t instanceof FastThreadLocalThread) {
+            return ((FastThreadLocalThread) t).threadLocalMap();
+        }
+        return SLOW_THREAD_LOCAL_MAP.get();
+    }
+
+    @SneakyThrows
+    private InternalThreadLocalMap copyThreadLocalMap(InternalThreadLocalMap threadLocalMap) {
+        InternalThreadLocalMap copy = INTERNAL_THREAD_LOCAL_MAP_CONSTRUCTOR.newInstance();
+        Object[] indexedVariables = ((Object[]) INDEXED_VARIABLES_FIELD.get(threadLocalMap)).clone();
+        int variablesToRemoveIndex = InternalThreadLocalMap.VARIABLES_TO_REMOVE_INDEX;
+        if (variablesToRemoveIndex < indexedVariables.length && indexedVariables[variablesToRemoveIndex] instanceof Set) {
+            indexedVariables[variablesToRemoveIndex] = new HashSet<>((Set<?>) indexedVariables[variablesToRemoveIndex]);
+        }
+        INDEXED_VARIABLES_FIELD.set(copy, indexedVariables);
+        return copy;
     }
 
     private void setThreadLocalMap(Thread t, InternalThreadLocalMap threadLocalMap) {

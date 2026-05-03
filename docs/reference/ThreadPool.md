@@ -29,7 +29,7 @@ RXlib 的 `ThreadPool` 采用**基于负载的自适应动态调整策略**：
 | **`SERIAL`** | **串行分发**：基于 `taskId` 进行串行队列化。采用无锁 `CompletableFuture` 生成任务链，不会阻塞物理线程。 | 需要严格顺序处理的会话消息、日志记录。 |
 | **`TRANSFER`** | **移交执行**：阻塞提交线程，直到任务被工作线程接手或成功存入队列。 | 关键任务流控，防止生产速度失控。 |
 | **`PRIORITY`** | **优先执行**：若当前无空闲线程且队列已满，强制新建一个临时线程处理。 | 紧急状态上报、高优监控。 |
-| **`INHERIT_FAST_THREAD_LOCALS`** | **环境继承**：子线程自动继承父线程的 `FastThreadLocal` 环境。 | 链路参数透传、用户权限上下文传递。 |
+| **`INHERIT_FAST_THREAD_LOCALS`** | **环境继承**：任务执行时复制父线程 `FastThreadLocal` 环境，结束后恢复旧 map。 | 链路参数透传、用户权限上下文传递。 |
 | **`THREAD_TRACE`** | **链路追踪**：开启异步 Trace，关联后续的所有异步调用流。 | 复杂异步系统全链路排障。 |
 
 ---
@@ -78,6 +78,8 @@ app:
 | `CALLER_RUNS` | 队列满且等待超时后由提交线程执行溢出任务。 | 希望快速消化突发但能接受提交线程承担执行成本的场景。 |
 
 高性能网络链路中，避免在 Netty `EventLoop` 上使用可能无限阻塞的提交路径；如果必须从 I/O 线程提交任务，优先配置 `TIMEOUT_REJECT` 并在上层做限流、降级或丢弃策略。
+
+`CALLER_RUNS` 会把执行成本转移到提交线程；当前实现会走与 worker 线程一致的 `beforeExecute/afterExecute` 生命周期，覆盖 `SINGLE`、`THREAD_TRACE`、`INHERIT_FAST_THREAD_LOCALS` 和 `taskMap` 清理。`INHERIT_FAST_THREAD_LOCALS` 使用复制后的 `InternalThreadLocalMap.indexedVariables` 执行，任务内修改 `FastThreadLocal` 不会污染提交线程后续上下文。
 
 ### 3.3 SERIAL 容量
 
@@ -174,6 +176,7 @@ timer.setTimeout(() -> {
 | `rx.thread_pool.serial.chain.count` | 当前串行 taskId 链数量。 |
 | `rx.thread_pool.serial.rejected.count` | SERIAL 容量拒绝次数。 |
 | `rx.thread_pool.single.skip.count` | SINGLE 重复任务跳过次数。 |
+| `rx.thread_pool.config.invalid.count` | 线程池配置解析失败次数，当前用于 `queueOfferMode` 未知值。 |
 
 网络项目还必须同时关注 JVM 堆外内存和 Netty allocator 指标，尤其是 direct memory 使用量、连接数、吞吐、P99/P999 延迟、写队列水位与拒绝/降级次数。
 

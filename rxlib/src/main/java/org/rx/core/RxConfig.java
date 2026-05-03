@@ -581,7 +581,12 @@ public final class RxConfig {
 
     public void refreshFrom(Map<String, Object> props, byte flags) {
         Linq.from(Reflects.getFieldMap(ConfigNames.class).values()).select(p -> p.get(null)).join(props.entrySet(), (p, x) -> eq(p, x.getKey()), (p, x) -> {
-            Reflects.writeFieldByPath(this, ConfigNames.getWithoutPrefix(x.getKey()), x.getValue(), flags);
+            if (ConfigNames.THREAD_POOL_QUEUE_OFFER_MODE.equals(x.getKey())) {
+                Object value = x.getValue();
+                threadPool.queueOfferMode = ThreadPoolQueueOfferMode.parse(value == null ? null : value.toString(), threadPool.queueOfferMode);
+            } else {
+                Reflects.writeFieldByPath(this, ConfigNames.getWithoutPrefix(x.getKey()), x.getValue(), flags);
+            }
             return null;
         });
 

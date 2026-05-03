@@ -80,8 +80,7 @@ class RxConfigTest {
         RxConfig conf = RxConfig.INSTANCE;
         String propName = RxConfig.ConfigNames.THREAD_POOL_TRACE_NAME;
         String oldProp = System.getProperty(propName);
-        String oldTraceName = conf.threadPool.traceName;
-        try {
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
             System.clearProperty(propName);
             conf.threadPool.traceName = "yaml-trace";
             conf.refreshFromSystemProperty();
@@ -92,18 +91,13 @@ class RxConfigTest {
             assertEquals("sys-trace", conf.threadPool.traceName);
         } finally {
             restoreProperty(propName, oldProp);
-            conf.threadPool.traceName = oldTraceName;
-            conf.refreshFrom(Collections.<String, Object>emptyMap());
         }
     }
 
     @Test
     void refreshFrom_acceptsRenamedThreadPoolResizeProps() {
         RxConfig conf = RxConfig.INSTANCE;
-        int oldMinIdleSize = conf.threadPool.getMinIdleSize();
-        int oldMaxPoolSize = conf.threadPool.getMaxPoolSize();
-        int oldResizeStep = conf.threadPool.getResizeStep();
-        try {
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
             Map<String, Object> props = new HashMap<>();
             props.put(RxConfig.ConfigNames.THREAD_POOL_MIN_IDLE_SIZE, 4);
             props.put(RxConfig.ConfigNames.THREAD_POOL_MAX_POOL_SIZE, 8);
@@ -112,26 +106,15 @@ class RxConfigTest {
             assertEquals(4, conf.threadPool.getMinIdleSize());
             assertEquals(8, conf.threadPool.getMaxPoolSize());
             assertEquals(5, conf.threadPool.getResizeStep());
-        } finally {
-            conf.threadPool.setMinIdleSize(oldMinIdleSize);
-            conf.threadPool.setMaxPoolSize(oldMaxPoolSize);
-            conf.threadPool.setResizeStep(oldResizeStep);
-            conf.refreshFrom(Collections.<String, Object>emptyMap());
         }
     }
 
     @Test
     void refreshFrom_acceptsThreadPoolSafetyProps() {
         RxConfig conf = RxConfig.INSTANCE;
-        ThreadPoolQueueOfferMode oldMode = conf.threadPool.getQueueOfferMode();
-        long oldOfferTimeout = conf.threadPool.getQueueOfferTimeoutMillis();
-        int oldSerialCapacity = conf.threadPool.getSerialQueueCapacity();
-        int oldSerialHardLimit = conf.threadPool.getSerialQueueHardLimit();
-        boolean oldPatch = conf.threadPool.isPatchCompletableFutureAsyncPool();
-        long oldCooldown = conf.threadPool.getResizeCooldownMillis();
-        try {
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
             Map<String, Object> props = new HashMap<>();
-            props.put(RxConfig.ConfigNames.THREAD_POOL_QUEUE_OFFER_MODE, "TIMEOUT_REJECT");
+            props.put(RxConfig.ConfigNames.THREAD_POOL_QUEUE_OFFER_MODE, " timeout-reject ");
             props.put(RxConfig.ConfigNames.THREAD_POOL_QUEUE_OFFER_TIMEOUT_MILLIS, 25);
             props.put(RxConfig.ConfigNames.THREAD_POOL_SERIAL_QUEUE_CAPACITY, 16);
             props.put(RxConfig.ConfigNames.THREAD_POOL_SERIAL_QUEUE_HARD_LIMIT, 32);
@@ -145,14 +128,26 @@ class RxConfigTest {
             assertEquals(32, conf.threadPool.getSerialQueueHardLimit());
             assertTrue(conf.threadPool.isPatchCompletableFutureAsyncPool());
             assertEquals(500, conf.threadPool.getResizeCooldownMillis());
+        }
+    }
+
+    @Test
+    void refreshFromSystemProperty_acceptsRelaxedQueueOfferMode() {
+        RxConfig conf = RxConfig.INSTANCE;
+        String propName = RxConfig.ConfigNames.THREAD_POOL_QUEUE_OFFER_MODE;
+        String oldProp = System.getProperty(propName);
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.threadPool.setQueueOfferMode(ThreadPoolQueueOfferMode.BLOCK);
+
+            System.setProperty(propName, " caller-runs ");
+            conf.refreshFromSystemProperty();
+            assertEquals(ThreadPoolQueueOfferMode.CALLER_RUNS, conf.threadPool.getQueueOfferMode());
+
+            System.setProperty(propName, "bad-mode");
+            conf.refreshFromSystemProperty();
+            assertEquals(ThreadPoolQueueOfferMode.CALLER_RUNS, conf.threadPool.getQueueOfferMode());
         } finally {
-            conf.threadPool.setQueueOfferMode(oldMode);
-            conf.threadPool.setQueueOfferTimeoutMillis(oldOfferTimeout);
-            conf.threadPool.setSerialQueueCapacity(oldSerialCapacity);
-            conf.threadPool.setSerialQueueHardLimit(oldSerialHardLimit);
-            conf.threadPool.setPatchCompletableFutureAsyncPool(oldPatch);
-            conf.threadPool.setResizeCooldownMillis(oldCooldown);
-            conf.refreshFrom(Collections.<String, Object>emptyMap());
+            restoreProperty(propName, oldProp);
         }
     }
 

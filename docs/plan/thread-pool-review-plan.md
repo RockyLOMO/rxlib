@@ -7,7 +7,7 @@
 
 ## 0. 本轮修复记录
 
-状态：阶段 1 已落地，默认兼容旧行为。
+状态：阶段 1 已收尾，默认兼容旧行为。
 
 - `ThreadPool.ThreadQueue` 新增 `queueOfferMode`：
   - `BLOCK`：默认值，保持原有无限背压阻塞语义。
@@ -18,11 +18,15 @@
 - 修复 `runSerialAsync()` 快速完成任务在 `ConcurrentHashMap.compute()` 内重入 compute 的挂死风险：完成回调移到 compute 外执行。
 - `CompletableFuture` 默认 async pool patch 改为显式开关 `patchCompletableFutureAsyncPool=false`，默认不再修改 JDK 全局静态字段。
 - 新增配置项已写入 `rx.yml`，并补充配置解析与线程池回归测试。
+- `CALLER_RUNS` 路径补齐生命周期等价性验证：`SINGLE` acquire/release、`THREAD_TRACE` 异常清理、`INHERIT_FAST_THREAD_LOCALS` 恢复提交线程上下文、`taskMap` 清理。
+- `INHERIT_FAST_THREAD_LOCALS` 执行时复制父线程 `InternalThreadLocalMap.indexedVariables`，执行后恢复旧 map，避免 caller-runs 或 worker 任务污染提交线程/后续任务。
+- `ThreadPoolQueueOfferMode.parse()` 支持 `trim()`、`timeout-reject` / `caller runs` 这类宽松写法；未知值会 warn 并记录 `rx.thread_pool.config.invalid.count`。
+- 新增 `ThreadPoolConfigSnapshot` 测试工具，线程池相关单测修改全局 `RxConfig.INSTANCE.threadPool` 后可自动 restore。
 - `docs/reference/ThreadPool.md` 已补充队列背压模式、SERIAL 容量、CompletableFuture patch 开关和线程池监控指标。
 
 提交记录中的验证：
 
-- `mvn -pl rxlib "-Dtest=ThreadPoolWheelTimerRegressionTest,TasksCompatibilityTest,RxConfigTest" test`：通过，16 个用例。
+- `mvn -pl rxlib "-Dtest=ThreadPoolWheelTimerRegressionTest,ThreadPoolQueueOfferModeTest,RxConfigTest,TasksCompatibilityTest" test`：通过，22 个用例。
 - `mvn -pl rxlib "-Dtest=ThreadPoolTest" test`：通过，56 个用例。
 - `mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest,ShadowsocksServerIntegrationTest,Socks5ClientIntegrationTest,RrpIntegrationTest,RemotingTest,DnsServerIntegrationTest" test`：75/76 个用例通过；`SocksProxyServerIntegrationTest.shadowsocksUdpRelay_socks5_chained_withUdpCompressAndRedundantOnProxyAB_e2e` 首次 UDP payload 长度 304/320 失败，单测方法复跑通过。
 
@@ -39,16 +43,19 @@
 - [x] SERIAL 快速完成任务的 `ConcurrentHashMap.compute()` 重入风险已有回归测试。
 - [x] `CompletableFuture` async pool patch 默认关闭，改为 `patchCompletableFutureAsyncPool=true` 显式开启。
 - [x] `rx.yml`、`RxConfig`、`docs/reference/ThreadPool.md` 已同步新增配置。
+- [x] caller-runs 路径的 SINGLE / TRACE / FastThreadLocal / taskMap 生命周期等价性已有回归测试。
+- [x] `ThreadPoolQueueOfferMode.parse()` 已支持 trim/宽松写法，未知值已有 warn/metric。
+- [x] 新增测试配置 snapshot/restore 工具，新增线程池配置测试已使用该工具。
 
-二次 review 新发现/建议：
+二次 review 新发现/处理状态：
 
-1. `CALLER_RUNS` 会让任务在提交线程内直接执行，需要补一组“生命周期等价性”测试：
+1. [x] `CALLER_RUNS` 会让任务在提交线程内直接执行，已补“生命周期等价性”测试：
    - `RunFlag.SINGLE` 在 caller-runs 路径下仍能正确 acquire/release。
    - `THREAD_TRACE` 在 caller-runs 路径下能正确 start/end，异常时也不泄漏。
    - `INHERIT_FAST_THREAD_LOCALS` 在 caller-runs 路径下不会污染提交线程后续上下文。
    - caller-runs 后 `taskMap`、serial counter、single lock 都能清理。
-2. `ThreadPoolQueueOfferMode.parse()` 建议对输入做 `trim()`，并对未知值打印 warn 或指标。当前未知值静默回退 default，线上配置写错时不容易发现。
-3. `RxConfigTest` / `ThreadPoolWheelTimerRegressionTest` 会直接修改 `RxConfig.INSTANCE.threadPool` 全局配置。默认串行跑问题不大；如果以后开启 JUnit 并行，建议加 JUnit `@ResourceLock("RxConfig.threadPool")` 或统一的 config snapshot/restore 工具。
+2. [x] `ThreadPoolQueueOfferMode.parse()` 已对输入做 `trim()`，支持宽松写法，并对未知值打印 warn 与指标。
+3. [x] `RxConfigTest` / `ThreadPoolWheelTimerRegressionTest` 已引入统一的 config snapshot/restore 工具，降低全局配置串扰风险。
 4. 指标命名需要以实际实现和 `docs/reference/ThreadPool.md` 为准。计划文档原先写的 `rx.thread_pool.core.size` / `pool.size` / `queue.size` 应同步为当前文档中的 `rx.thread_pool.core.count` / `size.count` / `queue.count`。
 5. `resizeCooldownMillis` 已有配置项，但 `CpuWatchman` resize cooldown / jitter 还没有实际落地，继续保留在阶段 3。
 6. 集成测试里 UDP 场景首次 payload 长度 304/320 失败、复跑通过，暂不归因到 ThreadPool。本计划只记录为“需要独立跟踪的网络链路 flaky”，不阻塞阶段 1 验收。
@@ -58,9 +65,8 @@
 - `Tasks.shutdown()` / `shutdownNow()` 生命周期语义。
 - `WheelTimer.shutdown()` 后周期任务重排策略。
 - `CpuWatchman` resize cooldown / jitter 实际扩缩容控制。
-- `SINGLE` namespace/scope 与 `FastThreadLocal` old map 恢复测试。
-- `CALLER_RUNS` 生命周期等价性测试。
-- 配置 parse 容错和未知值可观测性。
+- `SINGLE` namespace/scope。
+- 配置并行测试场景下的 `@ResourceLock` 或 CI 串行策略固定化。
 
 ## 1. Review 范围
 
@@ -293,7 +299,7 @@
 
 ## 4. 建议实施计划
 
-### 阶段 1：安全边界和可观测性（已基本完成）
+### 阶段 1：安全边界和可观测性（已完成）
 
 1. [x] 新增配置项：
    - `app.threadPool.queueOfferMode=BLOCK|TIMEOUT_REJECT|CALLER_RUNS`
@@ -306,16 +312,16 @@
 3. [x] `runSerialAsync()` 使用独立 serial 容量配置，不再默认最低 100000。
 4. [x] `Tasks.initCompletableFutureAsyncPool()` 改为配置开启，并输出明确日志与指标。
 5. [x] 补测试：队列 timeout reject、caller-runs、serial 容量、patch 开关、配置解析。
-6. [ ] 补 caller-runs 生命周期等价性测试。
-7. [ ] `ThreadPoolQueueOfferMode.parse()` 增加 trim、未知值 warn/metric。
-8. [ ] 补测试全局配置并发隔离工具或 `@ResourceLock`。
+6. [x] 补 caller-runs 生命周期等价性测试。
+7. [x] `ThreadPoolQueueOfferMode.parse()` 增加 trim、未知值 warn/metric。
+8. [x] 补测试全局配置并发隔离工具或 `@ResourceLock`。
 
 验收：
 
 - [x] 队列满时可按配置阻塞、超时拒绝或 caller-runs。
 - [x] SERIAL 链超过容量快速失败，map 计数可回收。
 - [x] 默认不修改 JDK `CompletableFuture` 全局 async pool。
-- [ ] caller-runs 路径与 worker 路径在 SINGLE/TRACE/FastThreadLocal/taskMap 清理方面语义一致。
+- [x] caller-runs 路径与 worker 路径在 SINGLE/TRACE/FastThreadLocal/taskMap 清理方面语义一致。
 
 ### 阶段 2：生命周期语义修正
 
@@ -348,7 +354,7 @@
 ### 阶段 4：上下文和语义增强
 
 1. SINGLE 支持 namespace/scope，避免全局 taskId 冲突。
-2. `INHERIT_FAST_THREAD_LOCALS` 执行后恢复旧 map，补污染隔离测试。
+2. [x] `INHERIT_FAST_THREAD_LOCALS` 执行后恢复旧 map，已补 caller-runs 污染隔离测试。
 3. traceId `InheritableThreadLocal` 增加最大深度和泄漏测试。
 4. 文档补齐 API 使用规则。
 
@@ -365,7 +371,7 @@
 - `ThreadQueueOfferTimeoutTest`
   - [x] 队列满后 `TIMEOUT_REJECT` 按预期抛异常。
   - [x] `CALLER_RUNS` 不增加队列长度。
-  - [ ] caller-runs 路径下 SINGLE/THREAD_TRACE/FastThreadLocal/taskMap 清理等价。
+  - [x] caller-runs 路径下 SINGLE/THREAD_TRACE/FastThreadLocal/taskMap 清理等价。
   - [ ] BLOCK 模式长时间阻塞但可被 shutdownNow / interrupt 解开。
 - `SerialQueueCapacityTest`
   - [x] 同 taskId 超容量快速失败。
@@ -375,9 +381,9 @@
   - [ ] 相同 namespace + taskId 跳过。
   - [ ] 不同 namespace + 相同 taskId 可并行。
 - `FastThreadLocalIsolationTest`
-  - [ ] 继承后恢复。
+  - [x] 继承后恢复。
   - [ ] 不继承时不可见。
-  - [ ] caller-runs 路径不可污染提交线程。
+  - [x] caller-runs 路径不可污染提交线程。
 - `WheelTimerShutdownTest`
   - [x] shutdown 后拒绝新任务。
   - [ ] shutdown 后周期任务不再重排。
@@ -387,10 +393,10 @@
   - [ ] cooldown 生效。
   - [ ] resize 不超过 max/min。
 - `ThreadPoolQueueOfferModeTest`
-  - [ ] parse 支持 trim。
-  - [ ] 未知值有 warn/metric 或至少可测试地 fallback。
+  - [x] parse 支持 trim。
+  - [x] 未知值有 warn/metric 或至少可测试地 fallback。
 - `ThreadPoolConfigIsolationTest`
-  - [ ] 测试修改全局 `RxConfig.INSTANCE.threadPool` 后能稳定 restore。
+  - [x] 测试修改全局 `RxConfig.INSTANCE.threadPool` 后能稳定 restore。
   - [ ] 并行测试场景下不会互相污染。
 
 ### 压测/基准
@@ -407,10 +413,10 @@
 
 ## 6. 推荐落地顺序
 
-1. 阶段 1 追加小修：caller-runs 生命周期测试、parse 容错、测试配置隔离。
-2. 生命周期阶段：`Tasks.shutdown()` / `WheelTimer.shutdown()` 语义固定。
-3. 扩缩容阶段：`CpuWatchman` cooldown / jitter / CPU load 单位统一。
-4. 语义增强阶段：SINGLE namespace、FastThreadLocal 恢复、trace 泄漏测试。
+1. 生命周期阶段：`Tasks.shutdown()` / `WheelTimer.shutdown()` 语义固定。
+2. 扩缩容阶段：`CpuWatchman` cooldown / jitter / CPU load 单位统一。
+3. 语义增强阶段：SINGLE namespace、trace 泄漏测试。
+4. 测试工程化阶段：并行测试场景下增加 `@ResourceLock` 或在 CI 固定线程池相关测试串行执行。
 
 ## 7. 风险与兼容策略
 
@@ -422,4 +428,4 @@
 
 ## 8. 总结
 
-当前 ThreadPool 第一阶段修复方向正确：把原先几个“强默认行为”变成了可配置、可观测、可测试的策略。阶段 1 可以进入收尾状态，剩余建议集中在边界测试和容错细节；下一步更值得投入的是生命周期语义、CpuWatchman 扩缩容稳定性，以及上下文隔离能力。
+当前 ThreadPool 第一阶段修复已经完成：把原先几个“强默认行为”变成了可配置、可观测、可测试的策略，并补齐 caller-runs 生命周期、FastThreadLocal 恢复、配置解析容错和测试配置隔离。下一步更值得投入的是生命周期语义、CpuWatchman 扩缩容稳定性，以及 SINGLE namespace / trace 泄漏测试。

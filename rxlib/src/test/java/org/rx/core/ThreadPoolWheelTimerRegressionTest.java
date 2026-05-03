@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import io.netty.util.concurrent.FastThreadLocal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -60,11 +62,9 @@ public class ThreadPoolWheelTimerRegressionTest {
     @Test
     void runSerialAsyncShouldRejectWhenSerialCapacityExceeded() throws Exception {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
-        int oldCapacity = conf.getSerialQueueCapacity();
-        int oldHardLimit = conf.getSerialQueueHardLimit();
         CountDownLatch blocking = new CountDownLatch(1);
         String taskId = "serial-cap-" + UUID.randomUUID();
-        try {
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
             conf.setSerialQueueCapacity(1);
             conf.setSerialQueueHardLimit(1);
             pool = ThreadPool.fixed("SERIAL-CAP", 1, 8);
@@ -83,18 +83,14 @@ public class ThreadPoolWheelTimerRegressionTest {
             assertFalse(ThreadPool.taskSerialMap.containsKey(taskId));
         } finally {
             blocking.countDown();
-            conf.setSerialQueueCapacity(oldCapacity);
-            conf.setSerialQueueHardLimit(oldHardLimit);
         }
     }
 
     @Test
     void queueOfferTimeoutRejectShouldFailFastWhenFixedPoolQueueFull() throws Exception {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
-        ThreadPoolQueueOfferMode oldMode = conf.getQueueOfferMode();
-        long oldTimeout = conf.getQueueOfferTimeoutMillis();
         CountDownLatch blocking = new CountDownLatch(1);
-        try {
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
             conf.setQueueOfferMode(ThreadPoolQueueOfferMode.TIMEOUT_REJECT);
             conf.setQueueOfferTimeoutMillis(20);
             pool = ThreadPool.fixed("QUEUE-REJECT", 1, 1);
@@ -114,19 +110,15 @@ public class ThreadPoolWheelTimerRegressionTest {
             running.get(5, TimeUnit.SECONDS);
         } finally {
             blocking.countDown();
-            conf.setQueueOfferMode(oldMode);
-            conf.setQueueOfferTimeoutMillis(oldTimeout);
         }
     }
 
     @Test
     void queueOfferCallerRunsShouldExecuteOverflowTaskInSubmittingThread() throws Exception {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
-        ThreadPoolQueueOfferMode oldMode = conf.getQueueOfferMode();
-        long oldTimeout = conf.getQueueOfferTimeoutMillis();
         CountDownLatch blocking = new CountDownLatch(1);
         AtomicReference<String> callerThread = new AtomicReference<>();
-        try {
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
             conf.setQueueOfferMode(ThreadPoolQueueOfferMode.CALLER_RUNS);
             conf.setQueueOfferTimeoutMillis(0);
             pool = ThreadPool.fixed("QUEUE-CALLER", 1, 1);
@@ -150,8 +142,121 @@ public class ThreadPoolWheelTimerRegressionTest {
             running.get(5, TimeUnit.SECONDS);
         } finally {
             blocking.countDown();
-            conf.setQueueOfferMode(oldMode);
-            conf.setQueueOfferTimeoutMillis(oldTimeout);
+        }
+    }
+
+    @Test
+    void queueOfferCallerRunsShouldKeepSingleLifecycleAndCleanTaskMap() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        CountDownLatch blocking = new CountDownLatch(1);
+        AtomicInteger duplicateRuns = new AtomicInteger();
+        String taskId = "caller-single-" + UUID.randomUUID();
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setQueueOfferMode(ThreadPoolQueueOfferMode.CALLER_RUNS);
+            conf.setQueueOfferTimeoutMillis(0);
+            pool = ThreadPool.fixed("QUEUE-CALLER-SINGLE", 1, 1);
+
+            CompletableFuture<Void> running = pool.runAsync(() -> {
+                blocking.await(5, TimeUnit.SECONDS);
+            }, taskId, RunFlag.SINGLE.flags());
+            waitUntil(() -> ThreadPool.runningSingleTasks.contains(taskId), 3000);
+            pool.runAsync(() -> {
+            });
+            waitUntil(() -> pool.getQueue().size() == 1, 3000);
+
+            CompletableFuture<Void> overflow = pool.runAsync(() -> {
+                duplicateRuns.incrementAndGet();
+            }, taskId, RunFlag.SINGLE.flags());
+
+            assertTrue(overflow.isDone());
+            assertEquals(0, duplicateRuns.get());
+            assertEquals(1L, pool.singleSkipCount.sum());
+            assertTrue(ThreadPool.runningSingleTasks.contains(taskId));
+
+            blocking.countDown();
+            running.get(5, TimeUnit.SECONDS);
+            waitUntil(() -> !ThreadPool.runningSingleTasks.contains(taskId), 3000);
+            waitUntil(() -> pool.taskMap.isEmpty(), 3000);
+        } finally {
+            blocking.countDown();
+        }
+    }
+
+    @Test
+    void queueOfferCallerRunsShouldEndThreadTraceWhenTaskFails() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        CountDownLatch blocking = new CountDownLatch(1);
+        AtomicReference<String> traceInTask = new AtomicReference<>();
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setQueueOfferMode(ThreadPoolQueueOfferMode.CALLER_RUNS);
+            conf.setQueueOfferTimeoutMillis(0);
+            pool = ThreadPool.fixed("QUEUE-CALLER-TRACE", 1, 1);
+
+            CompletableFuture<Void> running = pool.runAsync(() -> {
+                blocking.await(5, TimeUnit.SECONDS);
+            });
+            waitUntil(() -> pool.getActiveCount() == 1, 3000);
+            pool.runAsync(() -> {
+            });
+            waitUntil(() -> pool.getQueue().size() == 1, 3000);
+
+            String rootTrace = ThreadPool.startTrace("caller-runs-trace-" + UUID.randomUUID());
+            CompletableFuture<Void> overflow = pool.runAsync(() -> {
+                traceInTask.set(ThreadPool.traceId());
+                throw new IllegalStateException("boom");
+            }, null, RunFlag.THREAD_TRACE.flags());
+
+            ExecutionException error = assertThrows(ExecutionException.class, () -> overflow.get(1, TimeUnit.SECONDS));
+            assertTrue(error.getCause() instanceof IllegalStateException);
+            assertEquals(rootTrace, traceInTask.get());
+            assertEquals(rootTrace, ThreadPool.traceId());
+            ThreadPool.endTrace();
+            assertNull(ThreadPool.traceId());
+
+            blocking.countDown();
+            running.get(5, TimeUnit.SECONDS);
+            waitUntil(() -> pool.taskMap.isEmpty(), 3000);
+        } finally {
+            blocking.countDown();
+            ThreadPool.CTX_TRACE_ID.get().clear();
+        }
+    }
+
+    @Test
+    void queueOfferCallerRunsShouldRestoreFastThreadLocalMap() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        CountDownLatch blocking = new CountDownLatch(1);
+        FastThreadLocal<String> local = new FastThreadLocal<>();
+        AtomicReference<String> inherited = new AtomicReference<>();
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setQueueOfferMode(ThreadPoolQueueOfferMode.CALLER_RUNS);
+            conf.setQueueOfferTimeoutMillis(0);
+            pool = ThreadPool.fixed("QUEUE-CALLER-FTL", 1, 1);
+            local.set("parent");
+
+            CompletableFuture<Void> running = pool.runAsync(() -> {
+                blocking.await(5, TimeUnit.SECONDS);
+            });
+            waitUntil(() -> pool.getActiveCount() == 1, 3000);
+            pool.runAsync(() -> {
+            });
+            waitUntil(() -> pool.getQueue().size() == 1, 3000);
+
+            CompletableFuture<Void> overflow = pool.runAsync(() -> {
+                inherited.set(local.get());
+                local.set("task");
+            }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
+
+            overflow.get(1, TimeUnit.SECONDS);
+            assertEquals("parent", inherited.get());
+            assertEquals("parent", local.get());
+
+            blocking.countDown();
+            running.get(5, TimeUnit.SECONDS);
+            waitUntil(() -> pool.taskMap.isEmpty(), 3000);
+        } finally {
+            blocking.countDown();
+            local.remove();
         }
     }
 
