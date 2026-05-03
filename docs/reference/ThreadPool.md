@@ -100,7 +100,9 @@ app:
 
 `Tasks.executor()` 是全局共享入口，`Tasks.shutdown()` / `Tasks.shutdownNow()` 以及 `Tasks.executor().shutdown()` / `shutdownNow()` 均为 no-op 包装语义，不承担释放底层共享线程池、timer 或 watchman 的职责。
 
-独立创建的 `new ThreadPool(...)` / `ThreadPool.fixed(...)` 自己管理生命周期：`shutdown()` 和 `shutdownNow()` 会先从 `CpuWatchman` 注销，再进入 JDK 线程池关闭流程。
+独立创建的 `new ThreadPool(...)` / `ThreadPool.fixed(...)` 自己管理生命周期：`shutdown()` 和 `shutdownNow()` 会先从 `CpuWatchman` 注销，再进入 JDK 线程池关闭流程；关闭后再次 `execute()` / `submit()` / `run()` / `runAsync()` 会抛 `RejectedExecutionException`，调用方不能依赖 warn + ignore 语义。
+
+全局入口和独立实例的生命周期必须区分：`Tasks.executor()` 只是共享线程池包装器，关闭方法不会释放共享资源；standalone `ThreadPool` 是资源拥有者，关闭后即进入拒绝新任务状态。
 
 `ThreadQueue` 的 `drainTo()` / `clear()` / `shutdownNow()` 路径会按实际移除数量释放 slot，并清理未执行任务的 `taskMap` 映射，避免 `counter` 与 `availableSlots` 不一致。
 
@@ -151,7 +153,7 @@ ThreadPool.endTrace();
 RXlib 对 Netty 的 `HashedWheelTimer` 进行了封装，核心点在于：**只做调度，不做执行**。
 - **调度效率**：时间轮算法在具有大量定时器时通过单线程调度极其高效。
 - **并发执行**：所有触发的任务都会立即异步移交给 `ThreadPool` 执行，避免了传统时间轮“一处任务阻塞，整体调度停滞”的顽疾。
-- **关闭语义**：`WheelTimer.shutdown()` 会拒绝新任务，并取消未执行 timeout task、带 taskId 的 holder task 以及 periodic task；`awaitTermination()` 在 holder、active timeout 和 periodic 集合清空后返回 true。
+- **关闭语义**：`WheelTimer.shutdown()` 会拒绝新任务，并取消未执行 timeout task、带 taskId 的 holder task 以及 periodic task，同时停止底层 Netty `HashedWheelTimer`；`awaitTermination()` 在底层 timer 已停止且 holder、active timeout、periodic 集合清空后返回 true。
 
 ```java
 WheelTimer timer = Tasks.timer();

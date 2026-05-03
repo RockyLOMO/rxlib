@@ -522,6 +522,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     final LongAdder errorCount = new LongAdder();
     final LongAdder rejectedCount = new LongAdder();
     final AtomicLong lastDiagnosticMillis = new AtomicLong();
+    final AtomicBoolean timerStopStarted = new AtomicBoolean();
+    volatile boolean timerStopped;
     @Getter
     volatile boolean shutdown;
     volatile boolean shutdownNow;
@@ -706,6 +708,13 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         DiagnosticMetrics.record(now, "rx.wheel_timer.shutdown.count", shutdown ? 1D : 0D, tags, null);
     }
 
+    private void stopTimer() {
+        if (timerStopStarted.compareAndSet(false, true)) {
+            timer.stop();
+            timerStopped = true;
+        }
+    }
+
     private String diagnosticTags() {
         return "timer=" + Integer.toHexString(System.identityHashCode(this))
                 + ",executor=" + sanitizeMetricTag(executor.getClass().getName());
@@ -775,12 +784,16 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     @Override
     public void shutdown() {
         shutdown = true;
+        for (TimeoutFuture<?> future : holder.values()) {
+            future.cancel(false);
+        }
         for (Task<?> task : activeTasks) {
             task.cancel(false);
         }
         for (PeriodicTask periodicTask : periodicTasks) {
             periodicTask.cancel(false);
         }
+        stopTimer();
         recordDiagnosticMetrics(true);
     }
 
@@ -800,14 +813,14 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         holder.clear();
         activeTasks.clear();
         periodicTasks.clear();
-        timer.stop();
+        stopTimer();
         recordDiagnosticMetrics(true);
         return Collections.emptyList();
     }
 
     @Override
     public boolean isTerminated() {
-        return shutdownNow || (shutdown && holder.isEmpty() && activeTasks.isEmpty() && periodicTasks.isEmpty());
+        return timerStopped && (shutdownNow || (shutdown && holder.isEmpty() && activeTasks.isEmpty() && periodicTasks.isEmpty()));
     }
 
     @SneakyThrows

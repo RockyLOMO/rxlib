@@ -3,7 +3,9 @@ package org.rx.core;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -108,11 +110,67 @@ public class WheelTimerShutdownPeriodicTest {
         assertEquals(afterShutdown, counter.get());
     }
 
+    @Test
+    void standaloneShutdownShouldStopUnderlyingTimerAndRejectNewTasks() throws Exception {
+        pool = ThreadPool.fixed("TIMER-STANDALONE", 1, 8);
+        timer = new WheelTimer(pool);
+        Thread workerThread = timerWorkerThread(timer);
+        ScheduledFuture<?> future = timer.schedule(new Runnable() {
+            @Override
+            public void run() {
+            }
+        }, 5, TimeUnit.SECONDS);
+        waitUntil(new Condition() {
+            @Override
+            public boolean ok() {
+                return workerThread.isAlive();
+            }
+        }, 3000);
+
+        timer.shutdown();
+
+        assertTrue(timer.awaitTermination(2, TimeUnit.SECONDS));
+        assertThrows(CancellationException.class, future::get);
+        assertThrows(RejectedExecutionException.class, new org.junit.jupiter.api.function.Executable() {
+            @Override
+            public void execute() {
+                timer.schedule(new Runnable() {
+                    @Override
+                    public void run() {
+                    }
+                }, 1, TimeUnit.MILLISECONDS);
+            }
+        });
+        assertTrue(timer.holder.isEmpty());
+        assertTrue(timer.activeTasks.isEmpty());
+        assertTrue(timer.periodicTasks.isEmpty());
+        assertEquals(0, timer.timer.pendingTimeouts());
+        assertTrue(!workerThread.isAlive());
+    }
+
+    private Thread timerWorkerThread(WheelTimer timer) throws Exception {
+        Field field = timer.timer.getClass().getDeclaredField("workerThread");
+        field.setAccessible(true);
+        return (Thread) field.get(timer.timer);
+    }
+
     private void waitUntilAtLeast(AtomicInteger counter, int expected, long timeoutMillis) throws Exception {
         long deadline = System.currentTimeMillis() + timeoutMillis;
         while (counter.get() < expected && System.currentTimeMillis() < deadline) {
             Thread.sleep(10);
         }
         assertTrue(counter.get() >= expected);
+    }
+
+    private void waitUntil(Condition condition, long timeoutMillis) throws Exception {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (!condition.ok() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        assertTrue(condition.ok());
+    }
+
+    private interface Condition {
+        boolean ok();
     }
 }
