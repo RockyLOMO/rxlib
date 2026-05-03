@@ -15,7 +15,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.sql.Time;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
@@ -58,100 +57,50 @@ public final class Tasks {
         unsafeStaticFieldOffset = staticFieldOffset;
         unsafePutObject = putObject;
         executor = new AbstractExecutorService() {
-            volatile boolean shutdown;
-            volatile boolean shutdownNow;
-
-            private void ensureRunning() {
-                if (shutdown) {
-                    throw new RejectedExecutionException("Tasks executor is shutdown");
-                }
-            }
-
             @Override
             public Future<?> submit(Runnable task) {
-                ensureRunning();
                 return nextPool(task, null, null).submit(task);
             }
 
             @Override
             public <T> Future<T> submit(Runnable task, T result) {
-                ensureRunning();
                 return nextPool(task, null, null).submit(task, result);
             }
 
             @Override
             public <T> Future<T> submit(Callable<T> task) {
-                ensureRunning();
                 return nextPool(task, null, null).submit(task);
             }
 
             @Override
             public void execute(Runnable command) {
-                ensureRunning();
                 nextPool(command, null, null).execute(command);
             }
 
             @Override
-            public synchronized void shutdown() {
-                if (shutdown) {
-                    return;
-                }
-                shutdown = true;
-                timer.shutdown();
-                for (ThreadPool node : nodes) {
-                    CpuWatchman.INSTANCE.unregister(node);
-                    node.shutdown();
-                }
-                drainShutdownActions();
+            public void shutdown() {
+                log.warn("Ignore Tasks.executor().shutdown(); Tasks is a global wrapper");
             }
 
             @Override
-            public synchronized List<Runnable> shutdownNow() {
-                if (shutdownNow) {
-                    return Collections.emptyList();
-                }
-                shutdown = true;
-                shutdownNow = true;
-                List<Runnable> pending = new ArrayList<>();
-                pending.addAll(timer.shutdownNow());
-                for (ThreadPool node : nodes) {
-                    CpuWatchman.INSTANCE.unregister(node);
-                    pending.addAll(node.shutdownNow());
-                }
-                CpuWatchman.INSTANCE.shutdown();
-                drainShutdownActions();
-                return pending;
+            public List<Runnable> shutdownNow() {
+                log.warn("Ignore Tasks.executor().shutdownNow(); Tasks is a global wrapper");
+                return Collections.emptyList();
             }
 
             @Override
             public boolean isShutdown() {
-                return shutdown;
+                return false;
             }
 
             @Override
             public boolean isTerminated() {
-                if (!shutdown) {
-                    return false;
-                }
-                if (!timer.isTerminated()) {
-                    return false;
-                }
-                for (ThreadPool node : nodes) {
-                    if (!node.isTerminated()) {
-                        return false;
-                    }
-                }
-                return true;
+                return false;
             }
 
             @Override
-            @SneakyThrows
             public boolean awaitTermination(long timeout, TimeUnit unit) {
-                long deadline = System.currentTimeMillis() + TimeUnit.MILLISECONDS.convert(timeout, unit);
-                while (!isTerminated() && System.currentTimeMillis() < deadline) {
-                    Thread.sleep(Math.min(50L, Math.max(1L, deadline - System.currentTimeMillis())));
-                }
-                return isTerminated();
+                return false;
             }
         };
         completableFutureExecutor = Executors.unconfigurableExecutorService(executor);
@@ -247,10 +196,6 @@ public final class Tasks {
 
     @Subscribe(topicClass = RxConfig.class)
     static synchronized void createPool(ObjectChangedEvent event) {
-        if (executor.isShutdown()) {
-            log.warn("Skip create ThreadPool nodes because Tasks executor is shutdown");
-            return;
-        }
         int newCount = RxConfig.INSTANCE.threadPool.replicas;
         if (newCount == poolCount) {
             return;
@@ -279,16 +224,10 @@ public final class Tasks {
     }
 
     public static ThreadPool nextPool() {
-        if (executor.isShutdown()) {
-            throw new RejectedExecutionException("Tasks executor is shutdown");
-        }
         return nodes.get(ThreadLocalRandom.current().nextInt(0, poolCount));
     }
 
     static ThreadPool nextPool(Object task, Object taskId, FlagsEnum<RunFlag> flags) {
-        if (executor.isShutdown()) {
-            throw new RejectedExecutionException("Tasks executor is shutdown");
-        }
         ThreadPool.Task<?> adapted = ThreadPool.Task.as(task);
         if (adapted != null) {
             if (taskId == null) {
