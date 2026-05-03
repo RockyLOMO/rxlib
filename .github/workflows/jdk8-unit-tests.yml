@@ -1,0 +1,43 @@
+name: JDK 8 Unit Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this workflow was triggered"
+        required: false
+        default: "manual jdk8 validation"
+  push:
+    branches:
+      - "agent/**"
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Maven test on JDK 8
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "8"
+          cache: maven
+
+      - name: Show Java and Maven versions
+        run: |
+          java -version
+          mvn -version
+
+      - name: Build and test
+        run: mvn -B -U -Dgpg.skip=true -Dmaven.test.skip=false -DskipTests=false clean test
