@@ -16,7 +16,7 @@
         <maven.compiler.target>8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <lombok.version>1.18.30</lombok.version>
-        <mysql.version>5.1.49</mysql.version>
+        <mysql.version>8.0.28</mysql.version>
         <HikariCP.version>4.0.3</HikariCP.version>
         <druid.version>1.2.21</druid.version>
         <redisson.version>3.52.0</redisson.version>
