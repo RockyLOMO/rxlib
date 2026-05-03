@@ -3,158 +3,180 @@
 > 生成日期：2026-05-03  
 > 最近更新：2026-05-03  
 > 分支：`agent/20260503-thread-pool-review`  
-> 当前实现基线：`395359d7e858857c31f0cc04d64cc3e64586a3fb`  
-> 本次更新类型：执行 P1 待办后的计划文档同步。  
+> 当前 review 基线：`7e5a9524ccb1930ac8f322a988881222ff0792c3`  
+> 本次更新类型：整体 Review 结果同步，仅更新计划文档，不修改业务代码。  
 > 明确范围：`SINGLE namespace / scope` 不实现。
 
 # 背景
 
-用户要求继续执行三个 P1 待办，并更新计划文档：
+用户要求再次 review 当前实现，将结果更新到 `docs/plan/thread-pool-review-plan.md`，并给出当前待办。
 
-1. 补充 `stopTimer()` 异常注入测试。
-2. 补充重复 / 并发 `shutdown()` 与 `shutdownNow()` 测试。
-3. 明确 `WheelTimer.shutdownNow()` 与外部 executor running task 的语义。
+当前分支已经完成多轮线程池、时间轮、shutdown 生命周期和回归测试补强。最近一次实现提交为：
 
-本次已完成实现和参考文档补充，并将结果同步到本计划文档。
+- `395359d7e858857c31f0cc04d64cc3e64586a3fb`：`test(core): cover wheel timer shutdown races`
+
+最近一次计划文档提交为：
+
+- `7e5a9524ccb1930ac8f322a988881222ff0792c3`：`docs(plan): add thread-pool-review plan`
+
+本次 review 聚焦最新实现是否仍有功能缺口，以及当前剩余待办是否已经收敛。
 
 # 任务类型判断
 
-本次任务归类为 **Review / 修复后测试补强 / 文档补强需求**。
+本次任务归类为 **Review / 修复后复查 / 待办梳理需求**。
 
 原因：
 
-- 用户明确要求“执行代码修复 并更新计划文档”。
-- 修改点是已有 shutdown 实现的测试和文档补强，不是新增业务功能。
-- 本次不实现 `SINGLE namespace / scope`。
-- 本次保持 JDK8 兼容，不修改 main/master 分支。
+- 用户要求“再 review 下，更新计划文档，给出目前待办”。
+- 当前未要求继续修改业务代码。
+- 本阶段目标是复查已有代码和测试状态，明确剩余风险和待办。
+- 按 agent 流程，本次只更新计划文档，不修改业务代码。
 
 # 当前上下文
 
-## 已 review / 修改的文件
+## 已 review 的文件
 
-本次代码与文档提交修改：
-
+- `rxlib/src/main/java/org/rx/core/WheelTimer.java`
 - `rxlib/src/test/java/org/rx/core/WheelTimerShutdownPeriodicTest.java`
 - `docs/reference/WheelTimerShutdown.md`
-
-本次计划文档提交修改：
-
 - `docs/plan/thread-pool-review-plan.md`
 
-## 本次代码 / 文档提交
+## 当前 CI 状态
 
-- commit：`395359d7e858857c31f0cc04d64cc3e64586a3fb`
-- message：`test(core): cover wheel timer shutdown races`
+最新查询到的 `Agent CI`：
 
-## 关键调用链
+- run id：`25284655775`
+- branch：`agent/20260503-thread-pool-review`
+- head sha：`7e5a9524ccb1930ac8f322a988881222ff0792c3`
+- status：`in_progress`
+- conclusion：`null`
 
-### stopTimer 异常注入
+因此当前还不能认为 CI 已通过。只有 `status=completed` 且 `conclusion=success` 才能标记为通过。
 
-- Netty `HashedWheelTimer` worker thread 执行测试 `TimerTask`。
-- 测试任务在 timer worker thread 内调用 `WheelTimer.shutdown()`。
-- `WheelTimer.shutdown()` 调用 `stopTimer()`。
-- 底层 `HashedWheelTimer.stop()` 在 worker thread 内调用时抛出 `IllegalStateException`。
-- `stopTimer()` 捕获异常，恢复 `timerStopStarted=false` 并重新抛出。
-- 测试在外部线程再次调用 `shutdown()`，验证可重试并最终 terminated。
+注意：本次 review 会再产生一个文档-only commit。由于业务代码和测试代码未变，`25284655775` 仍可用于判断最近代码/测试实现是否通过；但如果严格要求最新 head 验证，则需要在本次文档 commit 后重新触发一次 CI。
 
-### 并发 shutdown / shutdownNow
+# 关键调用链
 
-- 创建 pending scheduled task。
-- 多个线程同时反复调用 `shutdown()` 或 `shutdownNow()`。
-- 通过 `timerStopStarted` 和 `timerStopped` 验证 shutdown 结束状态。
-- 验证 `holder / activeTasks / periodicTasks` 清空。
-- 验证 pending timeout 被取消。
+## WheelTimer.stopTimer()
 
-### shutdownNow 文档语义
+当前核心实现：
 
-新增 `docs/reference/WheelTimerShutdown.md`，明确：
+```java
+private void stopTimer() {
+    if (!timerStopStarted.compareAndSet(false, true)) {
+        return;
+    }
+    try {
+        timer.stop();
+        timerStopped = true;
+    } catch (RuntimeException | Error e) {
+        timerStopStarted.set(false);
+        throw e;
+    }
+}
+```
 
-- `WheelTimer` 拥有底层 Netty timer 和内部跟踪集合。
-- 外部 executor 中已运行的用户任务不属于 `WheelTimer` 完整生命周期所有权。
-- `shutdown()` 不会中断已运行任务，awaitTermination 会等待 running task 自然完成。
-- `shutdownNow()` 只尽力 cancel 并清理 timer 内部状态，不保证外部 executor 中忽略中断的 running task 立即停止。
+当前语义：
 
-# 目标
+- 正常路径只允许一个调用者执行底层 `timer.stop()`。
+- 其他并发调用者直接返回。
+- 如果 `timer.stop()` 抛异常，恢复 `timerStopStarted=false`，允许后续重试。
+- 不吞异常，调用方可感知底层 timer stop 失败。
 
-1. 用回归测试直接覆盖 `stopTimer()` stop 失败后允许重试。
-2. 用回归测试覆盖重复 / 并发 `shutdown()` 与 `shutdownNow()`。
-3. 用参考文档明确 `shutdownNow()` 与外部 executor running task 的边界。
-4. 同步计划文档，标记三个 P1 已完成。
-5. 触发 GitHub Actions 验证。
+## stopTimer 异常注入测试
 
-# 非目标
+`stopTimerFailureShouldResetStateAndAllowRetry` 当前通过以下方式构造异常：
 
-- 不实现 `SINGLE namespace / scope`。
-- 不修改 `.github/workflows/**`。
-- 不升级 JDK、Maven 插件或依赖版本。
-- 不修改无关模块。
-- 不自动创建 PR、不 merge、不发布 release。
-
-# 设计方案
-
-## 1. stopTimer 异常注入测试
-
-新增测试：`stopTimerFailureShouldResetStateAndAllowRetry`。
-
-设计点：
-
-- 不引入生产 API。
-- 不替换 final timer 字段。
-- 利用 Netty 自身语义：在 `HashedWheelTimer` worker thread 内调用 `stop()` 会抛 `IllegalStateException`。
-- 验证异常后：
+- 直接向底层 Netty `HashedWheelTimer` 提交一个 `TimerTask`。
+- 在 Netty timer worker thread 内调用 `WheelTimer.shutdown()`。
+- Netty `HashedWheelTimer.stop()` 在 worker thread 内调用时抛 `IllegalStateException`。
+- 测试验证：
   - `timerStopStarted=false`
   - `timerStopped=false`
-  - 外部线程再次 `shutdown()` 可成功
+  - 外部线程再次调用 `shutdown()` 可成功
   - `awaitTermination()` 返回 true
-  - 内部集合最终清空
+  - 内部集合清空
 
-## 2. 重复 / 并发 shutdown 测试
+## 并发 shutdown / shutdownNow 测试
 
-新增测试：`shutdownAndShutdownNowShouldBeSafeWhenRepeatedAndConcurrent`。
-
-设计点：
+`shutdownAndShutdownNowShouldBeSafeWhenRepeatedAndConcurrent` 当前覆盖：
 
 - 8 个线程并发启动。
 - 一半线程重复调用 `shutdownNow()`。
 - 一半线程重复调用 `shutdown()`。
-- 验证没有异常。
-- 验证最终 terminated。
-- 验证 `timerStopped=true`。
+- 验证无异常。
+- 验证最终 `awaitTermination()` 成功。
+- 验证 `timerStopStarted=true`、`timerStopped=true`。
 - 验证 `holder / activeTasks / periodicTasks` 为空。
 - 验证 pending timeout 被取消。
 
-## 3. shutdownNow 参考文档
+## shutdownNow 文档语义
 
-新增文档：`docs/reference/WheelTimerShutdown.md`。
+`docs/reference/WheelTimerShutdown.md` 已明确：
 
-设计点：
+- `WheelTimer` 管理底层 Netty timer 和内部跟踪集合。
+- 外部 executor 中已开始运行的用户任务不属于 `WheelTimer` 完整生命周期所有权。
+- `shutdown()` 会等待 running task 自然完成后才能 terminated。
+- `shutdownNow()` 只尽力 cancel 并清理 timer 内部状态，不保证外部 executor 中忽略中断的 running task 立即停止。
+- `isTerminated()` 不等价于外部 executor 中所有 running task 均已停止。
 
-- 避免大范围重写已有 `ThreadPool.md`。
-- 单独说明 `WheelTimer` 生命周期边界。
-- 明确 `shutdown()` 与 `shutdownNow()` 差异。
-- 明确 `isTerminated()` 不等价于外部 executor running task 全部停止。
-- 保持 JDK8 和现有 API 兼容。
+# 目标
 
-# JDK8 兼容性约束
+1. 复查当前最新实现是否符合预期。
+2. 明确当前已完成项。
+3. 列出当前仍需处理或观察的待办。
+4. 保持 JDK8 兼容约束。
+5. 本次只更新计划文档，不修改业务代码。
 
-本次实现保持 JDK8 兼容：
+# 非目标
 
-- 未使用 Java 9+ API。
-- 未引入新依赖。
-- 测试使用 `CountDownLatch`、`AtomicReference`、`AtomicInteger`、`TimeUnit`、`ScheduledFuture` 等 JDK8 API。
-- 测试中的匿名类写法兼容 JDK8。
-- 新增 Markdown 文档不影响编译。
+- 不实现 `SINGLE namespace / scope`。
+- 不修改 `WheelTimer.java`、`ThreadPool.java`、`CpuWatchman.java` 或测试代码。
+- 不调整 `.github/workflows/**`。
+- 不升级 JDK、Maven 插件或依赖版本。
+- 不自动创建 PR、不 merge、不发布 release。
 
-# 修改文件列表
+# Review 结论
 
-本次代码 / 文档提交：
+## 1. WheelTimer shutdown 实现主线已收敛
 
-- `rxlib/src/test/java/org/rx/core/WheelTimerShutdownPeriodicTest.java`
-- `docs/reference/WheelTimerShutdown.md`
+当前 `WheelTimer.shutdown()` / `shutdownNow()` / `stopTimer()` 的核心方向正确：
 
-本次计划文档提交：
+- `shutdown()` 会拒绝新任务、取消未执行 timeout、取消 holder、取消 periodic，并 stop 底层 timer。
+- `shutdown()` 对已开始执行的用户任务使用 `cancel(false)`，不会强制中断，`awaitTermination()` 会等待其自然完成。
+- `shutdownNow()` 会清理内部集合并 stop timer，但不承诺外部 executor 中已运行任务立即停止。
+- `stopTimer()` 已处理 stop 失败后的可重试状态恢复。
+- `isTerminated()` 已将 `timerStopped` 纳入判断。
 
-- `docs/plan/thread-pool-review-plan.md`
+本轮未发现新的必须修改业务代码的问题。
+
+## 2. stopTimer 异常注入测试覆盖了关键 bug 边界
+
+新增测试能直接验证 stop 失败后的状态恢复，不再只依赖代码 review 推理。
+
+测试方案不引入生产 API，也不替换 final timer 字段，改动范围较小。它的代价是依赖 Netty `HashedWheelTimer.stop()` 在 worker thread 内抛 `IllegalStateException` 的语义。短期可接受，未来 Netty 升级时需要复查。
+
+## 3. 重复 / 并发 shutdown 测试方向正确，但需要 CI 验证稳定性
+
+当前并发测试覆盖了重复 shutdown、shutdownNow 与 shutdown 混合并发、内部集合清理和 pending timeout 取消。测试方向正确。
+
+剩余风险主要是 CI 负载下的调度稳定性。如果 CI 失败，应优先根据失败栈调整等待条件或断言粒度，不应直接删除测试。
+
+## 4. shutdownNow 语义已文档化
+
+新增 `docs/reference/WheelTimerShutdown.md` 已明确 `shutdownNow()` 的资源边界，降低调用方误解 `isTerminated()` 的风险。
+
+后续可以考虑在 `docs/reference/ThreadPool.md` 中增加跳转链接，但不是阻塞项。
+
+## 5. ThreadPool / ThreadQueue / SERIAL / CpuWatchman 当前无新增阻塞项
+
+本轮 focus 是 `WheelTimer` shutdown 相关实现。结合前序 review 结论：
+
+- `ThreadQueue` slot/counter/taskMap 不变量已有测试覆盖。
+- SERIAL 容量、异常链和清理路径已有测试覆盖。
+- CpuWatchman resize 边界、cooldown、jitter 已有测试覆盖。
+
+当前不建议继续扩大代码修改范围，除非 CI 暴露实际失败。
 
 # 已完成项
 
@@ -202,59 +224,68 @@
 
 保留现状：`runningSingleTasks` 继续作为 JVM 全局互斥集合使用。调用方如担心跨业务 taskId 冲突，应自行在 taskId 中加入业务前缀。
 
-# 剩余待办明细
+# 当前待办明细
 
-## P0：完成最新分支 CI / Maven 验证
+## P0：等待并确认 `Agent CI` 结果
 
 ### 当前状态
 
-本次已有新提交 `395359d7e858857c31f0cc04d64cc3e64586a3fb`，需要触发并确认最新 head 的 CI 结果。
+`Agent CI` run `25284655775` 当前仍是：
+
+- status：`in_progress`
+- conclusion：`null`
+
+不能认为 CI 已通过。
 
 ### 完成标准
 
-- 最新 `Agent CI` 对应当前 head。
 - workflow `status=completed`。
 - workflow `conclusion=success`。
 
-### 如果失败
+### 备注
 
-必须读取失败日志，并分类处理：
+本次 review 只新增计划文档 commit。若要求 CI 严格覆盖最新 head，需要在本次文档 commit 后重新触发一次 CI；若只验证最新代码/测试实现，run `25284655775` 已覆盖对应代码树。
 
-1. 编译失败。
-2. 单元测试失败。
-3. Checkstyle / formatting 失败。
-4. 依赖下载失败。
-5. JDK 版本不兼容。
-6. 环境问题。
-7. 测试不稳定。
-8. GitHub Actions 配置问题。
-
-## P1：根据 CI 结果修复可能的测试失败
+## P1：根据 CI 结果修复可能的编译或测试失败
 
 ### 重点关注
 
-- `stopTimerFailureShouldResetStateAndAllowRetry` 依赖 Netty `HashedWheelTimer.stop()` 在 worker thread 内抛 `IllegalStateException` 的语义。
-- `shutdownAndShutdownNowShouldBeSafeWhenRepeatedAndConcurrent` 是并发测试，如果 CI 负载较高，可能需要调整等待超时。
-- 如果 `future.get()` 断言与 shutdownNow 取消竞态相关，需要根据实际失败栈判断是否应该放宽为 cancelled/done 语义，而不是删除测试。
+- `stopTimerFailureShouldResetStateAndAllowRetry` 是否能稳定触发 Netty worker thread 内 stop 异常。
+- `shutdownAndShutdownNowShouldBeSafeWhenRepeatedAndConcurrent` 是否在 CI 高负载下稳定。
+- `standaloneShutdownShouldStopUnderlyingTimerAndRejectNewTasks` 对 `workerThread` 反射和线程停止断言是否稳定。
+- 如果失败来自超时或调度抖动，应调整等待条件；不要删除测试覆盖。
 
 ### 完成标准
 
-- 如果 CI 失败，补修复 commit。
+- 如果 CI 失败，读取失败日志。
+- 按失败类型做最小修复。
 - 再次触发 CI。
 - 直到最新 CI `conclusion=success`。
 
-## P2：降低 WheelTimerShutdownPeriodicTest 对 Netty internal 的依赖
+## P2：降低 `WheelTimerShutdownPeriodicTest` 对 Netty internal 的依赖
 
 ### 问题
 
-当前测试仍包含两类 Netty internal 语义依赖：
+当前测试仍有 Netty internal 依赖：
 
 - 反射读取 `HashedWheelTimer.workerThread`。
 - 依赖 worker thread 内调用 `HashedWheelTimer.stop()` 抛 `IllegalStateException`。
 
 ### 建议
 
-短期保留，因为这是验证当前 bug 边界的最小改动。未来 Netty 升级时，需要单独验证或改造成可注入 timer 的测试结构。
+短期保留，因为这是最小化验证当前 bug 边界的方式。未来 Netty 升级时，建议单独改造成可注入 timer 或只基于 public 行为断言。
+
+## P2：文档索引补链
+
+### 问题
+
+已新增 `docs/reference/WheelTimerShutdown.md`，但 `docs/reference/ThreadPool.md` 当前未必有指向该文档的显式链接。
+
+### 建议
+
+后续可在 `docs/reference/ThreadPool.md` 的时间轮章节加一句：更多 shutdown 语义见 `docs/reference/WheelTimerShutdown.md`。
+
+该项非阻塞，不影响代码行为。
 
 ## P2：Metrics 标签基数约束
 
@@ -282,21 +313,45 @@
 - synchronized 外执行 resize。
 - 增加采样耗时指标。
 
+# JDK8 兼容性约束
+
+本次 review 和后续建议均遵守 JDK8：
+
+- 不使用 Java 9+ API。
+- 不引入需要 JDK9+ 的依赖版本。
+- 不使用 `Map.of`、`List.of`、Java 9+ `CompletableFuture` API。
+- 继续使用 JDK8 可用的 `AtomicBoolean`、`CountDownLatch`、`ConcurrentHashMap`、`Semaphore`、`LongAdder`。
+- 新增测试使用匿名类写法，避免引入更高版本语言特性。
+
+# 修改文件列表
+
+本次实际修改：
+
+- `docs/plan/thread-pool-review-plan.md`
+
+本次不修改业务代码和测试代码。
+
+如果后续执行待办，预计可能修改：
+
+- `rxlib/src/test/java/org/rx/core/WheelTimerShutdownPeriodicTest.java`
+- `docs/reference/ThreadPool.md`
+- `docs/reference/WheelTimerShutdown.md`
+
 # 风险点
 
-- CI 风险：本次新增测试尚未由最新 CI 验证。
-- 测试稳定性风险：新增并发 shutdown 测试依赖线程调度。
-- Netty 兼容性风险：异常注入测试依赖 `HashedWheelTimer.stop()` 的 worker thread 保护语义。
-- 语义风险：`shutdownNow()` 的 terminated 语义可能被误解为外部 executor 用户任务全部停止，已通过新文档降低该风险。
+- CI 风险：最新 CI 仍未完成，不能确认本分支已经验证通过。
+- 测试稳定性风险：并发 shutdown 测试和 worker thread 停止测试依赖线程调度。
+- Netty 兼容性风险：测试依赖 `HashedWheelTimer.workerThread` 和 worker thread 内 stop 异常语义。
+- 语义风险：`shutdownNow()` 与外部 executor running task 的边界需要调用方理解，已通过新文档降低风险。
+- 可观测性风险：未来如果把完整 taskId 放入 metrics 标签，会引发高基数。
 
 # 验证方案
 
-代码提交后需要触发 GitHub Actions：
+当前必须等待或重新触发 `Agent CI`：
 
-- 优先使用 `agent-ci.yml`。
-- 如果 workflow 支持 `workflow_dispatch`，手动触发。
-- 查询 workflow run 时必须按 `agent/20260503-thread-pool-review` 分支过滤。
-- 只有 `conclusion=success` 才算通过。
+- workflow：`Agent CI`
+- branch：`agent/20260503-thread-pool-review`
+- 通过标准：`status=completed` 且 `conclusion=success`
 
 建议 Maven 验证命令：
 
@@ -310,7 +365,13 @@ mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dma
 
 # 回滚方案
 
-如本次测试 / 文档补强导致问题：
+本次只更新计划文档，回滚方式：
+
+```bash
+git revert <本次计划文档 commit>
+```
+
+如果后续 CI 证明最近测试 / 文档补强存在问题，可回滚代码 / 文档提交：
 
 ```bash
 git revert 395359d7e858857c31f0cc04d64cc3e64586a3fb
@@ -324,10 +385,6 @@ git revert 395359d7e858857c31f0cc04d64cc3e64586a3fb
 
 # 当前结论
 
-本次已完成用户指定的三个 P1 待办：
+当前实现功能层面已经基本收敛。`WheelTimer.stopTimer()` 异常路径、running task shutdown、重复/并发 shutdown，以及 `shutdownNow()` 与外部 executor running task 的语义均已有实现、测试或文档覆盖。
 
-1. 新增 `stopTimer()` 异常注入测试，验证 stop 失败后状态恢复并允许重试。
-2. 新增重复 / 并发 `shutdown()` 与 `shutdownNow()` 测试，覆盖幂等和并发关闭边界。
-3. 新增 `docs/reference/WheelTimerShutdown.md`，明确 `shutdownNow()` 与外部 executor running task 的生命周期边界。
-
-下一步必须触发并确认最新 `Agent CI`，若失败则按日志继续修复。
+目前最高优先级待办是等待 `Agent CI` 完成并确认 `conclusion=success`。如果 CI 失败，下一步应基于日志做最小修复。功能层面暂不建议继续扩大业务代码改动范围。
