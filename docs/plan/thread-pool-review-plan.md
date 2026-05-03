@@ -139,21 +139,24 @@ mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dma
 
 ### 5.1 ThreadQueue drain/clear slot 释放
 
-优先级最高。`ThreadPoolExecutor.shutdownNow()` 可能通过 `drainTo()` 取走元素，而 `ThreadQueue` 目前主要在 `poll/take/remove` 中释放 slot。如果 `drainTo()` / `clear()` 绕过释放逻辑，`counter` 和 `availableSlots` 可能不一致。
+状态：**已完成**。
 
-建议：
+`ThreadPoolExecutor.shutdownNow()` 可能通过 `drainTo()` 取走元素，而 `ThreadQueue` 目前主要在 `poll/take/remove` 中释放 slot。如果 `drainTo()` / `clear()` 绕过释放逻辑，`counter` 和 `availableSlots` 可能不一致。
+
+已落地：
 
 - 覆盖 `ThreadQueue.drainTo(Collection)`。
 - 覆盖 `ThreadQueue.drainTo(Collection, int)`。
 - 覆盖 `ThreadQueue.clear()`。
 - 按实际移除数量释放 slot。
-- `blockUntilSlot()` 循环中检测 pool shutdown，已关闭则快速 reject。
+- `blockUntilSlot()` / timeout wait 循环中检测 pool shutdown，已关闭则快速 reject。
+- drain/clear/remove 外部移除队列元素时同步清理 `taskMap`。
 
 ### 5.2 standalone ThreadPool 生命周期
 
-`Tasks` 是 no-op shutdown，但 standalone `new ThreadPool(...)` / `ThreadPool.fixed(...)` 应自己管理生命周期。
+状态：**已完成**。
 
-建议：
+`Tasks` 是 no-op shutdown，但 standalone `new ThreadPool(...)` / `ThreadPool.fixed(...)` 应自己管理生命周期。
 
 - `ThreadPool.shutdown()` override：先 `CpuWatchman.INSTANCE.unregister(this)`，再调用 super。
 - `ThreadPool.shutdownNow()` override：先 unregister，再调用 super。
@@ -161,7 +164,7 @@ mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dma
 
 ### 5.3 WheelTimer shutdown 测试
 
-建议补测试：
+状态：**已完成**。新增 `WheelTimerShutdownPeriodicTest` 覆盖：
 
 - 无 taskId long delay task 在 shutdown 后不会执行。
 - 带 taskId period task shutdown 后 holder 清理。
@@ -170,16 +173,22 @@ mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dma
 
 ### 5.4 CpuWatchman 测试和 jitter
 
-剩余：
+状态：**已完成**。
 
-- 多副本 resize jitter 仍未实现。
-- 需要补 `CpuWatchmanResizeTest`：invalid CPU load、cooldown skip 指标、PRIORITY 不绕过 cooldown、resize 不越界。
+- 已实现 per-pool resize jitter，降低多副本同一采样窗口内同时扩缩容的抖动。
+- 新增 `CpuWatchmanResizeTest`：invalid CPU load、cooldown skip、PRIORITY 直调路径不绕过 cooldown、resize 不越界、jitter state。
 
 ### 5.5 SERIAL 异常链测试
 
+状态：**已完成**。
+
 推荐语义：单个 serial task 异常只影响自己的 Future，后续同 taskId 任务继续执行，链尾完成后清理 `taskSerialMap / taskSerialCountMap`。
 
+已将 `thenApplyAsync` 链接改为 `handleAsync`，确保前序 Future 异常时后续同 `taskId` 任务仍会执行。新增 `SerialQueueCapacityTest` 覆盖异常链不中断。
+
 ### 5.6 SINGLE namespace / scope
+
+状态：**暂缓**。根据最新要求，先不实现，已撤回本轮 namespace/scope 改动。
 
 当前 `runningSingleTasks` 仍是 JVM 全局 Set，存在跨业务 taskId 冲突风险。
 
@@ -192,7 +201,7 @@ mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dma
 
 ### 5.7 文档同步
 
-建议同步更新 `docs/reference/ThreadPool.md`：
+状态：**已完成**。已同步更新 `docs/reference/ThreadPool.md`：
 
 - `Tasks.shutdown()` / `shutdownNow()` 是 no-op，不承担资源释放职责。
 - `WheelTimer.shutdown()` 当前会取消未执行 timeout task。
@@ -200,13 +209,13 @@ mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dma
 
 ## 6. 建议后续落地顺序
 
-1. 修 `ThreadQueue drainTo/clear` slot 释放。
-2. 修 standalone `ThreadPool.shutdown/shutdownNow` unregister。
-3. 补 `WheelTimerShutdownPeriodicTest`。
-4. 补 `CpuWatchmanResizeTest`。
-5. 补 SERIAL 异常链测试。
-6. 单独设计并实现 SINGLE namespace/scope。
-7. 同步 `docs/reference/ThreadPool.md`。
+1. `ThreadQueue drainTo/clear` slot 释放：已完成。
+2. standalone `ThreadPool.shutdown/shutdownNow` unregister：已完成。
+3. `WheelTimerShutdownPeriodicTest`：已完成。
+4. `CpuWatchmanResizeTest`：已完成。
+5. SERIAL 异常链测试：已完成。
+6. SINGLE namespace/scope：暂缓，后续单独设计。
+7. `docs/reference/ThreadPool.md`：已同步。
 
 ## 7. 推荐验收命令
 
@@ -218,7 +227,7 @@ mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dma
 补齐剩余测试后建议新增执行：
 
 ```bash
-mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dmaven.gpg.skip=true -Dtest=WheelTimerShutdownPeriodicTest,CpuWatchmanResizeTest,ThreadPoolQueueShutdownTest,SerialQueueCapacityTest,SingleScopeTest test --batch-mode --no-transfer-progress
+mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dmaven.gpg.skip=true -Dtest=WheelTimerShutdownPeriodicTest,CpuWatchmanResizeTest,ThreadPoolQueueShutdownTest,SerialQueueCapacityTest test --batch-mode --no-transfer-progress
 ```
 
 网络相关集成测试仍建议单独跑，避免 UDP flaky 误判线程池修复。

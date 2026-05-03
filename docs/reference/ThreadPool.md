@@ -94,7 +94,17 @@ app:
 
 超过容量会快速抛 `RejectedExecutionException`，避免单个热 key 积压大量 `CompletableFuture` 对象。`serialQueueHardLimit` 是最终保护上限，`serialQueueCapacity` 不会超过该值。
 
-### 3.4 批量任务处理 (WaitAll / WaitAny)
+单个 `SERIAL` 任务异常只影响自己的 `Future`，不会阻断后续同 `taskId` 任务；链尾完成后会清理 `taskSerialMap / taskSerialCountMap`。
+
+### 3.4 生命周期语义
+
+`Tasks.executor()` 是全局共享入口，`Tasks.shutdown()` / `Tasks.shutdownNow()` 以及 `Tasks.executor().shutdown()` / `shutdownNow()` 均为 no-op 包装语义，不承担释放底层共享线程池、timer 或 watchman 的职责。
+
+独立创建的 `new ThreadPool(...)` / `ThreadPool.fixed(...)` 自己管理生命周期：`shutdown()` 和 `shutdownNow()` 会先从 `CpuWatchman` 注销，再进入 JDK 线程池关闭流程。
+
+`ThreadQueue` 的 `drainTo()` / `clear()` / `shutdownNow()` 路径会按实际移除数量释放 slot，并清理未执行任务的 `taskMap` 映射，避免 `counter` 与 `availableSlots` 不一致。
+
+### 3.5 批量任务处理 (WaitAll / WaitAny)
 ```java
 List<Func<Integer>> tasks = Arrays.asList(
     () -> { sleep(500); return 1; },
@@ -141,6 +151,7 @@ ThreadPool.endTrace();
 RXlib 对 Netty 的 `HashedWheelTimer` 进行了封装，核心点在于：**只做调度，不做执行**。
 - **调度效率**：时间轮算法在具有大量定时器时通过单线程调度极其高效。
 - **并发执行**：所有触发的任务都会立即异步移交给 `ThreadPool` 执行，避免了传统时间轮“一处任务阻塞，整体调度停滞”的顽疾。
+- **关闭语义**：`WheelTimer.shutdown()` 会拒绝新任务，并取消未执行 timeout task、带 taskId 的 holder task 以及 periodic task；`awaitTermination()` 在 holder、active timeout 和 periodic 集合清空后返回 true。
 
 ```java
 WheelTimer timer = Tasks.timer();
@@ -177,6 +188,12 @@ timer.setTimeout(() -> {
 | `rx.thread_pool.serial.rejected.count` | SERIAL 容量拒绝次数。 |
 | `rx.thread_pool.single.skip.count` | SINGLE 重复任务跳过次数。 |
 | `rx.thread_pool.config.invalid.count` | 线程池配置解析失败次数，当前用于 `queueOfferMode` 未知值。 |
+| `rx.thread_pool.cpu_load.invalid.count` | CPU load 采样为 NaN 或负数时跳过 resize 的次数。 |
+| `rx.thread_pool.resize.cooldown.skipped.count` | resize 因 cooldown 被跳过的次数。 |
+| `rx.wheel_timer.active.count` | 当前 active timeout task 数量。 |
+| `rx.wheel_timer.holder.count` | 当前带 taskId 的 holder 数量。 |
+| `rx.wheel_timer.periodic.count` | 当前 periodic task 数量。 |
+| `rx.wheel_timer.pending.count` | Netty 时间轮 pending timeout 数量。 |
 
 网络项目还必须同时关注 JVM 堆外内存和 Netty allocator 指标，尤其是 direct memory 使用量、连接数、吞吐、P99/P999 延迟、写队列水位与拒绝/降级次数。
 

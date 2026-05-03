@@ -31,6 +31,8 @@ public class CpuWatchman implements TimerTask {
     static final int DECREMENT_COUNTER = 0;
     static final int INCREMENT_COUNTER = 1;
     static final int LAST_RESIZE_MILLIS = 2;
+    static final int RESIZE_JITTER_MILLIS = 3;
+    static final int STATE_SIZE = 4;
 
     static int incrSize(ThreadPoolExecutor pool) {
         long[] state = INSTANCE.stateOf(pool);
@@ -111,7 +113,7 @@ public class CpuWatchman implements TimerTask {
         }
     }
 
-    private Decimal normalizeCpuLoad(double rawLoad) {
+    Decimal normalizeCpuLoad(double rawLoad) {
         if (Double.isNaN(rawLoad) || rawLoad < 0D) {
             return null;
         }
@@ -223,20 +225,22 @@ public class CpuWatchman implements TimerTask {
         }
     }
 
-    private long[] stateOf(ThreadPoolExecutor pool) {
+    long[] stateOf(ThreadPoolExecutor pool) {
         synchronized (holder) {
             Tuple<IntWaterMark, long[]> tuple = holder.get(pool);
             return tuple == null ? null : tuple.right;
         }
     }
 
-    private boolean isInCooldown(long[] state, int currentSize, String reason) {
+    boolean isInCooldown(long[] state, int currentSize, String reason) {
         if (state == null) {
             return false;
         }
         long cooldown = Math.max(0L, RxConfig.INSTANCE.threadPool.resizeCooldownMillis);
         long lastResizeMillis = state[LAST_RESIZE_MILLIS];
-        if (cooldown > 0L && lastResizeMillis > 0L && System.currentTimeMillis() - lastResizeMillis < cooldown) {
+        long jitter = state.length > RESIZE_JITTER_MILLIS ? state[RESIZE_JITTER_MILLIS] : 0L;
+        long effectiveCooldown = cooldown + Math.max(0L, jitter);
+        if (effectiveCooldown > 0L && lastResizeMillis > 0L && System.currentTimeMillis() - lastResizeMillis < effectiveCooldown) {
             recordResizeMetric("cooldown", reason, currentSize, currentSize);
             recordCooldownSkippedMetric(reason, currentSize);
             return true;
@@ -247,7 +251,25 @@ public class CpuWatchman implements TimerTask {
     private void markResize(long[] state) {
         if (state != null) {
             state[LAST_RESIZE_MILLIS] = System.currentTimeMillis();
+            if (state.length > RESIZE_JITTER_MILLIS) {
+                state[RESIZE_JITTER_MILLIS] = Math.max(0L, state[RESIZE_JITTER_MILLIS]);
+            }
         }
+    }
+
+    private long[] newResizeState(ThreadPoolExecutor pool) {
+        long[] state = new long[STATE_SIZE];
+        state[RESIZE_JITTER_MILLIS] = resizeJitterMillis(pool);
+        return state;
+    }
+
+    private long resizeJitterMillis(ThreadPoolExecutor pool) {
+        long cooldown = Math.max(0L, RxConfig.INSTANCE.threadPool.resizeCooldownMillis);
+        if (cooldown <= 0L) {
+            return 0L;
+        }
+        long bound = Math.min(cooldown, Math.max(1L, RxConfig.INSTANCE.threadPool.samplingPeriod));
+        return (System.identityHashCode(pool) & 0x7fffffffL) % (bound + 1L);
     }
 
     private void recordResizeMetric(String action, String reason, int before, int after) {
@@ -281,7 +303,7 @@ public class CpuWatchman implements TimerTask {
             throw new InvalidException("waterMark low > high");
         }
 
-        holder.put(pool, Tuple.of(waterMark, new long[3]));
+        holder.put(pool, Tuple.of(waterMark, newResizeState(pool)));
     }
 
     public void unregister(@NonNull ThreadPoolExecutor pool) {

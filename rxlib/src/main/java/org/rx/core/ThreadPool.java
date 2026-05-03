@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -160,8 +161,17 @@ public class ThreadPool extends ThreadPoolExecutor {
         private int blockUntilSlot(Runnable r, long startNanos) {
             boolean logged = false;
             for (;;) {
+                if (isPoolShutdown()) {
+                    offerRejectedCount.increment();
+                    return -1;
+                }
                 try {
                     if (availableSlots.tryAcquire(500, TimeUnit.MILLISECONDS)) {
+                        if (isPoolShutdown()) {
+                            availableSlots.release();
+                            offerRejectedCount.increment();
+                            return -1;
+                        }
                         recordOfferBlock(startNanos);
                         if (logged && log.isDebugEnabled()) {
                             log.debug("Wait poll ok");
@@ -184,6 +194,10 @@ public class ThreadPool extends ThreadPoolExecutor {
             boolean logged = false;
             long deadlineNanos = startNanos + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
             for (;;) {
+                if (isPoolShutdown()) {
+                    offerRejectedCount.increment();
+                    return false;
+                }
                 long remainingNanos = deadlineNanos - System.nanoTime();
                 if (remainingNanos <= 0L) {
                     return false;
@@ -191,6 +205,11 @@ public class ThreadPool extends ThreadPoolExecutor {
                 long waitNanos = Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(500L));
                 try {
                     if (availableSlots.tryAcquire(waitNanos, TimeUnit.NANOSECONDS)) {
+                        if (isPoolShutdown()) {
+                            availableSlots.release();
+                            offerRejectedCount.increment();
+                            return false;
+                        }
                         recordOfferBlock(startNanos);
                         return true;
                     }
@@ -205,6 +224,10 @@ public class ThreadPool extends ThreadPoolExecutor {
                     logged = true;
                 }
             }
+        }
+
+        private boolean isPoolShutdown() {
+            return pool != null && pool.isShutdown();
         }
 
         private void recordOfferBlock(long startNanos) {
@@ -263,15 +286,73 @@ public class ThreadPool extends ThreadPoolExecutor {
         public boolean remove(Object o) {
             boolean ok = super.remove(o);
             if (ok) {
-                if (pool != null && o instanceof Runnable) {
-                    pool.getTask((Runnable) o, true);
-                }
+                cleanupRemoved(o);
                 if (log.isDebugEnabled()) {
                     log.debug("Notify remove");
                 }
                 doNotify();
             }
             return ok;
+        }
+
+        @Override
+        public Runnable poll() {
+            Runnable r = super.poll();
+            if (r != null) {
+                cleanupRemoved(r);
+                doNotify();
+            }
+            return r;
+        }
+
+        @Override
+        public int drainTo(Collection<? super Runnable> c) {
+            return drainTo(c, Integer.MAX_VALUE);
+        }
+
+        @Override
+        public int drainTo(Collection<? super Runnable> c, int maxElements) {
+            Objects.requireNonNull(c, "collection");
+            if (c == this) {
+                throw new IllegalArgumentException("Can not drain to self");
+            }
+            if (maxElements <= 0) {
+                return 0;
+            }
+
+            int n = 0;
+            while (n < maxElements) {
+                Runnable r = super.poll();
+                if (r == null) {
+                    break;
+                }
+                try {
+                    c.add(r);
+                    n++;
+                } finally {
+                    cleanupRemoved(r);
+                    doNotify();
+                }
+            }
+            return n;
+        }
+
+        @Override
+        public void clear() {
+            for (;;) {
+                Runnable r = super.poll();
+                if (r == null) {
+                    return;
+                }
+                cleanupRemoved(r);
+                doNotify();
+            }
+        }
+
+        private void cleanupRemoved(Object o) {
+            if (pool != null && o instanceof Runnable) {
+                pool.getTask((Runnable) o, true);
+            }
         }
 
         private void doNotify() {
@@ -928,8 +1009,10 @@ public class ThreadPool extends ThreadPoolExecutor {
                 if (prev == null) {
                     next = CompletableFuture.supplyAsync(t, asyncExecutor);
                 } else {
-                    next = ((CompletableFuture<T>) prev).thenApplyAsync(it -> {
-                        COMPLETION_RETURNED_VALUE.set(it);
+                    next = ((CompletableFuture<T>) prev).handleAsync((it, ex) -> {
+                        if (ex == null) {
+                            COMPLETION_RETURNED_VALUE.set(it);
+                        }
                         try {
                             return t.get();
                         } finally {
@@ -1166,7 +1249,14 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     @Override
+    public void shutdown() {
+        CpuWatchman.INSTANCE.unregister(this);
+        super.shutdown();
+    }
+
+    @Override
     public List<Runnable> shutdownNow() {
+        CpuWatchman.INSTANCE.unregister(this);
         List<Runnable> queued = super.shutdownNow();
         for (Runnable runnable : queued) {
             getTask(runnable, true);
