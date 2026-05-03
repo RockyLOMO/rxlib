@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -119,14 +120,31 @@ public final class Tasks {
         }));
 
         // Delay CompletableFuture async-pool patching to avoid expanding the static-init dependency chain.
-        timer.setTimeout(Tasks::initCompletableFutureAsyncPool, 1000);
+        timer.setTimeout(() -> initCompletableFutureAsyncPool(), 1000);
         timer.setTimeout(() -> ObjectChangeTracker.DEFAULT.register(Tasks.class), 30000);
     }
 
-    private static void initCompletableFutureAsyncPool() {
-        if (!setCompletableFutureAsyncPool("asyncPool") && !setCompletableFutureAsyncPool("ASYNC_POOL")) {
-            log.warn("setAsyncPool field not found");
+    static boolean initCompletableFutureAsyncPool() {
+        if (!RxConfig.INSTANCE.threadPool.patchCompletableFutureAsyncPool) {
+            log.info("CompletableFuture async pool patch disabled by app.threadPool.patchCompletableFutureAsyncPool=false");
+            recordCompletableFuturePatchMetric("disabled", "none");
+            return false;
         }
+
+        if (setCompletableFutureAsyncPool("asyncPool")) {
+            log.info("CompletableFuture async pool patched, field=asyncPool");
+            recordCompletableFuturePatchMetric("success", "asyncPool");
+            return true;
+        }
+        if (setCompletableFutureAsyncPool("ASYNC_POOL")) {
+            log.info("CompletableFuture async pool patched, field=ASYNC_POOL");
+            recordCompletableFuturePatchMetric("success", "ASYNC_POOL");
+            return true;
+        }
+        log.warn("CompletableFuture async pool patch failed, field not found or write rejected, java={}",
+                System.getProperty("java.version"));
+        recordCompletableFuturePatchMetric("failed", "none");
+        return false;
     }
 
     private static boolean setCompletableFutureAsyncPool(String fieldName) {
@@ -161,6 +179,13 @@ public final class Tasks {
         } catch (Throwable e) {
             log.warn("unsafeWriteStaticField {}", field.getName(), e);
             return false;
+        }
+    }
+
+    private static void recordCompletableFuturePatchMetric(String result, String field) {
+        if (DiagnosticMetrics.isEnabled()) {
+            DiagnosticMetrics.record("rx.thread_pool.completable_future.patch.count", 1D,
+                    "result=" + result + ",field=" + field);
         }
     }
 

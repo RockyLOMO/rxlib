@@ -54,6 +54,12 @@ public final class RxConfig {
         String THREAD_POOL_MIN_IDLE_SIZE = "app.threadPool.minIdleSize";
         String THREAD_POOL_MAX_POOL_SIZE = "app.threadPool.maxPoolSize";
         String THREAD_POOL_RESIZE_STEP = "app.threadPool.resizeStep";
+        String THREAD_POOL_QUEUE_OFFER_MODE = "app.threadPool.queueOfferMode";
+        String THREAD_POOL_QUEUE_OFFER_TIMEOUT_MILLIS = "app.threadPool.queueOfferTimeoutMillis";
+        String THREAD_POOL_SERIAL_QUEUE_CAPACITY = "app.threadPool.serialQueueCapacity";
+        String THREAD_POOL_SERIAL_QUEUE_HARD_LIMIT = "app.threadPool.serialQueueHardLimit";
+        String THREAD_POOL_PATCH_COMPLETABLE_FUTURE_ASYNC_POOL = "app.threadPool.patchCompletableFutureAsyncPool";
+        String THREAD_POOL_RESIZE_COOLDOWN_MILLIS = "app.threadPool.resizeCooldownMillis";
 
         String PHYSICAL_MEMORY_USAGE_WARNING = "app.cache.physicalMemoryUsageWarningThreshold";
         String CACHE_PROVIDER = "app.cache.provider";
@@ -213,6 +219,12 @@ public final class RxConfig {
         int minIdleSize;
         int maxPoolSize;
         int resizeStep;
+        ThreadPoolQueueOfferMode queueOfferMode = ThreadPoolQueueOfferMode.BLOCK;
+        long queueOfferTimeoutMillis;
+        int serialQueueCapacity = 4096;
+        int serialQueueHardLimit = 100000;
+        boolean patchCompletableFutureAsyncPool;
+        long resizeCooldownMillis = 1000L;
     }
 
     @Getter
@@ -589,6 +601,13 @@ public final class RxConfig {
         threadPool.minIdleSize = Math.max(1, threadPool.minIdleSize);
         threadPool.maxPoolSize = Math.max(threadPool.minIdleSize, threadPool.maxPoolSize);
         threadPool.resizeStep = Math.max(1, threadPool.resizeStep);
+        if (threadPool.queueOfferMode == null) {
+            threadPool.queueOfferMode = ThreadPoolQueueOfferMode.BLOCK;
+        }
+        threadPool.queueOfferTimeoutMillis = Math.max(0L, threadPool.queueOfferTimeoutMillis);
+        threadPool.serialQueueHardLimit = Math.max(1, threadPool.serialQueueHardLimit);
+        threadPool.serialQueueCapacity = Math.max(1, Math.min(threadPool.serialQueueCapacity, threadPool.serialQueueHardLimit));
+        threadPool.resizeCooldownMillis = Math.max(0L, threadPool.resizeCooldownMillis);
         if (net.poolMaxSize <= 0) {
             net.poolMaxSize = Math.max(10, Constants.CPU_THREADS * 2);
         }
@@ -651,6 +670,18 @@ public final class RxConfig {
         threadPool.minIdleSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MIN_IDLE_SIZE, threadPool.minIdleSize);
         threadPool.maxPoolSize = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_MAX_POOL_SIZE, threadPool.maxPoolSize);
         threadPool.resizeStep = SystemPropertyUtil.getInt(ConfigNames.THREAD_POOL_RESIZE_STEP, threadPool.resizeStep);
+        threadPool.queueOfferMode = ThreadPoolQueueOfferMode.parse(
+                SystemPropertyUtil.get(ConfigNames.THREAD_POOL_QUEUE_OFFER_MODE), threadPool.queueOfferMode);
+        threadPool.queueOfferTimeoutMillis = SystemPropertyUtil.getLong(
+                ConfigNames.THREAD_POOL_QUEUE_OFFER_TIMEOUT_MILLIS, threadPool.queueOfferTimeoutMillis);
+        threadPool.serialQueueCapacity = SystemPropertyUtil.getInt(
+                ConfigNames.THREAD_POOL_SERIAL_QUEUE_CAPACITY, threadPool.serialQueueCapacity);
+        threadPool.serialQueueHardLimit = SystemPropertyUtil.getInt(
+                ConfigNames.THREAD_POOL_SERIAL_QUEUE_HARD_LIMIT, threadPool.serialQueueHardLimit);
+        threadPool.patchCompletableFutureAsyncPool = SystemPropertyUtil.getBoolean(
+                ConfigNames.THREAD_POOL_PATCH_COMPLETABLE_FUTURE_ASYNC_POOL, threadPool.patchCompletableFutureAsyncPool);
+        threadPool.resizeCooldownMillis = SystemPropertyUtil.getLong(
+                ConfigNames.THREAD_POOL_RESIZE_COOLDOWN_MILLIS, threadPool.resizeCooldownMillis);
 
         cache.physicalMemoryUsageWarningThreshold = SystemPropertyUtil.getInt(ConfigNames.PHYSICAL_MEMORY_USAGE_WARNING, cache.physicalMemoryUsageWarningThreshold);
         String v = SystemPropertyUtil.get(ConfigNames.CACHE_PROVIDER);

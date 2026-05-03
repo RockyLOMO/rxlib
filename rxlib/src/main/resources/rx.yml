@@ -24,6 +24,12 @@ app:
     minIdleSize: 1
     maxPoolSize: 1000
     resizeStep: 2
+    queueOfferMode: BLOCK
+    queueOfferTimeoutMillis: 0
+    serialQueueCapacity: 4096
+    serialQueueHardLimit: 100000
+    patchCompletableFutureAsyncPool: false
+    resizeCooldownMillis: 1000
   cache:
     physicalMemoryUsageWarningThreshold: 95
     provider: org.rx.core.cache.MemoryCache

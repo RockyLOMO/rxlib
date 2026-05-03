@@ -14,7 +14,7 @@ RXlib 的 `ThreadPool` 采用**基于负载的自适应动态调整策略**：
 2. **动态调优**：
    - 当队列已满且 **CPU 使用率 < 40%** 时，自动分批增加 `maxThreads` 以提升并发处理能力。
    - 当任务积压减少或 **CPU 使用率 > 60%** 时，自动收缩线程数以减少系统负荷，防止过度竞争。
-3. **阻塞反馈**：当达到最大线程数且队列依然撑爆时，会产生背压（Back-pressure），适度阻塞提交任务的线程，平衡生产与消费速度。
+3. **阻塞反馈**：当达到最大线程数且队列依然撑爆时，会产生背压（Back-pressure）。默认 `BLOCK` 模式保持旧行为，提交线程会等待队列释放 slot；也可以切换为超时拒绝或 caller-runs。
 
 ---
 
@@ -29,7 +29,7 @@ RXlib 的 `ThreadPool` 采用**基于负载的自适应动态调整策略**：
 | **`SERIAL`** | **串行分发**：基于 `taskId` 进行串行队列化。采用无锁 `CompletableFuture` 生成任务链，不会阻塞物理线程。 | 需要严格顺序处理的会话消息、日志记录。 |
 | **`TRANSFER`** | **移交执行**：阻塞提交线程，直到任务被工作线程接手或成功存入队列。 | 关键任务流控，防止生产速度失控。 |
 | **`PRIORITY`** | **优先执行**：若当前无空闲线程且队列已满，强制新建一个临时线程处理。 | 紧急状态上报、高优监控。 |
-| **`INHERIT_THREAD_LOCALS`** | **环境继承**：子线程自动继承父线程的 `FastThreadLocal` 环境。 | 链路参数透传、用户权限上下文传递。 |
+| **`INHERIT_FAST_THREAD_LOCALS`** | **环境继承**：子线程自动继承父线程的 `FastThreadLocal` 环境。 | 链路参数透传、用户权限上下文传递。 |
 | **`THREAD_TRACE`** | **链路追踪**：开启异步 Trace，关联后续的所有异步调用流。 | 复杂异步系统全链路排障。 |
 
 ---
@@ -38,7 +38,7 @@ RXlib 的 `ThreadPool` 采用**基于负载的自适应动态调整策略**：
 
 ### 3.1 基础提交与分流控制
 ```java
-ThreadPool pool = Tasks.pool();
+ThreadPool pool = Tasks.nextPool();
 AtomicInteger counter = new AtomicInteger();
 
 // 1. SINGLE 模式：确保同一时间只有一个执行，避免冗余
@@ -53,11 +53,46 @@ for (int i = 0; i < 5; i++) {
     pool.runAsync(() -> {
         log.info("Batch seq: {}", seq);
         sleep(500);
+        return null;
     }, "serial-id", RunFlag.SERIAL.flags());
 }
 ```
 
-### 3.2 批量任务处理 (WaitAll / WaitAny)
+### 3.2 队列背压配置
+
+`ThreadPool.ThreadQueue` 使用 `LinkedTransferQueue + Semaphore` 控制容量。默认配置保留历史阻塞语义：
+
+```yaml
+app:
+  threadPool:
+    queueOfferMode: BLOCK
+    queueOfferTimeoutMillis: 0
+```
+
+可选模式：
+
+| 模式 | 行为 | 建议场景 |
+| :--- | :--- | :--- |
+| `BLOCK` | 队列满时一直等待 slot，形成强背压。 | 后台批处理、允许提交线程阻塞的场景。 |
+| `TIMEOUT_REJECT` | 队列满后等待 `queueOfferTimeoutMillis`，超时抛 `RejectedExecutionException`。 | Netty EventLoop、低延迟入口、不可无限阻塞的链路。 |
+| `CALLER_RUNS` | 队列满且等待超时后由提交线程执行溢出任务。 | 希望快速消化突发但能接受提交线程承担执行成本的场景。 |
+
+高性能网络链路中，避免在 Netty `EventLoop` 上使用可能无限阻塞的提交路径；如果必须从 I/O 线程提交任务，优先配置 `TIMEOUT_REJECT` 并在上层做限流、降级或丢弃策略。
+
+### 3.3 SERIAL 容量
+
+`SERIAL` 按 `taskId` 使用 `CompletableFuture` 链串行，不占用工作线程等待。每个 `taskId` 的链长度受以下配置限制：
+
+```yaml
+app:
+  threadPool:
+    serialQueueCapacity: 4096
+    serialQueueHardLimit: 100000
+```
+
+超过容量会快速抛 `RejectedExecutionException`，避免单个热 key 积压大量 `CompletableFuture` 对象。`serialQueueHardLimit` 是最终保护上限，`serialQueueCapacity` 不会超过该值。
+
+### 3.4 批量任务处理 (WaitAll / WaitAny)
 ```java
 List<Func<Integer>> tasks = Arrays.asList(
     () -> { sleep(500); return 1; },
@@ -73,7 +108,9 @@ mf.getFuture().join(); // 阻塞至全链路结束
 
 ## 4. 全链路异步追踪 (Async Trace)
 
-RXlib 线程池不仅支持上下文传递，还深度集成了异步 Trace 功能，支持跨越 `Executor`、`WheelTimer` 以及 `CompletableFuture.xxAsync()` 的链路追踪。
+RXlib 线程池不仅支持上下文传递，还深度集成了异步 Trace 功能，支持跨越 `Executor`、`WheelTimer` 的链路追踪。
+
+无 executor 参数的 `CompletableFuture.xxAsync()` 默认仍使用 JDK 默认 async pool。RXlib 可以通过 `app.threadPool.patchCompletableFutureAsyncPool=true` 兼容旧行为，但该能力会修改 JDK 全局静态字段，默认关闭；新代码应显式传入 `Tasks.executor()` 或使用 `ThreadPool.runAsync()`。
 
 ```java
 // 初始化 Trace 配置
@@ -114,6 +151,31 @@ timer.setTimeout(() -> {
 ```
 
 ---
+
+## 6. 监控指标
+
+`DiagnosticMetrics` 开启后，线程池会输出核心指标：
+
+| 指标 | 含义 |
+| :--- | :--- |
+| `rx.thread_pool.core.count` | 当前 corePoolSize。 |
+| `rx.thread_pool.size.count` | 当前线程池线程数。 |
+| `rx.thread_pool.active.count` | 正在执行任务的线程数。 |
+| `rx.thread_pool.queue.count` | 当前队列长度。 |
+| `rx.thread_pool.queue.capacity` | 队列容量。 |
+| `rx.thread_pool.queue.remaining` | 队列剩余 slot。 |
+| `rx.thread_pool.completed.count` | 已完成任务数。 |
+| `rx.thread_pool.task.rejected.count` | 线程池拒绝任务数。 |
+| `rx.thread_pool.queue.offer.block.count` | 提交线程遇到满队列并等待的次数。 |
+| `rx.thread_pool.queue.offer.block.millis` | 提交线程累计等待耗时。 |
+| `rx.thread_pool.queue.offer.block.max.millis` | 单次最大等待耗时。 |
+| `rx.thread_pool.queue.offer.rejected.count` | 队列 offer 超时拒绝次数。 |
+| `rx.thread_pool.queue.offer.caller_runs.count` | caller-runs 溢出执行次数。 |
+| `rx.thread_pool.serial.chain.count` | 当前串行 taskId 链数量。 |
+| `rx.thread_pool.serial.rejected.count` | SERIAL 容量拒绝次数。 |
+| `rx.thread_pool.single.skip.count` | SINGLE 重复任务跳过次数。 |
+
+网络项目还必须同时关注 JVM 堆外内存和 Netty allocator 指标，尤其是 direct memory 使用量、连接数、吞吐、P99/P999 延迟、写队列水位与拒绝/降级次数。
 
 ## 7. Object Pool 对象池
 

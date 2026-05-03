@@ -121,6 +121,42 @@ class RxConfigTest {
     }
 
     @Test
+    void refreshFrom_acceptsThreadPoolSafetyProps() {
+        RxConfig conf = RxConfig.INSTANCE;
+        ThreadPoolQueueOfferMode oldMode = conf.threadPool.getQueueOfferMode();
+        long oldOfferTimeout = conf.threadPool.getQueueOfferTimeoutMillis();
+        int oldSerialCapacity = conf.threadPool.getSerialQueueCapacity();
+        int oldSerialHardLimit = conf.threadPool.getSerialQueueHardLimit();
+        boolean oldPatch = conf.threadPool.isPatchCompletableFutureAsyncPool();
+        long oldCooldown = conf.threadPool.getResizeCooldownMillis();
+        try {
+            Map<String, Object> props = new HashMap<>();
+            props.put(RxConfig.ConfigNames.THREAD_POOL_QUEUE_OFFER_MODE, "TIMEOUT_REJECT");
+            props.put(RxConfig.ConfigNames.THREAD_POOL_QUEUE_OFFER_TIMEOUT_MILLIS, 25);
+            props.put(RxConfig.ConfigNames.THREAD_POOL_SERIAL_QUEUE_CAPACITY, 16);
+            props.put(RxConfig.ConfigNames.THREAD_POOL_SERIAL_QUEUE_HARD_LIMIT, 32);
+            props.put(RxConfig.ConfigNames.THREAD_POOL_PATCH_COMPLETABLE_FUTURE_ASYNC_POOL, true);
+            props.put(RxConfig.ConfigNames.THREAD_POOL_RESIZE_COOLDOWN_MILLIS, 500);
+            conf.refreshFrom(props);
+
+            assertEquals(ThreadPoolQueueOfferMode.TIMEOUT_REJECT, conf.threadPool.getQueueOfferMode());
+            assertEquals(25, conf.threadPool.getQueueOfferTimeoutMillis());
+            assertEquals(16, conf.threadPool.getSerialQueueCapacity());
+            assertEquals(32, conf.threadPool.getSerialQueueHardLimit());
+            assertTrue(conf.threadPool.isPatchCompletableFutureAsyncPool());
+            assertEquals(500, conf.threadPool.getResizeCooldownMillis());
+        } finally {
+            conf.threadPool.setQueueOfferMode(oldMode);
+            conf.threadPool.setQueueOfferTimeoutMillis(oldOfferTimeout);
+            conf.threadPool.setSerialQueueCapacity(oldSerialCapacity);
+            conf.threadPool.setSerialQueueHardLimit(oldSerialHardLimit);
+            conf.threadPool.setPatchCompletableFutureAsyncPool(oldPatch);
+            conf.threadPool.setResizeCooldownMillis(oldCooldown);
+            conf.refreshFrom(Collections.<String, Object>emptyMap());
+        }
+    }
+
+    @Test
     void refreshFrom_initializesDefaultHttpServerWhenPortConfigured() throws Exception {
         assumeTrue(HttpServer.getDefault() == null);
         RxConfig conf = RxConfig.INSTANCE;

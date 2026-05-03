@@ -14,6 +14,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -54,6 +55,104 @@ public class ThreadPoolWheelTimerRegressionTest {
         }
         assertFalse(ThreadPool.taskSerialMap.containsKey(taskId));
         assertFalse(ThreadPool.taskSerialCountMap.containsKey(taskId));
+    }
+
+    @Test
+    void runSerialAsyncShouldRejectWhenSerialCapacityExceeded() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        int oldCapacity = conf.getSerialQueueCapacity();
+        int oldHardLimit = conf.getSerialQueueHardLimit();
+        CountDownLatch blocking = new CountDownLatch(1);
+        String taskId = "serial-cap-" + UUID.randomUUID();
+        try {
+            conf.setSerialQueueCapacity(1);
+            conf.setSerialQueueHardLimit(1);
+            pool = ThreadPool.fixed("SERIAL-CAP", 1, 8);
+
+            CompletableFuture<Void> first = pool.runSerialAsync(() -> {
+                blocking.await(5, TimeUnit.SECONDS);
+                return null;
+            }, taskId);
+            waitUntil(() -> ThreadPool.taskSerialCountMap.containsKey(taskId), 3000);
+
+            assertThrows(RejectedExecutionException.class, () -> pool.runSerialAsync(() -> null, taskId));
+
+            blocking.countDown();
+            first.get(5, TimeUnit.SECONDS);
+            waitUntil(() -> !ThreadPool.taskSerialCountMap.containsKey(taskId), 3000);
+            assertFalse(ThreadPool.taskSerialMap.containsKey(taskId));
+        } finally {
+            blocking.countDown();
+            conf.setSerialQueueCapacity(oldCapacity);
+            conf.setSerialQueueHardLimit(oldHardLimit);
+        }
+    }
+
+    @Test
+    void queueOfferTimeoutRejectShouldFailFastWhenFixedPoolQueueFull() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        ThreadPoolQueueOfferMode oldMode = conf.getQueueOfferMode();
+        long oldTimeout = conf.getQueueOfferTimeoutMillis();
+        CountDownLatch blocking = new CountDownLatch(1);
+        try {
+            conf.setQueueOfferMode(ThreadPoolQueueOfferMode.TIMEOUT_REJECT);
+            conf.setQueueOfferTimeoutMillis(20);
+            pool = ThreadPool.fixed("QUEUE-REJECT", 1, 1);
+
+            CompletableFuture<Void> running = pool.runAsync(() -> {
+                blocking.await(5, TimeUnit.SECONDS);
+            });
+            waitUntil(() -> pool.getActiveCount() == 1, 3000);
+            pool.runAsync(() -> {
+            });
+            waitUntil(() -> pool.getQueue().size() == 1, 3000);
+
+            assertThrows(RejectedExecutionException.class, () -> pool.runAsync(() -> {
+            }));
+
+            blocking.countDown();
+            running.get(5, TimeUnit.SECONDS);
+        } finally {
+            blocking.countDown();
+            conf.setQueueOfferMode(oldMode);
+            conf.setQueueOfferTimeoutMillis(oldTimeout);
+        }
+    }
+
+    @Test
+    void queueOfferCallerRunsShouldExecuteOverflowTaskInSubmittingThread() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        ThreadPoolQueueOfferMode oldMode = conf.getQueueOfferMode();
+        long oldTimeout = conf.getQueueOfferTimeoutMillis();
+        CountDownLatch blocking = new CountDownLatch(1);
+        AtomicReference<String> callerThread = new AtomicReference<>();
+        try {
+            conf.setQueueOfferMode(ThreadPoolQueueOfferMode.CALLER_RUNS);
+            conf.setQueueOfferTimeoutMillis(0);
+            pool = ThreadPool.fixed("QUEUE-CALLER", 1, 1);
+
+            CompletableFuture<Void> running = pool.runAsync(() -> {
+                blocking.await(5, TimeUnit.SECONDS);
+            });
+            waitUntil(() -> pool.getActiveCount() == 1, 3000);
+            pool.runAsync(() -> {
+            });
+            waitUntil(() -> pool.getQueue().size() == 1, 3000);
+
+            String submitter = Thread.currentThread().getName();
+            CompletableFuture<Void> overflow = pool.runAsync(() -> callerThread.set(Thread.currentThread().getName()));
+
+            assertTrue(overflow.isDone());
+            assertEquals(submitter, callerThread.get());
+            assertEquals(1, pool.getQueue().size());
+
+            blocking.countDown();
+            running.get(5, TimeUnit.SECONDS);
+        } finally {
+            blocking.countDown();
+            conf.setQueueOfferMode(oldMode);
+            conf.setQueueOfferTimeoutMillis(oldTimeout);
+        }
     }
 
     @Test
@@ -134,5 +233,17 @@ public class ThreadPoolWheelTimerRegressionTest {
         }, 0, TimeUnit.MILLISECONDS));
         assertThrows(RejectedExecutionException.class, () -> timer.execute(() -> {
         }));
+    }
+
+    private void waitUntil(Condition condition, long timeoutMillis) throws Exception {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (!condition.ok() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        assertTrue(condition.ok());
+    }
+
+    private interface Condition {
+        boolean ok();
     }
 }

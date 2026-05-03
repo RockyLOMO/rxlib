@@ -1,7 +1,36 @@
 # rxlib ThreadPool 相关类 Review 与优化计划
 
 > 生成日期：2026-05-03  
+> 最近更新：2026-05-03
 > 范围：`org.rx.core.ThreadPool`、`Tasks`、`WheelTimer`、`CpuWatchman`、`RunFlag`、`TimeoutFlag`、`ThreadPoolTest`
+
+## 0. 本轮修复记录
+
+状态：阶段 1 已落地，默认兼容旧行为。
+
+- `ThreadPool.ThreadQueue` 新增 `queueOfferMode`：
+  - `BLOCK`：默认值，保持原有无限背压阻塞语义。
+  - `TIMEOUT_REJECT`：队列满后最多等待 `queueOfferTimeoutMillis`，超时快速抛 `RejectedExecutionException`。
+  - `CALLER_RUNS`：队列满且超时后在提交线程执行溢出任务，避免继续堆积。
+- `ThreadQueue` 补充队列阻塞、阻塞耗时、最大阻塞耗时、拒绝、caller-runs 计数指标。
+- `runSerialAsync()` 改为使用 `serialQueueCapacity` / `serialQueueHardLimit`，不再把每个 taskId 的串行链最低放大到 100000。
+- 修复 `runSerialAsync()` 快速完成任务在 `ConcurrentHashMap.compute()` 内重入 compute 的挂死风险：完成回调移到 compute 外执行。
+- `CompletableFuture` 默认 async pool patch 改为显式开关 `patchCompletableFutureAsyncPool=false`，默认不再修改 JDK 全局静态字段。
+- 新增配置项已写入 `rx.yml`，并补充配置解析与线程池回归测试。
+- `docs/reference/ThreadPool.md` 已补充队列背压模式、SERIAL 容量、CompletableFuture patch 开关和线程池监控指标。
+
+验证：
+
+- `mvn -pl rxlib "-Dtest=ThreadPoolWheelTimerRegressionTest,TasksCompatibilityTest,RxConfigTest" test`：通过，16 个用例。
+- `mvn -pl rxlib "-Dtest=ThreadPoolTest" test`：通过，56 个用例。
+- `mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest,ShadowsocksServerIntegrationTest,Socks5ClientIntegrationTest,RrpIntegrationTest,RemotingTest,DnsServerIntegrationTest" test`：75/76 个用例通过；`SocksProxyServerIntegrationTest.shadowsocksUdpRelay_socks5_chained_withUdpCompressAndRedundantOnProxyAB_e2e` 首次 UDP payload 长度 304/320 失败，单测方法复跑通过。
+
+剩余未落地项：
+
+- `Tasks.shutdown()` / `shutdownNow()` 生命周期语义。
+- `WheelTimer.shutdown()` 后周期任务重排策略。
+- `CpuWatchman` resize cooldown / jitter 实际扩缩容控制。
+- `SINGLE` namespace/scope 与 `FastThreadLocal` old map 恢复测试。
 
 ## 1. Review 范围
 
@@ -21,8 +50,8 @@
 
 `ThreadPool` 继承 `ThreadPoolExecutor`，通过自定义 `ThreadQueue` 实现有界队列和生产者阻塞：
 
-- 构造时传入 `ThreadQueue(checkCapacity(queueCapacity))`，并把拒绝策略改成“shutdown 时忽略并记录日志；非 shutdown 时再次 offer 到队列”。
-- `ThreadQueue.offer()` 先尝试获取 `Semaphore` slot，队列满时每 500ms 记录一次阻塞日志并等待 slot。
+- 构造时传入 `ThreadQueue(checkCapacity(queueCapacity))`，shutdown 时忽略并记录日志，非 shutdown 的拒绝会清理任务映射并抛 `RejectedExecutionException`。
+- `ThreadQueue.offer()` 先尝试获取 `Semaphore` slot，默认 `BLOCK` 模式下队列满时每 500ms 记录一次阻塞日志并等待 slot；也可配置为 `TIMEOUT_REJECT` 或 `CALLER_RUNS`。
 - `Task` 包装 `Runnable/Callable`，负责 flags、taskId、traceId、慢调用 stack trace、FastThreadLocal 继承等上下文。
 - `SINGLE` 通过全局 `runningSingleTasks` 去重运行中任务。
 - `SERIAL` 通过 `taskSerialMap` + `CompletableFuture.thenApplyAsync` 按 taskId 串行。
@@ -36,7 +65,7 @@
 - `executor` 是一个 `AbstractExecutorService` 代理，提交任务时随机选择下一个 `ThreadPool`。
 - 对 `RunFlag.SINGLE` 且带 `taskId` 的任务，使用 `taskId.hashCode()` 稳定映射到同一个 pool，避免 SINGLE 语义跨副本失效。
 - 初始化时创建全局 `WheelTimer(executor)`。
-- 尝试通过反射/Unsafe patch `CompletableFuture` 的默认 async pool，让无 executor 的 async 阶段也走 rxlib executor。
+- 仅在 `patchCompletableFutureAsyncPool=true` 时尝试通过反射/Unsafe patch `CompletableFuture` 的默认 async pool；默认关闭。
 
 ### 2.3 WheelTimer
 
@@ -212,23 +241,23 @@ tags 建议：`poolName`、`replicaIndex`、`mode`、`reason`。
 
 ### 阶段 1：安全边界和可观测性（优先）
 
-1. 新增配置项：
+1. [x] 新增配置项：
    - `app.threadPool.queueOfferMode=BLOCK|TIMEOUT_REJECT|CALLER_RUNS`
    - `app.threadPool.queueOfferTimeoutMillis=0`
    - `app.threadPool.serialQueueCapacity=4096`
    - `app.threadPool.serialQueueHardLimit=100000`
    - `app.threadPool.patchCompletableFutureAsyncPool=false`
    - `app.threadPool.resizeCooldownMillis=1000`
-2. `ThreadQueue.offer()` 统计阻塞耗时和次数。
-3. `runSerialAsync()` 使用独立 serial 容量配置，不再默认最低 100000。
-4. `Tasks.initCompletableFutureAsyncPool()` 改为配置开启，并输出明确日志与指标。
-5. 补测试：队列 timeout reject、serial 容量、patch 开关。
+2. [x] `ThreadQueue.offer()` 统计阻塞耗时和次数。
+3. [x] `runSerialAsync()` 使用独立 serial 容量配置，不再默认最低 100000。
+4. [x] `Tasks.initCompletableFutureAsyncPool()` 改为配置开启，并输出明确日志与指标。
+5. [x] 补测试：队列 timeout reject、caller-runs、serial 容量、patch 开关、配置解析。
 
 验收：
 
-- 队列满时可按配置阻塞、超时拒绝或 caller-runs。
-- SERIAL 链超过容量快速失败，map 计数可回收。
-- 默认不修改 JDK `CompletableFuture` 全局 async pool。
+- [x] 队列满时可按配置阻塞、超时拒绝或 caller-runs。
+- [x] SERIAL 链超过容量快速失败，map 计数可回收。
+- [x] 默认不修改 JDK `CompletableFuture` 全局 async pool。
 
 ### 阶段 2：生命周期语义修正
 
