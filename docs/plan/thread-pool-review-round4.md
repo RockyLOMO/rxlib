@@ -4,7 +4,8 @@
 > 最近更新：2026-05-03  
 > 关联主计划：`docs/plan/thread-pool-review-plan.md`  
 > 关联补充：`docs/plan/thread-pool-review-round3.md`  
-> 最新 review 基准：`2c6865a64e5f6624e68c680c809deeb8e5ad8122`
+> 最新 review 基准：`2c6865a64e5f6624e68c680c809deeb8e5ad8122`  
+> CI 触发提交：本文件最后一次更新用于触发 `ThreadPool Regression Tests` workflow。
 
 ## 1. 本轮最新结论
 
