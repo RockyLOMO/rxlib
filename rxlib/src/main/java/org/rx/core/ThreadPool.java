@@ -63,6 +63,25 @@ public class ThreadPool extends ThreadPoolExecutor {
             this.availableSlots = new Semaphore(queueCapacity, false);
         }
 
+        static final class CapacitySnapshot {
+            final int capacity;
+            final int counter;
+            final int remaining;
+            final int slots;
+
+            CapacitySnapshot(int capacity, int counter, int remaining, int slots) {
+                this.capacity = capacity;
+                this.counter = counter;
+                this.remaining = remaining;
+                this.slots = slots;
+            }
+        }
+
+        CapacitySnapshot capacitySnapshot() {
+            int c = counter.get();
+            return new CapacitySnapshot(queueCapacity, c, Math.max(0, queueCapacity - c), availableSlots.availablePermits());
+        }
+
         public boolean isFullLoad() {
             return counter.get() >= queueCapacity;
         }
@@ -776,7 +795,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                             pool.getTask(r, true);
                         }
                         log.warn("ThreadPool {} is shutdown", poolName);
-                        return;
+                        throw new RejectedExecutionException("ThreadPool " + poolName + " is shutdown");
                     }
                     if (pool != null) {
                         pool.rejectTask(r);

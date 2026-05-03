@@ -714,9 +714,7 @@ public class ThreadPoolTest extends AbstractTester {
     public void testShutdownRejectsTasks() {
         ThreadPool p = createPool(2, 64);
         p.shutdown();
-        // After shutdown, submitted tasks should not execute but also should not throw from our custom rejection handler
-        // Our rejection handler logs a warning and returns when pool is shutdown
-        p.execute(() -> log.info("should not run"));
+        assertThrows(RejectedExecutionException.class, () -> p.execute(() -> log.info("should not run")));
         assertTrue(p.isShutdown());
     }
 

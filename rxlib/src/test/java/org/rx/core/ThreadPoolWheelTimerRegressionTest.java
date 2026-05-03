@@ -340,6 +340,46 @@ public class ThreadPoolWheelTimerRegressionTest {
         }));
     }
 
+    @Test
+    void timeoutShouldWakeGetAndClearStateWhenExecutorRejects() throws Exception {
+        pool = ThreadPool.fixed("TIMER-EXECUTOR-REJECT", 1, 8);
+        timer = new WheelTimer(pool);
+        pool.shutdown();
+
+        ScheduledFuture<?> future = timer.schedule(() -> {
+        }, 0, TimeUnit.MILLISECONDS);
+
+        ExecutionException error = assertThrows(ExecutionException.class, () -> future.get(3, TimeUnit.SECONDS));
+        assertTrue(error.getCause() instanceof RejectedExecutionException);
+        waitUntil(() -> timer.activeTasks.isEmpty() && timer.holder.isEmpty(), 3000);
+    }
+
+    @Test
+    void periodicShouldWakeGetAndRemoveWhenExecutorRejects() throws Exception {
+        pool = ThreadPool.fixed("TIMER-PERIOD-REJECT", 1, 8);
+        timer = new WheelTimer(pool);
+        pool.shutdown();
+
+        ScheduledFuture<?> future = timer.scheduleAtFixedRate(() -> {
+        }, 0, 50, TimeUnit.MILLISECONDS);
+
+        ExecutionException error = assertThrows(ExecutionException.class, () -> future.get(3, TimeUnit.SECONDS));
+        assertTrue(error.getCause() instanceof RejectedExecutionException);
+        waitUntil(() -> timer.periodicTasks.isEmpty(), 3000);
+    }
+
+    @Test
+    void negativeInitialDelayFunctionShouldPublishCancellation() {
+        timer = new WheelTimer(Tasks.executor());
+
+        TimeoutFuture<?> future = timer.setTimeout(() -> {
+        }, d -> -2L, "negative-delay", TimeoutFlag.PERIOD.flags());
+
+        assertThrows(CancellationException.class, future::get);
+        assertNull(timer.getFutureById("negative-delay"));
+        assertTrue(timer.activeTasks.isEmpty());
+    }
+
     private void waitUntil(Condition condition, long timeoutMillis) throws Exception {
         long deadline = System.currentTimeMillis() + timeoutMillis;
         while (!condition.ok() && System.currentTimeMillis() < deadline) {

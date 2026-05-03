@@ -97,12 +97,16 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                     submitted.cancel(true);
                 }
             } catch (Throwable e) {
-                errorCount.increment();
-                terminalError = e;
-                completeTask();
-                publish();
-                recordDiagnosticMetrics(false);
+                failBeforeSubmit(e);
             }
+        }
+
+        private void failBeforeSubmit(Throwable e) {
+            errorCount.increment();
+            terminalError = e;
+            completeTask();
+            publish();
+            recordDiagnosticMetrics(false);
         }
 
         private void onExecutionFinished(boolean doContinue, Timer timer) {
@@ -565,7 +569,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     private <T> TimeoutFuture<T> setTimeout(Task<T> task) {
         ensureRunning();
         if (task.id == null) {
-            newTimeout(task, 0, timer);
+            scheduleInitial(task);
             return task;
         }
 
@@ -583,7 +587,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
 
         try {
-            newTimeout(task, 0, timer);
+            scheduleInitial(task);
         } catch (Throwable e) {
             holder.remove(task.id, task);
             activeTasks.remove(task);
@@ -595,6 +599,26 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             ref.replaced.cancel();
         }
         return task;
+    }
+
+    private <T> boolean scheduleInitial(Task<T> task) {
+        if (newTimeout(task, 0, timer)) {
+            return true;
+        }
+        task.completeTask();
+        if (shutdown) {
+            RejectedExecutionException error = new RejectedExecutionException("WheelTimer is shutdown");
+            rejectedCount.increment();
+            task.terminalError = error;
+            task.publish();
+            recordDiagnosticMetrics(false);
+            throw error;
+        }
+        task.cancelRequested.set(true);
+        cancelledCount.increment();
+        task.publish();
+        recordDiagnosticMetrics(false);
+        return false;
     }
 
     private boolean isActive(TimeoutFuture<?> future) {
