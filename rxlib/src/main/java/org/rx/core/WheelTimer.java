@@ -19,9 +19,11 @@ import org.rx.util.function.Func;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.ExecutionException;
@@ -67,7 +69,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @Override
         public void run(Timeout timeout) {
             this.timeout = timeout;
-            if (cancelRequested.get() || !isCurrentHolder()) {
+            if (cancelRequested.get() || !isCurrentHolder() || shutdownNow) {
                 removeHolder();
                 publish();
                 return;
@@ -104,7 +106,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
 
         private void onExecutionFinished(boolean doContinue, Timer timer) {
-            if (doContinue && !cancelRequested.get() && isCurrentHolder()) {
+            if (doContinue && !shutdown && !cancelRequested.get() && isCurrentHolder()) {
                 try {
                     if (newTimeout(this, delay, timer)) {
                         return;
@@ -199,7 +201,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 return true;
             }
             if (flags.has(TimeoutFlag.PERIOD)) {
-                return cancelRequested.get();
+                return cancelRequested.get() || shutdown;
             }
             Future<T> current = future;
             return current != null ? current.isDone() : cancelRequested.get();
@@ -287,9 +289,14 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             this.periodMillis = periodMillis;
             this.fixedRate = fixedRate;
             this.nextFireTime = System.currentTimeMillis() + Math.max(0L, initialDelayMillis);
+            periodicTasks.add(this);
         }
 
         void schedule(long delayMillis) {
+            if (shutdown) {
+                signalComplete();
+                return;
+            }
             long safeDelay = Math.max(0L, delayMillis);
             expiredTime = System.currentTimeMillis() + safeDelay;
             timeout = timer.newTimeout(this, safeDelay, TimeUnit.MILLISECONDS);
@@ -300,7 +307,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @Override
         public void run(Timeout timeout) {
             this.timeout = timeout;
-            if (cancelled) {
+            if (cancelled || shutdownNow) {
                 signalComplete();
                 return;
             }
@@ -336,7 +343,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
 
         private void scheduleNext() {
-            if (cancelled) {
+            if (cancelled || shutdown) {
                 signalComplete();
                 return;
             }
@@ -360,6 +367,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
         private void signalComplete() {
             if (completed.compareAndSet(false, true)) {
+                periodicTasks.remove(this);
                 terminalLatch.countDown();
             }
         }
@@ -411,7 +419,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
         @Override
         public boolean isDone() {
-            return cancelled || terminalError != null;
+            return cancelled || terminalError != null || completed.get();
         }
 
         @Override
@@ -434,6 +442,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             }
             if (terminalError != null) {
                 throw new ExecutionException(terminalError);
+            }
+            if (shutdown) {
+                throw new CancellationException();
             }
             throw new IllegalStateException("Periodic task should not complete normally");
         }
@@ -493,7 +504,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     final ExecutorService executor;
     final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER", Thread.NORM_PRIORITY), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
-    final Map<Object, TimeoutFuture<?>> holder = new java.util.concurrent.ConcurrentHashMap<>();
+    final Map<Object, TimeoutFuture<?>> holder = new ConcurrentHashMap<>();
+    final Set<PeriodicTask> periodicTasks = ConcurrentHashMap.newKeySet();
     final LongAdder scheduledCount = new LongAdder();
     final LongAdder executedCount = new LongAdder();
     final LongAdder cancelledCount = new LongAdder();
@@ -583,6 +595,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     private <T> boolean newTimeout(Task<T> task, long initDelay, Timer timer) {
+        if (shutdown) {
+            return false;
+        }
         if (task.nextDelayFn != null) {
             task.delay = task.nextDelayFn.applyAsLong(initDelay);
         }
@@ -647,6 +662,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
         String tags = diagnosticTags();
         DiagnosticMetrics.record(now, "rx.wheel_timer.holder.count", holder.size(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.periodic.count", periodicTasks.size(), tags, null);
         DiagnosticMetrics.record(now, "rx.wheel_timer.pending.count", timer.pendingTimeouts(), tags, null);
         DiagnosticMetrics.record(now, "rx.wheel_timer.scheduled.count", scheduledCount.sum(), tags, null);
         DiagnosticMetrics.record(now, "rx.wheel_timer.executed.count", executedCount.sum(), tags, null);
@@ -725,6 +741,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     @Override
     public void shutdown() {
         shutdown = true;
+        for (PeriodicTask periodicTask : periodicTasks) {
+            periodicTask.cancel(false);
+        }
         recordDiagnosticMetrics(true);
     }
 
@@ -735,7 +754,11 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         for (TimeoutFuture<?> future : holder.values()) {
             future.cancel(true);
         }
+        for (PeriodicTask periodicTask : periodicTasks) {
+            periodicTask.cancel(true);
+        }
         holder.clear();
+        periodicTasks.clear();
         timer.stop();
         recordDiagnosticMetrics(true);
         return Collections.emptyList();
@@ -743,7 +766,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
     @Override
     public boolean isTerminated() {
-        return shutdownNow || (shutdown && holder.isEmpty());
+        return shutdownNow || (shutdown && holder.isEmpty() && periodicTasks.isEmpty());
     }
 
     @SneakyThrows
