@@ -5,12 +5,14 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -146,6 +148,38 @@ public class WheelTimerShutdownPeriodicTest {
         assertTrue(timer.periodicTasks.isEmpty());
         assertEquals(0, timer.timer.pendingTimeouts());
         assertTrue(!workerThread.isAlive());
+    }
+
+    @Test
+    void shutdownShouldAwaitRunningTaskCompletion() throws Exception {
+        pool = ThreadPool.fixed("TIMER-RUNNING", 1, 8);
+        timer = new WheelTimer(pool);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+
+        ScheduledFuture<?> future = timer.schedule(new Runnable() {
+            @Override
+            public void run() {
+                entered.countDown();
+                try {
+                    release.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }, 0, TimeUnit.MILLISECONDS);
+        assertTrue(entered.await(3, TimeUnit.SECONDS));
+
+        timer.shutdown();
+
+        assertFalse(timer.awaitTermination(200, TimeUnit.MILLISECONDS));
+        assertFalse(timer.activeTasks.isEmpty());
+        release.countDown();
+        assertTrue(timer.awaitTermination(3, TimeUnit.SECONDS));
+        assertTrue(timer.holder.isEmpty());
+        assertTrue(timer.activeTasks.isEmpty());
+        assertTrue(timer.periodicTasks.isEmpty());
+        future.get(1, TimeUnit.SECONDS);
     }
 
     private Thread timerWorkerThread(WheelTimer timer) throws Exception {

@@ -709,9 +709,15 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     private void stopTimer() {
-        if (timerStopStarted.compareAndSet(false, true)) {
+        if (!timerStopStarted.compareAndSet(false, true)) {
+            return;
+        }
+        try {
             timer.stop();
             timerStopped = true;
+        } catch (RuntimeException | Error e) {
+            timerStopStarted.set(false);
+            throw e;
         }
     }
 
