@@ -1,5 +1,6 @@
 name: JDK 8 Unit Tests
 
+# Manual-only workflow. Do not add push or pull_request triggers.
 on:
   workflow_dispatch:
     inputs:
@@ -11,13 +12,6 @@ on:
         description: "Optional test class list. Supports comma, semicolon, space, or newline separated values, for example: FooTest,BarTest"
         required: false
         default: ""
-  push:
-    branches:
-      - "agent/**"
-  pull_request:
-    branches:
-      - main
-      - master
 
 permissions:
   contents: read
@@ -50,7 +44,9 @@ jobs:
           set -euo pipefail
 
           NORMALIZED_TEST_CLASSES="$(
-            printf '%s' "$TEST_CLASSES"               | tr '\n\r\t ;' ',,,,,'               | sed -E 's/,+/,/g; s/^,//; s/,$//'
+            printf '%s' "$TEST_CLASSES" \
+              | tr '\n\r\t ;' ',,,,,' \
+              | sed -E 's/,+/,/g; s/^,//; s/,$//'
           )"
 
           MAVEN_ARGS="-B -U -Dgpg.skip=true -Dmaven.test.skip=false -DskipTests=false"

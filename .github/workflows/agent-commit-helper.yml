@@ -1,5 +1,6 @@
 name: Agent Commit Helper
 
+# Manual-only workflow. Do not add push or pull_request triggers.
 on:
   workflow_dispatch:
     inputs:
@@ -67,7 +68,9 @@ jobs:
 
           THRESHOLD_BYTES=$((THRESHOLD_MB * 1024 * 1024))
           echo "Listing files larger than ${THRESHOLD_MB} MB (${THRESHOLD_BYTES} bytes)"
-          find . -path ./.git -prune -o -type f -size +"${THRESHOLD_BYTES}"c -print0             | xargs -0 -r ls -lh             | sort -k5 -h
+          find . -path ./.git -prune -o -type f -size +"${THRESHOLD_BYTES}c" -print0 \
+            | xargs -0 -r ls -lh \
+            | sort -k5 -h
 
       - name: Agent usage note
         run: |
