@@ -15,6 +15,12 @@ on:
       - 'docs/plan/thread-pool-review-round4.md'
       - '.github/workflows/threadpool-regression.yml'
 
+permissions:
+  contents: write
+
+env:
+  RESULT_FILE: docs/ci/threadpool-regression-latest.md
+
 jobs:
   threadpool-regression:
     runs-on: ubuntu-latest
@@ -22,6 +28,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          persist-credentials: true
 
       - name: Set up JDK 8
         uses: actions/setup-java@v5
@@ -36,6 +44,8 @@ jobs:
           mvn -version
 
       - name: Run focused ThreadPool regression tests
+        id: focused
+        continue-on-error: true
         run: |
           mvn -pl rxlib -am \
             -Dmaven.test.skip=false \
@@ -47,6 +57,8 @@ jobs:
             --batch-mode --no-transfer-progress
 
       - name: Run focused Tasks/WheelTimer/CpuWatchman pattern tests
+        id: pattern
+        continue-on-error: true
         run: |
           mvn -pl rxlib -am \
             -Dmaven.test.skip=false \
@@ -56,3 +68,43 @@ jobs:
             '-Dtest=*CpuWatchman*,*WheelTimer*,*Tasks*' \
             test \
             --batch-mode --no-transfer-progress
+
+      - name: Write regression result
+        if: always()
+        run: |
+          mkdir -p docs/ci
+          {
+            echo '# ThreadPool Regression Latest Result'
+            echo
+            echo "- Run URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Branch: ${GITHUB_REF_NAME}"
+            echo "- Trigger: ${GITHUB_EVENT_NAME}"
+            echo "- Focused tests: ${{ steps.focused.outcome }}"
+            echo "- Pattern tests: ${{ steps.pattern.outcome }}"
+            echo "- Updated at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo
+            echo '## Commands'
+            echo
+            echo '```bash'
+            echo 'mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dmaven.gpg.skip=true -Dtest=ThreadPoolWheelTimerRegressionTest,ThreadPoolQueueOfferModeTest,RxConfigTest,TasksCompatibilityTest,ThreadPoolTest test --batch-mode --no-transfer-progress'
+            echo "mvn -pl rxlib -am -Dmaven.test.skip=false -DskipTests=false -Dgpg.skip=true -Dmaven.gpg.skip=true '-Dtest=*CpuWatchman*,*WheelTimer*,*Tasks*' test --batch-mode --no-transfer-progress"
+            echo '```'
+          } > "$RESULT_FILE"
+
+      - name: Commit regression result
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$RESULT_FILE"
+          if git diff --cached --quiet; then
+            echo "No result change to commit"
+          else
+            git commit -m "ci: update threadpool regression result [skip ci]"
+            git push
+          fi
+
+      - name: Fail on failed tests
+        if: steps.focused.outcome != 'success' || steps.pattern.outcome != 'success'
+        run: exit 1
