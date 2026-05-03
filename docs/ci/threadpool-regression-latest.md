@@ -1,12 +1,12 @@
 # ThreadPool Regression Latest Result
 
-- Run URL: https://github.com/RockyLOMO/rxlib/actions/runs/25274975813
-- Commit: ae43d95d0f0c14478c005f4b7ed97a8deccf7d55
-- Branch: master
-- Trigger: push
+- Run URL: https://github.com/RockyLOMO/rxlib/actions/runs/25277860974
+- Commit: 20bac4b8762031c0a4fd33a0f6f25e8adfca0080
+- Branch: ai/thread-pool-todo-impl
+- Trigger: workflow_dispatch
 - Focused tests: success
 - Pattern tests: success
-- Updated at: 2026-05-03T09:07:31Z
+- Updated at: 2026-05-03T11:30:07Z
 
 ## Commands
 
