@@ -1,8 +1,9 @@
 # rxlib ThreadPool 相关类 Review 与优化计划
 
 > 生成日期：2026-05-03  
-> 最近更新：2026-05-03
-> 范围：`org.rx.core.ThreadPool`、`Tasks`、`WheelTimer`、`CpuWatchman`、`RunFlag`、`TimeoutFlag`、`ThreadPoolTest`
+> 最近更新：2026-05-03  
+> 二次 Review 基准提交：`f5eab853c919727acce1d3a29e72e41e210dc6b0`  
+> 范围：`org.rx.core.ThreadPool`、`Tasks`、`WheelTimer`、`CpuWatchman`、`RunFlag`、`TimeoutFlag`、`ThreadPoolQueueOfferMode`、`ThreadPoolTest`、`ThreadPoolWheelTimerRegressionTest`、`TasksCompatibilityTest`、`RxConfigTest`
 
 ## 0. 本轮修复记录
 
@@ -19,11 +20,38 @@
 - 新增配置项已写入 `rx.yml`，并补充配置解析与线程池回归测试。
 - `docs/reference/ThreadPool.md` 已补充队列背压模式、SERIAL 容量、CompletableFuture patch 开关和线程池监控指标。
 
-验证：
+提交记录中的验证：
 
 - `mvn -pl rxlib "-Dtest=ThreadPoolWheelTimerRegressionTest,TasksCompatibilityTest,RxConfigTest" test`：通过，16 个用例。
 - `mvn -pl rxlib "-Dtest=ThreadPoolTest" test`：通过，56 个用例。
 - `mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest,ShadowsocksServerIntegrationTest,Socks5ClientIntegrationTest,RrpIntegrationTest,RemotingTest,DnsServerIntegrationTest" test`：75/76 个用例通过；`SocksProxyServerIntegrationTest.shadowsocksUdpRelay_socks5_chained_withUdpCompressAndRedundantOnProxyAB_e2e` 首次 UDP payload 长度 304/320 失败，单测方法复跑通过。
+
+## 0.1 二次 Review 结论
+
+结论：阶段 1 可视为基本验收通过。当前修复已经解决上轮最关键的 3 个强行为风险：无限阻塞入队不可配置、SERIAL 链容量过大、默认 patch JDK `CompletableFuture` 全局 async pool。
+
+确认已完成：
+
+- [x] 队列满时支持 `BLOCK` / `TIMEOUT_REJECT` / `CALLER_RUNS` 三种策略。
+- [x] 默认仍为 `BLOCK`，兼容历史行为。
+- [x] `TIMEOUT_REJECT`、`CALLER_RUNS` 已有回归测试。
+- [x] SERIAL 容量从固定最低 100000 改为 `serialQueueCapacity` / `serialQueueHardLimit`。
+- [x] SERIAL 快速完成任务的 `ConcurrentHashMap.compute()` 重入风险已有回归测试。
+- [x] `CompletableFuture` async pool patch 默认关闭，改为 `patchCompletableFutureAsyncPool=true` 显式开启。
+- [x] `rx.yml`、`RxConfig`、`docs/reference/ThreadPool.md` 已同步新增配置。
+
+二次 review 新发现/建议：
+
+1. `CALLER_RUNS` 会让任务在提交线程内直接执行，需要补一组“生命周期等价性”测试：
+   - `RunFlag.SINGLE` 在 caller-runs 路径下仍能正确 acquire/release。
+   - `THREAD_TRACE` 在 caller-runs 路径下能正确 start/end，异常时也不泄漏。
+   - `INHERIT_FAST_THREAD_LOCALS` 在 caller-runs 路径下不会污染提交线程后续上下文。
+   - caller-runs 后 `taskMap`、serial counter、single lock 都能清理。
+2. `ThreadPoolQueueOfferMode.parse()` 建议对输入做 `trim()`，并对未知值打印 warn 或指标。当前未知值静默回退 default，线上配置写错时不容易发现。
+3. `RxConfigTest` / `ThreadPoolWheelTimerRegressionTest` 会直接修改 `RxConfig.INSTANCE.threadPool` 全局配置。默认串行跑问题不大；如果以后开启 JUnit 并行，建议加 JUnit `@ResourceLock("RxConfig.threadPool")` 或统一的 config snapshot/restore 工具。
+4. 指标命名需要以实际实现和 `docs/reference/ThreadPool.md` 为准。计划文档原先写的 `rx.thread_pool.core.size` / `pool.size` / `queue.size` 应同步为当前文档中的 `rx.thread_pool.core.count` / `size.count` / `queue.count`。
+5. `resizeCooldownMillis` 已有配置项，但 `CpuWatchman` resize cooldown / jitter 还没有实际落地，继续保留在阶段 3。
+6. 集成测试里 UDP 场景首次 payload 长度 304/320 失败、复跑通过，暂不归因到 ThreadPool。本计划只记录为“需要独立跟踪的网络链路 flaky”，不阻塞阶段 1 验收。
 
 剩余未落地项：
 
@@ -31,6 +59,8 @@
 - `WheelTimer.shutdown()` 后周期任务重排策略。
 - `CpuWatchman` resize cooldown / jitter 实际扩缩容控制。
 - `SINGLE` namespace/scope 与 `FastThreadLocal` old map 恢复测试。
+- `CALLER_RUNS` 生命周期等价性测试。
+- 配置 parse 容错和未知值可观测性。
 
 ## 1. Review 范围
 
@@ -48,7 +78,7 @@
 
 ### 2.1 ThreadPool
 
-`ThreadPool` 继承 `ThreadPoolExecutor`，通过自定义 `ThreadQueue` 实现有界队列和生产者阻塞：
+`ThreadPool` 继承 `ThreadPoolExecutor`，通过自定义 `ThreadQueue` 实现有界队列和生产者背压：
 
 - 构造时传入 `ThreadQueue(checkCapacity(queueCapacity))`，shutdown 时忽略并记录日志，非 shutdown 的拒绝会清理任务映射并抛 `RejectedExecutionException`。
 - `ThreadQueue.offer()` 先尝试获取 `Semaphore` slot，默认 `BLOCK` 模式下队列满时每 500ms 记录一次阻塞日志并等待 slot；也可配置为 `TIMEOUT_REJECT` 或 `CALLER_RUNS`。
@@ -90,23 +120,22 @@
 
 ### P0/P1：需要优先处理
 
-#### 3.1 ThreadQueue.offer() 阻塞语义容易把调用方卡死
+#### 3.1 ThreadQueue.offer() 阻塞语义容易把调用方卡死 —— 已修复核心风险
 
-当前队列满时 `offer()` 会一直阻塞直到有 slot。优点是天然背压，缺点是：
+上轮问题：队列满时 `offer()` 会一直阻塞直到有 slot。优点是天然背压，缺点是：
 
 - `ThreadPoolExecutor` 内部调用 `workQueue.offer()` 时，调用线程可能是业务线程、Netty EventLoop、CompletableFuture async 链线程。
 - 如果在不可阻塞线程上提交任务，可能造成级联阻塞，尤其是网络 IO 线程或全局调度线程。
-- `RejectedExecutionHandler` 又会再次调用 `executor.getQueue().offer(r)`，语义上不是传统拒绝，而是“继续阻塞入队”。这对吞吐有利，但对低延迟场景不透明。
+- 原先拒绝策略语义不是传统拒绝，而是“继续阻塞入队”。这对吞吐有利，但对低延迟场景不透明。
 
-建议：
+当前状态：
 
-1. 保留当前默认阻塞策略，但新增可配置的 `queueOfferTimeoutMillis`。
-2. 支持 3 种模式：
-   - `BLOCK`：当前行为，适合后台批处理。
-   - `TIMEOUT_REJECT`：阻塞指定时间后抛 `RejectedExecutionException`。
-   - `CALLER_RUNS`：超过阈值后调用方执行，避免无限积压。
-3. 对 Netty/EventLoop 调用方增加保护：检测线程名或提供 `ThreadPool.assertNonEventLoopSubmit()` 诊断日志。
-4. 队列满时打点：阻塞次数、阻塞总耗时、最大阻塞耗时、超时拒绝数。
+- [x] 保留默认 `BLOCK`，兼容历史行为。
+- [x] 新增 `TIMEOUT_REJECT`。
+- [x] 新增 `CALLER_RUNS`。
+- [x] 队列满时已有阻塞、拒绝、caller-runs 指标。
+- [ ] 建议继续补：Netty/EventLoop 调用方保护或诊断日志，例如 `ThreadPool.assertNonEventLoopSubmit()`。
+- [ ] 建议继续补：caller-runs 路径的 SINGLE/TRACE/FastThreadLocal 生命周期等价性测试。
 
 #### 3.2 `Tasks.executor().shutdown()` 不会真正关闭底层 ThreadPool
 
@@ -120,33 +149,29 @@
 2. `executor.shutdown()` 至少记录 warn：全局 executor 不会停止底层 pool。
 3. 测试补齐：`Tasks.executor().shutdown()` 后再 submit 的行为要固定化。
 
-#### 3.3 `CompletableFuture` 默认 async pool patch 风险较高
+#### 3.3 `CompletableFuture` 默认 async pool patch 风险较高 —— 已修复核心风险
 
-`Tasks` 初始化后延迟反射/Unsafe patch `CompletableFuture.asyncPool/ASYNC_POOL`，目的是让无 executor 的 `thenApplyAsync` 等走 rxlib pool。这个设计能减少 commonPool 问题，但有风险：
+上轮问题：`Tasks` 初始化后延迟反射/Unsafe patch `CompletableFuture.asyncPool/ASYNC_POOL`，目的是让无 executor 的 `thenApplyAsync` 等走 rxlib pool。这个设计能减少 commonPool 问题，但会影响整个 JVM。
 
-- JDK 版本差异较大，字段名和 final 语义不稳定。
-- Java 17+ 强封装下可能依赖 `--add-opens` 或失败。
-- 修改 JDK 全局静态字段会影响整个 JVM 内所有库的 CompletableFuture 行为。
-- 故障时虽然记录 warn，但业务可能误以为无 executor 的 async 已被接管。
+当前状态：
 
-建议：
+- [x] 默认关闭全局 patch：`app.threadPool.patchCompletableFutureAsyncPool=false`。
+- [x] patch 结果有日志和 `DiagnosticMetrics` 指标。
+- [x] 已有默认关闭回归测试。
+- [ ] 建议继续补：开启 patch 的兼容性测试按 JDK 11 / 17 分组；新代码继续推荐显式传 `Tasks.executor()`。
 
-1. 默认关闭全局 patch，改为配置项：`app.threadPool.patchCompletableFutureAsyncPool=false`。
-2. 推荐库内全部显式使用 `Tasks.executor()` 或 `ThreadPool.asyncExecutor`。
-3. 启动时打印 patch 结果指标：成功/失败、字段名、JDK 版本、异常类型。
-4. 单测按 JDK 11/17 两组验证。
+#### 3.4 SERIAL 链最大容量硬性放大到 100000 —— 已修复核心风险
 
-#### 3.4 SERIAL 链最大容量目前硬性放大到 100000
+上轮问题：`runSerialAsync` 使用 `taskSerialCountMap` 控制每个 taskId 的串行链长度，但实际把最低容量放大到 100000，线上某个热 taskId 可能滞留大量 `CompletableFuture` 链对象。
 
-`runSerialAsync` 使用 `taskSerialCountMap` 控制每个 taskId 的串行链长度，但代码把配置容量和默认容量再 `Math.max(maxCap, 100000)`，实际等于最低允许 10 万。这样测试容易过，但线上某个 taskId 被刷爆时会造成大量 `CompletableFuture` 链对象滞留。
+当前状态：
 
-建议：
-
-1. 改为 `Math.min(configured, hardLimit)` 或新增配置：
-   - `app.threadPool.serialQueueCapacity`，默认建议 `4096` 或 `queueCapacity`。
-   - `app.threadPool.serialQueueHardLimit`，默认建议 `100000`，作为最后保护。
-2. SERIAL 拒绝时记录 taskId hash、链长度、poolName。
-3. 单测补齐：超过容量必须快速失败，且 `taskSerialCountMap` 无泄漏。
+- [x] 使用 `app.threadPool.serialQueueCapacity`。
+- [x] 使用 `app.threadPool.serialQueueHardLimit` 作为最终保护。
+- [x] `RxConfig.afterSet()` 会把 capacity 限制到 hardLimit 内。
+- [x] 超容量快速 `RejectedExecutionException` 已有测试。
+- [x] 完成后 `taskSerialMap` / `taskSerialCountMap` 回收已有测试。
+- [ ] 建议继续补：SERIAL 拒绝时记录 taskId hash、链长度、poolName，避免日志暴露完整业务 key。
 
 ### P1：中期优化
 
@@ -158,7 +183,7 @@
 
 1. 引入 scope：`SingleKey(poolName, taskId)` 或 `SingleKey(namespace, taskId)`。
 2. `RunFlag.SINGLE` 默认保持兼容；新增 `RunFlag.SINGLE_LOCAL` 或 API 参数 `scope`。
-3. 日志中输出 poolName + taskId + caller trace，方便定位谁占用了 SINGLE。
+3. 日志中输出 poolName + taskId hash + caller trace，方便定位谁占用了 SINGLE。
 
 #### 3.6 FastThreadLocal 继承/恢复需要更强的 finally 保障
 
@@ -166,20 +191,22 @@
 
 - 如果 afterExecute 未完全恢复/清理，可能污染后续任务。
 - 直接操作 Netty 内部结构，版本兼容性需要测试。
-- 对 `FastThreadLocalThread` 与普通 Thread 的路径要分别验证。
+- 对 `FastThreadLocalThread`、普通 Thread、caller-runs 三条路径都要验证。
 
 建议：
 
 1. 明确保存 old map，执行后恢复 old map，而不是简单 set/remove。
 2. 增加测试：任务 A 设置 FastThreadLocal，任务 B 不继承时必须看不到 A 的值。
-3. 增加 Netty 4.1.127 / 4.2.x 兼容性测试。
+3. 增加 caller-runs 路径下的 FastThreadLocal 隔离测试。
+4. 增加 Netty 4.1.127 / 4.2.x 兼容性测试。
 
 #### 3.7 CpuWatchman 扩缩容需要增加抖动保护和边界保护
 
 当前策略比较直接：CPU 低且队列非空扩容，CPU 高则缩容。需要注意：
 
-- `getSystemCpuLoad()` 和 `getProcessCpuLoad()` 返回值语义不同；当前系统 CPU 分支未乘 100，进程 CPU 分支乘 100，需要确认 `Decimal` 与水位单位是否一致。
+- `getSystemCpuLoad()` 和 `getProcessCpuLoad()` 返回值语义不同；需要确认最终统一为百分比 0~100。
 - 多 pool 同时采样时可能同步扩容/缩容，造成抖动。
+- `resizeCooldownMillis` 已有配置项，但扩缩容实际逻辑仍需要落地。
 - `setCorePoolSize()` 在 shutdown 或边界变动时可能抛异常，需要保护。
 
 建议：
@@ -193,7 +220,7 @@
 
 `WheelTimer.shutdown()` 只设置 shutdown，未停止底层 timer；`shutdownNow()` 才 `timer.stop()`。这对“优雅停止已提交任务”合理，但要文档化：
 
-- shutdown 后新任务拒绝，已有 timeout 是否继续执行？当前可能继续。
+- shutdown 后新任务拒绝，已有 timeout 是否继续执行？当前可以继续执行。
 - 周期任务是否继续 reschedule？依赖 `shutdown` 只在入口检查，内部重排需确认。
 - `awaitTermination()` 通过轮询 holder，若无 taskId 的周期任务不在 holder，可能无法准确表示终止。
 
@@ -206,40 +233,67 @@
 
 ### P2：可观测性与易用性
 
-#### 3.9 ThreadPool 指标需要补齐
+#### 3.9 ThreadPool 指标 —— 已补齐核心项，后续保持命名一致
 
-建议新增以下指标：
+当前文档已列出的指标：
 
-- `rx.thread_pool.core.size`
-- `rx.thread_pool.pool.size`
+- `rx.thread_pool.core.count`
+- `rx.thread_pool.size.count`
 - `rx.thread_pool.active.count`
-- `rx.thread_pool.queue.size`
+- `rx.thread_pool.queue.count`
 - `rx.thread_pool.queue.capacity`
 - `rx.thread_pool.queue.remaining`
 - `rx.thread_pool.completed.count`
-- `rx.thread_pool.task.submitted.count`
 - `rx.thread_pool.task.rejected.count`
 - `rx.thread_pool.queue.offer.block.count`
 - `rx.thread_pool.queue.offer.block.millis`
+- `rx.thread_pool.queue.offer.block.max.millis`
+- `rx.thread_pool.queue.offer.rejected.count`
+- `rx.thread_pool.queue.offer.caller_runs.count`
 - `rx.thread_pool.serial.chain.count`
+- `rx.thread_pool.serial.rejected.count`
 - `rx.thread_pool.single.skip.count`
 
-tags 建议：`poolName`、`replicaIndex`、`mode`、`reason`。
+继续建议：
 
-#### 3.10 API 命名和文档
+1. 补充 `rx.thread_pool.task.submitted.count`，便于计算 reject / submitted 比例。
+2. tags 建议统一包含：`poolName`、`mode`、`reason`；多副本场景可加 `replicaIndex`。
+3. caller-runs 执行的任务不会自然进入 `ThreadPoolExecutor.completedTaskCount`，需要明确用 caller-runs 独立指标统计。
 
-建议补一份 `docs/thread-pool.md`，说明：
+#### 3.10 API 命名和文档 —— 已部分完成
+
+`docs/reference/ThreadPool.md` 已补充队列背压模式、SERIAL 容量、CompletableFuture patch 开关和监控指标。
+
+继续建议补充：
 
 - `run` vs `runAsync` vs `submit` 的区别。
 - `SINGLE` 是跳过重复，不是排队。
 - `SERIAL` 是按 taskId 排队，不占用工作线程等待。
-- `TRANSFER` 对 `LinkedTransferQueue` 的影响。
+- `TRANSFER` 对 `LinkedTransferQueue` 的影响和阻塞风险。
 - 哪些线程禁止提交可能阻塞的任务。
-- CompletableFuture 默认 async pool patch 是否开启。
+- caller-runs 对任务生命周期、指标和延迟的影响。
+
+#### 3.11 配置解析容错
+
+`ThreadPoolQueueOfferMode.parse()` 当前能大小写不敏感匹配枚举值，但建议增强：
+
+1. `value.trim()` 后再匹配，兼容 YAML / system property 中的空格。
+2. 未知值时记录 warn 或指标：`rx.thread_pool.config.invalid.count`。
+3. 可选：支持 `timeout-reject` / `timeout_reject` 这类宽松写法，降低配置错误概率。
+
+#### 3.12 测试并发隔离
+
+新增测试会直接改 `RxConfig.INSTANCE.threadPool`。如果后续开启 JUnit parallel，需要防止测试互相污染。
+
+建议：
+
+1. 抽一个 `ThreadPoolConfigSnapshot` 测试工具，try-with-resources 自动 restore。
+2. 或对这些测试加 `@ResourceLock("RxConfig.threadPool")`。
+3. CI 保持线程池相关测试串行执行。
 
 ## 4. 建议实施计划
 
-### 阶段 1：安全边界和可观测性（优先）
+### 阶段 1：安全边界和可观测性（已基本完成）
 
 1. [x] 新增配置项：
    - `app.threadPool.queueOfferMode=BLOCK|TIMEOUT_REJECT|CALLER_RUNS`
@@ -252,12 +306,16 @@ tags 建议：`poolName`、`replicaIndex`、`mode`、`reason`。
 3. [x] `runSerialAsync()` 使用独立 serial 容量配置，不再默认最低 100000。
 4. [x] `Tasks.initCompletableFutureAsyncPool()` 改为配置开启，并输出明确日志与指标。
 5. [x] 补测试：队列 timeout reject、caller-runs、serial 容量、patch 开关、配置解析。
+6. [ ] 补 caller-runs 生命周期等价性测试。
+7. [ ] `ThreadPoolQueueOfferMode.parse()` 增加 trim、未知值 warn/metric。
+8. [ ] 补测试全局配置并发隔离工具或 `@ResourceLock`。
 
 验收：
 
 - [x] 队列满时可按配置阻塞、超时拒绝或 caller-runs。
 - [x] SERIAL 链超过容量快速失败，map 计数可回收。
 - [x] 默认不修改 JDK `CompletableFuture` 全局 async pool。
+- [ ] caller-runs 路径与 worker 路径在 SINGLE/TRACE/FastThreadLocal/taskMap 清理方面语义一致。
 
 ### 阶段 2：生命周期语义修正
 
@@ -305,49 +363,63 @@ tags 建议：`poolName`、`replicaIndex`、`mode`、`reason`。
 ### 单元测试
 
 - `ThreadQueueOfferTimeoutTest`
-  - 队列满后 `TIMEOUT_REJECT` 按预期抛异常。
-  - `CALLER_RUNS` 不增加队列长度。
-  - BLOCK 模式保持兼容。
+  - [x] 队列满后 `TIMEOUT_REJECT` 按预期抛异常。
+  - [x] `CALLER_RUNS` 不增加队列长度。
+  - [ ] caller-runs 路径下 SINGLE/THREAD_TRACE/FastThreadLocal/taskMap 清理等价。
+  - [ ] BLOCK 模式长时间阻塞但可被 shutdownNow / interrupt 解开。
 - `SerialQueueCapacityTest`
-  - 同 taskId 超容量快速失败。
-  - 任务完成后 `taskSerialCountMap` 清理。
-  - 异常任务不阻断后续串行链是否按预期。
+  - [x] 同 taskId 超容量快速失败。
+  - [x] 任务完成后 `taskSerialCountMap` 清理。
+  - [ ] 异常任务不阻断后续串行链是否按预期。
 - `SingleScopeTest`
-  - 相同 namespace + taskId 跳过。
-  - 不同 namespace + 相同 taskId 可并行。
+  - [ ] 相同 namespace + taskId 跳过。
+  - [ ] 不同 namespace + 相同 taskId 可并行。
 - `FastThreadLocalIsolationTest`
-  - 继承后恢复。
-  - 不继承时不可见。
+  - [ ] 继承后恢复。
+  - [ ] 不继承时不可见。
+  - [ ] caller-runs 路径不可污染提交线程。
 - `WheelTimerShutdownTest`
-  - shutdown 后拒绝新任务。
-  - shutdown 后周期任务不再重排。
-  - shutdownNow 取消 holder 和 timer。
+  - [x] shutdown 后拒绝新任务。
+  - [ ] shutdown 后周期任务不再重排。
+  - [x] shutdownNow 取消 holder 和 timer。
 - `CpuWatchmanResizeTest`
-  - load 单位正确。
-  - cooldown 生效。
-  - resize 不超过 max/min。
+  - [ ] load 单位正确。
+  - [ ] cooldown 生效。
+  - [ ] resize 不超过 max/min。
+- `ThreadPoolQueueOfferModeTest`
+  - [ ] parse 支持 trim。
+  - [ ] 未知值有 warn/metric 或至少可测试地 fallback。
+- `ThreadPoolConfigIsolationTest`
+  - [ ] 测试修改全局 `RxConfig.INSTANCE.threadPool` 后能稳定 restore。
+  - [ ] 并行测试场景下不会互相污染。
 
 ### 压测/基准
 
 - 1C/2C/4C 小机器下：短任务、高频提交、队列满背压。
 - Netty EventLoop 提交场景：确认不会被无界阻塞。
-- SERIAL 单 key 高压：10w 提交前后的内存曲线。
+- SERIAL 单 key 高压：容量拒绝前后的内存曲线。
+- CALLER_RUNS 突发场景：提交线程延迟、吞吐、tail latency。
 - 多副本 pool replicas=1/2/4 对吞吐和尾延迟的影响。
+
+### 需要独立跟踪的 flaky
+
+- `SocksProxyServerIntegrationTest.shadowsocksUdpRelay_socks5_chained_withUdpCompressAndRedundantOnProxyAB_e2e` 首次 UDP payload 长度 304/320 失败但单测复跑通过。建议单独记录为网络链路 flaky，排查多倍发包、压缩/冗余、UDP relay 首包、端口跳跃相关路径；暂不阻塞 ThreadPool 阶段 1 验收。
 
 ## 6. 推荐落地顺序
 
-1. 先做配置和指标，不改变默认行为。
-2. 再改 `CompletableFuture` patch 默认关闭，作为一次兼容性变更。
-3. 然后修正 SERIAL 容量，给出迁移说明。
-4. 最后处理生命周期、CPU 扩缩容和上下文隔离。
+1. 阶段 1 追加小修：caller-runs 生命周期测试、parse 容错、测试配置隔离。
+2. 生命周期阶段：`Tasks.shutdown()` / `WheelTimer.shutdown()` 语义固定。
+3. 扩缩容阶段：`CpuWatchman` cooldown / jitter / CPU load 单位统一。
+4. 语义增强阶段：SINGLE namespace、FastThreadLocal 恢复、trace 泄漏测试。
 
 ## 7. 风险与兼容策略
 
-- `ThreadQueue` 当前阻塞行为可能已有业务依赖，因此第一阶段必须保持默认 `BLOCK`。
-- `CompletableFuture` patch 默认关闭可能影响依赖无 executor async 也走 rxlib pool 的业务，建议先加日志开关观察一版。
-- SERIAL 容量收紧可能暴露已有堆积问题，建议先 warn，再 reject。
+- `ThreadQueue` 默认仍为 `BLOCK`，因此兼容旧行为；低延迟链路应显式改为 `TIMEOUT_REJECT`。
+- `CompletableFuture` patch 默认关闭，可能影响依赖无 executor async 也走 rxlib pool 的旧业务；建议发布说明中明确要求显式传 `Tasks.executor()` 或开启兼容开关。
+- SERIAL 容量收紧可能暴露已有热 key 堆积问题；建议先观察 `rx.thread_pool.serial.rejected.count`，必要时按业务 key 分类限流。
+- `CALLER_RUNS` 能保护队列，但会把执行成本转移到提交线程；Netty EventLoop 上慎用，除非任务极短且可控。
 - SINGLE 引入 namespace 时保持老 API 走全局 namespace，避免破坏兼容。
 
 ## 8. 总结
 
-当前 thread pool 实现已经具备比较完整的高性能库特征：任务包装、上下文透传、背压、串行/单例任务、动态扩缩容、定时调度和诊断指标。主要问题不在功能缺失，而在“默认行为偏强势”：无限阻塞入队、全局 CompletableFuture patch、SERIAL 过大链容量、shutdown 语义不够清晰。建议优先从配置化、指标化、测试覆盖入手，逐步把这些强行为改成可控策略。
+当前 ThreadPool 第一阶段修复方向正确：把原先几个“强默认行为”变成了可配置、可观测、可测试的策略。阶段 1 可以进入收尾状态，剩余建议集中在边界测试和容错细节；下一步更值得投入的是生命周期语义、CpuWatchman 扩缩容稳定性，以及上下文隔离能力。
