@@ -33,25 +33,35 @@ public class CpuWatchman implements TimerTask {
     static final int LAST_RESIZE_MILLIS = 2;
 
     static int incrSize(ThreadPoolExecutor pool) {
+        long[] state = INSTANCE.stateOf(pool);
+        int current = pool.getCorePoolSize();
+        if (INSTANCE.isInCooldown(state, current, "priorityIncrement")) {
+            return current;
+        }
         ThreadPool threadPool = asThreadPool(pool);
         int maxPoolSize = threadPool != null ? threadPool.maxPoolSize() : RxConfig.INSTANCE.threadPool.maxPoolSize;
         int resizeStep = threadPool != null ? threadPool.resizeStep() : RxConfig.INSTANCE.threadPool.resizeStep;
-        int current = pool.getCorePoolSize();
         int poolSize = Math.min(maxPoolSize, current + resizeStep);
         if (poolSize != current) {
             pool.setCorePoolSize(poolSize);
+            INSTANCE.markResize(state);
         }
         return poolSize;
     }
 
     static int decrSize(ThreadPoolExecutor pool) {
+        long[] state = INSTANCE.stateOf(pool);
+        int current = pool.getCorePoolSize();
+        if (INSTANCE.isInCooldown(state, current, "priorityDecrement")) {
+            return current;
+        }
         ThreadPool threadPool = asThreadPool(pool);
         int minIdleSize = threadPool != null ? threadPool.minIdleSize() : RxConfig.INSTANCE.threadPool.minIdleSize;
         int resizeStep = threadPool != null ? threadPool.resizeStep() : RxConfig.INSTANCE.threadPool.resizeStep;
-        int current = pool.getCorePoolSize();
         int poolSize = Math.max(minIdleSize, current - resizeStep);
         if (poolSize != current) {
             pool.setCorePoolSize(poolSize);
+            INSTANCE.markResize(state);
         }
         return poolSize;
     }
@@ -75,7 +85,11 @@ public class CpuWatchman implements TimerTask {
                 return;
             }
             double rawLoad = conf.watchSystemCpu ? osMx.getSystemCpuLoad() : osMx.getProcessCpuLoad();
-            Decimal cpuLoad = Decimal.valueOf(rawLoad * 100D);
+            Decimal cpuLoad = normalizeCpuLoad(rawLoad);
+            if (cpuLoad == null) {
+                recordInvalidCpuLoad(rawLoad);
+                return;
+            }
             synchronized (holder) {
                 for (Map.Entry<ThreadPoolExecutor, Tuple<IntWaterMark, long[]>> entry : holder.entrySet()) {
                     ThreadPoolExecutor pool = entry.getKey();
@@ -94,6 +108,19 @@ public class CpuWatchman implements TimerTask {
                 long period = Math.max(1L, conf.samplingPeriod);
                 timer.newTimeout(this, period, TimeUnit.MILLISECONDS);
             }
+        }
+    }
+
+    private Decimal normalizeCpuLoad(double rawLoad) {
+        if (Double.isNaN(rawLoad) || rawLoad < 0D) {
+            return null;
+        }
+        return Decimal.valueOf(Math.min(100D, rawLoad * 100D));
+    }
+
+    private void recordInvalidCpuLoad(double rawLoad) {
+        if (DiagnosticMetrics.isEnabled()) {
+            DiagnosticMetrics.record("rx.thread_pool.cpu_load.invalid.count", 1D, "raw=" + rawLoad);
         }
     }
 
@@ -179,18 +206,14 @@ public class CpuWatchman implements TimerTask {
     }
 
     private void resize(ThreadPoolExecutor pool, long[] state, boolean increment, String prefix, String reason, Decimal cpuLoad, IntWaterMark waterMark) {
-        long now = System.currentTimeMillis();
-        long cooldown = Math.max(0L, RxConfig.INSTANCE.threadPool.resizeCooldownMillis);
-        long lastResizeMillis = state[LAST_RESIZE_MILLIS];
-        if (cooldown > 0L && lastResizeMillis > 0L && now - lastResizeMillis < cooldown) {
-            recordResizeMetric("cooldown", reason, pool.getCorePoolSize(), pool.getCorePoolSize());
+        if (isInCooldown(state, pool.getCorePoolSize(), reason)) {
             return;
         }
 
         int before = pool.getCorePoolSize();
         try {
             int after = increment ? incrSize(pool) : decrSize(pool);
-            state[LAST_RESIZE_MILLIS] = now;
+            markResize(state);
             recordResizeMetric(increment ? "increment" : "decrement", reason, before, after);
             log.info("{} Threshold={}[{}-{}]% {} to {}", prefix,
                     cpuLoad, waterMark.getLow(), waterMark.getHigh(), increment ? "increment" : "decrement", after);
@@ -200,10 +223,44 @@ public class CpuWatchman implements TimerTask {
         }
     }
 
+    private long[] stateOf(ThreadPoolExecutor pool) {
+        synchronized (holder) {
+            Tuple<IntWaterMark, long[]> tuple = holder.get(pool);
+            return tuple == null ? null : tuple.right;
+        }
+    }
+
+    private boolean isInCooldown(long[] state, int currentSize, String reason) {
+        if (state == null) {
+            return false;
+        }
+        long cooldown = Math.max(0L, RxConfig.INSTANCE.threadPool.resizeCooldownMillis);
+        long lastResizeMillis = state[LAST_RESIZE_MILLIS];
+        if (cooldown > 0L && lastResizeMillis > 0L && System.currentTimeMillis() - lastResizeMillis < cooldown) {
+            recordResizeMetric("cooldown", reason, currentSize, currentSize);
+            recordCooldownSkippedMetric(reason, currentSize);
+            return true;
+        }
+        return false;
+    }
+
+    private void markResize(long[] state) {
+        if (state != null) {
+            state[LAST_RESIZE_MILLIS] = System.currentTimeMillis();
+        }
+    }
+
     private void recordResizeMetric(String action, String reason, int before, int after) {
         if (DiagnosticMetrics.isEnabled()) {
             DiagnosticMetrics.record("rx.thread_pool.resize.count", 1D,
                     "action=" + action + ",reason=" + reason + ",before=" + before + ",after=" + after);
+        }
+    }
+
+    private void recordCooldownSkippedMetric(String reason, int size) {
+        if (DiagnosticMetrics.isEnabled()) {
+            DiagnosticMetrics.record("rx.thread_pool.resize.cooldown.skipped.count", 1D,
+                    "reason=" + reason + ",size=" + size);
         }
     }
 
