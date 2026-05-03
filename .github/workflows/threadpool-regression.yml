@@ -1,0 +1,58 @@
+name: ThreadPool Regression Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - 'rxlib/src/main/java/org/rx/core/ThreadPool.java'
+      - 'rxlib/src/main/java/org/rx/core/ThreadPoolQueueOfferMode.java'
+      - 'rxlib/src/main/java/org/rx/core/Tasks.java'
+      - 'rxlib/src/main/java/org/rx/core/WheelTimer.java'
+      - 'rxlib/src/main/java/org/rx/core/CpuWatchman.java'
+      - 'rxlib/src/test/java/org/rx/core/**'
+      - 'docs/plan/thread-pool-review-round4.md'
+      - '.github/workflows/threadpool-regression.yml'
+
+jobs:
+  threadpool-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v5
+        with:
+          java-version: '8'
+          distribution: temurin
+          cache: maven
+
+      - name: Print Java and Maven versions
+        run: |
+          java -version
+          mvn -version
+
+      - name: Run focused ThreadPool regression tests
+        run: |
+          mvn -pl rxlib -am \
+            -Dmaven.test.skip=false \
+            -DskipTests=false \
+            -Dgpg.skip=true \
+            -Dmaven.gpg.skip=true \
+            -Dtest=ThreadPoolWheelTimerRegressionTest,ThreadPoolQueueOfferModeTest,RxConfigTest,TasksCompatibilityTest,ThreadPoolTest \
+            test \
+            --batch-mode --no-transfer-progress
+
+      - name: Run focused Tasks/WheelTimer/CpuWatchman pattern tests
+        run: |
+          mvn -pl rxlib -am \
+            -Dmaven.test.skip=false \
+            -DskipTests=false \
+            -Dgpg.skip=true \
+            -Dmaven.gpg.skip=true \
+            '-Dtest=*CpuWatchman*,*WheelTimer*,*Tasks*' \
+            test \
+            --batch-mode --no-transfer-progress
