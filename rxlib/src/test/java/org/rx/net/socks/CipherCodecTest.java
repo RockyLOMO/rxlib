@@ -104,8 +104,8 @@ class CipherCodecTest {
         }
 
         @Override
-        public ByteBuf decrypt(ByteBuf in) throws InvalidCipherTextException {
-            throw new InvalidCipherTextException("synthetic invalid cipher text");
+        public ByteBuf decrypt(ByteBuf in) {
+            throw new IllegalStateException(new InvalidCipherTextException("synthetic invalid cipher text"));
         }
     }
 }

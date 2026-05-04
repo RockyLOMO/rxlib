@@ -85,7 +85,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
                 }
             }
         } catch (Exception e) {
-            if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
+            if (isInvalidCipherText(e)) {
                 log.warn("cipher decode fail {}", rootMessage(e)); // 可能是密码错误或协议嗅探
                 if (!isUdp) {
                     inbound.close();
@@ -94,6 +94,13 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
             }
             throw e;
         }
+    }
+
+    private static boolean isInvalidCipherText(Throwable e) {
+        if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
+            return true;
+        }
+        return ExceptionUtils.getRootCause(e) instanceof org.bouncycastle.crypto.InvalidCipherTextException;
     }
 
     private static String rootMessage(Throwable e) {
