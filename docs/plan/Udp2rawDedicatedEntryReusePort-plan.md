@@ -512,6 +512,8 @@ private Udp2rawAuthMode udp2rawAuthMode = Udp2rawAuthMode.FIRST_PACKET_MAC;
 private boolean udp2rawRequireRpc = true;
 private UdpRedundantConfig udp2rawRedundant;
 private UdpCompressConfig udp2rawCompress;
+private int udp2rawBadAuthThreshold = 8;
+private int udp2rawBadAuthFuseSeconds = 30;
 ```
 
 默认建议：
@@ -595,7 +597,14 @@ private UdpCompressConfig udp2rawCompress;
 
 ## 实施进度（2026-05-04）
 
-本次已落地可编译、可验证的 **server fixed entry + 自定义 frame 基础层 + client tunnel writer + tunnel 层压缩/冗余发送**。旧 `Udp2rawHandler` 继续保留为兼容路径，新链路通过 `Udp2rawUpstream` 接管 RSS Client/SS 本地入口到 RSS Server fixed entry 的数据面。
+本次已落地可编译、可验证的 **server fixed entry + 自定义 frame 基础层 + client tunnel writer + tunnel 层压缩/冗余发送**。新链路通过 `Udp2rawUpstream` 接管 RSS Client/SS 本地入口到 RSS Server fixed entry 的数据面；旧 `Udp2rawHandler` 目前仅是现存历史代码，不再作为本计划的兼容目标。
+
+### 边界确认（2026-05-05）
+
+- udp2raw dedicated fixed entry 后续不再以 SOCKS5 UDP relay/replay 兼容作为验收目标。
+- A->B 数据面只保留本计划的 `Udp2rawUpstream -> fixed entry -> per-client NAT channel` 自定义 frame 方式。
+- 不再为了 udp2raw 新链路回退标准 SOCKS5 `UDP_ASSOCIATE`、远端 UDP relay port、port hopping、claim/reset relay。
+- 旧 `Udp2rawHandler` 属于现存历史路径，本计划后续实现和测试重点不再由它驱动。
 
 ### 已完成
 
@@ -634,6 +643,8 @@ private UdpCompressConfig udp2rawCompress;
   - 已记录 tunnel open/active、session create/close/active、drop、duplicate drop 等基础指标。
   - 已新增 `socks.udp2raw.compress.count`、`socks.udp2raw.redundant.copy.count`、`socks.udp2raw.redundant.delayed.drop.count` 等基础指标。
   - 已有 maxSessions、tunnel idle cleanup、seq duplicate drop、auth-fail drop、UDP write pending 过载保护。
+  - 已补齐 NAT rebinding 基础安全策略：已有 `(tunnel, connId)` 会话的 `udp2rawPeer` 发生变化时，必须携带有效 `authTag` 才允许更新 peer；`FIRST_PACKET_MAC` 后续普通包不能无鉴权迁移 peer。
+  - 已补齐 bad auth 熔断：同一 peer 在短窗口内达到 `udp2rawBadAuthThreshold` 后，按 `udp2rawBadAuthFuseSeconds` 短时阻断，降低公网 fixed entry 被无效 MAC 探测拖垮的风险。
 
 ### 已验证
 
@@ -647,6 +658,8 @@ mvn -pl rxlib "-Dtest=Udp2rawCodecTest,Udp2rawAuthenticatorTest,Udp2rawFixedEntr
 mvn -pl rxlib "-Dtest=Udp2rawFixedEntryIntegrationTest#fixedEntryCompressesResponseAndDropsRedundantRequest,SocksProxyServerIntegrationTest#socks5UdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e" test
 mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest#shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e" test
 mvn -pl rxlib "-Dtest=Udp2rawCodecTest,Udp2rawAuthenticatorTest,Udp2rawFixedEntryIntegrationTest,Udp2rawHandlerTest,SocksProxyServerIntegrationTest#socks5UdpRelay_udp2rawUpstream_fixedEntry_e2e+socks5UdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e+shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_e2e+shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e+socks5UdpRelay_udp2raw_chained_e2e" test
+mvn -pl rxlib "-Dtest=Udp2rawFixedEntryIntegrationTest" test
+mvn -pl rxlib "-Dtest=Udp2rawCodecTest,Udp2rawAuthenticatorTest,Udp2rawFixedEntryIntegrationTest,SocksProxyServerIntegrationTest#socks5UdpRelay_udp2rawUpstream_fixedEntry_e2e+shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_e2e" test
 ```
 
 验证结论：
@@ -660,14 +673,16 @@ mvn -pl rxlib "-Dtest=Udp2rawCodecTest,Udp2rawAuthenticatorTest,Udp2rawFixedEntr
 - P6 fixed entry 压缩/冗余通过：同一个 `tunnel/connId/seq` 的 request 冗余副本只写一次 dest；response 带 `FLAG_COMPRESSED | FLAG_REDUNDANT`，client 可解压还原。
 - P6 SOCKS5 本地入口 E2E 通过：`Udp2rawUpstream` request 压缩/冗余、server fixed entry 解压/去重、response 压缩/冗余、client response 解压/去重闭环通过。
 - P6 Shadowsocks 本地入口 E2E 通过：SS UDP 明文 address payload 经 udp2raw 压缩/冗余 tunnel 后可正确回显并还原为 SS UDP response。
-- 旧 `Udp2rawHandler` UDP_ASSOCIATE 兼容测试通过，现有链路未被破坏。
+- 旧 `Udp2rawHandler` UDP_ASSOCIATE 历史兼容测试曾通过；2026-05-05 后不再作为本计划新增能力的验收目标。
 - 当前最终组合目标测试 17 个用例通过。
+- P7 NAT rebinding 安全策略通过：同一 session 从新 peer 发来的无 MAC 包被拒绝，携带有效 MAC 的 rebind 包可继续写入 dest。
+- P7 bad auth 熔断通过：同一 peer 达到 bad-auth 阈值后短时阻断，熔断窗口过期后有效 MAC 包可恢复。
 
 ### 未完成/下一步
 
 - UDP redundant 自适应反馈尚未接入 tunnel 层：当前已支持静态倍率、分目的地规则与延迟副本；还未根据实际丢包率动态调整 multiplier。
 - P1 控制面仍是基础 open/heartbeat/close；还未把 `connectionTag/trafficUser` 完整绑定到流量统计策略。
-- NAT rebinding 安全策略、per-peer rate limit、bad auth 熔断仍待补齐。
+- per-peer rate limit 仍待补齐。
 
 ## 测试计划
 
@@ -729,7 +744,7 @@ udp2raw client 收到的 B 侧回包源端口仍是 fixed entry port。
 1. **无鉴权 fixed UDP entry 被滥用**：生产环境不建议 `NONE`，至少使用 RPC tunnel + FIRST_PACKET_MAC。
 2. **每包 MAC CPU 成本**：默认 FIRST_PACKET_MAC，安全要求高时再切 EVERY_PACKET_MAC。
 3. **connId 冲突**：connId 由 A 侧随机或 hash+random 生成，B 侧按 tunnel 隔离。
-4. **NAT rebinding**：peer 更新必须有 MAC 或明确安全策略。
+4. **NAT rebinding**：已要求 peer 更新必须携带有效 MAC；后续如要放宽到 IP 段迁移，必须另行补充策略和测试。
 5. **多倍发包重复写 dest**：B 侧必须在写 NAT channel 前去重。
 6. **压缩炸包/异常包**：解压必须有最大输出限制。
 7. **fixed entry 多 channel 状态分散**：tunnel/session 状态必须在 manager，不放 entry channel attr。

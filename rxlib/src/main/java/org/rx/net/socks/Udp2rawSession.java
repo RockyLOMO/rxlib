@@ -44,11 +44,20 @@ final class Udp2rawSession {
         return requestWindow.checkAndMark(seq);
     }
 
-    void updatePeer(Channel entryChannel, InetSocketAddress udp2rawPeer) {
+    boolean isPeer(InetSocketAddress peer) {
+        return samePeer(udp2rawPeer, peer);
+    }
+
+    boolean updatePeer(Channel entryChannel, InetSocketAddress udp2rawPeer, boolean allowRebind) {
+        InetSocketAddress current = this.udp2rawPeer;
+        if (!samePeer(current, udp2rawPeer) && !allowRebind) {
+            return false;
+        }
         this.entryChannel = entryChannel;
         this.udp2rawPeer = udp2rawPeer;
         this.lastActiveMillis = System.currentTimeMillis();
         context.touch();
+        return true;
     }
 
     void writeToDestination(ByteBuf payload) {
@@ -199,5 +208,12 @@ final class Udp2rawSession {
         protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
             session.writeToPeer(msg);
         }
+    }
+
+    private static boolean samePeer(InetSocketAddress a, InetSocketAddress b) {
+        if (a == b) {
+            return true;
+        }
+        return a != null && a.equals(b);
     }
 }

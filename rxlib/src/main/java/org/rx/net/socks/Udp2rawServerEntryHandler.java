@@ -42,20 +42,49 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
             recordDrop("unknown-tunnel");
             return;
         }
+        long now = System.currentTimeMillis();
+        if (tunnel.isPeerBlocked(in.sender(), now)) {
+            recordDrop("peer-blocked");
+            return;
+        }
 
         Udp2rawSessionKey key = frame.sessionKey();
         Udp2rawSession session = tunnel.session(key);
         boolean newSession = session == null;
-        if (Udp2rawAuthenticator.requiresAuth(tunnel.authMode, newSession, frame.getFlags())
-                && !Udp2rawAuthenticator.verify(tunnel.sessionSecret, frame, content.slice())) {
-            recordDrop("auth-fail");
-            return;
+        boolean authOk = false;
+        boolean authRequired = Udp2rawAuthenticator.requiresAuth(tunnel.authMode, newSession, frame.getFlags());
+        if (authRequired) {
+            authOk = Udp2rawAuthenticator.verify(tunnel.sessionSecret, frame, content.slice());
+            if (!authOk) {
+                tunnel.recordAuthFailure(in.sender(), now);
+                recordDrop("auth-fail");
+                return;
+            }
+        }
+        boolean peerRebind = !newSession && !session.isPeer(in.sender());
+        if (peerRebind && !authOk) {
+            if (!frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG)
+                    || !Udp2rawAuthenticator.verify(tunnel.sessionSecret, frame, content.slice())) {
+                if (frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG)) {
+                    tunnel.recordAuthFailure(in.sender(), now);
+                }
+                recordDrop("peer-rebind-auth-required");
+                return;
+            }
+            authOk = true;
+        }
+        if (authOk) {
+            tunnel.recordAuthSuccess(in.sender());
         }
         if (newSession) {
             session = tunnel.getOrCreateSession(key, in.sender(), frame.getClientSource(),
                     frame.getDestination(), ctx.channel());
             if (session == null) {
                 recordDrop("bad-session");
+                return;
+            }
+            if (!session.isPeer(in.sender()) && !authOk) {
+                recordDrop("peer-rebind-auth-required");
                 return;
             }
         }
@@ -65,7 +94,10 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
             return;
         }
 
-        session.updatePeer(ctx.channel(), in.sender());
+        if (!session.updatePeer(ctx.channel(), in.sender(), authOk)) {
+            recordDrop("peer-rebind-auth-required");
+            return;
+        }
         ByteBuf payload = content.slice();
         ByteBuf decoded = null;
         try {

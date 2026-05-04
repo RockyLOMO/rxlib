@@ -23,6 +23,7 @@ final class Udp2rawTunnelContext {
     final int maxSessions;
     final long createdAtMillis;
     final ConcurrentMap<Udp2rawSessionKey, Udp2rawSession> sessions = new ConcurrentHashMap<>();
+    final ConcurrentMap<InetSocketAddress, PeerGuard> peerGuards = new ConcurrentHashMap<>();
     volatile long lastActiveAtMillis;
 
     Udp2rawTunnelContext(Udp2rawServerEntryManager manager, String tunnelId,
@@ -79,6 +80,33 @@ final class Udp2rawTunnelContext {
         lastActiveAtMillis = System.currentTimeMillis();
     }
 
+    boolean isPeerBlocked(InetSocketAddress peer, long now) {
+        PeerGuard guard = peer != null ? peerGuards.get(peer) : null;
+        return guard != null && guard.isBlocked(now);
+    }
+
+    void recordAuthFailure(InetSocketAddress peer, long now) {
+        if (peer == null) {
+            return;
+        }
+        PeerGuard guard = peerGuards.get(peer);
+        if (guard == null) {
+            PeerGuard created = new PeerGuard();
+            PeerGuard old = peerGuards.putIfAbsent(peer, created);
+            guard = old != null ? old : created;
+        }
+        SocksConfig config = manager.server.getConfig();
+        guard.recordAuthFailure(now, config.getUdp2rawBadAuthThreshold(),
+                config.getUdp2rawBadAuthFuseSeconds() * 1000L);
+    }
+
+    void recordAuthSuccess(InetSocketAddress peer) {
+        PeerGuard guard = peer != null ? peerGuards.get(peer) : null;
+        if (guard != null) {
+            guard.clearAuthFailures();
+        }
+    }
+
     void removeSession(Udp2rawSessionKey key, Udp2rawSession session, String reason) {
         if (sessions.remove(key, session)) {
             DiagnosticMetrics.record("socks.udp2raw.session.close.count", 1D, "reason=" + reason);
@@ -95,5 +123,36 @@ final class Udp2rawTunnelContext {
 
     long expireAtMillis() {
         return lastActiveAtMillis + idleTimeoutMillis;
+    }
+
+    private static final class PeerGuard {
+        private static final long AUTH_FAIL_WINDOW_MILLIS = 10_000L;
+
+        private long authFailWindowStartMillis;
+        private int authFailures;
+        private volatile long blockedUntilMillis;
+
+        boolean isBlocked(long now) {
+            return blockedUntilMillis > now;
+        }
+
+        synchronized void recordAuthFailure(long now, int threshold, long fuseMillis) {
+            if (authFailWindowStartMillis == 0L || now - authFailWindowStartMillis > AUTH_FAIL_WINDOW_MILLIS) {
+                authFailWindowStartMillis = now;
+                authFailures = 0;
+            }
+            if (++authFailures < threshold) {
+                return;
+            }
+            blockedUntilMillis = now + fuseMillis;
+            authFailures = 0;
+            authFailWindowStartMillis = now;
+            DiagnosticMetrics.record("socks.udp2raw.peer.block.count", 1D, "reason=bad-auth");
+        }
+
+        synchronized void clearAuthFailures() {
+            authFailures = 0;
+            authFailWindowStartMillis = 0L;
+        }
     }
 }

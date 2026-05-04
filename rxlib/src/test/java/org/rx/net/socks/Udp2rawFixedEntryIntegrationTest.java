@@ -196,6 +196,139 @@ class Udp2rawFixedEntryIntegrationTest {
         }
     }
 
+    @Test
+    @Timeout(20)
+    void fixedEntryRequiresMacForPeerRebind() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-rebind-test-token");
+        LinkedBlockingQueue<String> echoPayloads = new LinkedBlockingQueue<>();
+        Channel echo = null;
+        SocksProxyServer proxy = null;
+        DatagramSocket firstPeer = null;
+        DatagramSocket secondPeer = null;
+        try {
+            Bootstrap udpEcho = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(
+                    new SimpleChannelInboundHandler<DatagramPacket>() {
+                        @Override
+                        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                            echoPayloads.add(msg.content().toString(StandardCharsets.UTF_8));
+                            ctx.writeAndFlush(new DatagramPacket(msg.content().retain(), msg.sender()));
+                        }
+                    }));
+            echo = udpEcho.bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+            InetSocketAddress echoAddress = (InetSocketAddress) echo.localAddress();
+
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            proxy = new SocksProxyServer(config, null);
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-rebind");
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+
+            firstPeer = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            secondPeer = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            long connId = 3001L;
+            sendRawUdp(firstPeer, entryAddress, buildUdp2raw(open, connId, 1L,
+                    Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT | Udp2rawCodec.FLAG_HAS_DST,
+                    new InetSocketAddress("127.0.0.1", 30201), echoAddress, "first", true));
+            assertEquals("first", echoPayloads.poll(3, TimeUnit.SECONDS));
+
+            sendRawUdp(secondPeer, entryAddress, buildUdp2raw(open, connId, 2L,
+                    0, null, null, "rebind-without-mac", false));
+            assertNull(echoPayloads.poll(400, TimeUnit.MILLISECONDS),
+                    "peer rebind without authTag must not reach destination");
+
+            sendRawUdp(secondPeer, entryAddress, buildUdp2raw(open, connId, 3L,
+                    0, null, null, "rebind-with-mac", true));
+            assertEquals("rebind-with-mac", echoPayloads.poll(3, TimeUnit.SECONDS));
+        } finally {
+            if (firstPeer != null) {
+                firstPeer.close();
+            }
+            if (secondPeer != null) {
+                secondPeer.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            if (echo != null) {
+                echo.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void fixedEntryBlocksPeerAfterBadAuthThreshold() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-bad-auth-test-token");
+        LinkedBlockingQueue<String> echoPayloads = new LinkedBlockingQueue<>();
+        Channel echo = null;
+        SocksProxyServer proxy = null;
+        DatagramSocket client = null;
+        try {
+            Bootstrap udpEcho = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(
+                    new SimpleChannelInboundHandler<DatagramPacket>() {
+                        @Override
+                        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                            echoPayloads.add(msg.content().toString(StandardCharsets.UTF_8));
+                            ctx.writeAndFlush(new DatagramPacket(msg.content().retain(), msg.sender()));
+                        }
+                    }));
+            echo = udpEcho.bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+            InetSocketAddress echoAddress = (InetSocketAddress) echo.localAddress();
+
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            config.setUdp2rawBadAuthThreshold(1);
+            config.setUdp2rawBadAuthFuseSeconds(1);
+            proxy = new SocksProxyServer(config, null);
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-bad-auth");
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+
+            client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            byte[] badAuth = buildUdp2raw(open, 4001L, 1L,
+                    Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT | Udp2rawCodec.FLAG_HAS_DST,
+                    new InetSocketAddress("127.0.0.1", 30301), echoAddress, "bad-auth", true);
+            badAuth[badAuth.length - 1] ^= 0x01;
+            sendRawUdp(client, entryAddress, badAuth);
+            Thread.sleep(100L);
+
+            sendRawUdp(client, entryAddress, buildUdp2raw(open, 4002L, 1L,
+                    Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT | Udp2rawCodec.FLAG_HAS_DST,
+                    new InetSocketAddress("127.0.0.1", 30302), echoAddress, "blocked", true));
+            assertNull(echoPayloads.poll(500, TimeUnit.MILLISECONDS),
+                    "peer should be blocked after reaching bad-auth threshold");
+
+            Thread.sleep(1200L);
+            sendRawUdp(client, entryAddress, buildUdp2raw(open, 4003L, 1L,
+                    Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT | Udp2rawCodec.FLAG_HAS_DST,
+                    new InetSocketAddress("127.0.0.1", 30303), echoAddress, "after-fuse", true));
+            assertEquals("after-fuse", echoPayloads.poll(3, TimeUnit.SECONDS));
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            if (echo != null) {
+                echo.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
     private static void sendUdp2raw(DatagramSocket socket, InetSocketAddress entryAddress,
             Udp2rawOpenResult open, long connId, InetSocketAddress clientSource,
             InetSocketAddress destination, String text) throws Exception {
@@ -218,6 +351,51 @@ class Udp2rawFixedEntryIntegrationTest {
             authTag.release();
             encoded.release();
         }
+    }
+
+    private static byte[] buildUdp2raw(Udp2rawOpenResult open, long connId, long seq, int flags,
+            InetSocketAddress clientSource, InetSocketAddress destination, String text, boolean sign) {
+        ByteBuf payload = Unpooled.copiedBuffer(text, StandardCharsets.UTF_8);
+        ByteBuf authTag = null;
+        ByteBuf encoded = null;
+        try {
+            Udp2rawFrame frame = Udp2rawFrame.data(open.getSessionHi(), open.getSessionLo(), connId, seq);
+            if (sign) {
+                flags |= Udp2rawCodec.FLAG_AUTH_TAG;
+            }
+            frame.setFlags(flags);
+            if ((flags & Udp2rawCodec.FLAG_HAS_CLIENT) != 0) {
+                frame.setClientSource(clientSource);
+            }
+            if ((flags & Udp2rawCodec.FLAG_HAS_DST) != 0) {
+                frame.setDestination(new UnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+            }
+            if (sign) {
+                authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
+                        open.getSessionSecret(), frame, payload);
+                frame.setAuthTag(authTag);
+            }
+            encoded = Udp2rawCodec.encode(UnpooledByteBufAllocator.DEFAULT, frame, payload);
+            payload = null;
+            byte[] bytes = new byte[encoded.readableBytes()];
+            encoded.getBytes(encoded.readerIndex(), bytes);
+            return bytes;
+        } finally {
+            if (authTag != null) {
+                authTag.release();
+            }
+            if (payload != null) {
+                payload.release();
+            }
+            if (encoded != null) {
+                encoded.release();
+            }
+        }
+    }
+
+    private static void sendRawUdp(DatagramSocket socket, InetSocketAddress entryAddress, byte[] bytes) throws Exception {
+        socket.send(new java.net.DatagramPacket(bytes, bytes.length,
+                InetAddress.getByName(entryAddress.getHostString()), entryAddress.getPort()));
     }
 
     private static byte[] buildCompressedUdp2raw(Udp2rawOpenResult open,
