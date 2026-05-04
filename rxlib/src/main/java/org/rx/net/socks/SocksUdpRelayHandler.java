@@ -11,6 +11,7 @@ import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.socks.upstream.Udp2rawUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -116,14 +117,19 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         static final String TO_UPSTREAM = "to-upstream";
         String toClient;
         String toClientSocks;
+        String toClientUdp2raw;
         String toClientDirect;
         String toUpstream;
         String toUpstreamSocks;
+        String toUpstreamUdp2raw;
         String toUpstreamDirect;
 
         String tags(boolean toClientDirection, Upstream upstream) {
             if (upstream instanceof SocksUdpUpstream) {
                 return toClientDirection ? toClientSocks() : toUpstreamSocks();
+            }
+            if (upstream instanceof Udp2rawUpstream) {
+                return toClientDirection ? toClientUdp2raw() : toUpstreamUdp2raw();
             }
             if (upstream != null) {
                 return toClientDirection ? toClientDirect() : toUpstreamDirect();
@@ -145,6 +151,13 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             return toClientSocks;
         }
 
+        private String toClientUdp2raw() {
+            if (toClientUdp2raw == null) {
+                toClientUdp2raw = base(TO_CLIENT) + ",mode=udp2raw";
+            }
+            return toClientUdp2raw;
+        }
+
         private String toClientDirect() {
             if (toClientDirect == null) {
                 toClientDirect = base(TO_CLIENT) + ",mode=direct";
@@ -164,6 +177,13 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                 toUpstreamSocks = base(TO_UPSTREAM) + ",mode=socks";
             }
             return toUpstreamSocks;
+        }
+
+        private String toUpstreamUdp2raw() {
+            if (toUpstreamUdp2raw == null) {
+                toUpstreamUdp2raw = base(TO_UPSTREAM) + ",mode=udp2raw";
+            }
+            return toUpstreamUdp2raw;
         }
 
         private String toUpstreamDirect() {
@@ -319,10 +339,17 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         SocksProxyServer server = Sockets.getAttr(relay, SocksContext.SOCKS_SVR);
         SocksConfig config = server.config;
         ByteBuf outBuf = in.content();
+        Upstream upstream = sc != null ? sc.getUpstream() : null;
 
-        boolean socksUpstreamResponse = sc != null && sc.getUpstream() instanceof SocksUdpUpstream
-                && ((SocksUdpUpstream) sc.getUpstream()).getUdpRelayAddress(relay) != null;
-        if (socksUpstreamResponse) {
+        boolean udp2rawUpstreamResponse = upstream instanceof Udp2rawUpstream;
+        boolean socksUpstreamResponse = upstream instanceof SocksUdpUpstream
+                && ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) != null;
+        if (udp2rawUpstreamResponse) {
+            outBuf = ((Udp2rawUpstream) upstream).decodeSocks5Response(relay, in);
+            if (outBuf == null) {
+                return;
+            }
+        } else if (socksUpstreamResponse) {
             // Response from next-hop SOCKS server: already has SOCKS5 header
             outBuf.retain();
         } else {
@@ -337,7 +364,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         DatagramPacket packet = new DatagramPacket(outBuf, clientAddr);
         int trafficBytes = packet.content().readableBytes();
         if (socksUpstreamResponse) {
-            ((SocksUdpUpstream) sc.getUpstream()).recordUdpTraffic(relay, trafficBytes);
+            ((SocksUdpUpstream) upstream).recordUdpTraffic(relay, trafficBytes);
         }
         SocksUserTraffic.recordRead(relay, sc, trafficBytes, 1L);
         Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
@@ -419,6 +446,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
     private static boolean isRouteReady(Channel relay, SocksContext context) {
         Upstream upstream = context.getUpstream();
+        if (upstream instanceof Udp2rawUpstream) {
+            return ((Udp2rawUpstream) upstream).getUdpEntryAddress(relay) != null;
+        }
         if (!(upstream instanceof SocksUdpUpstream)) {
             return resolveUpstreamTarget(relay, upstream) != null;
         }
@@ -426,6 +456,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private static InetSocketAddress resolveUpstreamTarget(Channel relay, Upstream upstream) {
+        if (upstream instanceof Udp2rawUpstream) {
+            return ((Udp2rawUpstream) upstream).getUdpEntryAddress(relay);
+        }
         if (upstream instanceof SocksUdpUpstream) {
             return ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay);
         }
@@ -440,6 +473,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
 
     private CompletableFuture<InetSocketAddress> resolveUpstreamTargetAsync(Channel relay, SocksContext context) {
         Upstream upstream = context.getUpstream();
+        if (upstream instanceof Udp2rawUpstream) {
+            return CompletableFuture.completedFuture(((Udp2rawUpstream) upstream).getUdpEntryAddress(relay));
+        }
         if (upstream instanceof SocksUdpUpstream) {
             return CompletableFuture.completedFuture(((SocksUdpUpstream) upstream).getUdpRelayAddress(relay));
         }
@@ -603,7 +639,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
 
         Upstream upstream = context.getUpstream();
-        if (upstream instanceof SocksUdpUpstream) {
+        if (upstream instanceof Udp2rawUpstream) {
+            ctxMap.put(upDstAddr, context);
+        } else if (upstream instanceof SocksUdpUpstream) {
             InetSocketAddress[] relayAddresses = ((SocksUdpUpstream) upstream).snapshotUdpRelayAddresses(relay);
             if (relayAddresses.length == 0) {
                 ctxMap.put(upDstAddr, context);
@@ -694,10 +732,14 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
             SocksContext context, boolean retained) {
         Upstream upstream = context.getUpstream();
+        Udp2rawUpstream udp2rawUpstream = upstream instanceof Udp2rawUpstream ? (Udp2rawUpstream) upstream : null;
         SocksUdpUpstream socksUpstream = upstream instanceof SocksUdpUpstream ? (SocksUdpUpstream) upstream : null;
         int trafficBytes = 0;
         InetSocketAddress upDstAddr;
-        if (socksUpstream != null) {
+        if (udp2rawUpstream != null) {
+            trafficBytes = inBuf.readableBytes();
+            upDstAddr = udp2rawUpstream.getUdpEntryAddress(relay);
+        } else if (socksUpstream != null) {
             inBuf.resetReaderIndex();
             trafficBytes = inBuf.readableBytes();
             upDstAddr = socksUpstream.selectUdpRelayAddressAndRecord(relay, trafficBytes);
@@ -715,14 +757,22 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             return;
         }
 
-        if (socksUpstream != null) {
+        if (udp2rawUpstream != null || socksUpstream != null) {
             registerRelayAddressIfMissing(relay, upDstAddr, context);
         }
         EndpointTracer.UDP.link(clientOriginAddr, relay);
+        SocksConfig config = Sockets.getAttr(relay, SocksContext.SOCKS_SVR).config;
+        if (udp2rawUpstream != null) {
+            if (config.isDebug()) {
+                log.info("socks5[{}] UDP2RAW OUT {}bytes {} => {}[{}]",
+                        config.getListenPort(), inBuf.readableBytes(), sender, upDstAddr, dstEp);
+            }
+            udp2rawUpstream.writeSocks5Request(relay, inBuf, clientOriginAddr, dstEp, context, retained);
+            return;
+        }
         if (!retained) {
             inBuf.retain();
         }
-        SocksConfig config = Sockets.getAttr(relay, SocksContext.SOCKS_SVR).config;
         if (config.isDebug()) {
             log.info("socks5[{}] UDP OUT {}bytes {} => {}[{}]",
                     config.getListenPort(), inBuf.readableBytes(), sender, upDstAddr, dstEp);

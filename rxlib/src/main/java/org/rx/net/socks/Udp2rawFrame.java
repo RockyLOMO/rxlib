@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import io.netty.buffer.ByteBuf;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -21,7 +22,7 @@ public final class Udp2rawFrame {
     private InetSocketAddress clientSource;
     private UnresolvedEndpoint destination;
     private InetSocketAddress sourceAddress;
-    private byte[] authTag;
+    private ByteBuf authTag;
 
     public boolean hasFlag(int flag) {
         return (flags & flag) != 0;

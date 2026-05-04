@@ -116,7 +116,9 @@ class Udp2rawFixedEntryIntegrationTest {
                 | Udp2rawCodec.FLAG_HAS_DST | Udp2rawCodec.FLAG_AUTH_TAG);
         frame.setClientSource(clientSource);
         frame.setDestination(new UnresolvedEndpoint(destination.getHostString(), destination.getPort()));
-        frame.setAuthTag(Udp2rawAuthenticator.sign(open.getSessionSecret(), frame, payload));
+        ByteBuf authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
+                open.getSessionSecret(), frame, payload);
+        frame.setAuthTag(authTag);
         ByteBuf encoded = Udp2rawCodec.encode(UnpooledByteBufAllocator.DEFAULT, frame, payload);
         try {
             byte[] bytes = new byte[encoded.readableBytes()];
@@ -124,6 +126,7 @@ class Udp2rawFixedEntryIntegrationTest {
             socket.send(new java.net.DatagramPacket(bytes, bytes.length,
                     InetAddress.getByName(entryAddress.getHostString()), entryAddress.getPort()));
         } finally {
+            authTag.release();
             encoded.release();
         }
     }

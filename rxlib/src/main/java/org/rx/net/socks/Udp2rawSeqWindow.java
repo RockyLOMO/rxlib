@@ -1,11 +1,11 @@
 package org.rx.net.socks;
 
-final class Udp2rawSeqWindow {
+public final class Udp2rawSeqWindow {
     private boolean initialized;
     private long highest;
     private long bitmap;
 
-    synchronized boolean checkAndMark(long seq) {
+    public synchronized boolean checkAndMark(long seq) {
         if (!initialized) {
             initialized = true;
             highest = seq;

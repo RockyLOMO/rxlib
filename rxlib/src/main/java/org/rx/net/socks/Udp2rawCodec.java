@@ -69,9 +69,7 @@ public final class Udp2rawCodec {
             if (authLen <= 0 || in.readerIndex() + authLen > headerEnd) {
                 throw new IllegalArgumentException("bad udp2raw auth tag length " + authLen);
             }
-            byte[] authTag = new byte[authLen];
-            in.readBytes(authTag);
-            frame.setAuthTag(authTag);
+            frame.setAuthTag(in.readSlice(authLen));
         }
         if (in.readerIndex() != headerEnd) {
             throw new IllegalArgumentException("udp2raw header length mismatch");
@@ -119,12 +117,13 @@ public final class Udp2rawCodec {
                 UdpManager.encode(header, sourceAddress);
             }
             if ((flags & FLAG_AUTH_TAG) != 0) {
-                byte[] authTag = frame.getAuthTag();
-                if (authTag == null || authTag.length == 0 || authTag.length > 255) {
+                ByteBuf authTag = frame.getAuthTag();
+                if (authTag == null || !authTag.isReadable() || authTag.readableBytes() > 255) {
                     throw new IllegalArgumentException("bad authTag length");
                 }
-                header.writeByte(authTag.length);
-                header.writeBytes(authTag);
+                int authLen = authTag.readableBytes();
+                header.writeByte(authLen);
+                header.writeBytes(authTag, authTag.readerIndex(), authLen);
             }
             int headerLength = header.writerIndex() - start;
             if (headerLength > 255) {

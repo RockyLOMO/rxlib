@@ -2,6 +2,7 @@ package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.buffer.UnpooledByteBufAllocator;
 import org.junit.jupiter.api.Test;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -18,19 +19,24 @@ class Udp2rawAuthenticatorTest {
             secret[i] = (byte) (i + 1);
         }
         ByteBuf payload = Unpooled.copiedBuffer("auth-payload", StandardCharsets.UTF_8);
+        ByteBuf authTag = null;
         try {
             Udp2rawFrame frame = Udp2rawFrame.data(1L, 2L, 100L, 1L);
             frame.setFlags(Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT
                     | Udp2rawCodec.FLAG_HAS_DST | Udp2rawCodec.FLAG_AUTH_TAG);
             frame.setClientSource(new InetSocketAddress("127.0.0.1", 30001));
             frame.setDestination(new UnresolvedEndpoint("127.0.0.1", 53));
-            frame.setAuthTag(Udp2rawAuthenticator.sign(secret, frame, payload));
+            authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT, secret, frame, payload);
+            frame.setAuthTag(authTag);
 
             assertTrue(Udp2rawAuthenticator.requiresAuth(Udp2rawAuthMode.FIRST_PACKET_MAC, true, frame.getFlags()));
             assertTrue(Udp2rawAuthenticator.verify(secret, frame, payload));
             payload.setByte(payload.readerIndex(), 'A');
             assertFalse(Udp2rawAuthenticator.verify(secret, frame, payload));
         } finally {
+            if (authTag != null) {
+                authTag.release();
+            }
             payload.release();
         }
     }

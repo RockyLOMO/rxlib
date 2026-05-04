@@ -1,17 +1,26 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.UnpooledByteBufAllocator;
+import org.rx.io.Bytes;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Locale;
 
 public final class Udp2rawAuthenticator {
     public static final int DEFAULT_TAG_BYTES = 16;
     private static final String HMAC_ALGORITHM = "HmacSHA256";
+    private static final int HMAC_BYTES = 32;
+    private static final ThreadLocal<Mac> HMAC = ThreadLocal.withInitial(() -> {
+        try {
+            return Mac.getInstance(HMAC_ALGORITHM);
+        } catch (Exception e) {
+            throw new IllegalStateException("udp2raw hmac init failed", e);
+        }
+    });
+    private static final ThreadLocal<byte[]> HMAC_SCRATCH = ThreadLocal.withInitial(() -> new byte[HMAC_BYTES]);
 
     private Udp2rawAuthenticator() {
     }
@@ -26,11 +35,11 @@ public final class Udp2rawAuthenticator {
         return newSession || (flags & Udp2rawCodec.FLAG_NEW_CONN) != 0;
     }
 
-    public static byte[] sign(byte[] secret, Udp2rawFrame frame, ByteBuf payload) {
-        return sign(secret, frame, payload, DEFAULT_TAG_BYTES);
+    public static ByteBuf sign(ByteBufAllocator alloc, byte[] secret, Udp2rawFrame frame, ByteBuf payload) {
+        return sign(alloc, secret, frame, payload, DEFAULT_TAG_BYTES);
     }
 
-    public static byte[] sign(byte[] secret, Udp2rawFrame frame, ByteBuf payload, int tagBytes) {
+    public static ByteBuf sign(ByteBufAllocator alloc, byte[] secret, Udp2rawFrame frame, ByteBuf payload, int tagBytes) {
         if (secret == null || secret.length == 0) {
             throw new IllegalArgumentException("secret must not be empty");
         }
@@ -38,8 +47,9 @@ public final class Udp2rawAuthenticator {
             throw new IllegalArgumentException("frame must not be null");
         }
         int len = tagBytes <= 0 ? DEFAULT_TAG_BYTES : Math.min(32, tagBytes);
+        ByteBuf out = (alloc != null ? alloc : UnpooledByteBufAllocator.DEFAULT).heapBuffer(HMAC_BYTES, HMAC_BYTES);
         try {
-            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+            Mac mac = HMAC.get();
             mac.init(new SecretKeySpec(secret, HMAC_ALGORITHM));
             updateFrame(mac, frame);
             if (payload != null && payload.isReadable()) {
@@ -48,25 +58,47 @@ public final class Udp2rawAuthenticator {
                     mac.update(buffer);
                 }
             }
-            byte[] full = mac.doFinal();
-            if (len == full.length) {
-                return full;
+            if (out.hasArray()) {
+                mac.doFinal(out.array(), out.arrayOffset() + out.writerIndex());
+                out.writerIndex(out.writerIndex() + len);
+            } else {
+                byte[] full = HMAC_SCRATCH.get();
+                mac.doFinal(full, 0);
+                out.writeBytes(full, 0, len);
             }
-            byte[] tag = new byte[len];
-            System.arraycopy(full, 0, tag, 0, len);
-            return tag;
+            return out;
         } catch (Exception e) {
+            Bytes.release(out);
             throw new IllegalStateException("udp2raw hmac failed", e);
         }
     }
 
     public static boolean verify(byte[] secret, Udp2rawFrame frame, ByteBuf payload) {
-        byte[] actual = frame != null ? frame.getAuthTag() : null;
-        if (actual == null || actual.length == 0) {
+        ByteBuf actual = frame != null ? frame.getAuthTag() : null;
+        if (actual == null || !actual.isReadable()) {
             return false;
         }
-        byte[] expected = sign(secret, frame, payload, actual.length);
-        return MessageDigest.isEqual(expected, actual);
+        ByteBuf expected = sign(payload != null ? payload.alloc() : UnpooledByteBufAllocator.DEFAULT,
+                secret, frame, payload, actual.readableBytes());
+        try {
+            return equalsConstantTime(expected, actual);
+        } finally {
+            expected.release();
+        }
+    }
+
+    private static boolean equalsConstantTime(ByteBuf expected, ByteBuf actual) {
+        int len = expected.readableBytes();
+        if (len != actual.readableBytes()) {
+            return false;
+        }
+        int expectedIndex = expected.readerIndex();
+        int actualIndex = actual.readerIndex();
+        int diff = 0;
+        for (int i = 0; i < len; i++) {
+            diff |= expected.getByte(expectedIndex + i) ^ actual.getByte(actualIndex + i);
+        }
+        return diff == 0;
     }
 
     private static void updateFrame(Mac mac, Udp2rawFrame frame) {
@@ -92,10 +124,41 @@ public final class Udp2rawAuthenticator {
             updateInt(mac, 0);
             return;
         }
-        byte[] bytes = host.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8);
-        updateInt(mac, bytes.length);
-        mac.update(bytes);
+        updateInt(mac, utf8LowerByteLength(host));
+        updateUtf8Lower(mac, host);
         updateInt(mac, port);
+    }
+
+    private static int utf8LowerByteLength(String value) {
+        int len = 0;
+        for (int i = 0; i < value.length(); ) {
+            int codePoint = Character.toLowerCase(value.codePointAt(i));
+            i += Character.charCount(codePoint);
+            len += codePoint <= 0x7F ? 1 : codePoint <= 0x7FF ? 2 : codePoint <= 0xFFFF ? 3 : 4;
+        }
+        return len;
+    }
+
+    private static void updateUtf8Lower(Mac mac, String value) {
+        for (int i = 0; i < value.length(); ) {
+            int codePoint = Character.toLowerCase(value.codePointAt(i));
+            i += Character.charCount(codePoint);
+            if (codePoint <= 0x7F) {
+                mac.update((byte) codePoint);
+            } else if (codePoint <= 0x7FF) {
+                mac.update((byte) (0xC0 | (codePoint >>> 6)));
+                mac.update((byte) (0x80 | (codePoint & 0x3F)));
+            } else if (codePoint <= 0xFFFF) {
+                mac.update((byte) (0xE0 | (codePoint >>> 12)));
+                mac.update((byte) (0x80 | ((codePoint >>> 6) & 0x3F)));
+                mac.update((byte) (0x80 | (codePoint & 0x3F)));
+            } else {
+                mac.update((byte) (0xF0 | (codePoint >>> 18)));
+                mac.update((byte) (0x80 | ((codePoint >>> 12) & 0x3F)));
+                mac.update((byte) (0x80 | ((codePoint >>> 6) & 0x3F)));
+                mac.update((byte) (0x80 | (codePoint & 0x3F)));
+            }
+        }
     }
 
     private static void updateInt(Mac mac, int value) {
