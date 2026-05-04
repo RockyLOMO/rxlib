@@ -44,6 +44,8 @@ import org.rx.net.socks.TrafficUser;
 import org.rx.net.socks.UdpRelayGroupOpenRequest;
 import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
+import org.rx.net.socks.Udp2rawOpenRequest;
+import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
@@ -366,6 +368,21 @@ public final class RssClient {
         @Override
         public boolean closeUdpRelayGroup(String groupId, String token) {
             return delegate.closeUdpRelayGroup(groupId, token);
+        }
+
+        @Override
+        public Udp2rawOpenResult openUdp2rawTunnel(Udp2rawOpenRequest request, String token) {
+            return delegate.openUdp2rawTunnel(request, token);
+        }
+
+        @Override
+        public boolean heartbeatUdp2rawTunnel(String tunnelId, String token) {
+            return delegate.heartbeatUdp2rawTunnel(tunnelId, token);
+        }
+
+        @Override
+        public boolean closeUdp2rawTunnel(String tunnelId, String token) {
+            return delegate.closeUdp2rawTunnel(tunnelId, token);
         }
 
         @Override

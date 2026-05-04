@@ -51,6 +51,11 @@ public class SocksConfig extends SocketConfig {
     private boolean whiteListEnabled = false;
     private boolean enableUdp2raw;
     private InetSocketAddress udp2rawClient;
+    private InetSocketAddress udp2rawListenAddress;
+    private int udp2rawSessionIdleSeconds = 300;
+    private int udp2rawMaxSessions = 65536;
+    private Udp2rawAuthMode udp2rawAuthMode = Udp2rawAuthMode.FIRST_PACKET_MAC;
+    private boolean udp2rawRequireRpc = true;
     private AuthenticEndpoint kcptunClient;
     private boolean tcpWarmPoolEnabled;
     private int tcpWarmPoolMinSize = 2;
@@ -276,6 +281,18 @@ public class SocksConfig extends SocketConfig {
         return udpPortHopping != null && udpPortHopping.isEnabled()
                 && (udpPortHopping.getHopCount() > 1
                 || (udpPortHopping.isAdaptive() && udpPortHopping.getMaxHopCount() > 1));
+    }
+
+    public void setUdp2rawSessionIdleSeconds(int udp2rawSessionIdleSeconds) {
+        this.udp2rawSessionIdleSeconds = Math.max(1, udp2rawSessionIdleSeconds);
+    }
+
+    public void setUdp2rawMaxSessions(int udp2rawMaxSessions) {
+        this.udp2rawMaxSessions = Math.max(1, udp2rawMaxSessions);
+    }
+
+    public void setUdp2rawAuthMode(Udp2rawAuthMode udp2rawAuthMode) {
+        this.udp2rawAuthMode = udp2rawAuthMode != null ? udp2rawAuthMode : Udp2rawAuthMode.FIRST_PACKET_MAC;
     }
 
     public void setUdpPortHoppingEnabled(boolean enabled) {

@@ -48,6 +48,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final Authenticator authenticator;
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
     private final UdpRelayGroupManager udpRelayGroupManager;
+    private final Udp2rawServerEntryManager udp2rawEntryManager;
     final AtomicInteger activeChannels = new AtomicInteger();
     // 只有压缩时一定要用
     @Setter
@@ -103,6 +104,8 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         this.config = config;
         this.authenticator = authenticator;
         this.udpRelayGroupManager = new UdpRelayGroupManager(this);
+        this.udp2rawEntryManager = config.isEnableUdp2raw() && config.getUdp2rawClient() == null
+                ? new Udp2rawServerEntryManager(this) : null;
 
         if (enableMemoryChannel) {
             if (memoryChannel == null) {
@@ -142,6 +145,9 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }
         }
 
+        if (udp2rawEntryManager != null) {
+            udp2rawEntryManager.start();
+        }
     }
 
     private MemoryBind createMemoryServer() {
@@ -193,6 +199,9 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @Override
     protected void dispose() {
+        if (udp2rawEntryManager != null) {
+            udp2rawEntryManager.close();
+        }
         udpRelayGroupManager.close();
         for (Channel relay : udpRelayRegistry.values()) {
             Sockets.closeOnFlushed(relay);
@@ -263,7 +272,13 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     }
 
     public SocksRpcCapabilities socksRpcCapabilities() {
-        return udpRelayGroupManager.capabilities();
+        SocksRpcCapabilities capabilities = udpRelayGroupManager.capabilities();
+        if (udp2rawEntryManager != null) {
+            capabilities.addFlag(SocksRpcCapabilities.UDP2RAW_TUNNEL);
+            capabilities.setUdp2rawFixedEntry(true);
+            capabilities.setMaxUdp2rawSessions(config.getUdp2rawMaxSessions());
+        }
+        return capabilities;
     }
 
     public SocksRpcCapabilities socksRpcCapabilities(String token) {
@@ -318,6 +333,40 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     public boolean closeUdpRelayGroup(String groupId, String token) {
         validateRpcToken(token, "close-group");
         return closeUdpRelayGroup(groupId);
+    }
+
+    public Udp2rawOpenResult openUdp2rawTunnel(Udp2rawOpenRequest request) {
+        if (udp2rawEntryManager == null) {
+            return Udp2rawOpenResult.unsupported();
+        }
+        return udp2rawEntryManager.open(request);
+    }
+
+    public Udp2rawOpenResult openUdp2rawTunnel(Udp2rawOpenRequest request, String token) {
+        validateRpcToken(token, "open-udp2raw");
+        return openUdp2rawTunnel(request);
+    }
+
+    public boolean heartbeatUdp2rawTunnel(String tunnelId) {
+        return udp2rawEntryManager != null && udp2rawEntryManager.heartbeat(tunnelId);
+    }
+
+    public boolean heartbeatUdp2rawTunnel(String tunnelId, String token) {
+        validateRpcToken(token, "heartbeat-udp2raw");
+        return heartbeatUdp2rawTunnel(tunnelId);
+    }
+
+    public boolean closeUdp2rawTunnel(String tunnelId) {
+        return udp2rawEntryManager != null && udp2rawEntryManager.closeTunnel(tunnelId);
+    }
+
+    public boolean closeUdp2rawTunnel(String tunnelId, String token) {
+        validateRpcToken(token, "close-udp2raw");
+        return closeUdp2rawTunnel(tunnelId);
+    }
+
+    public InetSocketAddress getUdp2rawEntryAddress() {
+        return udp2rawEntryManager != null ? udp2rawEntryManager.entryAddress() : null;
     }
 
     private void validateRpcToken(String token, String action) {

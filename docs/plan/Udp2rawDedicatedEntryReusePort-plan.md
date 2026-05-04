@@ -593,6 +593,82 @@ private UdpCompressConfig udp2rawCompress;
 - per-peer packet rate limit，可选。
 - bad auth fail 计数熔断。
 
+## 实施进度（2026-05-04）
+
+本次已落地可编译、可验证的 **server fixed entry + 自定义 frame 基础层 + client tunnel writer + tunnel 层压缩/冗余发送**。旧 `Udp2rawHandler` 继续保留为兼容路径，新链路通过 `Udp2rawUpstream` 接管 RSS Client/SS 本地入口到 RSS Server fixed entry 的数据面。
+
+### 已完成
+
+- P1 RPC 控制面基础：
+  - `SocksRpcCapabilities` 增加 `UDP2RAW_TUNNEL` 能力位。
+  - `SocksRpcContract` 增加 `openUdp2rawTunnel / heartbeatUdp2rawTunnel / closeUdp2rawTunnel` 默认方法。
+  - `RssRpcApp` 与 `RssClient.ForwardingSocksRpcContract` 已转发新增 RPC 方法。
+  - `SocksProxyServer` server mode 下自动启动 fixed UDP entry，并通过 RPC 打开 tunnel。
+- P2 自定义 codec：
+  - 新增 `Udp2rawCodec`、`Udp2rawFrame`、`Udp2rawFrameType`、`Udp2rawAuthMode`。
+  - 新增 `Udp2rawAuthenticator`，当前使用 Java 8 可用的 `HmacSHA256` 截断 tag。
+  - `authTag` 已从热路径 `byte[]` 改为 `ByteBuf`：decode 使用 `readSlice`，sign 返回 pooled heap `ByteBuf`，encode 从 `ByteBuf` 复制 tag，避免每包 `new byte[]`。
+  - 新增 `Udp2rawSessionKey` 与 `Udp2rawSeqWindow`，按 `sessionHi/sessionLo/connId/seq` 做基础隔离和去重。
+- P3 client tunnel writer：
+  - 新增 `Udp2rawUpstream`，通过 `SocksRpcContract.openUdp2rawTunnel` 打开 tunnel，不再执行标准 SOCKS5 `UDP_ASSOCIATE` control。
+  - 维护 `clientSource + dstEp -> connId`，首包携带 `NEW_CONN | HAS_CLIENT | HAS_DST | AUTH_TAG`，后续同一路由只带轻量 session/conn/seq header。
+  - SOCKS5 UDP relay 已接入 request/response：本地 SOCKS5 payload -> 自定义 DATA request，fixed entry DATA response -> 本地 SOCKS5 UDP response。
+  - Shadowsocks UDP relay 已接入 request/response：SS 明文 payload -> 自定义 DATA request，fixed entry DATA response -> SS address header response。
+  - `Udp2rawUpstream` 不调用 `SocksUdpUpstream.selectUdpRelayAddress`，不申请远端 UDP relay group，不走 claim/reset relay。
+- P4 server fixed entry 基线：
+  - 新增 `Udp2rawServerEntryManager`，fixed entry 通过 `Sockets.bindChannels(...)` 绑定，继承 Linux epoll `SO_REUSEPORT` 多 bind 能力。
+  - fixed entry 状态集中在 manager/tunnel context，不注册到 `udpRelayRegistry`。
+- P5 per-client NAT channel 基线：
+  - 新增 `Udp2rawServerEntryHandler`、`Udp2rawTunnelContext`、`Udp2rawSession`。
+  - 每个 `(tunnel session, connId)` 创建独立 UDP `natChannel` 并 `bind(0)` 出站到 dest。
+  - dest response 通过 fixed entry channel 回 udp2raw peer，回包源端口保持 fixed entry port。
+- P6 多倍发包和压缩基础闭环：
+  - 新增 `Udp2rawPayloadSupport`，统一处理 tunnel payload LZ4 压缩/解压、encoded frame 冗余复制发送。
+  - request/response 两个方向均支持 payload 压缩：压缩发生在 authTag 计算前，去重发生在解压前。
+  - request/response 两个方向均支持 redundant send：复制完整 encoded udp2raw frame，副本使用 `retainedDuplicate()`，不重复编码大 payload。
+  - redundant 支持静态 multiplier、分目的地规则解析、intervalMicros 延迟副本；延迟副本有 pending 上限保护。
+  - `Udp2rawUpstream` SOCKS5 与 Shadowsocks 两条本地入口都接入 request 压缩/冗余，client 侧 response 解压和 response seq 去重已接入。
+  - `Udp2rawSession.writeToPeer` 已接入 response 压缩/冗余，server fixed entry 已支持 request 压缩解包和 request seq 去重。
+  - open tunnel 时根据 client request 与 server config 协商 `compress/redundant` capabilities，避免单端误启用。
+- P7 指标和保护基础：
+  - 已记录 tunnel open/active、session create/close/active、drop、duplicate drop 等基础指标。
+  - 已新增 `socks.udp2raw.compress.count`、`socks.udp2raw.redundant.copy.count`、`socks.udp2raw.redundant.delayed.drop.count` 等基础指标。
+  - 已有 maxSessions、tunnel idle cleanup、seq duplicate drop、auth-fail drop、UDP write pending 过载保护。
+
+### 已验证
+
+```text
+mvn -pl rxlib "-Dtest=Udp2rawCodecTest,Udp2rawAuthenticatorTest,Udp2rawFixedEntryIntegrationTest" test
+mvn -pl rxlib "-Dtest=Udp2rawHandlerTest" test
+mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest#socks5UdpRelay_udp2raw_chained_e2e" test
+mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest#socks5UdpRelay_udp2rawUpstream_fixedEntry_e2e" test
+mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest#shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_e2e" test
+mvn -pl rxlib "-Dtest=Udp2rawCodecTest,Udp2rawAuthenticatorTest,Udp2rawFixedEntryIntegrationTest,Udp2rawHandlerTest,SocksProxyServerIntegrationTest#socks5UdpRelay_udp2rawUpstream_fixedEntry_e2e+shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_e2e+socks5UdpRelay_udp2raw_chained_e2e" test
+mvn -pl rxlib "-Dtest=Udp2rawFixedEntryIntegrationTest#fixedEntryCompressesResponseAndDropsRedundantRequest,SocksProxyServerIntegrationTest#socks5UdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e" test
+mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest#shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e" test
+mvn -pl rxlib "-Dtest=Udp2rawCodecTest,Udp2rawAuthenticatorTest,Udp2rawFixedEntryIntegrationTest,Udp2rawHandlerTest,SocksProxyServerIntegrationTest#socks5UdpRelay_udp2rawUpstream_fixedEntry_e2e+socks5UdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e+shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_e2e+shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e+socks5UdpRelay_udp2raw_chained_e2e" test
+```
+
+验证结论：
+
+- 自定义 udp2raw request/response frame encode/decode 通过。
+- FIRST_PACKET_MAC 鉴权、payload 篡改失败、seq 去重、session key 隔离通过。
+- fixed entry E2E 通过：RPC open tunnel 后，DATA request 经 fixed UDP entry 到 echo dest，response 从 fixed entry port 返回。
+- NAT-A 基线通过：两个不同 `client sourceEndpoint/connId` 访问同一 dest，dest 侧观察到两个不同 server UDP 源端口。
+- `Udp2rawUpstream` SOCKS5 本地入口 E2E 通过：RSS Client 不再向 B 创建标准 SOCKS5 UDP relay，B 侧 `udpRelayRegistry` 保持 0。
+- `Udp2rawUpstream` Shadowsocks 本地入口 E2E 通过：SS UDP 明文 address payload 经自定义 tunnel 到 fixed entry，response 可正确还原为 SS UDP response。
+- P6 fixed entry 压缩/冗余通过：同一个 `tunnel/connId/seq` 的 request 冗余副本只写一次 dest；response 带 `FLAG_COMPRESSED | FLAG_REDUNDANT`，client 可解压还原。
+- P6 SOCKS5 本地入口 E2E 通过：`Udp2rawUpstream` request 压缩/冗余、server fixed entry 解压/去重、response 压缩/冗余、client response 解压/去重闭环通过。
+- P6 Shadowsocks 本地入口 E2E 通过：SS UDP 明文 address payload 经 udp2raw 压缩/冗余 tunnel 后可正确回显并还原为 SS UDP response。
+- 旧 `Udp2rawHandler` UDP_ASSOCIATE 兼容测试通过，现有链路未被破坏。
+- 当前最终组合目标测试 17 个用例通过。
+
+### 未完成/下一步
+
+- UDP redundant 自适应反馈尚未接入 tunnel 层：当前已支持静态倍率、分目的地规则与延迟副本；还未根据实际丢包率动态调整 multiplier。
+- P1 控制面仍是基础 open/heartbeat/close；还未把 `connectionTag/trafficUser` 完整绑定到流量统计策略。
+- NAT rebinding 安全策略、per-peer rate limit、bad auth 熔断仍待补齐。
+
 ## 测试计划
 
 ### 单元测试

@@ -8,6 +8,8 @@ import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.UdpRelayGroupOpenRequest;
 import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
+import org.rx.net.socks.Udp2rawOpenRequest;
+import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetAddress;
@@ -83,6 +85,21 @@ public final class RssRpcApp implements SocksRpcContract {
     @Override
     public boolean closeUdpRelayGroup(String groupId, String token) {
         return svrSide.get().closeUdpRelayGroup(groupId, token);
+    }
+
+    @Override
+    public Udp2rawOpenResult openUdp2rawTunnel(Udp2rawOpenRequest request, String token) {
+        return svrSide.get().openUdp2rawTunnel(request, token);
+    }
+
+    @Override
+    public boolean heartbeatUdp2rawTunnel(String tunnelId, String token) {
+        return svrSide.get().heartbeatUdp2rawTunnel(tunnelId, token);
+    }
+
+    @Override
+    public boolean closeUdp2rawTunnel(String tunnelId, String token) {
+        return svrSide.get().closeUdp2rawTunnel(tunnelId, token);
     }
 
     @SneakyThrows
