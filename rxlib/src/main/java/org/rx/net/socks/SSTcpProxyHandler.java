@@ -25,7 +25,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         if (dstEp == null) {
             log.warn("SS TCP missing destination, close {}", Sockets.getOriginRemoteAddress(inbound));
             ReferenceCountUtil.release(msg);
-            Sockets.closeOnFlushed(inbound);
+            inbound.close();
             return;
         }
 
@@ -35,7 +35,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         } catch (Throwable routeError) {
             log.warn("SS TCP route error for {}", dstEp, routeError);
             ReferenceCountUtil.release(msg);
-            Sockets.closeOnFlushed(inbound);
+            inbound.close();
             return;
         }
 
@@ -43,7 +43,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         if (upstream == null || upstream.getDestination() == null) {
             log.warn("SS TCP route upstream invalid for {} from {}", dstEp, Sockets.getOriginRemoteAddress(inbound));
             ReferenceCountUtil.release(msg);
-            Sockets.closeOnFlushed(inbound);
+            inbound.close();
             return;
         }
 
@@ -54,7 +54,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         } catch (Throwable routeError) {
             log.warn("SS TCP route destination invalid for {} from {}", upDstEp, Sockets.getOriginRemoteAddress(inbound), routeError);
             ReferenceCountUtil.release(msg);
-            Sockets.closeOnFlushed(inbound);
+            inbound.close();
             return;
         }
 
@@ -64,7 +64,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         }).connect(connectAddress).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 log.warn("SS TCP connect to backend {}[{}] fail", upDstEp, dstEp, f.cause());
-                Sockets.closeOnFlushed(inbound);
+                inbound.close();
                 return;
             }
             if (debug) {
