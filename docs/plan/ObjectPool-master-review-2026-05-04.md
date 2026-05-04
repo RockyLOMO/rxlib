@@ -129,3 +129,38 @@
 5. 只有 `conclusion=success` 才认为 CI 通过。
 6. 如果失败，按编译失败、单元测试失败、格式失败、依赖下载失败、JDK 版本不兼容、环境问题、测试不稳定或 Actions 配置问题分类。
 7. 只修复与失败直接相关的代码，修复后再次提交并再次触发 CI。
+
+# 2026-05-04 执行记录
+
+本轮已进入代码阶段并完成本地修复验证。
+
+## 修复结论
+
+1. `ObjectPool.recycle(ObjectConf<T>, boolean)` 当前实现已符合计划中的核心修复方案：先通过 `BORROWED -> VALIDATING` CAS 抢占归还所有权，再执行 `validateHandler` / `passivateHandler`。CAS 失败线程不会执行 passivate，避免 ByteBuf、Channel、session、UDP lease 等非幂等资源被重复 passivate 或重复释放。
+2. 本次实际修改集中在 `ObjectPoolRecycleOwnershipTest`：`testStaleThreadLocalHintDoesNotBorrowRetiredObject` 原先断言 invalid idle 校验后 `pool.size()==0`，但 `validNow()` 可能按自适应 target 立即补建新 idle，对象池总量不一定归零。测试已调整为等待旧对象身份不再属于池，并继续验证后续 borrow 不会返回旧 ThreadLocal hint。
+3. 未改 public API、包名、依赖和 Java 版本语法；保持 Java 8 兼容。
+
+## 本地验证结论
+
+已执行：
+
+```powershell
+mvn -pl rxlib "-Dtest=ObjectPoolRecycleOwnershipTest,ObjectPoolTest,Socks5SessionPoolTest" test --batch-mode --no-transfer-progress
+```
+
+结果：
+
+- Tests run: 41
+- Failures: 0
+- Errors: 0
+- Skipped: 0
+- BUILD SUCCESS
+
+## 高性能风险复核
+
+- 内存泄漏：本次未新增 ByteBuf/Channel 持有路径；旧对象退休校验改为身份级断言，覆盖 stale ThreadLocal hint 不会借出 retired 对象。
+- 背压：未修改 borrow 等待、水位或队列逻辑。
+- 连接生命周期：未修改网络连接创建、保活、半关闭、异常断开或重连逻辑。
+- 线程模型：未引入锁或阻塞到 ObjectPool 热点路径；测试等待仅限单元测试。
+- 协议兼容性：未改协议编解码或网络协议行为。
+- 核心监控指标建议保持：对象池 size/idle/active/waiting/borrow timeout/created/retired，加上网络侧连接数、吞吐/延迟、Netty 堆外内存占用 `PooledByteBufAllocator.DEFAULT.metric().usedDirectMemory()`。
