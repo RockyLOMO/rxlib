@@ -137,11 +137,13 @@ public class ObjectPool<T> extends Disposable {
     volatile boolean disposing;
 
     static final int SAMPLE_COUNT = 12;
+    static final long IDLE_CREATE_FAILURE_BACKOFF_NANOS = TimeUnit.MILLISECONDS.toNanos(100);
     final LongAdder borrowAccumulator = new LongAdder();
     final long[] borrowSamples = new long[SAMPLE_COUNT];
     int sampleIndex = 0;
     final AtomicBoolean minIdleMaintaining = new AtomicBoolean();
     final AtomicBoolean validating = new AtomicBoolean();
+    volatile long idleCreateBackoffUntilNanos;
     @Getter
     volatile double demandFactor = 2.0;
     @Getter
@@ -253,6 +255,9 @@ public class ObjectPool<T> extends Disposable {
 
         insureMinIdle();
         future = Tasks.timer.setTimeout(this::validNow, d -> validationPeriod, this, Constants.TIMER_PERIOD_FLAG);
+        if (needsMinIdleMaintain(idleSize(), size())) {
+            triggerMinIdleMaintain();
+        }
     }
 
     @Override
@@ -269,7 +274,7 @@ public class ObjectPool<T> extends Disposable {
     void insureMinIdle() {
         int idle = idleSize();
         int total = size();
-        while (needsMinIdleMaintain(idle, total)) {
+        while (needsMinIdleMaintain(idle, total) && !isIdleCreateBackoffActive()) {
             ObjectConf<T> c = doCreateIdle();
             if (c != null) {
                 idle = idleSize();
@@ -281,12 +286,33 @@ public class ObjectPool<T> extends Disposable {
     }
 
     void insureTargetSize(int target) {
-        while (size() < target) {
+        while (size() < target && !isIdleCreateBackoffActive()) {
             ObjectConf<T> c = doCreateIdle();
             if (c == null) {
                 break;
             }
         }
+    }
+
+    boolean isIdleCreateBackoffActive() {
+        return idleCreateBackoffRemainingNanos() > 0;
+    }
+
+    long idleCreateBackoffRemainingNanos() {
+        long until = idleCreateBackoffUntilNanos;
+        if (until == 0) {
+            return 0;
+        }
+        long remaining = until - System.nanoTime();
+        return remaining > 0 ? remaining : 0;
+    }
+
+    void markIdleCreateFailure() {
+        idleCreateBackoffUntilNanos = System.nanoTime() + IDLE_CREATE_FAILURE_BACKOFF_NANOS;
+    }
+
+    void clearIdleCreateFailure() {
+        idleCreateBackoffUntilNanos = 0;
     }
 
     void linkIdleTail0(ObjectConf<T> c) {
@@ -527,12 +553,21 @@ public class ObjectPool<T> extends Disposable {
         if (!minIdleMaintaining.compareAndSet(false, true)) {
             return;
         }
+        long backoffNanos = idleCreateBackoffRemainingNanos();
+        if (backoffNanos > 0) {
+            long delayMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(backoffNanos));
+            Tasks.setTimeout(() -> {
+                minIdleMaintaining.set(false);
+                triggerMinIdleMaintain();
+            }, delayMillis);
+            return;
+        }
         Tasks.run(() -> {
             try {
                 while (true) {
                     int idle = idleSize();
                     int total = size();
-                    if (!needsMinIdleMaintain(idle, total)) {
+                    if (!needsMinIdleMaintain(idle, total) || isIdleCreateBackoffActive()) {
                         return;
                     }
                     int created = 0;
@@ -657,7 +692,7 @@ public class ObjectPool<T> extends Disposable {
     }
 
     ObjectConf<T> doCreateIdle() {
-        if (!reserveSlot()) {
+        if (isIdleCreateBackoffActive() || !reserveSlot()) {
             return null;
         }
         IdentityWrapper<T> wrapper = null;
@@ -667,6 +702,7 @@ public class ObjectPool<T> extends Disposable {
             if (!validateHandler.test(wrapper.instance)) {
                 releaseReservedSlot();
                 tryClose(wrapper);
+                markIdleCreateFailure();
                 return null;
             }
             if (passivateHandler != null) {
@@ -679,6 +715,7 @@ public class ObjectPool<T> extends Disposable {
             if (prev != null) {
                 releaseReservedSlot();
                 tryClose(wrapper);
+                markIdleCreateFailure();
                 log.warn("Object '{}' has already in this pool", wrapper);
                 return null;
             }
@@ -688,6 +725,7 @@ public class ObjectPool<T> extends Disposable {
                 return null;
             }
             createdCount.increment();
+            clearIdleCreateFailure();
             offerSharedIdle(c);
             return c;
         } catch (Throwable e) {
@@ -698,6 +736,9 @@ public class ObjectPool<T> extends Disposable {
                 if (wrapper != null) {
                     tryClose(wrapper);
                 }
+            }
+            if (!disposing && !isClosed()) {
+                markIdleCreateFailure();
             }
             log.warn("doCreateIdle error", e);
             return null;

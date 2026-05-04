@@ -1,229 +1,199 @@
-# 背景
+# ObjectPool 修改验证与后续计划
 
-用户要求在 `rockylomo/rxlib` 仓库 `master` 分支上 review `ObjectPool` 相关实现，并将结果更新到 `docs/plan/ObjectPool-review-plan.md`。
+## 背景
 
-本轮只做 review 与计划文档更新，不修改业务代码。review 基于 `master` 当前提交 `bcb1ad3bee05a439eb3ab0aa318db2585151bf7d`。
+用户要求验证 `ObjectPool` 的修改，并更新本计划文档。
 
-# 任务类型判断
+本次采用 **高性能模式（Netty 底层网络编程）**。当前项目强制基线仍为 Java 8，验证重点放在对象池状态机、并发归还、创建失败退避、资源释放、可观测性，以及对网络池化场景的影响。
 
-本次任务归类为 **Review / 修复 / 优化需求**。
+## 当前结论
 
-原因：用户明确要求 review 当前 `ObjectPool` 相关实现，并更新计划文档；没有要求直接实现代码。因此本轮只提交计划文档。后续只有在用户明确要求“按计划执行 / 开始修改代码”后，才进入代码实现阶段。
+`rxlib/src/main/java/org/rx/core/ObjectPool.java` 当前实现已经覆盖上一轮 review 中的主要修复点：
 
-# 当前上下文
+- `ObjectConf` 状态机包含 `IDLE / BORROWED / RETIRED / VALIDATING`。
+- `recycle()` 先通过 `BORROWED -> VALIDATING` CAS 获取归还所有权，只有 CAS 成功线程才执行 `validateHandler` 与 `passivateHandler`。
+- `validNow()` 校验 idle 对象前先切到 `VALIDATING` 并从 shared idle 队列摘除，避免 borrow 与后台 validate 并发作用同一对象。
+- `borrow()` 在 `createHandler` 持续失败或 duplicate 创建失败时调用 `backoffCreateFailure()`，避免 borrowTimeout 内 tight loop。
+- `doCreate()` 与 `doCreateIdle()` 的 duplicate object 分支会释放预占 slot，并调用 `tryClose(wrapper)`。
+- `demandFactor` 已是 `volatile double`，满足 setter 与后台 `validNow()` 并发可见性。
+- `lookupKey FastThreadLocal` 在查找后通过 `finally` 清空，降低长生命周期线程强引用保留风险。
+- `threadLocalCache` 只作为 L1 hint，归还对象仍进入 shared idle，borrow 命中 hint 后仍需 `IDLE -> BORROWED` CAS。
+- `closeObjectOnLeak=false` 为默认值，泄漏检测默认只记录指标，不强制关闭 borrowed 对象。
+- 诊断指标已包含 `active.count`、`target.total.count`，并保留兼容旧名 `target.count`。
+- 支持 `setName(String)` 给对象池添加诊断 tag，便于多池实例区分。
 
-已 review 的核心文件：
+本轮复核确认过一个 P1 问题：`doCreateIdle()` 遇到 duplicate object 时只回滚计数并返回 `null`，没有记录失败冷却状态。该问题会让 `validNow()`、`insureTargetSize()`、`insureMinIdle()` 与 `triggerMinIdleMaintain()` 后续再次触发 idle 创建，导致同一个错误 `createHandler` 在短时间内被多次调用。
 
-- `rxlib/src/main/java/org/rx/core/ObjectPool.java`
-- `rxlib/src/test/java/org/rx/core/ObjectPoolTest.java`
+当前已完成修复：idle 预热/维护创建路径新增 100ms 失败冷却。`doCreateIdle()` 的 duplicate、validate failed、异常路径会设置冷却；`insureMinIdle()`、`insureTargetSize()`、`triggerMinIdleMaintain()` 在冷却期内跳过补建；idle 创建成功后清除冷却。borrow 直接创建路径仍使用原有 `backoffCreateFailure()`，避免把借用热路径和后台 idle 维护冷却强耦合。
 
-关联文件：
-
-- `rxlib/src/main/java/org/rx/core/IdentityWrapper.java`
-- `rxlib/src/main/java/org/rx/core/Disposable.java`
-- `rxlib/src/main/java/org/rx/core/Extends.java`
-- `rxlib/src/main/java/org/rx/core/Constants.java`
-- `rxlib/src/main/java/org/rx/core/Tasks.java`
-- `rxlib/src/main/java/org/rx/diagnostic/DiagnosticMetrics.java`
-
-关键调用链：
-
-```text
-borrow()
-  -> checkBorrowable()
-  -> threadLocalCache fast path
-  -> doPoll(0) / pollSharedIdle()
-  -> doCreate()
-  -> validateHandler
-  -> return instance
-
-recycle(obj)
-  -> lookupKey FastThreadLocal IdentityWrapper
-  -> conf.get(identity)
-  -> validateHandler
-  -> passivateHandler
-  -> BORROWED -> IDLE CAS
-  -> offerSharedIdle()
-  -> optional threadLocalCache hint
-
-validNow()
-  -> scan live circular list
-  -> IDLE -> VALIDATING CAS
-  -> idle timeout / max lifetime / validateHandler
-  -> retire or offer back to shared idle
-  -> adaptive refill
-  -> record metrics
-
-dispose()
-  -> disposing = true
-  -> signal borrowers
-  -> cancel timer future
-  -> doRetire() all pooled objects
-```
-
-当前实现意图：`ObjectPool<T>` 通过 `ConcurrentHashMap<IdentityWrapper<T>, ObjectConf<T>>` 管理对象，使用 `IDLE / BORROWED / RETIRED / VALIDATING` 状态机，shared idle 链表提供跨线程复用，`FastThreadLocal` 作为 L1 hint，后台 timer 做校验、过期回收、泄漏检测和自适应 refill。
-
-# 目标
-
-1. 梳理 `ObjectPool` 当前状态机、对象生命周期、并发路径和资源释放路径。
-2. 标记本轮 review 发现的高优先级风险点。
-3. 给出后续最小修改方案，避免大规模重构。
-4. 保持 JDK8 兼容，不引入 Java 9+ API。
-5. 保持现有 public API 兼容。
-6. 补充建议新增或加强的测试场景。
-7. 后续如进入实现阶段，用 GitHub Actions `jdk8-unit-tests.yml` 验证 `org.rx.core.ObjectPoolTest`。
-
-# 非目标
-
-1. 本轮不修改 `ObjectPool.java` 或任何业务代码。
-2. 本轮不修改 `.github/workflows/**`。
-3. 本轮不升级 JDK 或依赖大版本。
-4. 本轮不删除文件、不改 public 方法签名、不改包名。
-5. 本轮不做 release、不删除分支。
-6. 本轮不扩大到 ThreadPool、Remoting、DNS、UDP 之外的无关模块。
-
-# 设计方案
-
-## Review 结论 1：recycle 热路径的状态所有权需要优先收紧
-
-当前归还路径中，`validateHandler` 和 `passivateHandler` 在 `BORROWED -> IDLE` CAS 前执行。风险是：同一个对象如果被重复 `recycle()` 或并发 `recycle()`，CAS 失败前仍可能重复执行 `passivateHandler`。
-
-这对普通对象可能只是多一次 reset，但对 RPC / UDP / Netty 场景可能造成重复关闭 handler、重复释放 buffer、重复清理租约等副作用。
-
-建议后续实现：
-
-- 在 `recycle(ObjectConf<T> c, boolean allowThreadLocal)` 开头先校验 `conf.get(c.wrapper) == c`。
-- 先通过 CAS 获得归还所有权，例如 `BORROWED -> VALIDATING`。
-- 只有 CAS 成功的线程才执行 `validateHandler` 和 `passivateHandler`。
-- 处理完成后再 `VALIDATING -> IDLE` 并放回 shared idle。
-- CAS 失败时，如果对象已 retired 或已不属于 pool，直接 return；如果仍属于 pool 但不是 borrowed，保持现有 double recycle 异常语义。
-- handler 异常路径必须 retire，并唤醒等待 borrower。
-
-## Review 结论 2：duplicate object 创建分支语义需要文档明确
-
-`doCreate()` / `doCreateIdle()` 中如果 `createHandler` 返回池中已存在对象，`conf.putIfAbsent(wrapper, c)` 会返回已有配置。
-
-当前实现已有释放预占 slot、关闭 wrapper、warn 日志和返回 null 的防御处理。风险是：如果 `createHandler` 错误地返回一个仍被业务持有的池内对象，`tryClose(wrapper)` 可能关闭正在使用的对象。
-
-该场景本质上是 `createHandler` 语义违规。建议保持当前防御逻辑，但在文档里明确：`createHandler` 必须返回全新对象，不得返回已在池内或仍被业务持有的对象。
-
-## Review 结论 3：ThreadLocal cache 是 hint，但仍有长生命周期线程引用保留风险
-
-当前 `threadLocalCache` 不再独占 idle 对象，`recycle()` 成功后会先 `offerSharedIdle(c)`，再把 `ObjectConf` 写入本线程 hint。borrow L1 path 也会检查 `conf.get(c.wrapper) == c` 和 `IDLE -> BORROWED` CAS，功能正确性较好。
-
-仍需关注：Netty EventLoop / FastThreadLocal 长生命周期线程可能长期持有 retired `ObjectConf` 引用，直到下一次 borrow 清理或线程结束。
-
-建议后续验证：
-
-- 增加 stale ThreadLocal cache 测试，确保 retired 对象不会被借出。
-- 增加长生命周期线程反复 retire/create 的压力测试，观察 size、retired、created 指标和内存保留。
-- 如后续仍有保留风险，可考虑增加配置开关禁用 L1 hint，但默认保持当前性能路径。
-
-## Review 结论 4：`demandFactor` 可见性建议修复
-
-当前 `demandFactor` 由 setter 修改，后台 `validNow()` 读取，但字段不是 `volatile`。其他容量与时间配置大多使用 volatile。建议改为：
-
-```java
-@Getter
-volatile double demandFactor = 2.0;
-```
-
-这属于小范围低风险修复，保持 API 不变，并符合 JDK8。
-
-## Review 结论 5：创建失败退避已有改善，但需要继续验证中断与日志语义
-
-当前 `borrow()` 已有 `backoffCreateFailure(remainingTime)`，避免 `createHandler` 持续失败时在 `borrowTimeout` 内 tight loop。
-
-建议继续保留测试：
-
-- `createHandler` 持续抛异常时，尝试次数不应过高。
-- borrow 总耗时接近 `borrowTimeout`。
-- 中断路径应恢复线程中断标记，并在最终 timeout message 中保留原始错误信息。
-
-## Review 结论 6：泄漏检测默认不关闭 borrowed 对象是正确方向
-
-当前 `closeObjectOnLeak=false` 默认只记录 leak 指标，不强制关闭 borrowed 对象；只有显式开启后才会 retire/close borrowed 对象。
-
-建议文档明确：
-
-- `leakDetectionThreshold=0` 表示关闭泄漏检测。
-- `closeObjectOnLeak=false` 只告警。
-- `closeObjectOnLeak=true` 是破坏性强制回收，调用方必须能承受业务对象被池关闭。
-
-## Review 结论 7：retire action magic int 建议后续替换为常量
-
-当前 `doRetire(wrapper, action)` 使用 magic int：`0 close`、`1 recycle validate`、`3 idleTimeout`、`4 leaked`。但 `maxLifetime` 和 validate failed 也可能复用 action 3，后续指标或日志扩展容易误分类。
-
-建议后续用 JDK8 兼容的 `static final int` 常量表达原因，不急于大改。
-
-# 修改文件列表
-
-本轮修改：
-
-- `docs/plan/ObjectPool-review-plan.md`
-
-后续如用户要求执行，预计可能修改：
+## 已核对文件
 
 - `rxlib/src/main/java/org/rx/core/ObjectPool.java`
 - `rxlib/src/test/java/org/rx/core/ObjectPoolTest.java`
-- 可选：`docs/reference/ObjectPool.md`
+- `rxlib/src/test/java/org/rx/net/socks/Socks5SessionPoolTest.java`
+- `docs/reference/ObjectPool.md`
 
-# 风险点
+## 已验证命令
 
-## 兼容性风险
+### ObjectPool 单元测试
 
-`ObjectPool` 是 core 通用类，影响 RPC、Socks、UDP、Remoting 等调用。不应改 public API，也不应改变已知 double recycle 的异常语义。
+```powershell
+mvn -pl rxlib -Dtest=ObjectPoolTest test
+```
 
-## 并发风险
+结果：
 
-`borrow/recycle/validNow/dispose` 四条路径可并发交错。归还状态机修复必须保证 handler 不在锁内执行、retire 后唤醒 borrower、shared idle 链表不会重复入队。
+- `Tests run: 34`
+- `Failures: 0`
+- `Errors: 0`
+- `Skipped: 0`
+- `BUILD SUCCESS`
 
-## 性能风险
+说明：
 
-recycle 热路径增加 CAS 状态转换会有额外开销。修复应保持最小改动，避免扩大 shared idle lock 临界区，避免后台扫描全量化。
+- 测试日志中出现的 `Object has already in this pool` 与 `doCreate error` WARN 是用例主动覆盖 duplicate object 与 create failure 分支，属于预期日志。
+- 修复后完整 `ObjectPoolTest` 已稳定通过本轮回归。
 
-## 资源释放风险
+### duplicate idle 单用例复核
 
-重复 `passivateHandler` 可能导致资源重复释放。duplicate object 分支 close 可能关闭错误返回的池内对象。`closeObjectOnLeak=true` 会关闭仍被业务持有的对象。
+```powershell
+mvn -pl rxlib -Dtest=ObjectPoolTest#testDuplicateIdleCreatedObjectIsClosedAndRetiredByValidation test
+```
 
-## Netty / 高频 Java 风险
+结果：
 
-如果池对象包装 Netty channel、handler、ByteBuf 或 UDP lease，需要特别关注：引用计数、重复 release、EventLoop 线程安全、阻塞 EventLoop、关闭路径资源释放、异常路径完整性。
+- `Tests run: 1`
+- `Failures: 0`
+- `Errors: 0`
+- `Skipped: 0`
+- `BUILD SUCCESS`
 
-## 测试风险
+结论：
 
-并发测试容易 flaky。新增 stress 测试应控制线程数、循环次数和超时，不应依赖精确调度顺序。
+- P1 duplicate idle 维护路径反复补建问题已修复。
+- 该用例修复前单独运行失败，修复后单独运行通过。
 
-# 验证方案
+### Socks5 session pool 回归
 
-本轮仅提交计划文档，不触发代码验证。
+```powershell
+mvn -pl rxlib -Dtest=Socks5SessionPoolTest test
+```
 
-后续进入实现阶段后建议：
+结果：
 
-1. 触发 GitHub Actions：`jdk8-unit-tests.yml`。
-2. `test_classes` 使用：`org.rx.core.ObjectPoolTest`。
-3. 本地 / CI Maven 建议：`mvn -pl rxlib -Dtest=org.rx.core.ObjectPoolTest test`。
-4. 重点补测：
-   - double recycle 不重复 passivate；
-   - concurrent recycle 只有一个线程执行 passivate；
-   - stale ThreadLocal cache 不会借出 retired 对象；
-   - demandFactor setter 与 validNow 并发 smoke；
-   - create failure backoff 不 tight loop；
-   - borrow / recycle / validNow / close race。
-5. CI 状态必须以 workflow run `conclusion=success` 为准；queued、in_progress、waiting 不能视为通过。
+- `Tests run: 4`
+- `Failures: 0`
+- `Errors: 0`
+- `Skipped: 0`
+- `BUILD SUCCESS`
 
-# 建议后续实现顺序
+说明：
 
-1. P0：修复 recycle 状态所有权，确保只有成功从 `BORROWED` 转出状态的线程执行 `validateHandler/passivateHandler`。
-2. P1：将 `demandFactor` 改为 `volatile double`。
-3. P1：补充并发 double recycle、stale ThreadLocal、create failure backoff 测试。
-4. P2：同步文档，明确 create/passivate/leak close 语义。
-5. P2：逐步替换 retire action magic int 为常量。
+- 该用例覆盖网络侧 session pool 使用路径，可作为 ObjectPool 修改后对 SOCKS 池化场景的轻量回归。
 
-# Review 结论
+## 当前测试覆盖
 
-当前 `ObjectPool` 近期修复已覆盖 shared idle、失败退避、duplicate object、防 close 后创建、validation 状态、泄漏检测和指标标签等方向，整体比早期实现更稳。
+`ObjectPoolTest` 当前已覆盖：
 
-本轮最优先建议是修复 `recycle()` 热路径的状态所有权：`passivateHandler` 必须只由成功获得归还所有权的线程执行。该问题是当前最值得优先处理的并发副作用风险。
+- 基础 borrow / recycle / validate 生命周期。
+- 创建失败后恢复。
+- 创建持续失败退避：`testCreateHandlerContinuousFailureBackoff()`。
+- duplicate borrowed 创建拒绝与关闭：`testDuplicateCreatedObjectIsClosedOrRejectedCleanly()`。
+- duplicate idle 创建关闭并在 validate 后 retire：`testDuplicateIdleCreatedObjectIsClosedAndRetiredByValidation()`。
+- shared idle 与 ThreadLocal hint 可见性。
+- stale ThreadLocal cache 不借出 retired 对象。
+- close / dispose 唤醒等待 borrower。
+- leak detection 默认不关闭 borrowed 对象。
+- borrow / recycle / validNow / close race 压力 smoke：`testStressBorrowRecycleValidateAndCloseRace()`。
 
-在用户明确要求执行前，本轮不修改业务代码。
+## 风险评估
+
+### 并发与状态机
+
+当前 `recycle()` 的状态所有权已经收紧，重复 recycle 或并发 recycle 只有一个线程能进入 `VALIDATING` 并执行 handler。该修复降低了重复 passivate、重复释放 ByteBuf / Channel 关联资源、重复清理 UDP lease 的风险。
+
+仍需继续关注：
+
+- handler 内部不得阻塞 EventLoop。
+- handler 内部不得执行不可重入的重复释放逻辑。
+- 若池对象封装 Netty `ByteBuf`，必须由调用方保证引用计数成对释放。
+
+### 创建失败退避
+
+`backoffCreateFailure()` 当前使用 `LockSupport.parkNanos()` 做 1ms 到 100ms 的退避，并在检测到中断后抛出 `InterruptedException`。这能避免 `createHandler` 持续失败时 CPU tight loop。
+
+仍需继续关注：
+
+- 连续失败时 WARN 日志可能较多，生产环境应结合日志采样或指标告警。
+- 如果 `createHandler` 失败原因来自远端不可达，应通过池外熔断或上游摘除处理，不能只依赖对象池退避。
+
+### duplicate object 语义
+
+当前 duplicate 分支会关闭 `createHandler` 返回的重复对象。这是对错误 `createHandler` 的防御，但如果 `createHandler` 违规返回仍被业务持有的池内对象，关闭动作可能影响正在使用的对象。
+
+结论：
+
+- 保持当前防御逻辑。
+- 文档必须明确：`createHandler` 必须返回全新对象，不得返回已在池内或仍被业务持有的对象。
+
+新增确认问题：
+
+- 修复前：`doCreateIdle()` 的 duplicate 分支没有设置失败冷却。
+- 修复前：`insureTargetSize()` 收到 `null` 会退出当前 while，但不会阻止后续 `validNow()` 或 `triggerMinIdleMaintain()` 再次进入。
+- 修复前：`doRetire()` 在非 disposing 场景会触发 `triggerMinIdleMaintain()`，当 duplicate 分支关闭了已有 idle 对象后，validate retire 会进一步放大补建重试。
+- 影响：不会直接借出重复对象，但会造成短时间重复创建、重复 WARN、额外 close 调用和 CPU/日志噪声。
+
+已完成修复：
+
+- 增加 `volatile long idleCreateBackoffUntilNanos`。
+- 增加 `IDLE_CREATE_FAILURE_BACKOFF_NANOS = 100ms`。
+- `doCreateIdle()` 发生 duplicate、异常或 validate failed 返回 `null` 前记录短暂冷却。
+- `insureMinIdle()`、`insureTargetSize()`、`triggerMinIdleMaintain()` 在冷却期内直接跳过补建。
+- idle 创建成功后清除冷却。
+- `borrow()` 的直接创建路径继续使用现有 `backoffCreateFailure()`，不要把 borrow 热路径和后台 idle 维护冷却强耦合。
+
+### ThreadLocal hint
+
+当前 L1 ThreadLocal 只是 hint，不再隐藏 idle 对象，功能正确性已通过测试覆盖。
+
+剩余风险：
+
+- Netty EventLoop 等长生命周期线程可能短期保留 retired `ObjectConf` 引用，直到下一次 borrow 清理或线程结束。
+- 当前测试已覆盖 stale hint 不会被借出，后续压测可继续观察内存保留。
+
+### 泄漏检测
+
+默认 `closeObjectOnLeak=false` 是更安全的方向，避免后台扫描关闭仍被业务持有的 borrowed 对象。
+
+如果显式开启 `closeObjectOnLeak=true`：
+
+- 这是破坏性强制回收。
+- RPC / Socks / UDP 调用方必须能承受连接、session 或租约被后台关闭。
+
+## 可观测性要求
+
+生产或压测环境建议至少监控：
+
+- 堆外内存占用，特别是 Netty direct memory。
+- 池总数：`rx.object_pool.size.count`。
+- 空闲数：`rx.object_pool.idle.count`。
+- 活跃数估算：`rx.object_pool.active.count`。
+- 等待借用线程数：`rx.object_pool.waiting.count`。
+- borrow timeout 次数：`rx.object_pool.borrow.timeout.count`。
+- 创建与销毁次数：`created.count`、`retired.count`。
+- 动态目标总容量：`rx.object_pool.target.total.count`。
+- 连接数、吞吐、平均延迟、P99 / P999 延迟。
+- 泄漏告警与 close-on-leak 次数。
+
+## 后续建议
+
+1. 对 RPC pool、Socks session pool、UDP lease pool 分别做长时间压测，观察 direct memory、连接数、timeout、retired 与 P99 延迟。
+2. 将 Remoting pool 模式纳入稳定 CI 回归；如仍有冷启动 1s 时序抖动，应增加预热或放宽测试超时。
+3. 将 `doRetire(wrapper, action)` 的 magic int 替换为 Java 8 兼容的 `static final int` 常量，降低后续日志和指标误分类风险。
+4. 如生产日志中 create failure WARN 过密，再增加日志采样或按池名聚合告警。
+
+## 结论
+
+本轮 P1 问题已修复：duplicate idle 创建失败现在会触发 idle 维护路径冷却，不再在短时间内被 `validNow()`、`insureMinIdle()` 或异步维护任务反复补建。
+
+当前验证结论：`ObjectPoolTest` 与 `Socks5SessionPoolTest` 均通过。下一阶段可以进入 RPC / Socks / UDP 真实场景压测与 CI 稳定性回归。
