@@ -10,7 +10,6 @@ import io.netty.handler.codec.MessageToMessageCodec;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.encryption.ICrypto;
 
@@ -32,24 +31,16 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         }
 
         ByteBuf outBuf = crypt.encrypt(inBuf);
-        boolean transferred = false;
-        try {
-            if (!outBuf.isReadable()) {
-                return;
-            }
-
-            if (msg instanceof DatagramPacket) {
-                msg = ((DatagramPacket) msg).replace(outBuf);
-            } else {
-                msg = outBuf;
-            }
-            out.add(msg);
-            transferred = true;
-        } finally {
-            if (!transferred) {
-                Bytes.release(outBuf);
-            }
+        if (!outBuf.isReadable()) {
+            return;
         }
+
+        if (msg instanceof DatagramPacket) {
+            msg = ((DatagramPacket) msg).replace(outBuf);
+        } else {
+            msg = outBuf;
+        }
+        out.add(msg);
     }
 
     @Override
@@ -66,24 +57,15 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         boolean isUdp = inbound instanceof DatagramChannel;
         try {
             ByteBuf outBuf = crypt.decrypt(inBuf);
-            boolean transferred = false;
-            try {
-                if (!outBuf.isReadable()) {
-                    return;
-                }
-
-                if (isUdp) {
-                    msg = ((DatagramPacket) msg).replace(outBuf);
-                } else {
-                    msg = outBuf;
-                }
-                out.add(msg);
-                transferred = true;
-            } finally {
-                if (!transferred) {
-                    Bytes.release(outBuf);
-                }
+            if (!outBuf.isReadable()) {
+                return;
             }
+            if (isUdp) {
+                msg = ((DatagramPacket) msg).replace(outBuf);
+            } else {
+                msg = outBuf;
+            }
+            out.add(msg);
         } catch (Exception e) {
             if (isInvalidCipherText(e)) {
                 log.warn("cipher decode fail {}", rootMessage(e)); // 可能是密码错误或协议嗅探
