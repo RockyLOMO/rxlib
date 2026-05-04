@@ -43,9 +43,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          RAW_TEST_CLASSES="$TEST_CLASSES"
+          if [ -z "$RAW_TEST_CLASSES" ]; then
+            COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+            RAW_TEST_CLASSES="$(
+              printf '%s' "$COMMIT_MESSAGE" \
+                | sed -nE 's/.*\[(test_classes|tests)[[:space:]]*[:=][[:space:]]*([^]]+)\].*/\2/p' \
+                | head -n 1
+            )"
+            if [ -n "$RAW_TEST_CLASSES" ]; then
+              echo "Resolved test classes from HEAD commit message: $RAW_TEST_CLASSES"
+            fi
+          fi
+
           NORMALIZED_TEST_CLASSES="$(
-            printf '%s' "$TEST_CLASSES" \
-              | tr '\n\r\t ;' ',,,,,' \
+            printf '%s' "$RAW_TEST_CLASSES" \
+              | tr '\n\r\t ;' ',,,,' \
               | sed -E 's/,+/,/g; s/^,//; s/,$//'
           )"
 
