@@ -203,7 +203,7 @@ private void stopTimer() {
 21. `WheelTimer.isTerminated()` 增加 `timerStopped` 判定。
 22. `WheelTimer.shutdown()` 取消 holder 中带 taskId 的 timeout future。
 23. `WheelTimer.stopTimer()` 异常路径加固，stop 失败后允许重试。
-24. running task 场景下 `shutdown()` / `awaitTermination()` 测试补强。
+24. [FAILED] running task 场景下 `shutdown()` / `awaitTermination()` 等待语义失效（见 P1 待办）。
 25. `stopTimer()` 异常注入测试，覆盖 stop 失败后可重试。
 26. 重复 / 并发 `shutdown()` 与 `shutdownNow()` 测试。
 27. `WheelTimer.shutdownNow()` 与外部 executor running task 语义参考文档。
@@ -246,21 +246,26 @@ private void stopTimer() {
 
 本次 review 只新增计划文档 commit。若要求 CI 严格覆盖最新 head，需要在本次文档 commit 后重新触发一次 CI；若只验证最新代码/测试实现，run `25284655775` 已覆盖对应代码树。
 
-## P1：根据 CI 结果修复可能的编译或测试失败
+## P1：修复 WheelTimer shutdown 等待语义失效
 
-### 重点关注
+### 问题
 
-- `stopTimerFailureShouldResetStateAndAllowRetry` 是否能稳定触发 Netty worker thread 内 stop 异常。
-- `shutdownAndShutdownNowShouldBeSafeWhenRepeatedAndConcurrent` 是否在 CI 高负载下稳定。
-- `standaloneShutdownShouldStopUnderlyingTimerAndRejectNewTasks` 对 `workerThread` 反射和线程停止断言是否稳定。
-- 如果失败来自超时或调度抖动，应调整等待条件；不要删除测试覆盖。
+在 `WheelTimerShutdownPeriodicTest#shutdownShouldAwaitRunningTaskCompletion` 中发现，`shutdown()` 后立即调用 `awaitTermination()` 会返回 `true`，即使外部 executor 中的任务仍在运行。
+
+### 根本原因
+
+`Task.cancel(false)` 判定 Future 取消成功后立即调用了 `completeTask()`，导致任务从 `activeTasks` 中过早移除。
+
+### 修复方向（需修改业务代码，当前阶段暂缓）
+
+- 修改 `WheelTimer.Task.cancel()` 和 `PeriodicTask.cancel()`。
+- 当 `mayInterruptIfRunning = false` 且任务已在 executor 中运行时，不立即调用 `completeTask()`。
+- 依靠 `onExecutionFinished()` 在任务自然结束时清理集合。
 
 ### 完成标准
 
-- 如果 CI 失败，读取失败日志。
-- 按失败类型做最小修复。
-- 再次触发 CI。
-- 直到最新 CI `conclusion=success`。
+- `shutdownShouldAwaitRunningTaskCompletion` 在 200ms 内断言 `awaitTermination` 返回 `false`。
+- 等待任务结束后，断言 `awaitTermination` 返回 `true`。
 
 ## P2：降低 `WheelTimerShutdownPeriodicTest` 对 Netty internal 的依赖
 

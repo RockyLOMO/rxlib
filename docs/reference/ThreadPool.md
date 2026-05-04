@@ -153,7 +153,7 @@ ThreadPool.endTrace();
 RXlib 对 Netty 的 `HashedWheelTimer` 进行了封装，核心点在于：**只做调度，不做执行**。
 - **调度效率**：时间轮算法在具有大量定时器时通过单线程调度极其高效。
 - **并发执行**：所有触发的任务都会立即异步移交给 `ThreadPool` 执行，避免了传统时间轮“一处任务阻塞，整体调度停滞”的顽疾。
-- **关闭语义**：`WheelTimer.shutdown()` 会拒绝新任务，并取消未执行 timeout task、带 taskId 的 holder task 以及 periodic task，同时停止底层 Netty `HashedWheelTimer`；`awaitTermination()` 在底层 timer 已停止且 holder、active timeout、periodic 集合清空后返回 true。
+- **关闭语义**：`WheelTimer.shutdown()` 会拒绝新任务，并取消未执行 timeout task、带 taskId 的 holder task 以及 periodic task，同时停止底层 Netty `HashedWheelTimer`；`awaitTermination()` 在底层 timer 已停止且 holder、active timeout、periodic 集合清空后返回 true。更多 shutdown 语义及与外部 executor running task 的边界见 [WheelTimerShutdown.md](./WheelTimerShutdown.md)。
 
 ```java
 WheelTimer timer = Tasks.timer();
