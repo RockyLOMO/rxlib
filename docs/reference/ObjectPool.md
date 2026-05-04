@@ -44,17 +44,31 @@
     *   `createHandler`: 必须提供，定义如何创建新对象。
     *   `validateHandler`: 必须提供，在借出前和后台扫描时验证对象的可用性。
     *   `activateHandler`: 对象被借出前触发（如清理旧的上下文状态）。
-    *   `passivateHandler`: 对象归还时触发（如释放不必要的强引用以协助 GC）。
+    *   `passivateHandler`: 对象进入 idle 前触发（如释放不必要的强引用以协助 GC）。
+
+当前生命周期约定：
+
+```text
+borrow 创建路径: create -> activate -> borrowed
+预热/refill 路径: create -> validate -> passivate -> idle
+复用借出路径: idle -> borrowed(CAS) -> validate/activate -> borrowed
+归还路径: borrowed -> validate -> passivate -> idle
+```
+
+`passivateHandler` 必须允许作用在“新创建但未 activate”的对象上。它的语义是“进入 idle 前重置/清理”，不是“借用结束后的反向操作”。
 
 ## 4. 可观测性 (Metrics)
 
 完全对接了 `DiagnosticMetrics`，记录了丰富的运行指标，包括但不限于：
 *   池的总大小 (`size.count`)
 *   当前空闲数 (`idle.count`)
+*   当前活跃数估算 (`active.count`，总数减 shared idle，包含 borrowed/validating 等非 idle 状态)
 *   等待借用的线程数 (`waiting.count`)
 *   滑动窗口内的借用量 (`borrow.window.count`)
-*   动态目标总容量 (`target.count`)
+*   动态目标总容量 (`target.total.count`，兼容保留旧名 `target.count`)
 *   创建、销毁、泄漏与超时次数
+
+可通过 `setName(String)` 给池配置诊断名称，指标 tag 会同时包含 `pool=<identity>`、`handler=<createHandler>` 和可选 `name=<poolName>`。
 
 ## 总结
 

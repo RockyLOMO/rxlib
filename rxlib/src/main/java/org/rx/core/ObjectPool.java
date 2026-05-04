@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
@@ -141,9 +142,15 @@ public class ObjectPool<T> extends Disposable {
     final AtomicBoolean validating = new AtomicBoolean();
     @Getter
     double demandFactor = 2.0;
+    @Getter
+    volatile String name;
 
     public void setDemandFactor(double demandFactor) {
         this.demandFactor = Math.max(0, demandFactor);
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 
     public int size() {
@@ -644,6 +651,7 @@ public class ObjectPool<T> extends Disposable {
             if (prev != null) {
                 // 极少数：已有映射（createHandler 返回了已存在对象）
                 releaseReservedSlot();
+                tryClose(wrapper);
                 log.warn("Object '{}' has already in this pool", wrapper);
                 return null;
             }
@@ -690,6 +698,7 @@ public class ObjectPool<T> extends Disposable {
             ObjectConf<T> prev = conf.putIfAbsent(wrapper, c);
             if (prev != null) {
                 releaseReservedSlot();
+                tryClose(wrapper);
                 log.warn("Object '{}' has already in this pool", wrapper);
                 return null;
             }
@@ -803,17 +812,21 @@ public class ObjectPool<T> extends Disposable {
             checkBorrowable();
             c = null;
             try {
+                boolean createAttempted = false;
                 // Try to poll first (fast path) with timeout 0
                 c = doPoll(0);
                 if (c == null) {
                     if (size() < maxPoolSize) {
+                        createAttempted = true;
                         c = doCreate();
                     }
                     if (c == null) {
-                        // 如果 doCreate 因瞬态错误失败（非 maxPoolSize 限制），短暂等待并重试
-                        // 如果是 maxPoolSize 限制，等待完整剩余时间
-                        long waitTime = (size() < maxPoolSize) ? Math.min(100, remainingTime) : remainingTime;
-                        c = doPoll(waitTime);
+                        if (createAttempted && size() < maxPoolSize && !disposing && !isClosed()) {
+                            backoffCreateFailure(remainingTime);
+                        } else {
+                            // 如果是 maxPoolSize 限制，等待完整剩余时间
+                            c = doPoll(remainingTime);
+                        }
                     }
                 }
 
@@ -846,6 +859,14 @@ public class ObjectPool<T> extends Disposable {
         }
         borrowTimeoutCount.increment();
         throw new TimeoutException(msg);
+    }
+
+    void backoffCreateFailure(long remainingTime) throws InterruptedException {
+        long waitTime = Math.min(100, Math.max(1, remainingTime));
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(waitTime));
+        if (Thread.interrupted()) {
+            throw new InterruptedException();
+        }
     }
 
     void checkBorrowable() throws TimeoutException {
@@ -907,19 +928,30 @@ public class ObjectPool<T> extends Disposable {
             return;
         }
         String tags = diagnosticTags();
-        DiagnosticMetrics.record("rx.object_pool.size.count", size(), tags);
-        DiagnosticMetrics.record("rx.object_pool.idle.count", idleSize(), tags);
+        int total = size();
+        int idle = idleSize();
+        int active = Math.max(0, total - idle);
+        DiagnosticMetrics.record("rx.object_pool.size.count", total, tags);
+        DiagnosticMetrics.record("rx.object_pool.idle.count", idle, tags);
+        DiagnosticMetrics.record("rx.object_pool.active.count", active, tags);
         DiagnosticMetrics.record("rx.object_pool.waiting.count", waitingBorrowers.get(), tags);
         DiagnosticMetrics.record("rx.object_pool.borrow.window.count", borrowsInWindow, tags);
         DiagnosticMetrics.record("rx.object_pool.target.count", targetSize, tags);
+        DiagnosticMetrics.record("rx.object_pool.target.total.count", targetSize, tags);
         DiagnosticMetrics.record("rx.object_pool.created.count", createdCount.sum(), tags);
         DiagnosticMetrics.record("rx.object_pool.retired.count", retiredCount.sum(), tags);
         DiagnosticMetrics.record("rx.object_pool.borrow.timeout.count", borrowTimeoutCount.sum(), tags);
     }
 
     private String diagnosticTags() {
-        return "pool=" + Integer.toHexString(System.identityHashCode(this))
-                + ",handler=" + sanitizeMetricTag(createHandler.getClass().getName());
+        StringBuilder b = new StringBuilder(96)
+                .append("pool=").append(Integer.toHexString(System.identityHashCode(this)))
+                .append(",handler=").append(sanitizeMetricTag(createHandler.getClass().getName()));
+        String localName = name;
+        if (localName != null && localName.length() != 0) {
+            b.append(",name=").append(sanitizeMetricTag(localName));
+        }
+        return b.toString();
     }
 
     private static String sanitizeMetricTag(String value) {

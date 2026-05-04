@@ -299,6 +299,75 @@ public class ObjectPoolTest {
         assertTrue(attempt.get() >= 2, "至少尝试了 2 次创建");
     }
 
+    @SneakyThrows
+    @Test
+    public void testCreateHandlerContinuousFailureBackoff() {
+        AtomicInteger attempts = new AtomicInteger();
+        ObjectPool<Object> pool = new ObjectPool<>(0, 1,
+                () -> {
+                    attempts.incrementAndGet();
+                    throw new RuntimeException("always fail");
+                },
+                x -> true);
+        pool.setBorrowTimeout(500);
+
+        assertThrows(TimeoutException.class, pool::borrow);
+
+        assertTrue(attempts.get() <= 20,
+                "持续创建失败时应有退避，避免 borrowTimeout 内 tight loop，actual: " + attempts.get());
+        pool.close();
+    }
+
+    @SneakyThrows
+    @Test
+    public void testDuplicateCreatedObjectIsClosedOrRejectedCleanly() {
+        AtomicInteger attempts = new AtomicInteger();
+        PooledResource shared = new PooledResource(1);
+        ObjectPool<PooledResource> pool = new ObjectPool<>(0, 2,
+                () -> {
+                    attempts.incrementAndGet();
+                    return shared;
+                },
+                x -> !x.closed.get());
+        pool.setBorrowTimeout(500);
+
+        PooledResource first = pool.borrow();
+        assertSame(shared, first);
+
+        assertThrows(TimeoutException.class, pool::borrow,
+                "createHandler 返回重复对象时应拒绝借出");
+        assertTrue(shared.closed.get(), "重复创建出的对象应被关闭");
+        assertTrue(shared.closeCount.get() > 0, "重复对象分支应调用 close");
+        assertTrue(attempts.get() <= 20,
+                "重复对象失败应走退避，避免 tight loop，actual: " + attempts.get());
+
+        pool.recycle(first);
+        assertEquals(0, pool.size(), "被关闭的已借出重复对象归还后应 retire");
+        pool.close();
+    }
+
+    @SneakyThrows
+    @Test
+    public void testDuplicateIdleCreatedObjectIsClosedAndRetiredByValidation() {
+        AtomicInteger attempts = new AtomicInteger();
+        PooledResource shared = new PooledResource(1);
+        ObjectPool<PooledResource> pool = new ObjectPool<>(1, 2,
+                () -> {
+                    attempts.incrementAndGet();
+                    return shared;
+                },
+                x -> !x.closed.get());
+
+        assertEquals(1, pool.size());
+        pool.insureTargetSize(2);
+
+        assertTrue(shared.closed.get(), "doCreateIdle 重复对象分支应关闭重复对象");
+        pool.validNow();
+        assertEquals(0, pool.size(), "已被 duplicate 分支关闭的 idle 对象应在 validate 时 retire");
+        assertTrue(attempts.get() <= 4, "idle duplicate 不应反复创建，actual: " + attempts.get());
+        pool.close();
+    }
+
     // ========== Validation ==========
 
     @Test
@@ -752,6 +821,89 @@ public class ObjectPoolTest {
     }
 
     @SneakyThrows
+    @Test
+    public void testStressBorrowRecycleValidateAndCloseRace() {
+        AtomicInteger created = new AtomicInteger();
+        AtomicInteger unexpected = new AtomicInteger();
+        AtomicBoolean closing = new AtomicBoolean(false);
+        ObjectPool<PooledResource> pool = new ObjectPool<>(1, 4,
+                () -> new PooledResource(created.incrementAndGet()),
+                x -> x.valid && !x.closed.get());
+        pool.setBorrowTimeout(5000);
+
+        int workers = 8;
+        ExecutorService executor = Executors.newFixedThreadPool(workers + 1);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(workers + 1);
+        for (int i = 0; i < workers; i++) {
+            executor.submit(() -> {
+                PooledResource borrowed = null;
+                try {
+                    start.await();
+                    for (int j = 0; j < 100 && !closing.get(); j++) {
+                        try {
+                            borrowed = pool.borrow();
+                            Thread.sleep(1);
+                            if (!closing.get()) {
+                                pool.recycle(borrowed);
+                            }
+                            borrowed = null;
+                        } catch (Throwable e) {
+                            if (!closing.get()) {
+                                log.error("Unexpected stress worker error", e);
+                                unexpected.incrementAndGet();
+                            }
+                            return;
+                        } finally {
+                            if (borrowed != null && !closing.get()) {
+                                try {
+                                    pool.recycle(borrowed);
+                                } catch (Throwable e) {
+                                    log.error("Unexpected stress recycle error", e);
+                                    unexpected.incrementAndGet();
+                                }
+                            }
+                        }
+                    }
+                } catch (Throwable e) {
+                    if (!closing.get()) {
+                        log.error("Unexpected stress setup error", e);
+                        unexpected.incrementAndGet();
+                    }
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+        executor.submit(() -> {
+            try {
+                start.await();
+                for (int i = 0; i < 100 && !closing.get(); i++) {
+                    pool.validNow();
+                    Thread.sleep(1);
+                }
+            } catch (Throwable e) {
+                if (!closing.get()) {
+                    log.error("Unexpected stress validator error", e);
+                    unexpected.incrementAndGet();
+                }
+            } finally {
+                done.countDown();
+            }
+        });
+
+        start.countDown();
+        Thread.sleep(100);
+        closing.set(true);
+        pool.close();
+
+        assertTrue(done.await(10, TimeUnit.SECONDS), "stress 线程应在 close 后退出");
+        executor.shutdownNow();
+        assertEquals(0, unexpected.get(), "borrow/recycle/validNow/close 并发不应出现非预期异常");
+        assertTrue(pool.isClosed());
+    }
+
+    @SneakyThrows
     static void waitForCondition(Callable<Boolean> condition, long timeoutMs, String message) {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
@@ -766,6 +918,7 @@ public class ObjectPoolTest {
     static final class PooledResource implements Closeable {
         final int id;
         final AtomicBoolean closed = new AtomicBoolean();
+        final AtomicInteger closeCount = new AtomicInteger();
         volatile boolean valid = true;
 
         PooledResource(int id) {
@@ -774,6 +927,7 @@ public class ObjectPoolTest {
 
         @Override
         public void close() {
+            closeCount.incrementAndGet();
             closed.set(true);
         }
     }

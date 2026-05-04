@@ -25,7 +25,7 @@
 - `lookupKey FastThreadLocal` 查找后已清空 `instance`；
 - 新增了多项针对性测试。
 
-当前版本整体比上一版安全很多，可以进入下一阶段：**小范围边界修复 + 压测验证 + 指标语义优化**。
+当前版本整体比上一版安全很多。本轮已继续完成小范围边界修复、指标语义优化、文档同步和轻量 stress 验证；后续重点转入更长时间压测与真实 RPC/UDP lease 场景回归。
 
 ---
 
@@ -41,7 +41,7 @@
 | P1 | 泄漏检测默认关闭 borrowed 对象 | 已修复 | `closeObjectOnLeak` 默认改为 `false`，默认只记录 leak 指标 |
 | P2 | `lookupKey` 保留最后 recycle 对象强引用 | 已修复 | `finally { lk.instance = null; }` 已加入 |
 | P2 | 后台 validate 可能和 borrow 并发 | 已修复 | 新增 `VALIDATING` 状态，扫描前 `IDLE -> VALIDATING` |
-| P2 | adaptive refill 目标语义不够清晰 | 部分保留 | 逻辑可用，但指标/命名仍建议优化为 targetTotalSize |
+| P2 | adaptive refill 目标语义不够清晰 | 已优化 | 保留旧 `target.count` 兼容，同时新增 `target.total.count` 与 `active.count` |
 
 ---
 
@@ -174,9 +174,9 @@ public void testLeakDetectionDefaultDoesNotRetireBorrowedObject()
 
 ---
 
-## 4. 本轮新增发现与建议
+## 4. 本轮新增发现与处理结论
 
-### 4.1 P1：创建失败时可能出现较紧的重试循环
+### 4.1 P1：创建失败时可能出现较紧的重试循环（已修复）
 
 #### 现象
 
@@ -199,32 +199,15 @@ c = doPoll(waitTime);
 
 由于 `size() < maxPoolSize`，`pollSharedIdle(waitTime)` 会立即返回 `null`，并不会真正 sleep/wait。于是当 `createHandler` 持续失败时，borrow 循环可能在 `borrowTimeout` 内较高频重试，造成 CPU 空转和日志刷屏。
 
-#### 建议修复
+#### 处理结论
 
-方式一：在创建失败后显式 backoff。
-
-```java
-if (c == null) {
-    if (size() < maxPoolSize) {
-        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(Math.min(100, remainingTime)));
-    } else {
-        c = doPoll(remainingTime);
-    }
-}
-```
-
-方式二：区分“因为池满需要等待”和“因为创建失败需要退避”。
-
-推荐新增局部变量：
+已在 `borrow()` 中区分 create attempted 失败路径，新增 `backoffCreateFailure()`，在 `createHandler` 持续失败且池仍有容量时最多退避 100ms，避免 tight loop 和日志刷屏。
 
 ```java
-boolean createAttempted = false;
-boolean createFailed = false;
+void backoffCreateFailure(long remainingTime) throws InterruptedException
 ```
 
-当 `size() < maxPoolSize` 且 `doCreate()` 返回 null 时，如果确认不是 close/dispose，则执行短暂 backoff。
-
-#### 建议测试
+#### 新增测试
 
 ```java
 @Test
@@ -240,7 +223,7 @@ void testCreateHandlerContinuousFailureBackoff()
 
 ---
 
-### 4.2 P2：duplicate object 分支应 close wrapper.instance
+### 4.2 P2：duplicate object 分支应 close wrapper.instance（已修复）
 
 #### 现象
 
@@ -258,7 +241,9 @@ return null;
 
 正常情况下这个分支极少发生，因为 `createHandler` 应该返回新对象。但作为防御逻辑，既然已经识别出 createHandler 异常返回重复对象，建议释放 slot 后也执行 `tryClose(wrapper)`，或者至少不要让该对象处于未知状态。
 
-#### 建议修复
+#### 处理结论
+
+`doCreate()` 和 `doCreateIdle()` 的 duplicate object 分支均已补充 `tryClose(wrapper)`，同时保留 slot 释放和 warn 日志。
 
 ```java
 if (prev != null) {
@@ -269,11 +254,21 @@ if (prev != null) {
 }
 ```
 
-`doCreate()` 和 `doCreateIdle()` 两处都建议补齐。
+新增测试：
+
+```java
+@Test
+void testDuplicateCreatedObjectIsClosedOrRejectedCleanly()
+```
+
+```java
+@Test
+void testDuplicateIdleCreatedObjectIsClosedAndRetiredByValidation()
+```
 
 ---
 
-### 4.3 P2：`doCreateIdle()` 对新对象直接 passivate，需要确认 handler 语义
+### 4.3 P2：`doCreateIdle()` 对新对象直接 passivate，需要确认 handler 语义（已文档化）
 
 当前 `doCreateIdle()` 创建对象后执行：
 
@@ -298,21 +293,22 @@ if (passivateHandler != null) {
 - `RpcHybridClientPoolImpl`：passivate 用于关闭 reconnect、reset handlers；
 - `UdpLeasePool`：无 passivate。
 
-建议补充约定：
+已在 `docs/reference/ObjectPool.md` 明确约定：
 
 > `passivateHandler` 必须允许作用在新创建且未 activate 的对象上。它的语义是“进入 idle 前重置/清理”，不是“借用结束后的反向操作”。
 
-也可以在文档里明确：
+文档同步了当前生命周期：
 
 ```text
-create -> validate -> passivate -> idle
-idle -> activate -> borrowed
-borrowed -> validate -> passivate -> idle
+borrow 创建路径: create -> activate -> borrowed
+预热/refill 路径: create -> validate -> passivate -> idle
+复用借出路径: idle -> borrowed(CAS) -> validate/activate -> borrowed
+归还路径: borrowed -> validate -> passivate -> idle
 ```
 
 ---
 
-### 4.4 P3：指标命名仍建议优化
+### 4.4 P3：指标命名仍建议优化（已优化）
 
 当前指标：
 
@@ -320,39 +316,46 @@ borrowed -> validate -> passivate -> idle
 rx.object_pool.target.count
 ```
 
-实际含义是 target total size，不是 target idle size。建议改名或新增：
+实际含义是 target total size，不是 target idle size。本轮保留旧指标兼容，并新增：
 
 ```java
 rx.object_pool.target.total.count
-rx.object_pool.borrowed.count
-rx.object_pool.idle.count
+rx.object_pool.active.count
 ```
 
-当前 `borrowed.count` 可以估算为：
+其中 `active.count` 使用：
 
 ```java
 Math.max(0, size() - idleSize())
 ```
 
-注意：存在 `VALIDATING` 状态时，这个值并不完全等于 borrowed，严格来说可以命名为 `active.count` 或补充状态统计。
+存在 `VALIDATING` 状态时，该值不严格等于 borrowed，因此命名为 `active.count`。
+
+同时新增 `setName(String)`，诊断 tag 会包含可选 `name=<poolName>`。
 
 ---
 
-## 5. 当前剩余任务
+## 5. 本轮已完成任务
 
-### 5.1 必做
+### 5.1 必做项
 
-1. 给 create failure 场景增加 backoff，避免 `createHandler` 持续失败时 CPU 空转。
-2. `doCreate()` / `doCreateIdle()` 的 duplicate object 分支补 `tryClose(wrapper)`。
-3. 对 `ObjectPoolTest` 补 `testCreateHandlerContinuousFailureBackoff()`。
+1. 已给 create failure 场景增加 backoff，避免 `createHandler` 持续失败时 CPU 空转。
+2. 已给 `doCreate()` / `doCreateIdle()` 的 duplicate object 分支补 `tryClose(wrapper)`。
+3. 已对 `ObjectPoolTest` 补 `testCreateHandlerContinuousFailureBackoff()`。
 
-### 5.2 建议做
+### 5.2 建议项
 
-1. 更新 `docs/reference/ObjectPool.md`，同步新的状态机和生命周期语义。
-2. 明确 `passivateHandler` 可以作用于新创建未 activate 对象。
-3. 指标命名从 `target.count` 调整为 `target.total.count`，或者保留旧指标同时新增新指标。
-4. 增加 pool name/tag 配置，避免只用 `identityHashCode`。
-5. 增加一次高并发 stress test，覆盖：borrow/recycle/validNow/close 并发。
+1. 已更新 `docs/reference/ObjectPool.md`，同步新的状态机和生命周期语义。
+2. 已明确 `passivateHandler` 可以作用于新创建未 activate 对象。
+3. 已保留旧 `target.count`，同时新增 `target.total.count` 和 `active.count`。
+4. 已增加 pool name/tag 配置，避免只用 `identityHashCode`。
+5. 已增加轻量高并发 stress test，覆盖 `borrow/recycle/validNow/close` 并发。
+
+### 5.3 后续建议
+
+1. 对 RPC client pool 和 UDP lease pool 做更长时间压测。
+2. 针对 `createHandler` 间歇失败、慢 validate、频繁 close/reopen 做 soak test。
+3. 如果 duplicate object 分支在真实场景出现，应回查对应 `createHandler`，它本身属于严重工厂语义错误。
 
 ---
 
@@ -419,6 +422,11 @@ void testDuplicateCreatedObjectIsClosedOrRejectedCleanly()
 
 ```java
 @Test
+void testDuplicateIdleCreatedObjectIsClosedAndRetiredByValidation()
+```
+
+```java
+@Test
 void testStressBorrowRecycleValidateAndCloseRace()
 ```
 
@@ -445,13 +453,13 @@ void testStressBorrowRecycleValidateAndCloseRace()
 
 本轮修复质量较高，上一版最危险的并发正确性问题已经基本解决。
 
-当前不建议再做大规模重构，优先做三个小补丁：
+当前不建议再做大规模重构，本轮三个小补丁已完成：
 
 1. create failure backoff；
 2. duplicate object 分支 close；
 3. 文档/指标语义同步。
 
-完成后可以进入压测阶段，重点压测：
+可以进入压测阶段，重点压测：
 
 - `maxPoolSize` 很小、线程数远大于池大小；
 - `createHandler` 间歇失败；
