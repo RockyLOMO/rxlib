@@ -1,14 +1,18 @@
 package org.rx.net.socks;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.util.ReferenceCountUtil;
 import org.junit.jupiter.api.Test;
+import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -61,6 +65,37 @@ class SSUdpProxyHandlerTest {
     }
 
     @Test
+    void routePendingReleaseReleasesRetainedPackets() throws Exception {
+        SSUdpProxyHandler handler = new SSUdpProxyHandler();
+        SSUdpProxyHandler.RouteInitState initState = new SSUdpProxyHandler.RouteInitState();
+        SSUdpProxyHandler.RouteKey routeKey = new SSUdpProxyHandler.RouteKey(
+                new InetSocketAddress("127.0.0.1", 10004),
+                new UnresolvedEndpoint("127.0.0.1", 53));
+        ByteBuf payload = Bytes.directBuffer(8).writeLong(1L);
+
+        Method enqueue = SSUdpProxyHandler.class.getDeclaredMethod("enqueuePendingPacket",
+                SSUdpProxyHandler.RouteInitState.class, ByteBuf.class, SSUdpProxyHandler.RouteKey.class);
+        enqueue.setAccessible(true);
+        Method release = SSUdpProxyHandler.class.getDeclaredMethod("releasePending", SSUdpProxyHandler.RouteInitState.class);
+        release.setAccessible(true);
+
+        try {
+            assertTrue((Boolean) enqueue.invoke(handler, initState, payload, routeKey));
+            assertEquals(2, payload.refCnt());
+
+            ReferenceCountUtil.release(payload);
+            assertEquals(1, payload.refCnt());
+
+            release.invoke(handler, initState);
+            assertEquals(0, payload.refCnt());
+        } finally {
+            if (payload.refCnt() > 0) {
+                ReferenceCountUtil.release(payload);
+            }
+        }
+    }
+
+    @Test
     void outboundPoolSourceCountReleasedWhenOpenThrows() {
         SSUdpProxyHandler.OUTBOUND_POOL.clear();
         SSUdpProxyHandler.OUTBOUND_POOL_SOURCE_COUNTS.clear();
@@ -73,7 +108,7 @@ class SSUdpProxyHandlerTest {
             SSUdpProxyHandler handler = new SSUdpProxyHandler() {
                 @Override
                 ChannelFuture openOutboundChannel(Channel inbound, ShadowsocksServer server, Upstream upstream,
-                        InetSocketAddress srcEp, OutboundPoolKey key) {
+                                                   InetSocketAddress srcEp, OutboundPoolKey key) {
                     throw new IllegalStateException("synthetic open failure");
                 }
             };
