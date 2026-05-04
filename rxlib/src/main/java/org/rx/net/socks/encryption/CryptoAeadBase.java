@@ -44,6 +44,12 @@ public abstract class CryptoAeadBase implements ICrypto {
 
     //UDP fields (FastThreadLocal for shared ICrypto instance)
     private static final FastThreadLocal<HKDFBytesGenerator> HKDF_HOLDER = new FastThreadLocal<>();
+    private static final FastThreadLocal<byte[]> SALT_BUF = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() {
+            return new byte[32];
+        }
+    };
     private final FastThreadLocal<byte[]> udpEncBuffer = new FastThreadLocal<byte[]>() {
         @Override
         protected byte[] initialValue() {
@@ -198,9 +204,9 @@ public abstract class CryptoAeadBase implements ICrypto {
                 if (length < saltLen + TAG_LENGTH) {
                     throw new DecoderException("Packet too short");
                 }
-                byte[] salt = new byte[saltLen];
-                in.readBytes(salt);
-                setDecSubkey(genSubkey(salt));
+                byte[] salt = SALT_BUF.get();
+                in.readBytes(salt, 0, saltLen);
+                setDecSubkey(genSubkey(salt, saltLen));
                 // getDecCipher() will auto-init if null
                 _udpDecrypt(in, out);
             } else {
@@ -211,9 +217,9 @@ public abstract class CryptoAeadBase implements ICrypto {
                     if (length < saltLen + TAG_LENGTH) {
                         throw new DecoderException("Packet too short");
                     }
-                    byte[] salt = new byte[saltLen];
-                    in.readBytes(salt);
-                    decSubkey = genSubkey(salt);
+                    byte[] salt = SALT_BUF.get();
+                    in.readBytes(salt, 0, saltLen);
+                    decSubkey = genSubkey(salt, saltLen);
                     decCipher = getCipher(false);
                     // TCP 首次：处理 salt 后面的 chunk 数据 int payloadAndTagLen = length - saltLen;
                     resetDecryptState();
@@ -232,11 +238,16 @@ public abstract class CryptoAeadBase implements ICrypto {
     }
 
     private byte[] genSubkey(byte[] salt) {
+        return genSubkey(salt, salt.length);
+    }
+
+    private byte[] genSubkey(byte[] salt, int saltLen) {
         HKDFBytesGenerator hkdf = HKDF_HOLDER.get();
         if (hkdf == null) {
             HKDF_HOLDER.set(hkdf = new HKDFBytesGenerator(new SHA1Digest()));
         }
-        hkdf.init(new HKDFParameters(_ssKey.getEncoded(), salt, INFO));
+        byte[] exactSalt = saltLen == salt.length ? salt : java.util.Arrays.copyOf(salt, saltLen);
+        hkdf.init(new HKDFParameters(_ssKey.getEncoded(), exactSalt, INFO));
         byte[] okm = new byte[getKeyLength()];
         hkdf.generateBytes(okm, 0, getKeyLength());
         return okm;

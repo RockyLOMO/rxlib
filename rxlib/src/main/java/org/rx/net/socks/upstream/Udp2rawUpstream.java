@@ -15,6 +15,8 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.SocksUserTraffic;
+import org.rx.net.socks.UdpCompressConfig;
+import org.rx.net.socks.UdpCompressStats;
 import org.rx.net.socks.Udp2rawAuthMode;
 import org.rx.net.socks.Udp2rawAuthenticator;
 import org.rx.net.socks.Udp2rawCodec;
@@ -22,8 +24,11 @@ import org.rx.net.socks.Udp2rawFrame;
 import org.rx.net.socks.Udp2rawFrameType;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
+import org.rx.net.socks.Udp2rawPayloadSupport;
 import org.rx.net.socks.Udp2rawSeqWindow;
 import org.rx.net.socks.UdpManager;
+import org.rx.net.socks.UdpRedundantConfig;
+import org.rx.net.socks.UdpRedundantMultiplierResolver;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
@@ -108,6 +113,7 @@ public class Udp2rawUpstream extends Upstream {
 
         int trafficBytes = payload.readableBytes();
         ByteBuf body = retained ? payload : payload.retain();
+        ByteBuf compressed = null;
         ByteBuf encoded = null;
         ByteBuf authTag = null;
         try {
@@ -121,6 +127,17 @@ public class Udp2rawUpstream extends Upstream {
                 frame.setClientSource(clientSource);
                 frame.setDestination(dstEp);
             }
+            compressed = Udp2rawPayloadSupport.compress(relay.alloc(), body, state.compressConfig,
+                    state.compressStats, state.udpEntryAddress, "request");
+            if (compressed != null) {
+                flags |= Udp2rawCodec.FLAG_COMPRESSED;
+                body.release();
+                body = compressed;
+                compressed = null;
+            }
+            if (Udp2rawPayloadSupport.isRedundantEnabled(state.redundantConfig)) {
+                flags |= Udp2rawCodec.FLAG_REDUNDANT;
+            }
             if (Udp2rawAuthenticator.requiresAuth(state.authMode, firstPacket, flags)) {
                 flags |= Udp2rawCodec.FLAG_AUTH_TAG;
             }
@@ -132,11 +149,10 @@ public class Udp2rawUpstream extends Upstream {
             encoded = Udp2rawCodec.encode(relay.alloc(), frame, body);
             body = null;
 
-            DatagramPacket packet = new DatagramPacket(encoded, state.udpEntryAddress);
-            encoded = null;
             SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
-            Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, METRIC_PREFIX,
-                    "flow=request");
+            Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(relay, encoded,
+                    state.udpEntryAddress, state.redundantConfig, state.redundantResolver, "flow=request");
+            encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop request to {} for {} result={}", state.udpEntryAddress, dstEp, result);
                 return false;
@@ -148,6 +164,7 @@ public class Udp2rawUpstream extends Upstream {
             return true;
         } catch (Throwable e) {
             Bytes.release(body);
+            Bytes.release(compressed);
             Bytes.release(encoded);
             DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=request-encode-fail");
             throw e;
@@ -164,6 +181,8 @@ public class Udp2rawUpstream extends Upstream {
             return null;
         }
 
+        ByteBuf body = payload;
+        ByteBuf compressed = null;
         ByteBuf encoded = null;
         ByteBuf authTag = null;
         try {
@@ -177,16 +196,27 @@ public class Udp2rawUpstream extends Upstream {
                 frame.setClientSource(clientSource);
                 frame.setDestination(dstEp);
             }
+            compressed = Udp2rawPayloadSupport.compress(relay.alloc(), body, state.compressConfig,
+                    state.compressStats, state.udpEntryAddress, "request");
+            if (compressed != null) {
+                flags |= Udp2rawCodec.FLAG_COMPRESSED;
+                body.release();
+                body = compressed;
+                compressed = null;
+            }
+            if (Udp2rawPayloadSupport.isRedundantEnabled(state.redundantConfig)) {
+                flags |= Udp2rawCodec.FLAG_REDUNDANT;
+            }
             if (Udp2rawAuthenticator.requiresAuth(state.authMode, firstPacket, flags)) {
                 flags |= Udp2rawCodec.FLAG_AUTH_TAG;
             }
             frame.setFlags(flags);
             if ((flags & Udp2rawCodec.FLAG_AUTH_TAG) != 0) {
-                authTag = Udp2rawAuthenticator.sign(relay.alloc(), state.sessionSecret, frame, payload);
+                authTag = Udp2rawAuthenticator.sign(relay.alloc(), state.sessionSecret, frame, body);
                 frame.setAuthTag(authTag);
             }
-            encoded = Udp2rawCodec.encode(relay.alloc(), frame, payload);
-            payload = null;
+            encoded = Udp2rawCodec.encode(relay.alloc(), frame, body);
+            body = null;
             DatagramPacket packet = new DatagramPacket(encoded, state.udpEntryAddress);
             encoded = null;
             if (firstPacket) {
@@ -195,6 +225,79 @@ public class Udp2rawUpstream extends Upstream {
             state.touch();
             return packet;
         } catch (Throwable e) {
+            Bytes.release(body);
+            Bytes.release(compressed);
+            Bytes.release(encoded);
+            DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=request-encode-fail");
+            throw e;
+        } finally {
+            Bytes.release(authTag);
+        }
+    }
+
+    public boolean writeRequest(Channel relay, ByteBuf payload,
+            InetSocketAddress clientSource, UnresolvedEndpoint dstEp, boolean retained) {
+        TunnelState state = activeState(relay);
+        if (state == null) {
+            if (retained) {
+                Bytes.release(payload);
+            }
+            DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=tunnel-not-ready");
+            return false;
+        }
+
+        ByteBuf body = retained ? payload : payload.retain();
+        ByteBuf compressed = null;
+        ByteBuf encoded = null;
+        ByteBuf authTag = null;
+        try {
+            ConnState conn = state.conn(clientSource, dstEp);
+            boolean firstPacket = conn.isFirstPacket();
+            Udp2rawFrame frame = Udp2rawFrame.data(state.sessionHi, state.sessionLo,
+                    conn.connId, conn.nextRequestSeq());
+            int flags = 0;
+            if (firstPacket) {
+                flags |= Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT | Udp2rawCodec.FLAG_HAS_DST;
+                frame.setClientSource(clientSource);
+                frame.setDestination(dstEp);
+            }
+            compressed = Udp2rawPayloadSupport.compress(relay.alloc(), body, state.compressConfig,
+                    state.compressStats, state.udpEntryAddress, "request");
+            if (compressed != null) {
+                flags |= Udp2rawCodec.FLAG_COMPRESSED;
+                body.release();
+                body = compressed;
+                compressed = null;
+            }
+            if (Udp2rawPayloadSupport.isRedundantEnabled(state.redundantConfig)) {
+                flags |= Udp2rawCodec.FLAG_REDUNDANT;
+            }
+            if (Udp2rawAuthenticator.requiresAuth(state.authMode, firstPacket, flags)) {
+                flags |= Udp2rawCodec.FLAG_AUTH_TAG;
+            }
+            frame.setFlags(flags);
+            if ((flags & Udp2rawCodec.FLAG_AUTH_TAG) != 0) {
+                authTag = Udp2rawAuthenticator.sign(relay.alloc(), state.sessionSecret, frame, body);
+                frame.setAuthTag(authTag);
+            }
+            encoded = Udp2rawCodec.encode(relay.alloc(), frame, body);
+            body = null;
+
+            Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(relay, encoded,
+                    state.udpEntryAddress, state.redundantConfig, state.redundantResolver, "flow=request");
+            encoded = null;
+            if (result != Sockets.UdpWriteResult.ACCEPTED) {
+                log.warn("udp2raw drop request to {} for {} result={}", state.udpEntryAddress, dstEp, result);
+                return false;
+            }
+            if (firstPacket) {
+                conn.markFirstPacketSent();
+            }
+            state.touch();
+            return true;
+        } catch (Throwable e) {
+            Bytes.release(body);
+            Bytes.release(compressed);
             Bytes.release(encoded);
             DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=request-encode-fail");
             throw e;
@@ -248,7 +351,16 @@ public class Udp2rawUpstream extends Upstream {
             return null;
         }
         state.touch();
-        return new Udp2rawResponse(frame.getSourceAddress(), content.slice().retain());
+        ByteBuf payload = content.slice();
+        if (frame.hasFlag(Udp2rawCodec.FLAG_COMPRESSED)) {
+            ByteBuf decoded = Udp2rawPayloadSupport.decompress(relay.alloc(), payload, "response");
+            if (decoded == null) {
+                DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=response-decompress-fail");
+                return null;
+            }
+            return new Udp2rawResponse(frame.getSourceAddress(), decoded);
+        }
+        return new Udp2rawResponse(frame.getSourceAddress(), payload.retain());
     }
 
     private void initializeTunnelOffLoop(Channel channel, CompletableFuture<TunnelState> future) {
@@ -302,8 +414,15 @@ public class Udp2rawUpstream extends Upstream {
         Udp2rawAuthMode authMode = result.getCapabilities() != null && result.getCapabilities().getAuthMode() != null
                 ? result.getCapabilities().getAuthMode()
                 : socksConfig.getUdp2rawAuthMode();
+        UdpCompressConfig compressConfig = result.getCapabilities() != null && result.getCapabilities().isCompress()
+                && socksConfig.isUdpCompressEnabled()
+                ? UdpCompressConfig.fromSocksConfig(socksConfig) : null;
+        UdpRedundantConfig redundantConfig = result.getCapabilities() != null && result.getCapabilities().isRedundant()
+                && Udp2rawPayloadSupport.isRedundantEnabled(UdpRedundantConfig.fromSocksConfig(socksConfig))
+                ? UdpRedundantConfig.fromSocksConfig(socksConfig) : null;
         return new TunnelState(facade, result.getTunnelId(), result.getSessionHi(), result.getSessionLo(),
-                result.getSessionSecret(), entryAddress, authMode, result.getExpireAtMillis());
+                result.getSessionSecret(), entryAddress, authMode, compressConfig, redundantConfig,
+                result.getExpireAtMillis());
     }
 
     private void completeTunnelInit(Channel channel, CompletableFuture<TunnelState> future,
@@ -449,6 +568,10 @@ public class Udp2rawUpstream extends Upstream {
         final byte[] sessionSecret;
         final InetSocketAddress udpEntryAddress;
         final Udp2rawAuthMode authMode;
+        final UdpCompressConfig compressConfig;
+        final UdpCompressStats compressStats;
+        final UdpRedundantConfig redundantConfig;
+        final UdpRedundantMultiplierResolver redundantResolver;
         final long expireAtMillis;
         final ConcurrentMap<RouteKey, ConnState> routes = new ConcurrentHashMap<>();
         final ConcurrentMap<Long, ConnState> connById = new ConcurrentHashMap<>();
@@ -459,7 +582,8 @@ public class Udp2rawUpstream extends Upstream {
 
         TunnelState(SocksRpcContract facade, String tunnelId, long sessionHi, long sessionLo,
                 byte[] sessionSecret, InetSocketAddress udpEntryAddress,
-                Udp2rawAuthMode authMode, long expireAtMillis) {
+                Udp2rawAuthMode authMode, UdpCompressConfig compressConfig,
+                UdpRedundantConfig redundantConfig, long expireAtMillis) {
             this.facade = facade;
             this.tunnelId = tunnelId;
             this.sessionHi = sessionHi;
@@ -467,6 +591,12 @@ public class Udp2rawUpstream extends Upstream {
             this.sessionSecret = sessionSecret;
             this.udpEntryAddress = udpEntryAddress;
             this.authMode = authMode != null ? authMode : Udp2rawAuthMode.FIRST_PACKET_MAC;
+            this.compressConfig = compressConfig;
+            this.compressStats = Udp2rawPayloadSupport.isCompressEnabled(compressConfig)
+                    ? new UdpCompressStats(compressConfig) : null;
+            this.redundantConfig = redundantConfig;
+            this.redundantResolver = Udp2rawPayloadSupport.isRedundantEnabled(redundantConfig)
+                    ? redundantConfig.buildMultiplierResolver() : null;
             this.expireAtMillis = expireAtMillis;
             this.lastActiveAtMillis = System.currentTimeMillis();
         }

@@ -91,14 +91,17 @@ final class Udp2rawServerEntryManager extends Disposable {
         long idleMillis = (request.getIdleTimeoutSeconds() > 0
                 ? request.getIdleTimeoutSeconds()
                 : config.getUdp2rawSessionIdleSeconds()) * 1000L;
+        UdpCompressConfig compressConfig = negotiateCompress(config, request.getCompress());
+        UdpRedundantConfig redundantConfig = negotiateRedundant(config, request.getRedundant());
         String tunnelId = tunnelId(sessionHi, sessionLo);
         Udp2rawTunnelContext context = new Udp2rawTunnelContext(this, tunnelId, sessionHi, sessionLo,
-                secret, config.getUdp2rawAuthMode(), idleMillis, maxSessions, now);
+                secret, config.getUdp2rawAuthMode(), compressConfig, redundantConfig,
+                idleMillis, maxSessions, now);
         tunnels.put(tunnelId, context);
         DiagnosticMetrics.record("socks.udp2raw.tunnel.open.count", 1D, "result=success");
         DiagnosticMetrics.record("socks.udp2raw.tunnel.active.count", tunnels.size(), "action=open");
         return Udp2rawOpenResult.success(tunnelId, sessionHi, sessionLo, secret, entryAddress,
-                context.expireAtMillis(), capabilities());
+                context.expireAtMillis(), capabilities(compressConfig, redundantConfig));
     }
 
     boolean heartbeat(String tunnelId) {
@@ -128,13 +131,17 @@ final class Udp2rawServerEntryManager extends Disposable {
     }
 
     Udp2rawCapabilities capabilities() {
+        return capabilities(configCompress(), configRedundant());
+    }
+
+    private Udp2rawCapabilities capabilities(UdpCompressConfig compressConfig, UdpRedundantConfig redundantConfig) {
         SocksConfig config = server.getConfig();
         Udp2rawCapabilities capabilities = new Udp2rawCapabilities();
         capabilities.setMaxSessions(config.getUdp2rawMaxSessions());
         capabilities.setAuthMode(config.getUdp2rawAuthMode());
         capabilities.setReusePort(Sockets.reusePortBindCount(config, resolveBindAddress()) > 1);
-        capabilities.setCompress(config.isUdpCompressEnabled());
-        capabilities.setRedundant(config.getUdpRedundantMultiplier() > 1 || config.isUdpRedundantAdaptive());
+        capabilities.setCompress(Udp2rawPayloadSupport.isCompressEnabled(compressConfig));
+        capabilities.setRedundant(Udp2rawPayloadSupport.isRedundantEnabled(redundantConfig));
         return capabilities;
     }
 
@@ -158,6 +165,36 @@ final class Udp2rawServerEntryManager extends Disposable {
             }
         }
         return Sockets.newAnyEndpoint(config.getListenPort());
+    }
+
+    private UdpCompressConfig negotiateCompress(SocksConfig config, UdpCompressConfig requested) {
+        if (!config.isUdpCompressEnabled() || !Udp2rawPayloadSupport.isCompressEnabled(requested)) {
+            return null;
+        }
+        UdpCompressConfig serverConfig = configCompress();
+        if (!Udp2rawPayloadSupport.isCompressEnabled(serverConfig)
+                || serverConfig.getCodec() != requested.getCodec()
+                || serverConfig.getDictionaryId() != requested.getDictionaryId()) {
+            return null;
+        }
+        return serverConfig;
+    }
+
+    private UdpRedundantConfig negotiateRedundant(SocksConfig config, UdpRedundantConfig requested) {
+        UdpRedundantConfig serverConfig = configRedundant();
+        if (!Udp2rawPayloadSupport.isRedundantEnabled(serverConfig)
+                || !Udp2rawPayloadSupport.isRedundantEnabled(requested)) {
+            return null;
+        }
+        return serverConfig;
+    }
+
+    private UdpCompressConfig configCompress() {
+        return UdpCompressConfig.fromSocksConfig(server.getConfig());
+    }
+
+    private UdpRedundantConfig configRedundant() {
+        return UdpRedundantConfig.fromSocksConfig(server.getConfig());
     }
 
     private void cleanupIdleTunnels() {

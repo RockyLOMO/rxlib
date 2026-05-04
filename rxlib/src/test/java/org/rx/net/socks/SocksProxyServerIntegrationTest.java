@@ -871,6 +871,59 @@ class SocksProxyServerIntegrationTest {
     @Test
     @SneakyThrows
     @Timeout(value = 20)
+    void socks5UdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e() {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-upstream-p6-token");
+        SocksProxyServer proxyA = null;
+        SocksProxyServer proxyB = null;
+        try {
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            configB.setEnableUdp2raw(true);
+            configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            configB.setUdpCompressEnabled(true);
+            configB.setUdpCompressMinPayloadBytes(1);
+            configB.setUdpCompressMinSavingsBytes(1);
+            configB.setUdpCompressMinSavingsRatio(0.01D);
+            configB.setUdpRedundantMultiplier(2);
+            proxyB = new SocksProxyServer(configB, null);
+            int proxyBPort = ((InetSocketAddress) proxyB.tcpChannels.get(0).localAddress()).getPort();
+
+            SocksConfig configA = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            configA.setEnableUdp2raw(false);
+            configA.setUdpCompressEnabled(true);
+            configA.setUdpCompressMinPayloadBytes(1);
+            configA.setUdpCompressMinSavingsBytes(1);
+            configA.setUdpCompressMinSavingsRatio(0.01D);
+            configA.setUdpRedundantMultiplier(2);
+            proxyA = new SocksProxyServer(configA, null);
+            int proxyAPort = ((InetSocketAddress) proxyA.tcpChannels.get(0).localAddress()).getPort();
+
+            UpstreamSupport supportB = new UpstreamSupport(
+                    new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null),
+                    new LocalRpcFacade(proxyB));
+            SocksProxyServer finalProxyB = proxyB;
+            proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(
+                    new Udp2rawUpstream(e.getFirstDestination(), configA, supportB)));
+
+            char[] chars = new char[320];
+            Arrays.fill(chars, 'D');
+            assertTrue(sendUdpViaProxy(proxyAPort, new String(chars), 5));
+            assertEquals(0, finalProxyB.udpRelayRegistry.size(),
+                    "udp2raw compress/redundant path must not create standard SOCKS5 UDP relay entries on B");
+        } finally {
+            if (proxyA != null) {
+                proxyA.close();
+            }
+            if (proxyB != null) {
+                proxyB.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 20)
     void shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_e2e() {
         String oldToken = RxConfig.INSTANCE.getRtoken();
         RxConfig.INSTANCE.setRtoken("udp2raw-ss-upstream-token");
@@ -903,6 +956,67 @@ class SocksProxyServerIntegrationTest {
             assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-udp2raw-fixed-entry");
             assertEquals(0, proxyB.udpRelayRegistry.size(),
                     "SS -> udp2raw fixed entry must not create standard SOCKS5 UDP relay entries on B");
+        } finally {
+            if (clientSock != null) {
+                clientSock.close();
+            }
+            if (ssServer != null) {
+                ssServer.close();
+            }
+            if (proxyB != null) {
+                proxyB.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 20)
+    void shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e() {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-ss-upstream-p6-token");
+        SocksProxyServer proxyB = null;
+        ShadowsocksServer ssServer = null;
+        DatagramSocket clientSock = null;
+        try {
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            configB.setEnableUdp2raw(true);
+            configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            configB.setUdpCompressEnabled(true);
+            configB.setUdpCompressMinPayloadBytes(1);
+            configB.setUdpCompressMinSavingsBytes(1);
+            configB.setUdpCompressMinSavingsRatio(0.01D);
+            configB.setUdpRedundantMultiplier(2);
+            proxyB = new SocksProxyServer(configB, null);
+            int proxyBPort = ((InetSocketAddress) proxyB.tcpChannels.get(0).localAddress()).getPort();
+
+            ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0),
+                    org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "udp2raw-ss-p6-pwd");
+            ssServer = new ShadowsocksServer(ssConfig);
+            int ssPort = ((InetSocketAddress) ssServer.udpChannels.get(0).localAddress()).getPort();
+
+            SocksConfig tunnelConfig = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            tunnelConfig.setUdpCompressEnabled(true);
+            tunnelConfig.setUdpCompressMinPayloadBytes(1);
+            tunnelConfig.setUdpCompressMinSavingsBytes(1);
+            tunnelConfig.setUdpCompressMinSavingsRatio(0.01D);
+            tunnelConfig.setUdpRedundantMultiplier(2);
+            UpstreamSupport supportB = new UpstreamSupport(
+                    new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null),
+                    new LocalRpcFacade(proxyB));
+            ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(
+                    new Udp2rawUpstream(e.getFirstDestination(), tunnelConfig, supportB)));
+
+            org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(
+                    ssConfig.getMethod(), ssConfig.getPassword(), true);
+            clientSock = new DatagramSocket();
+            clientSock.setSoTimeout(5000);
+            char[] chars = new char[320];
+            Arrays.fill(chars, 'S');
+            assertShadowsocksUdpEcho(clientSock, ssPort, crypto, new String(chars));
+            assertEquals(0, proxyB.udpRelayRegistry.size(),
+                    "SS -> udp2raw compress/redundant path must not create standard SOCKS5 UDP relay entries on B");
         } finally {
             if (clientSock != null) {
                 clientSock.close();

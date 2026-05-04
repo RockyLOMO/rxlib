@@ -137,22 +137,44 @@ final class Udp2rawSession {
         }
         Udp2rawFrame frame = Udp2rawFrame.data(key.getSessionHi(), key.getSessionLo(), key.getConnId(),
                 responseSeq.incrementAndGet());
-        frame.setFlags(Udp2rawCodec.FLAG_HAS_SRC);
+        int flags = Udp2rawCodec.FLAG_HAS_SRC;
         frame.setSourceAddress(response.sender());
         ByteBuf payload = response.content().retain();
+        ByteBuf body = payload;
+        ByteBuf compressed = null;
         ByteBuf encoded = null;
         try {
-            encoded = Udp2rawCodec.encode(entry.alloc(), frame, payload);
-            payload = null;
-            DatagramPacket packet = new DatagramPacket(encoded, peer);
+            compressed = Udp2rawPayloadSupport.compress(entry.alloc(), payload, context.compressConfig,
+                    context.compressStats, peer, "response");
+            if (compressed != null) {
+                flags |= Udp2rawCodec.FLAG_COMPRESSED;
+                body = compressed;
+                payload.release();
+                payload = null;
+                compressed = null;
+            }
+            if (Udp2rawPayloadSupport.isRedundantEnabled(context.redundantConfig)) {
+                flags |= Udp2rawCodec.FLAG_REDUNDANT;
+            }
+            frame.setFlags(flags);
+            encoded = Udp2rawCodec.encode(entry.alloc(), frame, body);
+            if (body == payload) {
+                payload = null;
+            }
+            body = null;
+            Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(entry, encoded, peer,
+                    context.redundantConfig, context.redundantResolver, "flow=response");
             encoded = null;
-            Sockets.UdpWriteResult result = Sockets.writeUdp(entry, packet, METRIC_PREFIX,
-                    "flow=to-peer");
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop response to peer {} result={}", peer, result);
             }
         } catch (Throwable e) {
+            if (body == payload) {
+                payload = null;
+            }
+            Bytes.release(body);
             Bytes.release(payload);
+            Bytes.release(compressed);
             Bytes.release(encoded);
             throw e;
         }

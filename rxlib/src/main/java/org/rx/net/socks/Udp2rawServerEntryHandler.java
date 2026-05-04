@@ -10,8 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
 
-import java.net.InetSocketAddress;
-
 @Slf4j
 @ChannelHandler.Sharable
 final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<DatagramPacket> {
@@ -72,7 +70,7 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
         ByteBuf decoded = null;
         try {
             if (frame.hasFlag(Udp2rawCodec.FLAG_COMPRESSED)) {
-                decoded = decompress(ctx.channel(), payload, in.sender());
+                decoded = Udp2rawPayloadSupport.decompress(ctx.alloc(), payload, "request");
                 if (decoded == null) {
                     recordDrop("decompress-fail");
                     return;
@@ -93,43 +91,6 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
                 if (session != null) {
                     session.close("peer-close");
                 }
-            }
-        }
-    }
-
-    private ByteBuf decompress(Channel channel, ByteBuf payload, InetSocketAddress sender) {
-        int readerIndex = payload.readerIndex();
-        if (payload.readableBytes() < UdpCompressSupport.HEADER_SIZE
-                || payload.getInt(readerIndex) != UdpCompressSupport.HEADER_MAGIC) {
-            return null;
-        }
-        int originalLen = payload.getUnsignedShort(readerIndex + 4);
-        short flags = payload.getUnsignedByte(readerIndex + 6);
-        short dictionaryId = payload.getUnsignedByte(readerIndex + 7);
-        if (originalLen <= 0 || (flags & UdpCompressSupport.FLAG_DICT) != 0 || dictionaryId != 0) {
-            return null;
-        }
-        int compressedIndex = readerIndex + UdpCompressSupport.HEADER_SIZE;
-        int compressedLen = payload.readableBytes() - UdpCompressSupport.HEADER_SIZE;
-        if (compressedLen <= 0) {
-            return null;
-        }
-        ByteBuf decoded = channel.alloc().directBuffer(originalLen);
-        try {
-            int actualLen = UdpCompressSupport.decompress(payload, compressedIndex, compressedLen, decoded, 0, originalLen);
-            if (actualLen != originalLen) {
-                return null;
-            }
-            decoded.writerIndex(actualLen);
-            return decoded;
-        } catch (Throwable e) {
-            if (manager.server.getConfig().isDebug()) {
-                log.warn("udp2raw decompress failed from {}", sender, e);
-            }
-            return null;
-        } finally {
-            if (decoded != null && decoded.writerIndex() == 0) {
-                decoded.release();
             }
         }
     }

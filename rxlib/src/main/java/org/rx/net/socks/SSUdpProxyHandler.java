@@ -325,6 +325,27 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             return;
         }
 
+        Upstream upstream = sc.getUpstream();
+        if (upstream instanceof Udp2rawUpstream) {
+            Udp2rawUpstream udp2rawUpstream = (Udp2rawUpstream) upstream;
+            InetSocketAddress udpRelayAddr = udp2rawUpstream.getUdpEntryAddress(outbound);
+            boolean accepted;
+            try {
+                accepted = udp2rawUpstream.writeRequest(outbound, payload, srcEp, dstEp, true);
+            } catch (Throwable ex) {
+                log.warn("SS UDP relay build udp2raw packet error for {}, drop packet from {}", dstEp, srcEp, ex);
+                return;
+            }
+            if (!accepted) {
+                log.warn("SS UDP relay drop udp2raw packet from {} for {}", srcEp, dstEp);
+                return;
+            }
+            if (debug) {
+                log.info("SS UDP2RAW OUT {} => {}[{}]", srcEp, udpRelayAddr, dstEp);
+            }
+            return;
+        }
+
         DatagramPacket packet = null;
         try {
             packet = buildOutboundPacket(sc, outbound, srcEp, dstEp, payload);
@@ -346,7 +367,6 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             return;
         }
         if (debug) {
-            Upstream upstream = sc.getUpstream();
             log.info("SS UDP OUT {} => {}[{}]", srcEp, udpRelayAddr != null ? udpRelayAddr : upstream.getDestination(), dstEp);
         }
     }

@@ -15,6 +15,10 @@ final class Udp2rawTunnelContext {
     final long sessionLo;
     final byte[] sessionSecret;
     final Udp2rawAuthMode authMode;
+    final UdpCompressConfig compressConfig;
+    final UdpCompressStats compressStats;
+    final UdpRedundantConfig redundantConfig;
+    final UdpRedundantMultiplierResolver redundantResolver;
     final long idleTimeoutMillis;
     final int maxSessions;
     final long createdAtMillis;
@@ -23,13 +27,20 @@ final class Udp2rawTunnelContext {
 
     Udp2rawTunnelContext(Udp2rawServerEntryManager manager, String tunnelId,
             long sessionHi, long sessionLo, byte[] sessionSecret,
-            Udp2rawAuthMode authMode, long idleTimeoutMillis, int maxSessions, long now) {
+            Udp2rawAuthMode authMode, UdpCompressConfig compressConfig,
+            UdpRedundantConfig redundantConfig, long idleTimeoutMillis, int maxSessions, long now) {
         this.manager = manager;
         this.tunnelId = tunnelId;
         this.sessionHi = sessionHi;
         this.sessionLo = sessionLo;
         this.sessionSecret = sessionSecret;
         this.authMode = authMode != null ? authMode : Udp2rawAuthMode.FIRST_PACKET_MAC;
+        this.compressConfig = compressConfig;
+        this.compressStats = Udp2rawPayloadSupport.isCompressEnabled(compressConfig)
+                ? new UdpCompressStats(compressConfig) : null;
+        this.redundantConfig = redundantConfig;
+        this.redundantResolver = Udp2rawPayloadSupport.isRedundantEnabled(redundantConfig)
+                ? redundantConfig.buildMultiplierResolver() : null;
         this.idleTimeoutMillis = idleTimeoutMillis;
         this.maxSessions = Math.max(1, maxSessions);
         this.createdAtMillis = now;

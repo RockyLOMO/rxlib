@@ -18,6 +18,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -107,6 +108,94 @@ class Udp2rawFixedEntryIntegrationTest {
         }
     }
 
+    @Test
+    @Timeout(20)
+    void fixedEntryCompressesResponseAndDropsRedundantRequest() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-p6-test-token");
+        LinkedBlockingQueue<String> echoPayloads = new LinkedBlockingQueue<>();
+        Channel echo = null;
+        SocksProxyServer proxy = null;
+        DatagramSocket client = null;
+        try {
+            Bootstrap udpEcho = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(
+                    new SimpleChannelInboundHandler<DatagramPacket>() {
+                        @Override
+                        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                            echoPayloads.add(msg.content().toString(StandardCharsets.UTF_8));
+                            ctx.writeAndFlush(new DatagramPacket(msg.content().retain(), msg.sender()));
+                        }
+                    }));
+            echo = udpEcho.bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+            InetSocketAddress echoAddress = (InetSocketAddress) echo.localAddress();
+
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            config.setUdp2rawMaxSessions(8);
+            config.setUdpCompressEnabled(true);
+            config.setUdpCompressMinPayloadBytes(1);
+            config.setUdpCompressMinSavingsBytes(1);
+            config.setUdpCompressMinSavingsRatio(0.01D);
+            config.setUdpRedundantMultiplier(2);
+            proxy = new SocksProxyServer(config, null);
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-p6");
+            request.setMaxSessions(8);
+            request.setCompress(UdpCompressConfig.fromSocksConfig(config));
+            request.setRedundant(UdpRedundantConfig.fromSocksConfig(config));
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            assertTrue(open.getCapabilities().isCompress());
+            assertTrue(open.getCapabilities().isRedundant());
+
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+            client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            client.setSoTimeout(5000);
+
+            byte[] bytes = buildCompressedUdp2raw(open,
+                    new InetSocketAddress("127.0.0.1", 30101), echoAddress, repeat('C', 320));
+            client.send(new java.net.DatagramPacket(bytes, bytes.length,
+                    InetAddress.getByName(entryAddress.getHostString()), entryAddress.getPort()));
+            client.send(new java.net.DatagramPacket(bytes, bytes.length,
+                    InetAddress.getByName(entryAddress.getHostString()), entryAddress.getPort()));
+
+            java.net.DatagramPacket packet = receive(client);
+            assertEquals(entryAddress.getPort(), packet.getPort(), "response source must be fixed entry port");
+            ByteBuf buf = Unpooled.wrappedBuffer(packet.getData(), 0, packet.getLength());
+            ByteBuf decoded = null;
+            try {
+                Udp2rawFrame frame = Udp2rawCodec.decode(buf);
+                assertTrue(frame.hasFlag(Udp2rawCodec.FLAG_COMPRESSED));
+                assertTrue(frame.hasFlag(Udp2rawCodec.FLAG_REDUNDANT));
+                decoded = Udp2rawPayloadSupport.decompress(UnpooledByteBufAllocator.DEFAULT, buf.slice(), "response-test");
+                assertNotNull(decoded);
+                assertEquals(repeat('C', 320), decoded.toString(StandardCharsets.UTF_8));
+            } finally {
+                if (decoded != null) {
+                    decoded.release();
+                }
+                buf.release();
+            }
+
+            assertEquals(repeat('C', 320), echoPayloads.poll(3, TimeUnit.SECONDS));
+            assertNull(echoPayloads.poll(300, TimeUnit.MILLISECONDS),
+                    "same tunnel/conn/seq redundant request must not hit destination twice");
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            if (echo != null) {
+                echo.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
     private static void sendUdp2raw(DatagramSocket socket, InetSocketAddress entryAddress,
             Udp2rawOpenResult open, long connId, InetSocketAddress clientSource,
             InetSocketAddress destination, String text) throws Exception {
@@ -129,6 +218,75 @@ class Udp2rawFixedEntryIntegrationTest {
             authTag.release();
             encoded.release();
         }
+    }
+
+    private static byte[] buildCompressedUdp2raw(Udp2rawOpenResult open,
+            InetSocketAddress clientSource, InetSocketAddress destination, String text) {
+        UdpCompressConfig compressConfig = new UdpCompressConfig();
+        compressConfig.setEnabled(true);
+        compressConfig.setMinPayloadBytes(1);
+        compressConfig.setMinSavingsBytes(1);
+        compressConfig.setMinSavingsRatio(0.01D);
+
+        ByteBuf payload = Unpooled.copiedBuffer(text, StandardCharsets.UTF_8);
+        ByteBuf body = payload;
+        ByteBuf compressed = null;
+        ByteBuf authTag = null;
+        ByteBuf encoded = null;
+        try {
+            Udp2rawFrame frame = Udp2rawFrame.data(open.getSessionHi(), open.getSessionLo(), 2001L, 1L);
+            int flags = Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT
+                    | Udp2rawCodec.FLAG_HAS_DST | Udp2rawCodec.FLAG_AUTH_TAG
+                    | Udp2rawCodec.FLAG_REDUNDANT;
+            compressed = Udp2rawPayloadSupport.compress(UnpooledByteBufAllocator.DEFAULT, payload,
+                    compressConfig, new UdpCompressStats(compressConfig), destination, "request-test");
+            if (compressed != null) {
+                flags |= Udp2rawCodec.FLAG_COMPRESSED;
+                payload.release();
+                payload = null;
+                body = compressed;
+                compressed = null;
+            }
+            frame.setFlags(flags);
+            frame.setClientSource(clientSource);
+            frame.setDestination(new UnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+            authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
+                    open.getSessionSecret(), frame, body);
+            frame.setAuthTag(authTag);
+            encoded = Udp2rawCodec.encode(UnpooledByteBufAllocator.DEFAULT, frame, body);
+            if (body == payload) {
+                payload = null;
+            }
+            body = null;
+            byte[] bytes = new byte[encoded.readableBytes()];
+            encoded.getBytes(encoded.readerIndex(), bytes);
+            return bytes;
+        } finally {
+            if (body == payload) {
+                payload = null;
+            }
+            if (authTag != null) {
+                authTag.release();
+            }
+            if (body != null) {
+                body.release();
+            }
+            if (payload != null) {
+                payload.release();
+            }
+            if (compressed != null) {
+                compressed.release();
+            }
+            if (encoded != null) {
+                encoded.release();
+            }
+        }
+    }
+
+    private static String repeat(char c, int count) {
+        char[] chars = new char[count];
+        Arrays.fill(chars, c);
+        return new String(chars);
     }
 
     private static java.net.DatagramPacket receive(DatagramSocket socket) throws Exception {
