@@ -11,6 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -40,8 +41,7 @@ public class ThreadPoolQueueShutdownTest {
         assertEquals(2, queue.drainTo(drained));
 
         assertEquals(2, drained.size());
-        assertEquals(0, queue.size());
-        assertEquals(2, queue.remainingCapacity());
+        assertQueueInvariant(queue, 0);
         blocking.countDown();
     }
 
@@ -53,14 +53,13 @@ public class ThreadPoolQueueShutdownTest {
         ThreadPool.ThreadQueue queue = (ThreadPool.ThreadQueue) pool.getQueue();
         queue.clear();
 
-        assertEquals(0, queue.size());
-        assertEquals(2, queue.remainingCapacity());
+        assertQueueInvariant(queue, 0);
         pool.execute(new Runnable() {
             @Override
             public void run() {
             }
         });
-        assertEquals(1, queue.size());
+        assertQueueInvariant(queue, 1);
         blocking.countDown();
     }
 
@@ -74,8 +73,7 @@ public class ThreadPoolQueueShutdownTest {
         blocking.countDown();
 
         ThreadPool.ThreadQueue queue = (ThreadPool.ThreadQueue) pool.getQueue();
-        assertEquals(0, queue.size());
-        assertEquals(2, queue.remainingCapacity());
+        assertQueueInvariant(queue, 0);
         assertFalse(CpuWatchman.INSTANCE.holder.containsKey(pool));
     }
 
@@ -119,9 +117,117 @@ public class ThreadPoolQueueShutdownTest {
             blocking.countDown();
 
             assertTrue(rejected.get(3, TimeUnit.SECONDS));
+            assertQueueInvariant((ThreadPool.ThreadQueue) pool.getQueue(), 0);
         } finally {
             blocking.countDown();
         }
+    }
+
+    @Test
+    void callerRunsOverflowShouldNotLeakSlotsWhenShutdownRaces() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        CountDownLatch blocking = new CountDownLatch(1);
+        CountDownLatch callerRunning = new CountDownLatch(1);
+        CountDownLatch releaseCaller = new CountDownLatch(1);
+        AtomicInteger callerRuns = new AtomicInteger();
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setQueueOfferMode(ThreadPoolQueueOfferMode.CALLER_RUNS);
+            conf.setQueueOfferTimeoutMillis(0);
+            fillQueue(blocking);
+
+            submitter = Executors.newSingleThreadExecutor();
+            Future<Boolean> overflow = submitter.submit(new java.util.concurrent.Callable<Boolean>() {
+                @Override
+                public Boolean call() {
+                    pool.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            callerRuns.incrementAndGet();
+                            callerRunning.countDown();
+                            try {
+                                releaseCaller.await(5, TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                    });
+                    return true;
+                }
+            });
+
+            assertTrue(callerRunning.await(3, TimeUnit.SECONDS));
+            pool.shutdownNow();
+            releaseCaller.countDown();
+            blocking.countDown();
+
+            assertTrue(overflow.get(3, TimeUnit.SECONDS));
+            assertEquals(1, callerRuns.get());
+            assertQueueInvariant((ThreadPool.ThreadQueue) pool.getQueue(), 0);
+            assertTrue(pool.taskMap.isEmpty());
+        } finally {
+            releaseCaller.countDown();
+            blocking.countDown();
+        }
+    }
+
+    @Test
+    void removeClearDrainShouldKeepCapacityInvariantWithConcurrentPoll() throws Exception {
+        final ThreadPool.ThreadQueue queue = new ThreadPool.ThreadQueue(64);
+        final List<Runnable> tasks = new ArrayList<Runnable>();
+        for (int i = 0; i < 64; i++) {
+            Runnable task = new Runnable() {
+                @Override
+                public void run() {
+                }
+            };
+            tasks.add(task);
+            assertTrue(queue.offer(task));
+        }
+        assertQueueInvariant(queue, 64);
+
+        final CountDownLatch start = new CountDownLatch(1);
+        final CountDownLatch stop = new CountDownLatch(1);
+        submitter = Executors.newFixedThreadPool(4);
+        List<Future<?>> workers = new ArrayList<Future<?>>();
+        for (int i = 0; i < 4; i++) {
+            workers.add(submitter.submit(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        start.await(3, TimeUnit.SECONDS);
+                        while (stop.getCount() > 0) {
+                            queue.poll(10, TimeUnit.MILLISECONDS);
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }));
+        }
+
+        start.countDown();
+        for (int i = 0; i < 24; i++) {
+            queue.remove(tasks.get(i));
+        }
+        List<Runnable> drained = new ArrayList<Runnable>();
+        queue.drainTo(drained, 24);
+        queue.clear();
+        stop.countDown();
+
+        for (Future<?> worker : workers) {
+            worker.get(3, TimeUnit.SECONDS);
+        }
+        assertQueueInvariant(queue, 0);
+        for (int i = 0; i < 64; i++) {
+            assertTrue(queue.offer(new Runnable() {
+                @Override
+                public void run() {
+                }
+            }));
+        }
+        assertQueueInvariant(queue, 64);
+        queue.clear();
+        assertQueueInvariant(queue, 0);
     }
 
     private void fillQueue(final CountDownLatch blocking) throws Exception {
@@ -167,6 +273,17 @@ public class ThreadPoolQueueShutdownTest {
             Thread.sleep(10);
         }
         assertTrue(condition.ok());
+    }
+
+    private void assertQueueInvariant(ThreadPool.ThreadQueue queue, int expectedSize) {
+        ThreadPool.ThreadQueue.CapacitySnapshot snapshot = queue.capacitySnapshot();
+        assertEquals(expectedSize, snapshot.counter);
+        assertEquals(expectedSize, queue.size());
+        assertEquals(snapshot.remaining, queue.remainingCapacity());
+        assertEquals(snapshot.remaining, snapshot.slots);
+        assertEquals(snapshot.capacity, snapshot.counter + snapshot.slots);
+        assertTrue(snapshot.counter >= 0);
+        assertTrue(snapshot.slots >= 0);
     }
 
     private interface Condition {
