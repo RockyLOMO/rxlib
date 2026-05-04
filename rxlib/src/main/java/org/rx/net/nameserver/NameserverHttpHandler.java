@@ -110,7 +110,7 @@ public class NameserverHttpHandler implements HttpServer.Handler {
             String appName = ifNull(session.<String>attr(Nameserver.APP_NAME_KEY), "NOT_REG");
             InetSocketAddress remoteEndpoint = session.tcpRemoteEndpoint();
             InetAddress address = remoteEndpoint == null ? null : remoteEndpoint.getAddress();
-            Map<String, Serializable> attrs = address == null ? null : nameserver.attrs.get(address);
+            Map<String, Serializable> attrs = address == null ? null : nameserver.attrs.get(nameserver.instanceKey(appName, address));
 
             Map<String, Object> row = new LinkedHashMap<String, Object>();
             row.put("appName", appName);

@@ -19,9 +19,11 @@ import org.rx.util.function.Func;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.ExecutionException;
@@ -33,6 +35,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.LongUnaryOperator;
@@ -47,12 +50,17 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         final String traceId;
         final StackTraceElement[] stackTrace;
         final CountDownLatch createdLatch = new CountDownLatch(1);
+        final CountDownLatch executionLatch = new CountDownLatch(1);
         final AtomicBoolean published = new AtomicBoolean();
         final AtomicBoolean cancelRequested = new AtomicBoolean();
         long delay;
         long expiredTime;
         volatile Timeout timeout;
         volatile Future<T> future;
+        volatile boolean executionStarted;
+        volatile boolean executionCompleted;
+        volatile boolean cancelMayInterruptIfRunning;
+        volatile T result;
         volatile Throwable terminalError;
 
         Task(Func<T> fn, FlagsEnum<TimeoutFlag> flags, Object id, LongUnaryOperator nextDelayFn) {
@@ -67,44 +75,61 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @Override
         public void run(Timeout timeout) {
             this.timeout = timeout;
-            if (cancelRequested.get() || !isCurrentHolder()) {
-                removeHolder();
+            if (cancelRequested.get() || !isCurrentHolder() || shutdownNow) {
+                completeTask();
                 publish();
                 return;
             }
 
             try {
                 Future<T> submitted = executor.submit(() -> {
+                    runningTaskCount.incrementAndGet();
+                    executionStarted = true;
                     executedCount.increment();
                     recordDiagnosticMetrics(false);
                     beginTrace(traceId, stackTrace);
                     boolean doContinue = flags.has(TimeoutFlag.PERIOD);
                     try {
-                        return fn.get();
+                        T value = fn.get();
+                        result = value;
+                        return value;
+                    } catch (Throwable e) {
+                        terminalError = e;
+                        throw e;
                     } finally {
                         try {
+                            executionCompleted = true;
+                            executionLatch.countDown();
                             onExecutionFinished(ThreadPool.continueFlag(doContinue), timeout.timer());
                         } finally {
-                            endTrace();
+                            try {
+                                endTrace();
+                            } finally {
+                                runningTaskCount.decrementAndGet();
+                            }
                         }
                     }
                 });
                 future = submitted;
                 publish();
-                if (cancelRequested.get()) {
-                    submitted.cancel(true);
+                if (cancelRequested.get() && submitted.cancel(cancelMayInterruptIfRunning)) {
+                    completeTask();
                 }
             } catch (Throwable e) {
-                errorCount.increment();
-                terminalError = e;
-                removeHolder();
-                publish();
-                recordDiagnosticMetrics(false);
+                failBeforeSubmit(e);
             }
         }
 
+        private void failBeforeSubmit(Throwable e) {
+            errorCount.increment();
+            terminalError = e;
+            completeTask();
+            publish();
+            recordDiagnosticMetrics(false);
+        }
+
         private void onExecutionFinished(boolean doContinue, Timer timer) {
-            if (doContinue && !cancelRequested.get() && isCurrentHolder()) {
+            if (doContinue && !shutdown && !cancelRequested.get() && isCurrentHolder()) {
                 try {
                     if (newTimeout(this, delay, timer)) {
                         return;
@@ -113,11 +138,16 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                     terminalError = e;
                 }
             }
-            removeHolder();
+            completeTask();
         }
 
         private boolean isCurrentHolder() {
             return id == null || holder.get(id) == this;
+        }
+
+        private void completeTask() {
+            removeHolder();
+            activeTasks.remove(this);
         }
 
         private void removeHolder() {
@@ -161,36 +191,46 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @Override
         public boolean cancel(boolean mayInterruptIfRunning) {
             Future<T> currentFuture = future;
-            boolean changed;
+            boolean cancelled = false;
+            boolean completeNow = false;
+            if (mayInterruptIfRunning) {
+                cancelMayInterruptIfRunning = true;
+            }
             if (flags.has(TimeoutFlag.PERIOD)) {
-                changed = !cancelRequested.getAndSet(true);
+                cancelled = !cancelRequested.getAndSet(true);
             } else {
-                changed = false;
+                cancelled = false;
             }
 
             Timeout currentTimeout = timeout;
             if (currentFuture == null) {
-                if (currentTimeout == null || currentTimeout.cancel()) {
+                boolean timeoutCancelled = currentTimeout == null
+                        || (!currentTimeout.isExpired() && currentTimeout.cancel());
+                if (timeoutCancelled && (mayInterruptIfRunning || !executionStarted)) {
                     cancelRequested.set(true);
-                    changed = true;
+                    cancelled = true;
+                    completeNow = true;
                 }
-            } else if (currentFuture.cancel(mayInterruptIfRunning)) {
+            } else if ((mayInterruptIfRunning || !executionStarted) && currentFuture.cancel(mayInterruptIfRunning)) {
                 cancelRequested.set(true);
-                changed = true;
+                cancelled = true;
+                completeNow = true;
             }
 
             if (currentTimeout != null) {
-                changed = currentTimeout.cancel() || changed;
+                currentTimeout.cancel();
             }
-            if (cancelRequested.get()) {
-                if (changed) {
-                    cancelledCount.increment();
-                }
-                removeHolder();
+            if (cancelled) {
+                cancelledCount.increment();
+            }
+            if (completeNow) {
+                completeTask();
                 publish();
                 recordDiagnosticMetrics(false);
+            } else if (cancelled) {
+                recordDiagnosticMetrics(false);
             }
-            return changed;
+            return cancelled;
         }
 
         @Override
@@ -199,10 +239,10 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 return true;
             }
             if (flags.has(TimeoutFlag.PERIOD)) {
-                return cancelRequested.get();
+                return cancelRequested.get() || shutdown;
             }
             Future<T> current = future;
-            return current != null ? current.isDone() : cancelRequested.get();
+            return executionCompleted || (current != null ? current.isDone() : cancelRequested.get());
         }
 
         @Override
@@ -240,10 +280,27 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 }
                 throw new TimeoutException();
             }
-            if (unit == null) {
-                return current.get();
+            if (current.isCancelled()) {
+                throw new CancellationException();
             }
-            return current.get(timeout, unit);
+            if (unit == null) {
+                executionLatch.await();
+            } else if (!executionLatch.await(timeout, unit)) {
+                if (current.isCancelled()) {
+                    throw new CancellationException();
+                }
+                throw new TimeoutException();
+            }
+            if (terminalError != null) {
+                throw new ExecutionException(terminalError);
+            }
+            if (cancelRequested.get() || current.isCancelled()) {
+                throw new CancellationException();
+            }
+            if (!executionCompleted) {
+                throw new TimeoutException();
+            }
+            return result;
         }
 
         @Override
@@ -277,6 +334,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         final StackTraceElement[] stackTrace = captureStackTrace();
         volatile Timeout timeout;
         volatile Future<?> future;
+        volatile boolean executionStarted;
+        volatile boolean executionRunning;
+        volatile boolean cancelMayInterruptIfRunning;
         volatile boolean cancelled;
         volatile Throwable terminalError;
         volatile long expiredTime;
@@ -287,9 +347,14 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             this.periodMillis = periodMillis;
             this.fixedRate = fixedRate;
             this.nextFireTime = System.currentTimeMillis() + Math.max(0L, initialDelayMillis);
+            periodicTasks.add(this);
         }
 
         void schedule(long delayMillis) {
+            if (shutdown) {
+                signalComplete();
+                return;
+            }
             long safeDelay = Math.max(0L, delayMillis);
             expiredTime = System.currentTimeMillis() + safeDelay;
             timeout = timer.newTimeout(this, safeDelay, TimeUnit.MILLISECONDS);
@@ -300,13 +365,16 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         @Override
         public void run(Timeout timeout) {
             this.timeout = timeout;
-            if (cancelled) {
+            if (cancelled || shutdownNow) {
                 signalComplete();
                 return;
             }
 
             try {
                 Future<?> submitted = executor.submit(() -> {
+                    runningTaskCount.incrementAndGet();
+                    executionStarted = true;
+                    executionRunning = true;
                     executedCount.increment();
                     recordDiagnosticMetrics(false);
                     beginTrace(traceId, stackTrace);
@@ -320,12 +388,17 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                         recordDiagnosticMetrics(false);
                         throw e;
                     } finally {
-                        endTrace();
+                        try {
+                            endTrace();
+                        } finally {
+                            executionRunning = false;
+                            runningTaskCount.decrementAndGet();
+                        }
                     }
                 });
                 future = submitted;
-                if (cancelled) {
-                    submitted.cancel(true);
+                if (cancelled && submitted.cancel(cancelMayInterruptIfRunning)) {
+                    signalComplete();
                 }
             } catch (Throwable e) {
                 errorCount.increment();
@@ -336,7 +409,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
 
         private void scheduleNext() {
-            if (cancelled) {
+            if (cancelled || shutdown) {
                 signalComplete();
                 return;
             }
@@ -360,6 +433,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
 
         private void signalComplete() {
             if (completed.compareAndSet(false, true)) {
+                periodicTasks.remove(this);
                 terminalLatch.countDown();
             }
         }
@@ -395,23 +469,31 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 return false;
             }
             cancelled = true;
+            if (mayInterruptIfRunning) {
+                cancelMayInterruptIfRunning = true;
+            }
             Timeout currentTimeout = timeout;
+            boolean timeoutCancelled = false;
             if (currentTimeout != null) {
-                currentTimeout.cancel();
+                timeoutCancelled = !currentTimeout.isExpired() && currentTimeout.cancel();
             }
             Future<?> currentFuture = future;
-            if (currentFuture != null) {
-                currentFuture.cancel(mayInterruptIfRunning);
+            boolean futureCancelled = false;
+            if (currentFuture != null && (mayInterruptIfRunning || !executionRunning)) {
+                futureCancelled = currentFuture.cancel(mayInterruptIfRunning);
             }
             cancelledCount.increment();
             recordDiagnosticMetrics(false);
-            signalComplete();
+            if (mayInterruptIfRunning || (futureCancelled && !executionRunning)
+                    || (!executionRunning && (currentTimeout == null || timeoutCancelled))) {
+                signalComplete();
+            }
             return true;
         }
 
         @Override
         public boolean isDone() {
-            return cancelled || terminalError != null;
+            return cancelled || terminalError != null || completed.get();
         }
 
         @Override
@@ -434,6 +516,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             }
             if (terminalError != null) {
                 throw new ExecutionException(terminalError);
+            }
+            if (shutdown) {
+                throw new CancellationException();
             }
             throw new IllegalStateException("Periodic task should not complete normally");
         }
@@ -477,8 +562,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
 
         @Override
-        public void run(Timeout timeout) {
-        }
+        public void run(Timeout timeout) {}
     }
 
     static final long TICK_DURATION = 100;
@@ -493,13 +577,18 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     final ExecutorService executor;
     final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER", Thread.NORM_PRIORITY), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
-    final Map<Object, TimeoutFuture<?>> holder = new java.util.concurrent.ConcurrentHashMap<>();
+    final Map<Object, TimeoutFuture<?>> holder = new ConcurrentHashMap<>();
+    final Set<Task<?>> activeTasks = ConcurrentHashMap.newKeySet();
+    final Set<PeriodicTask> periodicTasks = ConcurrentHashMap.newKeySet();
     final LongAdder scheduledCount = new LongAdder();
     final LongAdder executedCount = new LongAdder();
     final LongAdder cancelledCount = new LongAdder();
     final LongAdder errorCount = new LongAdder();
     final LongAdder rejectedCount = new LongAdder();
+    final AtomicInteger runningTaskCount = new AtomicInteger();
     final AtomicLong lastDiagnosticMillis = new AtomicLong();
+    final AtomicBoolean timerStopStarted = new AtomicBoolean();
+    volatile boolean timerStopped;
     @Getter
     volatile boolean shutdown;
     volatile boolean shutdownNow;
@@ -547,7 +636,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     private <T> TimeoutFuture<T> setTimeout(Task<T> task) {
         ensureRunning();
         if (task.id == null) {
-            newTimeout(task, 0, timer);
+            scheduleInitial(task);
             return task;
         }
 
@@ -565,9 +654,10 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
 
         try {
-            newTimeout(task, 0, timer);
+            scheduleInitial(task);
         } catch (Throwable e) {
             holder.remove(task.id, task);
+            activeTasks.remove(task);
             task.terminalError = e;
             task.publish();
             throw e;
@@ -578,17 +668,41 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         return task;
     }
 
+    private <T> boolean scheduleInitial(Task<T> task) {
+        if (newTimeout(task, 0, timer)) {
+            return true;
+        }
+        task.completeTask();
+        if (shutdown) {
+            RejectedExecutionException error = new RejectedExecutionException("WheelTimer is shutdown");
+            rejectedCount.increment();
+            task.terminalError = error;
+            task.publish();
+            recordDiagnosticMetrics(false);
+            throw error;
+        }
+        task.cancelRequested.set(true);
+        cancelledCount.increment();
+        task.publish();
+        recordDiagnosticMetrics(false);
+        return false;
+    }
+
     private boolean isActive(TimeoutFuture<?> future) {
         return future != null && !future.isCancelled() && !future.isDone();
     }
 
     private <T> boolean newTimeout(Task<T> task, long initDelay, Timer timer) {
+        if (shutdown) {
+            return false;
+        }
         if (task.nextDelayFn != null) {
             task.delay = task.nextDelayFn.applyAsLong(initDelay);
         }
         if (task.delay == Constants.TIMEOUT_INFINITE) {
             task.timeout = nonTask;
             task.expiredTime = Long.MAX_VALUE;
+            activeTasks.add(task);
             return true;
         }
         if (task.delay < 0) {
@@ -598,6 +712,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
         task.timeout = timer.newTimeout(task, task.delay, TimeUnit.MILLISECONDS);
         task.expiredTime = System.currentTimeMillis() + task.delay;
+        activeTasks.add(task);
         scheduledCount.increment();
         recordDiagnosticMetrics(false);
         return true;
@@ -647,6 +762,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         }
         String tags = diagnosticTags();
         DiagnosticMetrics.record(now, "rx.wheel_timer.holder.count", holder.size(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.active.count", activeTasks.size(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.running.count", runningTaskCount.get(), tags, null);
+        DiagnosticMetrics.record(now, "rx.wheel_timer.periodic.count", periodicTasks.size(), tags, null);
         DiagnosticMetrics.record(now, "rx.wheel_timer.pending.count", timer.pendingTimeouts(), tags, null);
         DiagnosticMetrics.record(now, "rx.wheel_timer.scheduled.count", scheduledCount.sum(), tags, null);
         DiagnosticMetrics.record(now, "rx.wheel_timer.executed.count", executedCount.sum(), tags, null);
@@ -654,6 +772,19 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         DiagnosticMetrics.record(now, "rx.wheel_timer.error.count", errorCount.sum(), tags, null);
         DiagnosticMetrics.record(now, "rx.wheel_timer.rejected.count", rejectedCount.sum(), tags, null);
         DiagnosticMetrics.record(now, "rx.wheel_timer.shutdown.count", shutdown ? 1D : 0D, tags, null);
+    }
+
+    private void stopTimer() {
+        if (!timerStopStarted.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            timer.stop();
+            timerStopped = true;
+        } catch (RuntimeException | Error e) {
+            timerStopStarted.set(false);
+            throw e;
+        }
     }
 
     private String diagnosticTags() {
@@ -725,6 +856,16 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     @Override
     public void shutdown() {
         shutdown = true;
+        for (TimeoutFuture<?> future : holder.values()) {
+            future.cancel(false);
+        }
+        for (Task<?> task : activeTasks) {
+            task.cancel(false);
+        }
+        for (PeriodicTask periodicTask : periodicTasks) {
+            periodicTask.cancel(false);
+        }
+        stopTimer();
         recordDiagnosticMetrics(true);
     }
 
@@ -735,15 +876,24 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         for (TimeoutFuture<?> future : holder.values()) {
             future.cancel(true);
         }
+        for (Task<?> task : activeTasks) {
+            task.cancel(true);
+        }
+        for (PeriodicTask periodicTask : periodicTasks) {
+            periodicTask.cancel(true);
+        }
         holder.clear();
-        timer.stop();
+        activeTasks.clear();
+        periodicTasks.clear();
+        stopTimer();
         recordDiagnosticMetrics(true);
         return Collections.emptyList();
     }
 
     @Override
     public boolean isTerminated() {
-        return shutdownNow || (shutdown && holder.isEmpty());
+        return timerStopped && (shutdownNow || (shutdown && holder.isEmpty() && activeTasks.isEmpty()
+                && periodicTasks.isEmpty() && runningTaskCount.get() == 0));
     }
 
     @SneakyThrows

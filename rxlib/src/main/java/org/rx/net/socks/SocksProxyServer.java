@@ -47,6 +47,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     @Getter(AccessLevel.PROTECTED)
     final Authenticator authenticator;
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
+    private final UdpRelayGroupManager udpRelayGroupManager;
     final AtomicInteger activeChannels = new AtomicInteger();
     // 只有压缩时一定要用
     @Setter
@@ -101,6 +102,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                              boolean enableMemoryChannel, Channel memoryChannel) {
         this.config = config;
         this.authenticator = authenticator;
+        this.udpRelayGroupManager = new UdpRelayGroupManager(this);
 
         if (enableMemoryChannel) {
             if (memoryChannel == null) {
@@ -191,6 +193,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @Override
     protected void dispose() {
+        udpRelayGroupManager.close();
         for (Channel relay : udpRelayRegistry.values()) {
             Sockets.closeOnFlushed(relay);
         }
@@ -219,19 +222,19 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         }
         udpRelayRegistry.put(local.getPort(), relay);
         if (DiagnosticMetrics.isEnabled()) {
-            DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=register,port=" + local.getPort());
+            DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=register");
         }
         relay.closeFuture().addListener(f -> {
             udpRelayRegistry.remove(local.getPort(), relay);
             if (DiagnosticMetrics.isEnabled()) {
-                DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=close,port=" + local.getPort());
+                DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=close");
             }
         });
     }
 
     public boolean resetUdpRelay(int relayPort) {
         if (DiagnosticMetrics.isEnabled()) {
-            DiagnosticMetrics.record("socks.udp.relay.reset.count", 1D, "port=" + relayPort);
+            DiagnosticMetrics.record("socks.udp.relay.reset.count", 1D, "action=reset");
         }
         return withUdpRelay(relayPort, relay -> {
             clearUdpRelayState(relay, null);
@@ -239,14 +242,93 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         });
     }
 
+    public boolean resetUdpRelay(int relayPort, String token) {
+        validateRpcToken(token, "reset");
+        return resetUdpRelay(relayPort);
+    }
+
     public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr) {
         if (DiagnosticMetrics.isEnabled()) {
-            DiagnosticMetrics.record("socks.udp.relay.claim.count", 1D, "port=" + relayPort);
+            DiagnosticMetrics.record("socks.udp.relay.claim.count", 1D, "action=claim");
         }
         return withUdpRelay(relayPort, relay -> {
             clearUdpRelayState(relay, clientAddr);
             return true;
         });
+    }
+
+    public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr, String token) {
+        validateRpcToken(token, "claim");
+        return claimUdpRelay(relayPort, clientAddr);
+    }
+
+    public SocksRpcCapabilities socksRpcCapabilities() {
+        return udpRelayGroupManager.capabilities();
+    }
+
+    public SocksRpcCapabilities socksRpcCapabilities(String token) {
+        validateRpcToken(token, "capabilities");
+        return socksRpcCapabilities();
+    }
+
+    public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request) {
+        return udpRelayGroupManager.open(request);
+    }
+
+    public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request, String token) {
+        validateRpcToken(token, "open-group");
+        UdpRelayGroupOpenResult result = openUdpRelayGroup(request);
+        if (result != null && result.isSuccess()) {
+            result.setToken(token);
+        }
+        return result;
+    }
+
+    public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
+        return udpRelayGroupManager.addUdpRelays(groupId, count);
+    }
+
+    public UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count, String token) {
+        validateRpcToken(token, "add-relay");
+        return addUdpRelays(groupId, count);
+    }
+
+    public boolean removeUdpRelay(String groupId, int relayPort) {
+        return udpRelayGroupManager.removeUdpRelay(groupId, relayPort);
+    }
+
+    public boolean removeUdpRelay(String groupId, int relayPort, String token) {
+        validateRpcToken(token, "remove-relay");
+        return removeUdpRelay(groupId, relayPort);
+    }
+
+    public boolean heartbeatUdpRelayGroup(String groupId) {
+        return udpRelayGroupManager.heartbeat(groupId);
+    }
+
+    public boolean heartbeatUdpRelayGroup(String groupId, String token) {
+        validateRpcToken(token, "heartbeat");
+        return heartbeatUdpRelayGroup(groupId);
+    }
+
+    public boolean closeUdpRelayGroup(String groupId) {
+        return udpRelayGroupManager.close(groupId);
+    }
+
+    public boolean closeUdpRelayGroup(String groupId, String token) {
+        validateRpcToken(token, "close-group");
+        return closeUdpRelayGroup(groupId);
+    }
+
+    private void validateRpcToken(String token, String action) {
+        try {
+            SocksRpcContract.requireValidRpcToken(token);
+        } catch (SecurityException e) {
+            if (DiagnosticMetrics.isEnabled()) {
+                DiagnosticMetrics.record("socks.rpc.auth.fail.count", 1D, "action=" + action);
+            }
+            throw e;
+        }
     }
 
     @SneakyThrows
@@ -268,6 +350,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @SuppressWarnings("unchecked")
     private void clearUdpRelayState(Channel relay, InetSocketAddress clientAddr) {
+        InetSocketAddress lockedClientAddr = isConcreteClientAddress(clientAddr) ? clientAddr : null;
         if (relay.pipeline().get(Udp2rawHandler.class) != null) {
             ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(Udp2rawHandler.ATTR_CTX_MAP).get();
             if (ctxMap != null) {
@@ -277,13 +360,19 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             if (routeMap != null) {
                 routeMap.clear();
             }
-            relay.attr(Udp2rawHandler.ATTR_CLIENT_ADDR).set(clientAddr);
+            relay.attr(Udp2rawHandler.ATTR_CLIENT_ADDR).set(lockedClientAddr);
         } else {
             SocksUdpRelayHandler.clearRelayState(relay);
-            relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(clientAddr);
+            relay.attr(SocksUdpRelayHandler.ATTR_CLIENT_ADDR).set(lockedClientAddr);
         }
         relay.attr(UdpRelayAttributes.ATTR_CLIENT_ORIGIN_ADDR).set(null);
-        relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(Boolean.TRUE);
+        relay.attr(UdpRelayAttributes.ATTR_CLIENT_LOCKED).set(lockedClientAddr != null);
+    }
+
+    private static boolean isConcreteClientAddress(InetSocketAddress clientAddr) {
+        return clientAddr != null
+                && clientAddr.getAddress() != null
+                && !clientAddr.getAddress().isAnyLocalAddress();
     }
 
 }

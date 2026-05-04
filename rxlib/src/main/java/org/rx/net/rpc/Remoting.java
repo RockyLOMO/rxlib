@@ -53,6 +53,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -99,6 +100,7 @@ public final class Remoting {
         static class EventBean {
             final Set<HybridSession> subscribe = ConcurrentHashMap.newKeySet();
             final Map<Long, EventContext> contextMap = new ConcurrentHashMap<Long, EventContext>();
+            final AtomicBoolean listenerAttached = new AtomicBoolean();
         }
 
         final RpcServerConfig config;
@@ -155,6 +157,9 @@ public final class Remoting {
                         case 2:
                             return invokeSuper(m, p);
                         case 3:
+                            if (config.isUsePool()) {
+                                throw new InvalidException("Remoting event subscription requires statefulMode");
+                            }
                             setReturnValue(clientBean, invokeSuper(m, p));
                             String eventName = (String) args[0];
                             ref.subscribedEvents.add(eventName);
@@ -614,7 +619,7 @@ public final class Remoting {
 
     private static String currentLocalEndpoint(HybridClient client) {
         HybridSession session = currentSession(client);
-        InetSocketAddress local = session == null ? null : session.tcpRemoteEndpoint();
+        InetSocketAddress local = session == null ? null : session.tcpLocalEndpoint();
         return Sockets.toString(local);
     }
 
@@ -698,15 +703,17 @@ public final class Remoting {
         }
         Object initLock = serverInitLocks.computeIfAbsent(contractInstance, k -> new Object());
         synchronized (initLock) {
-            existing = serverBeans.get(contractInstance);
-            if (existing != null) {
+            try {
+                existing = serverBeans.get(contractInstance);
+                if (existing != null) {
+                    return existing;
+                }
+                ServerBean bean = doRegister(contractInstance, config);
+                serverBeans.put(contractInstance, bean);
+                return bean;
+            } finally {
                 serverInitLocks.remove(contractInstance);
-                return existing;
             }
-            ServerBean bean = doRegister(contractInstance, config);
-            serverBeans.put(contractInstance, bean);
-            serverInitLocks.remove(contractInstance);
-            return bean;
         }
     }
 
@@ -728,16 +735,18 @@ public final class Remoting {
             ServerBean.EventBean eventBean = bean.eventBeans.computeIfAbsent(p.eventName, x -> new ServerBean.EventBean());
             switch (p.flag) {
                 case SUBSCRIBE:
-                    EventPublisher<?> eventTarget = (EventPublisher<?>) contractInstance;
-                    eventTarget.attachEvent(p.eventName, (sender, args) -> {
-                        ServerBean.EventContext eventContext = new ServerBean.EventContext((EventArgs) args);
-                        EventMessage computePack = prepareComputePack(bean, eventBean, p.eventName, (EventArgs) args, eventContext);
-                        if (computePack != null) {
-                            awaitComputedArgs(eventBean, eventContext, computePack, s);
-                        }
-                        List<HybridSession> broadcastTargets = collectBroadcastTargets(bean, eventBean, eventContext);
-                        doSendBroadcast(bean, p, eventContext, broadcastTargets);
-                    }, false);
+                    if (eventBean.listenerAttached.compareAndSet(false, true)) {
+                        EventPublisher<?> eventTarget = (EventPublisher<?>) contractInstance;
+                        eventTarget.attachEvent(p.eventName, (sender, args) -> {
+                            ServerBean.EventContext eventContext = new ServerBean.EventContext((EventArgs) args);
+                            EventMessage computePack = prepareComputePack(bean, eventBean, p.eventName, (EventArgs) args, eventContext);
+                            if (computePack != null) {
+                                awaitComputedArgs(eventBean, eventContext, computePack, s);
+                            }
+                            List<HybridSession> broadcastTargets = collectBroadcastTargets(bean, eventBean, eventContext);
+                            doSendBroadcast(bean, p, eventContext, broadcastTargets);
+                        }, false);
+                    }
                     log.info("serverSide event {} {} -> SUBSCRIBE", p.eventName, session.tcpRemoteEndpoint());
                     eventBean.subscribe.add(session);
                     break;
@@ -779,11 +788,28 @@ public final class Remoting {
         }
 
         MethodMessage pack = (MethodMessage) e.getValue();
+        Executor executor = bean.config.getExecutor();
         if (M_PING.equals(pack.methodName)) {
-            pack.returnValue = Boolean.TRUE;
-            session.send(pack, RemotingHybridOptions.response(pack));
+            if (executor != null && bean.config.isExecutorForPing()) {
+                executor.execute(() -> replyPing(session, pack));
+            } else {
+                replyPing(session, pack);
+            }
             return;
         }
+        if (executor == null) {
+            invokeAndReply(contractInstance, s, session, pack);
+        } else {
+            executor.execute(() -> invokeAndReply(contractInstance, s, session, pack));
+        }
+    }
+
+    private static void replyPing(HybridSession session, MethodMessage pack) {
+        pack.returnValue = Boolean.TRUE;
+        session.send(pack, RemotingHybridOptions.response(pack));
+    }
+
+    private static void invokeAndReply(Object contractInstance, HybridServer s, HybridSession session, MethodMessage pack) {
         try {
             pack.returnValue = Sys.callLog(contractInstance.getClass(), pack.methodName,
                     () -> String.format("Server %s.%s [%s -> %s]", contractInstance.getClass().getSimpleName(), pack.methodName,

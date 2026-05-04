@@ -1,0 +1,81 @@
+name: Agent Commit Helper
+
+# Manual-only workflow. Do not add push or pull_request triggers.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this helper workflow is being triggered"
+        required: false
+        default: "manual agent helper run"
+      ref:
+        description: "Branch, tag, or SHA to inspect"
+        required: false
+        default: "master"
+      list_large_files:
+        description: "List large files in the checkout"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      large_file_threshold_mb:
+        description: "Large file threshold in MB"
+        required: false
+        default: "50"
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    name: Inspect repository for agent commit work
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Show repository state
+        run: |
+          echo "reason=${{ inputs.reason }}"
+          echo "ref=${{ inputs.ref }}"
+          echo "sha=$(git rev-parse HEAD)"
+          echo "branch=$(git branch --show-current || true)"
+          git status --short
+          git log -1 --oneline
+
+      - name: List large files
+        if: ${{ inputs.list_large_files == 'true' }}
+        env:
+          THRESHOLD_MB: ${{ inputs.large_file_threshold_mb }}
+        run: |
+          case "$THRESHOLD_MB" in
+            ''|*[!0-9]*)
+              echo "large_file_threshold_mb must be a positive integer"
+              exit 1
+              ;;
+          esac
+
+          THRESHOLD_BYTES=$((THRESHOLD_MB * 1024 * 1024))
+          echo "Listing files larger than ${THRESHOLD_MB} MB (${THRESHOLD_BYTES} bytes)"
+          find . -path ./.git -prune -o -type f -size +"${THRESHOLD_BYTES}c" -print0 \
+            | xargs -0 -r ls -lh \
+            | sort -k5 -h
+
+      - name: Agent usage note
+        run: |
+          cat <<'EOF'
+          This helper intentionally does not auto-commit or push unknown changes.
+          For large or multi-file changes, prefer Git Data API commits from the agent,
+          or add an explicit, reviewed workflow extension in a separate plan.
+          EOF

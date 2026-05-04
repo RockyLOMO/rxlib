@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * DnsServer + DnsHandler 端到端：静态 hosts、拦截器缓存、解析完成后 {@link DnsServer#resolvingKeys} 应被清空。
+ * DnsServer + DnsHandler 端到端：静态 hosts、拦截器缓存、并发解析合并。
  * 同时覆盖 addHosts(addOrUpdate)、removeHosts（不凭空建空列表）、negativeTtl 默认值。
  */
 @Slf4j
@@ -54,7 +54,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
         }
 
         @Override
-        public void fakeEndpoint(long hash, String realEndpoint) {
+        public void fakeEndpoint(long hash, String realEndpoint, String token) {
         }
 
         @SneakyThrows
@@ -65,7 +65,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
         }
 
         @Override
-        public void addWhiteList(InetAddress endpoint) {
+        public void addWhiteList(InetAddress endpoint, String token) {
         }
     }
 
@@ -118,6 +118,21 @@ public class DnsServerIntegrationTest extends AbstractTester {
             RandomList<InetAddress> rl = server.getHosts().get(host);
             assertNotNull(rl);
             assertEquals(9, rl.getWeight(lo));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void domainShouldBeCaseInsensitive() throws Exception {
+        DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
+        try {
+            InetAddress lo = InetAddress.getByName("127.0.0.1");
+            assertTrue(server.addHosts("Example.COM.", "127.0.0.1"));
+
+            assertEquals(lo, server.getHosts("example.com").get(0));
+            assertEquals(lo, server.getHosts("EXAMPLE.COM.").get(0));
+            assertTrue(server.getHosts().containsKey("example.com"));
         } finally {
             server.close();
         }
@@ -186,10 +201,10 @@ public class DnsServerIntegrationTest extends AbstractTester {
             Thread.sleep(400);
             try (DnsClient client = new DnsClient(Collections.singletonList(new InetSocketAddress("127.0.0.1", dnsPort)))) {
                 assertEquals(shadow, client.resolve(name));
-                assertEquals(1, resolveCalls.get());
+                assertEquals(2, resolveCalls.get(), "A/AAAA 应分别写入缓存");
                 assertEquals(shadow, client.resolve(name));
-                assertEquals(1, resolveCalls.get(), "缓存命中后不应再次 resolveHost");
-                assertTrue(server.resolvingKeys.isEmpty(), "解析完成后 resolvingKeys 应 remove");
+                assertEquals(2, resolveCalls.get(), "缓存命中后不应再次 resolveHost");
+                assertTrue(server.resolvingPromises.isEmpty(), "解析完成后 resolvingPromises 应 remove");
             }
         } finally {
             server.close();

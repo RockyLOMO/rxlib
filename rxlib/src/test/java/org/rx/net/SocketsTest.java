@@ -160,6 +160,24 @@ public class SocketsTest {
     }
 
     @Test
+    public void testWriteUdpUsesConfiguredUdpWriteLimit() {
+        SocketConfig config = new SocketConfig();
+        config.setUdpWriteLimitBytes(6);
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(SocketConfig.ATTR_CONF).set(config);
+
+        ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4, 5, 6, 7});
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.PENDING_OVERLIMIT,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=config-limit"));
+        assertEquals(0, payload.refCnt());
+        assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+        assertNull(channel.readOutbound());
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
     public void testUdpWriteDropsUnresolvedRecipientBeforeWrite() {
         EmbeddedChannel channel = new EmbeddedChannel();
         channel.attr(Sockets.ATTR_UDP_WRITE_LIMIT_BYTES).set(128);

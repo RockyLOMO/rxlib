@@ -23,7 +23,7 @@
 | **双协议支持** | 同时监听 TCP/UDP，使用 Netty 内置编解码器 `TcpDnsQueryDecoder` / `DatagramDnsQueryDecoder` |
 | **hosts 权重负载** | 支持 `enableHostsWeight` 模式，相同域名多 IP 时按权重分配，返回 1-2 个 IP |
 | **解析拦截器** | `ResolveInterceptor` 接口支持自定义解析逻辑，可对接外部服务（如服务发现） |
-| **防缓存击穿** | `resolvingKeys` + `resolvingPromises` 防止并发场景下的缓存穿透（thundering-herd） |
+| **防缓存击穿** | `resolvingPromises` 按域名与记录类型合并并发解析，防止缓存穿透（thundering-herd） |
 | **H2 持久缓存** | 使用 `H2StoreCache` 作为 DNS 缓存后端，支持 TTL 和跨进程共享 |
 
 ## 适用场景

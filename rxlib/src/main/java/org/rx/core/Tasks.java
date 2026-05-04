@@ -1,13 +1,13 @@
 package org.rx.core;
 
 import io.netty.util.internal.ThreadLocalRandom;
-import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.annotation.Subscribe;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -57,9 +57,6 @@ public final class Tasks {
         unsafeStaticFieldOffset = staticFieldOffset;
         unsafePutObject = putObject;
         executor = new AbstractExecutorService() {
-            @Getter
-            boolean shutdown;
-
             @Override
             public Future<?> submit(Runnable task) {
                 return nextPool(task, null, null).submit(task);
@@ -82,23 +79,28 @@ public final class Tasks {
 
             @Override
             public void shutdown() {
-                shutdown = true;
+                log.warn("Ignore Tasks.executor().shutdown(); Tasks is a global wrapper");
             }
 
             @Override
             public List<Runnable> shutdownNow() {
-                shutdown = true;
+                log.warn("Ignore Tasks.executor().shutdownNow(); Tasks is a global wrapper");
                 return Collections.emptyList();
             }
 
             @Override
+            public boolean isShutdown() {
+                return false;
+            }
+
+            @Override
             public boolean isTerminated() {
-                return shutdown;
+                return false;
             }
 
             @Override
             public boolean awaitTermination(long timeout, TimeUnit unit) {
-                return shutdown;
+                return false;
             }
         };
         completableFutureExecutor = Executors.unconfigurableExecutorService(executor);
@@ -108,25 +110,35 @@ public final class Tasks {
 
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            Action fn;
-            while ((fn = shutdownActions.poll()) != null) {
-                try {
-                    fn.invoke();
-                } catch (Throwable e) {
-                    log.error("shutdownHook", e);
-                }
-            }
+            drainShutdownActions();
         }));
 
         // Delay CompletableFuture async-pool patching to avoid expanding the static-init dependency chain.
-        timer.setTimeout(Tasks::initCompletableFutureAsyncPool, 1000);
+        timer.setTimeout(() -> initCompletableFutureAsyncPool(), 1000);
         timer.setTimeout(() -> ObjectChangeTracker.DEFAULT.register(Tasks.class), 30000);
     }
 
-    private static void initCompletableFutureAsyncPool() {
-        if (!setCompletableFutureAsyncPool("asyncPool") && !setCompletableFutureAsyncPool("ASYNC_POOL")) {
-            log.warn("setAsyncPool field not found");
+    static boolean initCompletableFutureAsyncPool() {
+        if (!RxConfig.INSTANCE.threadPool.patchCompletableFutureAsyncPool) {
+            log.info("CompletableFuture async pool patch disabled by app.threadPool.patchCompletableFutureAsyncPool=false");
+            recordCompletableFuturePatchMetric("disabled", "none");
+            return false;
         }
+
+        if (setCompletableFutureAsyncPool("asyncPool")) {
+            log.info("CompletableFuture async pool patched, field=asyncPool");
+            recordCompletableFuturePatchMetric("success", "asyncPool");
+            return true;
+        }
+        if (setCompletableFutureAsyncPool("ASYNC_POOL")) {
+            log.info("CompletableFuture async pool patched, field=ASYNC_POOL");
+            recordCompletableFuturePatchMetric("success", "ASYNC_POOL");
+            return true;
+        }
+        log.warn("CompletableFuture async pool patch failed, field not found or write rejected, java={}",
+                System.getProperty("java.version"));
+        recordCompletableFuturePatchMetric("failed", "none");
+        return false;
     }
 
     private static boolean setCompletableFutureAsyncPool(String fieldName) {
@@ -164,6 +176,24 @@ public final class Tasks {
         }
     }
 
+    private static void recordCompletableFuturePatchMetric(String result, String field) {
+        if (DiagnosticMetrics.isEnabled()) {
+            DiagnosticMetrics.record("rx.thread_pool.completable_future.patch.count", 1D,
+                    "result=" + result + ",field=" + field);
+        }
+    }
+
+    private static void drainShutdownActions() {
+        Action fn;
+        while ((fn = shutdownActions.poll()) != null) {
+            try {
+                fn.invoke();
+            } catch (Throwable e) {
+                log.error("shutdownHook", e);
+            }
+        }
+    }
+
     @Subscribe(topicClass = RxConfig.class)
     static synchronized void createPool(ObjectChangedEvent event) {
         int newCount = RxConfig.INSTANCE.threadPool.replicas;
@@ -185,7 +215,8 @@ public final class Tasks {
                 }
                 for (int i = poolCount; i < nodes.size(); i++) {
                     if (nodes.get(i).getActiveCount() == 0) {
-                        nodes.remove(i);
+                        ThreadPool removed = nodes.remove(i);
+                        CpuWatchman.INSTANCE.unregister(removed);
                     }
                 }
             }, 60000, nodes, TimeoutFlag.PERIOD.flags(TimeoutFlag.REPLACE));
@@ -218,6 +249,14 @@ public final class Tasks {
 
     public static WheelTimer timer() {
         return timer;
+    }
+
+    public static void shutdown() {
+        executor.shutdown();
+    }
+
+    public static List<Runnable> shutdownNow() {
+        return executor.shutdownNow();
     }
 
     public static void addShutdownHook(Action fn) {

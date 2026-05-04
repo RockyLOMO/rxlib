@@ -5,6 +5,7 @@ import org.junit.jupiter.api.*;
 import org.rx.AbstractTester;
 import org.rx.bean.ULID;
 import org.rx.core.EventArgs;
+import org.rx.exception.InvalidException;
 import org.rx.net.transport.ClientDisconnectedException;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
@@ -306,21 +307,49 @@ public class RemotingTest extends AbstractTester {
     @Test
     @Order(6)
     @Timeout(20)
-    void rpcPoolMode_disconnectedEventPacket_recyclesOnce() throws Exception {
+    void poolModeShouldRejectEventSubscription() throws Exception {
         int port = freePort();
         InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
         RpcClientConfig<UserManager> config = RpcClientConfig.poolMode(endpoint, 1, 1);
         UserManager facade = Remoting.createFacade(UserManager.class, config);
-        CountingHybridClientPool pool = new CountingHybridClientPool(config);
-        Remoting.clientPools.put(config, pool);
         try {
-            assertThrows(ClientDisconnectedException.class, () ->
+            assertThrows(InvalidException.class, () ->
                     facade.<UserEventArgs>attachEvent("onCreate", (s, e) -> {
-                    }, false));
-            assertEquals(1, pool.returnCount.get(), "事件包断链后只能归还池化客户端一次");
+                    }, false), "poolMode 不支持长连接事件订阅");
         } finally {
-            Remoting.clientPools.remove(config);
-            pool.close();
+            facade.close();
+            closeClientPool(config);
+        }
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void eventSubscribeShouldAttachServerListenerOnce() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        UserManagerImpl impl = new UserManagerImpl();
+        startServer(impl, endpoint);
+
+        RpcClientConfig<UserManager> config1 = RpcClientConfig.statefulMode(endpoint, 0);
+        RpcClientConfig<UserManager> config2 = RpcClientConfig.statefulMode(endpoint, 0);
+        config1.getTcpConfig().setConnectTimeoutMillis(1000);
+        config2.getTcpConfig().setConnectTimeoutMillis(1000);
+        UserManager facade1 = Remoting.createFacade(UserManager.class, config1);
+        UserManager facade2 = Remoting.createFacade(UserManager.class, config2);
+        AtomicInteger callbacks = new AtomicInteger();
+        try {
+            facade1.<UserEventArgs>attachEvent("onCreate", (s, e) -> callbacks.incrementAndGet(), false);
+            facade2.<UserEventArgs>attachEvent("onCreate", (s, e) -> callbacks.incrementAndGet(), false);
+            sleep(300);
+
+            impl.create(PersonBean.LeZhi);
+
+            awaitEquals(callbacks, 2, 3000);
+            assertEquals(1, Remoting.serverBeans.get(impl).eventBeans.get("onCreate").listenerAttached.get() ? 1 : 0);
+        } finally {
+            facade1.close();
+            facade2.close();
         }
     }
 

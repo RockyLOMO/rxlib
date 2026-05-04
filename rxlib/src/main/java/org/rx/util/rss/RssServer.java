@@ -52,6 +52,7 @@ public final class RssServer {
         outConf.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
         outConf.setOptimalSettings(RssSupport.OUT_OPS);
         outConf.setUdpRedundantMultiplier(2);
+        outConf.setUdpRedundantTrackClientPeer(true);
         RssSupport.applyUdpCompressionTrial(outConf);
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);

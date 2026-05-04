@@ -4,19 +4,23 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 public class TasksCompatibilityTest {
     @Test
-    void completableFutureAsyncPoolUsesTasksExecutor() throws Exception {
-        Method method = Tasks.class.getDeclaredMethod("initCompletableFutureAsyncPool");
-        method.setAccessible(true);
-        method.invoke(null);
+    void completableFutureAsyncPoolPatchDisabledByDefault() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setPatchCompletableFutureAsyncPool(false);
+            Method method = Tasks.class.getDeclaredMethod("initCompletableFutureAsyncPool");
+            method.setAccessible(true);
+            Boolean patched = (Boolean) method.invoke(null);
+            assertFalse(patched);
+        }
 
-        String threadName = CompletableFuture.supplyAsync(() -> Thread.currentThread().getName())
-                .get(5, TimeUnit.SECONDS);
-        assertTrue(threadName.contains(ThreadPool.POOL_NAME_PREFIX), threadName);
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        });
+        future.join();
     }
 }

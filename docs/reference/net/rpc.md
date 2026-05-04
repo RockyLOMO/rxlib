@@ -26,6 +26,11 @@ rxlib 自研的高性能远程过程调用框架。支持 TCP 单一协议，也
 - 内部系统间的低延迟、高频调用通信。
 - 对传输性能有严苛要求的私有协议服务（相比 HTTP REST 或 gRPC 更轻量和迅速）。
 
+## 客户端模式约束
+
+- 普通 request/response 调用可使用 `RpcClientConfig.poolMode(...)`，适合高并发短调用。
+- 事件订阅、事件广播、断线自动重订阅必须使用 `RpcClientConfig.statefulMode(...)`。池化客户端会在调用后回收到连接池并重置 handler，不具备稳定的长连接订阅语义。
+
 ## Hybrid 传输模式注意事项
 
 在 rxlib 的 RPC 模块中，`Remoting` 默认采用 TCP/UDP 混合传输（Hybrid）协议。

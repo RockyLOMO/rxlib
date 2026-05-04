@@ -85,6 +85,11 @@ final class DefaultHybridSession implements HybridSession {
     }
 
     @Override
+    public InetSocketAddress tcpLocalEndpoint() {
+        return tcpClient == null ? null : tcpClient.getLocalEndpoint();
+    }
+
+    @Override
     public InetSocketAddress udpRemoteEndpoint() {
         return udpRemoteEndpoint;
     }

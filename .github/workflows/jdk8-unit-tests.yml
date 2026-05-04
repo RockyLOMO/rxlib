@@ -1,0 +1,73 @@
+name: JDK 8 Unit Tests
+
+# Manual-only workflow. Do not add push or pull_request triggers.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this workflow was triggered"
+        required: false
+        default: "manual jdk8 validation"
+      test_classes:
+        description: "Optional test class list. Supports comma, semicolon, space, or newline separated values, for example: FooTest,BarTest"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Maven test on JDK 8
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "8"
+          cache: maven
+
+      - name: Show Java and Maven versions
+        run: |
+          java -version
+          mvn -version
+
+      - name: Build and test
+        env:
+          TEST_CLASSES: ${{ inputs.test_classes }}
+        run: |
+          set -euo pipefail
+
+          RAW_TEST_CLASSES="$TEST_CLASSES"
+          if [ -z "$RAW_TEST_CLASSES" ]; then
+            COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+            RAW_TEST_CLASSES="$(
+              printf '%s' "$COMMIT_MESSAGE" \
+                | sed -nE 's/.*\[(test_classes|tests)[[:space:]]*[:=][[:space:]]*([^]]+)\].*/\2/p' \
+                | head -n 1
+            )"
+            if [ -n "$RAW_TEST_CLASSES" ]; then
+              echo "Resolved test classes from HEAD commit message: $RAW_TEST_CLASSES"
+            fi
+          fi
+
+          NORMALIZED_TEST_CLASSES="$(
+            printf '%s' "$RAW_TEST_CLASSES" \
+              | tr '\n\r\t ;' ',,,,' \
+              | sed -E 's/,+/,/g; s/^,//; s/,$//'
+          )"
+
+          MAVEN_ARGS="-B -U -Dgpg.skip=true -Dmaven.test.skip=false -DskipTests=false"
+
+          if [ -n "$NORMALIZED_TEST_CLASSES" ]; then
+            echo "Running selected JDK 8 tests: $NORMALIZED_TEST_CLASSES"
+            mvn $MAVEN_ARGS -Dtest="$NORMALIZED_TEST_CLASSES" clean test
+          else
+            echo "Running all JDK 8 tests"
+            mvn $MAVEN_ARGS clean test
+          fi

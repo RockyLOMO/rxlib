@@ -17,15 +17,20 @@ import org.rx.exception.TraceHandler;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
 
 import static org.rx.core.Constants.NON_UNCHECKED;
@@ -47,10 +52,34 @@ public class ThreadPool extends ThreadPoolExecutor {
         final int queueCapacity;
         final AtomicInteger counter = new AtomicInteger();
         final Semaphore availableSlots;
+        final LongAdder offerBlockCount = new LongAdder();
+        final LongAdder offerBlockMillis = new LongAdder();
+        final AtomicLong offerBlockMaxMillis = new AtomicLong();
+        final LongAdder offerRejectedCount = new LongAdder();
+        final LongAdder offerCallerRunsCount = new LongAdder();
 
         public ThreadQueue(int queueCapacity) {
             this.queueCapacity = queueCapacity;
             this.availableSlots = new Semaphore(queueCapacity, false);
+        }
+
+        static final class CapacitySnapshot {
+            final int capacity;
+            final int counter;
+            final int remaining;
+            final int slots;
+
+            CapacitySnapshot(int capacity, int counter, int remaining, int slots) {
+                this.capacity = capacity;
+                this.counter = counter;
+                this.remaining = remaining;
+                this.slots = slots;
+            }
+        }
+
+        CapacitySnapshot capacitySnapshot() {
+            int c = counter.get();
+            return new CapacitySnapshot(queueCapacity, c, Math.max(0, queueCapacity - c), availableSlots.availablePermits());
         }
 
         public boolean isFullLoad() {
@@ -67,28 +96,171 @@ public class ThreadPool extends ThreadPoolExecutor {
             return counter.get();
         }
 
-        @SneakyThrows
         @Override
         public boolean offer(Runnable r) {
-            if (!availableSlots.tryAcquire()) {
-                boolean logged = false;
-                while (!availableSlots.tryAcquire(500, TimeUnit.MILLISECONDS)) {
-                    if (!logged) {
-                        log.warn("Block caller thread until queue[{}/{}] polled then offer {}", counter.get(), queueCapacity, r);
-                        logged = true;
-                    }
-                }
-                if (logged && log.isDebugEnabled()) {
-                    log.debug("Wait poll ok");
-                }
-            }
-            counter.incrementAndGet();
-            Task<?> task = pool.setTask(r);
-            if (task != null && task.flags.has(RunFlag.TRANSFER)) {
-                super.transfer(r);
+            int acquireResult = acquireSlot(r);
+            if (acquireResult == 0) {
                 return true;
             }
-            return super.offer(r);
+            if (acquireResult < 0) {
+                if (pool != null) {
+                    pool.rejectTask(r);
+                }
+                throw new RejectedExecutionException("ThreadPool " + poolName() + " queue offer rejected");
+            }
+
+            boolean offered = false;
+            counter.incrementAndGet();
+            try {
+                Task<?> task = pool != null ? pool.setTask(r) : null;
+                if (task != null && task.flags.has(RunFlag.TRANSFER)) {
+                    super.transfer(r);
+                    offered = true;
+                    return true;
+                }
+                offered = super.offer(r);
+                return offered;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RejectedExecutionException("ThreadPool " + poolName() + " queue offer interrupted", e);
+            } finally {
+                if (!offered) {
+                    if (pool != null) {
+                        pool.getTask(r, true);
+                    }
+                    doNotify();
+                }
+            }
+        }
+
+        @Override
+        public int remainingCapacity() {
+            return Math.max(0, queueCapacity - counter.get());
+        }
+
+        private int acquireSlot(Runnable r) {
+            if (availableSlots.tryAcquire()) {
+                return 1;
+            }
+
+            RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
+            ThreadPoolQueueOfferMode mode = conf.queueOfferMode != null ? conf.queueOfferMode : ThreadPoolQueueOfferMode.BLOCK;
+            long timeoutMillis = Math.max(0L, conf.queueOfferTimeoutMillis);
+            long startNanos = System.nanoTime();
+            if (mode == ThreadPoolQueueOfferMode.BLOCK) {
+                return blockUntilSlot(r, startNanos);
+            }
+            if (timeoutMillis > 0L && waitForSlot(r, timeoutMillis, startNanos)) {
+                return 1;
+            }
+
+            recordOfferBlock(startNanos);
+            if (mode == ThreadPoolQueueOfferMode.CALLER_RUNS) {
+                offerCallerRunsCount.increment();
+                if (log.isWarnEnabled()) {
+                    log.warn("Run task in caller thread because queue[{}/{}] is full, pool={}, task={}",
+                            counter.get(), queueCapacity, poolName(), r);
+                }
+                if (pool != null) {
+                    pool.runInCaller(r);
+                } else {
+                    r.run();
+                }
+                return 0;
+            }
+
+            offerRejectedCount.increment();
+            if (log.isWarnEnabled()) {
+                log.warn("Reject task because queue[{}/{}] is full after {}ms, pool={}, task={}",
+                        counter.get(), queueCapacity, timeoutMillis, poolName(), r);
+            }
+            return -1;
+        }
+
+        private int blockUntilSlot(Runnable r, long startNanos) {
+            boolean logged = false;
+            for (;;) {
+                if (isPoolShutdown()) {
+                    offerRejectedCount.increment();
+                    return -1;
+                }
+                try {
+                    if (availableSlots.tryAcquire(500, TimeUnit.MILLISECONDS)) {
+                        if (isPoolShutdown()) {
+                            availableSlots.release();
+                            offerRejectedCount.increment();
+                            return -1;
+                        }
+                        recordOfferBlock(startNanos);
+                        if (logged && log.isDebugEnabled()) {
+                            log.debug("Wait poll ok");
+                        }
+                        return 1;
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    offerRejectedCount.increment();
+                    return -1;
+                }
+                if (!logged) {
+                    log.warn("Block caller thread until queue[{}/{}] polled then offer {}", counter.get(), queueCapacity, r);
+                    logged = true;
+                }
+            }
+        }
+
+        private boolean waitForSlot(Runnable r, long timeoutMillis, long startNanos) {
+            boolean logged = false;
+            long deadlineNanos = startNanos + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+            for (;;) {
+                if (isPoolShutdown()) {
+                    offerRejectedCount.increment();
+                    return false;
+                }
+                long remainingNanos = deadlineNanos - System.nanoTime();
+                if (remainingNanos <= 0L) {
+                    return false;
+                }
+                long waitNanos = Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(500L));
+                try {
+                    if (availableSlots.tryAcquire(waitNanos, TimeUnit.NANOSECONDS)) {
+                        if (isPoolShutdown()) {
+                            availableSlots.release();
+                            offerRejectedCount.increment();
+                            return false;
+                        }
+                        recordOfferBlock(startNanos);
+                        return true;
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    offerRejectedCount.increment();
+                    return false;
+                }
+                if (!logged) {
+                    log.warn("Block caller thread up to {}ms until queue[{}/{}] polled then offer {}",
+                            timeoutMillis, counter.get(), queueCapacity, r);
+                    logged = true;
+                }
+            }
+        }
+
+        private boolean isPoolShutdown() {
+            return pool != null && pool.isShutdown();
+        }
+
+        private void recordOfferBlock(long startNanos) {
+            long millis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+            offerBlockCount.increment();
+            offerBlockMillis.add(millis);
+            long old;
+            while (millis > (old = offerBlockMaxMillis.get()) && !offerBlockMaxMillis.compareAndSet(old, millis)) {
+                // retry
+            }
+        }
+
+        private String poolName() {
+            return pool == null ? "unknown" : pool.poolName;
         }
 
         @Override
@@ -133,15 +305,73 @@ public class ThreadPool extends ThreadPoolExecutor {
         public boolean remove(Object o) {
             boolean ok = super.remove(o);
             if (ok) {
-                if (pool != null && o instanceof Runnable) {
-                    pool.getTask((Runnable) o, true);
-                }
+                cleanupRemoved(o);
                 if (log.isDebugEnabled()) {
                     log.debug("Notify remove");
                 }
                 doNotify();
             }
             return ok;
+        }
+
+        @Override
+        public Runnable poll() {
+            Runnable r = super.poll();
+            if (r != null) {
+                cleanupRemoved(r);
+                doNotify();
+            }
+            return r;
+        }
+
+        @Override
+        public int drainTo(Collection<? super Runnable> c) {
+            return drainTo(c, Integer.MAX_VALUE);
+        }
+
+        @Override
+        public int drainTo(Collection<? super Runnable> c, int maxElements) {
+            Objects.requireNonNull(c, "collection");
+            if (c == this) {
+                throw new IllegalArgumentException("Can not drain to self");
+            }
+            if (maxElements <= 0) {
+                return 0;
+            }
+
+            int n = 0;
+            while (n < maxElements) {
+                Runnable r = super.poll();
+                if (r == null) {
+                    break;
+                }
+                try {
+                    c.add(r);
+                    n++;
+                } finally {
+                    cleanupRemoved(r);
+                    doNotify();
+                }
+            }
+            return n;
+        }
+
+        @Override
+        public void clear() {
+            for (;;) {
+                Runnable r = super.poll();
+                if (r == null) {
+                    return;
+                }
+                cleanupRemoved(r);
+                doNotify();
+            }
+        }
+
+        private void cleanupRemoved(Object o) {
+            if (pool != null && o instanceof Runnable) {
+                pool.getTask((Runnable) o, true);
+            }
         }
 
         private void doNotify() {
@@ -220,6 +450,8 @@ public class ThreadPool extends ThreadPoolExecutor {
         final StackTraceElement[] stackTrace;
         volatile boolean skipExecution;
         volatile boolean singleLockAcquired;
+        volatile boolean threadLocalMapSet;
+        volatile InternalThreadLocalMap oldThreadLocalMap;
 
         private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             if (flags == null) {
@@ -351,12 +583,19 @@ public class ThreadPool extends ThreadPoolExecutor {
      */
     @SuppressWarnings("unchecked")
     private static final ThreadLocal<InternalThreadLocalMap> SLOW_THREAD_LOCAL_MAP;
+    private static final Constructor<InternalThreadLocalMap> INTERNAL_THREAD_LOCAL_MAP_CONSTRUCTOR;
+    private static final Field INDEXED_VARIABLES_FIELD;
 
     static {
         try {
             SLOW_THREAD_LOCAL_MAP = (ThreadLocal<InternalThreadLocalMap>) FieldUtils.readStaticField(
                     InternalThreadLocalMap.class, "slowThreadLocalMap", true);
+            INTERNAL_THREAD_LOCAL_MAP_CONSTRUCTOR = InternalThreadLocalMap.class.getDeclaredConstructor();
+            INTERNAL_THREAD_LOCAL_MAP_CONSTRUCTOR.setAccessible(true);
+            INDEXED_VARIABLES_FIELD = FieldUtils.getDeclaredField(InternalThreadLocalMap.class, "indexedVariables", true);
         } catch (IllegalAccessException e) {
+            throw new ExceptionInInitializerError(e);
+        } catch (NoSuchMethodException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
@@ -514,6 +753,9 @@ public class ThreadPool extends ThreadPoolExecutor {
     final int maxPoolSize;
     final int resizeStep;
     final Map<Runnable, Task<?>> taskMap = new ConcurrentHashMap<>();
+    final LongAdder taskRejectedCount = new LongAdder();
+    final LongAdder serialRejectedCount = new LongAdder();
+    final LongAdder singleSkipCount = new LongAdder();
     // runAsync() wrap task to AsynchronousCompletionTask, and this::execute adapt function will not work
     final Executor asyncExecutor = super::execute;
 
@@ -553,15 +795,12 @@ public class ThreadPool extends ThreadPoolExecutor {
                             pool.getTask(r, true);
                         }
                         log.warn("ThreadPool {} is shutdown", poolName);
-                        return;
+                        throw new RejectedExecutionException("ThreadPool " + poolName + " is shutdown");
                     }
-                    boolean offered = executor.getQueue().offer(r);
-                    if (!offered) {
-                        if (pool != null) {
-                            pool.getTask(r, true);
-                        }
-                        throw new RejectedExecutionException("ThreadPool " + poolName + " queue offer rejected");
+                    if (pool != null) {
+                        pool.rejectTask(r);
                     }
+                    throw new RejectedExecutionException("ThreadPool " + poolName + " rejected task");
                 });
         super.allowCoreThreadTimeOut(allowCoreThreadTimeout);
         ((ThreadQueue) super.getQueue()).pool = this;
@@ -774,13 +1013,13 @@ public class ThreadPool extends ThreadPoolExecutor {
 
     <T> CompletableFuture<T> runSerialAsync(@NonNull Task<T> t, @NonNull Object taskId, FlagsEnum<RunFlag> flags, boolean reuse) {
         AtomicInteger counter = taskSerialCountMap.computeIfAbsent(taskId, k -> new AtomicInteger(0));
-        int maxCap = RxConfig.INSTANCE.threadPool.queueCapacity;
-        if (maxCap <= 0) maxCap = Constants.CPU_THREADS * 64;
-        maxCap = Math.max(maxCap, 100000); // Prevent unbounded growth but do not fail tests
+        int maxCap = serialQueueCapacity();
 
         if (counter.incrementAndGet() > maxCap) {
             counter.decrementAndGet();
-            throw new RejectedExecutionException("Serial task chain for " + taskId + " has exceeded capacity");
+            serialRejectedCount.increment();
+            throw new RejectedExecutionException("Serial task chain for " + taskId
+                    + " has exceeded capacity " + maxCap + " in pool " + poolName);
         }
         AtomicReference<CompletableFuture<T>> nextRef = new AtomicReference<>();
         try {
@@ -789,8 +1028,10 @@ public class ThreadPool extends ThreadPoolExecutor {
                 if (prev == null) {
                     next = CompletableFuture.supplyAsync(t, asyncExecutor);
                 } else {
-                    next = ((CompletableFuture<T>) prev).thenApplyAsync(it -> {
-                        COMPLETION_RETURNED_VALUE.set(it);
+                    next = ((CompletableFuture<T>) prev).handleAsync((it, ex) -> {
+                        if (ex == null) {
+                            COMPLETION_RETURNED_VALUE.set(it);
+                        }
                         try {
                             return t.get();
                         } finally {
@@ -799,12 +1040,6 @@ public class ThreadPool extends ThreadPoolExecutor {
                     }, this);
                 }
                 nextRef.set(next);
-                next.whenComplete((r, e) -> {
-                    taskSerialMap.compute(taskId, (k2, cur) -> cur == next ? null : cur);
-                    if (counter.decrementAndGet() == 0) {
-                        taskSerialCountMap.remove(taskId, counter);
-                    }
-                });
                 return next;
             });
         } catch (Throwable ex) {
@@ -813,7 +1048,14 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
             throw ex;
         }
-        return nextRef.get();
+        CompletableFuture<T> next = nextRef.get();
+        next.whenComplete((r, e) -> {
+            taskSerialMap.compute(taskId, (k2, cur) -> cur == next ? null : cur);
+            if (counter.decrementAndGet() == 0) {
+                taskSerialCountMap.remove(taskId, counter);
+            }
+        });
+        return next;
     }
 
     public <T> MultiTaskFuture<T, T> runAnyAsync(Iterable<Func<T>> tasks) {
@@ -851,6 +1093,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
             if (!runningSingleTasks.add(id)) {
                 task.skipExecution = true;
+                singleSkipCount.increment();
                 log.warn("SingleScope {} -> {} already running", id, flags.name());
                 return;
             }
@@ -864,7 +1107,9 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
         // TransmittableThreadLocal
         if (task.parent != null) {
-            setThreadLocalMap(t, task.parent);
+            task.oldThreadLocalMap = getThreadLocalMap(t);
+            task.threadLocalMapSet = true;
+            setThreadLocalMap(t, copyThreadLocalMap(task.parent));
         }
         if (flags.has(RunFlag.THREAD_TRACE)) {
             startTrace(task.traceId);
@@ -909,12 +1154,62 @@ public class ThreadPool extends ThreadPoolExecutor {
                 log.debug("CTX release {} -> {}", id, task.flags.name());
             }
         }
-        if (task.parent != null) {
-            setThreadLocalMap(Thread.currentThread(), null);
+        if (task.threadLocalMapSet) {
+            setThreadLocalMap(Thread.currentThread(), task.oldThreadLocalMap);
+            task.oldThreadLocalMap = null;
+            task.threadLocalMapSet = false;
         }
         if (flags.has(RunFlag.THREAD_TRACE)) {
             endTrace();
         }
+    }
+
+    private static int serialQueueCapacity() {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
+        int capacity = conf.serialQueueCapacity > 0 ? conf.serialQueueCapacity : checkCapacity(conf.queueCapacity);
+        int hardLimit = conf.serialQueueHardLimit > 0 ? conf.serialQueueHardLimit : 100000;
+        return Math.max(1, Math.min(capacity, hardLimit));
+    }
+
+    private void rejectTask(Runnable r) {
+        taskRejectedCount.increment();
+        getTask(r, true);
+    }
+
+    private void runInCaller(Runnable r) {
+        Thread thread = Thread.currentThread();
+        Throwable error = null;
+        beforeExecute(thread, r);
+        try {
+            r.run();
+        } catch (RuntimeException e) {
+            error = e;
+            throw e;
+        } catch (Error e) {
+            error = e;
+            throw e;
+        } finally {
+            afterExecute(r, error);
+        }
+    }
+
+    private InternalThreadLocalMap getThreadLocalMap(Thread t) {
+        if (t instanceof FastThreadLocalThread) {
+            return ((FastThreadLocalThread) t).threadLocalMap();
+        }
+        return SLOW_THREAD_LOCAL_MAP.get();
+    }
+
+    @SneakyThrows
+    private InternalThreadLocalMap copyThreadLocalMap(InternalThreadLocalMap threadLocalMap) {
+        InternalThreadLocalMap copy = INTERNAL_THREAD_LOCAL_MAP_CONSTRUCTOR.newInstance();
+        Object[] indexedVariables = ((Object[]) INDEXED_VARIABLES_FIELD.get(threadLocalMap)).clone();
+        int variablesToRemoveIndex = InternalThreadLocalMap.VARIABLES_TO_REMOVE_INDEX;
+        if (variablesToRemoveIndex < indexedVariables.length && indexedVariables[variablesToRemoveIndex] instanceof Set) {
+            indexedVariables[variablesToRemoveIndex] = new HashSet<>((Set<?>) indexedVariables[variablesToRemoveIndex]);
+        }
+        INDEXED_VARIABLES_FIELD.set(copy, indexedVariables);
+        return copy;
     }
 
     private void setThreadLocalMap(Thread t, InternalThreadLocalMap threadLocalMap) {
@@ -973,7 +1268,14 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     @Override
+    public void shutdown() {
+        CpuWatchman.INSTANCE.unregister(this);
+        super.shutdown();
+    }
+
+    @Override
     public List<Runnable> shutdownNow() {
+        CpuWatchman.INSTANCE.unregister(this);
         List<Runnable> queued = super.shutdownNow();
         for (Runnable runnable : queued) {
             getTask(runnable, true);
@@ -986,12 +1288,24 @@ public class ThreadPool extends ThreadPoolExecutor {
             return;
         }
         String tags = "pool=" + sanitizeMetricTag(poolName);
+        ThreadQueue queue = (ThreadQueue) getQueue();
         DiagnosticMetrics.record("rx.thread_pool.core.count", getCorePoolSize(), tags);
         DiagnosticMetrics.record("rx.thread_pool.size.count", getPoolSize(), tags);
         DiagnosticMetrics.record("rx.thread_pool.active.count", getActiveCount(), tags);
         DiagnosticMetrics.record("rx.thread_pool.queue.count", getQueue().size(), tags);
         DiagnosticMetrics.record("rx.thread_pool.completed.count", getCompletedTaskCount(), tags);
         DiagnosticMetrics.record("rx.thread_pool.largest.count", getLargestPoolSize(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.queue.capacity", queue.queueCapacity, tags);
+        DiagnosticMetrics.record("rx.thread_pool.queue.remaining", queue.remainingCapacity(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.task.rejected.count", taskRejectedCount.sum(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.queue.offer.block.count", queue.offerBlockCount.sum(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.queue.offer.block.millis", queue.offerBlockMillis.sum(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.queue.offer.block.max.millis", queue.offerBlockMaxMillis.get(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.queue.offer.rejected.count", queue.offerRejectedCount.sum(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.queue.offer.caller_runs.count", queue.offerCallerRunsCount.sum(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.serial.chain.count", taskSerialCountMap.size(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.serial.rejected.count", serialRejectedCount.sum(), tags);
+        DiagnosticMetrics.record("rx.thread_pool.single.skip.count", singleSkipCount.sum(), tags);
     }
 
     private static String sanitizeMetricTag(String value) {

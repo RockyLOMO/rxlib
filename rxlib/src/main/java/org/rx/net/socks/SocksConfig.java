@@ -69,10 +69,30 @@ public class SocksConfig extends SocketConfig {
      */
     private UdpRedundantConfig udpRedundant;
     /**
+     * 是否允许 UDP relay 把真实 client UDP sender 登记为 RDNT peer。
+     * 仅建议在 rxlib A<->B 标准 SOCKS5 fallback 链路的 B 侧开启。
+     */
+    private boolean udpRedundantTrackClientPeer;
+    /**
      * UDP 单包压缩配置。
      * 仅对代理链上的隧道对端生效，用于回收多倍发包带来的带宽开销。
      */
     private UdpCompressConfig udpCompress;
+    /**
+     * UDP SOCKS5 upstream 端口跳跃配置。
+     * 默认关闭；开启后同一逻辑 upstream 可持有多个远端 UDP relay 端口。
+     */
+    private UdpPortHoppingConfig udpPortHopping;
+    /**
+     * UDP relay 控制面选择。AUTO 下优先尝试 rxlib RPC group，失败按 fallback 配置回退标准 SOCKS5。
+     */
+    private UdpRelayControlMode udpRelayControlMode = UdpRelayControlMode.AUTO;
+    private boolean udpRelayControlFallbackToSocks5 = true;
+    private int udpRelayControlMaxRelaysPerGroup = 4;
+    private long udpRelayGroupIdleMillis = 300_000L;
+    private long udpRelayGroupHeartbeatMillis = 30_000L;
+    private int udpRelayControlFailureThreshold = 5;
+    private long udpRelayControlBreakerOpenMillis = 60_000L;
 
     public SocksConfig() {}
 
@@ -250,6 +270,154 @@ public class SocksConfig extends SocketConfig {
             udpRedundant = new UdpRedundantConfig();
         }
         return udpRedundant.getDestinationRules();
+    }
+
+    public boolean isUdpPortHoppingEnabled() {
+        return udpPortHopping != null && udpPortHopping.isEnabled()
+                && (udpPortHopping.getHopCount() > 1
+                || (udpPortHopping.isAdaptive() && udpPortHopping.getMaxHopCount() > 1));
+    }
+
+    public void setUdpPortHoppingEnabled(boolean enabled) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setEnabled(enabled);
+    }
+
+    public int getUdpPortHoppingHopCount() {
+        return udpPortHopping != null ? udpPortHopping.getHopCount() : 1;
+    }
+
+    public void setUdpPortHoppingHopCount(int hopCount) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setHopCount(hopCount);
+    }
+
+    public int getUdpPortHoppingMinActiveHops() {
+        return udpPortHopping != null ? udpPortHopping.getMinActiveHops() : 1;
+    }
+
+    public void setUdpPortHoppingMinActiveHops(int minActiveHops) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setMinActiveHops(minActiveHops);
+    }
+
+    public UdpPortHoppingMode getUdpPortHoppingMode() {
+        return udpPortHopping != null ? udpPortHopping.getMode() : UdpPortHoppingMode.ROUND_ROBIN;
+    }
+
+    public void setUdpPortHoppingMode(UdpPortHoppingMode mode) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setMode(mode);
+    }
+
+    public boolean isUdpPortHoppingAdaptive() {
+        return udpPortHopping != null && udpPortHopping.isAdaptive();
+    }
+
+    public void setUdpPortHoppingAdaptive(boolean adaptive) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setAdaptive(adaptive);
+    }
+
+    public int getUdpPortHoppingMinHopCount() {
+        return udpPortHopping != null ? udpPortHopping.getMinHopCount() : 1;
+    }
+
+    public void setUdpPortHoppingMinHopCount(int minHopCount) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setMinHopCount(minHopCount);
+    }
+
+    public int getUdpPortHoppingMaxHopCount() {
+        return udpPortHopping != null ? udpPortHopping.getMaxHopCount() : 1;
+    }
+
+    public void setUdpPortHoppingMaxHopCount(int maxHopCount) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setMaxHopCount(maxHopCount);
+    }
+
+    public long getUdpPortHoppingAdaptiveScaleUpBytes() {
+        return udpPortHopping != null ? udpPortHopping.getAdaptiveScaleUpBytes() : 0L;
+    }
+
+    public void setUdpPortHoppingAdaptiveScaleUpBytes(long adaptiveScaleUpBytes) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setAdaptiveScaleUpBytes(adaptiveScaleUpBytes);
+    }
+
+    public long getUdpPortHoppingAdaptiveScaleUpActiveMillis() {
+        return udpPortHopping != null ? udpPortHopping.getAdaptiveScaleUpActiveMillis() : 0L;
+    }
+
+    public void setUdpPortHoppingAdaptiveScaleUpActiveMillis(long adaptiveScaleUpActiveMillis) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setAdaptiveScaleUpActiveMillis(adaptiveScaleUpActiveMillis);
+    }
+
+    public int getUdpPortHoppingAdaptiveScaleUpCooldownMillis() {
+        return udpPortHopping != null ? udpPortHopping.getAdaptiveScaleUpCooldownMillis() : 1000;
+    }
+
+    public void setUdpPortHoppingAdaptiveScaleUpCooldownMillis(int adaptiveScaleUpCooldownMillis) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setAdaptiveScaleUpCooldownMillis(adaptiveScaleUpCooldownMillis);
+    }
+
+    public int getUdpPortHoppingReplenishDelayMillis() {
+        return udpPortHopping != null ? udpPortHopping.getReplenishDelayMillis() : 1000;
+    }
+
+    public void setUdpPortHoppingReplenishDelayMillis(int replenishDelayMillis) {
+        if (udpPortHopping == null) {
+            udpPortHopping = new UdpPortHoppingConfig();
+        }
+        udpPortHopping.setReplenishDelayMillis(replenishDelayMillis);
+    }
+
+    public void setUdpRelayControlMode(UdpRelayControlMode udpRelayControlMode) {
+        this.udpRelayControlMode = udpRelayControlMode != null ? udpRelayControlMode : UdpRelayControlMode.AUTO;
+    }
+
+    public void setUdpRelayControlMaxRelaysPerGroup(int udpRelayControlMaxRelaysPerGroup) {
+        this.udpRelayControlMaxRelaysPerGroup = Math.max(1,
+                Math.min(UdpPortHoppingConfig.MAX_HOP_COUNT, udpRelayControlMaxRelaysPerGroup));
+    }
+
+    public void setUdpRelayGroupIdleMillis(long udpRelayGroupIdleMillis) {
+        this.udpRelayGroupIdleMillis = Math.max(1_000L, udpRelayGroupIdleMillis);
+    }
+
+    public void setUdpRelayGroupHeartbeatMillis(long udpRelayGroupHeartbeatMillis) {
+        this.udpRelayGroupHeartbeatMillis = Math.max(1_000L, udpRelayGroupHeartbeatMillis);
+    }
+
+    public void setUdpRelayControlFailureThreshold(int udpRelayControlFailureThreshold) {
+        this.udpRelayControlFailureThreshold = Math.max(1, udpRelayControlFailureThreshold);
+    }
+
+    public void setUdpRelayControlBreakerOpenMillis(long udpRelayControlBreakerOpenMillis) {
+        this.udpRelayControlBreakerOpenMillis = Math.max(1_000L, udpRelayControlBreakerOpenMillis);
     }
 
     public boolean isUdpCompressEnabled() {

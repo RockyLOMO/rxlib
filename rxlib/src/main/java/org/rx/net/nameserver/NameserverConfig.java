@@ -16,6 +16,7 @@ public class NameserverConfig implements Serializable {
     private int dnsTtl = 60;
     private int registerPort = 854;
     private int syncPort;
+    private long replicaFullSyncPeriodMillis = 60_000L;
     private List<String> replicaEndpoints;
     private List<String> udpCodecAllowPrefixes;
 }
