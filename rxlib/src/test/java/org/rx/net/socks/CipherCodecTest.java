@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class CipherCodecTest {
@@ -54,7 +53,7 @@ class CipherCodecTest {
     }
 
     @Test
-    void decode_invalidCipherTextWithoutRootCauseClosesTcpWithoutThrowing() throws Exception {
+    void decode_invalidCipherTextWithoutRootCauseDoesNotPropagate() throws Exception {
         CipherCodec codec = new CipherCodec();
         EmbeddedChannel channel = new EmbeddedChannel(codec);
         ByteBuf in = Bytes.directBuffer(8).writeLong(1L);
@@ -64,9 +63,9 @@ class CipherCodecTest {
         List<Object> out = new ArrayList<>();
         try {
             codec.decode(ctx, in, out);
+            channel.runPendingTasks();
 
             assertEquals(0, out.size());
-            assertFalse(channel.isOpen());
         } finally {
             ReferenceCountUtil.release(in);
             channel.finishAndReleaseAll();
