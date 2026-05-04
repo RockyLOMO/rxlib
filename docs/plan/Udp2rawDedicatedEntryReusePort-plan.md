@@ -593,6 +593,55 @@ private UdpCompressConfig udp2rawCompress;
 - per-peer packet rate limit，可选。
 - bad auth fail 计数熔断。
 
+## 实施进度（2026-05-04）
+
+本次已落地第一阶段可编译、可验证的 **server fixed entry + 自定义 frame 基础层**，保留旧 `Udp2rawHandler` 作为兼容路径，避免一次性切断现有 UDP_ASSOCIATE 测试链路。
+
+### 已完成
+
+- P1 RPC 控制面基础：
+  - `SocksRpcCapabilities` 增加 `UDP2RAW_TUNNEL` 能力位。
+  - `SocksRpcContract` 增加 `openUdp2rawTunnel / heartbeatUdp2rawTunnel / closeUdp2rawTunnel` 默认方法。
+  - `RssRpcApp` 与 `RssClient.ForwardingSocksRpcContract` 已转发新增 RPC 方法。
+  - `SocksProxyServer` server mode 下自动启动 fixed UDP entry，并通过 RPC 打开 tunnel。
+- P2 自定义 codec：
+  - 新增 `Udp2rawCodec`、`Udp2rawFrame`、`Udp2rawFrameType`、`Udp2rawAuthMode`。
+  - 新增 `Udp2rawAuthenticator`，当前使用 Java 8 可用的 `HmacSHA256` 截断 tag。
+  - 新增 `Udp2rawSessionKey` 与 `Udp2rawSeqWindow`，按 `sessionHi/sessionLo/connId/seq` 做基础隔离和去重。
+- P4 server fixed entry 基线：
+  - 新增 `Udp2rawServerEntryManager`，fixed entry 通过 `Sockets.bindChannels(...)` 绑定，继承 Linux epoll `SO_REUSEPORT` 多 bind 能力。
+  - fixed entry 状态集中在 manager/tunnel context，不注册到 `udpRelayRegistry`。
+- P5 per-client NAT channel 基线：
+  - 新增 `Udp2rawServerEntryHandler`、`Udp2rawTunnelContext`、`Udp2rawSession`。
+  - 每个 `(tunnel session, connId)` 创建独立 UDP `natChannel` 并 `bind(0)` 出站到 dest。
+  - dest response 通过 fixed entry channel 回 udp2raw peer，回包源端口保持 fixed entry port。
+- P7 指标和保护基础：
+  - 已记录 tunnel open/active、session create/close/active、drop、duplicate drop 等基础指标。
+  - 已有 maxSessions、tunnel idle cleanup、seq duplicate drop、auth-fail drop。
+
+### 已验证
+
+```text
+mvn -pl rxlib "-Dtest=Udp2rawCodecTest,Udp2rawAuthenticatorTest,Udp2rawFixedEntryIntegrationTest" test
+mvn -pl rxlib "-Dtest=Udp2rawHandlerTest" test
+mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest#socks5UdpRelay_udp2raw_chained_e2e" test
+```
+
+验证结论：
+
+- 自定义 udp2raw request/response frame encode/decode 通过。
+- FIRST_PACKET_MAC 鉴权、payload 篡改失败、seq 去重、session key 隔离通过。
+- fixed entry E2E 通过：RPC open tunnel 后，DATA request 经 fixed UDP entry 到 echo dest，response 从 fixed entry port 返回。
+- NAT-A 基线通过：两个不同 `client sourceEndpoint/connId` 访问同一 dest，dest 侧观察到两个不同 server UDP 源端口。
+- 旧 `Udp2rawHandler` UDP_ASSOCIATE 兼容测试通过，现有链路未被破坏。
+
+### 未完成/下一步
+
+- P3 client tunnel writer 未完成：`Udp2rawUpstream` 尚未接管 RSS Client -> RSS Server 数据面，当前新 fixed entry 主要通过测试直接发自定义 frame 验证。
+- P6 多倍发包/压缩未完整闭环：server entry 已支持接收 `FLAG_COMPRESSED` 的 UCMP payload 解压；request/response 两方向 tunnel 层 redundant send、response compress 尚未实现。
+- P1 控制面仍是基础 open/heartbeat/close；还未把 `connectionTag/trafficUser` 完整绑定到流量统计策略。
+- NAT rebinding 安全策略、per-peer rate limit、bad auth 熔断仍待补齐。
+
 ## 测试计划
 
 ### 单元测试
