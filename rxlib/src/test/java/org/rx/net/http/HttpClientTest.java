@@ -2,6 +2,9 @@ package org.rx.net.http;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.netty.channel.Channel;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.cookie.CookieHeaderNames;
 import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.multipart.FileUpload;
@@ -29,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -461,6 +465,21 @@ public class HttpClientTest {
             assertEquals(200, response.getStatus());
             assertEquals("1", response.getHeader("X-Forward-OK"));
             assertTrue(response.getContentAsString().contains("forward-ok"));
+        }
+    }
+
+    @Test
+    public void testUploadWriterRejectsEventLoopThread() throws Exception {
+        NioEventLoopGroup group = new NioEventLoopGroup(1);
+        Channel channel = new NioSocketChannel();
+        try {
+            group.register(channel).syncUninterruptibly();
+            channel.eventLoop().submit(() ->
+                    assertThrows(IllegalStateException.class, () -> new HttpClient.UploadWriter(channel, null)))
+                    .get(5, TimeUnit.SECONDS);
+        } finally {
+            channel.close().syncUninterruptibly();
+            group.shutdownGracefully(0, 1, TimeUnit.SECONDS).syncUninterruptibly();
         }
     }
 

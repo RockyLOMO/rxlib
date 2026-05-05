@@ -275,6 +275,34 @@ public class SocketsTest {
     }
 
     @Test
+    public void testParseEndpointSupportsIpv6BracketAndUnbracketedLiteral() {
+        InetSocketAddress bracket = Sockets.parseEndpoint("[::1]:8080");
+        assertNotNull(bracket.getAddress());
+        assertEquals(8080, bracket.getPort());
+
+        InetSocketAddress literal = Sockets.parseEndpoint("2001:db8::1:8443");
+        assertNotNull(literal.getAddress());
+        assertEquals(8443, literal.getPort());
+
+        assertThrows(Exception.class, () -> Sockets.parseEndpoint("[::1]"));
+        assertThrows(Exception.class, () -> Sockets.parseEndpoint("::1"));
+    }
+
+    @Test
+    public void testSetHttpProxyAcceptsDomainWithoutLocalDns() {
+        try {
+            Sockets.setHttpProxy("proxy.example:8080");
+
+            assertEquals("proxy.example", System.getProperty("http.proxyHost"));
+            assertEquals("8080", System.getProperty("http.proxyPort"));
+            assertEquals("proxy.example", System.getProperty("https.proxyHost"));
+            assertEquals("8080", System.getProperty("https.proxyPort"));
+        } finally {
+            Sockets.clearHttpProxy();
+        }
+    }
+
+    @Test
     public void testGetMessageBuf() {
         ByteBuf buf = Unpooled.copiedBuffer("hello", StandardCharsets.UTF_8);
 

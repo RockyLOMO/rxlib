@@ -9,7 +9,7 @@
 - 关联测试：`rxlib/src/test/java/org/rx/net/**`
 - 测试排除：`FecCodecTest`、`socks/httptunnel/**`
 
-本计划文档只记录 review 结论、风险点和后续修复计划，不修改业务代码。
+本计划文档最初记录 review 结论、风险点和后续修复计划；2026-05-05 已进入修复执行阶段，并在本文持续更新进度。
 
 # 任务类型判断
 
@@ -148,11 +148,11 @@
 2. 梳理连接生命周期、背压、UDP、HTTP、DNS、RPC、SOCKS、transport 的关键调用链。
 3. 识别潜在稳定性、性能、并发、资源释放和测试覆盖风险。
 4. 给出后续最小修复顺序与验证方案。
-5. 提交计划文档，等待用户确认后再修改业务代码。
+5. 执行已确认的最小修复，并持续更新进度与验证结论。
 
 # 非目标
 
-1. 本次计划提交不修改业务代码。
+1. 不扩大到 FEC 与 HTTP Tunnel 相关代码。
 2. 不 review / 修改 FEC 相关文件。
 3. 不 review / 修改 HTTP Tunnel 相关文件。
 4. 不升级依赖。
@@ -167,6 +167,8 @@
 
 ### P0：背压事件传播与 autoRead 目标通道确认
 
+状态：**已修复，已补测试，已验证通过**。
+
 候选问题：
 
 - `BackpressureHandler.channelWritabilityChanged(...)` 在已有 timer 或 cooldown schedule 分支中直接 `return`，只有立即处理分支调用 `super.channelWritabilityChanged(ctx)`。
@@ -179,7 +181,15 @@
 - 确认 `channelActive` 应操作 outbound 还是 captured inbound。
 - 若确认是风险，最小修复为确保事件继续传播，并修正 autoRead 目标通道。
 
+实际修复：
+
+- `BackpressureHandler.channelWritabilityChanged(...)` 改为 `try/finally` 传播 `super.channelWritabilityChanged(ctx)`，确保 timer 已存在、cooldown 延迟、立即处理三个分支都不会截断 pipeline 后续 handler。
+- `BackpressureHandler.channelActive(...)` 改为恢复 captured `inbound` 的 `autoRead`，避免 handler 安装在 outbound pipeline 时误操作 outbound channel。
+- 新增/扩展 `BackpressureHandlerTest` 覆盖事件传播和 inbound `autoRead` 恢复。
+
 ### P1：HTTP 流式上传阻塞 EventLoop 风险
+
+状态：**已加防护，已补测试，已验证通过**。
 
 候选问题：
 
@@ -193,7 +203,15 @@
 - 增加大 body、慢 channel、write timeout 回归测试。
 - 保持现有 API，不引入新依赖。
 
+实际修复：
+
+- 现有 `writeRequest(...)` 已在请求头写成功后通过 `Tasks.run(...)` 执行 `content.writeStreaming(...)`，流式读取不在 Netty EventLoop 上执行。
+- `UploadWriter` 构造阶段新增 EventLoop guard，若未来调用路径误把流式上传放回 EventLoop，会立即失败而不是阻塞 I/O 线程。
+- 新增 `HttpClientTest.testUploadWriterRejectsEventLoopThread`。
+
 ### P1：Sockets endpoint / proxy 解析边界
+
+状态：**已修复，已补测试，已验证通过**。
 
 候选问题：
 
@@ -208,7 +226,15 @@
 - 为域名代理、IPv4、IPv6 literal / bracket 格式补测试。
 - 不改变避免本机 DNS 的既有设计。
 
+实际修复：
+
+- `Sockets.setHttpProxy(...)` 改为使用 `InetSocketAddress.getHostString()`，域名代理保持 unresolved，不触发本机 DNS，也不会因 `getAddress()==null` NPE。
+- `Sockets.parseEndpoint(...)` 支持 `[IPv6]:port` bracket 格式，并校验空 host、缺失 port、非法 port 与无端口 IPv6。
+- 新增/扩展 `SocketsTest` 覆盖域名代理、IPv4、IPv6 bracket 与 IPv6 literal。
+
 ### P1：UdpClient close 在 EventLoop 中同步等待风险
+
+状态：**已修复，已补测试，已验证通过**。
 
 候选问题：
 
@@ -221,7 +247,16 @@
 - EventLoop 内直接异步 `ch.close()`，非 EventLoop 可保留同步等待或统一非阻塞关闭。
 - 保持 pending sends / requests / receives 清理逻辑不变。
 
+实际修复：
+
+- `UdpClient.close()` 保持 pending send/request/receive 清理逻辑不变。
+- 当调用线程属于任一 UDP channel 的 EventLoop 时，只发起异步 `ch.close()`，不再 `syncUninterruptibly()` 阻塞 I/O 线程。
+- 非 EventLoop 调用仍保持原同步关闭语义。
+- 新增 `UdpTransportTest.closeFromEventLoopDoesNotBlockEventLoop`。
+
 ### P2：UDP FULL ack 与 async receive 悬挂风险
+
+状态：**未修改，保留后续评估**。
 
 候选问题：
 
@@ -237,6 +272,8 @@
 
 ### P2：Sockets.writeUdp 失败路径释放语义验证
 
+状态：**未修改，已有相关测试通过，保留后续 leak-aware 强化**。
+
 候选问题：
 
 - `Sockets.writeUdp(...)` 对 inactive / unresolved / pending overlimit / notWritable / write throw 有显式 release。
@@ -251,6 +288,8 @@
 
 ### P2：SOCKS / UDP relay / upstream 边界测试补齐
 
+状态：**未修改，保留后续按实际改动补齐**。
+
 候选问题：
 
 - SOCKS、UDP relay、UDP2raw、redundant、compress、port hopping 已有较多测试。
@@ -261,39 +300,29 @@
 - 优先只为实际修改文件添加测试。
 - 避免一次性大重构。
 
-## 实现阶段建议顺序
+## 执行顺序与当前状态
 
-1. 先补回归测试，复现或锁定上述行为。
-2. 修复 `BackpressureHandler` 的事件传播 / autoRead 目标通道问题。
-3. 修复 `Sockets.setHttpProxy` 域名和 IPv6 endpoint 边界。
-4. 验证并修复 `UdpClient.close()` EventLoop 同步等待风险。
-5. 验证 HTTP 流式上传线程模型；必要时添加 EventLoop guard / offload。
-6. 验证 UDP FULL ack 悬挂风险和 `writeUdp` 失败释放语义。
-7. 每个修复保持独立、小步提交，便于 CI 定位。
+1. 已完成：先补回归测试，复现或锁定 P0/P1 行为。
+2. 已完成：修复 `BackpressureHandler` 的事件传播 / autoRead 目标通道问题。
+3. 已完成：修复 `Sockets.setHttpProxy` 域名和 IPv6 endpoint 边界。
+4. 已完成：验证并修复 `UdpClient.close()` EventLoop 同步等待风险。
+5. 已完成：验证 HTTP 流式上传线程模型，并添加 EventLoop guard。
+6. 待评估：UDP FULL ack 悬挂风险和 `writeUdp` 失败释放语义。
+7. 待后续：每个剩余修复保持独立、小步提交，便于 CI 定位。
 
 # 修改文件列表
 
-本次计划阶段新增：
+本次修复实际修改：
 
 - `docs/plan/review-rx-net-excluding-fec-httptunnel-20260505.md`
-
-后续若用户确认执行，预计可能修改：
-
 - `rxlib/src/main/java/org/rx/net/BackpressureHandler.java`
 - `rxlib/src/main/java/org/rx/net/Sockets.java`
 - `rxlib/src/main/java/org/rx/net/http/HttpClient.java`
 - `rxlib/src/main/java/org/rx/net/transport/UdpClient.java`
-
-预计可能新增或修改测试：
-
 - `rxlib/src/test/java/org/rx/net/BackpressureHandlerTest.java`
 - `rxlib/src/test/java/org/rx/net/SocketsTest.java`
 - `rxlib/src/test/java/org/rx/net/http/HttpClientTest.java`
-- `rxlib/src/test/java/org/rx/net/http/HttpClientIntegrationTest.java`
 - `rxlib/src/test/java/org/rx/net/transport/UdpTransportTest.java`
-- `rxlib/src/test/java/org/rx/net/socks/SocksUdpRelayHandlerTest.java`
-
-实际修改文件以后续确认后的实现为准。
 
 # 风险点
 
@@ -328,11 +357,21 @@
 
 # 验证方案
 
-## 当前计划阶段
+## 当前修复验证
 
-- 本次只提交计划文档，不修改业务代码。
-- 不触发 GitHub Actions。
-- 已确认仓库存在 `.github/workflows/jdk8-unit-tests.yml`，该 workflow 为 `workflow_dispatch` 手动触发。
+本地已执行：
+
+```bash
+mvn -pl rxlib "-Dgpg.skip=true" "-Dtest=BackpressureHandlerTest,SocketsTest,UdpTransportTest,HttpClientTest" test
+```
+
+结果：
+
+- Tests run: 63
+- Failures: 0
+- Errors: 0
+- Skipped: 0
+- BUILD SUCCESS
 
 ## 后续实现阶段
 

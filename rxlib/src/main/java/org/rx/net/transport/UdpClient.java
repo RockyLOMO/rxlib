@@ -858,9 +858,20 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         completedReceives.clear();
         inflightReceives.clear();
 
+        boolean inEventLoop = false;
+        Thread current = Thread.currentThread();
+        for (Channel ch : channels) {
+            if (ch.eventLoop().inEventLoop(current)) {
+                inEventLoop = true;
+                break;
+            }
+        }
         for (Channel ch : channels) {
             if (ch.isOpen()) {
-                ch.close().syncUninterruptibly();
+                ChannelFuture closeFuture = ch.close();
+                if (!inEventLoop) {
+                    closeFuture.syncUninterruptibly();
+                }
             }
         }
     }

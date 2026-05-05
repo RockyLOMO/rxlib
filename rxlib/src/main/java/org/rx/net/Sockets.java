@@ -1427,14 +1427,47 @@ public final class Sockets {
     }
 
     public static InetSocketAddress parseEndpoint(@NonNull String endpoint) {
-        int i = endpoint.lastIndexOf(":");
-        if (i == -1) {
+        String value = endpoint.trim();
+        if (value.isEmpty()) {
             throw new InvalidException("Invalid endpoint {}", endpoint);
         }
 
-        String ip = endpoint.substring(0, i);
-        int port = Integer.parseInt(endpoint.substring(i + 1));
-        return newUnresolvedEndpoint(ip, port);
+        String host;
+        String portText;
+        if (value.charAt(0) == '[') {
+            int close = value.indexOf(']');
+            if (close <= 1 || close + 1 >= value.length() || value.charAt(close + 1) != ':') {
+                throw new InvalidException("Invalid endpoint {}", endpoint);
+            }
+            host = value.substring(1, close);
+            portText = value.substring(close + 2);
+        } else {
+            int i = value.lastIndexOf(":");
+            if (i <= 0 || i == value.length() - 1) {
+                throw new InvalidException("Invalid endpoint {}", endpoint);
+            }
+
+            host = value.substring(0, i);
+            portText = value.substring(i + 1);
+            if (host.indexOf(':') != -1 && !isValidIp(host)) {
+                throw new InvalidException("Invalid endpoint {}", endpoint);
+            }
+        }
+
+        host = host.trim();
+        if (host.isEmpty()) {
+            throw new InvalidException("Invalid endpoint {}", endpoint);
+        }
+        int port;
+        try {
+            port = Integer.parseInt(portText);
+        } catch (NumberFormatException e) {
+            throw new InvalidException("Invalid endpoint {}", endpoint);
+        }
+        if (port < 0 || port > 65535) {
+            throw new InvalidException("Invalid endpoint {}", endpoint);
+        }
+        return newUnresolvedEndpoint(host, port);
     }
 
     /**
@@ -1569,9 +1602,10 @@ public final class Sockets {
     public static void setHttpProxy(String proxyAddr, List<String> nonProxyHosts, String userName, String password) {
         InetSocketAddress ipe = parseEndpoint(proxyAddr);
         Properties prop = System.getProperties();
-        prop.setProperty("http.proxyHost", ipe.getAddress().getHostAddress());
+        String proxyHost = ipe.getHostString();
+        prop.setProperty("http.proxyHost", proxyHost);
         prop.setProperty("http.proxyPort", String.valueOf(ipe.getPort()));
-        prop.setProperty("https.proxyHost", ipe.getAddress().getHostAddress());
+        prop.setProperty("https.proxyHost", proxyHost);
         prop.setProperty("https.proxyPort", String.valueOf(ipe.getPort()));
         if (!CollectionUtils.isEmpty(nonProxyHosts)) {
             // "localhost|192.168.1.*"

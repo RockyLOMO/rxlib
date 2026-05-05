@@ -60,40 +60,42 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-        Channel outbound = ctx.channel();
+        try {
+            Channel outbound = ctx.channel();
 
-        ScheduledFuture<?> t = timer.get();
-        if (t != null
-        // && !t.isDone()
-        ) {
-            return;
-        }
-
-        long now = System.nanoTime();
-        long spanMs = (now - lastEventTs) / Constants.NANO_TO_MILLIS, nextMs;
-        if (spanMs < COOLDOWN_MILLIS
-                && (nextMs = COOLDOWN_MILLIS - spanMs) > MIN_SPAN_MILLIS) {
-            ScheduledFuture<?> schedule = ctx.executor().schedule(() -> {
-                try {
-                    if (!outbound.isActive()) {
-                        return;
-                    }
-                    onEvent(outbound, System.nanoTime());
-                } finally {
-                    timer.lazySet(null);
-                }
-            }, nextMs, TimeUnit.MILLISECONDS);
-            // 如果 CAS 失败（意味着别处刚写入 timer），我们仍然要把 scheduled 取消
-            if (!timer.compareAndSet(null, schedule)) {
-                schedule.cancel(false);
+            ScheduledFuture<?> t = timer.get();
+            if (t != null
+            // && !t.isDone()
+            ) {
+                return;
             }
-            log.info("Backpressure setTimeout[{}]", nextMs);
-            return;
+
+            long now = System.nanoTime();
+            long spanMs = (now - lastEventTs) / Constants.NANO_TO_MILLIS, nextMs;
+            if (spanMs < COOLDOWN_MILLIS
+                    && (nextMs = COOLDOWN_MILLIS - spanMs) > MIN_SPAN_MILLIS) {
+                ScheduledFuture<?> schedule = ctx.executor().schedule(() -> {
+                    try {
+                        if (!outbound.isActive()) {
+                            return;
+                        }
+                        onEvent(outbound, System.nanoTime());
+                    } finally {
+                        timer.lazySet(null);
+                    }
+                }, nextMs, TimeUnit.MILLISECONDS);
+                // 如果 CAS 失败（意味着别处刚写入 timer），我们仍然要把 scheduled 取消
+                if (!timer.compareAndSet(null, schedule)) {
+                    schedule.cancel(false);
+                }
+                log.info("Backpressure setTimeout[{}]", nextMs);
+                return;
+            }
+
+            onEvent(outbound, now);
+        } finally {
+            super.channelWritabilityChanged(ctx);
         }
-
-        onEvent(outbound, now);
-
-        super.channelWritabilityChanged(ctx);
     }
 
     void onEvent(Channel outbound, long nowNano) {
@@ -137,8 +139,10 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        // 确保刚连上就打开读取
-        Sockets.enableAutoRead(ctx.channel());
+        // outbound 刚连上时恢复 captured inbound 读取
+        if (inbound != null && inbound.isOpen()) {
+            Sockets.enableAutoRead(inbound);
+        }
         super.channelActive(ctx);
     }
 

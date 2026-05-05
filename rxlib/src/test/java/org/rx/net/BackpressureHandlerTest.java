@@ -1,13 +1,17 @@
 package org.rx.net;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.util.concurrent.ScheduledFuture;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -64,6 +68,78 @@ public class BackpressureHandlerTest {
 
         assertFalse(handler.isPaused());
         assertTrue(inbound.config().isAutoRead());
+    }
+
+    @Test
+    public void testWritabilityChangedPropagatesWhenTimerExists() {
+        EmbeddedChannel inbound = new EmbeddedChannel();
+        EmbeddedChannel outbound = new EmbeddedChannel();
+        outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
+
+        BackpressureHandler.install(inbound, outbound);
+        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+        AtomicInteger propagated = new AtomicInteger();
+        outbound.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+            @Override
+            public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+                propagated.incrementAndGet();
+                super.channelWritabilityChanged(ctx);
+            }
+        });
+
+        ScheduledFuture<?> future = outbound.eventLoop().schedule(() -> {
+        }, 1, java.util.concurrent.TimeUnit.DAYS);
+        handler.timer.set(future);
+        outbound.pipeline().fireChannelWritabilityChanged();
+
+        assertEquals(1, propagated.get());
+        handler.stopTimer();
+        outbound.finishAndReleaseAll();
+        inbound.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testWritabilityChangedPropagatesWhenCooldownSchedules() {
+        EmbeddedChannel inbound = new EmbeddedChannel();
+        EmbeddedChannel outbound = new EmbeddedChannel();
+        outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
+
+        BackpressureHandler.install(inbound, outbound);
+        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+        handler.lastEventTs = System.nanoTime();
+        AtomicInteger propagated = new AtomicInteger();
+        outbound.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+            @Override
+            public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+                propagated.incrementAndGet();
+                super.channelWritabilityChanged(ctx);
+            }
+        });
+
+        outbound.pipeline().fireChannelWritabilityChanged();
+
+        assertEquals(1, propagated.get());
+        assertNotNull(handler.timer.get());
+        handler.stopTimer();
+        outbound.finishAndReleaseAll();
+        inbound.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testChannelActiveRestoresInboundAutoRead() {
+        EmbeddedChannel inbound = new EmbeddedChannel();
+        EmbeddedChannel outbound = new EmbeddedChannel();
+        outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
+        inbound.config().setAutoRead(false);
+        outbound.config().setAutoRead(false);
+
+        BackpressureHandler.install(inbound, outbound);
+        outbound.pipeline().fireChannelActive();
+
+        assertTrue(inbound.config().isAutoRead());
+        assertFalse(outbound.config().isAutoRead());
+        outbound.finishAndReleaseAll();
+        inbound.finishAndReleaseAll();
     }
 
     @SneakyThrows
