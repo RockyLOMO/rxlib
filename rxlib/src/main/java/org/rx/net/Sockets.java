@@ -33,6 +33,7 @@ import io.netty.resolver.dns.DnsAddressResolverGroup;
 import io.netty.resolver.dns.DnsNameResolverBuilder;
 import io.netty.util.AttributeKey;
 import io.netty.util.NetUtil;
+import io.netty.util.ReferenceCountUtil;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -53,6 +54,7 @@ import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DoHClient;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.socks.ShadowsocksConfig;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -102,6 +104,99 @@ public final class Sockets {
         String RPC = "RPC";
     }
 
+    public static final class UdpFinalEgressGuardHandler extends ChannelOutboundHandlerAdapter {
+        private final SocketConfig config;
+        private final boolean forceBackpressure;
+
+        UdpFinalEgressGuardHandler(SocketConfig config, boolean forceBackpressure) {
+            this.config = config;
+            this.forceBackpressure = forceBackpressure;
+        }
+
+        @Override
+        public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {
+            if (!(msg instanceof DatagramPacket)) {
+                ctx.write(msg, promise);
+                return;
+            }
+
+            Channel channel = ctx.channel();
+            DatagramPacket packet = (DatagramPacket) msg;
+            SocketConfig effectiveConfig = udpEffectiveConfig(channel, config);
+            String metricPrefix = udpFinalMetricPrefix(effectiveConfig);
+            String tags = "path=final-egress";
+            int bytes = packet.content().readableBytes();
+
+            if (!channel.isActive()) {
+                releaseUdpPacket(packet, metricPrefix, tags, "final-inactive", 0, 0);
+                completeDroppedWrite(promise);
+                return;
+            }
+
+            InetSocketAddress recipient = packet.recipient();
+            int limitBytes = udpWriteLimitBytes(channel);
+            if (recipient != null && recipient.isUnresolved()) {
+                releaseUdpPacket(packet, metricPrefix, tags, "final-unresolved-recipient", 0, limitBytes);
+                completeDroppedWrite(promise);
+                return;
+            }
+
+            int udpMtu = effectiveConfig != null ? Math.max(0, effectiveConfig.getUdpMtu()) : 0;
+            if (udpMtu > 0 && bytes > udpMtu) {
+                releaseUdpPacketByMtu(packet, metricPrefix, tags, bytes, udpMtu);
+                completeDroppedWrite(promise);
+                return;
+            }
+
+            if (!forceBackpressure && udpMtu <= 0) {
+                ctx.write(packet, promise);
+                return;
+            }
+
+            AtomicInteger pendingBytes = udpPendingWriteBytesState(channel);
+            int queuedBytes = pendingBytes.addAndGet(bytes);
+            if (queuedBytes > limitBytes) {
+                pendingBytes.addAndGet(-bytes);
+                releaseUdpPacket(packet, metricPrefix, tags, "final-pending-overlimit", queuedBytes, limitBytes);
+                completeDroppedWrite(promise);
+                return;
+            }
+            if (!channel.isWritable()) {
+                pendingBytes.addAndGet(-bytes);
+                releaseUdpPacket(packet, metricPrefix, tags, "final-not-writable", queuedBytes, limitBytes);
+                completeDroppedWrite(promise);
+                return;
+            }
+
+            ChannelPromise writePromise = promise.isVoid() ? ctx.newPromise() : promise;
+            writePromise.addListener((ChannelFutureListener) f -> {
+                pendingBytes.addAndGet(-bytes);
+                if (!f.isSuccess()) {
+                    recordUdpMetric(metricPrefix, "drop.count",
+                            appendUdpMetricTags(tags, "reason=final-write-fail,limitBucket=" + udpLimitBucket(limitBytes)));
+                    log.warn("UDP final write fail channel={} recipient={}", channel, packet.recipient(), f.cause());
+                }
+            });
+            try {
+                ctx.write(packet, writePromise);
+            } catch (Throwable e) {
+                ReferenceCountUtil.release(packet);
+                if (!writePromise.tryFailure(e)) {
+                    pendingBytes.addAndGet(-bytes);
+                }
+                recordUdpMetric(metricPrefix, "drop.count",
+                        appendUdpMetricTags(tags, "reason=final-write-throw,limitBucket=" + udpLimitBucket(limitBytes)));
+                log.warn("UDP final write throw channel={} recipient={}", channel, packet.recipient(), e);
+            }
+        }
+
+        private static void completeDroppedWrite(ChannelPromise promise) {
+            if (!promise.isVoid()) {
+                promise.trySuccess();
+            }
+        }
+    }
+
     @ChannelHandler.Sharable
     static class SocketChannelInitializer extends ChannelInitializer<Channel> {
         public static final SocketChannelInitializer DEFAULT = new SocketChannelInitializer();
@@ -121,6 +216,7 @@ public final class Sockets {
 
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
+    public static final String UDP_FINAL_EGRESS_GUARD = "UDP_FINAL_EGRESS_GUARD";
     public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
     public static final AttributeKey<InetSocketAddress> ATTR_ORIGIN_REMOTE_ADDR = AttributeKey.valueOf("originRemoteAddr");
     static final AttributeKey<AtomicInteger> ATTR_UDP_PENDING_WRITE_BYTES = AttributeKey.valueOf("udpPendingWriteBytes");
@@ -944,7 +1040,11 @@ public final class Sockets {
         final SocketConfig finalConfig = config;
         b.attr(SocketConfig.ATTR_INIT_FN, (BiAction<Channel>) ch -> {
             if (finalConfig instanceof SocksConfig) {
-                addUdpOptimizationHandlers(ch.pipeline(), (SocksConfig) finalConfig);
+                SocksConfig socksConfig = (SocksConfig) finalConfig;
+                addUdpFinalEgressGuard(ch.pipeline(), socksConfig, isUdpRedundantEnabled(socksConfig));
+                addUdpOptimizationHandlers(ch.pipeline(), socksConfig);
+            } else {
+                addUdpFinalEgressGuard(ch.pipeline(), finalConfig, false);
             }
             DiagnosticMetrics.installNetIoHandler(ch.pipeline(), finalConfig instanceof SocksConfig
                     ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT);
@@ -974,13 +1074,13 @@ public final class Sockets {
      */
     public static void addUdpOptimizationHandlers(ChannelPipeline pipeline, SocksConfig config) {
         boolean compressEnabled = config.isUdpCompressEnabled();
-        int multiplier = config.getUdpRedundantMultiplier();
-        boolean hasDestRules = config.hasUdpRedundantDestinationRules();
-        boolean redundantEnabled = multiplier > 1 || config.isUdpRedundantAdaptive() || hasDestRules;
+        boolean redundantEnabled = isUdpRedundantEnabled(config);
+        addUdpFinalEgressGuard(pipeline, config, redundantEnabled);
         if (!compressEnabled && !redundantEnabled) {
             return;
         }
 
+        int multiplier = config.getUdpRedundantMultiplier();
         if (redundantEnabled) {
             org.rx.net.socks.UdpRedundantMultiplierResolver resolver = config.buildUdpRedundantMultiplierResolver();
             if (config.isUdpRedundantAdaptive()) {
@@ -1016,6 +1116,31 @@ public final class Sockets {
             pipeline.addLast(org.rx.net.socks.UdpCompressEncoder.class.getSimpleName(),
                     new org.rx.net.socks.UdpCompressEncoder(org.rx.net.socks.UdpCompressConfig.fromSocksConfig(config)));
         }
+    }
+
+    public static void addUdpFinalEgressGuard(ChannelPipeline pipeline, SocketConfig config) {
+        addUdpFinalEgressGuard(pipeline, config, false);
+    }
+
+    static void addUdpFinalEgressGuard(ChannelPipeline pipeline, SocketConfig config, boolean forceBackpressure) {
+        if (pipeline.get(UDP_FINAL_EGRESS_GUARD) != null || pipeline.get(UdpFinalEgressGuardHandler.class) != null) {
+            return;
+        }
+        if (!shouldInstallUdpFinalEgressGuard(config, forceBackpressure)) {
+            return;
+        }
+        pipeline.addLast(UDP_FINAL_EGRESS_GUARD, new UdpFinalEgressGuardHandler(config, forceBackpressure));
+    }
+
+    private static boolean shouldInstallUdpFinalEgressGuard(SocketConfig config, boolean forceBackpressure) {
+        return config != null && (config.getUdpMtu() > 0 || forceBackpressure);
+    }
+
+    private static boolean isUdpRedundantEnabled(SocksConfig config) {
+        return config != null
+                && (config.getUdpRedundantMultiplier() > 1
+                || config.isUdpRedundantAdaptive()
+                || config.hasUdpRedundantDestinationRules());
     }
 
     public static void writeAndFlush(Channel channel, @NonNull Queue<?> packs) {
@@ -1069,6 +1194,7 @@ public final class Sockets {
         }
 
         int bytes = packet.content().readableBytes();
+        boolean finalGuard = hasUdpFinalEgressGuard(channel);
         if (!channel.isActive()) {
             releaseUdpPacket(packet, metricPrefix, tags, "inactive", 0, 0);
             return UdpWriteResult.CHANNEL_INACTIVE;
@@ -1081,32 +1207,41 @@ public final class Sockets {
             return UdpWriteResult.UNRESOLVED_RECIPIENT;
         }
 
-        int udpMtu = udpMtu(channel, config);
-        if (udpMtu > 0 && bytes > udpMtu) {
-            releaseUdpPacketByMtu(packet, metricPrefix, tags, bytes, udpMtu);
-            return UdpWriteResult.MTU_EXCEEDED;
-        }
+        AtomicInteger pendingBytes = null;
+        int limitBytes = 0;
+        int queuedBytes = 0;
+        if (!finalGuard) {
+            int udpMtu = udpMtu(channel, config);
+            if (udpMtu > 0 && bytes > udpMtu) {
+                releaseUdpPacketByMtu(packet, metricPrefix, tags, bytes, udpMtu);
+                return UdpWriteResult.MTU_EXCEEDED;
+            }
 
-        AtomicInteger pendingBytes = udpPendingWriteBytesState(channel);
-        int queuedBytes = pendingBytes.addAndGet(bytes);
-        int limitBytes = udpWriteLimitBytes(channel);
-        if (queuedBytes > limitBytes) {
-            pendingBytes.addAndGet(-bytes);
-            releaseUdpPacket(packet, metricPrefix, tags, "pending-overlimit", queuedBytes, limitBytes);
-            return UdpWriteResult.PENDING_OVERLIMIT;
-        }
-        if (!channel.isWritable()) {
-            pendingBytes.addAndGet(-bytes);
-            releaseUdpPacket(packet, metricPrefix, tags, "not-writable", queuedBytes, limitBytes);
-            return UdpWriteResult.CHANNEL_UNWRITABLE;
+            pendingBytes = udpPendingWriteBytesState(channel);
+            queuedBytes = pendingBytes.addAndGet(bytes);
+            limitBytes = udpWriteLimitBytes(channel);
+            if (queuedBytes > limitBytes) {
+                pendingBytes.addAndGet(-bytes);
+                releaseUdpPacket(packet, metricPrefix, tags, "pending-overlimit", queuedBytes, limitBytes);
+                return UdpWriteResult.PENDING_OVERLIMIT;
+            }
+            if (!channel.isWritable()) {
+                pendingBytes.addAndGet(-bytes);
+                releaseUdpPacket(packet, metricPrefix, tags, "not-writable", queuedBytes, limitBytes);
+                return UdpWriteResult.CHANNEL_UNWRITABLE;
+            }
         }
 
         try {
+            AtomicInteger finalPendingBytes = pendingBytes;
+            int finalLimitBytes = limitBytes;
             channel.writeAndFlush(packet).addListener((ChannelFutureListener) f -> {
-                pendingBytes.addAndGet(-bytes);
-                if (!f.isSuccess()) {
+                if (finalPendingBytes != null) {
+                    finalPendingBytes.addAndGet(-bytes);
+                }
+                if (!f.isSuccess() && !finalGuard) {
                     recordUdpMetric(metricPrefix, "drop.count",
-                            appendUdpMetricTags(tags, "reason=write-fail,limitBucket=" + udpLimitBucket(limitBytes)));
+                            appendUdpMetricTags(tags, "reason=write-fail,limitBucket=" + udpLimitBucket(finalLimitBytes)));
                     log.warn("UDP write fail channel={} recipient={}", channel, packet.recipient(), f.cause());
                 }
                 if (completionListener != null) {
@@ -1119,7 +1254,9 @@ public final class Sockets {
             });
             return UdpWriteResult.ACCEPTED;
         } catch (Throwable e) {
-            pendingBytes.addAndGet(-bytes);
+            if (pendingBytes != null) {
+                pendingBytes.addAndGet(-bytes);
+            }
             releaseUdpPacket(packet, metricPrefix, tags, "write-throw", queuedBytes, limitBytes);
             log.warn("UDP write throw channel={} recipient={}", channel, packet.recipient(), e);
             return UdpWriteResult.WRITE_THROWN;
@@ -1149,9 +1286,28 @@ public final class Sockets {
         return DEFAULT_UDP_WRITE_LIMIT_BYTES;
     }
 
+    private static boolean hasUdpFinalEgressGuard(Channel channel) {
+        return channel.pipeline().get(UdpFinalEgressGuardHandler.class) != null
+                || channel.pipeline().get(UDP_FINAL_EGRESS_GUARD) != null;
+    }
+
     private static int udpMtu(Channel channel, SocketConfig override) {
-        SocketConfig config = override != null ? override : channel.attr(SocketConfig.ATTR_CONF).get();
+        SocketConfig config = udpEffectiveConfig(channel, override);
         return config != null ? Math.max(0, config.getUdpMtu()) : 0;
+    }
+
+    private static SocketConfig udpEffectiveConfig(Channel channel, SocketConfig override) {
+        return override != null ? override : channel.attr(SocketConfig.ATTR_CONF).get();
+    }
+
+    private static String udpFinalMetricPrefix(SocketConfig config) {
+        if (config instanceof ShadowsocksConfig) {
+            return "ss.udp";
+        }
+        if (config instanceof SocksConfig) {
+            return "socks.udp";
+        }
+        return "udp";
     }
 
     private static AtomicInteger udpPendingWriteBytesState(Channel channel) {
