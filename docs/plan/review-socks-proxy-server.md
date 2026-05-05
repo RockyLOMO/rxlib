@@ -1,124 +1,202 @@
 # 背景
 
-用户要求在 `RockyLOMO/rxlib` 仓库 `master` 分支上 review 并处理 `SocksProxyServer` 相关类。计划文档已先行提交，本轮已按“执行计划，先忽略 CI”的要求进入代码阶段，并持续更新本文档进度。
+用户要求在 `rxlib` 库、`master` 分支 review `SocksProxyServer` 相关类。本阶段只做代码 review 与计划文档提交，不修改业务代码。review 基于 `master` 当前提交 `077a8e24d5970a133b533fad62db2a0ee7298106`，计划分支复用 `agent/review-socks-proxy-server`。
 
 # 任务类型判断
 
-本次归类为 Review / 修复 / 重构 / 优化需求。原因是任务对象是已有 `SocksProxyServer` 及 socks 相关实现，不是新增功能；处理方式以最小改动修复 review 中识别出的风险点为主。
+本次归类为 Review / 修复 / 重构 / 优化需求。
+
+原因：
+- 用户明确要求 “review 下 SocksProxyServer 相关类”。
+- 目标是检查现有实现、调用链、边界条件、风险点和验证方案。
+- 按仓库 agent 流程，review 阶段只提交 `docs/plan/*` 计划文档；只有用户后续明确要求“按计划执行 / 开始修改代码 / 继续写代码”后，才进入业务代码修改阶段。
 
 # 当前上下文
 
-## 已 review 的核心文件
+## 已 review 的文件
 
+核心文件：
 - `rxlib/src/main/java/org/rx/net/socks/SocksProxyServer.java`
-- `rxlib/src/main/java/org/rx/net/socks/SocksConfig.java`
-- `rxlib/src/main/java/org/rx/net/socks/SocksContext.java`
 - `rxlib/src/main/java/org/rx/net/socks/Socks5InitialRequestHandler.java`
 - `rxlib/src/main/java/org/rx/net/socks/Socks5PasswordAuthRequestHandler.java`
 - `rxlib/src/main/java/org/rx/net/socks/Socks5CommandRequestHandler.java`
+- `rxlib/src/main/java/org/rx/net/socks/ProxyManageHandler.java`
+- `rxlib/src/main/java/org/rx/net/socks/ProxyChannelIdleHandler.java`
 - `rxlib/src/main/java/org/rx/net/socks/SocksTcpFrontendRelayHandler.java`
 - `rxlib/src/main/java/org/rx/net/socks/SocksTcpBackendRelayHandler.java`
-- `rxlib/src/main/java/org/rx/net/socks/ProxyChannelIdleHandler.java`
-- `rxlib/src/main/java/org/rx/net/socks/ProxyManageHandler.java`
-- `rxlib/src/main/java/org/rx/net/socks/SocksConnectionTagRegistry.java`
-- `rxlib/src/main/java/org/rx/net/socks/SocksUserTraffic.java`
 - `rxlib/src/main/java/org/rx/net/socks/SocksUdpRelayHandler.java`
 - `rxlib/src/main/java/org/rx/net/socks/UdpRelayGroupManager.java`
 - `rxlib/src/main/java/org/rx/net/socks/Udp2rawServerEntryManager.java`
-- `rxlib/src/main/java/org/rx/net/socks/Udp2rawServerEntryHandler.java`
-- `rxlib/src/main/java/org/rx/net/socks/Udp2rawHandler.java`
-- `rxlib/src/main/java/org/rx/net/socks/Udp2rawPayloadSupport.java`
-- `rxlib/src/main/java/org/rx/net/socks/SocksRpcContract.java`
+- `rxlib/src/main/java/org/rx/net/socks/SocksConnectionTagRegistry.java`
+- `rxlib/src/main/java/org/rx/net/socks/SocksUserTraffic.java`
+- `rxlib/src/main/java/org/rx/net/socks/SocksContext.java`
+
+相关测试：
+- `rxlib/src/test/java/org/rx/net/socks/SocksProxyServerTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/SocksProxyServerIntegrationTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/Socks5CommandRequestHandlerTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/SocksUdpRelayHandlerTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/Udp2rawFixedEntryIntegrationTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/Udp2rawHandlerTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/UdpRedundantTest.java`
+
+验证配置：
+- `.github/workflows/jdk8-unit-tests.yml`
 
 ## 关键调用链
 
-1. `SocksProxyServer` 构造阶段根据 `SocksConfig` 绑定 TCP 或 Local memory server，初始化 `UdpRelayGroupManager`，并在启用固定入口 udp2raw 且未配置 udp2raw client 时初始化 `Udp2rawServerEntryManager`。
-2. `acceptChannel` 为入站 channel 挂载 `ProxyManageHandler`、`ProxyChannelIdleHandler`、SOCKS5 encoder/decoder、初始请求 handler、认证 handler 和命令请求 handler，并维护 `activeChannels`。
-3. `Socks5InitialRequestHandler` 根据 `SocksProxyServer.isAuthEnabled()` 选择 `NO_AUTH` 或 `PASSWORD` 认证方式。
-4. `Socks5PasswordAuthRequestHandler` 调用 `Authenticator`，将认证结果或连接标签写入 `SocksContext` / `SocksConnectionTagRegistry`。
-5. `Socks5CommandRequestHandler` 负责 CONNECT / UDP_ASSOCIATE：构造 `SocksContext`、执行路由、连接上游或建立 UDP relay。
-6. `SocksProxyServer` 暴露 RPC 管理能力：reset/claim UDP relay、UDP relay group open/add/remove/heartbeat/close、udp2raw tunnel open/heartbeat/close、capabilities 查询。
-7. `dispose` 关闭 udp2raw entry、UDP relay group、UDP relay registry 和由 server 自身创建的 TCP bind channel。
+1. `SocksProxyServer` 构造阶段根据 `SocksConfig` 选择普通 TCP 监听、Local memory channel 或外部传入 memory channel。
+2. `acceptChannel(Channel)` 初始化 Netty pipeline：可选 `ProxyManageHandler`、可选 `ProxyChannelIdleHandler`、通用 TCP server handler、SOCKS5 encoder、initial decoder/handler、可选 password auth decoder/handler、command request decoder/handler。
+3. `Socks5InitialRequestHandler` 根据是否启用 authenticator 选择 NO_AUTH 或 PASSWORD。
+4. `Socks5PasswordAuthRequestHandler` 通过 `Authenticator` 写入 `SocksContext` 的认证结果。
+5. `Socks5CommandRequestHandler` 根据 CONNECT / UDP_ASSOCIATE 分流，触发 `onTcpRoute` / `onUdpRoute`，创建 TCP backend 或 UDP relay。
+6. TCP relay 使用 frontend/backend handler 双向转发并依赖 channel close 释放资源。
+7. UDP relay 通过 `SocksUdpRelayHandler`、`registerUdpRelay`、`udpRelayRegistry` 与 RPC 管理接口协作。
+8. udp2raw fixed-entry 通过 `Udp2rawServerEntryManager` 启动入口、打开/心跳/关闭 tunnel。
+9. 流量统计通过 `ProxyManageHandler`、`SocksConnectionTagRegistry`、`SocksUserTraffic` 绑定 channel / session / user。
+
+## 当前实现意图
+
+- `SocksProxyServer` 是 SOCKS5 server 的入口和生命周期管理器。
+- `onTcpRoute` / `onUdpRoute` 允许调用方自定义上游选择。
+- `udpRelayRegistry` 支撑 relay port 到 channel 的管理操作。
+- token overload 用于 RPC 管理接口鉴权。
+- `ProxyManageHandler` 与 tag registry 用于流量统计和 session 归属。
+- `udp2rawEntryManager` 只在 fixed-entry server 模式启用。
+
+## 已发现的问题或风险
+
+1. `openUdp2rawTunnel` 在未启用 `udp2rawEntryManager` 时返回 unsupported 结果，但 `heartbeatUdp2rawTunnel` / `closeUdp2rawTunnel` 仅返回 `false`，调用方无法区分 unsupported 与 not found。
+2. `activeChannels` 的 close listener 在 `acceptChannel` 末尾注册，pipeline 初始化异常路径缺少显式关闭与计数保护测试。
+3. `udpRelayRegistry` 使用本地 port 作为 key，未来如支持同端口多地址监听、reusePort 或多 group 复用端口，存在覆盖风险。
+4. `withUdpRelay` 在非 relay EventLoop 线程使用 `.get()` 同步等待，RPC 管理线程可能被长时间阻塞。
+5. RPC token 保护集中在 token overload，无 token public 方法仍直接执行管理操作，需要确认 RPC 暴露层不会暴露这些内部入口。
+6. `connectionTagResolver` 返回 null、抛异常或连接失败时，流量绑定释放路径需要更明确测试覆盖。
 
 # 目标
 
-- 完成 `SocksProxyServer` 相关类 review 的计划文档。
-- 处理计划文档中列出的可小范围修复风险点。
-- 按用户要求先忽略 CI，不触发 GitHub Actions。
-- 持续更新计划文档中的处理进度。
+1. 完成 `SocksProxyServer` 及相关 SOCKS5、TCP relay、UDP relay、udp2raw、流量统计链路 review。
+2. 提交 `docs/plan/review-socks-proxy-server.md`。
+3. 明确后续可能的最小修复范围。
+4. 明确测试与 GitHub Actions 验证方式。
+5. 当前阶段不修改业务代码。
 
 # 非目标
 
-- 不做 socks 包大规模重构。
-- 不升级依赖，不调整 Maven 或 GitHub Actions 配置。
-- 不修改 secrets、token、证书、私钥，不发布 release。
-- 本轮不触发 CI。
+1. 不修改 `rxlib/src/main/java` 下业务代码。
+2. 不新增或修改测试代码。
+3. 不调整 public API，除非用户后续明确确认兼容性风险。
+4. 不升级依赖、Maven 插件或 GitHub Actions。
+5. 不修改 secrets、token、证书、私钥。
+6. 不自动发布 release。
 
 # 设计方案
 
-采用最小改动策略：
+后续如用户要求按计划执行，建议采用“先补测试复现，再做最小行为修复”的策略。
 
-1. 对 UDP relay registry 的端口冲突做明确处理，避免静默覆盖导致 channel 泄漏或错误路由。
-2. 对 `withUdpRelay` 的跨 event loop 同步调用增加超时保护，避免 RPC 线程无限等待。
-3. 对 `activeChannels` 关闭计数做防负数保护。
-4. 对 `dispose` 遍历 UDP relay registry 做快照遍历，避免 close listener 同时修改 registry 的弱一致行为影响释放过程。
-5. 对 `ProxyManageHandler` 在 memory/local channel 或无法解析远端地址的场景加保护，避免 traffic binding 路径 NPE。
-6. RPC token 暴露边界经 review 后保持现有 public overload 以维持兼容性；远程暴露面以 `SocksRpcContract` 中带 token 的方法为准。未直接改方法可见性，避免破坏已有调用方。
+## 方案 A：测试优先与约束文档化
+
+适用场景：风险尚未确认是生产 bug。
+
+计划：
+- 增加 `SocksProxyServerTest` / `SocksProxyServerIntegrationTest` 用例覆盖：
+  - `acceptChannel` 重复调用不重复计数。
+  - memory channel 生命周期不被 server 误关闭。
+  - UDP relay port 唯一约束。
+  - `connectionTagResolver` 返回 null / 抛异常 / 连接失败。
+  - udp2raw unsupported 与 not found 语义。
+- 对隐含约束加注释：
+  - UDP relay registry 当前按 port 唯一。
+  - `withUdpRelay` 同步切换到 relay EventLoop 的目的。
+  - token overload 与内部无 token 方法的边界。
+
+优点：兼容性风险低，能先确认真实问题。
+缺点：不直接改变运行时行为。
+
+## 方案 B：最小行为修复
+
+适用场景：用户确认需要修复相关风险。
+
+候选修改：
+1. `SocksProxyServer.registerUdpRelay`
+   - 若 port 已存在且旧 channel active，拒绝覆盖或记录诊断指标。
+   - close listener 继续用 `remove(key, relay)`，避免误删后注册的新 relay。
+2. `SocksProxyServer.withUdpRelay`
+   - 增加 timeout 或 fail-fast 保护，避免无限等待。
+   - 保持 JDK8 API。
+3. `SocksProxyServer` udp2raw RPC 方法
+   - 对 unsupported 场景补充 diagnostic metric 或日志。
+   - 如要变更返回语义，另起兼容性评估。
+4. `ProxyManageHandler` / `SocksConnectionTagRegistry`
+   - 增强 resolver 异常保护和 finally 释放检查。
+5. RPC token API
+   - 确认 RPC 暴露层仅暴露 token overload。
+   - 如果不能保证，考虑把无 token public 方法改为内部方法或新增安全包装；这可能影响外部调用方，需用户确认。
+
+## 异常处理策略
+
+- RPC token 校验失败继续抛 `SecurityException`，并记录现有诊断指标。
+- UDP relay 不存在继续返回 `false`，除非确认要引入明确结果类型。
+- resolver 异常不应导致 tag 泄漏；建议关闭连接或降级为未绑定 tag，并确保 session close 记录一致。
+
+## 资源释放策略
+
+- `dispose()` 继续按当前顺序关闭 `udp2rawEntryManager`、`udpRelayGroupManager`、已注册 UDP relay、registry、自有 TCP channel 和 bootstrap。
+- 外部传入 memory channel 不主动关闭，保持当前所有权语义。
+- relay registry 修改必须防止 close listener 误删新 channel。
+- pipeline 初始化失败时应尽量显式关闭 channel 或保证上游会关闭。
+
+## 并发策略
+
+- channel attr 与 relay 状态清理尽量在对应 EventLoop 内执行。
+- 避免 EventLoop 内跨线程同步等待。
+- 共享结构继续使用 `ConcurrentHashMap`。
+- 计数器继续使用 `AtomicInteger`，但增加异常路径测试。
 
 # 修改文件列表
 
-已新增/修改：
-
+本阶段修改：
 - `docs/plan/review-socks-proxy-server.md`
+
+如果后续进入代码实现阶段，预计可能修改：
 - `rxlib/src/main/java/org/rx/net/socks/SocksProxyServer.java`
 - `rxlib/src/main/java/org/rx/net/socks/ProxyManageHandler.java`
+- `rxlib/src/main/java/org/rx/net/socks/SocksConnectionTagRegistry.java`
+- `rxlib/src/main/java/org/rx/net/socks/SocksUserTraffic.java`
+- `rxlib/src/test/java/org/rx/net/socks/SocksProxyServerTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/SocksProxyServerIntegrationTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/Socks5CommandRequestHandlerTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/SocksUdpRelayHandlerTest.java`
+- `rxlib/src/test/java/org/rx/net/socks/Udp2rawFixedEntryIntegrationTest.java`
 
-# 风险点处理进度
+# 风险点
 
-## 已处理
-
-- [x] `registerUdpRelay` 原先使用 `put` 静默覆盖同端口 relay。现改为 `putIfAbsent` / `replace` 循环：
-  - 无旧 relay 时注册新 relay。
-  - 同一个 relay 重复注册时直接返回，避免重复 close listener。
-  - 旧 relay 仍 active 时拒绝新重复 relay，并关闭新 relay，保留已有 active relay。
-  - 旧 relay 非 active 时才替换。
-  - 增加 `socks.udp.relay.duplicate.count` metric。
-- [x] `withUdpRelay` 原先 `submit(task).get()` 可能无限阻塞。现增加 `UDP_RELAY_OPERATION_TIMEOUT_SECONDS = 5` 秒超时，超时后取消 future、记录 `socks.udp.relay.operation.timeout.count` metric，并返回 `false`。
-- [x] `dispose` 原先直接遍历 `udpRelayRegistry.values()`，close listener 同时可能修改 registry。现改为 `toArray(new Channel[0])` 快照遍历后关闭，再 clear registry。
-- [x] `activeChannels` 原先 closeFuture 中直接 decrement，异常重复关闭或外部 channel 复用场景存在负数风险。现使用 `updateAndGet(v -> v > 0 ? v - 1 : 0)` 防负数。
-- [x] `ProxyManageHandler.setUser` 原先直接依赖 `Sockets.getOriginRemoteAddress(ctx.channel())` 并读取 `getAddress()`，memory/local channel 或未解析远端地址可能 NPE。现增加 `resolveRemoteAddress`，优先 origin remote，失败则尝试 `channel.remoteAddress()`；仍无法解析时绑定 anonymous 并返回。
-- [x] `ProxyManageHandler.channelInactive` 的 remote 地址也改为同一解析逻辑，避免诊断与日志路径空地址异常。
-- [x] RPC token 暴露边界已复核：`SocksRpcContract` 只声明带 token 的远程管理方法；`SocksProxyServer` 保留无 token public 方法作为本地 API，不调整可见性以避免破坏兼容性。
-
-## 未在本轮修改的项
-
-- [ ] 未新增测试代码。原因是用户明确要求先忽略 CI，本轮优先完成业务防护与文档进度更新；后续仍建议补 `SocksProxyServerTest` / `ProxyManageHandler` 相关测试。
-- [ ] 未改变 RPC 方法签名或 public API。原因是兼容性风险高，且 contract 层远程暴露面已经是带 token 方法。
+1. 兼容性风险：`SocksProxyServer` public 管理方法可能已有外部调用方，改可见性或返回语义需谨慎。
+2. 性能风险：`withUdpRelay(...).get()` 同步等待可能影响 RPC 管理吞吐。
+3. 并发风险：UDP relay port key 覆盖、close listener 与新注册 relay 竞态。
+4. 资源释放风险：memory channel 所有权不同，不能误关外部 channel；pipeline 初始化异常也需释放。
+5. 测试风险：SOCKS/UDP/udp2raw 集成测试依赖本地端口与 Netty timing，可能存在 flaky。
+6. JDK 风险：项目默认按 JDK8 验证，后续实现禁止使用 JDK9+ API。
+7. 安全风险：RPC token overload 与无 token public 方法边界需要确认。
 
 # 验证方案
 
-本轮按用户要求未触发 CI。后续需要验证时建议执行：
+本阶段只提交计划文档，不将 CI 结果声明为业务修复通过。
 
-1. 触发 `.github/workflows/jdk8-unit-tests.yml`，使用 `workflow_dispatch`。
-2. `test_classes` 优先带：
+后续如进入代码修改阶段：
+1. 提交代码后手动触发 `.github/workflows/jdk8-unit-tests.yml`。
+2. workflow 名称：`JDK 8 Unit Tests`。
+3. branch：`agent/review-socks-proxy-server`。
+4. `test_classes` 建议：
    - `org.rx.net.socks.SocksProxyServerTest`
    - `org.rx.net.socks.SocksProxyServerIntegrationTest`
    - `org.rx.net.socks.Socks5CommandRequestHandlerTest`
    - `org.rx.net.socks.SocksUdpRelayHandlerTest`
    - `org.rx.net.socks.Udp2rawFixedEntryIntegrationTest`
-3. 如果后续补充 udp2raw / redundant / traffic accounting 修改，再补充：
+5. 如果影响 udp2raw payload 或 redundant 逻辑，追加：
    - `org.rx.net.socks.Udp2rawHandlerTest`
    - `org.rx.net.socks.UdpRedundantTest`
-4. 只有 workflow run `conclusion=success` 才认为 CI 通过。
-
-# 当前提交进度
-
-- `a68004182be2817c6148083263a1a28a84c900e3`：`docs(plan): review SocksProxyServer related classes`
-- `d182280b118f5a36efbba6f7e25a1d6d31977ead`：`fix: guard duplicate UDP relay registration`
-- `3e21102a70b1d62ae0cb1fc4323e5ae9b2554cfb`：`fix: harden socks relay state management`
-
-# 剩余风险
-
-- CI 未运行，JDK8 编译和单元测试结果未知。
-- 未补自动化测试，重复 UDP relay、relay event loop timeout、memory/local channel traffic binding 等场景建议后续补测。
-- `withUdpRelay` 超时返回 `false` 是安全降级，但在极端 event loop 卡顿时管理操作可能失败，需要调用方按 false 处理重试或上报。
+6. CI 如失败，先分类为编译失败、单测失败、格式失败、依赖下载失败、JDK8 不兼容、环境问题、测试不稳定或 workflow 配置问题。
+7. 修复时只修改与失败直接相关的代码。
+8. 修复后再次 commit 并重新触发 `jdk8-unit-tests.yml`。
+9. 只有 workflow run `conclusion=success` 才认为 CI 通过。
