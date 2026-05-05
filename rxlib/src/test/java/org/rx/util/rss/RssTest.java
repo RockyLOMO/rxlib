@@ -138,7 +138,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void resolveClientInListenAddress_DefaultToLocalAddress() {
-        RSSConf conf = new RSSConf();
+        RssClientConf conf = new RssClientConf();
 
         SocketAddress address = RssClient.resolveClientInListenAddress(conf, 6885, "rss-in-");
 
@@ -147,7 +147,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void resolveClientInListenAddress_BindPortUsesLoopback() {
-        RSSConf conf = new RSSConf();
+        RssClientConf conf = new RssClientConf();
         conf.socksBindPort = true;
 
         SocketAddress address = RssClient.resolveClientInListenAddress(conf, 6885, "rss-in-");
@@ -161,7 +161,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void resolveNameserverConfig_UsesShadowDnsServerPortAndTtl() {
-        RSSConf conf = new RSSConf();
+        RssClientConf conf = new RssClientConf();
         NameserverConfig config = new NameserverConfig();
         config.setRegisterPort(1854);
         conf.nameserver = config;
@@ -180,7 +180,7 @@ public class RssTest extends AbstractTester {
     @Test
     public void yamlConf() {
         YamlConfiguration yamlConfiguration = new YamlConfiguration("output.yaml");
-        RSSConf rssConf = yamlConfiguration.readAs(null, RSSConf.class);
+        RssClientConf rssConf = yamlConfiguration.readAs(null, RssClientConf.class);
         System.out.println("反序列化rssConf: " + rssConf);
         System.out.println("序列化rssConf:" + yamlConfiguration.dump());
     }
@@ -443,7 +443,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void shouldScheduleDdns_RequiresPositivePeriodAndDomains() {
-        RSSConf conf = new RSSConf();
+        RssClientConf conf = new RssClientConf();
 
         assertTrue(!RssClient.shouldScheduleDdns(conf));
         conf.ddnsDomains = Collections.singletonList("a.example.com");
@@ -454,7 +454,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void applyUdpLeasePool_EnablesAndClampsRssConfig() {
-        RSSConf conf = new RSSConf();
+        RssClientConf conf = new RssClientConf();
         conf.udpLeasePoolMinSize = 64;
         conf.udpLeasePoolMaxSize = 4;
         conf.udpLeasePoolMaxIdleMillis = 5;
@@ -474,7 +474,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void applyUdpLeasePool_DisabledKeepsPoolOff() {
-        RSSConf conf = new RSSConf();
+        RssClientConf conf = new RssClientConf();
         conf.udpLeasePoolEnabled = false;
         SocksConfig config = new SocksConfig();
         config.setUdpLeasePoolEnabled(true);
@@ -551,10 +551,10 @@ public class RssTest extends AbstractTester {
     @Test
     @SneakyThrows
     public void nextUpstream_ThrowsWhenNoServerAvailable() {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
-            RssClient.rssConf = new RSSConf();
-            RssClient.rssConf.route = new RSSConf.RouteConf();
+            RssClient.rssConf = new RssClientConf();
+            RssClient.rssConf.route = new RssClientConf.RouteConf();
 
             assertThrows(InvalidException.class,
                     () -> RssClient.nextUpstream(new RandomList<UpstreamSupport>(), java.net.InetAddress.getByName("127.0.0.1")));
@@ -566,10 +566,10 @@ public class RssTest extends AbstractTester {
     @Test
     @SneakyThrows
     public void nextUpstream_SkipsUnhealthyCachedServer() {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
-            RssClient.rssConf = new RSSConf();
-            RssClient.rssConf.route = new RSSConf.RouteConf();
+            RssClient.rssConf = new RssClientConf();
+            RssClient.rssConf.route = new RssClientConf.RouteConf();
             RssClient.rssConf.route.srcSteeringTTL = 60;
             RandomList<UpstreamSupport> servers = new RandomList<>();
             UpstreamSupport first = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), null);
@@ -594,11 +594,11 @@ public class RssTest extends AbstractTester {
     @Test
     @SneakyThrows
     public void nextUpstream_FailOpenUsesConfiguredWeightWhenRuntimeWeightsAreZero() {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
-            RssClient.rssConf = new RSSConf();
+            RssClient.rssConf = new RssClientConf();
             RssClient.rssConf.upstreamFailOpenWhenAllDown = true;
-            RssClient.rssConf.route = new RSSConf.RouteConf();
+            RssClient.rssConf.route = new RssClientConf.RouteConf();
             RandomList<UpstreamSupport> servers = new RandomList<>();
             UpstreamSupport main = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), null);
             main.setConfiguredWeight(1);
@@ -614,11 +614,11 @@ public class RssTest extends AbstractTester {
     @Test
     @SneakyThrows
     public void nextUpstream_FailCloseThrowsWhenRuntimeWeightsAreZero() {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
-            RssClient.rssConf = new RSSConf();
+            RssClient.rssConf = new RssClientConf();
             RssClient.rssConf.upstreamFailOpenWhenAllDown = false;
-            RssClient.rssConf.route = new RSSConf.RouteConf();
+            RssClient.rssConf.route = new RssClientConf.RouteConf();
             RandomList<UpstreamSupport> servers = new RandomList<>();
             UpstreamSupport main = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), null);
             main.setConfiguredWeight(1);
@@ -733,8 +733,8 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void forwardingDns_routeDisabledNullRemoteResultDoesNotFallbackToLocalDns() throws Exception {
-        RSSConf old = RssClient.rssConf;
-        RSSConf conf = validRssConf();
+        RssClientConf old = RssClient.rssConf;
+        RssClientConf conf = validRssConf();
         conf.route.enable = false;
         AtomicInteger calls = new AtomicInteger();
         SocksRpcContract delegate = new SocksRpcContract() {
@@ -881,7 +881,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void resolveRpcRequestTimeoutMillis_UsesConfiguredOrConnectBound() {
-        RSSConf conf = new RSSConf();
+        RssClientConf conf = new RssClientConf();
 
         assertEquals(3000, RssClient.resolveRpcRequestTimeoutMillis(conf));
         conf.rpcRequestTimeoutMillis = 1200;
@@ -895,10 +895,10 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void buildRpcEndpointsByServerHost_ReusesNormalRpcPortForSameHostTunServer() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer normal = new RSSConf.SocksServer("main", 9,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer normal = new RssClientConf.SocksServer("main", 9,
                 AuthenticEndpoint.valueOf("u:p@202.91.34.9:9900"));
-        RSSConf.SocksServer tun = new RSSConf.SocksServer("main-tun", 1,
+        RssClientConf.SocksServer tun = new RssClientConf.SocksServer("main-tun", 1,
                 AuthenticEndpoint.valueOf("u:p@202.91.34.9:9910"));
         tun.setUdp2raw(true);
         tun.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
@@ -913,11 +913,11 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void buildRpcEndpointsByServerHost_UsesConfiguredFixedRpcPort() {
-        RSSConf conf = validRssConf();
+        RssClientConf conf = validRssConf();
         conf.rpcPort = 9901;
-        RSSConf.SocksServer normal = new RSSConf.SocksServer("main", 9,
+        RssClientConf.SocksServer normal = new RssClientConf.SocksServer("main", 9,
                 AuthenticEndpoint.valueOf("u:p@202.91.34.9:9900"));
-        RSSConf.SocksServer tun = new RSSConf.SocksServer("main-tun", 1,
+        RssClientConf.SocksServer tun = new RssClientConf.SocksServer("main-tun", 1,
                 AuthenticEndpoint.valueOf("u:p@202.91.34.9:9910"));
         tun.setUdp2raw(true);
         tun.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
@@ -931,12 +931,12 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void buildUpstreams_ReusesRpcFacadeAndAggregatesDnsWeightForSameHost() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer main = new RSSConf.SocksServer("main", 9,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer main = new RssClientConf.SocksServer("main", 9,
                 AuthenticEndpoint.valueOf("u:p@202.91.34.9:9900"));
-        RSSConf.SocksServer backup = new RSSConf.SocksServer("backup", 1,
+        RssClientConf.SocksServer backup = new RssClientConf.SocksServer("backup", 1,
                 AuthenticEndpoint.valueOf("u:p@202.91.34.9:9902"));
-        RSSConf.SocksServer tun = new RSSConf.SocksServer("main-tun", 1,
+        RssClientConf.SocksServer tun = new RssClientConf.SocksServer("main-tun", 1,
                 AuthenticEndpoint.valueOf("u:p@202.91.34.9:9910"));
         tun.setUdp2raw(true);
         tun.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
@@ -959,7 +959,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_ClampsRuntimeFields() {
-        RSSConf conf = validRssConf();
+        RssClientConf conf = validRssConf();
         conf.trafficRetentionDays = 0;
         conf.memoryRetentionHours = 0;
         conf.rpcMinSize = 4;
@@ -981,7 +981,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_RejectsDuplicateShadowUsers() {
-        RSSConf conf = validRssConf();
+        RssClientConf conf = validRssConf();
         ShadowUser duplicate = new ShadowUser();
         duplicate.setUsername(conf.shadowUsers.get(0).getUsername());
         duplicate.setSsPort(2082);
@@ -994,10 +994,10 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_AcceptsShadowUserScopedSocksServers() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer first = new RSSConf.SocksServer("primary", 1,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer first = new RssClientConf.SocksServer("primary", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"));
-        RSSConf.SocksServer second = new RSSConf.SocksServer("backup", 2,
+        RssClientConf.SocksServer second = new RssClientConf.SocksServer("backup", 2,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:1081"));
         conf.socksServers = Arrays.asList(first, second);
         conf.shadowUsers.get(0).setSocksServers(Collections.singletonList(" backup "));
@@ -1008,8 +1008,8 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_AcceptsTunUserScopedUdp2rawSocksServers() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer udp2raw = new RSSConf.SocksServer("tun-a", 1,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("tun-a", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
         udp2raw.setUdp2raw(true);
         udp2raw.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
@@ -1023,8 +1023,8 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_RejectsUdp2rawServerWithoutTcpClient() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer udp2raw = new RSSConf.SocksServer("tun-a", 1,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("tun-a", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
         udp2raw.setUdp2raw(true);
         conf.socksServers = Arrays.asList(conf.socksServers.get(0), udp2raw);
@@ -1035,8 +1035,8 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_RejectsMixedUdp2rawAndNormalSocksServers() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer udp2raw = new RSSConf.SocksServer("tun-a", 1,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("tun-a", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
         udp2raw.setUdp2raw(true);
         udp2raw.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
@@ -1048,12 +1048,12 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_AcceptsMultipleUdp2rawServersForOneUser() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer first = new RSSConf.SocksServer("tun-a", 1,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer first = new RssClientConf.SocksServer("tun-a", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
         first.setUdp2raw(true);
         first.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
-        RSSConf.SocksServer second = new RSSConf.SocksServer("tun-b", 1,
+        RssClientConf.SocksServer second = new RssClientConf.SocksServer("tun-b", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9920"));
         second.setUdp2raw(true);
         second.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
@@ -1066,8 +1066,8 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_AcceptsShadowUserScopedTcpClientSocksServers() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer hysteria = new RSSConf.SocksServer("hysteria-a", 2,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer hysteria = new RssClientConf.SocksServer("hysteria-a", 2,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9900"));
         hysteria.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:1080"));
         conf.socksServers = Arrays.asList(conf.socksServers.get(0), hysteria);
@@ -1087,8 +1087,8 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_RejectsMixedTcpClientAndNormalSocksServers() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer hysteria = new RSSConf.SocksServer("hysteria-a", 1,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer hysteria = new RssClientConf.SocksServer("hysteria-a", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9900"));
         hysteria.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:1080"));
         conf.socksServers = Arrays.asList(conf.socksServers.get(0), hysteria);
@@ -1099,7 +1099,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_RejectsUnknownShadowUserSocksServer() {
-        RSSConf conf = validRssConf();
+        RssClientConf conf = validRssConf();
         conf.socksServers.get(0).setId("primary");
         conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("missing"));
 
@@ -1108,8 +1108,8 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void normalizeAndValidateRssConfig_RejectsShadowUserScopedDisabledSocksServers() {
-        RSSConf conf = validRssConf();
-        RSSConf.SocksServer disabled = new RSSConf.SocksServer("disabled", 0,
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer disabled = new RssClientConf.SocksServer("disabled", 0,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"));
         conf.socksServers = Collections.singletonList(disabled);
         conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("disabled"));
@@ -1163,9 +1163,9 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void updateUpstreamHealth_UpdatesShadowUserScopedWeights() {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
-            RSSConf conf = new RSSConf();
+            RssClientConf conf = new RssClientConf();
             conf.upstreamHealthFailureThreshold = 1;
             RssClient.rssConf = conf;
             UpstreamSupport support = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"), null);
@@ -1183,7 +1183,7 @@ public class RssTest extends AbstractTester {
             RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(defaults,
                     new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
                     userServers, udp2rawUserServers,
-                    Collections.<RSSConf.SocksServer>emptyList(), Collections.<RSSConf.SocksServer>emptyList());
+                    Collections.<RssClientConf.SocksServer>emptyList(), Collections.<RssClientConf.SocksServer>emptyList());
 
             RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
 
@@ -1197,9 +1197,9 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void updateUpstreamHealth_RequiresConsecutiveFailuresBeforeWeightZero() {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
-            RSSConf conf = new RSSConf();
+            RssClientConf conf = new RssClientConf();
             conf.upstreamHealthFailureThreshold = 3;
             RssClient.rssConf = conf;
             UpstreamSupport support = new UpstreamSupport(AuthenticEndpoint.valueOf("u:p@127.0.0.1:1080"), null);
@@ -1234,9 +1234,9 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void upstreamHealthCheckPeriodMillis_UsesConfiguredSeconds() {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
-            RSSConf conf = new RSSConf();
+            RssClientConf conf = new RssClientConf();
             conf.upstreamHealthCheckSeconds = 7;
             RssClient.rssConf = conf;
 
@@ -1255,9 +1255,9 @@ public class RssTest extends AbstractTester {
         SocksProxyServer backSvr = new SocksProxyServer(new SocksConfig(new LocalAddress("RSS_HEALTH_RPC_BACK")));
         TcpServer rpcServer = null;
         SocksRpcContract facade = null;
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
-            RSSConf conf = new RSSConf();
+            RssClientConf conf = new RssClientConf();
             conf.upstreamHealthFailureThreshold = 3;
             RssClient.rssConf = conf;
             RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(rpcPort));
@@ -1301,20 +1301,20 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void socksServerJsonReader_RequiresObjectFormatWithWeight() {
-        RSSConf conf = JSON.parseObject("{\"socksServers\":["
-                + "{\"id\":\"backup\",\"weight\":2,\"endpoint\":\"u:p@127.0.0.1:1081\"}]}", RSSConf.class);
+        RssClientConf conf = JSON.parseObject("{\"socksServers\":["
+                + "{\"id\":\"backup\",\"weight\":2,\"endpoint\":\"u:p@127.0.0.1:1081\"}]}", RssClientConf.class);
 
         assertEquals(1, conf.socksServers.size());
         assertEquals("backup", conf.socksServers.get(0).getId());
         assertEquals(2, RssClient.weightOf(conf.socksServers.get(0)));
         assertEquals(1081, conf.socksServers.get(0).getEndpoint().requireEndpoint().getPort());
         assertThrows(Exception.class, () -> JSON.parseObject(
-                "{\"socksServers\":[\"u:p@127.0.0.1:1080\"]}", RSSConf.class));
+                "{\"socksServers\":[\"u:p@127.0.0.1:1080\"]}", RssClientConf.class));
     }
 
     @Test
     public void configureOutboundConfig_RefreshesTimeoutAndUdpLeaseSettings() {
-        RSSConf conf = new RSSConf();
+        RssClientConf conf = new RssClientConf();
         conf.connectTimeoutSeconds = 2;
         conf.tcpTimeoutSeconds = 3;
         conf.udpTimeoutSeconds = 4;
@@ -1351,8 +1351,8 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void inServerRestartRequired_DetectsOwnedConfigChanges() {
-        RSSConf oldConf = validRssConf();
-        RSSConf newConf = validRssConf();
+        RssClientConf oldConf = validRssConf();
+        RssClientConf newConf = validRssConf();
 
         assertTrue(!RssClient.inServerRestartRequired(oldConf, newConf));
 
@@ -1365,7 +1365,7 @@ public class RssTest extends AbstractTester {
         assertTrue(RssClient.inServerRestartRequired(oldConf, newConf));
 
         newConf = validRssConf();
-        RSSConf.SocksServer udp2raw = new RSSConf.SocksServer("udp2raw", 1,
+        RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("udp2raw", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
         udp2raw.setUdp2raw(true);
         udp2raw.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
@@ -1375,8 +1375,8 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void shadowServerRestartRequired_DetectsConfigObjectChanges() {
-        RSSConf oldConf = validRssConf();
-        RSSConf newConf = validRssConf();
+        RssClientConf oldConf = validRssConf();
+        RssClientConf newConf = validRssConf();
 
         assertTrue(!RssClient.shadowServerRestartRequired(oldConf, newConf));
 
@@ -1384,8 +1384,8 @@ public class RssTest extends AbstractTester {
         assertTrue(RssClient.shadowServerRestartRequired(oldConf, newConf));
     }
 
-    private RSSConf validRssConf() {
-        RSSConf conf = new RSSConf();
+    private RssClientConf validRssConf() {
+        RssClientConf conf = new RssClientConf();
         ShadowUser user = new ShadowUser();
         user.setUsername("ss-rocky");
         user.setSsPort(2081);
@@ -1394,7 +1394,7 @@ public class RssTest extends AbstractTester {
         conf.shadowUsers = Collections.singletonList(user);
         conf.socksPwd = "socks-pwd";
         AuthenticEndpoint endpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080), "u", "p");
-        conf.socksServers = Collections.singletonList(new RSSConf.SocksServer("primary", 1, endpoint));
+        conf.socksServers = Collections.singletonList(new RssClientConf.SocksServer("primary", 1, endpoint));
         return conf;
     }
 

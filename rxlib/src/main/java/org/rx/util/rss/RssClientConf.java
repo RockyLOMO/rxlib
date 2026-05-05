@@ -20,7 +20,7 @@ import java.util.Set;
 @Getter
 @Setter
 @ToString
-public class RSSConf {
+public class RssClientConf {
     static {
         JSONFactory.getDefaultObjectReaderProvider().register(SocksServer.class,
                 (ObjectReader<SocksServer>) (jsonReader, fieldType, fieldName, features) -> {

@@ -365,18 +365,18 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     }
 
     private static AuthenticEndpoint configuredEndpoint(Object value) {
-        if (value instanceof RSSConf.SocksServer) {
-            return ((RSSConf.SocksServer) value).getEndpoint();
+        if (value instanceof RssClientConf.SocksServer) {
+            return ((RssClientConf.SocksServer) value).getEndpoint();
         }
         return value instanceof AuthenticEndpoint ? (AuthenticEndpoint) value : null;
     }
 
     private static String configuredEndpointId(Object value) {
-        return value instanceof RSSConf.SocksServer ? ((RSSConf.SocksServer) value).getId() : null;
+        return value instanceof RssClientConf.SocksServer ? ((RssClientConf.SocksServer) value).getId() : null;
     }
 
     private static int configuredEndpointWeight(Object value, AuthenticEndpoint endpoint) {
-        return value instanceof RSSConf.SocksServer ? RssClient.weightOf((RSSConf.SocksServer) value) : RssClient.weightOf(endpoint);
+        return value instanceof RssClientConf.SocksServer ? RssClient.weightOf((RssClientConf.SocksServer) value) : RssClient.weightOf(endpoint);
     }
 
     private static String upstreamState(RssRuntime.UpstreamSnapshot snapshot) {
@@ -601,7 +601,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     }
 
     private static int effectiveMemoryRetentionHours(int configuredHours) {
-        RSSConf conf = RssClient.rssConf;
+        RssClientConf conf = RssClient.rssConf;
         return conf != null ? Math.max(1, conf.memoryRetentionHours) : Math.max(1, configuredHours);
     }
 

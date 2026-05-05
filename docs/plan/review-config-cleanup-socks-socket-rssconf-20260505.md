@@ -1,4 +1,4 @@
-# 配置项清理 review 计划：SocksConfig / SocketConfig / RSSConf
+# 配置项清理 review 计划：SocksConfig / SocketConfig / RssClientConf
 
 # 背景
 
@@ -6,7 +6,7 @@
 
 - `rxlib/src/main/java/org/rx/net/socks/SocksConfig.java`
 - `rxlib/src/main/java/org/rx/net/SocketConfig.java`
-- `rxlib/src/main/java/org/rx/util/rss/RSSConf.java`
+- `rxlib/src/main/java/org/rx/util/rss/RssClientConf.java`
 
 本轮基于 `master` 分支当前代码做 review。由于这些类均属于 public 配置入口，且多数通过 Lombok 或 public field 暴露给外部配置文件/调用方，删除字段可能破坏源码兼容或配置反序列化兼容。本计划只记录 review 结论和后续清理方案，不修改业务代码。
 
@@ -26,7 +26,7 @@
 
 - `rxlib/src/main/java/org/rx/net/socks/SocksConfig.java`
 - `rxlib/src/main/java/org/rx/net/SocketConfig.java`
-- `rxlib/src/main/java/org/rx/util/rss/RSSConf.java`
+- `rxlib/src/main/java/org/rx/util/rss/RssClientConf.java`
 - 关联调用链：
   - `rxlib/src/main/java/org/rx/net/Sockets.java`
   - `rxlib/src/main/java/org/rx/net/socks/SocksProxyServer.java`
@@ -56,9 +56,9 @@
 - `reactorName`、`optimalSettings`、`connectTimeoutMillis`、`transportFlags`、`reusePortBindCount`、`udpWriteLimitBytes`、`tcpCompressionLevel`、`cipher`、`cipherKey` 均在 bootstrap、pipeline 或懒加载配置中使用，不应删除。
 - `udpWritePerSourceLimitBytes` 在 `SocketConfig` 中存在字段和 setter；当前已 review 的主要 UDP 写路径里尚未确认有实际读取。它是候选废弃项，但需要全仓精确搜索确认后才能处理。
 
-### RSSConf
+### RssClientConf
 
-`RSSConf` 是 RSS 子系统的主配置，不是空壳类。当前已确认：
+`RssClientConf` 是 RSS 子系统的主配置，不是空壳类。当前已确认：
 
 - `RssClient.normalizeAndValidateRssConfig` 会校验或规范化：
   - `route`
@@ -90,10 +90,10 @@
   - `socksServers`
   - `shadowUsers`
   - `nameserver`
-- `RSSConf.SocksServer` 的 `tcpClient` 被 `RssRuntime` 用于 TCP_CLIENT 路由；不能删除。
-- `RSSConf.SocksServer` 的 `udp2raw` 被用于区分 UDP2RAW 路由；不能删除。
-- `RSSConf.SocksServer` 的 `udp2rawClient` 字段存在于自定义反序列化逻辑中，语义是固定 udp2raw 目标预留字段；需要继续精确确认是否仍被运行时读取。如果仅解析不使用，则属于候选废弃项，而不是可直接删除项。
-- `RSSConf` 的 DDNS 相关字段 `ddnsJobSeconds`、`ddnsDomains`、`ddnsApiKey`、`ddnsApiProxy` 需要结合 `configureDdnsSchedule(...)` 继续核对。当前已确认 `normalizeAndValidateRssConfig` 对 DDNS 条件做校验，不能仅凭字段少见就直接删除。
+- `RssClientConf.SocksServer` 的 `tcpClient` 被 `RssRuntime` 用于 TCP_CLIENT 路由；不能删除。
+- `RssClientConf.SocksServer` 的 `udp2raw` 被用于区分 UDP2RAW 路由；不能删除。
+- `RssClientConf.SocksServer` 的 `udp2rawClient` 字段存在于自定义反序列化逻辑中，语义是固定 udp2raw 目标预留字段；需要继续精确确认是否仍被运行时读取。如果仅解析不使用，则属于候选废弃项，而不是可直接删除项。
+- `RssClientConf` 的 DDNS 相关字段 `ddnsJobSeconds`、`ddnsDomains`、`ddnsApiKey`、`ddnsApiProxy` 需要结合 `configureDdnsSchedule(...)` 继续核对。当前已确认 `normalizeAndValidateRssConfig` 对 DDNS 条件做校验，不能仅凭字段少见就直接删除。
 
 # 目标
 
@@ -145,7 +145,7 @@
 - `udpPortHopping*`
 - 认证、监听、超时、路由、upstream、DNS、traffic 相关字段
 
-`RSSConf`：
+`RssClientConf`：
 
 - `logFlags`
 - `shadowUsers`
@@ -178,8 +178,8 @@
 - `rrpPort`
 - `route`
 - `ddns*` 字段在 DDNS 调度确认前暂列不能删
-- `RSSConf.SocksServer.id/weight/endpoint/udp2raw/tcpClient`
-- `RSSConf.RouteConf.enable/dstGeoSiteDirectRules/srcIpProxyRules/srcSteeringTTL`
+- `RssClientConf.SocksServer.id/weight/endpoint/udp2raw/tcpClient`
+- `RssClientConf.RouteConf.enable/dstGeoSiteDirectRules/srcIpProxyRules/srcSteeringTTL`
 
 ### B. 候选废弃项，不建议直接删
 
@@ -193,18 +193,18 @@
   - 需要全仓精确搜索后确认。
   - 如果确实没有运行链路，建议先 `@Deprecated`，不要直接删。
 
-- `RSSConf.SocksServer.udp2rawClient`
-  - 当前 `RSSConf` 自定义反序列化会读取并赋值。
+- `RssClientConf.SocksServer.udp2rawClient`
+  - 当前 `RssClientConf` 自定义反序列化会读取并赋值。
   - 需要继续确认 `RssRuntime` / `RssClient` 是否实际使用该字段。
   - 如果只保留了解析但运行时不读，可标记为废弃字段。
   - 因为它是 RSS 配置文件字段，直接删除可能影响旧配置文件。
 
 ### C. 当前没有把握直接删除的字段
 
-- `RSSConf.ddnsJobSeconds`
-- `RSSConf.ddnsDomains`
-- `RSSConf.ddnsApiKey`
-- `RSSConf.ddnsApiProxy`
+- `RssClientConf.ddnsJobSeconds`
+- `RssClientConf.ddnsDomains`
+- `RssClientConf.ddnsApiKey`
+- `RssClientConf.ddnsApiProxy`
 
 原因：`normalizeAndValidateRssConfig` 已对 DDNS 条件做校验，`RssRuntime` 中存在 `configureDdnsSchedule(...)` 调用，需要先精确看该方法内部再判断。
 
@@ -230,23 +230,23 @@
 
 - `rxlib/src/main/java/org/rx/net/socks/SocksConfig.java`
 - `rxlib/src/main/java/org/rx/net/SocketConfig.java`
-- `rxlib/src/main/java/org/rx/util/rss/RSSConf.java`
+- `rxlib/src/main/java/org/rx/util/rss/RssClientConf.java`
 - 可能新增/修改测试：
   - `rxlib/src/test/java/org/rx/net/socks/SocksConfigTest.java`
   - `rxlib/src/test/java/org/rx/net/SocketConfigTest.java`
-  - `rxlib/src/test/java/org/rx/util/rss/RSSConfTest.java`
+  - `rxlib/src/test/java/org/rx/util/rss/RssClientConfTest.java`
 
 # 风险点
 
 ## 兼容性风险
 
 - 删除 Lombok 字段等价于删除 getter/setter，可能导致外部源码编译失败。
-- `RSSConf` 字段是 public field，旧 JSON/YAML 配置可能包含这些字段；直接删除可能导致加载失败或行为静默变化。
-- `RSSConf.SocksServer` 还有自定义 FastJSON2 reader，删除字段需要同步更新 reader。
+- `RssClientConf` 字段是 public field，旧 JSON/YAML 配置可能包含这些字段；直接删除可能导致加载失败或行为静默变化。
+- `RssClientConf.SocksServer` 还有自定义 FastJSON2 reader，删除字段需要同步更新 reader。
 
 ## 功能风险
 
-- `RSSConf` 同时控制 socks、shadow、dns、nameserver、rrp、ddns、route、traffic store、lease pool 等功能，误删会影响运行时。
+- `RssClientConf` 同时控制 socks、shadow、dns、nameserver、rrp、ddns、route、traffic store、lease pool 等功能，误删会影响运行时。
 - `SocksConfig` UDP/udp2raw/redundant/compress/port hopping 配置互相关联，不能只看字段名判断。
 - `SocketConfig` 是低层网络栈配置，误删可能改变 bootstrap 或 pipeline 行为。
 
@@ -263,7 +263,7 @@
 mvn -pl rxlib -Dgpg.skip=true -Dmaven.test.skip=false -DskipTests=false -Dtest=SocksProxyServerTest,Socks5ClientTest,SocksUdpRelayHandlerTest,SocketsTest test
 ```
 
-如果涉及 RSSConf：
+如果涉及 RssClientConf：
 
 ```bash
 mvn -pl rxlib -Dgpg.skip=true -Dmaven.test.skip=false -DskipTests=false -Dtest=Rss*Test test

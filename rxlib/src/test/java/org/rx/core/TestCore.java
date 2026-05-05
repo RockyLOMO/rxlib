@@ -629,7 +629,7 @@ public class TestCore extends AbstractTester {
 //        Class.forName(Sys.class.getName());
 //        PropertyUtils propertyUtils = new PropertyUtils();
 //        propertyUtils.setSkipMissingProperties(true);
-//        Constructor constructor = new Constructor(Main.RSSConf.class, new LoaderOptions());
+//        Constructor constructor = new Constructor(Main.RssClientConf.class, new LoaderOptions());
 //        constructor.setPropertyUtils(propertyUtils);
 //
 //        DumperOptions dumperOptions = new DumperOptions();
@@ -647,7 +647,7 @@ public class TestCore extends AbstractTester {
 //        };
 //        Representer representer = new Representer(dumperOptions);
 //        representer.setPropertyUtils(unsortedPropertyUtils);
-//        representer.addClassTag(Main.RSSConf.class, Tag.MAP);
+//        representer.addClassTag(Main.RssClientConf.class, Tag.MAP);
 //
 //        Yaml yaml = new Yaml(constructor, representer);
 //
@@ -703,7 +703,7 @@ public class TestCore extends AbstractTester {
 //                "pcapSourceIp: 192.168.31.9\n" +
 //                "pcapUdpDirect: false";
 //
-//        Main.RSSConf javaObj = yaml.load(yamlStr);
+//        Main.RssClientConf javaObj = yaml.load(yamlStr);
 //        System.out.println("反序列化: " + javaObj);
 //
 //        // 2. Java Object → YAML（序列化）
@@ -718,7 +718,7 @@ public class TestCore extends AbstractTester {
 //        System.out.println("序列化 output.yaml");
 //        // 从文件加载
 //        try (InputStream input = Files.newInputStream(Paths.get("output.yaml"))) {
-//            Main.RSSConf fromFile = yaml.load(input);
+//            Main.RssClientConf fromFile = yaml.load(input);
 //            System.out.println("反序列化: " + fromFile);
 //        }
 

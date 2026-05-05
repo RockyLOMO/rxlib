@@ -308,11 +308,11 @@ mvn -pl rxlib -DskipTests compile
 
 结果：全部通过，5 个目标测试成功，模块编译成功。
 
-## 10.1 RSSConf 接入状态
+## 10.1 RssClientConf 接入状态
 
 已接入 `RssClient`：
 
-- `RssClient.launch(...)` 使用 `YamlConfigSource<RSSConf>` 读取和监听 `conf.yml`，不再直接在文件 watcher 回调里修改运行态。
+- `RssClient.launch(...)` 使用 `YamlConfigSource<RssClientConf>` 读取和监听 `conf.yml`，不再直接在文件 watcher 回调里修改运行态。
 - `RssRuntime` 已从 `RssClient` 拆出，集中承载 reload 编排、staging 资源构建、原子切换、失败回滚与旧资源关闭；`RssClient` 保留启动入口、配置校验和共享静态辅助方法。
 - `rssConf` 改为 `volatile` 发布；运行态更新成功后才替换全局配置引用。
 - 上游 socks/RPC facade 使用新快照预创建，构建失败会关闭半成品 facade；成功后通过 `AtomicReference<RandomList<UpstreamSupport>>` 切换，旧 facade 延迟关闭，降低 in-flight 请求被硬切断的概率。
