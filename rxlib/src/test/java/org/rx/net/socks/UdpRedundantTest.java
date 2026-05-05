@@ -794,6 +794,101 @@ public class UdpRedundantTest {
         assertFalse(UdpRelayAttributes.shouldEncode(relay, client));
     }
 
+    @Test
+    public void testSocksUdpRedundantModeControlsDirection() {
+        SocksConfig config = new SocksConfig();
+        config.setUdpRedundantMultiplier(2);
+
+        config.setSocksUdpRedundantMode(UdpRedundantMode.REQUEST_ONLY);
+        assertTrue(UdpRedundantSupport.allowSocksUdpRequest(config));
+        assertFalse(UdpRedundantSupport.allowSocksUdpResponse(config));
+        assertFalse(UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config));
+
+        config.setSocksUdpRedundantMode(UdpRedundantMode.RESPONSE_ONLY);
+        assertFalse(UdpRedundantSupport.allowSocksUdpRequest(config));
+        assertTrue(UdpRedundantSupport.allowSocksUdpResponse(config));
+        assertTrue(UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config));
+
+        config.setSocksUdpRedundantMode(null);
+        assertTrue(UdpRedundantSupport.allowSocksUdpRequest(config));
+        assertTrue(UdpRedundantSupport.allowSocksUdpResponse(config));
+    }
+
+    @Test
+    public void testUdp2rawRedundantModeControlsDirection() {
+        SocksConfig config = new SocksConfig();
+        config.setUdpRedundantMultiplier(2);
+
+        config.setUdp2rawRedundantMode(Udp2rawRedundantMode.REQUEST_ONLY);
+        assertTrue(UdpRedundantSupport.allowUdp2rawRequest(config));
+        assertFalse(UdpRedundantSupport.allowUdp2rawResponse(config));
+        assertFalse(UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config, true));
+
+        config.setUdp2rawRedundantMode(Udp2rawRedundantMode.RESPONSE_ONLY);
+        assertFalse(UdpRedundantSupport.allowUdp2rawRequest(config));
+        assertTrue(UdpRedundantSupport.allowUdp2rawResponse(config));
+        assertTrue(UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config, true));
+    }
+
+    @Test
+    public void testUdpAssociateClientPeerTrackingHonorsUdp2rawMode() {
+        SocksConfig config = new SocksConfig();
+        config.setUdpRedundantMultiplier(2);
+        InetSocketAddress origin = new InetSocketAddress("127.0.0.1", 53010);
+        InetSocketAddress peer = new InetSocketAddress("127.0.0.2", 53010);
+
+        config.setUdp2rawRedundantMode(Udp2rawRedundantMode.REQUEST_ONLY);
+        assertFalse(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer, true));
+
+        config.setUdp2rawRedundantMode(Udp2rawRedundantMode.RESPONSE_ONLY);
+        assertTrue(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer, true));
+
+        config.setSocksUdpRedundantMode(UdpRedundantMode.REQUEST_ONLY);
+        assertFalse(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer));
+    }
+
+    @Test
+    public void testUdp2rawPayloadSupportFiltersRedundantCopiesByMode() {
+        UdpRedundantConfig config = new UdpRedundantConfig();
+        config.setMultiplier(3);
+
+        EmbeddedChannel request = new EmbeddedChannel();
+        try {
+            Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(request,
+                    Unpooled.copiedBuffer("request".getBytes(StandardCharsets.UTF_8)), REMOTE,
+                    UdpRedundantSupport.udp2rawConfigForRequest(config, Udp2rawRedundantMode.REQUEST_ONLY),
+                    null, null, "flow=request");
+            assertEquals(Sockets.UdpWriteResult.ACCEPTED, result);
+            assertEquals(3, drainOutbound(request));
+        } finally {
+            request.finishAndReleaseAll();
+        }
+
+        EmbeddedChannel skippedResponse = new EmbeddedChannel();
+        try {
+            Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(skippedResponse,
+                    Unpooled.copiedBuffer("response".getBytes(StandardCharsets.UTF_8)), REMOTE,
+                    UdpRedundantSupport.udp2rawConfigForResponse(config, Udp2rawRedundantMode.REQUEST_ONLY),
+                    null, null, "flow=response");
+            assertEquals(Sockets.UdpWriteResult.ACCEPTED, result);
+            assertEquals(1, drainOutbound(skippedResponse));
+        } finally {
+            skippedResponse.finishAndReleaseAll();
+        }
+
+        EmbeddedChannel response = new EmbeddedChannel();
+        try {
+            Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(response,
+                    Unpooled.copiedBuffer("response".getBytes(StandardCharsets.UTF_8)), REMOTE,
+                    UdpRedundantSupport.udp2rawConfigForResponse(config, Udp2rawRedundantMode.RESPONSE_ONLY),
+                    null, null, "flow=response");
+            assertEquals(Sockets.UdpWriteResult.ACCEPTED, result);
+            assertEquals(3, drainOutbound(response));
+        } finally {
+            response.finishAndReleaseAll();
+        }
+    }
+
     // ===================== 辅助方法 =====================
 
     /**
@@ -810,6 +905,16 @@ public class UdpRedundantTest {
 
     private static void registerRedundantPeer(EmbeddedChannel channel) {
         UdpRelayAttributes.addRedundantPeer(channel, REMOTE);
+    }
+
+    private static int drainOutbound(EmbeddedChannel channel) {
+        int count = 0;
+        DatagramPacket packet;
+        while ((packet = channel.readOutbound()) != null) {
+            count++;
+            packet.release();
+        }
+        return count;
     }
 
     /**

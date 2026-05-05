@@ -84,7 +84,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             final InetSocketAddress clientTcpAddr = Sockets.getOriginRemoteAddress(tcpControl);
             final InetSocketAddress tcpPeerAddr = Sockets.getRemoteAddress(tcpControl);
             final boolean udp2raw = config.isEnableUdp2raw();
-            final boolean redundantClientPeer = shouldTrackRedundantClientPeer(config, clientTcpAddr, tcpPeerAddr);
+            final boolean redundantClientPeer = shouldTrackRedundantClientPeer(config, clientTcpAddr, tcpPeerAddr, udp2raw);
 
             InetSocketAddress tcpLocalAddr = Sockets.getLocalAddress(tcpControl);
             SocketAddress udpBindAddr = resolveUdpRelayBindAddress(tcpLocalAddr);
@@ -194,7 +194,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
     static boolean shouldTrackRedundantClientPeer(SocksConfig config,
             InetSocketAddress clientTcpAddr, InetSocketAddress tcpPeerAddr) {
-        if (!UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config)) {
+        return shouldTrackRedundantClientPeer(config, clientTcpAddr, tcpPeerAddr, false);
+    }
+
+    static boolean shouldTrackRedundantClientPeer(SocksConfig config,
+            InetSocketAddress clientTcpAddr, InetSocketAddress tcpPeerAddr, boolean udp2raw) {
+        if (!UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config, udp2raw)) {
             return false;
         }
         return config.isUdpRedundantTrackClientPeer()

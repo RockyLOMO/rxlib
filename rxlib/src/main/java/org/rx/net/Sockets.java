@@ -191,6 +191,8 @@ public final class Sockets {
         }
 
         private static void completeDroppedWrite(ChannelPromise promise) {
+            // Final egress drops are metrics-observable; write futures stay successful so UDP callers
+            // that only use completion for pending cleanup are not forced onto an exception path.
             if (!promise.isVoid()) {
                 promise.trySuccess();
             }
@@ -1070,7 +1072,8 @@ public final class Sockets {
     /**
      * 向 pipeline 添加 UDP 压缩 / 多倍发包优化 Handler。
      * <p>
-     * 安装顺序固定为：入站先去重后解压，出站先压缩后多倍发送。
+     * 必须在业务/protocol outbound handler 之前安装。最终出站顺序为：
+     * 业务写出 -> 压缩 -> 多倍发送 -> final egress guard -> transport。
      */
     public static void addUdpOptimizationHandlers(ChannelPipeline pipeline, SocksConfig config) {
         boolean compressEnabled = config.isUdpCompressEnabled();

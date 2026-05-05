@@ -301,7 +301,9 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             return;
         }
 
-        UdpRelayAttributes.addRedundantPeer(relay, targetAddr);
+        if (UdpRedundantSupport.isConfigured(config) && UdpRedundantSupport.allowUdp2rawRequest(config)) {
+            UdpRelayAttributes.addRedundantPeer(relay, targetAddr);
+        }
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
         if (ctxMap == null) {
             relay.attr(ATTR_CTX_MAP).set(ctxMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap());
