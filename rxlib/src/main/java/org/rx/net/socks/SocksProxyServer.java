@@ -229,7 +229,16 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         if (local == null) {
             return;
         }
-        udpRelayRegistry.put(local.getPort(), relay);
+        Channel previous = udpRelayRegistry.put(local.getPort(), relay);
+        if (previous == relay) {
+            return;
+        }
+        if (previous != null && previous.isOpen()) {
+            Sockets.closeOnFlushed(previous);
+            if (DiagnosticMetrics.isEnabled()) {
+                DiagnosticMetrics.record("socks.udp.relay.duplicate.count", 1D, "action=replace");
+            }
+        }
         if (DiagnosticMetrics.isEnabled()) {
             DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=register");
         }
@@ -423,5 +432,4 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 && clientAddr.getAddress() != null
                 && !clientAddr.getAddress().isAnyLocalAddress();
     }
-
 }
