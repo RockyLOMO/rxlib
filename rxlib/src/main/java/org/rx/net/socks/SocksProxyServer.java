@@ -37,6 +37,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public static final PredicateFunc<UnresolvedEndpoint> DNS_CIPHER_ROUTER = dstEp -> dstEp.getPort() == SocksRpcContract.DNS_PORT
             || dstEp.getPort() == 80;
+    private static final long UDP_RELAY_OPERATION_TIMEOUT_SECONDS = 5L;
     public final Delegate<SocksProxyServer, SocksContext> onTcpRoute = Delegate.create(DIRECT_ROUTER),
             onUdpRoute = Delegate.create(DIRECT_ROUTER);
     public final Delegate<SocksProxyServer, SocksContext> onReconnecting = Delegate.create();
@@ -194,7 +195,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
         channel.attr(SocksContext.SOCKS_SVR).set(this);
         activeChannels.incrementAndGet();
-        channel.closeFuture().addListener(f -> activeChannels.decrementAndGet());
+        channel.closeFuture().addListener(f -> activeChannels.updateAndGet(v -> v > 0 ? v - 1 : 0));
     }
 
     @Override
@@ -203,7 +204,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             udp2rawEntryManager.close();
         }
         udpRelayGroupManager.close();
-        for (Channel relay : udpRelayRegistry.values()) {
+        for (Channel relay : udpRelayRegistry.values().toArray(new Channel[0])) {
             Sockets.closeOnFlushed(relay);
         }
         udpRelayRegistry.clear();
@@ -229,12 +230,31 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         if (local == null) {
             return;
         }
-        udpRelayRegistry.put(local.getPort(), relay);
+        int relayPort = local.getPort();
+        while (true) {
+            Channel previous = udpRelayRegistry.putIfAbsent(relayPort, relay);
+            if (previous == null) {
+                break;
+            }
+            if (previous == relay) {
+                return;
+            }
+            if (previous.isActive()) {
+                Sockets.closeOnFlushed(relay);
+                if (DiagnosticMetrics.isEnabled()) {
+                    DiagnosticMetrics.record("socks.udp.relay.duplicate.count", 1D, "action=reject");
+                }
+                return;
+            }
+            if (udpRelayRegistry.replace(relayPort, previous, relay)) {
+                break;
+            }
+        }
         if (DiagnosticMetrics.isEnabled()) {
             DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=register");
         }
         relay.closeFuture().addListener(f -> {
-            udpRelayRegistry.remove(local.getPort(), relay);
+            udpRelayRegistry.remove(relayPort, relay);
             if (DiagnosticMetrics.isEnabled()) {
                 DiagnosticMetrics.record("socks.udp.relay.active.count", udpRelayRegistry.size(), "action=close");
             }
@@ -385,7 +405,16 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         if (relay.eventLoop().inEventLoop()) {
             return task.call();
         }
-        return relay.eventLoop().submit(task).get();
+        java.util.concurrent.Future<Boolean> future = relay.eventLoop().submit(task);
+        try {
+            return future.get(UDP_RELAY_OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            future.cancel(false);
+            if (DiagnosticMetrics.isEnabled()) {
+                DiagnosticMetrics.record("socks.udp.relay.operation.timeout.count", 1D, "action=event-loop");
+            }
+            return false;
+        }
     }
 
     @SneakyThrows
@@ -423,5 +452,4 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                 && clientAddr.getAddress() != null
                 && !clientAddr.getAddress().isAnyLocalAddress();
     }
-
 }
