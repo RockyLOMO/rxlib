@@ -21,6 +21,7 @@ final class Udp2rawSession {
     final Udp2rawSessionKey key;
     final InetSocketAddress clientSource;
     final UnresolvedEndpoint destination;
+    final SocksContext trafficContext;
     final Udp2rawSeqWindow requestWindow = new Udp2rawSeqWindow();
     final AtomicLong responseSeq = new AtomicLong();
     volatile InetSocketAddress udp2rawPeer;
@@ -36,6 +37,7 @@ final class Udp2rawSession {
         this.udp2rawPeer = udp2rawPeer;
         this.clientSource = clientSource;
         this.destination = destination;
+        this.trafficContext = context.trafficContext(udp2rawPeer, destination);
         this.entryChannel = entryChannel;
         this.lastActiveMillis = System.currentTimeMillis();
     }
@@ -106,12 +108,15 @@ final class Udp2rawSession {
             DiagnosticMetrics.record("socks.udp2raw.drop.count", 1D, "reason=nat-inactive");
             return;
         }
+        int trafficBytes = payload.readableBytes();
         DatagramPacket packet = new DatagramPacket(payload, target);
         Sockets.UdpWriteResult result = Sockets.writeUdp(natChannel, packet, METRIC_PREFIX,
                 "flow=to-destination");
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("udp2raw drop packet to destination {} result={}", target, result);
+            return;
         }
+        SocksUserTraffic.recordWrite(natChannel, trafficContext, trafficBytes, 1L);
     }
 
     private ChannelFuture ensureNatChannel() {
@@ -149,6 +154,7 @@ final class Udp2rawSession {
         int flags = Udp2rawCodec.FLAG_HAS_SRC;
         frame.setSourceAddress(response.sender());
         ByteBuf payload = response.content().retain();
+        int trafficBytes = payload.readableBytes();
         ByteBuf body = payload;
         ByteBuf compressed = null;
         ByteBuf encoded = null;
@@ -172,11 +178,13 @@ final class Udp2rawSession {
             }
             body = null;
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(entry, encoded, peer,
-                    context.redundantConfig, context.redundantResolver, "flow=response");
+                    context.redundantConfig, context.redundantStats, context.redundantResolver, "flow=response");
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop response to peer {} result={}", peer, result);
+                return;
             }
+            SocksUserTraffic.recordRead(entry, trafficContext, trafficBytes, 1L);
         } catch (Throwable e) {
             if (body == payload) {
                 payload = null;

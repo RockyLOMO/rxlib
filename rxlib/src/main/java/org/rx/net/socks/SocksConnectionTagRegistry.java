@@ -43,7 +43,8 @@ public final class SocksConnectionTagRegistry {
         if (channel == null) {
             return null;
         }
-        return TAGS.get(channel.remoteAddress());
+        SocketAddress remoteAddress = channel.remoteAddress();
+        return remoteAddress != null ? TAGS.get(remoteAddress) : null;
     }
 
     private static boolean register(Channel channel, String tag) {

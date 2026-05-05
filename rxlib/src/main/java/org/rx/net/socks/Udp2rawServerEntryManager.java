@@ -93,10 +93,11 @@ final class Udp2rawServerEntryManager extends Disposable {
                 : config.getUdp2rawSessionIdleSeconds()) * 1000L;
         UdpCompressConfig compressConfig = negotiateCompress(config, request.getCompress());
         UdpRedundantConfig redundantConfig = negotiateRedundant(config, request.getRedundant());
+        TrafficUser trafficUser = resolveTrafficUser(request);
         String tunnelId = tunnelId(sessionHi, sessionLo);
         Udp2rawTunnelContext context = new Udp2rawTunnelContext(this, tunnelId, sessionHi, sessionLo,
                 secret, config.getUdp2rawAuthMode(), compressConfig, redundantConfig,
-                idleMillis, maxSessions, now);
+                idleMillis, maxSessions, trafficUser, now);
         tunnels.put(tunnelId, context);
         DiagnosticMetrics.record("socks.udp2raw.tunnel.open.count", 1D, "result=success");
         DiagnosticMetrics.record("socks.udp2raw.tunnel.active.count", tunnels.size(), "action=open");
@@ -195,6 +196,28 @@ final class Udp2rawServerEntryManager extends Disposable {
 
     private UdpRedundantConfig configRedundant() {
         return UdpRedundantConfig.fromSocksConfig(server.getConfig());
+    }
+
+    private TrafficUser resolveTrafficUser(Udp2rawOpenRequest request) {
+        String tag = firstNonEmpty(request.getConnectionTag(), request.getTrafficUser());
+        if (tag == null || server.getConnectionTagResolver() == null) {
+            return TrafficUser.ANONYMOUS;
+        }
+        AuthResult result = server.getConnectionTagResolver().apply(tag);
+        TrafficUser user = result != null ? result.getTrafficUser() : null;
+        if (user == null || user.isAnonymous()) {
+            DiagnosticMetrics.record("socks.udp2raw.tunnel.traffic.bind.count", 1D, "result=miss");
+            return TrafficUser.ANONYMOUS;
+        }
+        DiagnosticMetrics.record("socks.udp2raw.tunnel.traffic.bind.count", 1D, "result=success");
+        return user;
+    }
+
+    private static String firstNonEmpty(String first, String second) {
+        if (first != null && first.length() > 0) {
+            return first;
+        }
+        return second != null && second.length() > 0 ? second : null;
     }
 
     private void cleanupIdleTunnels() {

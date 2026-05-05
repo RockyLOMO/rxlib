@@ -10,6 +10,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.rx.bean.DateTime;
 import org.rx.core.RxConfig;
 import org.rx.net.Sockets;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -20,7 +21,9 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -394,6 +397,76 @@ class Udp2rawFixedEntryIntegrationTest {
         }
     }
 
+    @Test
+    @Timeout(20)
+    void fixedEntryBindsTrafficUserFromOpenRequest() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-traffic-test-token");
+        LinkedBlockingQueue<String> echoPayloads = new LinkedBlockingQueue<>();
+        Channel echo = null;
+        SocksProxyServer proxy = null;
+        DatagramSocket client = null;
+        try {
+            Bootstrap udpEcho = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(
+                    new SimpleChannelInboundHandler<DatagramPacket>() {
+                        @Override
+                        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                            echoPayloads.add(msg.content().toString(StandardCharsets.UTF_8));
+                            ctx.writeAndFlush(new DatagramPacket(msg.content().retain(), msg.sender()));
+                        }
+                    }));
+            echo = udpEcho.bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+            InetSocketAddress echoAddress = (InetSocketAddress) echo.localAddress();
+
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            TestTrafficUser trafficUser = new TestTrafficUser("udp2raw-u1");
+            proxy = new SocksProxyServer(config, null);
+            proxy.setConnectionTagResolver(tag -> {
+                if (!"udp2raw-u1".equals(tag)) {
+                    return null;
+                }
+                return new AuthResult(new SocksUser("inner-u1"), trafficUser);
+            });
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-traffic");
+            request.setTrafficUser("udp2raw-u1");
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+
+            client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            client.setSoTimeout(5000);
+            sendUdp2raw(client, entryAddress, open, 6001L,
+                    new InetSocketAddress("127.0.0.1", 30501), echoAddress, "traffic");
+
+            java.net.DatagramPacket packet = receive(client);
+            ByteBuf buf = Unpooled.wrappedBuffer(packet.getData(), 0, packet.getLength());
+            try {
+                Udp2rawFrame frame = Udp2rawCodec.decode(buf);
+                assertEquals(Udp2rawFrameType.DATA, frame.getType());
+                assertEquals("traffic", buf.toString(StandardCharsets.UTF_8));
+            } finally {
+                buf.release();
+            }
+            assertEquals("traffic", echoPayloads.poll(3, TimeUnit.SECONDS));
+            waitForTraffic(trafficUser, 2000L);
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            if (echo != null) {
+                echo.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
     private static void sendUdp2raw(DatagramSocket socket, InetSocketAddress entryAddress,
             Udp2rawOpenResult open, long connId, InetSocketAddress clientSource,
             InetSocketAddress destination, String text) throws Exception {
@@ -537,5 +610,58 @@ class Udp2rawFixedEntryIntegrationTest {
         java.net.DatagramPacket packet = new java.net.DatagramPacket(bytes, bytes.length);
         socket.receive(packet);
         return packet;
+    }
+
+    private static void waitForTraffic(TestTrafficUser user, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (!user.getLoginIps().isEmpty()
+                    && user.getTotalReadBytes() > 0L
+                    && user.getTotalWriteBytes() > 0L) {
+                return;
+            }
+            Thread.sleep(20L);
+        }
+        fail("traffic user should accumulate udp2raw read/write bytes");
+    }
+
+    static class TestTrafficUser implements TrafficUser {
+        final String username;
+        final Map<InetAddress, TrafficLoginInfo> loginIps = new ConcurrentHashMap<>();
+        DateTime lastResetTime;
+
+        TestTrafficUser(String username) {
+            this.username = username;
+        }
+
+        @Override
+        public String getUsername() {
+            return username;
+        }
+
+        @Override
+        public Map<InetAddress, TrafficLoginInfo> getLoginIps() {
+            return loginIps;
+        }
+
+        @Override
+        public int getIpLimit() {
+            return -1;
+        }
+
+        @Override
+        public DateTime getLastResetTime() {
+            return lastResetTime;
+        }
+
+        @Override
+        public void setLastResetTime(DateTime value) {
+            lastResetTime = value;
+        }
+
+        @Override
+        public boolean isAnonymous() {
+            return false;
+        }
     }
 }

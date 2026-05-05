@@ -80,6 +80,10 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
         if (authOk) {
             tunnel.recordAuthSuccess(in.sender());
         }
+        boolean redundantFrame = frame.hasFlag(Udp2rawCodec.FLAG_REDUNDANT);
+        if (redundantFrame) {
+            tunnel.recordRedundantReceived();
+        }
         if (newSession) {
             session = tunnel.getOrCreateSession(key, in.sender(), frame.getClientSource(),
                     frame.getDestination(), ctx.channel());
@@ -96,6 +100,9 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
             recordDrop("duplicate");
             DiagnosticMetrics.record("socks.udp2raw.redundant.duplicate.drop.count", 1D, "direction=request");
             return;
+        }
+        if (redundantFrame) {
+            tunnel.recordRedundantUnique("request");
         }
 
         if (!session.updatePeer(ctx.channel(), in.sender(), authOk)) {

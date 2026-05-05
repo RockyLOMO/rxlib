@@ -13,11 +13,14 @@ import org.rx.net.Sockets;
 import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 public final class Udp2rawPayloadSupport {
     private static final String METRIC_PREFIX = "socks.udp2raw";
     private static final int MAX_PENDING_REDUNDANT_COPIES = 4096;
+    public static final long REDUNDANT_ADJUST_INTERVAL_MILLIS =
+            TimeUnit.SECONDS.toMillis(UdpRedundantEncoder.ADJUST_INTERVAL_SECONDS);
     private static final AttributeKey<AtomicInteger> ATTR_PENDING_REDUNDANT_COPIES =
             AttributeKey.valueOf("udp2rawPendingRedundantCopies");
 
@@ -132,10 +135,16 @@ public final class Udp2rawPayloadSupport {
     public static Sockets.UdpWriteResult writeEncoded(Channel channel, ByteBuf encoded,
             InetSocketAddress recipient, UdpRedundantConfig redundant,
             UdpRedundantMultiplierResolver resolver, String flowTag) {
+        return writeEncoded(channel, encoded, recipient, redundant, null, resolver, flowTag);
+    }
+
+    public static Sockets.UdpWriteResult writeEncoded(Channel channel, ByteBuf encoded,
+            InetSocketAddress recipient, UdpRedundantConfig redundant, UdpRedundantStats stats,
+            UdpRedundantMultiplierResolver resolver, String flowTag) {
         if (encoded == null) {
             return Sockets.UdpWriteResult.WRITE_THROWN;
         }
-        int multiplier = effectiveMultiplier(redundant, resolver, recipient);
+        int multiplier = effectiveMultiplier(redundant, stats, resolver, recipient);
         int intervalMicros = redundant != null ? Math.max(0, redundant.getIntervalMicros()) : 0;
         Sockets.UdpWriteResult first = Sockets.UdpWriteResult.WRITE_THROWN;
         try {
@@ -161,6 +170,32 @@ public final class Udp2rawPayloadSupport {
         } finally {
             Bytes.release(encoded);
         }
+    }
+
+    public static UdpRedundantStats newAdaptiveStats(UdpRedundantConfig config) {
+        if (!isRedundantEnabled(config) || !config.isAdaptive()) {
+            return null;
+        }
+        return new UdpRedundantStats(config.getMultiplier(), config.getMinMultiplier(), config.getMaxMultiplier(),
+                config.getIntervalMicros(), config.getLossThresholdHigh(), config.getLossThresholdLow(),
+                config.getStablePeriods());
+    }
+
+    public static void adjustAdaptiveStats(UdpRedundantStats stats, AtomicLong nextAdjustAtMillis,
+            String direction) {
+        if (stats == null || nextAdjustAtMillis == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long next = nextAdjustAtMillis.get();
+        if (now < next || !nextAdjustAtMillis.compareAndSet(next, now + REDUNDANT_ADJUST_INTERVAL_MILLIS)) {
+            return;
+        }
+        int multiplier = stats.adjustMultiplier();
+        DiagnosticMetrics.record(METRIC_PREFIX + ".redundant.adaptive.multiplier",
+                multiplier, "direction=" + direction);
+        DiagnosticMetrics.record(METRIC_PREFIX + ".redundant.adaptive.loss.rate",
+                stats.getLastLossRate(), "direction=" + direction);
     }
 
     private static Sockets.UdpWriteResult writeCopy(Channel channel, ByteBuf copy,
@@ -210,7 +245,7 @@ public final class Udp2rawPayloadSupport {
         return old != null ? old : created;
     }
 
-    private static int effectiveMultiplier(UdpRedundantConfig config,
+    static int effectiveMultiplier(UdpRedundantConfig config, UdpRedundantStats stats,
             UdpRedundantMultiplierResolver resolver, InetSocketAddress recipient) {
         if (config == null) {
             return 1;
@@ -222,8 +257,8 @@ public final class Udp2rawPayloadSupport {
         if (rule >= 1 && rule <= 5) {
             return rule;
         }
-        int multiplier = config.getMultiplier();
-        if (config.isAdaptive()) {
+        int multiplier = stats != null ? stats.getMultiplier() : config.getMultiplier();
+        if (config.isAdaptive() && stats == null) {
             multiplier = Math.max(config.getMinMultiplier(), Math.min(multiplier, config.getMaxMultiplier()));
         }
         return Math.max(1, Math.min(5, multiplier));

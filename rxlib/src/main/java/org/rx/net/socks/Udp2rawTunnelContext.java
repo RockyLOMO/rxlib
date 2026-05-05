@@ -20,17 +20,21 @@ final class Udp2rawTunnelContext {
     final UdpCompressStats compressStats;
     final UdpRedundantConfig redundantConfig;
     final UdpRedundantMultiplierResolver redundantResolver;
+    final UdpRedundantStats redundantStats;
+    final TrafficUser trafficUser;
     final long idleTimeoutMillis;
     final int maxSessions;
     final long createdAtMillis;
     final ConcurrentMap<Udp2rawSessionKey, Udp2rawSession> sessions = new ConcurrentHashMap<>();
     final ConcurrentMap<InetSocketAddress, PeerGuard> peerGuards = new ConcurrentHashMap<>();
+    private final AtomicLong nextRedundantAdjustAtMillis = new AtomicLong();
     volatile long lastActiveAtMillis;
 
     Udp2rawTunnelContext(Udp2rawServerEntryManager manager, String tunnelId,
             long sessionHi, long sessionLo, byte[] sessionSecret,
             Udp2rawAuthMode authMode, UdpCompressConfig compressConfig,
-            UdpRedundantConfig redundantConfig, long idleTimeoutMillis, int maxSessions, long now) {
+            UdpRedundantConfig redundantConfig, long idleTimeoutMillis, int maxSessions,
+            TrafficUser trafficUser, long now) {
         this.manager = manager;
         this.tunnelId = tunnelId;
         this.sessionHi = sessionHi;
@@ -43,10 +47,15 @@ final class Udp2rawTunnelContext {
         this.redundantConfig = redundantConfig;
         this.redundantResolver = Udp2rawPayloadSupport.isRedundantEnabled(redundantConfig)
                 ? redundantConfig.buildMultiplierResolver() : null;
+        this.redundantStats = Udp2rawPayloadSupport.newAdaptiveStats(redundantConfig);
+        this.trafficUser = trafficUser != null ? trafficUser : TrafficUser.ANONYMOUS;
         this.idleTimeoutMillis = idleTimeoutMillis;
         this.maxSessions = Math.max(1, maxSessions);
         this.createdAtMillis = now;
         this.lastActiveAtMillis = now;
+        if (this.redundantStats != null) {
+            nextRedundantAdjustAtMillis.set(now + Udp2rawPayloadSupport.REDUNDANT_ADJUST_INTERVAL_MILLIS);
+        }
     }
 
     Udp2rawSession session(Udp2rawSessionKey key) {
@@ -115,6 +124,31 @@ final class Udp2rawTunnelContext {
         if (guard != null) {
             guard.clearAuthFailures();
         }
+    }
+
+    void recordRedundantReceived() {
+        if (redundantStats != null) {
+            redundantStats.recordReceived();
+        }
+    }
+
+    void recordRedundantUnique(String direction) {
+        if (redundantStats == null) {
+            return;
+        }
+        redundantStats.recordUnique();
+        Udp2rawPayloadSupport.adjustAdaptiveStats(redundantStats, nextRedundantAdjustAtMillis, direction);
+    }
+
+    SocksContext trafficContext(InetSocketAddress source, UnresolvedEndpoint destination) {
+        if (trafficUser == null || trafficUser.isAnonymous() || source == null || source.getAddress() == null) {
+            return null;
+        }
+        TrafficLoginInfo loginInfo = trafficUser.getLoginIps()
+                .computeIfAbsent(source.getAddress(), ip -> new TrafficLoginInfo());
+        SocksContext context = SocksContext.getCtx(source, destination);
+        SocksUserTraffic.attach(context, trafficUser, loginInfo);
+        return context;
     }
 
     void removeSession(Udp2rawSessionKey key, Udp2rawSession session, String reason) {

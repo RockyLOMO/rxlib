@@ -582,6 +582,26 @@ public class UdpRedundantTest {
     }
 
     @Test
+    public void testUdp2rawPayloadSupportUsesAdaptiveStats() {
+        UdpRedundantConfig config = new UdpRedundantConfig();
+        config.setAdaptive(true);
+        config.setMultiplier(2);
+        config.setMinMultiplier(1);
+        config.setMaxMultiplier(5);
+        config.setStablePeriods(1);
+        UdpRedundantStats stats = Udp2rawPayloadSupport.newAdaptiveStats(config);
+        assertNotNull(stats);
+
+        feedHighLoss(stats, 2);
+        stats.adjustMultiplier();
+
+        assertEquals(3, Udp2rawPayloadSupport.effectiveMultiplier(config, stats, null, REMOTE));
+        UdpRedundantMultiplierResolver resolver = dest -> 1;
+        assertEquals(1, Udp2rawPayloadSupport.effectiveMultiplier(config, stats, resolver, REMOTE),
+                "分目的地规则应继续覆盖自适应倍率");
+    }
+
+    @Test
     public void testDecoderFeedsStats() {
         UdpRedundantStats stats = new UdpRedundantStats(3, 1, 5, 0, 0.20, 0.05, 1);
         UdpRedundantDecoder decoder = new UdpRedundantDecoder(stats);

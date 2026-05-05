@@ -13,8 +13,10 @@ import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksContext;
+import org.rx.net.socks.SocksConnectionTagRegistry;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.SocksUserTraffic;
+import org.rx.net.socks.TrafficUser;
 import org.rx.net.socks.UdpCompressConfig;
 import org.rx.net.socks.UdpCompressStats;
 import org.rx.net.socks.Udp2rawAuthMode;
@@ -29,6 +31,7 @@ import org.rx.net.socks.Udp2rawSeqWindow;
 import org.rx.net.socks.UdpManager;
 import org.rx.net.socks.UdpRedundantConfig;
 import org.rx.net.socks.UdpRedundantMultiplierResolver;
+import org.rx.net.socks.UdpRedundantStats;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
@@ -151,7 +154,8 @@ public class Udp2rawUpstream extends Upstream {
 
             SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(relay, encoded,
-                    state.udpEntryAddress, state.redundantConfig, state.redundantResolver, "flow=request");
+                    state.udpEntryAddress, state.redundantConfig, state.redundantStats,
+                    state.redundantResolver, "flow=request");
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop request to {} for {} result={}", state.udpEntryAddress, dstEp, result);
@@ -284,7 +288,8 @@ public class Udp2rawUpstream extends Upstream {
             body = null;
 
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(relay, encoded,
-                    state.udpEntryAddress, state.redundantConfig, state.redundantResolver, "flow=request");
+                    state.udpEntryAddress, state.redundantConfig, state.redundantStats,
+                    state.redundantResolver, "flow=request");
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop request to {} for {} result={}", state.udpEntryAddress, dstEp, result);
@@ -346,9 +351,16 @@ public class Udp2rawUpstream extends Upstream {
             DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=unknown-conn");
             return null;
         }
+        boolean redundantFrame = frame.hasFlag(Udp2rawCodec.FLAG_REDUNDANT);
+        if (redundantFrame) {
+            state.recordRedundantReceived();
+        }
         if (!conn.responseWindow.checkAndMark(frame.getPacketSeq())) {
             DiagnosticMetrics.record(METRIC_PREFIX + ".redundant.duplicate.drop.count", 1D, "direction=response");
             return null;
+        }
+        if (redundantFrame) {
+            state.recordRedundantUnique("response");
         }
         state.touch();
         ByteBuf payload = content.slice();
@@ -395,6 +407,7 @@ public class Udp2rawUpstream extends Upstream {
         request.setIdleTimeoutSeconds(socksConfig.getUdp2rawSessionIdleSeconds());
         request.setCompress(socksConfig.getUdpCompress());
         request.setRedundant(socksConfig.getUdpRedundant());
+        bindTrafficIdentity(channel, request);
 
         Udp2rawOpenResult result = facade.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
         if (result == null || !result.isSupported() || !result.isSuccess()) {
@@ -531,6 +544,28 @@ public class Udp2rawUpstream extends Upstream {
         return reactorName != null && reactorName.length() > 0 ? reactorName : "udp2raw-client";
     }
 
+    private void bindTrafficIdentity(Channel channel, Udp2rawOpenRequest request) {
+        String connectionTag = SocksConnectionTagRegistry.resolve(channel);
+        if (hasText(connectionTag)) {
+            request.setConnectionTag(connectionTag);
+        }
+
+        String trafficUser = null;
+        AuthenticEndpoint endpoint = next.getEndpoint();
+        if (endpoint != null) {
+            trafficUser = endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME);
+        }
+        if (!hasText(trafficUser) && channel != null) {
+            TrafficUser user = channel.attr(SocksUserTraffic.ATTR_USER).get();
+            if (user != null && !user.isAnonymous()) {
+                trafficUser = user.getUsername();
+            }
+        }
+        if (hasText(trafficUser)) {
+            request.setTrafficUser(trafficUser);
+        }
+    }
+
     private InetSocketAddress normalizeEntryAddress(InetSocketAddress entryAddress) {
         if (entryAddress == null) {
             return null;
@@ -560,6 +595,10 @@ public class Udp2rawUpstream extends Upstream {
         return a.getHostString().equalsIgnoreCase(b.getHostString());
     }
 
+    private static boolean hasText(String value) {
+        return value != null && value.length() > 0;
+    }
+
     static final class TunnelState {
         final SocksRpcContract facade;
         final String tunnelId;
@@ -572,11 +611,13 @@ public class Udp2rawUpstream extends Upstream {
         final UdpCompressStats compressStats;
         final UdpRedundantConfig redundantConfig;
         final UdpRedundantMultiplierResolver redundantResolver;
+        final UdpRedundantStats redundantStats;
         final long expireAtMillis;
         final ConcurrentMap<RouteKey, ConnState> routes = new ConcurrentHashMap<>();
         final ConcurrentMap<Long, ConnState> connById = new ConcurrentHashMap<>();
         final AtomicBoolean closed = new AtomicBoolean();
         final AtomicBoolean activeRetained = new AtomicBoolean();
+        final AtomicLong nextRedundantAdjustAtMillis = new AtomicLong();
         volatile UpstreamSupport activeSupport;
         volatile long lastActiveAtMillis;
 
@@ -597,8 +638,13 @@ public class Udp2rawUpstream extends Upstream {
             this.redundantConfig = redundantConfig;
             this.redundantResolver = Udp2rawPayloadSupport.isRedundantEnabled(redundantConfig)
                     ? redundantConfig.buildMultiplierResolver() : null;
+            this.redundantStats = Udp2rawPayloadSupport.newAdaptiveStats(redundantConfig);
             this.expireAtMillis = expireAtMillis;
             this.lastActiveAtMillis = System.currentTimeMillis();
+            if (this.redundantStats != null) {
+                nextRedundantAdjustAtMillis.set(this.lastActiveAtMillis
+                        + Udp2rawPayloadSupport.REDUNDANT_ADJUST_INTERVAL_MILLIS);
+            }
         }
 
         boolean isValid() {
@@ -632,6 +678,20 @@ public class Udp2rawUpstream extends Upstream {
 
         void touch() {
             lastActiveAtMillis = System.currentTimeMillis();
+        }
+
+        void recordRedundantReceived() {
+            if (redundantStats != null) {
+                redundantStats.recordReceived();
+            }
+        }
+
+        void recordRedundantUnique(String direction) {
+            if (redundantStats == null) {
+                return;
+            }
+            redundantStats.recordUnique();
+            Udp2rawPayloadSupport.adjustAdaptiveStats(redundantStats, nextRedundantAdjustAtMillis, direction);
         }
 
         void retain(UpstreamSupport support) {
