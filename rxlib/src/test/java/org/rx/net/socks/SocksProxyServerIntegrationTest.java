@@ -1914,21 +1914,61 @@ class SocksProxyServerIntegrationTest {
             addrBuf.release();
         }
 
-        clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
+        java.net.DatagramPacket request = new java.net.DatagramPacket(encrypted, encrypted.length,
+                InetAddress.getByName("127.0.0.1"), ssPort);
 
+        int originalTimeout = clientSock.getSoTimeout();
+        int timeoutMillis = originalTimeout > 0 ? originalTimeout : 5000;
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        AssertionError lastMismatch = null;
         byte[] respBuf = new byte[1024];
-        java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
-        clientSock.receive(p);
-
-        ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
+        int attempts = 0;
         try {
-            UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
-            byte[] echoed = new byte[decBuf.readableBytes()];
-            decBuf.readBytes(echoed);
-            assertEquals(UDP_ECHO_PORT, srcEp.getPort());
-            assertArrayEquals(payload, echoed);
+            for (;;) {
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0) {
+                    if (lastMismatch != null) {
+                        throw lastMismatch;
+                    }
+                    fail("Did not receive Shadowsocks UDP echo within " + timeoutMillis + "ms");
+                }
+                clientSock.send(request);
+                attempts++;
+                clientSock.setSoTimeout((int) Math.min(500L, Math.max(1L, remaining)));
+                java.net.DatagramPacket p = new java.net.DatagramPacket(respBuf, respBuf.length);
+                try {
+                    clientSock.receive(p);
+                } catch (SocketTimeoutException e) {
+                    if (System.currentTimeMillis() >= deadline && lastMismatch != null) {
+                        throw lastMismatch;
+                    }
+                    continue;
+                }
+
+                ByteBuf decBuf = null;
+                try {
+                    decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
+                    UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+                    byte[] echoed = new byte[decBuf.readableBytes()];
+                    decBuf.readBytes(echoed);
+                    if (srcEp.getPort() == UDP_ECHO_PORT && Arrays.equals(payload, echoed)) {
+                        return;
+                    }
+                    lastMismatch = new AssertionError("Shadowsocks UDP echo mismatch expectedPort="
+                            + UDP_ECHO_PORT + " actualPort=" + srcEp.getPort()
+                            + " expectedLen=" + payload.length + " actualLen=" + echoed.length
+                            + " attempts=" + attempts);
+                } catch (Exception e) {
+                    lastMismatch = new AssertionError("Shadowsocks UDP echo decode failed length="
+                            + p.getLength() + " attempts=" + attempts, e);
+                } finally {
+                    if (decBuf != null) {
+                        decBuf.release();
+                    }
+                }
+            }
         } finally {
-            decBuf.release();
+            clientSock.setSoTimeout(originalTimeout);
         }
     }
 

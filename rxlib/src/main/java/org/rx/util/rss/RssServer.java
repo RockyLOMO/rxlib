@@ -15,6 +15,7 @@ import org.rx.net.socks.Authenticator;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksUser;
+import org.rx.net.socks.UdpRedundantMode;
 import org.rx.net.transport.TcpServerConfig;
 
 import java.util.Map;
@@ -52,7 +53,7 @@ public final class RssServer {
         outConf.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
         outConf.setOptimalSettings(RssSupport.OUT_OPS);
         outConf.setUdpRedundantMultiplier(2);
-        outConf.setUdpRedundantTrackClientPeer(true);
+        outConf.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
         RssSupport.applyUdpCompressionTrial(outConf);
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);

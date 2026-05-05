@@ -93,10 +93,11 @@ final class Udp2rawServerEntryManager extends Disposable {
                 : config.getUdp2rawSessionIdleSeconds()) * 1000L;
         UdpCompressConfig compressConfig = negotiateCompress(config, request.getCompress());
         UdpRedundantConfig redundantConfig = negotiateRedundant(config, request.getRedundant());
+        UdpRedundantMode redundantMode = negotiateRedundantMode(config, request.getRedundantMode());
         TrafficUser trafficUser = resolveTrafficUser(request);
         String tunnelId = tunnelId(sessionHi, sessionLo);
         Udp2rawTunnelContext context = new Udp2rawTunnelContext(this, tunnelId, sessionHi, sessionLo,
-                secret, config.getUdp2rawAuthMode(), compressConfig, redundantConfig,
+                secret, config.getUdp2rawAuthMode(), compressConfig, redundantConfig, redundantMode,
                 idleMillis, maxSessions, trafficUser, now);
         tunnels.put(tunnelId, context);
         DiagnosticMetrics.record("socks.udp2raw.tunnel.open.count", 1D, "result=success");
@@ -188,6 +189,14 @@ final class Udp2rawServerEntryManager extends Disposable {
             return null;
         }
         return serverConfig;
+    }
+
+    private UdpRedundantMode negotiateRedundantMode(SocksConfig config, UdpRedundantMode requested) {
+        if (requested != null) {
+            return requested;
+        }
+        UdpRedundantMode mode = config.getUdp2rawRedundantMode();
+        return mode != null ? mode : UdpRedundantMode.BIDIRECTIONAL;
     }
 
     private UdpCompressConfig configCompress() {

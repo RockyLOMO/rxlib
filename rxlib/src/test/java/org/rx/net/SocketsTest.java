@@ -179,6 +179,95 @@ public class SocketsTest {
     }
 
     @Test
+    public void testUdpWriteMtuDisabledAllowsLargerPacket() {
+        SocketConfig config = new SocketConfig();
+        config.setUdpMtu(0);
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(SocketConfig.ATTR_CONF).set(config);
+
+        ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4, 5});
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.ACCEPTED,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=mtu-disabled"));
+
+        DatagramPacket outbound = channel.readOutbound();
+        assertNotNull(outbound);
+        outbound.release();
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteAllowsPacketAtConfiguredUdpMtu() {
+        SocketConfig config = new SocketConfig();
+        config.setUdpMtu(4);
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(SocketConfig.ATTR_CONF).set(config);
+
+        ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4});
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.ACCEPTED,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=mtu-equal"));
+
+        DatagramPacket outbound = channel.readOutbound();
+        assertNotNull(outbound);
+        outbound.release();
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteDropsWhenConfiguredUdpMtuExceeded() {
+        SocketConfig config = new SocketConfig();
+        config.setUdpMtu(4);
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(SocketConfig.ATTR_CONF).set(config);
+
+        ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4, 5});
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.MTU_EXCEEDED,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=mtu-exceeded"));
+        assertEquals(0, payload.refCnt());
+        assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+        assertNull(channel.readOutbound());
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteRecordsMtuDropMetricsWithLowCardinalityTags() throws Exception {
+        DiagnosticConfig config = memDiagnosticConfig("sockets_udp_mtu_drop");
+        config.setSampleIntervalMillis(60000L);
+        DiagnosticMonitor monitor = new DiagnosticMonitor(config);
+        monitor.start();
+        try {
+            SocketConfig socketConfig = new SocketConfig();
+            socketConfig.setUdpMtu(1300);
+            EmbeddedChannel channel = new EmbeddedChannel();
+            channel.attr(SocketConfig.ATTR_CONF).set(socketConfig);
+
+            ByteBuf payload = Unpooled.buffer(1301);
+            payload.writeZero(1301);
+            DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+            assertEquals(Sockets.UdpWriteResult.MTU_EXCEEDED,
+                    Sockets.writeUdp(channel, packet, "test.udp", "case=mtu-metric"));
+            assertEquals(0, payload.refCnt());
+
+            assertTrue(monitor.getStore().flush(5000L));
+            String tags = "case=mtu-metric,reason=mtu-exceeded,mtuBucket=lte1300";
+            assertEquals(1, countMetric(config, "test.udp.drop.count", tags));
+            assertEquals(1, countMetric(config, "test.udp.mtu.drop.count", tags));
+            assertEquals(1, countMetric(config, "test.udp.mtu.drop.bytes", tags));
+            assertEquals(0, countWhere(config, "diag_metric_sample",
+                    "metric='test.udp.mtu.drop.count' AND (tags LIKE '%bytes=%' OR tags LIKE '%recipient=%' OR tags LIKE '%127.0.0.1%')"));
+            channel.finishAndReleaseAll();
+        } finally {
+            monitor.close();
+        }
+    }
+
+    @Test
     public void testUdpWriteDropsUnresolvedRecipientBeforeWrite() {
         EmbeddedChannel channel = new EmbeddedChannel();
         channel.attr(Sockets.ATTR_UDP_WRITE_LIMIT_BYTES).set(128);

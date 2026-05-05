@@ -20,6 +20,7 @@ public class Udp2rawOpenRequest implements Serializable {
     private int idleTimeoutSeconds;
     private UdpCompressConfig compress;
     private UdpRedundantConfig redundant;
+    private UdpRedundantMode redundantMode;
     private String connectionTag;
     private String trafficUser;
 }

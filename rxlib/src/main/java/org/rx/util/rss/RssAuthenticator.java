@@ -167,7 +167,7 @@ public class RssAuthenticator implements Authenticator {
     }
 
     private int currentMemoryRetentionHours() {
-        RSSConf conf = RssClient.rssConf;
+        RssClientConf conf = RssClient.rssConf;
         return conf != null ? Math.max(1, conf.memoryRetentionHours) : getMemoryRetentionHours();
     }
 

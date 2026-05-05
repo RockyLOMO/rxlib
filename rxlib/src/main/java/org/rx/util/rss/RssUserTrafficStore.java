@@ -569,7 +569,7 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
     }
 
     private int currentRetentionDays() {
-        RSSConf conf = RssClient.rssConf;
+        RssClientConf conf = RssClient.rssConf;
         return conf != null ? Math.max(1, conf.trafficRetentionDays) : retentionDays;
     }
 }

@@ -19,6 +19,7 @@ final class Udp2rawTunnelContext {
     final UdpCompressConfig compressConfig;
     final UdpCompressStats compressStats;
     final UdpRedundantConfig redundantConfig;
+    final UdpRedundantMode redundantMode;
     final UdpRedundantMultiplierResolver redundantResolver;
     final UdpRedundantStats redundantStats;
     final TrafficUser trafficUser;
@@ -33,7 +34,8 @@ final class Udp2rawTunnelContext {
     Udp2rawTunnelContext(Udp2rawServerEntryManager manager, String tunnelId,
             long sessionHi, long sessionLo, byte[] sessionSecret,
             Udp2rawAuthMode authMode, UdpCompressConfig compressConfig,
-            UdpRedundantConfig redundantConfig, long idleTimeoutMillis, int maxSessions,
+            UdpRedundantConfig redundantConfig, UdpRedundantMode redundantMode,
+            long idleTimeoutMillis, int maxSessions,
             TrafficUser trafficUser, long now) {
         this.manager = manager;
         this.tunnelId = tunnelId;
@@ -45,6 +47,7 @@ final class Udp2rawTunnelContext {
         this.compressStats = Udp2rawPayloadSupport.isCompressEnabled(compressConfig)
                 ? new UdpCompressStats(compressConfig) : null;
         this.redundantConfig = redundantConfig;
+        this.redundantMode = redundantMode != null ? redundantMode : UdpRedundantMode.BIDIRECTIONAL;
         this.redundantResolver = Udp2rawPayloadSupport.isRedundantEnabled(redundantConfig)
                 ? redundantConfig.buildMultiplierResolver() : null;
         this.redundantStats = Udp2rawPayloadSupport.newAdaptiveStats(redundantConfig);

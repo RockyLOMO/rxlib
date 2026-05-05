@@ -211,6 +211,14 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         return null;
     }
 
+    private static ShadowsocksConfig ssConfig(SocksContext sc) {
+        if (sc == null || sc.inbound == null) {
+            return null;
+        }
+        ShadowsocksServer server = Sockets.getAttr(sc.inbound, ShadowsocksConfig.SVR, false);
+        return server != null ? server.config : null;
+    }
+
     private static void runOnExecutor(EventExecutor executor, Runnable task) {
         if (executor.inEventLoop()) {
             task.run();
@@ -360,7 +368,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             return;
         }
         InetSocketAddress udpRelayAddr = relayAddress(sc.getUpstream(), outbound);
-        Sockets.UdpWriteResult result = Sockets.writeUdp(outbound, packet, "ss.udp",
+        Sockets.UdpWriteResult result = Sockets.writeUdp(outbound, packet, ssConfig(sc), "ss.udp",
                 udpMetricTags("frontend", "outbound", sc.getUpstream()));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("SS UDP relay drop packet from {} for {} result={}", srcEp, dstEp, result);
@@ -840,7 +848,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             if (releaseOutBuf) {
                 Bytes.release(outBuf);
             }
-            Sockets.UdpWriteResult result = Sockets.writeUdp(binding.inbound, packet, "ss.udp",
+            Sockets.UdpWriteResult result = Sockets.writeUdp(binding.inbound, packet, server.config, "ss.udp",
                     udpMetricTags("backend", "inbound", binding.representativeUpstream),
                     f -> releaseSourcePending(binding.inbound, srcEp, responseBytes));
             if (result != Sockets.UdpWriteResult.ACCEPTED) {

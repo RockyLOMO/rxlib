@@ -48,6 +48,10 @@ public class SocketConfig implements Serializable {
      */
     private int udpWritePerSourceLimitBytes = 256 * 1024;
     /**
+     * 最终 UDP datagram payload 字节上限，不含 IP/UDP header；0 表示关闭 MTU 限制。
+     */
+    private int udpMtu;
+    /**
      * TCP zlib 压缩级别。
      * -1 表示保持 Netty 默认值，其余取值范围为 [0, 9]。
      */
@@ -86,6 +90,10 @@ public class SocketConfig implements Serializable {
 
     public void setUdpWritePerSourceLimitBytes(int udpWritePerSourceLimitBytes) {
         this.udpWritePerSourceLimitBytes = Math.max(0, udpWritePerSourceLimitBytes);
+    }
+
+    public void setUdpMtu(int udpMtu) {
+        this.udpMtu = Math.max(0, udpMtu);
     }
 
     public SocketConfig() {

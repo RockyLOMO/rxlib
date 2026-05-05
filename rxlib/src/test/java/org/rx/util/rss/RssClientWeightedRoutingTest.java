@@ -30,7 +30,7 @@ class RssClientWeightedRoutingTest {
 
     @Test
     void nextUpstream_RespectsWeightsAcrossDifferentSourceIps() throws Exception {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
             RssClient.rssConf = rssConfWithSteeringTtl(60);
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 9);
@@ -60,7 +60,7 @@ class RssClientWeightedRoutingTest {
 
     @Test
     void nextUpstream_KeepsSameSourceIpPinnedWithinSteeringTtl() throws Exception {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
             RssClient.rssConf = rssConfWithSteeringTtl(60);
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 9);
@@ -80,7 +80,7 @@ class RssClientWeightedRoutingTest {
 
     @Test
     void nextUpstream_SkipsSourceSteeringForCommonStatelessPorts() throws Exception {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
             RssClient.rssConf = rssConfWithSteeringTtl(60);
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
@@ -102,7 +102,7 @@ class RssClientWeightedRoutingTest {
 
     @Test
     void nextUpstream_KeepsSourceSteeringForStatefulPorts() throws Exception {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
             RssClient.rssConf = rssConfWithSteeringTtl(60);
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
@@ -124,7 +124,7 @@ class RssClientWeightedRoutingTest {
 
     @Test
     void nextUpstream_DisablesSourceSteeringForClosingOldInstance() throws Exception {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         try {
             RssClient.rssConf = rssConfWithSteeringTtl(60);
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
@@ -153,9 +153,9 @@ class RssClientWeightedRoutingTest {
         assertTrue(!RssClient.isCommonStatelessPort(22));
     }
 
-    private static RSSConf rssConfWithSteeringTtl(int ttlSeconds) {
-        RSSConf conf = new RSSConf();
-        conf.route = new RSSConf.RouteConf();
+    private static RssClientConf rssConfWithSteeringTtl(int ttlSeconds) {
+        RssClientConf conf = new RssClientConf();
+        conf.route = new RssClientConf.RouteConf();
         conf.route.srcSteeringTTL = ttlSeconds;
         return conf;
     }

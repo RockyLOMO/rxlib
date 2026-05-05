@@ -103,11 +103,11 @@ public class RssUserTrafficStoreTest extends AbstractTester {
 
     @Test
     public void retentionDaysUsesCurrentRssConfig() {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/rss_user_traffic_retention"), null);
         try {
             RssUserTrafficStore store = new RssUserTrafficStore(db, 60);
-            RSSConf conf = new RSSConf();
+            RssClientConf conf = new RssClientConf();
             conf.trafficRetentionDays = 7;
             RssClient.rssConf = conf;
 

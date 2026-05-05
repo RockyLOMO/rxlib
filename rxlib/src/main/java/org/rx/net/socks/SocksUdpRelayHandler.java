@@ -367,7 +367,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             ((SocksUdpUpstream) upstream).recordUdpTraffic(relay, trafficBytes);
         }
         SocksUserTraffic.recordRead(relay, sc, trafficBytes, 1L);
-        Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
+        Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, config, "socks.udp",
                 udpMetricTags(relay, config, true, sc != null ? sc.getUpstream() : null));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("socks5[{}] UDP relay drop response from {} to {} result={}",
@@ -782,7 +782,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             trafficBytes = packet.content().readableBytes();
         }
         SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
-        Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, "socks.udp",
+        Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, config, "socks.udp",
                 udpMetricTags(relay, config, false, upstream));
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("socks5[{}] UDP relay drop packet from {} to {}[{}] result={}",

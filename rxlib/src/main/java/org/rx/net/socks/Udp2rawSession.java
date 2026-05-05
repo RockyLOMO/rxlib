@@ -110,7 +110,7 @@ final class Udp2rawSession {
         }
         int trafficBytes = payload.readableBytes();
         DatagramPacket packet = new DatagramPacket(payload, target);
-        Sockets.UdpWriteResult result = Sockets.writeUdp(natChannel, packet, METRIC_PREFIX,
+        Sockets.UdpWriteResult result = Sockets.writeUdp(natChannel, packet, context.manager.server.getConfig(), METRIC_PREFIX,
                 "flow=to-destination");
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("udp2raw drop packet to destination {} result={}", target, result);
@@ -168,7 +168,9 @@ final class Udp2rawSession {
                 payload = null;
                 compressed = null;
             }
-            if (Udp2rawPayloadSupport.isRedundantEnabled(context.redundantConfig)) {
+            UdpRedundantConfig responseRedundant = UdpRedundantSupport.udp2rawConfigForResponse(
+                    context.redundantConfig, context.redundantMode);
+            if (Udp2rawPayloadSupport.isRedundantEnabled(responseRedundant)) {
                 flags |= Udp2rawCodec.FLAG_REDUNDANT;
             }
             frame.setFlags(flags);
@@ -178,7 +180,7 @@ final class Udp2rawSession {
             }
             body = null;
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(entry, encoded, peer,
-                    context.redundantConfig, context.redundantStats, context.redundantResolver, "flow=response");
+                    responseRedundant, context.redundantStats, context.redundantResolver, "flow=response");
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop response to peer {} result={}", peer, result);

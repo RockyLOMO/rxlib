@@ -79,7 +79,7 @@ public class RssAuthenticatorTest {
 
     @Test
     public void resetIpUsesCurrentRssConfigMemoryWindow() throws Exception {
-        RSSConf oldConf = RssClient.rssConf;
+        RssClientConf oldConf = RssClient.rssConf;
         ShadowUser user = new ShadowUser();
         user.setUsername("ss-rocky");
         user.setSsPort(1081);
@@ -92,7 +92,7 @@ public class RssAuthenticatorTest {
 
         RssAuthenticator authenticator = new RssAuthenticator(Arrays.asList(user), "inner-pwd", 24);
         try {
-            RSSConf conf = new RSSConf();
+            RssClientConf conf = new RssClientConf();
             conf.memoryRetentionHours = 1;
             RssClient.rssConf = conf;
 

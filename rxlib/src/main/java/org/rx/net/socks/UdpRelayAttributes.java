@@ -65,12 +65,16 @@ public final class UdpRelayAttributes {
     }
 
     public static boolean shouldTrackClientAsRedundantPeer(SocksConfig config) {
-        if (config == null) {
+        return shouldTrackClientAsRedundantPeer(config, false);
+    }
+
+    public static boolean shouldTrackClientAsRedundantPeer(SocksConfig config, boolean udp2raw) {
+        if (!UdpRedundantSupport.isConfigured(config)) {
             return false;
         }
-        return config.getUdpRedundantMultiplier() > 1
-                || config.isUdpRedundantAdaptive()
-                || config.hasUdpRedundantDestinationRules();
+        return udp2raw
+                ? UdpRedundantSupport.allowUdp2rawResponse(config)
+                : UdpRedundantSupport.allowSocksUdpResponse(config);
     }
 
     static InetSocketAddress normalize(InetSocketAddress address) {
