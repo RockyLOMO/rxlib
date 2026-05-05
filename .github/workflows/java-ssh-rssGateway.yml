@@ -11,6 +11,11 @@ on:
         options:
           - replace
           - coexist
+      reuseport_migration_fallback:
+        description: replace 并行切换失败时，允许首次迁移兼容重启
+        required: true
+        default: true
+        type: boolean
 #  push:
 #    branches: [ rss-17 ]
 
@@ -42,6 +47,11 @@ jobs:
           echo "REMOTE_DIR=rss" >> $GITHUB_ENV
           echo "HEALTH_URL=cloud.f-li.cn:6899" >> $GITHUB_ENV
           echo "DEPLOY_MODE=${{ inputs.deploy_mode || 'replace' }}" >> $GITHUB_ENV
+          if [[ "${{ inputs.reuseport_migration_fallback }}" == "true" ]]; then
+            echo "REUSEPORT_MIGRATION_FALLBACK=1" >> $GITHUB_ENV
+          else
+            echo "REUSEPORT_MIGRATION_FALLBACK=0" >> $GITHUB_ENV
+          fi
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
       - name: Build with Maven
         run: |
@@ -98,8 +108,10 @@ jobs:
             cd /home/${{ env.REMOTE_DIR }}/
             chmod 755 start.sh
             chmod 755 rollback.sh
+            export REUSEPORT_MIGRATION_FALLBACK="${{ env.REUSEPORT_MIGRATION_FALLBACK }}"
             echo "=== before publish ==="
             ps -ef | grep "[a]pp.jar" || true
+            echo "REUSEPORT_MIGRATION_FALLBACK=${REUSEPORT_MIGRATION_FALLBACK}"
             bash ./start.sh publish "${{ inputs.deploy_mode || 'replace' }}"
             echo "=== after publish ==="
             bash ./start.sh status
