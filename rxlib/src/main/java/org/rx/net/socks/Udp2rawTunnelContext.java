@@ -7,6 +7,7 @@ import org.rx.net.support.UnresolvedEndpoint;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 final class Udp2rawTunnelContext {
     final Udp2rawServerEntryManager manager;
@@ -85,16 +86,25 @@ final class Udp2rawTunnelContext {
         return guard != null && guard.isBlocked(now);
     }
 
+    boolean allowPeerPacket(InetSocketAddress peer, long now) {
+        SocksConfig config = manager.server.getConfig();
+        int limit = config.getUdp2rawPeerRateLimitPerSecond();
+        if (limit <= 0 || peer == null) {
+            return true;
+        }
+        PeerGuard guard = peerGuard(peer);
+        if (guard.allowPacket(now, limit, config.getUdp2rawPeerRateLimitBurst())) {
+            return true;
+        }
+        DiagnosticMetrics.record("socks.udp2raw.peer.rate.limit.count", 1D, "result=drop");
+        return false;
+    }
+
     void recordAuthFailure(InetSocketAddress peer, long now) {
         if (peer == null) {
             return;
         }
-        PeerGuard guard = peerGuards.get(peer);
-        if (guard == null) {
-            PeerGuard created = new PeerGuard();
-            PeerGuard old = peerGuards.putIfAbsent(peer, created);
-            guard = old != null ? old : created;
-        }
+        PeerGuard guard = peerGuard(peer);
         SocksConfig config = manager.server.getConfig();
         guard.recordAuthFailure(now, config.getUdp2rawBadAuthThreshold(),
                 config.getUdp2rawBadAuthFuseSeconds() * 1000L);
@@ -125,15 +135,48 @@ final class Udp2rawTunnelContext {
         return lastActiveAtMillis + idleTimeoutMillis;
     }
 
+    private PeerGuard peerGuard(InetSocketAddress peer) {
+        PeerGuard guard = peerGuards.get(peer);
+        if (guard != null) {
+            return guard;
+        }
+        PeerGuard created = new PeerGuard();
+        PeerGuard old = peerGuards.putIfAbsent(peer, created);
+        return old != null ? old : created;
+    }
+
     private static final class PeerGuard {
         private static final long AUTH_FAIL_WINDOW_MILLIS = 10_000L;
 
+        private final AtomicLong rateWindow = new AtomicLong();
         private long authFailWindowStartMillis;
         private int authFailures;
         private volatile long blockedUntilMillis;
 
         boolean isBlocked(long now) {
             return blockedUntilMillis > now;
+        }
+
+        boolean allowPacket(long now, int limitPerSecond, int burst) {
+            int limit = burst > 0 ? burst : limitPerSecond;
+            long second = (now / 1000L) & 0xffffffffL;
+            for (;;) {
+                long current = rateWindow.get();
+                long currentSecond = current >>> 32;
+                int count = (int) current;
+                long next;
+                if (currentSecond != second) {
+                    next = (second << 32) | 1L;
+                } else {
+                    if (count >= limit) {
+                        return false;
+                    }
+                    next = (second << 32) | ((count + 1L) & 0xffffffffL);
+                }
+                if (rateWindow.compareAndSet(current, next)) {
+                    return true;
+                }
+            }
         }
 
         synchronized void recordAuthFailure(long now, int threshold, long fuseMillis) {

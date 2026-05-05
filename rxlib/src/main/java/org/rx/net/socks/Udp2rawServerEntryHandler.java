@@ -47,6 +47,10 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
             recordDrop("peer-blocked");
             return;
         }
+        if (!tunnel.allowPeerPacket(in.sender(), now)) {
+            recordDrop("peer-rate-limit");
+            return;
+        }
 
         Udp2rawSessionKey key = frame.sessionKey();
         Udp2rawSession session = tunnel.session(key);

@@ -514,6 +514,8 @@ private UdpRedundantConfig udp2rawRedundant;
 private UdpCompressConfig udp2rawCompress;
 private int udp2rawBadAuthThreshold = 8;
 private int udp2rawBadAuthFuseSeconds = 30;
+private int udp2rawPeerRateLimitPerSecond = 0; // 0 表示关闭
+private int udp2rawPeerRateLimitBurst = 0;     // 0 表示使用 perSecond
 ```
 
 默认建议：
@@ -645,6 +647,7 @@ private int udp2rawBadAuthFuseSeconds = 30;
   - 已有 maxSessions、tunnel idle cleanup、seq duplicate drop、auth-fail drop、UDP write pending 过载保护。
   - 已补齐 NAT rebinding 基础安全策略：已有 `(tunnel, connId)` 会话的 `udp2rawPeer` 发生变化时，必须携带有效 `authTag` 才允许更新 peer；`FIRST_PACKET_MAC` 后续普通包不能无鉴权迁移 peer。
   - 已补齐 bad auth 熔断：同一 peer 在短窗口内达到 `udp2rawBadAuthThreshold` 后，按 `udp2rawBadAuthFuseSeconds` 短时阻断，降低公网 fixed entry 被无效 MAC 探测拖垮的风险。
+  - 已补齐 per-peer packet rate limit：默认关闭；开启 `udp2rawPeerRateLimitPerSecond` 后，同一 tunnel 内同一 udp2raw peer 超过窗口包数会在 fixed entry 收包路径被丢弃，并记录 `socks.udp2raw.peer.rate.limit.count` 与 `drop.reason=peer-rate-limit`。
 
 ### 已验证
 
@@ -677,12 +680,12 @@ mvn -pl rxlib "-Dtest=Udp2rawCodecTest,Udp2rawAuthenticatorTest,Udp2rawFixedEntr
 - 当前最终组合目标测试 17 个用例通过。
 - P7 NAT rebinding 安全策略通过：同一 session 从新 peer 发来的无 MAC 包被拒绝，携带有效 MAC 的 rebind 包可继续写入 dest。
 - P7 bad auth 熔断通过：同一 peer 达到 bad-auth 阈值后短时阻断，熔断窗口过期后有效 MAC 包可恢复。
+- P7 per-peer rate limit 通过：同一 peer 超过配置包数阈值后，超限包不写入 dest；窗口恢复后有效包可继续转发。
 
 ### 未完成/下一步
 
 - UDP redundant 自适应反馈尚未接入 tunnel 层：当前已支持静态倍率、分目的地规则与延迟副本；还未根据实际丢包率动态调整 multiplier。
 - P1 控制面仍是基础 open/heartbeat/close；还未把 `connectionTag/trafficUser` 完整绑定到流量统计策略。
-- per-peer rate limit 仍待补齐。
 
 ## 测试计划
 

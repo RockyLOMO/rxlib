@@ -329,6 +329,71 @@ class Udp2rawFixedEntryIntegrationTest {
         }
     }
 
+    @Test
+    @Timeout(20)
+    void fixedEntryRateLimitsPeerPackets() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-rate-limit-test-token");
+        LinkedBlockingQueue<String> echoPayloads = new LinkedBlockingQueue<>();
+        Channel echo = null;
+        SocksProxyServer proxy = null;
+        DatagramSocket client = null;
+        try {
+            Bootstrap udpEcho = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(
+                    new SimpleChannelInboundHandler<DatagramPacket>() {
+                        @Override
+                        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                            echoPayloads.add(msg.content().toString(StandardCharsets.UTF_8));
+                            ctx.writeAndFlush(new DatagramPacket(msg.content().retain(), msg.sender()));
+                        }
+                    }));
+            echo = udpEcho.bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+            InetSocketAddress echoAddress = (InetSocketAddress) echo.localAddress();
+
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            config.setUdp2rawPeerRateLimitPerSecond(1);
+            config.setUdp2rawPeerRateLimitBurst(1);
+            proxy = new SocksProxyServer(config, null);
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-rate-limit");
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+
+            client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            sendRawUdp(client, entryAddress, buildUdp2raw(open, 5001L, 1L,
+                    Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT | Udp2rawCodec.FLAG_HAS_DST,
+                    new InetSocketAddress("127.0.0.1", 30401), echoAddress, "first", true));
+            assertEquals("first", echoPayloads.poll(3, TimeUnit.SECONDS));
+
+            sendRawUdp(client, entryAddress, buildUdp2raw(open, 5002L, 1L,
+                    Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT | Udp2rawCodec.FLAG_HAS_DST,
+                    new InetSocketAddress("127.0.0.1", 30402), echoAddress, "limited", true));
+            assertNull(echoPayloads.poll(500, TimeUnit.MILLISECONDS),
+                    "same peer should be packet-rate limited within the one-second window");
+
+            Thread.sleep(1100L);
+            sendRawUdp(client, entryAddress, buildUdp2raw(open, 5003L, 1L,
+                    Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT | Udp2rawCodec.FLAG_HAS_DST,
+                    new InetSocketAddress("127.0.0.1", 30403), echoAddress, "after-limit", true));
+            assertEquals("after-limit", echoPayloads.poll(3, TimeUnit.SECONDS));
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            if (echo != null) {
+                echo.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
     private static void sendUdp2raw(DatagramSocket socket, InetSocketAddress entryAddress,
             Udp2rawOpenResult open, long connId, InetSocketAddress clientSource,
             InetSocketAddress destination, String text) throws Exception {

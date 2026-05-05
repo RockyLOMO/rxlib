@@ -58,6 +58,8 @@ public class SocksConfig extends SocketConfig {
     private boolean udp2rawRequireRpc = true;
     private int udp2rawBadAuthThreshold = 8;
     private int udp2rawBadAuthFuseSeconds = 30;
+    private int udp2rawPeerRateLimitPerSecond;
+    private int udp2rawPeerRateLimitBurst;
     private AuthenticEndpoint kcptunClient;
     private boolean tcpWarmPoolEnabled;
     private int tcpWarmPoolMinSize = 2;
@@ -303,6 +305,14 @@ public class SocksConfig extends SocketConfig {
 
     public void setUdp2rawBadAuthFuseSeconds(int udp2rawBadAuthFuseSeconds) {
         this.udp2rawBadAuthFuseSeconds = Math.max(1, udp2rawBadAuthFuseSeconds);
+    }
+
+    public void setUdp2rawPeerRateLimitPerSecond(int udp2rawPeerRateLimitPerSecond) {
+        this.udp2rawPeerRateLimitPerSecond = Math.max(0, udp2rawPeerRateLimitPerSecond);
+    }
+
+    public void setUdp2rawPeerRateLimitBurst(int udp2rawPeerRateLimitBurst) {
+        this.udp2rawPeerRateLimitBurst = Math.max(0, udp2rawPeerRateLimitBurst);
     }
 
     public void setUdpPortHoppingEnabled(boolean enabled) {
