@@ -21,8 +21,8 @@
 
 - 用户要求“仔细慢慢地 review”，目标是检查现有实现的风险点、调用链、边界条件和测试覆盖。
 - 当前没有提出新增功能、新接口或新协议支持。
-- 按 agent 流程，review 类任务必须先完成代码理解和计划文档提交，未经用户明确要求不修改业务代码。
-- 本次提交只新增计划文档，不修改 `rxlib/src/main/java` 或 `rxlib/src/test/java` 下业务/测试代码。
+- 已按用户要求进入 follow-up 修复阶段：认可的 P0/P1 小范围问题直接修复并补测试；范围大或证据不足的项明确标为暂缓。
+- 本次只修改 `org.rx.net` 范围内已确认的小问题，不扩大到 FEC、HTTP Tunnel 或大规模重构。
 
 # 当前上下文
 
@@ -248,11 +248,13 @@
 
 ### P0：`Sockets.addAfter(...)` handler 插入方向疑似错误
 
+状态：**已修复，已补测试，已验证通过**。
+
 观察：
 
 - `Sockets.addBefore(...)` 使用 `pipeline.addBefore(...)`，符合函数名语义。
-- `Sockets.addAfter(...)` 中按 reverse 顺序遍历 handler，但实际调用仍是 `pipeline.addBefore(baseName, ...)`。
-- 从命名和调用意图看，`addAfter` 应该把 handlers 插到 `baseName` 后面；当前实现会插到 `baseName` 前面，可能导致 codec、cipher、压缩、协议 handler 顺序反转或错位。
+- 修复前 `Sockets.addAfter(...)` 中按 reverse 顺序遍历 handler，但实际调用仍是 `pipeline.addBefore(baseName, ...)`。
+- 从命名和调用意图看，`addAfter` 应该把 handlers 插到 `baseName` 后面；原实现会插到 `baseName` 前面，可能导致 codec、cipher、压缩、协议 handler 顺序反转或错位。
 
 候选修复方向：
 
@@ -261,13 +263,20 @@
   - `addBefore(base, A, B)` 期望 `A -> B -> base`
   - `addAfter(base, A, B)` 期望 `base -> A -> B`
 
+实际修复：
+
+- `Sockets.addAfter(...)` 保持 reverse 遍历，但改为调用 `pipeline.addAfter(baseName, ...)`。
+- 在 `SocketsTest` 中新增 pipeline 顺序测试，固定 `addBefore` 和 `addAfter` 的插入语义。
+
 ### P1：`BackpressureHandler.channelInactive(...)` 关闭路径未触发 end callback
+
+状态：**已修复，已补测试，已验证通过**。
 
 观察：
 
 - 不可写时，handler 通过 `paused=true` 和 `onBackpressureStart` 暂停 inbound。
 - 恢复可写时，`handleRecovery(...)` 会调用 `onBackpressureEnd`。
-- outbound `channelInactive` 只停止 timer 并把 `paused=false`，没有调用 `onBackpressureEnd`。
+- 修复前 outbound `channelInactive` 只停止 timer 并把 `paused=false`，没有调用 `onBackpressureEnd`。
 - 默认 install 回调只控制 inbound autoRead；如果上层传入自定义回调，还可能维护业务队列暂停状态。关闭路径不触发 end callback，可能让外部状态停留在 paused。
 
 候选修复方向：
@@ -276,7 +285,15 @@
 - 如果 inbound 已关闭，应确认回调是否仍需要执行；至少要在测试中覆盖 inbound open / closed 两种场景。
 - 保持 `stopTimer()`，避免 delayed recovery 在 channel 关闭后再次运行。
 
+实际修复：
+
+- `channelInactive(...)` 先 `stopTimer()`，再通过 `handleRecovery(ctx.channel(), 0, null)` 统一触发恢复逻辑。
+- `handleRecovery(...)` 自带 `paused` guard，可避免重复触发 end callback。
+- `BackpressureHandlerTest` 覆盖 inbound open 与 inbound closed 两种关闭路径，确认外部回调会被执行且 paused 状态被清理。
+
 ### P1：`GlobalChannelHandler.write(...)` listener 注册时机可进一步稳健化
+
+状态：**暂缓，不做本轮代码修改**。
 
 观察：
 
@@ -289,13 +306,21 @@
 - 优先补充回归测试确认现有行为。
 - 如需调整，尽量在 `super.write(...)` 前注册 listener，保持语义不变。
 
-### P1：`UdpClient.close()` 在 EventLoop 上同步等待 close 的风险需继续验证
+暂缓原因：
+
+- 当前 listener 只做日志，不承担资源释放或背压状态维护。
+- Netty `Future.addListener(...)` 对已完成 future 仍会回调 listener；当前风险没有稳定复现证据。
+- 后续如果 listener 增加资源清理、指标强约束或测试复现同步完成边界，再单独处理。
+
+### P1：`UdpClient.close()` 在 EventLoop 上同步等待 close 风险确认
+
+状态：**已在历史修复中完成，本轮不重复改动**。
 
 观察：
 
 - `UdpClient.close()` 会清理 pending sends / requests / receives，然后遍历 channel 并调用 close。
 - 历史计划中提过 `ch.close().syncUninterruptibly()` 在 EventLoop 中可能造成阻塞风险。
-- 当前 master 需要继续确认该路径是否已完全避免 EventLoop 内同步等待，或至少已有测试覆盖。
+- 当前 master 已确认该路径避免 EventLoop 内同步等待，并已有测试覆盖。
 
 候选修复方向：
 
@@ -304,7 +329,15 @@
   - 非 EventLoop 调用保留同步或统一异步 close 语义。
 - 增加 EventLoop 内调用 close 不阻塞的测试。
 
+当前确认：
+
+- 当前代码已判断调用线程是否属于任一 UDP channel 的 EventLoop。
+- EventLoop 内只发起异步 `ch.close()`，非 EventLoop 仍保留同步等待。
+- 已有 `UdpTransportTest.closeFromEventLoopDoesNotBlockEventLoop` 覆盖该路径。
+
 ### P2：UDP FULL ack 与 async receive 悬挂风险需要验证
+
+状态：**暂缓，保留后续专项评估**。
 
 观察：
 
@@ -318,7 +351,14 @@
 - 如果没有保护，考虑为 async receive 增加轻量超时清理或文档化语义。
 - 回归测试应模拟业务回调不完成、异常完成、延迟完成三类场景。
 
+暂缓原因：
+
+- 该项涉及可靠投递语义，提前 ack 或超时清理都可能改变协议行为。
+- 需要先审清事件系统、receive timeout、assembly expire 与重试策略后再动代码。
+
 ### P2：`Sockets.writeUdp(...)` 失败路径引用计数语义需 leak-aware 测试确认
+
+状态：**暂缓，本轮不改代码**。
 
 观察：
 
@@ -331,7 +371,14 @@
 - 增加 `EmbeddedChannel` 或 fake promise 的失败路径测试。
 - 尽量只增强测试，除非确认存在引用计数漏洞。
 
+暂缓原因：
+
+- 当前已有 inactive、unresolved、pending over-limit、not writable、write throw 等常规失败路径测试。
+- `writeAndFlush` listener failure 的 ownership 需要 leak-aware 或更精确 promise 模拟，避免误释放或双释放。
+
 ### P2：HTTP streaming upload / response close 需要继续看齐 EventLoop 模型
+
+状态：**部分已在历史修复中完成；剩余 response close 细分场景暂缓**。
 
 观察：
 
@@ -344,7 +391,14 @@
 - 优先补充 `HttpClientTest` 中慢 body、write timeout、response close/pool release 的回归测试。
 - 不改变现有 public API。
 
+当前确认与暂缓原因：
+
+- 历史修复已确认 streaming upload 通过业务线程执行，并在 `UploadWriter` 构造处加 EventLoop guard。
+- 慢 body、异常 body、取消 body、调用方未 close body 等连接归还细分场景范围较大，本轮未展开，后续按实际复现补测试。
+
 ### P2：DNS / DoH cache 与 upstream fallback 测试覆盖需补齐
+
+状态：**暂缓，保留后续按 DNS 专项补测**。
 
 观察：
 
@@ -356,7 +410,14 @@
 - 对 cache `RuntimeException` evict 后重试、interceptor 空结果、`.lan` 跳过 interceptor、A/AAAA 以外类型 fallback 补测试。
 - 保持 DNS 策略行为不变。
 
+暂缓原因：
+
+- 本轮无 DNS 行为修改，直接补大范围 DNS 分支测试会扩大验证面。
+- DNS/DoH 需独立跑 `DnsOptimizationTest`、`DnsServerIntegrationTest`、`DoHMessageCodecTest` 等组合验证。
+
 ### P2：SOCKS / UDP relay / upstream 的 close 与 attr 清理需针对性补测试
+
+状态：**暂缓，保留后续按实际 bug 或修改点补测**。
 
 观察：
 
@@ -369,48 +430,54 @@
 - 避免一次性重构 `SocksProxyServer`、`SocksUdpRelayHandler`、`SocksUdpUpstream` 等大文件。
 - 重点看 session map、channel attr、metric tag、pending queue 在 close/exception 中是否清理。
 
+暂缓原因：
+
+- SOCKS / UDP relay / upstream 影响面大、集成测试重。
+- 当前没有本轮直接修改点，后续只在具体问题复现后做小步修复。
+
 # 目标
 
-1. 在当前 `master` 上留下本轮 review 计划文件，作为后续修复前置文档。
+1. 在当前 `master` 上更新本轮 follow-up 文档，记录已认可修复与暂缓项。
 2. 明确 review 范围：`rxlib` 模块 `org.rx.net` 包，排除 FEC 与 HTTP Tunnel。
 3. 记录当前关键调用链、已扫描文件、候选风险点和优先级。
-4. 为后续最小修复列出明确顺序：
-   - 先修复/验证 `Sockets.addAfter(...)` handler 顺序。
-   - 再验证 `BackpressureHandler` 关闭恢复语义。
-   - 再按测试证据处理 UDP / HTTP / DNS / SOCKS / RPC 剩余风险。
-5. 后续如进入代码阶段，所有修改都必须配套回归测试，并通过 JDK 8 GitHub Actions。
+4. 已完成认可的小范围修复：
+   - 修复/验证 `Sockets.addAfter(...)` handler 顺序。
+   - 修复/验证 `BackpressureHandler` 关闭恢复语义。
+5. 将 UDP / HTTP / DNS / SOCKS / RPC 剩余风险按证据暂缓，后续专项处理。
 
 # 非目标
 
-1. 本计划不修改业务代码。
-2. 本计划不修改测试代码。
-3. 本计划不 review 或修复 FEC 相关代码。
-4. 本计划不 review 或修复 HTTP Tunnel 相关代码。
-5. 不升级 Netty、Fury、BouncyCastle、Spring 或其他依赖。
-6. 不引入新框架或重型依赖。
-7. 不修改 public API，除非后续修复必须且经过兼容性评估。
-8. 不修改 secrets、token、证书、私钥。
-9. 不发布 release。
-10. 不一次性重构 SOCKS / UDP relay / RPC 大文件。
+1. 不 review 或修复 FEC 相关代码。
+2. 不 review 或修复 HTTP Tunnel 相关代码。
+3. 不升级 Netty、Fury、BouncyCastle、Spring 或其他依赖。
+4. 不引入新框架或重型依赖。
+5. 不修改 public API，除非后续修复必须且经过兼容性评估。
+6. 不修改 secrets、token、证书、私钥。
+7. 不发布 release。
+8. 不一次性重构 SOCKS / UDP relay / RPC 大文件。
 
 # 设计方案
 
 ## 阶段 0：计划提交
 
-本次只新增计划文档：
+状态：**已完成**。
+
+已更新计划文档：
 
 - `docs/plan/review-org-rx-net-followup-20260505.md`
 
-不触发代码修改。
+本轮已按用户要求进入小范围代码修复阶段。
 
 ## 阶段 1：P0 回归测试与最小修复
 
 ### `Sockets.addAfter(...)`
 
-拟修改：
+状态：**已完成**。
+
+实际修改：
 
 - `rxlib/src/main/java/org/rx/net/Sockets.java`
-- `rxlib/src/test/java/org/rx/net/SocketsTest.java` 或新增 `SocketsPipelineOrderTest.java`
+- `rxlib/src/test/java/org/rx/net/SocketsTest.java`
 
 设计：
 
@@ -438,7 +505,9 @@
 
 ### `BackpressureHandler.channelInactive(...)`
 
-拟修改：
+状态：**已完成**。
+
+实际修改：
 
 - `rxlib/src/main/java/org/rx/net/BackpressureHandler.java`
 - `rxlib/src/test/java/org/rx/net/BackpressureHandlerTest.java`
@@ -450,11 +519,8 @@
   - 在 paused 状态下触发 outbound inactive。
   - 验证 end callback 是否被调用。
   - 验证 inbound autoRead 或自定义 paused flag 恢复。
-- 如果确认现有行为风险成立：
-  - 在 `channelInactive` 中捕获 `wasPaused`。
-  - 先 `stopTimer()`。
-  - 对 `wasPaused` 执行恢复回调或专门恢复函数。
-  - 避免重复恢复、避免关闭 inbound 后误读。
+- `channelInactive` 先 `stopTimer()`，再调用 `handleRecovery(...)`。
+- `handleRecovery(...)` 自带 paused guard，避免重复恢复。
 - 保持 cooldown/timer 逻辑不扩大范围。
 
 异常处理：
@@ -469,10 +535,12 @@
 
 ## 阶段 3：P1/P2 只按证据补充测试
 
+状态：**暂缓**。
+
 候选范围：
 
 - `GlobalChannelHandler.write(...)`
-- `UdpClient.close()`
+- UDP FULL ack 与 async receive
 - `Sockets.writeUdp(...)`
 - `HttpClient` streaming upload / response close
 - `DnsResolveCore` cache fallback
@@ -506,49 +574,44 @@
 
 # 修改文件列表
 
-## 本次计划阶段实际修改
+## 本轮实际修改
 
 - `docs/plan/review-org-rx-net-followup-20260505.md`
+- `rxlib/src/main/java/org/rx/net/Sockets.java`
+- `rxlib/src/main/java/org/rx/net/BackpressureHandler.java`
+- `rxlib/src/test/java/org/rx/net/SocketsTest.java`
+- `rxlib/src/test/java/org/rx/net/BackpressureHandlerTest.java`
 
-## 后续代码阶段预计可能修改
+## 本轮暂缓项后续可能修改
 
 按优先级和测试证据拆分：
 
-1. P0 pipeline 顺序：
-   - `rxlib/src/main/java/org/rx/net/Sockets.java`
-   - `rxlib/src/test/java/org/rx/net/SocketsTest.java`
-   - 或新增 `rxlib/src/test/java/org/rx/net/SocketsPipelineOrderTest.java`
-
-2. P1 背压关闭恢复：
-   - `rxlib/src/main/java/org/rx/net/BackpressureHandler.java`
-   - `rxlib/src/test/java/org/rx/net/BackpressureHandlerTest.java`
-
-3. P1/P2 全局 handler：
+1. P1/P2 全局 handler：
    - `rxlib/src/main/java/org/rx/net/GlobalChannelHandler.java`
    - `rxlib/src/test/java/org/rx/net/GlobalChannelHandlerTest.java`
 
-4. P1/P2 UDP transport：
+2. P2 UDP transport / writeUdp：
    - `rxlib/src/main/java/org/rx/net/transport/UdpClient.java`
    - `rxlib/src/test/java/org/rx/net/transport/UdpTransportTest.java`
    - 可能补充 `rxlib/src/test/java/org/rx/net/SocketsTest.java`
 
-5. P2 HTTP：
+3. P2 HTTP：
    - `rxlib/src/main/java/org/rx/net/http/HttpClient.java`
    - `rxlib/src/test/java/org/rx/net/http/HttpClientTest.java`
 
-6. P2 DNS：
+4. P2 DNS：
    - `rxlib/src/main/java/org/rx/net/dns/DnsResolveCore.java`
    - `rxlib/src/test/java/org/rx/net/dns/DnsOptimizationTest.java`
    - `rxlib/src/test/java/org/rx/net/dns/DoHMessageCodecTest.java`
 
-7. P2 SOCKS / UDP relay / upstream：
+5. P2 SOCKS / UDP relay / upstream：
    - 只在测试复现后选择具体文件，例如：
      - `rxlib/src/main/java/org/rx/net/socks/SocksUdpRelayHandler.java`
      - `rxlib/src/main/java/org/rx/net/socks/SSUdpProxyHandler.java`
      - `rxlib/src/main/java/org/rx/net/socks/upstream/SocksUdpUpstream.java`
      - 对应 `rxlib/src/test/java/org/rx/net/socks/**`
 
-8. P2 RPC / Hybrid：
+6. P2 RPC / Hybrid：
    - 只在测试复现后选择具体文件，例如：
      - `rxlib/src/main/java/org/rx/net/rpc/Remoting.java`
      - `rxlib/src/main/java/org/rx/net/transport/hybrid/DefaultHybridSession.java`
@@ -592,9 +655,21 @@
 
 # 验证方案
 
-## 当前计划阶段
+## 当前修复验证
 
-本次只提交 Markdown 计划文件，不改业务代码，不需要触发 JDK8 单元测试。
+本地已执行：
+
+```bash
+mvn -pl rxlib "-Dgpg.skip=true" "-Dtest=SocketsTest,BackpressureHandlerTest" test
+```
+
+结果：
+
+- Tests run: 37
+- Failures: 0
+- Errors: 0
+- Skipped: 0
+- BUILD SUCCESS
 
 ## 后续代码阶段本地验证建议
 

@@ -149,9 +149,8 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         stopTimer();
-        if (paused) {
-            paused = false; // 防止外部系统死等
-        }
+        // outbound 关闭时也通知恢复，避免外部队列/限流状态停在 paused。
+        handleRecovery(ctx.channel(), 0, null);
         super.channelInactive(ctx);
     }
 

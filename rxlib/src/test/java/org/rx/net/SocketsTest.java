@@ -7,6 +7,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -398,6 +399,45 @@ public class SocketsTest {
     }
 
     @Test
+    public void testPipelineAddBeforeAndAfterKeepRequestedOrder() {
+        EmbeddedChannel beforeChannel = new EmbeddedChannel();
+        try {
+            beforeChannel.pipeline().addLast("base", new BasePipelineHandler());
+            Sockets.addBefore(beforeChannel.pipeline(), "base",
+                    new FirstPipelineHandler(), new SecondPipelineHandler());
+
+            List<String> beforeNames = beforeChannel.pipeline().names();
+            assertTrue(beforeNames.contains(FirstPipelineHandler.class.getSimpleName()));
+            assertTrue(beforeNames.contains(SecondPipelineHandler.class.getSimpleName()));
+            assertTrue(beforeNames.contains("base"));
+            assertTrue(beforeNames.indexOf(FirstPipelineHandler.class.getSimpleName())
+                    < beforeNames.indexOf(SecondPipelineHandler.class.getSimpleName()));
+            assertTrue(beforeNames.indexOf(SecondPipelineHandler.class.getSimpleName())
+                    < beforeNames.indexOf("base"));
+        } finally {
+            beforeChannel.finishAndReleaseAll();
+        }
+
+        EmbeddedChannel afterChannel = new EmbeddedChannel();
+        try {
+            afterChannel.pipeline().addLast("base", new BasePipelineHandler());
+            Sockets.addAfter(afterChannel.pipeline(), "base",
+                    new FirstPipelineHandler(), new SecondPipelineHandler());
+
+            List<String> afterNames = afterChannel.pipeline().names();
+            assertTrue(afterNames.contains("base"));
+            assertTrue(afterNames.contains(FirstPipelineHandler.class.getSimpleName()));
+            assertTrue(afterNames.contains(SecondPipelineHandler.class.getSimpleName()));
+            assertTrue(afterNames.indexOf("base")
+                    < afterNames.indexOf(FirstPipelineHandler.class.getSimpleName()));
+            assertTrue(afterNames.indexOf(FirstPipelineHandler.class.getSimpleName())
+                    < afterNames.indexOf(SecondPipelineHandler.class.getSimpleName()));
+        } finally {
+            afterChannel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
     public void testTcpCompressionLevelUsesConfiguredEncoder() {
         SocketConfig config = new SocketConfig();
         config.setTransportFlags(TransportFlags.COMPRESS_WRITE.flags());
@@ -550,5 +590,14 @@ public class SocketsTest {
         public ChannelFuture writeAndFlush(Object msg) {
             throw new IllegalStateException("synthetic write failure");
         }
+    }
+
+    private static final class BasePipelineHandler extends ChannelInboundHandlerAdapter {
+    }
+
+    private static final class FirstPipelineHandler extends ChannelInboundHandlerAdapter {
+    }
+
+    private static final class SecondPipelineHandler extends ChannelInboundHandlerAdapter {
     }
 }

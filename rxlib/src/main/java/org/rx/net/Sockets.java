@@ -602,7 +602,7 @@ public final class Sockets {
     public static void addAfter(ChannelPipeline pipeline, String baseName, ChannelHandler... handlers) {
         for (int i = handlers.length - 1; i > -1; i--) {
             ChannelHandler handler = handlers[i];
-            pipeline.addBefore(baseName, handler.getClass().getSimpleName(), handler);
+            pipeline.addAfter(baseName, handler.getClass().getSimpleName(), handler);
         }
     }
 

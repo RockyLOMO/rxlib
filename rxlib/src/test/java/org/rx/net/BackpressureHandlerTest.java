@@ -202,4 +202,64 @@ public class BackpressureHandlerTest {
         assertFalse(handler.isPaused());
         assertSame(ex, errorRef.get());
     }
+
+    @Test
+    public void testChannelInactiveEndsPausedBackpressure() {
+        EmbeddedChannel inbound = new EmbeddedChannel();
+        EmbeddedChannel outbound = new EmbeddedChannel();
+        outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
+
+        AtomicInteger ended = new AtomicInteger();
+        BackpressureHandler.install(inbound, outbound,
+                (in, out) -> Sockets.disableAutoRead(in),
+                (in, out, e) -> {
+                    ended.incrementAndGet();
+                    Sockets.enableAutoRead(in);
+                });
+        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+
+        outbound.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+        outbound.pipeline().fireChannelWritabilityChanged();
+        assertTrue(handler.isPaused());
+        assertFalse(inbound.config().isAutoRead());
+
+        outbound.pipeline().fireChannelInactive();
+
+        assertFalse(handler.isPaused());
+        assertEquals(1, ended.get());
+        assertTrue(inbound.config().isAutoRead());
+        outbound.finishAndReleaseAll();
+        inbound.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testChannelInactiveEndsPausedBackpressureWhenInboundClosed() {
+        EmbeddedChannel inbound = new EmbeddedChannel();
+        EmbeddedChannel outbound = new EmbeddedChannel();
+        outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
+
+        AtomicInteger ended = new AtomicInteger();
+        AtomicReference<Channel> callbackInbound = new AtomicReference<>();
+        BackpressureHandler.install(inbound, outbound,
+                (in, out) -> {
+                },
+                (in, out, e) -> {
+                    callbackInbound.set(in);
+                    ended.incrementAndGet();
+                });
+        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+
+        outbound.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+        outbound.pipeline().fireChannelWritabilityChanged();
+        assertTrue(handler.isPaused());
+
+        inbound.close().syncUninterruptibly();
+        outbound.pipeline().fireChannelInactive();
+
+        assertFalse(handler.isPaused());
+        assertEquals(1, ended.get());
+        assertSame(inbound, callbackInbound.get());
+        outbound.finishAndReleaseAll();
+        inbound.finishAndReleaseAll();
+    }
 }
