@@ -57,6 +57,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             AttributeKey.valueOf("udp2rawRouteMap");
 
     public static final Udp2rawHandler DEFAULT = new Udp2rawHandler();
+    private static final String METRIC_PREFIX = "socks.udp2raw";
     static final short STREAM_MAGIC = -21264;
     static final byte STREAM_VERSION = 1;
 
@@ -164,7 +165,12 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
         DatagramPacket packet = new DatagramPacket(inBuf.retain(), clientEp.socketAddress());
         SocksUserTraffic.recordRead(relay, context, packet.content().readableBytes(), 1L);
-        relay.writeAndFlush(packet);
+        Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, config, METRIC_PREFIX,
+                "flow=client-response");
+        if (result != Sockets.UdpWriteResult.ACCEPTED) {
+            log.warn("UDP2RAW[{}] client drop response {} => {} result={}",
+                    config.getListenPort(), srcEp, clientEp, result);
+        }
     }
 
     //endregion
@@ -266,7 +272,14 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                 ((SocksUdpUpstream) sc.getUpstream()).recordUdpTraffic(relay, trafficBytes);
             }
             SocksUserTraffic.recordRead(relay, sc, trafficBytes, 1L);
-            relay.writeAndFlush(new DatagramPacket(outBufCom, clientAddr));
+            DatagramPacket packet = new DatagramPacket(outBufCom, clientAddr);
+            outBufCom = null;
+            Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, config, METRIC_PREFIX,
+                    "flow=server-response");
+            if (result != Sockets.UdpWriteResult.ACCEPTED) {
+                log.warn("UDP2RAW[{}] server drop response {} => {} result={}",
+                        config.getListenPort(), dstEp, clientAddr, result);
+            }
         } catch (Throwable e) {
             Bytes.release(outBufCom);
             throw e;
@@ -313,7 +326,14 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
                 ((SocksUdpUpstream) upstream).recordUdpTraffic(relay, trafficBytes);
             }
             SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
-            relay.writeAndFlush(new DatagramPacket(outBuf, targetAddr));
+            DatagramPacket packet = new DatagramPacket(outBuf, targetAddr);
+            outBuf = null;
+            Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, config, METRIC_PREFIX,
+                    "flow=client-request");
+            if (result != Sockets.UdpWriteResult.ACCEPTED) {
+                log.warn("UDP2RAW[{}] client drop request {} => {}[{}] result={}",
+                        config.getListenPort(), clientEp, targetAddr, upDstEp, result);
+            }
         } catch (Throwable ex) {
             Bytes.release(outBuf);
             throw ex;
@@ -348,7 +368,12 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
             ((SocksUdpUpstream) upstream).recordUdpTraffic(relay, trafficBytes);
         }
         SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
-        relay.writeAndFlush(new DatagramPacket(outBuf, upDstAddr));
+        Sockets.UdpWriteResult result = Sockets.writeUdp(relay, new DatagramPacket(outBuf, upDstAddr),
+                config, METRIC_PREFIX, "flow=server-request");
+        if (result != Sockets.UdpWriteResult.ACCEPTED) {
+            log.warn("UDP2RAW[{}] server drop request {}[{}] => {} result={}",
+                    config.getListenPort(), sender, clientEp, upDstEp, result);
+        }
     }
 
     private static void registerRelayTargets(Channel relay, Upstream upstream, InetSocketAddress selected,

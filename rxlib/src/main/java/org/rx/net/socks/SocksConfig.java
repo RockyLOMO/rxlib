@@ -60,7 +60,6 @@ public class SocksConfig extends SocketConfig {
     private int udp2rawBadAuthFuseSeconds = 30;
     private int udp2rawPeerRateLimitPerSecond;
     private int udp2rawPeerRateLimitBurst;
-    private AuthenticEndpoint kcptunClient;
     private boolean tcpWarmPoolEnabled;
     private int tcpWarmPoolMinSize = 2;
     private int tcpWarmPoolMaxIdleMillis = 60_000;
@@ -284,7 +283,7 @@ public class SocksConfig extends SocketConfig {
     public boolean isUdpPortHoppingEnabled() {
         return udpPortHopping != null && udpPortHopping.isEnabled()
                 && (udpPortHopping.getHopCount() > 1
-                || (udpPortHopping.isAdaptive() && udpPortHopping.getMaxHopCount() > 1));
+                        || (udpPortHopping.isAdaptive() && udpPortHopping.getMaxHopCount() > 1));
     }
 
     public void setUdp2rawSessionIdleSeconds(int udp2rawSessionIdleSeconds) {

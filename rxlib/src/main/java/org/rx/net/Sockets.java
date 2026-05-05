@@ -91,6 +91,7 @@ public final class Sockets {
         CHANNEL_INACTIVE,
         CHANNEL_UNWRITABLE,
         UNRESOLVED_RECIPIENT,
+        MTU_EXCEEDED,
         PENDING_OVERLIMIT,
         WRITE_THROWN
     }
@@ -1048,7 +1049,22 @@ public final class Sockets {
 
     public static UdpWriteResult writeUdp(Channel channel, DatagramPacket packet, String metricPrefix, String tags,
                                           ChannelFutureListener completionListener) {
-        if (channel == null || packet == null) {
+        return writeUdp(channel, packet, null, metricPrefix, tags, completionListener);
+    }
+
+    public static UdpWriteResult writeUdp(Channel channel, DatagramPacket packet, SocketConfig config,
+                                          String metricPrefix, String tags) {
+        return writeUdp(channel, packet, config, metricPrefix, tags, null);
+    }
+
+    public static UdpWriteResult writeUdp(Channel channel, DatagramPacket packet, SocketConfig config,
+                                          String metricPrefix, String tags,
+                                          ChannelFutureListener completionListener) {
+        if (packet == null) {
+            return UdpWriteResult.WRITE_THROWN;
+        }
+        if (channel == null) {
+            releaseUdpPacket(packet, metricPrefix, tags, "null-channel", 0, 0);
             return UdpWriteResult.WRITE_THROWN;
         }
 
@@ -1063,6 +1079,12 @@ public final class Sockets {
             releaseUdpPacket(packet, metricPrefix, tags, "unresolved-recipient", 0, udpWriteLimitBytes(channel));
             log.warn("UDP write drop unresolved recipient channel={} recipient={}", channel, recipient);
             return UdpWriteResult.UNRESOLVED_RECIPIENT;
+        }
+
+        int udpMtu = udpMtu(channel, config);
+        if (udpMtu > 0 && bytes > udpMtu) {
+            releaseUdpPacketByMtu(packet, metricPrefix, tags, bytes, udpMtu);
+            return UdpWriteResult.MTU_EXCEEDED;
         }
 
         AtomicInteger pendingBytes = udpPendingWriteBytesState(channel);
@@ -1127,6 +1149,11 @@ public final class Sockets {
         return DEFAULT_UDP_WRITE_LIMIT_BYTES;
     }
 
+    private static int udpMtu(Channel channel, SocketConfig override) {
+        SocketConfig config = override != null ? override : channel.attr(SocketConfig.ATTR_CONF).get();
+        return config != null ? Math.max(0, config.getUdpMtu()) : 0;
+    }
+
     private static AtomicInteger udpPendingWriteBytesState(Channel channel) {
         AtomicInteger state = channel.attr(ATTR_UDP_PENDING_WRITE_BYTES).get();
         if (state != null) {
@@ -1147,6 +1174,16 @@ public final class Sockets {
         if (queuedBytes > 0) {
             recordUdpMetric(metricPrefix, "pending.write.bytes", metricTags, queuedBytes);
         }
+    }
+
+    private static void releaseUdpPacketByMtu(DatagramPacket packet, String metricPrefix, String tags,
+                                              int bytes, int udpMtu) {
+        Bytes.release(packet);
+        String metricTags = appendUdpMetricTags(tags,
+                "reason=mtu-exceeded,mtuBucket=" + udpMtuBucket(udpMtu));
+        recordUdpMetric(metricPrefix, "drop.count", metricTags);
+        recordUdpMetric(metricPrefix, "mtu.drop.count", metricTags);
+        recordUdpMetric(metricPrefix, "mtu.drop.bytes", metricTags, bytes);
     }
 
     private static void recordUdpMetric(String metricPrefix, String suffix, String tags) {
@@ -1201,6 +1238,22 @@ public final class Sockets {
             return "lte1m";
         }
         return "gt1m";
+    }
+
+    private static String udpMtuBucket(int udpMtu) {
+        if (udpMtu <= 1200) {
+            return "lte1200";
+        }
+        if (udpMtu <= 1300) {
+            return "lte1300";
+        }
+        if (udpMtu <= 1400) {
+            return "lte1400";
+        }
+        if (udpMtu <= 1500) {
+            return "lte1500";
+        }
+        return "gt1500";
     }
 
     /**

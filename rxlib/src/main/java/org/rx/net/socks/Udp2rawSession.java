@@ -110,7 +110,7 @@ final class Udp2rawSession {
         }
         int trafficBytes = payload.readableBytes();
         DatagramPacket packet = new DatagramPacket(payload, target);
-        Sockets.UdpWriteResult result = Sockets.writeUdp(natChannel, packet, METRIC_PREFIX,
+        Sockets.UdpWriteResult result = Sockets.writeUdp(natChannel, packet, context.manager.server.getConfig(), METRIC_PREFIX,
                 "flow=to-destination");
         if (result != Sockets.UdpWriteResult.ACCEPTED) {
             log.warn("udp2raw drop packet to destination {} result={}", target, result);
