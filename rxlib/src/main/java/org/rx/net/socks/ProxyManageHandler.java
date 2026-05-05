@@ -44,7 +44,9 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         InetSocketAddress realEp = resolveRemoteAddress(ctx);
         if (realEp == null || realEp.getAddress() == null) {
             log.warn("TrafficUser {} bind skipped due to unresolved remote address", this.trafficUser.getUsername());
-            SocksUserTraffic.bind(ctx.channel(), TrafficUser.ANONYMOUS, null);
+            this.trafficUser = TrafficUser.ANONYMOUS;
+            info = null;
+            SocksUserTraffic.bind(ctx.channel(), this.trafficUser, null);
             return;
         }
         info = this.trafficUser.getLoginIps().computeIfAbsent(realEp.getAddress(), ip -> new TrafficLoginInfo());

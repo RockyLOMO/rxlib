@@ -72,6 +72,7 @@
 - `docs/plan/review-socks-proxy-server.md`
 - `rxlib/src/main/java/org/rx/net/socks/SocksProxyServer.java`
 - `rxlib/src/main/java/org/rx/net/socks/ProxyManageHandler.java`
+- `rxlib/src/test/java/org/rx/net/socks/SocksProxyServerTest.java`
 
 # 风险点处理进度
 
@@ -87,17 +88,28 @@
 - [x] `dispose` 原先直接遍历 `udpRelayRegistry.values()`，close listener 同时可能修改 registry。现改为 `toArray(new Channel[0])` 快照遍历后关闭，再 clear registry。
 - [x] `activeChannels` 原先 closeFuture 中直接 decrement，异常重复关闭或外部 channel 复用场景存在负数风险。现使用 `updateAndGet(v -> v > 0 ? v - 1 : 0)` 防负数。
 - [x] `ProxyManageHandler.setUser` 原先直接依赖 `Sockets.getOriginRemoteAddress(ctx.channel())` 并读取 `getAddress()`，memory/local channel 或未解析远端地址可能 NPE。现增加 `resolveRemoteAddress`，优先 origin remote，失败则尝试 `channel.remoteAddress()`；仍无法解析时绑定 anonymous 并返回。
+- [x] `ProxyManageHandler.setUser` 在未解析远端地址时原先只把 channel attribute 绑定 anonymous，但 handler 内部仍保留真实 `TrafficUser`。现同步将内部 `trafficUser` 降级为 anonymous，并清空 `info`，避免后续 TCP/UDP context 或 session 统计继续使用未绑定真实用户。
 - [x] `ProxyManageHandler.channelInactive` 的 remote 地址也改为同一解析逻辑，避免诊断与日志路径空地址异常。
 - [x] RPC token 暴露边界已复核：`SocksRpcContract` 只声明带 token 的远程管理方法；`SocksProxyServer` 保留无 token public 方法作为本地 API，不调整可见性以避免破坏兼容性。
+- [x] 已补充 `SocksProxyServerTest.testTrafficUserFallsBackToAnonymousWhenRemoteAddressUnresolved`，覆盖未解析远端地址时的 anonymous 降级。
 
 ## 未在本轮修改的项
 
-- [ ] 未新增测试代码。原因是用户明确要求先忽略 CI，本轮优先完成业务防护与文档进度更新；后续仍建议补 `SocksProxyServerTest` / `ProxyManageHandler` 相关测试。
 - [ ] 未改变 RPC 方法签名或 public API。原因是兼容性风险高，且 contract 层远程暴露面已经是带 token 方法。
 
 # 验证方案
 
-本轮按用户要求未触发 CI。后续需要验证时建议执行：
+本轮未触发 GitHub Actions CI，已执行本地 Java 8 Maven 验证：
+
+1. `mvn -pl rxlib "-Dtest=SocksProxyServerTest" test`
+   - 结果：通过，7 个用例全部成功。
+2. `mvn -pl rxlib "-Dtest=SocksProxyServerIntegrationTest#shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e" test`
+   - 结果：通过，单独运行该集成用例成功。
+3. `mvn -pl rxlib "-Dtest=SocksProxyServerTest,SocksProxyServerIntegrationTest,Socks5CommandRequestHandlerTest,SocksUdpRelayHandlerTest,Udp2rawFixedEntryIntegrationTest" test`
+   - 结果：失败，51 个用例中 50 个通过；`SocksProxyServerIntegrationTest.shadowsocksUdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e` 在整组串跑时出现一次 payload 长度断言失败：expected 320, actual 288。
+   - 备注：该用例单独运行通过，失败路径是 Shadowsocks UDP -> udp2raw fixed entry -> compress/redundant 组合，表现为整组运行时的 UDP redundant/compress 集成抖动，暂未归因到本轮 `SocksProxyServer` / `ProxyManageHandler` 修改。
+
+后续需要 CI 验证时建议执行：
 
 1. 触发 `.github/workflows/jdk8-unit-tests.yml`，使用 `workflow_dispatch`。
 2. `test_classes` 优先带：
@@ -119,6 +131,7 @@
 
 # 剩余风险
 
-- CI 未运行，JDK8 编译和单元测试结果未知。
-- 未补自动化测试，重复 UDP relay、relay event loop timeout、memory/local channel traffic binding 等场景建议后续补测。
+- CI 未运行，GitHub Actions 结果未知。
+- 本地目标测试集存在 1 个整组串跑失败但单独运行通过的 UDP compress/redundant 集成抖动，需要后续单独排查是否有测试间 UDP 残留、端口复用或 redundant 序列状态隔离问题。
+- 重复 UDP relay、relay event loop timeout 等场景仍建议继续补更细粒度单元测试。
 - `withUdpRelay` 超时返回 `false` 是安全降级，但在极端 event loop 卡顿时管理操作可能失败，需要调用方按 false 处理重试或上报。
