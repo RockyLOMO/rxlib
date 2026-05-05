@@ -199,11 +199,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
     static boolean shouldTrackRedundantClientPeer(SocksConfig config,
             InetSocketAddress clientTcpAddr, InetSocketAddress tcpPeerAddr, boolean udp2raw) {
-        if (!UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config, udp2raw)) {
-            return false;
-        }
-        return config.isUdpRedundantTrackClientPeer()
-                || (clientTcpAddr != null && tcpPeerAddr != null && !clientTcpAddr.equals(tcpPeerAddr));
+        return UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config, udp2raw);
     }
 
     private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {

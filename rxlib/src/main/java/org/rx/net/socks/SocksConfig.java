@@ -82,12 +82,7 @@ public class SocksConfig extends SocketConfig {
     /**
      * SOCKS UDP RDNT 方向控制。只决定登记 request/response 哪个方向的 peer。
      */
-    private UdpRedundantMode socksUdpRedundantMode = UdpRedundantMode.BIDIRECTIONAL;
-    /**
-     * 是否允许 UDP relay 把真实 client UDP sender 登记为 RDNT peer。
-     * 仅建议在 rxlib A<->B 标准 SOCKS5 fallback 链路的 B 侧开启。
-     */
-    private boolean udpRedundantTrackClientPeer;
+    private UdpRedundantMode socksUdpRedundantMode = UdpRedundantMode.REQUEST_ONLY;
     /**
      * UDP 单包压缩配置。
      * 仅对代理链上的隧道对端生效，用于回收多倍发包带来的带宽开销。
@@ -104,7 +99,7 @@ public class SocksConfig extends SocketConfig {
     /**
      * udp2raw payload RDNT 方向控制。默认双向，保持旧配置兼容。
      */
-    private Udp2rawRedundantMode udp2rawRedundantMode = Udp2rawRedundantMode.BIDIRECTIONAL;
+    private UdpRedundantMode udp2rawRedundantMode = UdpRedundantMode.BIDIRECTIONAL;
     private boolean udp2rawRequireRpc = true;
     private int udp2rawBadAuthThreshold = 8;
     private int udp2rawBadAuthFuseSeconds = 30;
@@ -234,7 +229,7 @@ public class SocksConfig extends SocketConfig {
 
     public void setSocksUdpRedundantMode(UdpRedundantMode socksUdpRedundantMode) {
         this.socksUdpRedundantMode = socksUdpRedundantMode != null
-                ? socksUdpRedundantMode : UdpRedundantMode.BIDIRECTIONAL;
+                ? socksUdpRedundantMode : UdpRedundantMode.REQUEST_ONLY;
     }
 
     public void setUdpRedundantAdaptive(boolean adaptive) {
@@ -324,9 +319,9 @@ public class SocksConfig extends SocketConfig {
         this.udp2rawAuthMode = udp2rawAuthMode != null ? udp2rawAuthMode : Udp2rawAuthMode.FIRST_PACKET_MAC;
     }
 
-    public void setUdp2rawRedundantMode(Udp2rawRedundantMode udp2rawRedundantMode) {
+    public void setUdp2rawRedundantMode(UdpRedundantMode udp2rawRedundantMode) {
         this.udp2rawRedundantMode = udp2rawRedundantMode != null
-                ? udp2rawRedundantMode : Udp2rawRedundantMode.BIDIRECTIONAL;
+                ? udp2rawRedundantMode : UdpRedundantMode.BIDIRECTIONAL;
     }
 
     public void setUdp2rawBadAuthThreshold(int udp2rawBadAuthThreshold) {

@@ -22,29 +22,31 @@ public final class UdpRedundantSupport {
     }
 
     public static boolean allowUdp2rawRequest(SocksConfig config) {
-        return udp2rawMode(config != null ? config.getUdp2rawRedundantMode() : null).allowRequest();
+        return modeOrDefault(config != null ? config.getUdp2rawRedundantMode() : null,
+                UdpRedundantMode.BIDIRECTIONAL).allowRequest();
     }
 
     public static boolean allowUdp2rawResponse(SocksConfig config) {
-        return udp2rawMode(config != null ? config.getUdp2rawRedundantMode() : null).allowResponse();
+        return modeOrDefault(config != null ? config.getUdp2rawRedundantMode() : null,
+                UdpRedundantMode.BIDIRECTIONAL).allowResponse();
     }
 
     public static UdpRedundantConfig udp2rawConfigForRequest(UdpRedundantConfig config,
-            Udp2rawRedundantMode mode) {
-        return udp2rawMode(mode).allowRequest() ? config : null;
+            UdpRedundantMode mode) {
+        return modeOrDefault(mode, UdpRedundantMode.BIDIRECTIONAL).allowRequest() ? config : null;
     }
 
     public static UdpRedundantConfig udp2rawConfigForResponse(UdpRedundantConfig config,
-            Udp2rawRedundantMode mode) {
-        return udp2rawMode(mode).allowResponse() ? config : null;
-    }
-
-    public static UdpRedundantMode udp2rawMode(Udp2rawRedundantMode mode) {
-        return mode != null ? mode.toCommonMode() : UdpRedundantMode.BIDIRECTIONAL;
+            UdpRedundantMode mode) {
+        return modeOrDefault(mode, UdpRedundantMode.BIDIRECTIONAL).allowResponse() ? config : null;
     }
 
     private static UdpRedundantMode socksMode(SocksConfig config) {
         UdpRedundantMode mode = config != null ? config.getSocksUdpRedundantMode() : null;
-        return mode != null ? mode : UdpRedundantMode.BIDIRECTIONAL;
+        return modeOrDefault(mode, UdpRedundantMode.REQUEST_ONLY);
+    }
+
+    private static UdpRedundantMode modeOrDefault(UdpRedundantMode mode, UdpRedundantMode defaultMode) {
+        return mode != null ? mode : defaultMode;
     }
 }

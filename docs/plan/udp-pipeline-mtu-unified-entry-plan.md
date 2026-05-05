@@ -81,16 +81,9 @@ final egress drop 当前设计为：
 
 ## 1. 公共方向抽象
 
-新增公共方向枚举：
+新增唯一公共方向枚举：
 
 - `UdpRedundantMode`
-  - `REQUEST_ONLY`
-  - `RESPONSE_ONLY`
-  - `BIDIRECTIONAL`
-
-新增 udp2raw 方向枚举：
-
-- `Udp2rawRedundantMode`
   - `REQUEST_ONLY`
   - `RESPONSE_ONLY`
   - `BIDIRECTIONAL`
@@ -108,11 +101,25 @@ final egress drop 当前设计为：
 新增：
 
 ```java
-private UdpRedundantMode socksUdpRedundantMode = UdpRedundantMode.BIDIRECTIONAL;
-private Udp2rawRedundantMode udp2rawRedundantMode = Udp2rawRedundantMode.BIDIRECTIONAL;
+private UdpRedundantMode socksUdpRedundantMode = UdpRedundantMode.REQUEST_ONLY;
+private UdpRedundantMode udp2rawRedundantMode = UdpRedundantMode.BIDIRECTIONAL;
 ```
 
-setter 均为 null-safe，传入 null 时恢复 `BIDIRECTIONAL`。
+实际默认：
+
+- `socksUdpRedundantMode = REQUEST_ONLY`：保护普通 SOCKS5 UDP client，默认不向 client 响应方向加 RDNT 头。
+- `udp2rawRedundantMode = BIDIRECTIONAL`：保持 udp2raw tunnel payload redundant 旧语义。
+
+setter 均为 null-safe：
+
+- `setSocksUdpRedundantMode(null)` 恢复 `REQUEST_ONLY`。
+- `setUdp2rawRedundantMode(null)` 恢复 `BIDIRECTIONAL`。
+
+`udpRedundantTrackClientPeer` 已移除，由 `socksUdpRedundantMode` 明确表达：
+
+- `REQUEST_ONLY`：只登记上游 request peer。
+- `RESPONSE_ONLY`：只登记 client response peer。
+- `BIDIRECTIONAL`：同时登记 request/response peer。
 
 ## 3. SOCKS UDP 接入
 
@@ -129,6 +136,8 @@ SOCKS UDP 方向语义：
   - `shouldTrackClientAsRedundantPeer(config, udp2raw)` 按 response 方向判断。
 - `SocksUdpUpstream`
   - 仅在 redundant 已配置且 request 方向允许时登记上游 relay peer。
+- `RssServer`
+  - 原 `udpRedundantTrackClientPeer=true` 迁移为 `socksUdpRedundantMode=BIDIRECTIONAL`。
 
 优化：
 

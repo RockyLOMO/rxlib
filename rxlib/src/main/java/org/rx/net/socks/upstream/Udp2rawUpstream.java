@@ -27,10 +27,10 @@ import org.rx.net.socks.Udp2rawFrameType;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.socks.Udp2rawPayloadSupport;
-import org.rx.net.socks.Udp2rawRedundantMode;
 import org.rx.net.socks.Udp2rawSeqWindow;
 import org.rx.net.socks.UdpManager;
 import org.rx.net.socks.UdpRedundantConfig;
+import org.rx.net.socks.UdpRedundantMode;
 import org.rx.net.socks.UdpRedundantMultiplierResolver;
 import org.rx.net.socks.UdpRedundantSupport;
 import org.rx.net.socks.UdpRedundantStats;
@@ -620,7 +620,7 @@ public class Udp2rawUpstream extends Upstream {
         final UdpCompressConfig compressConfig;
         final UdpCompressStats compressStats;
         final UdpRedundantConfig redundantConfig;
-        final Udp2rawRedundantMode redundantMode;
+        final UdpRedundantMode redundantMode;
         final UdpRedundantMultiplierResolver redundantResolver;
         final UdpRedundantStats redundantStats;
         final long expireAtMillis;
@@ -635,7 +635,7 @@ public class Udp2rawUpstream extends Upstream {
         TunnelState(SocksRpcContract facade, String tunnelId, long sessionHi, long sessionLo,
                 byte[] sessionSecret, InetSocketAddress udpEntryAddress,
                 Udp2rawAuthMode authMode, UdpCompressConfig compressConfig,
-                UdpRedundantConfig redundantConfig, Udp2rawRedundantMode redundantMode,
+                UdpRedundantConfig redundantConfig, UdpRedundantMode redundantMode,
                 long expireAtMillis) {
             this.facade = facade;
             this.tunnelId = tunnelId;
@@ -648,7 +648,7 @@ public class Udp2rawUpstream extends Upstream {
             this.compressStats = Udp2rawPayloadSupport.isCompressEnabled(compressConfig)
                     ? new UdpCompressStats(compressConfig) : null;
             this.redundantConfig = redundantConfig;
-            this.redundantMode = redundantMode != null ? redundantMode : Udp2rawRedundantMode.BIDIRECTIONAL;
+            this.redundantMode = redundantMode != null ? redundantMode : UdpRedundantMode.BIDIRECTIONAL;
             this.redundantResolver = Udp2rawPayloadSupport.isRedundantEnabled(redundantConfig)
                     ? redundantConfig.buildMultiplierResolver() : null;
             this.redundantStats = Udp2rawPayloadSupport.newAdaptiveStats(redundantConfig);

@@ -774,6 +774,7 @@ public class UdpRedundantTest {
     public void testRpcRelayGroupAddsClientSenderAsRedundantPeerWhenEnabled() {
         SocksConfig config = new SocksConfig();
         config.setUdpRedundantMultiplier(2);
+        config.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
         EmbeddedChannel relay = new EmbeddedChannel();
         InetSocketAddress client = new InetSocketAddress("127.0.0.1", 53000);
 
@@ -811,20 +812,20 @@ public class UdpRedundantTest {
 
         config.setSocksUdpRedundantMode(null);
         assertTrue(UdpRedundantSupport.allowSocksUdpRequest(config));
-        assertTrue(UdpRedundantSupport.allowSocksUdpResponse(config));
+        assertFalse(UdpRedundantSupport.allowSocksUdpResponse(config));
     }
 
     @Test
-    public void testUdp2rawRedundantModeControlsDirection() {
+    public void testUdp2rawUsesCommonRedundantModeControlsDirection() {
         SocksConfig config = new SocksConfig();
         config.setUdpRedundantMultiplier(2);
 
-        config.setUdp2rawRedundantMode(Udp2rawRedundantMode.REQUEST_ONLY);
+        config.setUdp2rawRedundantMode(UdpRedundantMode.REQUEST_ONLY);
         assertTrue(UdpRedundantSupport.allowUdp2rawRequest(config));
         assertFalse(UdpRedundantSupport.allowUdp2rawResponse(config));
         assertFalse(UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config, true));
 
-        config.setUdp2rawRedundantMode(Udp2rawRedundantMode.RESPONSE_ONLY);
+        config.setUdp2rawRedundantMode(UdpRedundantMode.RESPONSE_ONLY);
         assertFalse(UdpRedundantSupport.allowUdp2rawRequest(config));
         assertTrue(UdpRedundantSupport.allowUdp2rawResponse(config));
         assertTrue(UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config, true));
@@ -837,10 +838,10 @@ public class UdpRedundantTest {
         InetSocketAddress origin = new InetSocketAddress("127.0.0.1", 53010);
         InetSocketAddress peer = new InetSocketAddress("127.0.0.2", 53010);
 
-        config.setUdp2rawRedundantMode(Udp2rawRedundantMode.REQUEST_ONLY);
+        config.setUdp2rawRedundantMode(UdpRedundantMode.REQUEST_ONLY);
         assertFalse(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer, true));
 
-        config.setUdp2rawRedundantMode(Udp2rawRedundantMode.RESPONSE_ONLY);
+        config.setUdp2rawRedundantMode(UdpRedundantMode.RESPONSE_ONLY);
         assertTrue(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer, true));
 
         config.setSocksUdpRedundantMode(UdpRedundantMode.REQUEST_ONLY);
@@ -856,7 +857,7 @@ public class UdpRedundantTest {
         try {
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(request,
                     Unpooled.copiedBuffer("request".getBytes(StandardCharsets.UTF_8)), REMOTE,
-                    UdpRedundantSupport.udp2rawConfigForRequest(config, Udp2rawRedundantMode.REQUEST_ONLY),
+                    UdpRedundantSupport.udp2rawConfigForRequest(config, UdpRedundantMode.REQUEST_ONLY),
                     null, null, "flow=request");
             assertEquals(Sockets.UdpWriteResult.ACCEPTED, result);
             assertEquals(3, drainOutbound(request));
@@ -868,7 +869,7 @@ public class UdpRedundantTest {
         try {
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(skippedResponse,
                     Unpooled.copiedBuffer("response".getBytes(StandardCharsets.UTF_8)), REMOTE,
-                    UdpRedundantSupport.udp2rawConfigForResponse(config, Udp2rawRedundantMode.REQUEST_ONLY),
+                    UdpRedundantSupport.udp2rawConfigForResponse(config, UdpRedundantMode.REQUEST_ONLY),
                     null, null, "flow=response");
             assertEquals(Sockets.UdpWriteResult.ACCEPTED, result);
             assertEquals(1, drainOutbound(skippedResponse));
@@ -880,7 +881,7 @@ public class UdpRedundantTest {
         try {
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(response,
                     Unpooled.copiedBuffer("response".getBytes(StandardCharsets.UTF_8)), REMOTE,
-                    UdpRedundantSupport.udp2rawConfigForResponse(config, Udp2rawRedundantMode.RESPONSE_ONLY),
+                    UdpRedundantSupport.udp2rawConfigForResponse(config, UdpRedundantMode.RESPONSE_ONLY),
                     null, null, "flow=response");
             assertEquals(Sockets.UdpWriteResult.ACCEPTED, result);
             assertEquals(3, drainOutbound(response));
