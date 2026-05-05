@@ -29,6 +29,7 @@ DEPLOY_MODE=${DEPLOY_MODE:-replace}
 DEPLOY_ID=${DEPLOY_ID:-$(date +%Y%m%d_%H%M%S)_$$}
 # 明确打开才允许旧式重启；默认绝不因新进程失败而杀掉唯一旧实例。
 REUSEPORT_MIGRATION_FALLBACK=${REUSEPORT_MIGRATION_FALLBACK:-0}
+ROLLBACK_ON_LEGACY_FALLBACK_FAILURE=${ROLLBACK_ON_LEGACY_FALLBACK_FAILURE:-1}
 DEPLOY_SLOTS=(a b)
 if ! [[ "${MAX_LIVE_PROCESSES}" =~ ^[0-9]+$ ]] || [ "${MAX_LIVE_PROCESSES}" -lt 1 ]; then
     MAX_LIVE_PROCESSES=2
@@ -294,6 +295,39 @@ pid_listens_on_procfs() {
     return 1
 }
 
+pids_listening_on_procfs() {
+    local port="$1"
+    local inodes pid_dir pid fd link inode
+
+    inodes=$(listener_inodes_for_port "${port}")
+    [ -n "${inodes}" ] || return 1
+
+    for pid_dir in /proc/[0-9]*; do
+        [ -d "${pid_dir}/fd" ] || continue
+        pid=${pid_dir#/proc/}
+        for fd in "${pid_dir}"/fd/*; do
+            [ -e "${fd}" ] || continue
+            link=$(readlink "${fd}" 2>/dev/null) || continue
+            case "${link}" in
+                socket:\[*\])
+                    inode=${link#socket:[}
+                    inode=${inode%]}
+                    if printf '%s\n' "${inodes}" | grep -Fxq "${inode}"; then
+                        echo "${pid}"
+                        break
+                    fi
+                    ;;
+            esac
+        done
+    done | sort -n -u
+}
+
+pids_listening_on() {
+    local port="$1"
+    pids_listening_on_procfs "${port}" && return 0
+    return 1
+}
+
 pid_listens_on() {
     local pid="$1"
     local port="$2"
@@ -329,15 +363,64 @@ any_required_port_in_use() {
     return 1
 }
 
+matching_process_owns_required_port() {
+    local pid port
+    while IFS= read -r pid; do
+        [ -z "${pid}" ] && continue
+        for port in "${REQUIRED_TCP_PORTS[@]}"; do
+            if pid_listens_on "${pid}" "${port}"; then
+                return 0
+            fi
+        done
+    done <<EOF
+$(process_pids)
+EOF
+    return 1
+}
+
 print_required_port_status() {
-    local port state
+    local port state owners
     for port in "${REQUIRED_TCP_PORTS[@]}"; do
         state="free"
+        owners=""
         if port_in_use "${port}"; then
             state="in-use"
+            owners=$(pids_listening_on "${port}" | tr '\n' ' ' | sed 's/[[:space:]]*$//')
         fi
-        echo "${YELLOW}[${LOCAL_TIME}] port ${port}/tcp ${state}${NC}"
+        if [ -n "${owners}" ]; then
+            echo "${YELLOW}[${LOCAL_TIME}] port ${port}/tcp ${state}, listenerPids=${owners}${NC}"
+        else
+            echo "${YELLOW}[${LOCAL_TIME}] port ${port}/tcp ${state}${NC}"
+        fi
     done
+}
+
+print_candidate_port_status() {
+    local pid port ports candidates any args
+    candidates=$(candidate_pids)
+    if [ -z "${candidates}" ]; then
+        echo "${YELLOW}[${LOCAL_TIME}] 未找到本次启动候选 PID deployId=${DEPLOY_ID}${NC}"
+        return 0
+    fi
+
+    while IFS= read -r pid; do
+        [ -z "${pid}" ] && continue
+        ports=""
+        for port in "${REQUIRED_TCP_PORTS[@]}"; do
+            if pid_listens_on "${pid}" "${port}"; then
+                ports="${ports} ${port}=LISTEN"
+            else
+                ports="${ports} ${port}=NO"
+            fi
+        done
+        any="dead"
+        pid_alive "${pid}" && any="alive"
+        echo "${YELLOW}[${LOCAL_TIME}] 候选进程 pid=${pid} ${any}${ports}${NC}"
+        args=$(pid_args "${pid}")
+        [ -n "${args}" ] && echo "  args=${args}"
+    done <<EOF
+${candidates}
+EOF
 }
 
 write_drain_token() {
@@ -500,6 +583,7 @@ EOF
     done
 
     echo "${RED}[${LOCAL_TIME}] 新进程启动失败：未确认 PID 绑定全部必需端口 deployId=${DEPLOY_ID}, slot=${NEW_SLOT}${NC}"
+    print_candidate_port_status
     print_required_port_status
     if [ -f "${log_file}" ]; then
         tail -n 100 "${log_file}" || true
@@ -511,8 +595,12 @@ EOF
 last_start_looks_first_migration_conflict() {
     local log_file
     log_file=$(slot_log_file "${NEW_SLOT:-a}")
-    [ -f "${log_file}" ] || return 1
-    grep -Eiq "Address already in use|BindException|EADDRINUSE|bind .*fail|bind .*failed|Database may be already in use|database is already in use|Locked by another process|File lock|JdbcSQLNonTransientConnectionException" "${log_file}"
+    if [ -f "${log_file}" ] && grep -Eiq "Address already in use|BindException|EADDRINUSE|bind .*fail|bind .*failed|Database may be already in use|database is already in use|Locked by another process|File lock|JdbcSQLNonTransientConnectionException" "${log_file}"; then
+        return 0
+    fi
+
+    # 首次迁移时旧进程可能不是同一套 SO_REUSEPORT/H2 兼容参数，日志不一定及时刷出异常。
+    matching_process_owns_required_port
 }
 
 publish_jar() {
@@ -569,17 +657,30 @@ publish_release() {
 }
 
 publish_with_legacy_restart() {
-    local slot
+    local slot base_deploy_id
     echo "${YELLOW}[${LOCAL_TIME}] 同端口并行启动失败，执行显式开启的首次迁移兼容重启${NC}"
+    base_deploy_id="${DEPLOY_ID}"
     slot=$(select_start_slot) || slot="a"
     while IFS= read -r pid; do
         drain_process_and_wait "${pid}" "" "兼容迁移旧进程" || return 1
     done <<EOF
 $(process_pids)
 EOF
-    DEPLOY_ID="${DEPLOY_ID}_legacy"
+    DEPLOY_ID="${base_deploy_id}_legacy"
     start_new_process "${slot}"
-    wait_for_new_process || return 1
+    if wait_for_new_process; then
+        echo "${GREEN}[${LOCAL_TIME}] 兼容迁移重启完成，新进程 PID=${NEW_PID}, slot=${slot}${NC}"
+        print_process_status
+        return 0
+    fi
+
+    echo "${RED}[${LOCAL_TIME}] 兼容迁移重启失败${NC}"
+    if [ "${ROLLBACK_ON_LEGACY_FALLBACK_FAILURE}" = "1" ]; then
+        echo "${YELLOW}[${LOCAL_TIME}] 尝试恢复 app.jar.latest 并启动旧版本${NC}"
+        DEPLOY_ID="${base_deploy_id}_rollback"
+        rollback_release || return 1
+    fi
+    return 1
 }
 
 start_if_absent() {
@@ -629,7 +730,7 @@ case "${ACTION}" in
         DEPLOY_MODE=$(normalize_deploy_mode "${DEPLOY_MODE}") || exit 1
         echo "${YELLOW}[${LOCAL_TIME}] 发布模式：mode=${DEPLOY_MODE}, SO_REUSEPORT=${REUSE_PORT_BIND_COUNT}, maxLive=${MAX_LIVE_PROCESSES}, drain=${DRAIN_TIMEOUT_SECONDS}s${NC}"
         if ! publish_release "${DEPLOY_MODE}"; then
-            if [ "${REUSEPORT_MIGRATION_FALLBACK}" = "1" ] && last_start_looks_first_migration_conflict; then
+            if [ "${DEPLOY_MODE}" = "replace" ] && [ "${REUSEPORT_MIGRATION_FALLBACK}" = "1" ] && last_start_looks_first_migration_conflict; then
                 publish_with_legacy_restart || exit 1
             else
                 exit 1
