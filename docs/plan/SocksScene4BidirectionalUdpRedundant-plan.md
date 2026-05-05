@@ -73,7 +73,7 @@ ShadowsocksClient(ip c)
 | 8 | 已完成 | `SocketConfig` 增加 UDP write limit 与 per-source soft limit；SS inbound 回包写入前做 per-source pending 保护。 |
 | 9 | 已完成 | UDP 指标 tag 收敛为低基数，不再携带 endpoint、动态端口、bytes、pool key 等高基数字段。 |
 | F1 | 已完成 | `SocksUdpRelayHandler` 只在 client sender 首次确认或变化时登记 RDNT client peer，避免每包 `InetSocketAddress` 分配和 CHM put。 |
-| F2 | 已完成 | `SocksConfig.udpRedundantTrackClientPeer` 显式控制标准 SOCKS5 fallback 下 B -> A RDNT，默认 false，避免普通 SOCKS5 client 被误打 RDNT。 |
+| F2 | 已完成 | `SocksConfig.socksUdpRedundantMode` 显式控制标准 SOCKS5 fallback 下 B -> A RDNT，默认 `REQUEST_ONLY`，避免普通 SOCKS5 client 被误打 RDNT。 |
 | F3 | 已完成 | `UdpRedundantEncoder` / `UdpRedundantDecoder` 对 delayed copy、pending、duplicate/window 指标增加 1/64 采样，计数类指标按倍率补偿。 |
 | F4 | 已完成 | `SSUdpProxyHandler.acquireOutboundChannel(...)` 对 `computeIfAbsent/openOutboundChannel` 抛异常增加 source count 兜底释放。 |
 
@@ -843,15 +843,15 @@ udpOutboundPoolMaxPerSource=128
 新增 follow-up 配置：
 
 ```properties
-# 仅在 rxlib A<->B 标准 SOCKS5 fallback 链路的 B 侧开启
-udpRedundantTrackClientPeer=false
+# 普通 SOCKS5 client 默认仅请求方向 RDNT
+socksUdpRedundantMode=REQUEST_ONLY
 ```
 
 场景4如果需要标准 SOCKS5 fallback 下也保证 B -> A RDNT：
 
 ```properties
 # Proxy B
-udpRedundantTrackClientPeer=true
+socksUdpRedundantMode=BIDIRECTIONAL
 ```
 
 ## 15. master 二次 review follow-up 合并
@@ -861,7 +861,7 @@ udpRedundantTrackClientPeer=true
 | 编号 | 问题 | 修复状态 | 关键变更 |
 | --- | --- | --- | --- |
 | F1 | B 侧双向 RDNT 后每包重复 `addRedundantPeer` | 已修复 | 新增 `UdpRelayAttributes.addRedundantClientPeerIfChanged(...)` 和 `ATTR_REDUNDANT_CLIENT_ADDR`，`SocksUdpRelayHandler` 只在 client sender 首次确认或变化时更新 peer。 |
-| F2 | 标准 SOCKS5 fallback 下 B -> A RDNT 仍依赖 `clientTcpAddr != tcpPeerAddr` 启发式 | 已修复 | `SocksConfig` 新增 `udpRedundantTrackClientPeer`；`Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(...)` 支持显式开启，同时默认保持 false。 |
+| F2 | 标准 SOCKS5 fallback 下 B -> A RDNT 仍依赖 `clientTcpAddr != tcpPeerAddr` 启发式 | 已修复 | `SocksConfig` 新增 `socksUdpRedundantMode`；`Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(...)` 按响应方向显式开启，同时默认 `REQUEST_ONLY`。 |
 | F3 | RDNT duplicate/delayed copy 指标低基数但仍高频 record | 已修复 | Encoder/Decoder 内部增加 1/64 固定采样；计数类指标用采样倍率补偿，pending/window gauge 记录采样时的当前值。 |
 | F4 | `OUTBOUND_POOL` source count 在 open 抛异常时可能泄漏 | 已修复 | `acquireOutboundChannel(...)` 包裹 `computeIfAbsent`，异常路径调用 `releaseOutboundSource(...)` 并记录 `result=error`。 |
 
@@ -869,8 +869,8 @@ udpRedundantTrackClientPeer=true
 
 ```text
 SocksUdpRelayHandlerTest#redundantClientPeerAddedOnlyWhenClientSenderChanges
-Socks5CommandRequestHandlerTest#redundantClientPeerTrackingRequiresExplicitFallbackFlagForSamePeer
-Socks5CommandRequestHandlerTest#redundantClientPeerTrackingKeepsExistingDifferentPeerHeuristic
+Socks5CommandRequestHandlerTest#redundantClientPeerTrackingRequiresResponseDirectionForSamePeer
+Socks5CommandRequestHandlerTest#redundantClientPeerTrackingDoesNotUseDifferentPeerHeuristic
 SSUdpProxyHandlerTest#outboundPoolSourceCountReleasedWhenOpenThrows
 UdpRedundantTest#testEncoderDelayedCopyMetricsAreSampled
 UdpRedundantTest#testDecoderDuplicateMetricsAreSampled
@@ -928,7 +928,7 @@ F4. OUTBOUND_POOL source count 异常路径兜底释放
 
 ```text
 ccaf7b7493dfe2c62ac2bb87eb1f15c7dbee33bf
-feat(socks): add udpRedundantTrackClientPeer config for A<->B fallback chain
+feat(socks): add explicit socks UDP redundant response mode for A<->B fallback chain
 ```
 
 复查代码范围：
@@ -967,7 +967,7 @@ rxlib/src/test/java/org/rx/net/socks/UdpRedundantTest.java
 | 8 | 已完成 | UDP write limit 与 SS inbound per-source pending soft limit 已落地。 |
 | 9 | 已完成 | UDP metrics tags 已收敛为低基数，动态 endpoint/port/key 不进入 tag。 |
 | F1 | 已完成 | `SocksUdpRelayHandler` 已只在 client sender 首次确认或变化时调用 `addRedundantClientPeerIfChanged(...)`，避免每包 CHM put。 |
-| F2 | 已完成 | `SocksConfig.udpRedundantTrackClientPeer` 已加入，标准 SOCKS5 fallback 可显式打开 B -> A RDNT，默认 false 保护普通 client。 |
+| F2 | 已完成 | `SocksConfig.socksUdpRedundantMode` 已加入，标准 SOCKS5 fallback 可显式打开 B -> A RDNT，默认 `REQUEST_ONLY` 保护普通 client。 |
 | F3 | 已完成 | `UdpRedundantEncoder` / `UdpRedundantDecoder` 已加入 `METRIC_SAMPLE_RATE=64` 和 `shouldSampleMetric()`，高频指标改为采样记录。 |
 | F4 | 已完成 | `SSUdpProxyHandler.acquireOutboundChannel(...)` 已用 try/catch 包住 `computeIfAbsent/openOutboundChannel`，异常路径会释放 source count。 |
 
@@ -994,14 +994,13 @@ SocksUdpRelayHandlerTest#redundantClientPeerAddedOnlyWhenClientSenderChanges
 `SocksConfig` 已新增：
 
 ```java
-private boolean udpRedundantTrackClientPeer;
+private UdpRedundantMode socksUdpRedundantMode = UdpRedundantMode.REQUEST_ONLY;
 ```
 
 `Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(...)` 现在逻辑为：
 
 ```java
-return config.isUdpRedundantTrackClientPeer()
-        || (clientTcpAddr != null && tcpPeerAddr != null && !clientTcpAddr.equals(tcpPeerAddr));
+return UdpRedundantSupport.allowSocksUdpResponse(config);
 ```
 
 前置仍要求：
@@ -1015,8 +1014,8 @@ UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config)
 对应测试：
 
 ```text
-Socks5CommandRequestHandlerTest#redundantClientPeerTrackingRequiresExplicitFallbackFlagForSamePeer
-Socks5CommandRequestHandlerTest#redundantClientPeerTrackingKeepsExistingDifferentPeerHeuristic
+Socks5CommandRequestHandlerTest#redundantClientPeerTrackingRequiresResponseDirectionForSamePeer
+Socks5CommandRequestHandlerTest#redundantClientPeerTrackingDoesNotUseDifferentPeerHeuristic
 ```
 
 ### F3：高频 RDNT metrics 采样

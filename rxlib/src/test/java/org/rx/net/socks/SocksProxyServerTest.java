@@ -223,6 +223,30 @@ class SocksProxyServerTest {
         }
     }
 
+    @Test
+    @Order(7)
+    void testTrafficUserFallsBackToAnonymousWhenRemoteAddressUnresolved() {
+        ProxyManageHandler handler = new ProxyManageHandler(0L);
+        EmbeddedChannel channel = new EmbeddedChannel(handler) {
+            @Override
+            public java.net.SocketAddress remoteAddress() {
+                return InetSocketAddress.createUnresolved("unresolved.test", 1234);
+            }
+        };
+        TestTrafficUser trafficUser = new TestTrafficUser("shadow-unresolved");
+        try {
+            handler.setUser(new SocksUser("inner-unresolved"), trafficUser,
+                    channel.pipeline().context(ProxyManageHandler.class));
+
+            assertSame(TrafficUser.ANONYMOUS, handler.getTrafficUser());
+            assertNull(handler.getInfo());
+            assertSame(TrafficUser.ANONYMOUS, channel.attr(SocksUserTraffic.ATTR_USER).get());
+            assertTrue(trafficUser.getLoginIps().isEmpty());
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
     private void runSocks5NettyClientTest(Channel ch, String message) throws InterruptedException {
         CountDownLatch hsLatch = new CountDownLatch(1);
         CountDownLatch connLatch = new CountDownLatch(1);

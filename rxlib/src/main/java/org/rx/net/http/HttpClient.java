@@ -848,6 +848,9 @@ public class HttpClient implements AutoCloseable {
         ChannelFuture lastFuture;
 
         UploadWriter(Channel channel, RequestState state) {
+            if (channel.eventLoop().inEventLoop()) {
+                throw new IllegalStateException("HTTP streaming upload cannot run on Netty EventLoop");
+            }
             this.channel = channel;
             this.state = state;
         }

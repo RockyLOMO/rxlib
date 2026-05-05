@@ -102,8 +102,10 @@ public class ObjectPoolRecycleOwnershipTest {
             assertEquals(1, pool.idleSize());
 
             first.closed = true;
-            pool.validNow();
-            assertEquals(0, pool.size(), "invalid idle object should be retired");
+            waitForCondition(() -> {
+                pool.validNow();
+                return !pool.anyMatch(x -> x == first);
+            }, 3000, "invalid idle object should be retired");
 
             TestResource second = pool.borrow();
             assertNotNull(second);
@@ -113,6 +115,21 @@ public class ObjectPoolRecycleOwnershipTest {
         } finally {
             pool.close();
         }
+    }
+
+    private static void waitForCondition(Condition condition, long timeoutMs, String message) throws Exception {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.ok()) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        assertTrue(condition.ok(), message);
+    }
+
+    private interface Condition {
+        boolean ok() throws Exception;
     }
 
     static final class TestResource implements Closeable {

@@ -14,6 +14,7 @@ import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 
 @Slf4j
 public class ProxyManageHandler extends ChannelTrafficShapingHandler {
@@ -40,7 +41,14 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             SocksUserTraffic.bind(ctx.channel(), TrafficUser.ANONYMOUS, null);
             return;
         }
-        InetSocketAddress realEp = Sockets.getOriginRemoteAddress(ctx.channel());
+        InetSocketAddress realEp = resolveRemoteAddress(ctx);
+        if (realEp == null || realEp.getAddress() == null) {
+            log.warn("TrafficUser {} bind skipped due to unresolved remote address", this.trafficUser.getUsername());
+            this.trafficUser = TrafficUser.ANONYMOUS;
+            info = null;
+            SocksUserTraffic.bind(ctx.channel(), this.trafficUser, null);
+            return;
+        }
         info = this.trafficUser.getLoginIps().computeIfAbsent(realEp.getAddress(), ip -> new TrafficLoginInfo());
         if (this.trafficUser.getIpLimit() != -1 && this.trafficUser.getLoginIps().size() > this.trafficUser.getIpLimit()) {
             log.error("TrafficUser {} maxIpCount={}\nconnectedIps={} incomingIp={}",
@@ -54,6 +62,15 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
         }
         retainLogin(info, now.getTime());
         SocksUserTraffic.bind(ctx.channel(), this.trafficUser, info);
+    }
+
+    private static InetSocketAddress resolveRemoteAddress(ChannelHandlerContext ctx) {
+        InetSocketAddress realEp = Sockets.getOriginRemoteAddress(ctx.channel());
+        if (realEp != null) {
+            return realEp;
+        }
+        SocketAddress remoteAddress = ctx.channel().remoteAddress();
+        return remoteAddress instanceof InetSocketAddress ? (InetSocketAddress) remoteAddress : null;
     }
 
     private static void retainLogin(TrafficLoginInfo info, long nowMillis) {
@@ -94,7 +111,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             info.getTotalActiveSeconds().addAndGet(elapsed / Constants.NANO_TO_MILLIS / 1000);
         }
 
-        InetSocketAddress remoteAddress = Sockets.getOriginRemoteAddress(ctx.channel());
+        InetSocketAddress remoteAddress = resolveRemoteAddress(ctx);
         String tagsUser = trafficUser != null && !trafficUser.isAnonymous() ? trafficUser.getUsername() : user.getUsername();
         if (trafficUser != null && !trafficUser.isAnonymous()) {
             SocksUserTraffic.recordSession(trafficUser, remoteAddress, SocksUserTraffic.PROTOCOL_TCP,

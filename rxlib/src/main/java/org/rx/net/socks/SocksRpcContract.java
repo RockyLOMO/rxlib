@@ -96,6 +96,18 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
         return false;
     }
 
+    default Udp2rawOpenResult openUdp2rawTunnel(Udp2rawOpenRequest request, String token) {
+        return Udp2rawOpenResult.unsupported();
+    }
+
+    default boolean heartbeatUdp2rawTunnel(String tunnelId, String token) {
+        return false;
+    }
+
+    default boolean closeUdp2rawTunnel(String tunnelId, String token) {
+        return false;
+    }
+
     @Override
     default void close() {
         //rpc close

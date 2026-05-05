@@ -7,6 +7,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -178,6 +179,95 @@ public class SocketsTest {
     }
 
     @Test
+    public void testUdpWriteMtuDisabledAllowsLargerPacket() {
+        SocketConfig config = new SocketConfig();
+        config.setUdpMtu(0);
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(SocketConfig.ATTR_CONF).set(config);
+
+        ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4, 5});
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.ACCEPTED,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=mtu-disabled"));
+
+        DatagramPacket outbound = channel.readOutbound();
+        assertNotNull(outbound);
+        outbound.release();
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteAllowsPacketAtConfiguredUdpMtu() {
+        SocketConfig config = new SocketConfig();
+        config.setUdpMtu(4);
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(SocketConfig.ATTR_CONF).set(config);
+
+        ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4});
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.ACCEPTED,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=mtu-equal"));
+
+        DatagramPacket outbound = channel.readOutbound();
+        assertNotNull(outbound);
+        outbound.release();
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteDropsWhenConfiguredUdpMtuExceeded() {
+        SocketConfig config = new SocketConfig();
+        config.setUdpMtu(4);
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(SocketConfig.ATTR_CONF).set(config);
+
+        ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4, 5});
+        DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+        assertEquals(Sockets.UdpWriteResult.MTU_EXCEEDED,
+                Sockets.writeUdp(channel, packet, "test.udp", "case=mtu-exceeded"));
+        assertEquals(0, payload.refCnt());
+        assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+        assertNull(channel.readOutbound());
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testUdpWriteRecordsMtuDropMetricsWithLowCardinalityTags() throws Exception {
+        DiagnosticConfig config = memDiagnosticConfig("sockets_udp_mtu_drop");
+        config.setSampleIntervalMillis(60000L);
+        DiagnosticMonitor monitor = new DiagnosticMonitor(config);
+        monitor.start();
+        try {
+            SocketConfig socketConfig = new SocketConfig();
+            socketConfig.setUdpMtu(1300);
+            EmbeddedChannel channel = new EmbeddedChannel();
+            channel.attr(SocketConfig.ATTR_CONF).set(socketConfig);
+
+            ByteBuf payload = Unpooled.buffer(1301);
+            payload.writeZero(1301);
+            DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+            assertEquals(Sockets.UdpWriteResult.MTU_EXCEEDED,
+                    Sockets.writeUdp(channel, packet, "test.udp", "case=mtu-metric"));
+            assertEquals(0, payload.refCnt());
+
+            assertTrue(monitor.getStore().flush(5000L));
+            String tags = "case=mtu-metric,reason=mtu-exceeded,mtuBucket=lte1300";
+            assertEquals(1, countMetric(config, "test.udp.drop.count", tags));
+            assertEquals(1, countMetric(config, "test.udp.mtu.drop.count", tags));
+            assertEquals(1, countMetric(config, "test.udp.mtu.drop.bytes", tags));
+            assertEquals(0, countWhere(config, "diag_metric_sample",
+                    "metric='test.udp.mtu.drop.count' AND (tags LIKE '%bytes=%' OR tags LIKE '%recipient=%' OR tags LIKE '%127.0.0.1%')"));
+            channel.finishAndReleaseAll();
+        } finally {
+            monitor.close();
+        }
+    }
+
+    @Test
     public void testUdpWriteDropsUnresolvedRecipientBeforeWrite() {
         EmbeddedChannel channel = new EmbeddedChannel();
         channel.attr(Sockets.ATTR_UDP_WRITE_LIMIT_BYTES).set(128);
@@ -275,6 +365,34 @@ public class SocketsTest {
     }
 
     @Test
+    public void testParseEndpointSupportsIpv6BracketAndUnbracketedLiteral() {
+        InetSocketAddress bracket = Sockets.parseEndpoint("[::1]:8080");
+        assertNotNull(bracket.getAddress());
+        assertEquals(8080, bracket.getPort());
+
+        InetSocketAddress literal = Sockets.parseEndpoint("2001:db8::1:8443");
+        assertNotNull(literal.getAddress());
+        assertEquals(8443, literal.getPort());
+
+        assertThrows(Exception.class, () -> Sockets.parseEndpoint("[::1]"));
+        assertThrows(Exception.class, () -> Sockets.parseEndpoint("::1"));
+    }
+
+    @Test
+    public void testSetHttpProxyAcceptsDomainWithoutLocalDns() {
+        try {
+            Sockets.setHttpProxy("proxy.example:8080");
+
+            assertEquals("proxy.example", System.getProperty("http.proxyHost"));
+            assertEquals("8080", System.getProperty("http.proxyPort"));
+            assertEquals("proxy.example", System.getProperty("https.proxyHost"));
+            assertEquals("8080", System.getProperty("https.proxyPort"));
+        } finally {
+            Sockets.clearHttpProxy();
+        }
+    }
+
+    @Test
     public void testGetMessageBuf() {
         ByteBuf buf = Unpooled.copiedBuffer("hello", StandardCharsets.UTF_8);
 
@@ -367,6 +485,45 @@ public class SocketsTest {
  
         assertNull(channel.pipeline().get(Sockets.ZIP_DECODER));
         assertNotNull(channel.pipeline().get(Sockets.ZIP_ENCODER));
+    }
+
+    @Test
+    public void testPipelineAddBeforeAndAfterKeepRequestedOrder() {
+        EmbeddedChannel beforeChannel = new EmbeddedChannel();
+        try {
+            beforeChannel.pipeline().addLast("base", new BasePipelineHandler());
+            Sockets.addBefore(beforeChannel.pipeline(), "base",
+                    new FirstPipelineHandler(), new SecondPipelineHandler());
+
+            List<String> beforeNames = beforeChannel.pipeline().names();
+            assertTrue(beforeNames.contains(FirstPipelineHandler.class.getSimpleName()));
+            assertTrue(beforeNames.contains(SecondPipelineHandler.class.getSimpleName()));
+            assertTrue(beforeNames.contains("base"));
+            assertTrue(beforeNames.indexOf(FirstPipelineHandler.class.getSimpleName())
+                    < beforeNames.indexOf(SecondPipelineHandler.class.getSimpleName()));
+            assertTrue(beforeNames.indexOf(SecondPipelineHandler.class.getSimpleName())
+                    < beforeNames.indexOf("base"));
+        } finally {
+            beforeChannel.finishAndReleaseAll();
+        }
+
+        EmbeddedChannel afterChannel = new EmbeddedChannel();
+        try {
+            afterChannel.pipeline().addLast("base", new BasePipelineHandler());
+            Sockets.addAfter(afterChannel.pipeline(), "base",
+                    new FirstPipelineHandler(), new SecondPipelineHandler());
+
+            List<String> afterNames = afterChannel.pipeline().names();
+            assertTrue(afterNames.contains("base"));
+            assertTrue(afterNames.contains(FirstPipelineHandler.class.getSimpleName()));
+            assertTrue(afterNames.contains(SecondPipelineHandler.class.getSimpleName()));
+            assertTrue(afterNames.indexOf("base")
+                    < afterNames.indexOf(FirstPipelineHandler.class.getSimpleName()));
+            assertTrue(afterNames.indexOf(FirstPipelineHandler.class.getSimpleName())
+                    < afterNames.indexOf(SecondPipelineHandler.class.getSimpleName()));
+        } finally {
+            afterChannel.finishAndReleaseAll();
+        }
     }
 
     @Test
@@ -522,5 +679,14 @@ public class SocketsTest {
         public ChannelFuture writeAndFlush(Object msg) {
             throw new IllegalStateException("synthetic write failure");
         }
+    }
+
+    private static final class BasePipelineHandler extends ChannelInboundHandlerAdapter {
+    }
+
+    private static final class FirstPipelineHandler extends ChannelInboundHandlerAdapter {
+    }
+
+    private static final class SecondPipelineHandler extends ChannelInboundHandlerAdapter {
     }
 }

@@ -23,6 +23,7 @@ import org.rx.net.socks.UdpRelayGroupOpenRequest;
 import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.UdpRelayAttributes;
+import org.rx.net.socks.UdpRedundantSupport;
 import org.rx.net.socks.UdpLeasePoolKey;
 import org.rx.net.socks.UdpPortHoppingConfig;
 import org.rx.net.socks.UdpPortHoppingMode;
@@ -604,7 +605,7 @@ public class SocksUdpUpstream extends Upstream {
         group.retain(next);
         InetSocketAddress[] relayAddresses = group.snapshotRelayAddresses();
         for (InetSocketAddress relayAddr : relayAddresses) {
-            UdpRelayAttributes.addRedundantPeer(channel, relayAddr);
+            addRequestRedundantPeer(channel, relayAddr);
         }
         recordGroupActiveCount(channel, group, "bind");
         final SessionGroup finalGroup = group;
@@ -738,7 +739,7 @@ public class SocksUdpUpstream extends Upstream {
             }
 
             group.addHolder(holder);
-            UdpRelayAttributes.addRedundantPeer(channel, holder.relayAddr);
+            addRequestRedundantPeer(channel, holder.relayAddr);
             SocksUdpRelayHandler.onUpstreamRelayAdded(channel, holder.relayAddr, this);
             registerControlCloseListener(channel, group, holder);
             recordGroupActiveCount(channel, group, "replenish");
@@ -815,7 +816,7 @@ public class SocksUdpUpstream extends Upstream {
             }
 
             group.addHolder(holder);
-            UdpRelayAttributes.addRedundantPeer(channel, holder.relayAddr);
+            addRequestRedundantPeer(channel, holder.relayAddr);
             SocksUdpRelayHandler.onUpstreamRelayAdded(channel, holder.relayAddr, this);
             registerControlCloseListener(channel, group, holder);
             recordGroupActiveCount(channel, group, "adaptive-scale-up");
@@ -925,6 +926,14 @@ public class SocksUdpUpstream extends Upstream {
             return a.getAddress().equals(b.getAddress());
         }
         return a.getHostString().equalsIgnoreCase(b.getHostString());
+    }
+
+    private void addRequestRedundantPeer(Channel channel, InetSocketAddress relayAddr) {
+        if (config instanceof SocksConfig
+                && UdpRedundantSupport.isConfigured((SocksConfig) config)
+                && UdpRedundantSupport.allowSocksUdpRequest((SocksConfig) config)) {
+            UdpRelayAttributes.addRedundantPeer(channel, relayAddr);
+        }
     }
 
     static final class RpcRelayGroupControl {

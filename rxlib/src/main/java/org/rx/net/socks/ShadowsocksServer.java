@@ -76,6 +76,10 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
         }).attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
     }
 
+    /**
+     * Returns the number of currently accepted TCP frontend channels.
+     * UDP server channels and UDP outbound relay channels are intentionally not included.
+     */
     public int activeChannelCount() {
         return activeChannels.get();
     }

@@ -6,7 +6,6 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.core.cache.H2StoreCache;
-import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
@@ -29,7 +28,11 @@ public class SocksConfig extends SocketConfig {
     private static final String WHITE_LIST_KEY_PREFIX = "socksWhiteList";
 
     private static final long serialVersionUID = 3526543718065617052L;
+
+    // 监听配置（必填）
     private SocketAddress listenAddress;
+
+    // 基础 I/O 与 TCP 解析策略
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = DEF_READ_TIMEOUT_SECONDS;
     private int writeTimeoutSeconds;
@@ -41,48 +44,18 @@ public class SocksConfig extends SocketConfig {
      * DIRECT/REMOTE: 使用 Netty 异步 DNS，并分别走直连/远程 DNS Client。
      */
     private TcpAsyncDnsMode tcpAsyncDnsMode = TcpAsyncDnsMode.DIRECT;
-    @Getter(AccessLevel.NONE)
-    @ToString.Exclude
-    private transient volatile Set<InetAddress> whiteList;
+
+    // 访问控制
     /**
      * 是否启用「非公网仅白名单」访问控制。默认 false（非公网一律放行）；为 true 时仅私网或 {@link #getWhiteList()} 内地址通过 {@link #isAllowed(InetAddress)}。
      * 为 false 时 {@link #allowWhiteList} 不再写入。
      */
     private boolean whiteListEnabled = false;
-    private boolean enableUdp2raw;
-    private InetSocketAddress udp2rawClient;
-    private AuthenticEndpoint kcptunClient;
-    private boolean tcpWarmPoolEnabled;
-    private int tcpWarmPoolMinSize = 2;
-    private int tcpWarmPoolMaxIdleMillis = 60_000;
-    private int tcpWarmPoolRefillIntervalMillis = 1_000;
-    private boolean udpLeasePoolEnabled;
-    private int udpLeasePoolMinSize = 2;
-    private int udpLeasePoolMaxSize = 32;
-    private int udpLeasePoolMaxIdleMillis = 300_000;
-    private int udpLeaseRpcBreakerThreshold = 3;
-    private int udpLeaseRpcBreakerOpenSeconds = 30;
-    /**
-     * UDP 多倍发包配置。
-     * 取值范围 [1, 5]，默认 1。
-     * 用于游戏低延迟场景，以带宽换取丢包容忍度。
-     */
-    private UdpRedundantConfig udpRedundant;
-    /**
-     * 是否允许 UDP relay 把真实 client UDP sender 登记为 RDNT peer。
-     * 仅建议在 rxlib A<->B 标准 SOCKS5 fallback 链路的 B 侧开启。
-     */
-    private boolean udpRedundantTrackClientPeer;
-    /**
-     * UDP 单包压缩配置。
-     * 仅对代理链上的隧道对端生效，用于回收多倍发包带来的带宽开销。
-     */
-    private UdpCompressConfig udpCompress;
-    /**
-     * UDP SOCKS5 upstream 端口跳跃配置。
-     * 默认关闭；开启后同一逻辑 upstream 可持有多个远端 UDP relay 端口。
-     */
-    private UdpPortHoppingConfig udpPortHopping;
+    @Getter(AccessLevel.NONE)
+    @ToString.Exclude
+    private transient volatile Set<InetAddress> whiteList;
+
+    // UDP relay 控制面
     /**
      * UDP relay 控制面选择。AUTO 下优先尝试 rxlib RPC group，失败按 fallback 配置回退标准 SOCKS5。
      */
@@ -93,6 +66,57 @@ public class SocksConfig extends SocketConfig {
     private long udpRelayGroupHeartbeatMillis = 30_000L;
     private int udpRelayControlFailureThreshold = 5;
     private long udpRelayControlBreakerOpenMillis = 60_000L;
+
+    // UDP 端口跳跃、冗余与压缩
+    /**
+     * UDP SOCKS5 upstream 端口跳跃配置。
+     * 默认关闭；开启后同一逻辑 upstream 可持有多个远端 UDP relay 端口。
+     */
+    private UdpPortHoppingConfig udpPortHopping;
+    /**
+     * UDP 多倍发包配置。
+     * 取值范围 [1, 5]，默认 1。
+     * 用于游戏低延迟场景，以带宽换取丢包容忍度。
+     */
+    private UdpRedundantConfig udpRedundant;
+    /**
+     * SOCKS UDP RDNT 方向控制。只决定登记 request/response 哪个方向的 peer。
+     */
+    private UdpRedundantMode socksUdpRedundantMode = UdpRedundantMode.REQUEST_ONLY;
+    /**
+     * UDP 单包压缩配置。
+     * 仅对代理链上的隧道对端生效，用于回收多倍发包带来的带宽开销。
+     */
+    private UdpCompressConfig udpCompress;
+
+    // UDP2RAW 隧道
+    private boolean enableUdp2raw;
+    private InetSocketAddress udp2rawClient;
+    private InetSocketAddress udp2rawListenAddress;
+    private int udp2rawSessionIdleSeconds = 300;
+    private int udp2rawMaxSessions = 65536;
+    private Udp2rawAuthMode udp2rawAuthMode = Udp2rawAuthMode.FIRST_PACKET_MAC;
+    /**
+     * udp2raw payload RDNT 方向控制。默认双向，保持旧配置兼容。
+     */
+    private UdpRedundantMode udp2rawRedundantMode = UdpRedundantMode.BIDIRECTIONAL;
+    private boolean udp2rawRequireRpc = true;
+    private int udp2rawBadAuthThreshold = 8;
+    private int udp2rawBadAuthFuseSeconds = 30;
+    private int udp2rawPeerRateLimitPerSecond;
+    private int udp2rawPeerRateLimitBurst;
+
+    // 上游连接池
+    private boolean tcpWarmPoolEnabled;
+    private int tcpWarmPoolMinSize = 2;
+    private int tcpWarmPoolMaxIdleMillis = 60_000;
+    private int tcpWarmPoolRefillIntervalMillis = 1_000;
+    private boolean udpLeasePoolEnabled;
+    private int udpLeasePoolMinSize = 2;
+    private int udpLeasePoolMaxSize = 32;
+    private int udpLeasePoolMaxIdleMillis = 300_000;
+    private int udpLeaseRpcBreakerThreshold = 3;
+    private int udpLeaseRpcBreakerOpenSeconds = 30;
 
     public SocksConfig() {}
 
@@ -203,6 +227,11 @@ public class SocksConfig extends SocketConfig {
         return udpRedundant != null && udpRedundant.isAdaptive();
     }
 
+    public void setSocksUdpRedundantMode(UdpRedundantMode socksUdpRedundantMode) {
+        this.socksUdpRedundantMode = socksUdpRedundantMode != null
+                ? socksUdpRedundantMode : UdpRedundantMode.REQUEST_ONLY;
+    }
+
     public void setUdpRedundantAdaptive(boolean adaptive) {
         if (udpRedundant == null) {
             udpRedundant = new UdpRedundantConfig();
@@ -275,7 +304,40 @@ public class SocksConfig extends SocketConfig {
     public boolean isUdpPortHoppingEnabled() {
         return udpPortHopping != null && udpPortHopping.isEnabled()
                 && (udpPortHopping.getHopCount() > 1
-                || (udpPortHopping.isAdaptive() && udpPortHopping.getMaxHopCount() > 1));
+                        || (udpPortHopping.isAdaptive() && udpPortHopping.getMaxHopCount() > 1));
+    }
+
+    public void setUdp2rawSessionIdleSeconds(int udp2rawSessionIdleSeconds) {
+        this.udp2rawSessionIdleSeconds = Math.max(1, udp2rawSessionIdleSeconds);
+    }
+
+    public void setUdp2rawMaxSessions(int udp2rawMaxSessions) {
+        this.udp2rawMaxSessions = Math.max(1, udp2rawMaxSessions);
+    }
+
+    public void setUdp2rawAuthMode(Udp2rawAuthMode udp2rawAuthMode) {
+        this.udp2rawAuthMode = udp2rawAuthMode != null ? udp2rawAuthMode : Udp2rawAuthMode.FIRST_PACKET_MAC;
+    }
+
+    public void setUdp2rawRedundantMode(UdpRedundantMode udp2rawRedundantMode) {
+        this.udp2rawRedundantMode = udp2rawRedundantMode != null
+                ? udp2rawRedundantMode : UdpRedundantMode.BIDIRECTIONAL;
+    }
+
+    public void setUdp2rawBadAuthThreshold(int udp2rawBadAuthThreshold) {
+        this.udp2rawBadAuthThreshold = Math.max(1, udp2rawBadAuthThreshold);
+    }
+
+    public void setUdp2rawBadAuthFuseSeconds(int udp2rawBadAuthFuseSeconds) {
+        this.udp2rawBadAuthFuseSeconds = Math.max(1, udp2rawBadAuthFuseSeconds);
+    }
+
+    public void setUdp2rawPeerRateLimitPerSecond(int udp2rawPeerRateLimitPerSecond) {
+        this.udp2rawPeerRateLimitPerSecond = Math.max(0, udp2rawPeerRateLimitPerSecond);
+    }
+
+    public void setUdp2rawPeerRateLimitBurst(int udp2rawPeerRateLimitBurst) {
+        this.udp2rawPeerRateLimitBurst = Math.max(0, udp2rawPeerRateLimitBurst);
     }
 
     public void setUdpPortHoppingEnabled(boolean enabled) {

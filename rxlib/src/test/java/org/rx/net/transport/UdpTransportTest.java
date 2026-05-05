@@ -5,6 +5,7 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.exception.InvalidException;
@@ -20,6 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class UdpTransportTest {
@@ -160,6 +162,18 @@ class UdpTransportTest {
             Thread.currentThread().interrupt();
             throw InvalidException.sneaky(e);
         }
+    }
+
+    @Test
+    @Timeout(5)
+    void closeFromEventLoopDoesNotBlockEventLoop() throws Exception {
+        UdpClient client = new UdpClient(0, new StringUtf8Codec());
+        Channel ch = client.getChannel();
+
+        ch.eventLoop().submit(() -> client.close()).get(2, TimeUnit.SECONDS);
+        ch.closeFuture().syncUninterruptibly();
+
+        assertFalse(ch.isOpen());
     }
 
     static final class EchoRequest implements Serializable {

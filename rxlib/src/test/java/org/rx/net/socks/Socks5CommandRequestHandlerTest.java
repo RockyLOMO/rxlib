@@ -82,28 +82,28 @@ class Socks5CommandRequestHandlerTest {
     }
 
     @Test
-    void redundantClientPeerTrackingRequiresExplicitFallbackFlagForSamePeer() {
+    void redundantClientPeerTrackingRequiresResponseDirectionForSamePeer() {
         SocksConfig config = new SocksConfig();
         config.setUdpRedundantMultiplier(2);
         InetSocketAddress client = new InetSocketAddress("127.0.0.1", 25001);
 
         assertFalse(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, client, client));
 
-        config.setUdpRedundantTrackClientPeer(true);
+        config.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
         assertTrue(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, client, client));
     }
 
     @Test
-    void redundantClientPeerTrackingKeepsExistingDifferentPeerHeuristic() {
+    void redundantClientPeerTrackingDoesNotUseDifferentPeerHeuristic() {
         SocksConfig config = new SocksConfig();
         config.setUdpRedundantMultiplier(2);
         InetSocketAddress origin = new InetSocketAddress("10.0.0.2", 25002);
         InetSocketAddress peer = new InetSocketAddress("127.0.0.1", 25002);
 
-        assertTrue(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer));
-
-        config.setUdpRedundantMultiplier(1);
         assertFalse(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer));
+
+        config.setSocksUdpRedundantMode(UdpRedundantMode.RESPONSE_ONLY);
+        assertTrue(Socks5CommandRequestHandler.shouldTrackRedundantClientPeer(config, origin, peer));
     }
 
     @Test
