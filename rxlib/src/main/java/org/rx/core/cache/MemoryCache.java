@@ -151,6 +151,8 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
     public TV put(TK key, TV value, CachePolicy policy) {
         if (policy != null) {
             policyMap.put(key, policy);
+        } else {
+            policyMap.remove(key);
         }
 //        TV old = cache.getIfPresent(key);
 //        cache.put(key, value);
@@ -160,12 +162,19 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public void putAll(Map<? extends TK, ? extends TV> m) {
+        for (TK key : m.keySet()) {
+            policyMap.remove(key);
+        }
         cache.putAll(m);
     }
 
     @Override
     public TV putIfAbsent(TK key, TV value) {
-        return cache.asMap().putIfAbsent(key, value);
+        TV old = cache.asMap().putIfAbsent(key, value);
+        if (old == null) {
+            policyMap.remove(key);
+        }
+        return old;
     }
 
     @Override
@@ -180,16 +189,25 @@ public class MemoryCache<TK, TV> implements Cache<TK, TV> {
 
     @Override
     public TV remove(Object key) {
-        return cache.asMap().remove(key);
+        TV old = cache.asMap().remove(key);
+        if (old != null) {
+            policyMap.remove(key);
+        }
+        return old;
     }
 
     @Override
     public boolean remove(Object key, Object value) {
-        return cache.asMap().remove(key, value);
+        boolean removed = cache.asMap().remove(key, value);
+        if (removed) {
+            policyMap.remove(key);
+        }
+        return removed;
     }
 
     @Override
     public void clear() {
+        policyMap.clear();
         cache.invalidateAll();
     }
 

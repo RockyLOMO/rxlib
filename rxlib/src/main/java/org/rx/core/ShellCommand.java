@@ -29,6 +29,7 @@ import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.rx.core.Extends.newConcurrentList;
 
@@ -189,6 +190,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
     Future<Void> daemonFuture;
     boolean closeFlag;
     Long processId;
+    List<String> processCommand;
 
     public synchronized boolean isRunning() {
         return process != null && process.isAlive();
@@ -237,6 +239,7 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
         Long currentJvmPid = currentJvmPid();
         Set<Long> existingChildPids = currentJvmPid == null ? Collections.<Long>emptySet() : new HashSet<>(listDirectChildPids(currentJvmPid));
         List<String> command = buildCommand();
+        processCommand = command;
         if (!command.isEmpty() && Files.isPath(command.get(0))) {
             workspace = new File(Files.getFullPathNoEndSeparator(command.get(0)));
         }
@@ -307,12 +310,20 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
 
         log.debug("kill {}", shell);
         Long pid = processId;
+        if (pid == null && processCommand != null) {
+            Long currentJvmPid = currentJvmPid();
+            if (currentJvmPid != null) {
+                pid = processId = resolveProcessId(process, processCommand, currentJvmPid, Collections.<Long>emptySet());
+            }
+        }
         boolean killed = pid != null && killProcessTree(pid, new HashSet<Long>());
         if (killed && waitForExit(process, 1000L)) {
+            waitReaderExit(2000L);
             return;
         }
         process.destroyForcibly();
         waitForExit(process, 1000L);
+        waitReaderExit(2000L);
     }
 
     public synchronized void restart() {
@@ -362,9 +373,14 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
     }
 
     Long resolveWindowsProcessId(long parentPid, Set<Long> existingChildPids, List<String> command) {
+        String commandText = String.join(" ", command).toLowerCase();
+        Long powershellPid = resolveWindowsProcessIdByPowerShell(parentPid, existingChildPids, commandText);
+        if (powershellPid != null) {
+            return powershellPid;
+        }
+
         List<String> lines = runCommand(Arrays.asList("wmic", "process", "where", String.format("ParentProcessId=%d", parentPid),
                 "get", "ProcessId,CommandLine", "/format:csv"));
-        String commandText = String.join(" ", command).toLowerCase();
         Long fallback = null;
         for (String line : lines) {
             if (line.isEmpty() || line.startsWith("Node,") || !line.contains(",")) {
@@ -381,8 +397,11 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
             if (existingChildPids.contains(pid)) {
                 continue;
             }
-            fallback = pid;
             String commandLine = arr[2] == null ? "" : arr[2].toLowerCase();
+            if (isProcessLookupCommand(commandLine)) {
+                continue;
+            }
+            fallback = pid;
             if (commandLine.contains(commandText)) {
                 return pid;
             }
@@ -390,12 +409,12 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
         if (fallback != null) {
             return fallback;
         }
-        return resolveWindowsProcessIdByPowerShell(parentPid, existingChildPids, commandText);
+        return null;
     }
 
     Long resolveWindowsProcessIdByPowerShell(long parentPid, Set<Long> existingChildPids, String commandText) {
         List<String> lines = runCommand(Arrays.asList("powershell", "-NoProfile", "-Command",
-                String.format("Get-CimInstance Win32_Process -Filter \\\"ParentProcessId=%d\\\" | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation", parentPid)));
+                String.format("Get-CimInstance Win32_Process -Filter 'ParentProcessId=%d' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation", parentPid)));
         Long fallback = null;
         for (String line : lines) {
             if (line.isEmpty() || line.startsWith("\"ProcessId\"")) {
@@ -409,13 +428,22 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
             if (pid == null || existingChildPids.contains(pid)) {
                 continue;
             }
-            fallback = pid;
             String commandLine = arr[1] == null ? "" : arr[1].toLowerCase();
+            if (isProcessLookupCommand(commandLine)) {
+                continue;
+            }
+            fallback = pid;
             if (commandLine.contains(commandText)) {
                 return pid;
             }
         }
         return fallback;
+    }
+
+    boolean isProcessLookupCommand(String commandLine) {
+        return commandLine.contains("get-ciminstance win32_process")
+                || commandLine.contains("convertto-csv -notypeinformation")
+                || commandLine.contains("wmic process where");
     }
 
     Long resolveUnixProcessId(long parentPid) {
@@ -587,5 +615,19 @@ public class ShellCommand extends Disposable implements EventPublisher<ShellComm
     @SneakyThrows
     boolean waitForExit(Process target, long timeoutMillis) {
         return !target.isAlive() || target.waitFor(timeoutMillis, TimeUnit.MILLISECONDS);
+    }
+
+    void waitReaderExit(long timeoutMillis) {
+        Future<Void> reader = daemonFuture;
+        if (reader == null || reader.isDone()) {
+            return;
+        }
+        try {
+            reader.get(timeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            log.warn("waitReaderExit timeout {}", shell);
+        } catch (Throwable e) {
+            log.debug("waitReaderExit {}", shell, e);
+        }
     }
 }

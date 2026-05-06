@@ -16,6 +16,25 @@
 
 原因是用户明确要求“仔细 review”，目标是检查已有核心包的实现质量、调用链、边界条件、资源释放、并发和兼容性风险，而不是新增功能。按流程应先 review 相关代码并提交计划文档，用户明确要求后再进入代码实现阶段。
 
+# 执行标记（2026-05-06）
+
+本轮已按用户“执行计划”要求进入实现阶段，以下标记覆盖原计划中的阶段性描述。
+
+## 不认可 / 修正项
+
+1. 原文“本阶段不修改业务代码”只适用于 2026-05-05 的计划提交阶段；本轮用户已明确要求执行计划，因此允许最小代码修复。
+2. `ThreadPool.ThreadQueue` 的 slot 对称释放风险经核验已有实现与回归测试覆盖，包括 `drainTo`、`clear`、`shutdownNow`、并发 `poll/remove/drain/clear` 和 caller-runs 竞态；本轮不把它作为待修复 bug。
+3. `ObjectPool` “事件通知在锁内执行”的风险在当前实现中未发现对应事件通知路径，不作为本轮修复项；仍保留 borrow/recycle/close 状态机与泄漏检测为后续回归重点。
+4. 原文建议的 GitHub Actions 分支 `agent/review-org-rx-core-20260505` 属于远端 CI 执行建议；本轮本地验收优先使用 Maven/JDK8 兼容命令，未创建或切换该分支。
+
+## 本轮确认并修复
+
+1. `MemoryCache` 在同 key 从自定义 `CachePolicy` 覆盖为默认策略时，`policyMap` 旧策略会残留，导致新值继续沿用旧 TTL；已改为默认 put/putAll/remove/clear 同步清理策略元数据。
+2. `YamlConfiguration` 加载 YAML 后未关闭传入的 `InputStream`，存在配置加载资源泄漏风险；已在 `loadYaml(List<InputStream>)` 中统一关闭。
+3. `YamlConfiguration.readAs` 对泛型集合等非 Map 结构走 `new JSONObject(map)`，`map == null` 时无法可靠转换；已改为非 Map 泛型走 fastjson2 `JSON.parseObject(JSON.toJSONString(...), Type)`。
+4. `ThreadPool` 读取 `CompletableFuture.AsynchronousCompletionTask.fn` 属于 JDK 内部实现依赖；已增加不可访问或读取失败时的降级路径，避免 worker 因反射失败中断。
+5. `ShellCommand` 在 Windows/JDK8 下 PID 解析 fallback 可能命中自身 PowerShell/WMIC 查询进程，导致只杀 wrapper 而留下 `ping -t` 等子进程；已修正 PowerShell 过滤命令并排除查询进程，同时在 kill 后等待 reader 任务触发退出事件。
+
 # 当前上下文
 
 ## 已 review 的文件
@@ -130,9 +149,17 @@
 
 # 修改文件列表
 
-本阶段实际修改：`docs/plan/review-org-rx-core-20260505.md`。
+本轮实际修改：
 
-后续如用户明确要求“按计划执行”，预计可能修改：`ThreadPool.java`, `WheelTimer.java`, `ObjectPool.java`, `RxConfig.java`, `YamlConfiguration.java`, `MemoryCache.java`, `H2StoreCache.java`, `YamlConfigSource.java`, `Reflects.java`, `ShellCommand.java`，以及相关 `rxlib/src/test/java/org/rx/core/**` 测试。
+- `docs/plan/review-org-rx-core-20260505.md`
+- `rxlib/src/main/java/org/rx/core/ThreadPool.java`
+- `rxlib/src/main/java/org/rx/core/YamlConfiguration.java`
+- `rxlib/src/main/java/org/rx/core/ShellCommand.java`
+- `rxlib/src/main/java/org/rx/core/cache/MemoryCache.java`
+- `rxlib/src/test/java/org/rx/core/YamlConfigurationTest.java`
+- `rxlib/src/test/java/org/rx/core/cache/MemoryCacheTest.java`
+
+后续仍可继续分批核验：`WheelTimer.java`, `ObjectPool.java`, `RxConfig.java`, `H2StoreCache.java`, `YamlConfigSource.java`, `Reflects.java`，以及相关 `rxlib/src/test/java/org/rx/core/**` 测试。
 
 # 风险点
 
@@ -196,3 +223,17 @@ mvn -B -U -Dgpg.skip=true -Dmaven.test.skip=false -DskipTests=false -Dtest=Threa
 CI 判定标准：`status=completed` 且 `conclusion=success`。
 
 如果 CI 失败，先分类为编译失败、单元测试失败、格式失败、依赖下载失败、JDK 版本不兼容、环境问题、测试不稳定或 GitHub Actions 配置问题，然后只修改与失败直接相关的代码或测试，并再次提交和触发 CI。
+
+## 本轮本地验证结果
+
+已通过：
+
+```bash
+mvn -pl rxlib "-Dgpg.skip=true" "-Dmaven.test.skip=false" "-DskipTests=false" "-Dtest=MemoryCacheTest,YamlConfigurationTest,ThreadPoolWheelTimerRegressionTest,ThreadPoolQueueShutdownTest" test
+mvn -pl rxlib "-Dgpg.skip=true" "-Dmaven.test.skip=false" "-DskipTests=false" "-Dtest=ShellCommandTest" test
+mvn -pl rxlib "-Dgpg.skip=true" "-Dmaven.test.skip=false" "-DskipTests=false" "-Dtest=MemoryCacheTest,YamlConfigurationTest,ThreadPoolWheelTimerRegressionTest,ThreadPoolQueueShutdownTest,ShellCommandTest" test
+```
+
+最终聚合回归：35 tests，0 failures，0 errors，0 skipped。
+
+补充大集合回归曾因 4 分钟工具超时中断；已确认无 rxlib Maven/Java 测试进程残留。该次中断前报告中，本轮改动相关测试通过，额外暴露的 `ThreadPoolTest.timer`、`TestCore`、`EntityDatabaseTest` 等旧失败与本轮改动无直接关系，需另开批次处理。
