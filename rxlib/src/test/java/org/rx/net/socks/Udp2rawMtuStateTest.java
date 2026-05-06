@@ -2,10 +2,13 @@ package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.buffer.UnpooledByteBufAllocator;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class Udp2rawMtuStateTest {
@@ -89,6 +92,27 @@ class Udp2rawMtuStateTest {
         Udp2rawMtuState.Probe probe = state.nextProbe(now);
 
         assertEquals(1000, probe.mtu);
+    }
+
+    @Test
+    void defaultStateCanLowerBelow1200WhenHardCapIsSmall() {
+        Udp2rawMtuState state = new Udp2rawMtuState(1000, "client");
+        long now = System.currentTimeMillis() + 1000L;
+
+        state.onWriteMtuDrop(1000, now);
+
+        assertEquals(920, state.currentMtu());
+    }
+
+    @Test
+    void tinyMtuDoesNotEmitOversizedProbe() {
+        Udp2rawMtuState state = new Udp2rawMtuState(40, 1, 40, "client");
+        long now = System.currentTimeMillis() + 1000L;
+
+        assertNull(state.nextProbe(now));
+        assertThrows(IllegalArgumentException.class, () -> Udp2rawMtuProbeSupport.encodeProbe(
+                UnpooledByteBufAllocator.DEFAULT, new byte[] {1}, 1L, 2L, 1L,
+                Udp2rawMtuProbeSupport.MIN_PROBE_DATAGRAM_BYTES - 1));
     }
 
     @Test

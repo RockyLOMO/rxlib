@@ -13,6 +13,7 @@ public final class Udp2rawMtuState {
     static final int DEFAULT_MTU = 1300;
     static final int MIN_MTU = 1200;
     static final int MAX_MTU = 1400;
+    private static final int ADAPTIVE_MIN_MTU = 576;
     private static final int STEP_UP = 20;
     private static final int STEP_DOWN = 80;
     private static final int VERIFY_AFTER_UP_MISSES = 2;
@@ -37,7 +38,7 @@ public final class Udp2rawMtuState {
     }
 
     public Udp2rawMtuState(int initialMtu, String side) {
-        this(initialMtu, MIN_MTU, initialMtu > 0 ? initialMtu : MAX_MTU, side);
+        this(initialMtu, ADAPTIVE_MIN_MTU, initialMtu > 0 ? initialMtu : MAX_MTU, side);
     }
 
     public Udp2rawMtuState(int initialMtu, int minMtu, int maxMtu) {
@@ -74,6 +75,12 @@ public final class Udp2rawMtuState {
             onTimeout(now);
         }
         if (now < nextProbeAtMillis) {
+            return null;
+        }
+        if (currentMtu < Udp2rawMtuProbeSupport.MIN_PROBE_DATAGRAM_BYTES) {
+            nextProbeAtMillis = now + PROBE_INTERVAL_MILLIS;
+            DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D,
+                    "action=probe-too-small,mtuBucket=" + mtuBucket(currentMtu));
             return null;
         }
 

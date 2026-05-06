@@ -389,6 +389,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         return udp2rawEntryManager != null ? udp2rawEntryManager.entryAddress() : null;
     }
 
+    Udp2rawTunnelContext udp2rawTunnelContext(String tunnelId) {
+        return udp2rawEntryManager != null ? udp2rawEntryManager.context(tunnelId) : null;
+    }
+
     private void validateRpcToken(String token, String action) {
         try {
             SocksRpcContract.requireValidRpcToken(token);

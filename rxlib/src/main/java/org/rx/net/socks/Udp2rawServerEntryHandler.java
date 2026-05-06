@@ -201,8 +201,22 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
             recordDrop("unknown-tunnel");
             return;
         }
-        if (tunnel.mtuState == null || !frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG)
+        long now = System.currentTimeMillis();
+        if (tunnel.isPeerBlocked(in.sender(), now)) {
+            recordDrop("peer-blocked");
+            return;
+        }
+        if (!tunnel.allowPeerPacket(in.sender(), now)) {
+            recordDrop("peer-rate-limit");
+            return;
+        }
+        if (!frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG)
                 || !Udp2rawAuthenticator.verify(tunnel.sessionSecret, frame, payload)) {
+            tunnel.recordAuthFailure(in.sender(), now);
+            DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D, "action=bad-ack,side=server");
+            return;
+        }
+        if (tunnel.mtuState == null) {
             DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D, "action=bad-ack,side=server");
             return;
         }
@@ -212,7 +226,7 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
                     "action=bad-ack-payload,side=server");
             return;
         }
-        if (tunnel.mtuState.ack(frame.getPacketSeq(), acceptedMtu, System.currentTimeMillis())) {
+        if (tunnel.acceptMtuAck(in.sender(), frame.getPacketSeq(), acceptedMtu, now)) {
             tunnel.recordAuthSuccess(in.sender());
             tunnel.touch();
         }

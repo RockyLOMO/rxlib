@@ -132,6 +132,10 @@ final class Udp2rawServerEntryManager extends Disposable {
         return tunnels.get(tunnelId(frame.getSessionHi(), frame.getSessionLo()));
     }
 
+    Udp2rawTunnelContext context(String tunnelId) {
+        return tunnelId != null ? tunnels.get(tunnelId) : null;
+    }
+
     Udp2rawCapabilities capabilities() {
         return capabilities(configCompress(), configRedundant());
     }
