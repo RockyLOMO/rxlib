@@ -111,6 +111,7 @@ public class Reflects extends ClassUtils {
         registerConvert(String.class, BigDecimal.class, (sv, tt) -> new BigDecimal(sv));
         registerConvert(String.class, UUID.class, (sv, tt) -> UUID.fromString(sv));
         registerConvert(String.class, Date.class, (sv, tt) -> DateTime.valueOf(sv));
+        registerConvert(Number.class, BigDecimal.class, (sv, tt) -> sv instanceof Decimal ? ((Decimal) sv).getValue() : BigDecimal.valueOf(sv.doubleValue()));
         registerConvert(Number.class, Decimal.class, (sv, tt) -> Decimal.valueOf(sv.doubleValue()));
         registerConvert(Long.class, Date.class, (sv, tt) -> new Date(sv));
         registerConvert(Long.class, DateTime.class, (sv, tt) -> new DateTime(sv, TimeZone.getDefault()));
@@ -906,13 +907,12 @@ public class Reflects extends ClassUtils {
                     //todo check
                     value = loadClass(value.toString(), true);
                 } else {
+                    ConvertBean convertBean = findConvertBean(fValue, toType);
+                    if (convertBean != null) {
+                        return (T) convertBean.converter.apply(value, convertBean.toType);
+                    }
                     Linq<Method> methods = getMethodMap(toType).get(CHANGE_TYPE_METHOD);
                     if (methods == null || fromType.isEnum()) {
-                        Class<T> fType = toType;
-                        ConvertBean convertBean = Linq.from(convertBeans).firstOrDefault(p -> TypeUtils.isInstance(fValue, p.baseFromType) && p.toType.isAssignableFrom(fType));
-                        if (convertBean != null) {
-                            return (T) convertBean.converter.apply(value, convertBean.toType);
-                        }
                         throw new NoSuchMethodException(CHANGE_TYPE_METHOD);
                     }
 
@@ -958,6 +958,10 @@ public class Reflects extends ClassUtils {
             }
         }
         return (T) value;
+    }
+
+    private static ConvertBean findConvertBean(Object value, Class<?> toType) {
+        return Linq.from(convertBeans).firstOrDefault(p -> TypeUtils.isInstance(value, p.baseFromType) && p.toType.isAssignableFrom(toType));
     }
 
     public static boolean isBasicType(@NonNull Class<?> type) {

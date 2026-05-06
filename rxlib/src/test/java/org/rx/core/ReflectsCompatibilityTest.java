@@ -1,8 +1,10 @@
 package org.rx.core;
 
 import org.junit.jupiter.api.Test;
+import org.rx.bean.Decimal;
 
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
 import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -68,5 +70,11 @@ public class ReflectsCompatibilityTest {
                 "org.rx.core.ReflectsCompatibilityTest$InvokeTarget.instanceEcho",
                 Arrays.asList("x"), p -> new InvokeTarget());
         assertEquals("bean:x", value);
+    }
+
+    @Test
+    void changeTypeUsesRegisteredConverterBeforeStringValueOfFallback() {
+        assertEquals(new BigDecimal("1.25"), Reflects.changeType("1.25", BigDecimal.class));
+        assertEquals(new BigDecimal("2.00"), Reflects.changeType(Decimal.valueOf(2D), BigDecimal.class));
     }
 }
