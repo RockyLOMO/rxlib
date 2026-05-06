@@ -113,6 +113,53 @@ class Udp2rawFixedEntryIntegrationTest {
 
     @Test
     @Timeout(20)
+    void fixedEntryRepliesToAuthenticatedMtuProbe() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-mtu-probe-token");
+        SocksProxyServer proxy = null;
+        DatagramSocket client = null;
+        try {
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            config.setUdpMtu(1300);
+            proxy = new SocksProxyServer(config, null);
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-mtu");
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+
+            client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            client.setSoTimeout(5000);
+            sendRawUdp(client, entryAddress, buildMtuProbe(open, 77L, 1300));
+
+            java.net.DatagramPacket packet = receive(client);
+            assertEquals(entryAddress.getPort(), packet.getPort());
+            ByteBuf buf = Unpooled.wrappedBuffer(packet.getData(), 0, packet.getLength());
+            try {
+                Udp2rawFrame frame = Udp2rawCodec.decode(buf);
+                assertEquals(Udp2rawFrameType.MTU_ACK, frame.getType());
+                assertEquals(77L, frame.getPacketSeq());
+                assertTrue(frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG));
+                assertTrue(Udp2rawAuthenticator.verify(open.getSessionSecret(), frame, buf.slice()));
+            } finally {
+                buf.release();
+            }
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @Timeout(20)
     void fixedEntryCompressesResponseAndDropsRedundantRequest() throws Exception {
         String oldToken = RxConfig.INSTANCE.getRtoken();
         RxConfig.INSTANCE.setRtoken("udp2raw-p6-test-token");
@@ -534,6 +581,39 @@ class Udp2rawFixedEntryIntegrationTest {
     private static void sendRawUdp(DatagramSocket socket, InetSocketAddress entryAddress, byte[] bytes) throws Exception {
         socket.send(new java.net.DatagramPacket(bytes, bytes.length,
                 InetAddress.getByName(entryAddress.getHostString()), entryAddress.getPort()));
+    }
+
+    private static byte[] buildMtuProbe(Udp2rawOpenResult open, long seq, int mtu) {
+        ByteBuf payload = null;
+        ByteBuf authTag = null;
+        ByteBuf encoded = null;
+        try {
+            Udp2rawFrame frame = Udp2rawFrame.data(open.getSessionHi(), open.getSessionLo(), 0L, seq);
+            frame.setType(Udp2rawFrameType.MTU_PROBE);
+            frame.setFlags(Udp2rawCodec.FLAG_AUTH_TAG);
+            int headerBytes = Udp2rawCodec.FIXED_HEADER_LENGTH + 1 + Udp2rawAuthenticator.DEFAULT_TAG_BYTES;
+            int payloadBytes = Math.max(0, mtu - headerBytes);
+            payload = UnpooledByteBufAllocator.DEFAULT.directBuffer(payloadBytes, payloadBytes);
+            payload.writeZero(payloadBytes);
+            authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
+                    open.getSessionSecret(), frame, payload);
+            frame.setAuthTag(authTag);
+            encoded = Udp2rawCodec.encode(UnpooledByteBufAllocator.DEFAULT, frame, payload);
+            payload = null;
+            byte[] bytes = new byte[encoded.readableBytes()];
+            encoded.getBytes(encoded.readerIndex(), bytes);
+            return bytes;
+        } finally {
+            if (authTag != null) {
+                authTag.release();
+            }
+            if (payload != null) {
+                payload.release();
+            }
+            if (encoded != null) {
+                encoded.release();
+            }
+        }
     }
 
     private static byte[] buildCompressedUdp2raw(Udp2rawOpenResult open,

@@ -98,6 +98,15 @@ public final class Sockets {
         WRITE_THROWN
     }
 
+    /**
+     * UDP MTU 探测包允许超过当前本地 MTU guard，真正由路径是否回 ACK 来收敛。
+     */
+    public static final class UdpMtuProbeDatagramPacket extends DatagramPacket {
+        public UdpMtuProbeDatagramPacket(ByteBuf data, InetSocketAddress recipient) {
+            super(data, recipient);
+        }
+    }
+
     public interface ReactorNames {
         String SHARED_TCP = "_TCP";
         String SHARED_UDP = "_UDP";
@@ -142,7 +151,7 @@ public final class Sockets {
             }
 
             int udpMtu = effectiveConfig != null ? Math.max(0, effectiveConfig.getUdpMtu()) : 0;
-            if (udpMtu > 0 && bytes > udpMtu) {
+            if (!(packet instanceof UdpMtuProbeDatagramPacket) && udpMtu > 0 && bytes > udpMtu) {
                 releaseUdpPacketByMtu(packet, metricPrefix, tags, bytes, udpMtu);
                 completeDroppedWrite(promise);
                 return;
@@ -1215,7 +1224,7 @@ public final class Sockets {
         int queuedBytes = 0;
         if (!finalGuard) {
             int udpMtu = udpMtu(channel, config);
-            if (udpMtu > 0 && bytes > udpMtu) {
+            if (!(packet instanceof UdpMtuProbeDatagramPacket) && udpMtu > 0 && bytes > udpMtu) {
                 releaseUdpPacketByMtu(packet, metricPrefix, tags, bytes, udpMtu);
                 return UdpWriteResult.MTU_EXCEEDED;
             }

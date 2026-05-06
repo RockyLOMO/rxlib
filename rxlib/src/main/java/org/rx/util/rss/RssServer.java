@@ -24,6 +24,7 @@ import static org.rx.core.Extends.eq;
 
 @Slf4j
 public final class RssServer {
+    static final int UDP2RAW_MTU = RssClient.UDP2RAW_MTU;
     static HttpServer httpServer;
 
     private RssServer() {
@@ -46,24 +47,13 @@ public final class RssServer {
         ssUser.setPassword(shadowUser.getPassword());
 
         SocksConfig outConf = new SocksConfig(port);
-        outConf.setDebug(debugFlag);
-        outConf.setWhiteListEnabled(true);
-        outConf.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.REMOTE);
-        outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
-        outConf.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
-        outConf.setOptimalSettings(RssSupport.OUT_OPS);
-        outConf.setUdpRedundantMultiplier(2);
-        outConf.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
-        RssSupport.applyUdpCompressionTrial(outConf);
+        configureOutboundConfig(outConf, debugFlag);
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         if (udp2rawPort != null && udp2rawPort > 0) {
             SocksConfig outTunConf = Sys.deepClone(outConf);
-            outTunConf.setDebug(debugFlag);
-            outTunConf.setListenAddress(Sockets.newAnyEndpoint(udp2rawPort));
-            outTunConf.setUdpRedundantMultiplier(2);
-            RssSupport.applyUdpCompressionTrial(outTunConf);
+            configureUdp2rawOutboundConfig(outTunConf, debugFlag, udp2rawPort);
             SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
             outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         }
@@ -75,6 +65,26 @@ public final class RssServer {
         Remoting.register(app, rpcConf);
         serverInit();
         app.await();
+    }
+
+    static void configureOutboundConfig(SocksConfig config, boolean debugFlag) {
+        config.setDebug(debugFlag);
+        config.setWhiteListEnabled(true);
+        config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.REMOTE);
+        config.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        config.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
+        config.setOptimalSettings(RssSupport.OUT_OPS);
+        config.setUdpRedundantMultiplier(2);
+        config.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
+        config.setUdpMtu(UDP2RAW_MTU);
+        RssSupport.applyUdpCompressionTrial(config);
+    }
+
+    static void configureUdp2rawOutboundConfig(SocksConfig config, boolean debugFlag, int udp2rawPort) {
+        configureOutboundConfig(config, debugFlag);
+        config.setListenAddress(Sockets.newAnyEndpoint(udp2rawPort));
+        // RSS Server 的独立 udp2raw 端口必须开启隧道服务能力，客户端 RPC open 才能成功。
+        config.setEnableUdp2raw(true);
     }
 
     static void serverInit() {

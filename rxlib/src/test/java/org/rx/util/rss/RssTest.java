@@ -45,6 +45,7 @@ import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.SocksUser;
 import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficLoginInfo;
+import org.rx.net.socks.UdpRedundantMode;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
@@ -77,6 +78,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -1316,6 +1318,44 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void configureInboundConfig_AppliesUdp2rawFlag() {
+        RssClientConf conf = new RssClientConf();
+        SocksConfig normal = new SocksConfig(new LocalAddress("RSS_IN_NORMAL_CONF"));
+        SocksConfig tunnel = new SocksConfig(new LocalAddress("RSS_IN_TUN_CONF"));
+
+        RssClient.configureInboundConfig(conf, normal, false);
+        RssClient.configureInboundConfig(conf, tunnel, true);
+
+        assertFalse(normal.isEnableUdp2raw());
+        assertEquals(1300, normal.getUdpMtu());
+        assertTrue(tunnel.isEnableUdp2raw());
+        assertEquals(1300, tunnel.getUdpMtu());
+    }
+
+    @Test
+    public void rssServerConfigureOutboundConfig_AppliesUdpMtu() {
+        SocksConfig config = new SocksConfig(new LocalAddress("RSS_SERVER_OUT_CONF"));
+
+        RssServer.configureOutboundConfig(config, true);
+
+        assertTrue(config.isDebug());
+        assertEquals(1300, config.getUdpMtu());
+        assertFalse(config.isEnableUdp2raw());
+        assertEquals(UdpRedundantMode.BIDIRECTIONAL, config.getSocksUdpRedundantMode());
+    }
+
+    @Test
+    public void rssServerConfigureUdp2rawOutboundConfig_EnablesTunnelAndMtu() {
+        SocksConfig config = new SocksConfig(new LocalAddress("RSS_SERVER_OUT_TUN_CONF"));
+
+        RssServer.configureUdp2rawOutboundConfig(config, false, 40940);
+
+        assertEquals(1300, config.getUdpMtu());
+        assertTrue(config.isEnableUdp2raw());
+        assertEquals(Sockets.newAnyEndpoint(40940), config.getListenAddress());
+    }
+
+    @Test
     public void socksServerJsonReader_RequiresObjectFormatWithWeight() {
         RssClientConf conf = JSON.parseObject("{\"socksServers\":["
                 + "{\"id\":\"backup\",\"weight\":2,\"endpoint\":\"u:p@127.0.0.1:1081\"}]}", RssClientConf.class);
@@ -1413,6 +1453,7 @@ public class RssTest extends AbstractTester {
                 new SocksConfig(), support);
 
         assertTrue(udpRoute instanceof Udp2rawUpstream);
+        assertEquals(1300, ((SocksConfig) udpRoute.getConfig()).getUdpMtu());
     }
 
     @Test
@@ -1431,6 +1472,7 @@ public class RssTest extends AbstractTester {
         assertEquals(2000, config.getConnectTimeoutMillis());
         assertEquals(3, config.getReadTimeoutSeconds());
         assertEquals(4, config.getUdpReadTimeoutSeconds());
+        assertEquals(1300, config.getUdpMtu());
         assertTrue(config.isUdpLeasePoolEnabled());
         assertEquals(5, config.getUdpLeasePoolMaxSize());
     }

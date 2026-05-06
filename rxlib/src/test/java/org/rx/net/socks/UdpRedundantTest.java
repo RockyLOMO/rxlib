@@ -890,6 +890,21 @@ public class UdpRedundantTest {
         }
     }
 
+    @Test
+    public void testUdp2rawPayloadSupportDropsAboveDynamicMtuBeforeWrite() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        try {
+            Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(channel,
+                    Unpooled.buffer(1301).writeZero(1301), REMOTE,
+                    null, null, null, "flow=request", 1300);
+
+            assertEquals(Sockets.UdpWriteResult.MTU_EXCEEDED, result);
+            assertNull(channel.readOutbound());
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
     // ===================== 辅助方法 =====================
 
     /**

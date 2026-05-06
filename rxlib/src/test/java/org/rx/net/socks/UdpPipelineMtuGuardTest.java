@@ -63,6 +63,31 @@ class UdpPipelineMtuGuardTest {
     }
 
     @Test
+    void finalGuardAllowsMtuProbeAboveCurrentMtu() {
+        SocksConfig config = new SocksConfig();
+        config.setUdpMtu(1300);
+
+        EmbeddedChannel channel = newPipeline(config);
+        try {
+            ByteBuf payload = Unpooled.buffer(1320);
+            payload.writeZero(1320);
+
+            channel.writeOutbound(new Sockets.UdpMtuProbeDatagramPacket(payload, REMOTE));
+
+            DatagramPacket out = channel.readOutbound();
+            assertNotNull(out, "MTU probe must bypass local MTU guard");
+            try {
+                assertEquals(1320, out.content().readableBytes());
+            } finally {
+                out.release();
+            }
+            assertNull(channel.readOutbound());
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
     void finalGuardAllowsEachRedundantPacketAtMtuBoundary() {
         SocksConfig config = new SocksConfig();
         config.setUdpMtu(1300);

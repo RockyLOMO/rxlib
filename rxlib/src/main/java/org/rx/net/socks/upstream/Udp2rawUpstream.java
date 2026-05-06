@@ -24,6 +24,7 @@ import org.rx.net.socks.Udp2rawAuthenticator;
 import org.rx.net.socks.Udp2rawCodec;
 import org.rx.net.socks.Udp2rawFrame;
 import org.rx.net.socks.Udp2rawFrameType;
+import org.rx.net.socks.Udp2rawMtuState;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.socks.Udp2rawPayloadSupport;
@@ -42,7 +43,9 @@ import java.nio.channels.ClosedChannelException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -159,7 +162,7 @@ public class Udp2rawUpstream extends Upstream {
             SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(relay, encoded,
                     state.udpTransportAddress, requestRedundant, state.redundantStats,
-                    state.redundantResolver, "flow=request");
+                    state.redundantResolver, "flow=request", state.currentMtu());
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop request to {} for {} result={}", state.udpTransportAddress, dstEp, result);
@@ -297,7 +300,7 @@ public class Udp2rawUpstream extends Upstream {
 
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(relay, encoded,
                     state.udpTransportAddress, requestRedundant, state.redundantStats,
-                    state.redundantResolver, "flow=request");
+                    state.redundantResolver, "flow=request", state.currentMtu());
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop request to {} for {} result={}", state.udpTransportAddress, dstEp, result);
@@ -343,10 +346,17 @@ public class Udp2rawUpstream extends Upstream {
             log.warn("udp2raw discard bad response from {}", in.sender(), e);
             return null;
         }
-        if (frame.getType() != Udp2rawFrameType.DATA
-                || frame.getSessionHi() != state.sessionHi
+        if (frame.getSessionHi() != state.sessionHi
                 || frame.getSessionLo() != state.sessionLo) {
             DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=bad-response-session");
+            return null;
+        }
+        if (frame.getType() == Udp2rawFrameType.MTU_ACK) {
+            handleMtuAck(state, frame, content.slice());
+            return null;
+        }
+        if (frame.getType() != Udp2rawFrameType.DATA) {
+            DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=bad-response-type");
             return null;
         }
         if (!frame.hasFlag(Udp2rawCodec.FLAG_HAS_SRC) || frame.getSourceAddress() == null) {
@@ -381,6 +391,17 @@ public class Udp2rawUpstream extends Upstream {
             return new Udp2rawResponse(frame.getSourceAddress(), decoded);
         }
         return new Udp2rawResponse(frame.getSourceAddress(), payload.retain());
+    }
+
+    private void handleMtuAck(TunnelState state, Udp2rawFrame frame, ByteBuf payload) {
+        if (state.mtuState == null || !frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG)
+                || !Udp2rawAuthenticator.verify(state.sessionSecret, frame, payload)) {
+            DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D, "action=bad-ack");
+            return;
+        }
+        if (state.mtuState.ack(frame.getPacketSeq(), System.currentTimeMillis())) {
+            state.touch();
+        }
     }
 
     private void initializeTunnelOffLoop(Channel channel, CompletableFuture<TunnelState> future) {
@@ -445,7 +466,7 @@ public class Udp2rawUpstream extends Upstream {
         InetSocketAddress transportAddress = next.getUdpClient() != null ? next.getUdpClient() : entryAddress;
         return new TunnelState(facade, result.getTunnelId(), result.getSessionHi(), result.getSessionLo(),
                 result.getSessionSecret(), entryAddress, transportAddress, authMode, compressConfig, redundantConfig,
-                socksConfig.getUdp2rawRedundantMode(),
+                socksConfig.getUdp2rawRedundantMode(), socksConfig.getUdpMtu(),
                 result.getExpireAtMillis());
     }
 
@@ -483,6 +504,7 @@ public class Udp2rawUpstream extends Upstream {
         channel.closeFuture().addListener(f -> invalidateState(channel, state, "channel-close"));
         DiagnosticMetrics.record(METRIC_PREFIX + ".tunnel.client.active.count",
                 tunnelMap(channel).size(), "action=open");
+        scheduleMtuProbe(channel, state, 1_000L);
         future.complete(state);
     }
 
@@ -516,6 +538,10 @@ public class Udp2rawUpstream extends Upstream {
     private void closeState(TunnelState state, String reason) {
         if (state == null || state.closed.getAndSet(true)) {
             return;
+        }
+        ScheduledFuture<?> mtuProbeFuture = state.mtuProbeFuture;
+        if (mtuProbeFuture != null) {
+            mtuProbeFuture.cancel(false);
         }
         if (state.facade == null || state.tunnelId == null) {
             return;
@@ -610,6 +636,60 @@ public class Udp2rawUpstream extends Upstream {
         return value != null && value.length() > 0;
     }
 
+    private void scheduleMtuProbe(Channel channel, TunnelState state, long delayMillis) {
+        if (state == null || state.mtuState == null || state.mtuState.currentMtu() <= 0 || !channel.isActive()) {
+            return;
+        }
+        state.mtuProbeFuture = channel.eventLoop().schedule(() -> runMtuProbe(channel, state),
+                Math.max(1L, delayMillis), TimeUnit.MILLISECONDS);
+    }
+
+    private void runMtuProbe(Channel channel, TunnelState state) {
+        if (!channel.isActive() || activeState(channel) != state || state.closed.get()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        Udp2rawMtuState.Probe probe = state.mtuState.nextProbe(now);
+        if (probe != null) {
+            sendMtuProbe(channel, state, probe);
+        }
+        scheduleMtuProbe(channel, state, state.mtuState.nextDelayMillis(System.currentTimeMillis()));
+    }
+
+    private void sendMtuProbe(Channel channel, TunnelState state, Udp2rawMtuState.Probe probe) {
+        ByteBuf payload = null;
+        ByteBuf authTag = null;
+        ByteBuf encoded = null;
+        try {
+            Udp2rawFrame frame = Udp2rawFrame.data(state.sessionHi, state.sessionLo, 0L, probe.seq);
+            frame.setType(Udp2rawFrameType.MTU_PROBE);
+            frame.setFlags(Udp2rawCodec.FLAG_AUTH_TAG);
+            int headerBytes = Udp2rawCodec.FIXED_HEADER_LENGTH + 1 + Udp2rawAuthenticator.DEFAULT_TAG_BYTES;
+            int payloadBytes = Math.max(0, probe.mtu - headerBytes);
+            payload = channel.alloc().directBuffer(payloadBytes, payloadBytes);
+            payload.writeZero(payloadBytes);
+            authTag = Udp2rawAuthenticator.sign(channel.alloc(), state.sessionSecret, frame, payload);
+            frame.setAuthTag(authTag);
+            encoded = Udp2rawCodec.encode(channel.alloc(), frame, payload);
+            payload = null;
+            Sockets.UdpWriteResult result = Sockets.writeUdp(channel,
+                    new Sockets.UdpMtuProbeDatagramPacket(encoded, state.udpTransportAddress),
+                    METRIC_PREFIX, "flow=mtu-probe");
+            encoded = null;
+            if (result != Sockets.UdpWriteResult.ACCEPTED) {
+                DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D,
+                        "action=local-drop,result=" + result);
+            }
+        } catch (Throwable e) {
+            Bytes.release(payload);
+            Bytes.release(encoded);
+            DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D, "action=encode-fail");
+            log.warn("udp2raw MTU probe send failed to {}", state.udpTransportAddress, e);
+        } finally {
+            Bytes.release(authTag);
+        }
+    }
+
     static final class TunnelState {
         final SocksRpcContract facade;
         final String tunnelId;
@@ -625,12 +705,14 @@ public class Udp2rawUpstream extends Upstream {
         final UdpRedundantMode redundantMode;
         final UdpRedundantMultiplierResolver redundantResolver;
         final UdpRedundantStats redundantStats;
+        final Udp2rawMtuState mtuState;
         final long expireAtMillis;
         final ConcurrentMap<RouteKey, ConnState> routes = new ConcurrentHashMap<>();
         final ConcurrentMap<Long, ConnState> connById = new ConcurrentHashMap<>();
         final AtomicBoolean closed = new AtomicBoolean();
         final AtomicBoolean activeRetained = new AtomicBoolean();
         final AtomicLong nextRedundantAdjustAtMillis = new AtomicLong();
+        volatile ScheduledFuture<?> mtuProbeFuture;
         volatile UpstreamSupport activeSupport;
         volatile long lastActiveAtMillis;
 
@@ -638,7 +720,7 @@ public class Udp2rawUpstream extends Upstream {
                 byte[] sessionSecret, InetSocketAddress udpEntryAddress, InetSocketAddress udpTransportAddress,
                 Udp2rawAuthMode authMode, UdpCompressConfig compressConfig,
                 UdpRedundantConfig redundantConfig, UdpRedundantMode redundantMode,
-                long expireAtMillis) {
+                int initialMtu, long expireAtMillis) {
             this.facade = facade;
             this.tunnelId = tunnelId;
             this.sessionHi = sessionHi;
@@ -655,6 +737,7 @@ public class Udp2rawUpstream extends Upstream {
             this.redundantResolver = Udp2rawPayloadSupport.isRedundantEnabled(redundantConfig)
                     ? redundantConfig.buildMultiplierResolver() : null;
             this.redundantStats = Udp2rawPayloadSupport.newAdaptiveStats(redundantConfig);
+            this.mtuState = initialMtu > 0 ? new Udp2rawMtuState(initialMtu) : null;
             this.expireAtMillis = expireAtMillis;
             this.lastActiveAtMillis = System.currentTimeMillis();
             if (this.redundantStats != null) {
@@ -708,6 +791,10 @@ public class Udp2rawUpstream extends Upstream {
             }
             redundantStats.recordUnique();
             Udp2rawPayloadSupport.adjustAdaptiveStats(redundantStats, nextRedundantAdjustAtMillis, direction);
+        }
+
+        int currentMtu() {
+            return mtuState != null ? mtuState.currentMtu() : 0;
         }
 
         void retain(UpstreamSupport support) {

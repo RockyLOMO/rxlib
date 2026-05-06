@@ -1,0 +1,166 @@
+package org.rx.net.socks;
+
+import lombok.extern.slf4j.Slf4j;
+import org.rx.diagnostic.DiagnosticMetrics;
+
+/**
+ * udp2raw 单隧道 MTU 探测状态。
+ * <p>
+ * 只维护少量标量，按低频控制帧收敛，业务包热路径只读取 {@link #currentMtu()}。
+ */
+@Slf4j
+public final class Udp2rawMtuState {
+    static final int DEFAULT_MTU = 1300;
+    static final int MIN_MTU = 1200;
+    static final int MAX_MTU = 1400;
+    private static final int STEP_UP = 20;
+    private static final int STEP_DOWN = 80;
+    private static final int VERIFY_AFTER_UP_MISSES = 2;
+    private static final long PROBE_INTERVAL_MILLIS = 15_000L;
+    private static final long PROBE_RETRY_MILLIS = 5_000L;
+    private static final long ACK_TIMEOUT_MILLIS = 2_000L;
+
+    private final int minMtu;
+    private final int maxMtu;
+    private int currentMtu;
+    private long nextSeq;
+    private long pendingSeq;
+    private int pendingMtu;
+    private long pendingDeadlineMillis;
+    private long nextProbeAtMillis;
+    private boolean verified;
+    private int upMisses;
+
+    public Udp2rawMtuState(int initialMtu) {
+        this(initialMtu, MIN_MTU, MAX_MTU);
+    }
+
+    public Udp2rawMtuState(int initialMtu, int minMtu, int maxMtu) {
+        if (initialMtu <= 0) {
+            this.minMtu = 0;
+            this.maxMtu = 0;
+            this.currentMtu = 0;
+            return;
+        }
+        this.minMtu = Math.max(576, minMtu);
+        this.maxMtu = Math.max(this.minMtu, maxMtu);
+        this.currentMtu = clamp(initialMtu, this.minMtu, this.maxMtu);
+        this.nextProbeAtMillis = System.currentTimeMillis() + 1_000L;
+    }
+
+    public synchronized Probe nextProbe(long now) {
+        if (currentMtu <= 0) {
+            return null;
+        }
+        if (pendingSeq != 0L) {
+            if (now < pendingDeadlineMillis) {
+                return null;
+            }
+            onTimeout(now);
+        }
+        if (now < nextProbeAtMillis) {
+            return null;
+        }
+
+        int target = nextTargetMtu();
+        long seq = ++nextSeq;
+        pendingSeq = seq;
+        pendingMtu = target;
+        pendingDeadlineMillis = now + ACK_TIMEOUT_MILLIS;
+        nextProbeAtMillis = now + PROBE_INTERVAL_MILLIS;
+        DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D,
+                "action=send,mtuBucket=" + mtuBucket(target));
+        return new Probe(seq, target);
+    }
+
+    public synchronized boolean ack(long seq, long now) {
+        if (seq == 0L || seq != pendingSeq) {
+            return false;
+        }
+        int old = currentMtu;
+        currentMtu = Math.max(currentMtu, pendingMtu);
+        verified = true;
+        upMisses = 0;
+        pendingSeq = 0L;
+        pendingMtu = 0;
+        pendingDeadlineMillis = 0L;
+        nextProbeAtMillis = now + PROBE_INTERVAL_MILLIS;
+        DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D,
+                "action=ack,mtuBucket=" + mtuBucket(currentMtu));
+        DiagnosticMetrics.record("socks.udp2raw.mtu.current", currentMtu, "side=client");
+        if (currentMtu != old) {
+            log.info("udp2raw MTU adaptive UP: {} -> {}", old, currentMtu);
+        }
+        return true;
+    }
+
+    public synchronized int currentMtu() {
+        return currentMtu;
+    }
+
+    public synchronized long nextDelayMillis(long now) {
+        if (currentMtu <= 0) {
+            return 0L;
+        }
+        if (pendingSeq != 0L) {
+            return Math.max(1L, pendingDeadlineMillis - now);
+        }
+        return Math.max(1L, nextProbeAtMillis - now);
+    }
+
+    private int nextTargetMtu() {
+        if (!verified || upMisses >= VERIFY_AFTER_UP_MISSES || currentMtu >= maxMtu) {
+            return currentMtu;
+        }
+        return Math.min(maxMtu, currentMtu + STEP_UP);
+    }
+
+    private void onTimeout(long now) {
+        int old = currentMtu;
+        boolean verifyProbe = pendingMtu <= currentMtu || !verified;
+        if (verifyProbe) {
+            currentMtu = Math.max(minMtu, currentMtu - STEP_DOWN);
+            verified = false;
+            upMisses = 0;
+        } else {
+            upMisses++;
+        }
+        DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D,
+                "action=timeout,mtuBucket=" + mtuBucket(pendingMtu));
+        pendingSeq = 0L;
+        pendingMtu = 0;
+        pendingDeadlineMillis = 0L;
+        nextProbeAtMillis = now + PROBE_RETRY_MILLIS;
+        if (currentMtu != old) {
+            DiagnosticMetrics.record("socks.udp2raw.mtu.current", currentMtu, "side=client");
+            log.warn("udp2raw MTU adaptive DOWN: {} -> {}", old, currentMtu);
+        }
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static String mtuBucket(int mtu) {
+        if (mtu <= 1200) {
+            return "lte1200";
+        }
+        if (mtu <= 1300) {
+            return "lte1300";
+        }
+        if (mtu <= 1400) {
+            return "lte1400";
+        }
+        return "gt1400";
+    }
+
+    public static final class Probe {
+        public final long seq;
+        public final int mtu;
+
+        Probe(long seq, int mtu) {
+            this.seq = seq;
+            this.mtu = mtu;
+        }
+    }
+}

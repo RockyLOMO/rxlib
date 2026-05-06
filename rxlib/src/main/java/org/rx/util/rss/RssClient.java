@@ -99,6 +99,7 @@ public final class RssClient {
     static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 60L * 1000L;
     static final int DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS = 5;
     static final int DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD = 3;
+    static final int UDP2RAW_MTU = 1300;
     static final long DEFAULT_PROCESS_DRAIN_MAX_WAIT_MILLIS = 180L * 1000L;
     static final long DEFAULT_PROCESS_DRAIN_TOKEN_TTL_MILLIS = 120L * 1000L;
     static final String PROCESS_DRAIN_MAX_WAIT_PROPERTY = "app.rss.drainMaxWaitMillis";
@@ -907,6 +908,9 @@ public final class RssClient {
 
     static void configureInboundConfig(RssClientConf conf, SocksConfig config, boolean udp2raw) {
         config.setDebug(conf.hasDebugFlag());
+        // RSS udp2raw 入口必须启用服务端隧道能力，RPC open 才不会返回 unsupported。
+        config.setEnableUdp2raw(udp2raw);
+        config.setUdpMtu(UDP2RAW_MTU);
         config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.DIRECT);
         config.setOptimalSettings(RssSupport.IN_OPS);
         config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
@@ -921,6 +925,7 @@ public final class RssClient {
         config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
         config.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
         config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
+        config.setUdpMtu(UDP2RAW_MTU);
         applyUdpLeasePool(conf, config);
         RssSupport.applyUdpCompressionTrial(config);
     }
@@ -1543,13 +1548,25 @@ public final class RssClient {
             return new Upstream(dstEp);
         }
         if (next.isUdp2raw()) {
-            return new Udp2rawUpstream(dstEp, config, next);
+            return new Udp2rawUpstream(dstEp, udp2rawRouteConfig(config), next);
         }
         InetSocketAddress udpClient = next.getUdpClient();
         if (udpClient != null) {
             return new UdpClientUpstream(dstEp, config, udpClient);
         }
         return new SocksUdpUpstream(dstEp, config, routeUpstream(config, next));
+    }
+
+    private static SocksConfig udp2rawRouteConfig(SocksConfig config) {
+        if (config == null) {
+            config = new SocksConfig();
+        }
+        if (config.getUdpMtu() > 0) {
+            return config;
+        }
+        SocksConfig routed = Sys.deepClone(config);
+        routed.setUdpMtu(UDP2RAW_MTU);
+        return routed;
     }
 
     static UpstreamSupport routeUpstream(SocksConfig inConf, UpstreamSupport next) {

@@ -141,8 +141,24 @@ public final class Udp2rawPayloadSupport {
     public static Sockets.UdpWriteResult writeEncoded(Channel channel, ByteBuf encoded,
             InetSocketAddress recipient, UdpRedundantConfig redundant, UdpRedundantStats stats,
             UdpRedundantMultiplierResolver resolver, String flowTag) {
+        return writeEncoded(channel, encoded, recipient, redundant, stats, resolver, flowTag, 0);
+    }
+
+    public static Sockets.UdpWriteResult writeEncoded(Channel channel, ByteBuf encoded,
+            InetSocketAddress recipient, UdpRedundantConfig redundant, UdpRedundantStats stats,
+            UdpRedundantMultiplierResolver resolver, String flowTag, int udpMtu) {
         if (encoded == null) {
             return Sockets.UdpWriteResult.WRITE_THROWN;
+        }
+        if (udpMtu > 0 && encoded.readableBytes() > udpMtu) {
+            int bytes = encoded.readableBytes();
+            Bytes.release(encoded);
+            String tags = appendDirection(flowTag);
+            DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D,
+                    tags + ",reason=mtu-exceeded");
+            DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.drop.count", 1D, tags);
+            DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.drop.bytes", bytes, tags);
+            return Sockets.UdpWriteResult.MTU_EXCEEDED;
         }
         int multiplier = effectiveMultiplier(redundant, stats, resolver, recipient);
         int intervalMicros = redundant != null ? Math.max(0, redundant.getIntervalMicros()) : 0;

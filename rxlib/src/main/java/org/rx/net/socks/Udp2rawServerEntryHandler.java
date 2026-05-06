@@ -9,6 +9,7 @@ import io.netty.channel.socket.DatagramPacket;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
+import org.rx.net.Sockets;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -33,7 +34,7 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
             return;
         }
         if (frame.getType() != Udp2rawFrameType.DATA) {
-            handleControlFrame(frame);
+            handleControlFrame(ctx, in, frame, content.slice());
             return;
         }
 
@@ -126,7 +127,8 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
         }
     }
 
-    private void handleControlFrame(Udp2rawFrame frame) {
+    private void handleControlFrame(ChannelHandlerContext ctx, DatagramPacket in,
+            Udp2rawFrame frame, ByteBuf payload) {
         if (frame.getType() == Udp2rawFrameType.CLOSE) {
             Udp2rawTunnelContext tunnel = manager.context(frame);
             if (tunnel != null) {
@@ -135,6 +137,61 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
                     session.close("peer-close");
                 }
             }
+            return;
+        }
+        if (frame.getType() == Udp2rawFrameType.MTU_PROBE) {
+            handleMtuProbe(ctx, in, frame, payload);
+        }
+    }
+
+    private void handleMtuProbe(ChannelHandlerContext ctx, DatagramPacket in,
+            Udp2rawFrame frame, ByteBuf payload) {
+        Udp2rawTunnelContext tunnel = manager.context(frame);
+        if (tunnel == null) {
+            recordDrop("unknown-tunnel");
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (tunnel.isPeerBlocked(in.sender(), now) || !tunnel.allowPeerPacket(in.sender(), now)) {
+            recordDrop("peer-rate-limit");
+            return;
+        }
+        if (!frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG)
+                || !Udp2rawAuthenticator.verify(tunnel.sessionSecret, frame, payload)) {
+            tunnel.recordAuthFailure(in.sender(), now);
+            recordDrop("mtu-probe-auth-fail");
+            return;
+        }
+        tunnel.recordAuthSuccess(in.sender());
+        tunnel.touch();
+        sendMtuAck(ctx, in, tunnel, frame.getPacketSeq());
+    }
+
+    private void sendMtuAck(ChannelHandlerContext ctx, DatagramPacket in,
+            Udp2rawTunnelContext tunnel, long seq) {
+        ByteBuf authTag = null;
+        ByteBuf encoded = null;
+        try {
+            Udp2rawFrame ack = Udp2rawFrame.data(tunnel.sessionHi, tunnel.sessionLo, 0L, seq);
+            ack.setType(Udp2rawFrameType.MTU_ACK);
+            ack.setFlags(Udp2rawCodec.FLAG_AUTH_TAG);
+            authTag = Udp2rawAuthenticator.sign(ctx.alloc(), tunnel.sessionSecret, ack, null);
+            ack.setAuthTag(authTag);
+            encoded = Udp2rawCodec.encode(ctx.alloc(), ack, null);
+            Sockets.UdpWriteResult result = Sockets.writeUdp(ctx.channel(),
+                    new DatagramPacket(encoded, in.sender()), manager.server.getConfig(),
+                    "socks.udp2raw", "flow=mtu-ack");
+            encoded = null;
+            if (result != Sockets.UdpWriteResult.ACCEPTED) {
+                DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D,
+                        "action=ack-drop,result=" + result);
+            }
+        } catch (Throwable e) {
+            Bytes.release(encoded);
+            DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D, "action=ack-encode-fail");
+            log.warn("udp2raw MTU ack send failed to {}", in.sender(), e);
+        } finally {
+            Bytes.release(authTag);
         }
     }
 
