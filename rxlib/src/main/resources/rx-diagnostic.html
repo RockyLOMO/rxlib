@@ -362,6 +362,44 @@
             max-height: 420px;
         }
 
+        .tool-history {
+            margin: -4px 0 12px;
+        }
+
+        .tool-history-title {
+            color: var(--muted);
+            font-size: 12px;
+            margin: 0 0 6px;
+        }
+
+        .tool-history-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .tool-history-item {
+            background: #fffdf7;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            color: var(--muted);
+            cursor: pointer;
+            font: inherit;
+            font-size: 12px;
+            max-width: 100%;
+            overflow: hidden;
+            padding: 6px 9px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .tool-history-clear {
+            background: transparent;
+            border: 1px solid var(--line);
+            color: var(--muted);
+            padding: 6px 9px;
+        }
+
         .empty {
             color: var(--muted);
         }
@@ -450,6 +488,169 @@
             activate(location.hash ? location.hash.substring(1) : null);
         });
         activate(location.hash ? location.hash.substring(1) : null);
+    })();
+    (function () {
+        var maxHistory = 10;
+        var storageKey = 'rx.diagnostic.tools.history.v1';
+        var forms = document.querySelectorAll('form[data-tool-history]');
+        var lists = document.querySelectorAll('[data-tool-history-list]');
+
+        function loadHistory() {
+            try {
+                return JSON.parse(localStorage.getItem(storageKey) || '{}') || {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveHistory(history) {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(history));
+            } catch (e) {
+            }
+        }
+
+        function fields(form) {
+            return form.querySelectorAll('input[name], textarea[name], select[name]');
+        }
+
+        function collect(form) {
+            var values = {};
+            var controls = fields(form);
+            for (var i = 0; i < controls.length; i++) {
+                var control = controls[i];
+                if (control.type === 'hidden' || control.name === 'action') {
+                    continue;
+                }
+                values[control.name] = control.value || '';
+            }
+            return values;
+        }
+
+        function isEmpty(values) {
+            for (var key in values) {
+                if (Object.prototype.hasOwnProperty.call(values, key) && values[key]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function same(a, b) {
+            return JSON.stringify(a) === JSON.stringify(b);
+        }
+
+        function label(values) {
+            var parts = [];
+            for (var key in values) {
+                if (Object.prototype.hasOwnProperty.call(values, key) && values[key]) {
+                    parts.push(key + '=' + values[key].replace(/\s+/g, ' '));
+                }
+            }
+            if (!parts.length) {
+                return 'empty';
+            }
+            return parts.join(' | ').substring(0, 160);
+        }
+
+        function applyValues(form, values) {
+            var controls = fields(form);
+            for (var i = 0; i < controls.length; i++) {
+                var control = controls[i];
+                if (Object.prototype.hasOwnProperty.call(values, control.name)) {
+                    control.value = values[control.name];
+                }
+            }
+        }
+
+        function formByKind(kind) {
+            return document.querySelector('form[data-tool-history="' + kind + '"]');
+        }
+
+        function renderHistory() {
+            var history = loadHistory();
+            for (var i = 0; i < lists.length; i++) {
+                var list = lists[i];
+                var kind = list.getAttribute('data-tool-history-list');
+                var rows = history[kind] || [];
+                list.innerHTML = '';
+                if (!rows.length) {
+                    continue;
+                }
+                var title = document.createElement('div');
+                title.className = 'tool-history-title';
+                title.appendChild(document.createTextNode('Recent inputs'));
+                list.appendChild(title);
+                var items = document.createElement('div');
+                items.className = 'tool-history-items';
+                for (var j = 0; j < rows.length; j++) {
+                    var row = rows[j];
+                    var button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'tool-history-item';
+                    button.setAttribute('data-tool-history-kind', kind);
+                    button.setAttribute('data-tool-history-index', String(j));
+                    button.title = label(row);
+                    button.appendChild(document.createTextNode(label(row)));
+                    items.appendChild(button);
+                }
+                var clear = document.createElement('button');
+                clear.type = 'button';
+                clear.className = 'tool-history-item tool-history-clear';
+                clear.setAttribute('data-tool-history-clear', kind);
+                clear.appendChild(document.createTextNode('Clear'));
+                items.appendChild(clear);
+                list.appendChild(items);
+            }
+        }
+
+        for (var i = 0; i < forms.length; i++) {
+            forms[i].addEventListener('submit', function () {
+                var kind = this.getAttribute('data-tool-history');
+                var values = collect(this);
+                if (isEmpty(values)) {
+                    return;
+                }
+                var history = loadHistory();
+                var rows = history[kind] || [];
+                var next = [values];
+                for (var j = 0; j < rows.length && next.length < maxHistory; j++) {
+                    if (!same(values, rows[j])) {
+                        next.push(rows[j]);
+                    }
+                }
+                history[kind] = next;
+                saveHistory(history);
+            });
+        }
+
+        document.addEventListener('click', function (event) {
+            var target = event.target;
+            if (!target || !target.getAttribute) {
+                return;
+            }
+            var clearKind = target.getAttribute('data-tool-history-clear');
+            if (clearKind) {
+                var clearHistory = loadHistory();
+                clearHistory[clearKind] = [];
+                saveHistory(clearHistory);
+                renderHistory();
+                return;
+            }
+            var kind = target.getAttribute('data-tool-history-kind');
+            var index = target.getAttribute('data-tool-history-index');
+            if (!kind || index === null) {
+                return;
+            }
+            var history = loadHistory();
+            var row = (history[kind] || [])[parseInt(index, 10)];
+            var form = formByKind(kind);
+            if (row && form) {
+                applyValues(form, row);
+            }
+        });
+
+        renderHistory();
     })();
 </script>
 </body>

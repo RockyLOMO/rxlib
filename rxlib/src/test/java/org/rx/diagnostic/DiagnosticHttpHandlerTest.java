@@ -49,6 +49,27 @@ public class DiagnosticHttpHandlerTest {
     }
 
     @Test
+    public void diagnosticToolsTemplateSupportsLocalInputHistory() {
+        Map<String, Object> vars = new HashMap<String, Object>();
+        vars.put("baseQueryHidden", "");
+
+        String toolsHtml = HttpServer.renderHtmlTemplate("rx-diagnostic-tools.html", vars);
+        String pageHtml = HttpServer.renderHtmlTemplate("rx-diagnostic.html",
+                Collections.singletonMap("body", toolsHtml));
+
+        assertTrue(toolsHtml.contains("data-tool-history=\"bean\""));
+        assertTrue(toolsHtml.contains("data-tool-history=\"invoke\""));
+        assertTrue(toolsHtml.contains("data-tool-history=\"dns\""));
+        assertTrue(toolsHtml.contains("data-tool-history=\"exec\""));
+        assertTrue(pageHtml.contains("rx.diagnostic.tools.history.v1"));
+        assertTrue(pageHtml.contains("maxHistory = 10"));
+        assertTrue(pageHtml.contains("Recent inputs"));
+        assertTrue(pageHtml.contains("data-tool-history-clear"));
+        assertTrue(pageHtml.contains("parts.push(key + '=' + values[key]"));
+        assertTrue(pageHtml.contains("parts.join(' | ')"));
+    }
+
+    @Test
     public void diagnosticPageRequiresBasicAuthAndReadsH2() throws Exception {
         DiagnosticConfig config = memConfig("diag_http");
         DiagnosticConfig oldDiagnostic = RxConfig.INSTANCE.getDiagnostic();
@@ -154,6 +175,8 @@ public class DiagnosticHttpHandlerTest {
                 assertTrue(html.contains("net.* Charts"));
                 assertTrue(html.contains("diagnostic.netIoBytesPerSecondThreshold"));
                 assertTrue(html.contains("Tools"));
+                assertTrue(html.contains("data-tool-history=\"exec\""));
+                assertTrue(html.contains("rx.diagnostic.tools.history.v1"));
                 assertTrue(html.contains("name=\"toolHost\""));
                 assertTrue(html.contains("name=\"toolCmd\""));
                 assertTrue(html.contains("Bean/Class Read Write"));
