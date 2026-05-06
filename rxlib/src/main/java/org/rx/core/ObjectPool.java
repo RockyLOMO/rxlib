@@ -800,24 +800,20 @@ public class ObjectPool<T> extends Disposable {
             threadLocalCache.set(null);
             if (conf.get(c.wrapper) == c && c.casState(ObjectConf.IDLE, ObjectConf.BORROWED)) {
                 removeSharedIdle(c);
-                boolean ok = true;
-                if (validateHandler.test(c.wrapper.instance)) {
-                    if (activateHandler != null) {
-                        try {
+                try {
+                    if (!validateHandler.test(c.wrapper.instance)) {
+                        doRetire(c.wrapper, 1);
+                    } else {
+                        if (activateHandler != null) {
                             activateHandler.accept(c.wrapper.instance);
-                        } catch (Throwable e) {
-                            doRetire(c.wrapper, 0);
-                            log.warn("borrow L1 error", e);
-                            ok = false;
                         }
-                    }
-                    if (ok) {
                         borrowAccumulator.increment();
                         triggerMinIdleMaintain();
                         return c.wrapper.instance;
                     }
-                } else {
-                    doRetire(c.wrapper, 1);
+                } catch (Throwable e) {
+                    doRetire(c.wrapper, 0);
+                    log.warn("borrow L1 error", e);
                 }
             }
         }

@@ -2,7 +2,7 @@
 
 用户要求在 `RockyLOMO/rxlib` 仓库 `master` 分支上，参考 `docs/test/review.md` 中定义的排除项目，对 `rxlib` 模块整体做一次 review。
 
-本次工作仅进入计划阶段：完成仓库结构扫描、排除范围识别、关键调用链和风险点梳理，并提交 review 计划文档。按流程约束，在用户明确要求“按计划执行 / 开始修改代码 / 继续写代码”前，不修改业务代码、不新增或修改测试代码。
+本次工作已从计划阶段进入执行阶段：先完成仓库结构扫描、排除范围识别、关键调用链和风险点梳理；在用户明确要求继续后，对已确认成立且可用最小测试复现的问题做代码修复，并在本文档中标记不认同或暂不采纳的候选项。
 
 # 任务类型判断
 
@@ -150,8 +150,8 @@
 
 # 非目标
 
-1. 本计划阶段不修改业务代码。
-2. 本计划阶段不新增或修改测试代码。
+1. 不修改未确认成立的问题。
+2. 不新增与本次确认问题无关的测试代码。
 3. 不 review 或修复 `docs/test/review.md` 中明确排除的类/包，除非后续用户明确要求。
 4. 不做大规模架构重写。
 5. 不升级大版本依赖。
@@ -230,13 +230,70 @@
 7. 非排除 socks
    - 检查 UDP relay、udp2raw、冗余/压缩 pipeline 的 MTU、session 清理、定时任务取消、ByteBuf 生命周期。
 
+# 本次执行结论（2026-05-06）
+
+用户已明确要求继续执行代码修改。本节记录对上述候选项的采纳状态，避免把“待复核问题池”误当成已确认缺陷。
+
+## 已认同并修改
+
+1. `ObjectPool.borrow` 线程本地 L1 缓存命中后的异常清理不完整。
+   - 结论：认同，已修复。
+   - 证据：`minIdleSize <= 0` 时，`recycle` 会把对象放入 `threadLocalCache`；下一次同线程 `borrow` 命中 L1 后会先执行 `IDLE -> BORROWED`，再执行 `validateHandler.test`。旧代码若 `validateHandler` 抛异常，会跳出 L1 分支且不调用 `doRetire`，导致对象保持 BORROWED、`totalCount` 不释放；在 `maxPoolSize=1` 时后续 borrow 只能超时。
+   - 修复：L1 分支内对 validate/activate 统一 try/catch；异常时执行 `doRetire(c.wrapper, 0)`，释放 live/idle 状态和 `totalCount`，并继续走主 borrow 循环创建或借出可用对象。
+   - 测试：新增 `ObjectPoolTest.testThreadLocalValidationExceptionReleasesSlotOnBorrow`。
+
+## 不认同 / 暂不采纳
+
+1. `ThreadPool.ThreadQueue` 计数器与 `availableSlots` 存在当前待修缺陷。
+   - 标记：不认同作为本轮代码修改项。
+   - 原因：二次复核发现 `offer/poll/take/drainTo/clear/remove/shutdownNow/caller-runs` 已有对称清理和回归测试覆盖，例如 `ThreadPoolQueueShutdownTest` 已覆盖 drain/clear/shutdownNow/阻塞 offer/CallerRuns/并发 poll 场景；本轮未找到新的可复现反例。
+
+2. `ThreadPool.runSerialAsync` 串行链路 map 一定存在泄漏。
+   - 标记：暂不采纳。
+   - 原因：当前实现对入队容量计数有 `try/catch` 回滚，完成后通过 `whenComplete` 清理 `taskSerialMap` 与 `taskSerialCountMap`；没有稳定复现取消、拒绝执行或异常路径遗留 map 的用例。后续若要继续，需要先构造明确失败测试。
+
+3. `ThreadPool.beforeExecute/afterExecute` 中 single、trace、FastThreadLocal 清理需要直接修改。
+   - 标记：暂不采纳。
+   - 原因：`SINGLE` 跳过执行分支没有获取 single 锁，也未设置 FastThreadLocal 或 trace，因此 `afterExecute` 早退不会遗漏这些资源；直接改动会触碰热点执行路径和 Netty internal 兼容点，当前证据不足。
+
+4. `WheelTimer` shutdown 后周期任务仍可能持续重调度。
+   - 标记：不认同作为当前缺陷。
+   - 原因：`Task.onExecutionFinished` 与 `PeriodicTask.scheduleNext` 都检查 `shutdown/cancelRequested`；已有 `WheelTimerShutdownPeriodicTest` 及线程池定时器回归测试覆盖 shutdown 周期任务行为。
+
+5. `ObjectPool.dispose` 与后台 validate 并发需要进一步重构。
+   - 标记：暂不采纳。
+   - 原因：当前已有 `disposing`、`validating`、`signalBorrowers`、`doRetire` 清理路径，且现有并发压力测试覆盖 borrow/recycle/validNow/close race。本轮只采纳并修复已证实的 L1 validate 异常泄漏，不做扩大重构。
+
+6. `HttpClient` response body 未消费会影响连接复用。
+   - 标记：不认同作为当前缺陷。
+   - 原因：当前客户端在 `LastHttpContent` 后先把响应体落入 `HybridStream`，再释放 channel 回连接池；用户是否消费 `Response.body` 不影响该请求对应 channel 的复用。`Response.close` 的职责是释放本地 body 资源和 activeResponses 追踪。
+
+7. `Remoting` pending request 在正常超时/异常返回后一定泄漏。
+   - 标记：暂不采纳。
+   - 原因：同步方法调用路径在 `finally` 中执行 `removeWaitBean`，断线重连场景会按现有设计重发 pending。若要修改 channelInactive 下的失败传播，需要先明确是否改变 stateful 自动重连语义，本轮不直接改。
+
+8. `DefaultTcpClient` dispose 后仍会实际发起重连。
+   - 标记：不认同作为当前缺陷。
+   - 原因：`dispose` 会先 `setEnableReconnect(false)` 并取消 pending connect；即使已有延迟重连任务触发，`doConnect(true)` 也会因 `canRetryConnect()` 为 false 走取消路径，不会继续 bootstrap connect。
+
+9. `UdpClient.close` 会阻塞 EventLoop 或泄漏 pending buffer。
+   - 标记：不认同作为当前缺陷。
+   - 原因：`close` 已区分 EventLoop 调用，EventLoop 内不 `syncUninterruptibly`；`pendingSends/pendingRequests/pendingReceives` 均有 cancel/complete/release/clear 路径，已有 `UdpTransportTest.closeFromEventLoopDoesNotBlockEventLoop` 和 ByteBuf 释放相关测试覆盖。
+
+## 未处理 / 待后续证据
+
+- DNS fallback、DoH 取消、DNS TCP/UDP 异常包处理：本轮未做代码修改。需要后续以明确场景和测试先复现，再决定是否改。
+- 非排除 socks UDP relay / udp2raw / 冗余链路：本轮未做代码修改。该区域影响协议兼容、MTU 和 ByteBuf 所有权，后续应单独拆小任务验证。
+
 # 修改文件列表
 
-本计划阶段实际修改：
+本次实际修改：
 
 - `docs/plan/review-rxlib-module-excluding-review-md-20260506.md`
+- `rxlib/src/main/java/org/rx/core/ObjectPool.java`
+- `rxlib/src/test/java/org/rx/core/ObjectPoolTest.java`
 
-后续若用户明确要求执行代码修复，预计可能修改以下范围中的少量文件，具体以确认的问题为准：
+后续若继续执行其他已确认代码修复，预计可能修改以下范围中的少量文件，具体以可复现问题为准：
 
 - `rxlib/src/main/java/org/rx/core/ThreadPool.java`
 - `rxlib/src/main/java/org/rx/core/ObjectPool.java`
@@ -282,9 +339,10 @@
 
 # 验证方案
 
-计划阶段：
+本次本地验证：
 
-- 不运行 CI，因为只新增 review 计划文档，不修改代码或测试。
+- 已执行：`mvn -pl rxlib "-Dtest=ObjectPoolTest,ObjectPoolRecycleOwnershipTest" test`
+- 结果：通过，`Tests run: 38, Failures: 0, Errors: 0, Skipped: 0`。
 
 后续代码阶段：
 
