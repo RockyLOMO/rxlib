@@ -19,7 +19,6 @@ import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
-import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.GeoManager;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -593,7 +592,7 @@ final class RssRuntime implements AutoCloseable {
             if (rssConf.hasDebugFlag()) {
                 log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
-            e.setUpstream(new SocksUdpUpstream(dstEp, toInConf, svrSupport));
+            e.setUpstream(createUdpRouteUpstream(dstEp, toInConf, svrSupport));
         });
         return ref;
     }

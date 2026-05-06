@@ -12,6 +12,7 @@ import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Udp2rawUpstream;
+import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -118,10 +119,12 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         String toClient;
         String toClientSocks;
         String toClientUdp2raw;
+        String toClientUdpClient;
         String toClientDirect;
         String toUpstream;
         String toUpstreamSocks;
         String toUpstreamUdp2raw;
+        String toUpstreamUdpClient;
         String toUpstreamDirect;
 
         String tags(boolean toClientDirection, Upstream upstream) {
@@ -130,6 +133,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             }
             if (upstream instanceof Udp2rawUpstream) {
                 return toClientDirection ? toClientUdp2raw() : toUpstreamUdp2raw();
+            }
+            if (upstream instanceof UdpClientUpstream) {
+                return toClientDirection ? toClientUdpClient() : toUpstreamUdpClient();
             }
             if (upstream != null) {
                 return toClientDirection ? toClientDirect() : toUpstreamDirect();
@@ -158,6 +164,13 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             return toClientUdp2raw;
         }
 
+        private String toClientUdpClient() {
+            if (toClientUdpClient == null) {
+                toClientUdpClient = base(TO_CLIENT) + ",mode=udp-client";
+            }
+            return toClientUdpClient;
+        }
+
         private String toClientDirect() {
             if (toClientDirect == null) {
                 toClientDirect = base(TO_CLIENT) + ",mode=direct";
@@ -184,6 +197,13 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                 toUpstreamUdp2raw = base(TO_UPSTREAM) + ",mode=udp2raw";
             }
             return toUpstreamUdp2raw;
+        }
+
+        private String toUpstreamUdpClient() {
+            if (toUpstreamUdpClient == null) {
+                toUpstreamUdpClient = base(TO_UPSTREAM) + ",mode=udp-client";
+            }
+            return toUpstreamUdpClient;
         }
 
         private String toUpstreamDirect() {
@@ -291,7 +311,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         if (lastRoute != null && lastRoute.matches(inBuf)) {
             SocksContext lastContext = lastRoute.context;
             if (isRouteReady(relay, lastContext)) {
-                if (!(lastContext.getUpstream() instanceof SocksUdpUpstream)) {
+                Upstream lastUpstream = lastContext.getUpstream();
+                if (!(lastUpstream instanceof SocksUdpUpstream) && !(lastUpstream instanceof UdpClientUpstream)) {
                     inBuf.skipBytes(lastRoute.requestHeader.length());
                 }
                 writeClientPacket(relay, inBuf, sender, clientOriginAddr, lastContext.getFirstDestination(), lastContext, false);
@@ -342,6 +363,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         Upstream upstream = sc != null ? sc.getUpstream() : null;
 
         boolean udp2rawUpstreamResponse = upstream instanceof Udp2rawUpstream;
+        boolean udpClientUpstreamResponse = upstream instanceof UdpClientUpstream;
         boolean socksUpstreamResponse = upstream instanceof SocksUdpUpstream
                 && ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay) != null;
         if (udp2rawUpstreamResponse) {
@@ -349,8 +371,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             if (outBuf == null) {
                 return;
             }
-        } else if (socksUpstreamResponse) {
-            // Response from next-hop SOCKS server: already has SOCKS5 header
+        } else if (socksUpstreamResponse || udpClientUpstreamResponse) {
+            // Response from next-hop UDP client/SOCKS server: already has SOCKS5 header.
             outBuf.retain();
         } else {
             // Direct response: prepend SOCKS5 UDP header with real sender address
@@ -449,6 +471,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         if (upstream instanceof Udp2rawUpstream) {
             return ((Udp2rawUpstream) upstream).getUdpEntryAddress(relay) != null;
         }
+        if (upstream instanceof UdpClientUpstream) {
+            return ((UdpClientUpstream) upstream).getUdpClientAddress(relay) != null;
+        }
         if (!(upstream instanceof SocksUdpUpstream)) {
             return resolveUpstreamTarget(relay, upstream) != null;
         }
@@ -458,6 +483,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     private static InetSocketAddress resolveUpstreamTarget(Channel relay, Upstream upstream) {
         if (upstream instanceof Udp2rawUpstream) {
             return ((Udp2rawUpstream) upstream).getUdpEntryAddress(relay);
+        }
+        if (upstream instanceof UdpClientUpstream) {
+            return ((UdpClientUpstream) upstream).getUdpClientAddress(relay);
         }
         if (upstream instanceof SocksUdpUpstream) {
             return ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay);
@@ -475,6 +503,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         Upstream upstream = context.getUpstream();
         if (upstream instanceof Udp2rawUpstream) {
             return CompletableFuture.completedFuture(((Udp2rawUpstream) upstream).getUdpEntryAddress(relay));
+        }
+        if (upstream instanceof UdpClientUpstream) {
+            return CompletableFuture.completedFuture(((UdpClientUpstream) upstream).getUdpClientAddress(relay));
         }
         if (upstream instanceof SocksUdpUpstream) {
             return CompletableFuture.completedFuture(((SocksUdpUpstream) upstream).getUdpRelayAddress(relay));
@@ -733,12 +764,17 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             SocksContext context, boolean retained) {
         Upstream upstream = context.getUpstream();
         Udp2rawUpstream udp2rawUpstream = upstream instanceof Udp2rawUpstream ? (Udp2rawUpstream) upstream : null;
+        UdpClientUpstream udpClientUpstream = upstream instanceof UdpClientUpstream ? (UdpClientUpstream) upstream : null;
         SocksUdpUpstream socksUpstream = upstream instanceof SocksUdpUpstream ? (SocksUdpUpstream) upstream : null;
         int trafficBytes = 0;
         InetSocketAddress upDstAddr;
         if (udp2rawUpstream != null) {
             trafficBytes = inBuf.readableBytes();
             upDstAddr = udp2rawUpstream.getUdpEntryAddress(relay);
+        } else if (udpClientUpstream != null) {
+            inBuf.resetReaderIndex();
+            trafficBytes = inBuf.readableBytes();
+            upDstAddr = udpClientUpstream.getUdpClientAddress(relay);
         } else if (socksUpstream != null) {
             inBuf.resetReaderIndex();
             trafficBytes = inBuf.readableBytes();
@@ -757,7 +793,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             return;
         }
 
-        if (udp2rawUpstream != null || socksUpstream != null) {
+        if (udp2rawUpstream != null || socksUpstream != null || udpClientUpstream != null) {
             registerRelayAddressIfMissing(relay, upDstAddr, context);
         }
         EndpointTracer.UDP.link(clientOriginAddr, relay);

@@ -35,7 +35,7 @@ public class RssClientConf {
                     server.setEndpoint(readSocksServerEndpoint(endpoint));
                     server.setUdp2raw(Boolean.TRUE.equals(obj.getBoolean("udp2raw")));
                     server.setTcpClient(readSocksServerEndpoint(obj.get("tcpClient")));
-                    server.setUdp2rawClient(readSocketAddress(obj.get("udp2rawClient")));
+                    server.setUdpClient(readSocketAddress(obj.get("udpClient")));
                     return server;
                 });
     }
@@ -136,8 +136,8 @@ public class RssClientConf {
         public boolean udp2raw;
         // TCP 走 kcptun/hysteria 等客户端时仅覆盖 endpoint 地址；账号密码默认沿用当前 socksServer。
         public AuthenticEndpoint tcpClient;
-        // UDP 固定 udp2raw 目标预留字段；当前 UDP 仍按 SOCKS5 UDP 路由处理。
-        public InetSocketAddress udp2rawClient;
+        // UDP 走 udp2raw/hysteria 等客户端时的固定 UDP 目标。
+        public InetSocketAddress udpClient;
 
         public SocksServer() {
         }

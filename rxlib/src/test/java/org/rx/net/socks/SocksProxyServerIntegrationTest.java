@@ -18,6 +18,7 @@ import org.rx.net.TransportFlags;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Udp2rawUpstream;
+import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
@@ -967,6 +968,55 @@ class SocksProxyServerIntegrationTest {
                 proxyB.close();
             }
             RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 20)
+    void shadowsocksUdpRelay_udpClientUpstream_preservesSocks5Header_e2e() {
+        Channel udpClient = null;
+        ShadowsocksServer ssServer = null;
+        DatagramSocket clientSock = null;
+        try {
+            udpClient = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(
+                    new SimpleChannelInboundHandler<DatagramPacket>() {
+                        @Override
+                        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                            ByteBuf in = msg.content();
+                            if (!UdpManager.isValidSocks5UdpPacket(in)) {
+                                return;
+                            }
+                            UnresolvedEndpoint dst = UdpManager.socks5Decode(in);
+                            ctx.writeAndFlush(new DatagramPacket(UdpManager.socks5Encode(in.retain(), dst), msg.sender()));
+                        }
+                    })).bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+            InetSocketAddress udpClientAddress = (InetSocketAddress) udpClient.localAddress();
+
+            ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0),
+                    org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "udp-client-ss-pwd");
+            ssServer = new ShadowsocksServer(ssConfig);
+            int ssPort = ((InetSocketAddress) ssServer.udpChannels.get(0).localAddress()).getPort();
+
+            SocksConfig tunnelConfig = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(
+                    new UdpClientUpstream(e.getFirstDestination(), tunnelConfig, udpClientAddress)));
+
+            org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(
+                    ssConfig.getMethod(), ssConfig.getPassword(), true);
+            clientSock = new DatagramSocket();
+            clientSock.setSoTimeout(5000);
+            assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-udp-client-upstream");
+        } finally {
+            if (clientSock != null) {
+                clientSock.close();
+            }
+            if (ssServer != null) {
+                ssServer.close();
+            }
+            if (udpClient != null) {
+                udpClient.close();
+            }
         }
     }
 

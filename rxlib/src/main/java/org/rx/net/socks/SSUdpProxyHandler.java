@@ -13,6 +13,7 @@ import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Udp2rawUpstream;
+import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -52,10 +53,12 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     private static final String UDP_TAG_FRONTEND_OUTBOUND = "path=frontend,flow=to-upstream";
     private static final String UDP_TAG_FRONTEND_OUTBOUND_SOCKS = UDP_TAG_FRONTEND_OUTBOUND + ",mode=socks";
     private static final String UDP_TAG_FRONTEND_OUTBOUND_UDP2RAW = UDP_TAG_FRONTEND_OUTBOUND + ",mode=udp2raw";
+    private static final String UDP_TAG_FRONTEND_OUTBOUND_UDP_CLIENT = UDP_TAG_FRONTEND_OUTBOUND + ",mode=udp-client";
     private static final String UDP_TAG_FRONTEND_OUTBOUND_DIRECT = UDP_TAG_FRONTEND_OUTBOUND + ",mode=direct";
     private static final String UDP_TAG_BACKEND_INBOUND = "path=backend,flow=to-client";
     private static final String UDP_TAG_BACKEND_INBOUND_SOCKS = UDP_TAG_BACKEND_INBOUND + ",mode=socks";
     private static final String UDP_TAG_BACKEND_INBOUND_UDP2RAW = UDP_TAG_BACKEND_INBOUND + ",mode=udp2raw";
+    private static final String UDP_TAG_BACKEND_INBOUND_UDP_CLIENT = UDP_TAG_BACKEND_INBOUND + ",mode=udp-client";
     private static final String UDP_TAG_BACKEND_INBOUND_DIRECT = UDP_TAG_BACKEND_INBOUND + ",mode=direct";
     static final ConcurrentHashMap<OutboundPoolKey, ChannelFuture> OUTBOUND_POOL = new ConcurrentHashMap<>();
     static final ConcurrentHashMap<OutboundSourceKey, AtomicInteger> OUTBOUND_POOL_SOURCE_COUNTS = new ConcurrentHashMap<>();
@@ -134,6 +137,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             this.upstreamType = upstream.getClass();
             this.affinity = upstream instanceof SocksUdpUpstream ? ((SocksUdpUpstream) upstream).poolKey()
                     : upstream instanceof Udp2rawUpstream ? ((Udp2rawUpstream) upstream).tunnelAffinity()
+                    : upstream instanceof UdpClientUpstream ? ((UdpClientUpstream) upstream).clientAffinity()
                     : upstream.getConfig();
             this.hash = (((inboundId.hashCode() * 31) + Objects.hashCode(source)) * 31 + upstreamType.hashCode()) * 31 + Objects.hashCode(affinity);
         }
@@ -208,6 +212,9 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         if (upstream instanceof Udp2rawUpstream) {
             return ((Udp2rawUpstream) upstream).getUdpEntryAddress(channel);
         }
+        if (upstream instanceof UdpClientUpstream) {
+            return ((UdpClientUpstream) upstream).getUdpClientAddress(channel);
+        }
         return null;
     }
 
@@ -269,6 +276,11 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         Upstream upstream = sc.getUpstream();
         if (upstream instanceof Udp2rawUpstream) {
             return ((Udp2rawUpstream) upstream).buildRequestPacket(outbound, payload, srcEp, dstEp);
+        }
+        if (upstream instanceof UdpClientUpstream) {
+            UdpManager.HeaderTemplate headerTemplate = socks5HeaderTemplate(sc.inbound, dstEp);
+            return new DatagramPacket(UdpManager.socks5Encode(payload, headerTemplate),
+                    ((UdpClientUpstream) upstream).getUdpClientAddress(outbound));
         }
         if (upstream instanceof SocksUdpUpstream) {
             UdpManager.HeaderTemplate headerTemplate = socks5HeaderTemplate(sc.inbound, dstEp);
@@ -392,6 +404,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             return;
         }
         if (!(upstream instanceof SocksUdpUpstream) && !(upstream instanceof Udp2rawUpstream)
+                && !(upstream instanceof UdpClientUpstream)
                 || relayAddress(upstream, outbound) != null) {
             runOnOutboundLoop(outbound, () -> writePacketNow(sc, outbound, dstEp, payload, srcEp, debug));
             return;
@@ -800,11 +813,17 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 realDstEp = response.getSourceAddress();
                 responseDst = new UnresolvedEndpoint(realDstEp.getHostString(), realDstEp.getPort());
             } else if (udpRelayAddr != null) {
-                SocksUdpUpstream socksUpstream = (SocksUdpUpstream) binding.representativeUpstream;
-                if (!socksUpstream.ownsUdpRelayAddress(outbound, out.sender())) {
+                boolean udpClientResponse = representative instanceof UdpClientUpstream;
+                if (!udpClientResponse && !((SocksUdpUpstream) representative).ownsUdpRelayAddress(outbound, out.sender())) {
                     DiagnosticMetrics.record("ss.udp.unexpected.sender.count", 1D,
                             "path=backend,mode=socks");
                     log.warn("SS UDP discard packet from unexpected relay sender {}, expected group primary {}", out.sender(), udpRelayAddr);
+                    return;
+                }
+                if (udpClientResponse && !((UdpClientUpstream) representative).ownsUdpClientAddress(out.sender())) {
+                    DiagnosticMetrics.record("ss.udp.unexpected.sender.count", 1D,
+                            "path=backend,mode=udp-client");
+                    log.warn("SS UDP discard packet from unexpected udp client sender {}, expected {}", out.sender(), udpRelayAddr);
                     return;
                 }
                 if (!UdpManager.isValidSocks5UdpPacket(outBuf)) {
@@ -813,7 +832,9 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                     log.warn("SS UDP discard invalid socks5 relay packet from {}, size={}", out.sender(), outBuf.readableBytes());
                     return;
                 }
-                socksUpstream.recordUdpTraffic(outbound, outBuf.readableBytes());
+                if (!udpClientResponse) {
+                    ((SocksUdpUpstream) representative).recordUdpTraffic(outbound, outBuf.readableBytes());
+                }
                 responseDst = UdpManager.socks5Decode(outBuf);
                 realDstEp = responseDst.socketAddress();
             } else {
@@ -1019,6 +1040,9 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             if (upstream instanceof Udp2rawUpstream) {
                 return UDP_TAG_FRONTEND_OUTBOUND_UDP2RAW;
             }
+            if (upstream instanceof UdpClientUpstream) {
+                return UDP_TAG_FRONTEND_OUTBOUND_UDP_CLIENT;
+            }
             return upstream != null ? UDP_TAG_FRONTEND_OUTBOUND_DIRECT : UDP_TAG_FRONTEND_OUTBOUND;
         }
         if ("backend".equals(path) && "inbound".equals(direction)) {
@@ -1028,12 +1052,17 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             if (upstream instanceof Udp2rawUpstream) {
                 return UDP_TAG_BACKEND_INBOUND_UDP2RAW;
             }
+            if (upstream instanceof UdpClientUpstream) {
+                return UDP_TAG_BACKEND_INBOUND_UDP_CLIENT;
+            }
             return upstream != null ? UDP_TAG_BACKEND_INBOUND_DIRECT : UDP_TAG_BACKEND_INBOUND;
         }
 
         String flow = "outbound".equals(direction) ? "to-upstream" : "inbound".equals(direction) ? "to-client" : direction;
         String tags = "path=" + path + ",flow=" + flow;
         return upstream != null ? tags + ",mode="
-                + (upstream instanceof SocksUdpUpstream ? "socks" : upstream instanceof Udp2rawUpstream ? "udp2raw" : "direct") : tags;
+                + (upstream instanceof SocksUdpUpstream ? "socks"
+                : upstream instanceof Udp2rawUpstream ? "udp2raw"
+                : upstream instanceof UdpClientUpstream ? "udp-client" : "direct") : tags;
     }
 }

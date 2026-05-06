@@ -48,6 +48,8 @@ import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.socks.upstream.Udp2rawUpstream;
+import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.GeoManager;
 import org.rx.net.support.IpGeolocation;
@@ -498,9 +500,20 @@ public final class RssClient {
                 log.warn("rssConf socksServer {} tcpClient is not InetSocketAddress", socksServer);
                 return false;
             }
-            if (socksServer.isUdp2raw() && weightOf(socksServer) > 0 && tcpClient == null) {
-                log.warn("rssConf socksServer {} udp2raw requires tcpClient", socksServer);
+            InetSocketAddress udpClient = socksServer.getUdpClient();
+            if (udpClient != null && udpClient.getPort() <= 0) {
+                log.warn("rssConf socksServer {} udpClient port invalid", socksServer);
                 return false;
+            }
+            if (socksServer.isUdp2raw() && weightOf(socksServer) > 0) {
+                if (udpClient != null) {
+                    log.warn("rssConf socksServer {} udp2raw conflicts with udpClient", socksServer);
+                    return false;
+                }
+                if (tcpClient == null) {
+                    log.warn("rssConf socksServer {} udp2raw requires tcpClient", socksServer);
+                    return false;
+                }
             }
             String id = trimToNull(socksServer.getId());
             if (id == null) {
@@ -574,7 +587,8 @@ public final class RssClient {
         if (socksServer != null && socksServer.isUdp2raw()) {
             return ServerRouteMode.UDP2RAW;
         }
-        return socksServer != null && socksServer.getTcpClient() != null ? ServerRouteMode.TCP_CLIENT : ServerRouteMode.SOCKS;
+        return socksServer != null && (socksServer.getTcpClient() != null || socksServer.getUdpClient() != null)
+                ? ServerRouteMode.TCP_CLIENT : ServerRouteMode.SOCKS;
     }
 
     private static Map<String, RssClientConf.SocksServer> indexSocksServers(List<RssClientConf.SocksServer> socksServers) {
@@ -658,6 +672,7 @@ public final class RssClient {
                 UpstreamSupport support = new UpstreamSupport(socksServer, facade);
                 support.setConfiguredWeight(weight);
                 support.setTcpClient(configuredServer.getTcpClient());
+                support.setUdpClient(configuredServer.getUdpClient());
                 socksServers.add(support, weight);
                 addDnsInterceptorWeight(dnsInterceptors, facade, weight);
                 if (!Strings.isEmpty(configuredServer.getId())) {
@@ -679,6 +694,8 @@ public final class RssClient {
                 UpstreamSupport support = new UpstreamSupport(socksServer, facade);
                 support.setConfiguredWeight(weight);
                 support.setTcpClient(configuredServer.getTcpClient());
+                support.setUdpClient(configuredServer.getUdpClient());
+                support.setUdp2raw(true);
                 udp2rawSocksServers.add(support, weight);
                 if (!Strings.isEmpty(configuredServer.getId())) {
                     udp2rawSupportByServerId.put(configuredServer.getId(), support);
@@ -835,9 +852,13 @@ public final class RssClient {
             if (weight <= 0) {
                 continue;
             }
-            UpstreamSupport support = new UpstreamSupport(rewriteEndpoint(configuredServer.getEndpoint(),
-                    configuredServer.getTcpClient()), null);
+            AuthenticEndpoint endpoint = configuredServer.getTcpClient() == null
+                    ? configuredServer.getEndpoint()
+                    : rewriteEndpoint(configuredServer.getEndpoint(), configuredServer.getTcpClient());
+            UpstreamSupport support = new UpstreamSupport(endpoint, null);
             support.setConfiguredWeight(weight);
+            support.setTcpClient(configuredServer.getTcpClient());
+            support.setUdpClient(configuredServer.getUdpClient());
             servers.add(support, weight);
         }
         return servers;
@@ -1309,7 +1330,7 @@ public final class RssClient {
         SocksConfig outConf = createOutboundConfig(conf, inConf);
         AtomicReference<SocksConfig> outConfRef = new AtomicReference<>(outConf);
         AtomicBoolean sourceSteeringEnabled = new AtomicBoolean(true);
-        BiFunc<SocksContext, UpstreamSupport> routerFn = e -> {
+        BiFunc<SocksContext, UpstreamSupport> selectUpstreamFn = e -> {
             InetAddress srcHost = e.getSource().getAddress();
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             RandomList<UpstreamSupport> servers = resolveUserSocksServers(socksServersRef.get(),
@@ -1324,8 +1345,7 @@ public final class RssClient {
             if (rssConf.hasDebugFlag()) {
                 log.info("route upSvr src {} dst {} -> {}", srcHost, dstEp, next.getEndpoint());
             }
-            SocksConfig currentOutConf = outConfRef.get();
-            return routeUpstream(currentOutConf, next);
+            return next;
         };
         QuadraFunc<InetSocketAddress, UnresolvedEndpoint, String, Boolean> routeingFn = (srcEp, dstEp, transType) -> {
             String host = dstEp.getHost();
@@ -1371,7 +1391,8 @@ public final class RssClient {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             SocksConfig currentOutConf = outConfRef.get();
             if (routeingFn.apply(e.getSource(), dstEp, "TCP")) {
-                e.setUpstream(new SocksTcpUpstream(dstEp, currentOutConf, routerFn.apply(e)));
+                e.setUpstream(new SocksTcpUpstream(dstEp, currentOutConf,
+                        routeUpstream(currentOutConf, selectUpstreamFn.apply(e))));
             } else {
                 e.setUpstream(new Upstream(dstEp));
             }
@@ -1383,7 +1404,7 @@ public final class RssClient {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             SocksConfig currentOutConf = outConfRef.get();
             if (routeingFn.apply(e.getSource(), dstEp, "UDP")) {
-                e.setUpstream(new SocksUdpUpstream(dstEp, currentOutConf, routerFn.apply(e)));
+                e.setUpstream(createUdpRouteUpstream(dstEp, currentOutConf, selectUpstreamFn.apply(e)));
             } else {
                 e.setUpstream(new Upstream(dstEp));
             }
@@ -1519,6 +1540,20 @@ public final class RssClient {
             }
         }
         throw new NoSuchElementException();
+    }
+
+    static Upstream createUdpRouteUpstream(UnresolvedEndpoint dstEp, SocksConfig config, UpstreamSupport next) {
+        if (next == null) {
+            return new Upstream(dstEp);
+        }
+        if (next.isUdp2raw()) {
+            return new Udp2rawUpstream(dstEp, config, next);
+        }
+        InetSocketAddress udpClient = next.getUdpClient();
+        if (udpClient != null) {
+            return new UdpClientUpstream(dstEp, config, udpClient);
+        }
+        return new SocksUdpUpstream(dstEp, config, routeUpstream(config, next));
     }
 
     static UpstreamSupport routeUpstream(SocksConfig inConf, UpstreamSupport next) {
