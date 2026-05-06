@@ -52,8 +52,13 @@ public final class Udp2rawMtuState {
             this.currentMtu = 0;
             return;
         }
-        this.minMtu = Math.max(576, minMtu);
-        this.maxMtu = Math.max(this.minMtu, maxMtu);
+        int effectiveMax = maxMtu > 0 ? maxMtu : MAX_MTU;
+        int effectiveMin = Math.max(576, minMtu);
+        if (effectiveMin > effectiveMax) {
+            effectiveMin = effectiveMax;
+        }
+        this.minMtu = Math.max(1, effectiveMin);
+        this.maxMtu = Math.max(this.minMtu, effectiveMax);
         this.currentMtu = clamp(initialMtu, this.minMtu, this.maxMtu);
         this.nextProbeAtMillis = System.currentTimeMillis() + 1_000L;
     }

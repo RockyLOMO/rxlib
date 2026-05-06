@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -76,5 +78,33 @@ class Udp2rawMtuStateTest {
         Udp2rawMtuState.Probe next = state.nextProbe(now + 20_000L);
 
         assertEquals(1300, next.mtu);
+    }
+
+    @Test
+    void initialBelowMinRespectsHardCap() {
+        Udp2rawMtuState state = new Udp2rawMtuState(1000, "client");
+        long now = System.currentTimeMillis() + 1000L;
+
+        assertEquals(1000, state.currentMtu());
+        Udp2rawMtuState.Probe probe = state.nextProbe(now);
+
+        assertEquals(1000, probe.mtu);
+    }
+
+    @Test
+    void ackAcceptedMtuRequiresExactlyFourBytes() {
+        assertEquals(-1, Udp2rawMtuProbeSupport.readAckAcceptedMtu(Unpooled.EMPTY_BUFFER));
+        ByteBuf three = Unpooled.buffer(3).writeMedium(1300);
+        ByteBuf five = Unpooled.buffer(5).writeInt(1300).writeByte(0);
+        ByteBuf zero = Unpooled.buffer(4).writeInt(0);
+        try {
+            assertEquals(-1, Udp2rawMtuProbeSupport.readAckAcceptedMtu(three));
+            assertEquals(-1, Udp2rawMtuProbeSupport.readAckAcceptedMtu(five));
+            assertEquals(-1, Udp2rawMtuProbeSupport.readAckAcceptedMtu(zero));
+        } finally {
+            three.release();
+            five.release();
+            zero.release();
+        }
     }
 }

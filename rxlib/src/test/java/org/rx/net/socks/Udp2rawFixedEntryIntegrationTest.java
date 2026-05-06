@@ -162,6 +162,66 @@ class Udp2rawFixedEntryIntegrationTest {
 
     @Test
     @Timeout(20)
+    void fixedEntrySendsResponseDirectionMtuProbeAndAcceptsAck() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-response-mtu-probe-token");
+        SocksProxyServer proxy = null;
+        DatagramSocket client = null;
+        try {
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            config.setUdpMtu(1300);
+            proxy = new SocksProxyServer(config, null);
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-response-mtu");
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+
+            client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            client.setSoTimeout(5000);
+            sendRawUdp(client, entryAddress, buildMtuProbe(open, 88L, 1300));
+
+            java.net.DatagramPacket ackPacket = receive(client);
+            ByteBuf ackBuf = Unpooled.wrappedBuffer(ackPacket.getData(), 0, ackPacket.getLength());
+            try {
+                Udp2rawFrame ack = Udp2rawCodec.decode(ackBuf);
+                assertEquals(Udp2rawFrameType.MTU_ACK, ack.getType());
+                assertEquals(88L, ack.getPacketSeq());
+            } finally {
+                ackBuf.release();
+            }
+
+            java.net.DatagramPacket probePacket = receive(client);
+            assertEquals(1300, probePacket.getLength());
+            ByteBuf probeBuf = Unpooled.wrappedBuffer(probePacket.getData(), 0, probePacket.getLength());
+            long probeSeq;
+            try {
+                Udp2rawFrame probe = Udp2rawCodec.decode(probeBuf);
+                assertEquals(Udp2rawFrameType.MTU_PROBE, probe.getType());
+                assertTrue(probe.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG));
+                assertTrue(Udp2rawAuthenticator.verify(open.getSessionSecret(), probe, probeBuf.slice()));
+                probeSeq = probe.getPacketSeq();
+            } finally {
+                probeBuf.release();
+            }
+
+            sendRawUdp(client, entryAddress, buildMtuAck(open, probeSeq, probePacket.getLength()));
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @Timeout(20)
     void fixedEntryCompressesResponseAndDropsRedundantRequest() throws Exception {
         String oldToken = RxConfig.INSTANCE.getRtoken();
         RxConfig.INSTANCE.setRtoken("udp2raw-p6-test-token");
@@ -618,6 +678,21 @@ class Udp2rawFixedEntryIntegrationTest {
         }
     }
 
+    private static byte[] buildMtuAck(Udp2rawOpenResult open, long seq, int acceptedMtu) {
+        ByteBuf encoded = null;
+        try {
+            encoded = Udp2rawMtuProbeSupport.encodeAck(UnpooledByteBufAllocator.DEFAULT,
+                    open.getSessionSecret(), open.getSessionHi(), open.getSessionLo(), seq, acceptedMtu);
+            byte[] bytes = new byte[encoded.readableBytes()];
+            encoded.getBytes(encoded.readerIndex(), bytes);
+            return bytes;
+        } finally {
+            if (encoded != null) {
+                encoded.release();
+            }
+        }
+    }
+
     private static byte[] buildCompressedUdp2raw(Udp2rawOpenResult open,
             InetSocketAddress clientSource, InetSocketAddress destination, String text) {
         UdpCompressConfig compressConfig = new UdpCompressConfig();
@@ -688,7 +763,7 @@ class Udp2rawFixedEntryIntegrationTest {
     }
 
     private static java.net.DatagramPacket receive(DatagramSocket socket) throws Exception {
-        byte[] bytes = new byte[1024];
+        byte[] bytes = new byte[2048];
         java.net.DatagramPacket packet = new java.net.DatagramPacket(bytes, bytes.length);
         socket.receive(packet);
         return packet;

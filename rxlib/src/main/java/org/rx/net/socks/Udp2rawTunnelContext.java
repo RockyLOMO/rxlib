@@ -1,12 +1,17 @@
 package org.rx.net.socks;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
+import org.rx.io.Bytes;
 import org.rx.diagnostic.DiagnosticMetrics;
+import org.rx.net.Sockets;
 import org.rx.net.support.UnresolvedEndpoint;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 final class Udp2rawTunnelContext {
@@ -30,6 +35,10 @@ final class Udp2rawTunnelContext {
     final ConcurrentMap<Udp2rawSessionKey, Udp2rawSession> sessions = new ConcurrentHashMap<>();
     final ConcurrentMap<InetSocketAddress, PeerGuard> peerGuards = new ConcurrentHashMap<>();
     private final AtomicLong nextRedundantAdjustAtMillis = new AtomicLong();
+    private volatile ScheduledFuture<?> mtuProbeFuture;
+    private volatile Channel mtuProbeChannel;
+    private volatile InetSocketAddress mtuProbePeer;
+    private volatile boolean closed;
     volatile long lastActiveAtMillis;
 
     Udp2rawTunnelContext(Udp2rawServerEntryManager manager, String tunnelId,
@@ -149,6 +158,22 @@ final class Udp2rawTunnelContext {
         return mtuState != null ? mtuState.currentMtu() : 0;
     }
 
+    synchronized void noteMtuPeer(Channel channel, InetSocketAddress peer) {
+        if (closed || mtuState == null || mtuState.currentMtu() <= 0 || channel == null || peer == null) {
+            return;
+        }
+        boolean channelChanged = mtuProbeChannel != null && mtuProbeChannel != channel;
+        mtuProbeChannel = channel;
+        mtuProbePeer = peer;
+        if (channelChanged && mtuProbeFuture != null) {
+            mtuProbeFuture.cancel(false);
+            mtuProbeFuture = null;
+        }
+        if (mtuProbeFuture == null || mtuProbeFuture.isDone()) {
+            scheduleMtuProbe(1000L);
+        }
+    }
+
     SocksContext trafficContext(InetSocketAddress source, UnresolvedEndpoint destination) {
         if (trafficUser == null || trafficUser.isAnonymous() || source == null || source.getAddress() == null) {
             return null;
@@ -168,6 +193,12 @@ final class Udp2rawTunnelContext {
     }
 
     void close(String reason) {
+        closed = true;
+        ScheduledFuture<?> future = mtuProbeFuture;
+        if (future != null) {
+            future.cancel(false);
+            mtuProbeFuture = null;
+        }
         for (Udp2rawSession session : sessions.values()) {
             session.close(reason);
         }
@@ -186,6 +217,55 @@ final class Udp2rawTunnelContext {
         PeerGuard created = new PeerGuard();
         PeerGuard old = peerGuards.putIfAbsent(peer, created);
         return old != null ? old : created;
+    }
+
+    private synchronized void scheduleMtuProbe(long delayMillis) {
+        final Channel channel = mtuProbeChannel;
+        if (closed || channel == null || !channel.isActive() || mtuProbePeer == null
+                || mtuState == null || mtuState.currentMtu() <= 0) {
+            return;
+        }
+        mtuProbeFuture = channel.eventLoop().schedule(new Runnable() {
+            @Override
+            public void run() {
+                runMtuProbe();
+            }
+        }, Math.max(1L, delayMillis), TimeUnit.MILLISECONDS);
+    }
+
+    private void runMtuProbe() {
+        Channel channel = mtuProbeChannel;
+        InetSocketAddress peer = mtuProbePeer;
+        if (closed || channel == null || !channel.isActive() || peer == null
+                || mtuState == null || mtuState.currentMtu() <= 0) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        Udp2rawMtuState.Probe probe = mtuState.nextProbe(now);
+        if (probe != null) {
+            sendMtuProbe(channel, peer, probe);
+        }
+        scheduleMtuProbe(mtuState.nextDelayMillis(System.currentTimeMillis()));
+    }
+
+    private void sendMtuProbe(Channel channel, InetSocketAddress peer, Udp2rawMtuState.Probe probe) {
+        ByteBuf encoded = null;
+        try {
+            encoded = Udp2rawMtuProbeSupport.encodeProbe(channel.alloc(), sessionSecret,
+                    sessionHi, sessionLo, probe.seq, probe.mtu);
+            Sockets.UdpWriteResult result = Sockets.writeUdp(channel,
+                    new Sockets.UdpMtuProbeDatagramPacket(encoded, peer),
+                    "socks.udp2raw", "flow=mtu-probe,side=server");
+            encoded = null;
+            if (result != Sockets.UdpWriteResult.ACCEPTED) {
+                DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D,
+                        "action=local-drop,side=server,result=" + result);
+            }
+        } catch (Throwable e) {
+            Bytes.release(encoded);
+            DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D,
+                    "action=encode-fail,side=server");
+        }
     }
 
     private static final class PeerGuard {

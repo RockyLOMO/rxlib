@@ -25,6 +25,7 @@ import org.rx.net.socks.Udp2rawCodec;
 import org.rx.net.socks.Udp2rawFrame;
 import org.rx.net.socks.Udp2rawFrameType;
 import org.rx.net.socks.Udp2rawMtuState;
+import org.rx.net.socks.Udp2rawMtuProbeSupport;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.socks.Udp2rawPayloadSupport;
@@ -338,6 +339,7 @@ public class Udp2rawUpstream extends Upstream {
         }
 
         ByteBuf content = in.content();
+        int datagramBytes = content.readableBytes();
         Udp2rawFrame frame;
         try {
             frame = Udp2rawCodec.decode(content);
@@ -353,6 +355,10 @@ public class Udp2rawUpstream extends Upstream {
         }
         if (frame.getType() == Udp2rawFrameType.MTU_ACK) {
             handleMtuAck(state, frame, content.slice());
+            return null;
+        }
+        if (frame.getType() == Udp2rawFrameType.MTU_PROBE) {
+            handleMtuProbe(relay, state, frame, content.slice(), datagramBytes);
             return null;
         }
         if (frame.getType() != Udp2rawFrameType.DATA) {
@@ -399,10 +405,45 @@ public class Udp2rawUpstream extends Upstream {
             DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D, "action=bad-ack");
             return;
         }
-        int acceptedMtu = payload != null && payload.readableBytes() >= 4
-                ? payload.getInt(payload.readerIndex()) : 0;
+        int acceptedMtu = Udp2rawMtuProbeSupport.readAckAcceptedMtu(payload);
+        if (acceptedMtu <= 0) {
+            DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D, "action=bad-ack-payload");
+            return;
+        }
         if (state.mtuState.ack(frame.getPacketSeq(), acceptedMtu, System.currentTimeMillis())) {
             state.touch();
+        }
+    }
+
+    private void handleMtuProbe(Channel relay, TunnelState state,
+            Udp2rawFrame frame, ByteBuf payload, int datagramBytes) {
+        if (!frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG)
+                || !Udp2rawAuthenticator.verify(state.sessionSecret, frame, payload)) {
+            DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D, "action=bad-probe");
+            return;
+        }
+        sendMtuAck(relay, state, frame.getPacketSeq(), datagramBytes);
+        state.touch();
+    }
+
+    private void sendMtuAck(Channel channel, TunnelState state, long seq, int acceptedMtu) {
+        ByteBuf encoded = null;
+        try {
+            encoded = Udp2rawMtuProbeSupport.encodeAck(channel.alloc(), state.sessionSecret,
+                    state.sessionHi, state.sessionLo, seq, acceptedMtu);
+            Sockets.UdpWriteResult result = Sockets.writeUdp(channel,
+                    new DatagramPacket(encoded, state.udpTransportAddress),
+                    METRIC_PREFIX, "flow=mtu-ack,side=client");
+            encoded = null;
+            if (result != Sockets.UdpWriteResult.ACCEPTED) {
+                DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D,
+                        "action=ack-drop,side=client,result=" + result);
+            }
+        } catch (Throwable e) {
+            Bytes.release(encoded);
+            DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D,
+                    "action=ack-encode-fail,side=client");
+            log.warn("udp2raw MTU ack send failed to {}", state.udpTransportAddress, e);
         }
     }
 
@@ -659,21 +700,10 @@ public class Udp2rawUpstream extends Upstream {
     }
 
     private void sendMtuProbe(Channel channel, TunnelState state, Udp2rawMtuState.Probe probe) {
-        ByteBuf payload = null;
-        ByteBuf authTag = null;
         ByteBuf encoded = null;
         try {
-            Udp2rawFrame frame = Udp2rawFrame.data(state.sessionHi, state.sessionLo, 0L, probe.seq);
-            frame.setType(Udp2rawFrameType.MTU_PROBE);
-            frame.setFlags(Udp2rawCodec.FLAG_AUTH_TAG);
-            int headerBytes = Udp2rawCodec.FIXED_HEADER_LENGTH + 1 + Udp2rawAuthenticator.DEFAULT_TAG_BYTES;
-            int payloadBytes = Math.max(0, probe.mtu - headerBytes);
-            payload = channel.alloc().directBuffer(payloadBytes, payloadBytes);
-            payload.writeZero(payloadBytes);
-            authTag = Udp2rawAuthenticator.sign(channel.alloc(), state.sessionSecret, frame, payload);
-            frame.setAuthTag(authTag);
-            encoded = Udp2rawCodec.encode(channel.alloc(), frame, payload);
-            payload = null;
+            encoded = Udp2rawMtuProbeSupport.encodeProbe(channel.alloc(), state.sessionSecret,
+                    state.sessionHi, state.sessionLo, probe.seq, probe.mtu);
             Sockets.UdpWriteResult result = Sockets.writeUdp(channel,
                     new Sockets.UdpMtuProbeDatagramPacket(encoded, state.udpTransportAddress),
                     METRIC_PREFIX, "flow=mtu-probe");
@@ -683,12 +713,9 @@ public class Udp2rawUpstream extends Upstream {
                         "action=local-drop,result=" + result);
             }
         } catch (Throwable e) {
-            Bytes.release(payload);
             Bytes.release(encoded);
             DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D, "action=encode-fail");
             log.warn("udp2raw MTU probe send failed to {}", state.udpTransportAddress, e);
-        } finally {
-            Bytes.release(authTag);
         }
     }
 

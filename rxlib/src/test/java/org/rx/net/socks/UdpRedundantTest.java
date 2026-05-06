@@ -927,6 +927,23 @@ public class UdpRedundantTest {
         }
     }
 
+    @Test
+    public void testDynamicMtuBelow1200DoesNotBypassFinalGuard() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        Udp2rawMtuState state = new Udp2rawMtuState(1000, "client");
+        try {
+            Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(channel,
+                    Unpooled.buffer(1001).writeZero(1001), REMOTE,
+                    null, null, null, "flow=request", state.currentMtu(), state);
+
+            assertEquals(Sockets.UdpWriteResult.MTU_EXCEEDED, result);
+            assertEquals(1000, state.currentMtu());
+            assertNull(channel.readOutbound());
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
     // ===================== 辅助方法 =====================
 
     /**
