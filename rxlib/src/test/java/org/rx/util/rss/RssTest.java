@@ -1036,7 +1036,7 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
-    public void normalizeAndValidateRssConfig_RejectsUdp2rawWithTransparentUdpClient() {
+    public void normalizeAndValidateRssConfig_AcceptsUdp2rawWithTransportUdpClient() {
         RssClientConf conf = validRssConf();
         RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("tun-a", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
@@ -1046,7 +1046,7 @@ public class RssTest extends AbstractTester {
         conf.socksServers = Arrays.asList(conf.socksServers.get(0), udp2raw);
         conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("tun-a"));
 
-        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
     }
 
     @Test

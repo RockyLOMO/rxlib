@@ -872,6 +872,73 @@ class SocksProxyServerIntegrationTest {
     @Test
     @SneakyThrows
     @Timeout(value = 20)
+    void socks5UdpRelay_udp2rawUpstream_viaExternalUdpClient_e2e() {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-upstream-external-client-token");
+        SocksProxyServer proxyA = null;
+        SocksProxyServer proxyB = null;
+        Channel udpClient = null;
+        try {
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            configB.setEnableUdp2raw(true);
+            configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            proxyB = new SocksProxyServer(configB, null);
+            int proxyBPort = ((InetSocketAddress) proxyB.tcpChannels.get(0).localAddress()).getPort();
+            int proxyBEntryPort = proxyB.getUdp2rawEntryAddress().getPort();
+            InetSocketAddress proxyBEntry = new InetSocketAddress("127.0.0.1", proxyBEntryPort);
+
+            AtomicReference<InetSocketAddress> proxyAAddress = new AtomicReference<>();
+            udpClient = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(
+                    new SimpleChannelInboundHandler<DatagramPacket>() {
+                        @Override
+                        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                            InetSocketAddress sender = msg.sender();
+                            if (sender.getPort() == proxyBEntryPort) {
+                                InetSocketAddress client = proxyAAddress.get();
+                                if (client != null) {
+                                    ctx.writeAndFlush(new DatagramPacket(msg.content().retain(), client));
+                                }
+                                return;
+                            }
+                            proxyAAddress.set(sender);
+                            ctx.writeAndFlush(new DatagramPacket(msg.content().retain(), proxyBEntry));
+                        }
+                    })).bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+            InetSocketAddress udpClientAddress = (InetSocketAddress) udpClient.localAddress();
+
+            SocksConfig configA = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            configA.setEnableUdp2raw(false);
+            proxyA = new SocksProxyServer(configA, null);
+            int proxyAPort = ((InetSocketAddress) proxyA.tcpChannels.get(0).localAddress()).getPort();
+
+            UpstreamSupport supportB = new UpstreamSupport(
+                    new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null),
+                    new LocalRpcFacade(proxyB));
+            supportB.setUdpClient(udpClientAddress);
+            SocksProxyServer finalProxyB = proxyB;
+            proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(
+                    new Udp2rawUpstream(e.getFirstDestination(), configA, supportB)));
+
+            assertTrue(sendUdpViaProxy(proxyAPort, "udp2raw-external-client", 5));
+            assertEquals(0, finalProxyB.udpRelayRegistry.size(),
+                    "udp2raw via external UDP client must not create standard SOCKS5 UDP relay entries on B");
+        } finally {
+            if (udpClient != null) {
+                udpClient.close();
+            }
+            if (proxyA != null) {
+                proxyA.close();
+            }
+            if (proxyB != null) {
+                proxyB.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 20)
     void socks5UdpRelay_udp2rawUpstream_fixedEntry_compressAndRedundant_e2e() {
         String oldToken = RxConfig.INSTANCE.getRtoken();
         RxConfig.INSTANCE.setRtoken("udp2raw-upstream-p6-token");
