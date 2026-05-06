@@ -15,6 +15,8 @@ import java.io.File;
 import java.net.ServerSocket;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -259,6 +261,54 @@ public class DiagnosticHttpHandlerTest {
         }
     }
 
+    @Test
+    public void diagnosticPageKeepsNonH2TabsWhenH2FileMissing() throws Exception {
+        DiagnosticConfig config = memConfig("diag_http_missing_h2");
+        DiagnosticConfig oldDiagnostic = RxConfig.INSTANCE.getDiagnostic();
+        String oldRtoken = RxConfig.INSTANCE.getRtoken();
+        Path dir = Files.createTempDirectory("rx-diag-missing-h2");
+        HttpServer server = null;
+        try {
+            config.setH2JdbcUrl(null);
+            config.setH2File(dir.resolve("rx-diagnostic").toFile());
+            RxConfig.INSTANCE.setDiagnostic(config);
+            RxConfig.INSTANCE.setRtoken("secret");
+
+            int port = freePort();
+            server = new HttpServer(port, false).requestDiagnostic("/diag");
+            try (HttpClient client = new HttpClient()) {
+                client.requestHeaders().set(HttpHeaderNames.AUTHORIZATION, basic("secret"));
+                HttpClient.Response ok = client.get("http://127.0.0.1:" + port + "/diag?limit=10");
+                String html = ok.bodyAsString();
+
+                assertEquals(200, ok.code());
+                assertTrue(html.contains("No H2 data"));
+                assertTrue(html.contains("Diagnostic H2 file was not found."));
+                assertTrue(html.contains("Runtime State"));
+                assertTrue(html.contains("Input Arguments"));
+                assertTrue(html.contains("Exception Traces"));
+                assertTrue(html.contains("Method Traces"));
+                assertTrue(html.contains("Tools"));
+                assertTrue(html.contains("name=\"toolHost\""));
+                assertTrue(html.contains("Bean/Class Read Write"));
+                assertTrue(html.contains("VM Options"));
+                assertTrue(html.contains("ThreadMXBean"));
+                assertTrue(html.contains("name=\"vmOptionName\""));
+                assertTrue(html.contains("Overview"));
+                assertTrue(html.contains("Metrics"));
+                assertTrue(html.contains("Thread CPU"));
+                assertTrue(html.contains("Net I/O"));
+            }
+        } finally {
+            if (server != null) {
+                server.close();
+            }
+            RxConfig.INSTANCE.setDiagnostic(oldDiagnostic);
+            RxConfig.INSTANCE.setRtoken(oldRtoken);
+            deleteTempDir(dir);
+        }
+    }
+
     private static DiagnosticConfig memConfig(String name) {
         DiagnosticConfig config = new DiagnosticConfig();
         config.setH2JdbcUrl("jdbc:h2:mem:" + name + "_" + System.nanoTime()
@@ -282,5 +332,19 @@ public class DiagnosticHttpHandlerTest {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
         }
+    }
+
+    private static void deleteTempDir(Path dir) {
+        if (dir == null) {
+            return;
+        }
+        File file = dir.toFile();
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                child.delete();
+            }
+        }
+        file.delete();
     }
 }
