@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.support.UnresolvedEndpoint;
 
@@ -215,6 +216,59 @@ class SocksUdpRelayHandlerTest {
                 assertEquals(secondRelay, second.recipient());
             } finally {
                 second.release();
+            }
+        } finally {
+            relay.finishAndReleaseAll();
+            server.close();
+        }
+    }
+
+    @Test
+    void udpClientUpstreamPreservesSocks5HeaderBothDirections() throws Exception {
+        SocksConfig config = new SocksConfig(new LocalAddress("UDP_CLIENT_UPSTREAM_TEST"));
+        config.getWhiteList();
+        SocksProxyServer server = new SocksProxyServer(config);
+        EmbeddedChannel relay = new EmbeddedChannel(SocksUdpRelayHandler.DEFAULT);
+        try {
+            InetSocketAddress udpClient = new InetSocketAddress("127.0.0.1", 23201);
+            server.onUdpRoute.replace((s, e) -> e.setUpstream(
+                    new UdpClientUpstream(e.getFirstDestination(), config, udpClient)));
+            relay.attr(SocksContext.SOCKS_SVR).set(server);
+
+            InetSocketAddress clientAddr = new InetSocketAddress("127.0.0.1", 22201);
+            assertDoesNotThrow(() -> relay.writeInbound(socks5Packet(clientAddr, "udp-client-req")));
+            DatagramPacket request = readOutbound(relay);
+            assertNotNull(request);
+            try {
+                assertEquals(udpClient, request.recipient());
+                assertTrue(UdpManager.isValidSocks5UdpPacket(request.content()));
+                UnresolvedEndpoint dstEp = UdpManager.socks5Decode(request.content());
+                assertEquals(15302, dstEp.getPort());
+                byte[] payload = new byte[request.content().readableBytes()];
+                request.content().readBytes(payload);
+                assertEquals("udp-client-req", new String(payload, StandardCharsets.UTF_8));
+            } finally {
+                request.release();
+            }
+
+            ByteBuf responseBuf = Unpooled.buffer();
+            responseBuf.writeZero(3);
+            UdpManager.encode(responseBuf, "127.0.0.1", 15302);
+            responseBuf.writeBytes("udp-client-res".getBytes(StandardCharsets.UTF_8));
+            assertDoesNotThrow(() -> relay.writeInbound(
+                    new DatagramPacket(responseBuf, new InetSocketAddress("127.0.0.1", 1080), udpClient)));
+            DatagramPacket response = readOutbound(relay);
+            assertNotNull(response);
+            try {
+                assertEquals(clientAddr, response.recipient());
+                assertTrue(UdpManager.isValidSocks5UdpPacket(response.content()));
+                UnresolvedEndpoint srcEp = UdpManager.socks5Decode(response.content());
+                assertEquals(15302, srcEp.getPort());
+                byte[] payload = new byte[response.content().readableBytes()];
+                response.content().readBytes(payload);
+                assertEquals("udp-client-res", new String(payload, StandardCharsets.UTF_8));
+            } finally {
+                response.release();
             }
         } finally {
             relay.finishAndReleaseAll();

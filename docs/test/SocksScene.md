@@ -17,8 +17,10 @@ socks5 client -> SocksServerProxy A(广域网ip a), udp associate -> SocksServer
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#socks5UdpRelay_chained_withLeasePool_reusesProxyBRelay`
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#socks5TcpConnect_chained_withCompressedTunnel_bypassCandidatePort_e2e`
 
-## udp2raw场景
-socks5 client -> SocksServerProxy A(广域网ip a), udp associate -> udp2raw client(广域网ip a) -> udp2raw server(广域网ip b) -> SocksServerProxy B(广域网ip b), udp -> dest
+## 场景3 - udp2raw场景
+ShadowsocksClient(广域网ip c) 
+-> ShadowsocksServer(广域网ip a) -> SocksServerProxy A(广域网ip a), udp direct to -> udp2raw client(广域网ip a) 
+-> udp2raw server(广域网ip b) -> SocksServerProxy B(广域网ip b), udp -> dest
 - 对应用例：
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#socks5UdpRelay_udp2raw_chained_e2e`
   - `org.rx.net.socks.Udp2rawHandlerTest#udp2raw_clientServerModeE2E`

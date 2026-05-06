@@ -48,6 +48,8 @@ import org.rx.net.socks.TrafficLoginInfo;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.socks.upstream.Udp2rawUpstream;
+import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.IpGeolocation;
 import org.rx.net.support.UnresolvedEndpoint;
@@ -1034,6 +1036,20 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void normalizeAndValidateRssConfig_RejectsUdp2rawWithTransparentUdpClient() {
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("tun-a", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
+        udp2raw.setUdp2raw(true);
+        udp2raw.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        udp2raw.setUdpClient(new InetSocketAddress("127.0.0.1", 4094));
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), udp2raw);
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("tun-a"));
+
+        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+    }
+
+    @Test
     public void normalizeAndValidateRssConfig_RejectsMixedUdp2rawAndNormalSocksServers() {
         RssClientConf conf = validRssConf();
         RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("tun-a", 1,
@@ -1310,6 +1326,93 @@ public class RssTest extends AbstractTester {
         assertEquals(1081, conf.socksServers.get(0).getEndpoint().requireEndpoint().getPort());
         assertThrows(Exception.class, () -> JSON.parseObject(
                 "{\"socksServers\":[\"u:p@127.0.0.1:1080\"]}", RssClientConf.class));
+    }
+
+    @Test
+    public void socksServerJsonReader_AcceptsUdpClientOnly() {
+        RssClientConf conf = JSON.parseObject("{\"socksServers\":["
+                + "{\"id\":\"tun\",\"weight\":1,\"endpoint\":\"u:p@127.0.0.1:1081\","
+                + "\"tcpClient\":\"127.0.0.1:4093\",\"udpClient\":\"127.0.0.1:4094\"}]}",
+                RssClientConf.class);
+        RssClientConf.SocksServer server = conf.socksServers.get(0);
+
+        assertEquals(new InetSocketAddress("127.0.0.1", 4094), server.getUdpClient());
+        assertEquals(RssClient.ServerRouteMode.TCP_CLIENT, RssClient.routeMode(server));
+    }
+
+    @Test
+    public void socksServerJsonReader_IgnoresRemovedUdp2rawClientKey() {
+        RssClientConf legacy = JSON.parseObject("{\"socksServers\":["
+                + "{\"id\":\"tun\",\"weight\":1,\"endpoint\":\"u:p@127.0.0.1:1081\","
+                + "\"udp2rawClient\":\"127.0.0.1:4095\"}]}",
+                RssClientConf.class);
+
+        RssClientConf.SocksServer server = legacy.socksServers.get(0);
+        assertEquals(null, server.getUdpClient());
+        assertEquals(RssClient.ServerRouteMode.SOCKS, RssClient.routeMode(server));
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_RejectsUdp2rawWhenOnlyRemovedLegacyKeyPresent() {
+        RssClientConf conf = validRssConf();
+        RssClientConf legacy = JSON.parseObject("{\"socksServers\":["
+                + "{\"id\":\"tun\",\"weight\":1,\"endpoint\":\"u:p@127.0.0.1:1081\","
+                + "\"udp2raw\":true,\"udp2rawClient\":\"127.0.0.1:4095\"}]}",
+                RssClientConf.class);
+        conf.socksServers = legacy.socksServers;
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("tun"));
+
+        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+    }
+
+    @Test
+    public void buildUserTcpClientServers_CarriesUdpClientForUdpRoute() {
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer tunneled = new RssClientConf.SocksServer("hysteria-a", 2,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9900"));
+        InetSocketAddress udpClient = new InetSocketAddress("127.0.0.1", 4094);
+        tunneled.setTcpClient(AuthenticEndpoint.valueOf("127.0.0.1:4093"));
+        tunneled.setUdpClient(udpClient);
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), tunneled);
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("hysteria-a"));
+
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+        RandomList<UpstreamSupport> directServers = RssClient.buildUserTcpClientServers(
+                conf.shadowUsers.get(0), conf.socksServers);
+        UpstreamSupport support = directServers.next();
+        Upstream udpRoute = RssClient.createUdpRouteUpstream(new UnresolvedEndpoint("8.8.8.8", 53),
+                new SocksConfig(), support);
+
+        assertEquals(new InetSocketAddress("127.0.0.1", 4093), support.getEndpoint().getEndpoint());
+        assertEquals(udpClient, support.getUdpClient());
+        assertTrue(udpRoute instanceof UdpClientUpstream);
+        assertEquals(udpClient, ((UdpClientUpstream) udpRoute).getUdpClientAddress(null));
+    }
+
+    @Test
+    public void createUdpRouteUpstream_UsesUdp2rawUpstreamWhenServerMarkedUdp2raw() {
+        UpstreamSupport support = new UpstreamSupport(
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9900"), new SocksRpcContract() {
+            @Override
+            public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            }
+
+            @Override
+            public void addWhiteList(InetAddress endpoint, String token) {
+            }
+
+            @Override
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                return Collections.emptyList();
+            }
+        });
+        support.setUdp2raw(true);
+        support.setUdpClient(new InetSocketAddress("127.0.0.1", 4094));
+
+        Upstream udpRoute = RssClient.createUdpRouteUpstream(new UnresolvedEndpoint("8.8.8.8", 53),
+                new SocksConfig(), support);
+
+        assertTrue(udpRoute instanceof Udp2rawUpstream);
     }
 
     @Test

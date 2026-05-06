@@ -7,6 +7,7 @@ import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.SocksRpcContract;
 
+import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Getter
@@ -16,6 +17,8 @@ public class UpstreamSupport {
     private AuthenticEndpoint endpoint;
     private SocksRpcContract facade;
     private AuthenticEndpoint tcpClient;
+    private InetSocketAddress udpClient;
+    private boolean udp2raw;
     private int configuredWeight;
     private volatile boolean healthy = true;
     private volatile int healthFailureCount;
