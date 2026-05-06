@@ -1,12 +1,17 @@
 package org.rx.core;
 
+import com.alibaba.fastjson2.TypeReference;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,6 +30,25 @@ public class YamlConfigurationTest {
         protected Map<String, Object> loadYamlSnapshot(String fileName, boolean includeOutputFile) {
             Map<String, Object> next = snapshots.poll();
             return next == null ? new LinkedHashMap<>() : new LinkedHashMap<>(next);
+        }
+    }
+
+    public static class Route {
+        public String host;
+        public int port;
+    }
+
+    static final class CloseTrackingInputStream extends ByteArrayInputStream {
+        boolean closed;
+
+        CloseTrackingInputStream(String value) {
+            super(value.getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public void close() throws IOException {
+            closed = true;
+            super.close();
         }
     }
 
@@ -69,5 +93,34 @@ public class YamlConfigurationTest {
 
         assertEquals(0, changedCount.get());
         assertEquals(Integer.valueOf(1), conf.read("version", 0));
+    }
+
+    @Test
+    public void testReadAs_GenericList() throws Exception {
+        Path confFile = Files.createTempFile("yaml-generic-list", ".yml");
+        confFile.toFile().deleteOnExit();
+        Files.write(confFile, ("routes:\n"
+                + "  - host: a\n"
+                + "    port: 1001\n"
+                + "  - host: b\n"
+                + "    port: 1002\n").getBytes(StandardCharsets.UTF_8));
+
+        YamlConfiguration conf = new YamlConfiguration(confFile.toString());
+        List<Route> routes = conf.readAs("routes", new TypeReference<List<Route>>() {
+        }.getType(), true);
+
+        assertEquals(2, routes.size());
+        assertEquals("a", routes.get(0).host);
+        assertEquals(1002, routes.get(1).port);
+    }
+
+    @Test
+    public void testLoadYaml_ClosesInputStreams() {
+        CloseTrackingInputStream in = new CloseTrackingInputStream("version: 1\n");
+
+        Map<String, Object> yaml = YamlConfiguration.loadYaml(Arrays.asList(in));
+
+        assertEquals(1, yaml.get("version"));
+        assertTrue(in.closed);
     }
 }

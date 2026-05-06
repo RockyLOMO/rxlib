@@ -1,5 +1,6 @@
 package org.rx.core;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONReader;
 import lombok.Getter;
@@ -61,9 +62,20 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration>, Aut
             return result;
         }
         Yaml yaml = new Yaml();
-        for (Object data : Linq.from(streams).selectMany(yaml::loadAll)) {
-            Map<String, Object> sub = (Map<String, Object>) data;
-            fill(sub, result);
+        try {
+            for (InputStream stream : streams) {
+                if (stream == null) {
+                    continue;
+                }
+                for (Object data : yaml.loadAll(stream)) {
+                    Map<String, Object> sub = (Map<String, Object>) data;
+                    fill(sub, result);
+                }
+            }
+        } finally {
+            for (InputStream stream : streams) {
+                tryClose(stream);
+            }
         }
         return result;
     }
@@ -306,10 +318,13 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration>, Aut
             return (T) map;
         }
         Class<T> clz = as(type, Class.class);
-        if (isProp || clz == null) {
+        if (isProp) {
             //new Yaml().loadAs() 不支持嵌套泛型
             return new JSONObject(map).to(type, JSONReader.Feature.SupportClassForName);
 //            return JSON.parseObject(JSON.toJSONString(p), type, JSONReader.Feature.SupportClassForName);
+        }
+        if (clz == null) {
+            return JSON.parseObject(JSON.toJSONString(p), type, JSONReader.Feature.SupportClassForName);
         }
         return Reflects.changeType(p, clz);
     }

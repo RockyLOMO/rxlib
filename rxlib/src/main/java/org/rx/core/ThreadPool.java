@@ -1242,13 +1242,19 @@ public class ThreadPool extends ThreadPoolExecutor {
         return task;
     }
 
-    @SneakyThrows
     private Task<?> readCompletionTask(Runnable r) {
-        Field field = ASYNC_COMPLETION_FN_FIELDS.computeIfAbsent(r.getClass(), k -> Reflects.getFieldMap(k).get("fn"));
-        if (field == null) {
+        try {
+            Field field = ASYNC_COMPLETION_FN_FIELDS.computeIfAbsent(r.getClass(), k -> Reflects.getFieldMap(k).get("fn"));
+            if (field == null || !field.isAccessible()) {
+                return null;
+            }
+            return Task.as(field.get(r));
+        } catch (Throwable e) {
+            if (log.isDebugEnabled()) {
+                log.debug("Read CompletableFuture async task failed {}", r.getClass().getName(), e);
+            }
             return null;
         }
-        return Task.as(field.get(r));
     }
 
     private Task<?> getTask(Runnable r, boolean remove) {
