@@ -36,4 +36,45 @@ class Udp2rawMtuStateTest {
         state.nextProbe(now + 43_000L);
         assertEquals(1220, state.currentMtu(), "当前 MTU 验证失败才快速下调");
     }
+
+    @Test
+    void acceptedSizeClampsAckedProbeMtu() {
+        Udp2rawMtuState state = new Udp2rawMtuState(1300, 1200, 1400);
+        long now = System.currentTimeMillis() + 1000L;
+
+        Udp2rawMtuState.Probe verify = state.nextProbe(now);
+        assertTrue(state.ack(verify.seq, 1300, now + 10L));
+        Udp2rawMtuState.Probe up = state.nextProbe(now + 20_000L);
+        assertEquals(1320, up.mtu);
+
+        assertTrue(state.ack(up.seq, 1310, now + 20_010L));
+
+        assertEquals(1310, state.currentMtu());
+    }
+
+    @Test
+    void writeMtuDropOnlyLowersWhenDatagramWasWithinCurrentMtu() {
+        Udp2rawMtuState state = new Udp2rawMtuState(1300, 1200, 1400);
+        long now = System.currentTimeMillis() + 1000L;
+
+        state.onWriteMtuDrop(1400, now);
+        assertEquals(1300, state.currentMtu(), "业务包超过当前 MTU 时只记录，不应越降越小");
+
+        state.onWriteMtuDrop(1300, now + 1L);
+
+        assertEquals(1220, state.currentMtu());
+    }
+
+    @Test
+    void defaultStateDoesNotProbeAboveHardInitialMtu() {
+        Udp2rawMtuState state = new Udp2rawMtuState(1300);
+        long now = System.currentTimeMillis() + 1000L;
+
+        Udp2rawMtuState.Probe verify = state.nextProbe(now);
+        assertEquals(1300, verify.mtu);
+        assertTrue(state.ack(verify.seq, 1300, now + 10L));
+        Udp2rawMtuState.Probe next = state.nextProbe(now + 20_000L);
+
+        assertEquals(1300, next.mtu);
+    }
 }

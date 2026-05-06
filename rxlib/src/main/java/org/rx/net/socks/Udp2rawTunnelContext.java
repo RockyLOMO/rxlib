@@ -22,6 +22,7 @@ final class Udp2rawTunnelContext {
     final UdpRedundantMode redundantMode;
     final UdpRedundantMultiplierResolver redundantResolver;
     final UdpRedundantStats redundantStats;
+    final Udp2rawMtuState mtuState;
     final TrafficUser trafficUser;
     final long idleTimeoutMillis;
     final int maxSessions;
@@ -35,7 +36,7 @@ final class Udp2rawTunnelContext {
             long sessionHi, long sessionLo, byte[] sessionSecret,
             Udp2rawAuthMode authMode, UdpCompressConfig compressConfig,
             UdpRedundantConfig redundantConfig, UdpRedundantMode redundantMode,
-            long idleTimeoutMillis, int maxSessions,
+            long idleTimeoutMillis, int maxSessions, int initialMtu,
             TrafficUser trafficUser, long now) {
         this.manager = manager;
         this.tunnelId = tunnelId;
@@ -51,6 +52,7 @@ final class Udp2rawTunnelContext {
         this.redundantResolver = Udp2rawPayloadSupport.isRedundantEnabled(redundantConfig)
                 ? redundantConfig.buildMultiplierResolver() : null;
         this.redundantStats = Udp2rawPayloadSupport.newAdaptiveStats(redundantConfig);
+        this.mtuState = initialMtu > 0 ? new Udp2rawMtuState(initialMtu, "server") : null;
         this.trafficUser = trafficUser != null ? trafficUser : TrafficUser.ANONYMOUS;
         this.idleTimeoutMillis = idleTimeoutMillis;
         this.maxSessions = Math.max(1, maxSessions);
@@ -141,6 +143,10 @@ final class Udp2rawTunnelContext {
         }
         redundantStats.recordUnique();
         Udp2rawPayloadSupport.adjustAdaptiveStats(redundantStats, nextRedundantAdjustAtMillis, direction);
+    }
+
+    int currentMtu() {
+        return mtuState != null ? mtuState.currentMtu() : 0;
     }
 
     SocksContext trafficContext(InetSocketAddress source, UnresolvedEndpoint destination) {

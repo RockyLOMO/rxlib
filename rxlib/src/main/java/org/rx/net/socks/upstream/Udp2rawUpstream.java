@@ -162,7 +162,7 @@ public class Udp2rawUpstream extends Upstream {
             SocksUserTraffic.recordWrite(relay, context, trafficBytes, 1L);
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(relay, encoded,
                     state.udpTransportAddress, requestRedundant, state.redundantStats,
-                    state.redundantResolver, "flow=request", state.currentMtu());
+                    state.redundantResolver, "flow=request", state.currentMtu(), state.mtuState);
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop request to {} for {} result={}", state.udpTransportAddress, dstEp, result);
@@ -300,7 +300,7 @@ public class Udp2rawUpstream extends Upstream {
 
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(relay, encoded,
                     state.udpTransportAddress, requestRedundant, state.redundantStats,
-                    state.redundantResolver, "flow=request", state.currentMtu());
+                    state.redundantResolver, "flow=request", state.currentMtu(), state.mtuState);
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop request to {} for {} result={}", state.udpTransportAddress, dstEp, result);
@@ -399,7 +399,9 @@ public class Udp2rawUpstream extends Upstream {
             DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D, "action=bad-ack");
             return;
         }
-        if (state.mtuState.ack(frame.getPacketSeq(), System.currentTimeMillis())) {
+        int acceptedMtu = payload != null && payload.readableBytes() >= 4
+                ? payload.getInt(payload.readerIndex()) : 0;
+        if (state.mtuState.ack(frame.getPacketSeq(), acceptedMtu, System.currentTimeMillis())) {
             state.touch();
         }
     }

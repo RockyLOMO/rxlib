@@ -893,12 +893,34 @@ public class UdpRedundantTest {
     @Test
     public void testUdp2rawPayloadSupportDropsAboveDynamicMtuBeforeWrite() {
         EmbeddedChannel channel = new EmbeddedChannel();
+        Udp2rawMtuState state = new Udp2rawMtuState(1300, 1200, 1400);
         try {
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(channel,
                     Unpooled.buffer(1301).writeZero(1301), REMOTE,
-                    null, null, null, "flow=request", 1300);
+                    null, null, null, "flow=request", 1300, state);
 
             assertEquals(Sockets.UdpWriteResult.MTU_EXCEEDED, result);
+            assertEquals(1300, state.currentMtu(), "业务包超过当前 MTU 时不应触发保守下调");
+            assertNull(channel.readOutbound());
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void testUdp2rawPayloadSupportFeedsFinalMtuDropToState() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        SocksConfig finalGuardConfig = new SocksConfig();
+        finalGuardConfig.setUdpMtu(1300);
+        channel.attr(org.rx.net.SocketConfig.ATTR_CONF).set(finalGuardConfig);
+        Udp2rawMtuState state = new Udp2rawMtuState(1400, 1200, 1400);
+        try {
+            Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(channel,
+                    Unpooled.buffer(1350).writeZero(1350), REMOTE,
+                    null, null, null, "flow=request", 1400, state);
+
+            assertEquals(Sockets.UdpWriteResult.MTU_EXCEEDED, result);
+            assertEquals(1320, state.currentMtu());
             assertNull(channel.readOutbound());
         } finally {
             channel.finishAndReleaseAll();

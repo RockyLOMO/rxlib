@@ -22,7 +22,8 @@ public final class Udp2rawMtuState {
 
     private final int minMtu;
     private final int maxMtu;
-    private int currentMtu;
+    private final String side;
+    private volatile int currentMtu;
     private long nextSeq;
     private long pendingSeq;
     private int pendingMtu;
@@ -32,10 +33,19 @@ public final class Udp2rawMtuState {
     private int upMisses;
 
     public Udp2rawMtuState(int initialMtu) {
-        this(initialMtu, MIN_MTU, MAX_MTU);
+        this(initialMtu, "client");
+    }
+
+    public Udp2rawMtuState(int initialMtu, String side) {
+        this(initialMtu, MIN_MTU, initialMtu > 0 ? initialMtu : MAX_MTU, side);
     }
 
     public Udp2rawMtuState(int initialMtu, int minMtu, int maxMtu) {
+        this(initialMtu, minMtu, maxMtu, "client");
+    }
+
+    public Udp2rawMtuState(int initialMtu, int minMtu, int maxMtu, String side) {
+        this.side = side != null && side.length() > 0 ? side : "unknown";
         if (initialMtu <= 0) {
             this.minMtu = 0;
             this.maxMtu = 0;
@@ -73,13 +83,14 @@ public final class Udp2rawMtuState {
         return new Probe(seq, target);
     }
 
-    public synchronized boolean ack(long seq, long now) {
+    public synchronized boolean ack(long seq, int acceptedMtu, long now) {
         if (seq == 0L || seq != pendingSeq) {
             return false;
         }
         int old = currentMtu;
-        currentMtu = Math.max(currentMtu, pendingMtu);
-        verified = true;
+        int accepted = acceptedMtu > 0 ? Math.min(acceptedMtu, pendingMtu) : pendingMtu;
+        currentMtu = clamp(accepted, minMtu, maxMtu);
+        verified = currentMtu >= pendingMtu;
         upMisses = 0;
         pendingSeq = 0L;
         pendingMtu = 0;
@@ -87,15 +98,46 @@ public final class Udp2rawMtuState {
         nextProbeAtMillis = now + PROBE_INTERVAL_MILLIS;
         DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D,
                 "action=ack,mtuBucket=" + mtuBucket(currentMtu));
-        DiagnosticMetrics.record("socks.udp2raw.mtu.current", currentMtu, "side=client");
-        if (currentMtu != old) {
+        DiagnosticMetrics.record("socks.udp2raw.mtu.current", currentMtu, "side=" + side);
+        if (currentMtu > old) {
             log.info("udp2raw MTU adaptive UP: {} -> {}", old, currentMtu);
+        } else if (currentMtu < old) {
+            log.warn("udp2raw MTU adaptive DOWN by accepted size: {} -> {}", old, currentMtu);
         }
         return true;
     }
 
-    public synchronized int currentMtu() {
+    public boolean ack(long seq, long now) {
+        return ack(seq, 0, now);
+    }
+
+    public int currentMtu() {
         return currentMtu;
+    }
+
+    public synchronized void onWriteMtuDrop(int datagramBytes, long now) {
+        if (currentMtu <= 0) {
+            return;
+        }
+        DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D,
+                "action=write-mtu-drop,mtuBucket=" + mtuBucket(datagramBytes));
+        if (datagramBytes > currentMtu) {
+            nextProbeAtMillis = Math.min(nextProbeAtMillis, now + PROBE_RETRY_MILLIS);
+            return;
+        }
+
+        int old = currentMtu;
+        currentMtu = Math.max(minMtu, currentMtu - STEP_DOWN);
+        verified = false;
+        upMisses = 0;
+        pendingSeq = 0L;
+        pendingMtu = 0;
+        pendingDeadlineMillis = 0L;
+        nextProbeAtMillis = now + PROBE_RETRY_MILLIS;
+        if (currentMtu != old) {
+            DiagnosticMetrics.record("socks.udp2raw.mtu.current", currentMtu, "side=" + side);
+            log.warn("udp2raw MTU adaptive DOWN by write drop: {} -> {}", old, currentMtu);
+        }
     }
 
     public synchronized long nextDelayMillis(long now) {
@@ -132,7 +174,7 @@ public final class Udp2rawMtuState {
         pendingDeadlineMillis = 0L;
         nextProbeAtMillis = now + PROBE_RETRY_MILLIS;
         if (currentMtu != old) {
-            DiagnosticMetrics.record("socks.udp2raw.mtu.current", currentMtu, "side=client");
+            DiagnosticMetrics.record("socks.udp2raw.mtu.current", currentMtu, "side=" + side);
             log.warn("udp2raw MTU adaptive DOWN: {} -> {}", old, currentMtu);
         }
     }

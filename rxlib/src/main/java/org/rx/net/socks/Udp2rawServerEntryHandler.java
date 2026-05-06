@@ -23,6 +23,7 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket in) {
         ByteBuf content = in.content();
+        int datagramBytes = content.readableBytes();
         Udp2rawFrame frame;
         try {
             frame = Udp2rawCodec.decode(content);
@@ -34,7 +35,7 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
             return;
         }
         if (frame.getType() != Udp2rawFrameType.DATA) {
-            handleControlFrame(ctx, in, frame, content.slice());
+            handleControlFrame(ctx, in, frame, content.slice(), datagramBytes);
             return;
         }
 
@@ -128,7 +129,7 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
     }
 
     private void handleControlFrame(ChannelHandlerContext ctx, DatagramPacket in,
-            Udp2rawFrame frame, ByteBuf payload) {
+            Udp2rawFrame frame, ByteBuf payload, int datagramBytes) {
         if (frame.getType() == Udp2rawFrameType.CLOSE) {
             Udp2rawTunnelContext tunnel = manager.context(frame);
             if (tunnel != null) {
@@ -140,12 +141,12 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
             return;
         }
         if (frame.getType() == Udp2rawFrameType.MTU_PROBE) {
-            handleMtuProbe(ctx, in, frame, payload);
+            handleMtuProbe(ctx, in, frame, payload, datagramBytes);
         }
     }
 
     private void handleMtuProbe(ChannelHandlerContext ctx, DatagramPacket in,
-            Udp2rawFrame frame, ByteBuf payload) {
+            Udp2rawFrame frame, ByteBuf payload, int datagramBytes) {
         Udp2rawTunnelContext tunnel = manager.context(frame);
         if (tunnel == null) {
             recordDrop("unknown-tunnel");
@@ -164,20 +165,24 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
         }
         tunnel.recordAuthSuccess(in.sender());
         tunnel.touch();
-        sendMtuAck(ctx, in, tunnel, frame.getPacketSeq());
+        sendMtuAck(ctx, in, tunnel, frame.getPacketSeq(), datagramBytes);
     }
 
     private void sendMtuAck(ChannelHandlerContext ctx, DatagramPacket in,
-            Udp2rawTunnelContext tunnel, long seq) {
+            Udp2rawTunnelContext tunnel, long seq, int acceptedMtu) {
+        ByteBuf payload = null;
         ByteBuf authTag = null;
         ByteBuf encoded = null;
         try {
             Udp2rawFrame ack = Udp2rawFrame.data(tunnel.sessionHi, tunnel.sessionLo, 0L, seq);
             ack.setType(Udp2rawFrameType.MTU_ACK);
             ack.setFlags(Udp2rawCodec.FLAG_AUTH_TAG);
-            authTag = Udp2rawAuthenticator.sign(ctx.alloc(), tunnel.sessionSecret, ack, null);
+            payload = ctx.alloc().directBuffer(4, 4);
+            payload.writeInt(Math.max(0, acceptedMtu));
+            authTag = Udp2rawAuthenticator.sign(ctx.alloc(), tunnel.sessionSecret, ack, payload);
             ack.setAuthTag(authTag);
-            encoded = Udp2rawCodec.encode(ctx.alloc(), ack, null);
+            encoded = Udp2rawCodec.encode(ctx.alloc(), ack, payload);
+            payload = null;
             Sockets.UdpWriteResult result = Sockets.writeUdp(ctx.channel(),
                     new DatagramPacket(encoded, in.sender()), manager.server.getConfig(),
                     "socks.udp2raw", "flow=mtu-ack");
@@ -187,6 +192,7 @@ final class Udp2rawServerEntryHandler extends SimpleChannelInboundHandler<Datagr
                         "action=ack-drop,result=" + result);
             }
         } catch (Throwable e) {
+            Bytes.release(payload);
             Bytes.release(encoded);
             DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D, "action=ack-encode-fail");
             log.warn("udp2raw MTU ack send failed to {}", in.sender(), e);

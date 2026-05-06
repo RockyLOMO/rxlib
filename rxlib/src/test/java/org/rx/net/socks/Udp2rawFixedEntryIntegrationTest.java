@@ -144,6 +144,8 @@ class Udp2rawFixedEntryIntegrationTest {
                 assertEquals(77L, frame.getPacketSeq());
                 assertTrue(frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG));
                 assertTrue(Udp2rawAuthenticator.verify(open.getSessionSecret(), frame, buf.slice()));
+                assertEquals(4, buf.readableBytes());
+                assertEquals(1300, buf.getInt(buf.readerIndex()));
             } finally {
                 buf.release();
             }

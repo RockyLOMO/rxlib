@@ -181,7 +181,7 @@ final class Udp2rawSession {
             body = null;
             Sockets.UdpWriteResult result = Udp2rawPayloadSupport.writeEncoded(entry, encoded, peer,
                     responseRedundant, context.redundantStats, context.redundantResolver, "flow=response",
-                    context.manager.server.getConfig().getUdpMtu());
+                    context.currentMtu(), context.mtuState);
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
                 log.warn("udp2raw drop response to peer {} result={}", peer, result);
