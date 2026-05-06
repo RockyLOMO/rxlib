@@ -161,7 +161,9 @@ if (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), BeanMapN
 如果用户后续要求执行，预计修改：
 
 - `rxlib/src/main/java/org/rx/util/BeanMapper.java`
-- `rxlib/src/test/java/org/rx/util/TestUtil.java` 或新增专门 BeanMapper 测试类
+- `rxlib/src/main/java/org/rx/core/Reflects.java`
+- `rxlib/src/test/java/org/rx/core/ReflectsCompatibilityTest.java`
+- `rxlib/src/test/java/org/rx/util/BeanMapperAssignmentTest.java`
 
 # 风险点
 
@@ -195,3 +197,39 @@ mvn -pl rxlib -Dtest=org.rx.util.BeanMapperTest test
 ```
 
 代码 commit 后触发 `jdk8-unit-tests.yml`，`test_classes` 包含相关测试类；只在 workflow run `conclusion=success` 后认为 CI 通过。
+
+# 执行记录（2026-05-06）
+
+## 已执行
+
+- 修改 `rxlib/src/main/java/org/rx/util/BeanMapper.java`：
+  - `mapping.ignore()` 仍保持最高优先级。
+  - `mapping.source()` 提前读取，后续 `SKIP_NULL` / `Ignore` / `trim` / `format` / `defaultValue` / `converter` 均基于显式 source 的真实值执行。
+- 新增 `rxlib/src/test/java/org/rx/util/BeanMapperAssignmentTest.java`：
+  - 覆盖 `source != target` 时 `trim + format` 生效。
+  - 覆盖 `SKIP_NULL` 先读取显式 source 后再判断。
+  - 覆盖同名 target 但 source 指向其他属性时，`Ignore` null 策略不再被旧同名值误导。
+  - 覆盖 converter 接收显式 source 值，且 converter 结果不再被后置 source 读取覆盖。
+- 追加修复首轮回归暴露的问题：
+  - `Reflects.changeType` 优先使用已注册转换器，并补齐 `Number -> BigDecimal`，其中 `Decimal -> BigDecimal` 直接取 `Decimal.getValue()`。
+  - 普通 Bean copy 遇到未显式 `@Mapping` 的不兼容同名属性时，`LOG_ON_MISS_MAPPING` 跳过并保留目标旧值；显式 `@Mapping` 或 `THROW_ON_MISS_MAPPING` 仍抛错。
+  - `convertFromObjectString` 使用完整分隔串 `", "`，避免日期时间值中的空格被误拆。
+
+## 不认可 / 未执行项
+
+- 未执行 source 属性缺失时从静默 fallback 改为 warn/throw：
+  - 原计划也标注该项需要单独评估兼容性。
+  - 本次保持原行为，避免破坏现有注解容错语义。
+- 未执行 `Objects.hash(from, to)` 缓存碰撞、`MapConfig.flags` method 级隔离、Map source 注解支持等额外风险修复：
+  - 这些属于计划中的额外 review 风险，不是本次赋值 bug 的最小修复面。
+
+## 验证结果
+
+- 通过：`mvn -pl rxlib '-Dtest=org.rx.util.BeanMapperAssignmentTest' test`
+  - 初始 source 赋值回归 Tests run: 4, Failures: 0, Errors: 0, Skipped: 0。
+- 首轮未通过：`mvn -pl rxlib '-Dtest=org.rx.util.TestUtil#defineMapBean+normalMapBean' test`
+  - `Decimal -> BigDecimal` 是 `Reflects.changeType` 注册转换器未优先使用的问题，已修复。
+  - `DateTime -> int` 不应补默认有损转换，改为 BeanMapper 在非显式 `@Mapping` 且仅 `LOG_ON_MISS_MAPPING` 时跳过不兼容同名属性；`THROW_ON_MISS_MAPPING` 仍抛错。
+  - `convertFromObjectString` 后续暴露 `Strings.split(", ")` 误用字符集合分隔的问题，已改为完整分隔串。
+- 最终通过：`mvn -pl rxlib '-Dtest=org.rx.core.ReflectsCompatibilityTest,org.rx.util.BeanMapperAssignmentTest,org.rx.util.TestUtil#defineMapBean+normalMapBean' test`
+  - Tests run: 13, Failures: 0, Errors: 0, Skipped: 0。

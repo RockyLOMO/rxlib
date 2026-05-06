@@ -49,7 +49,7 @@ public class BeanMapper {
         if (e == -1) {
             return Collections.emptyMap();
         }
-        return Linq.from(Strings.split(str.substring(s + 1, e), ", ")).select(p -> {
+        return Linq.from(Strings.splitByWholeSeparator(str.substring(s + 1, e), ", ")).select(p -> {
             int i = Strings.indexOf(p, "=");
             if (i == -1) {
                 throw new InvalidException("Parse error {}", p);
@@ -134,6 +134,7 @@ public class BeanMapper {
             flags = this.flags;
         }
         boolean skipNull = flags.has(BeanMapFlag.SKIP_NULL);
+        boolean logOnFail = flags.has(BeanMapFlag.LOG_ON_MISS_MAPPING), throwOnFail = flags.has(BeanMapFlag.THROW_ON_MISS_MAPPING);
         Class<?> from = source.getClass(), to = target.getClass();
         final Linq<Reflects.PropertyNode> toProperties = Reflects.getProperties(to);
         TreeSet<String> copiedNames = new TreeSet<>();
@@ -160,10 +161,12 @@ public class BeanMapper {
             config.copier.copy(source, target, (sourceValue, targetType, methodName) -> {
                 String propertyName = Reflects.propertyName(methodName.toString());
                 copiedNames.add(propertyName);
+                boolean explicitMapping = false;
                 for (Mapping mapping : mappings) {
                     if (!Strings.hashEquals(mapping.target(), propertyName)) {
                         continue;
                     }
+                    explicitMapping = true;
                     sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, source, target, skipNull, toProperties);
                     break;
                 }
@@ -171,7 +174,18 @@ public class BeanMapper {
 //                if (mapping != null) {
 //                    sourceValue = processMapping(mapping, sourceValue, targetType, propertyName, source, target, skipNull, toProperties);
 //                }
-                return Reflects.changeType(sourceValue, targetType);
+                try {
+                    return Reflects.changeType(sourceValue, targetType);
+                } catch (RuntimeException e) {
+                    if (explicitMapping || throwOnFail) {
+                        throw e;
+                    }
+                    copiedNames.remove(propertyName);
+                    if (logOnFail) {
+                        log.warn("Skip map {} to {} property {}: {}", from.getSimpleName(), to.getSimpleName(), propertyName, e.toString());
+                    }
+                    return Reflects.invokeMethod(toProperties.first(p -> eq(p.propertyName, propertyName)).getter, target);
+                }
             });
 
             for (Mapping mapping : mappings.where(p -> !copiedNames.contains(p.target()))) {
@@ -188,7 +202,6 @@ public class BeanMapper {
             }
         }
 
-        boolean logOnFail = flags.has(BeanMapFlag.LOG_ON_MISS_MAPPING), throwOnFail = flags.has(BeanMapFlag.THROW_ON_MISS_MAPPING);
         if (logOnFail || throwOnFail) {
             Linq<String> missedProperties = toProperties.select(p -> p.propertyName).except(copiedNames);
             if (missedProperties.any()) {
@@ -207,8 +220,16 @@ public class BeanMapper {
     }
 
     private Object processMapping(Mapping mapping, Object sourceValue, Class<?> targetType, String propertyName, Object source, Object target, boolean skipNull, Linq<Reflects.PropertyNode> toProperties) {
-        if (mapping.ignore()
-                || (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), BeanMapNullValueStrategy.Ignore)))) {
+        if (mapping.ignore()) {
+            return Reflects.invokeMethod(toProperties.first(p -> eq(p.propertyName, propertyName)).getter, target);
+        }
+        if (!Strings.isEmpty(mapping.source())) {
+            Reflects.PropertyNode propertyNode = Reflects.getProperties(source.getClass()).firstOrDefault(p -> eq(mapping.source(), p.propertyName));
+            if (propertyNode != null) {
+                sourceValue = Reflects.invokeMethod(propertyNode.getter, source);
+            }
+        }
+        if (sourceValue == null && (skipNull || eq(mapping.nullValueStrategy(), BeanMapNullValueStrategy.Ignore))) {
             return Reflects.invokeMethod(toProperties.first(p -> eq(p.propertyName, propertyName)).getter, target);
         }
         if (sourceValue instanceof String) {
@@ -226,12 +247,6 @@ public class BeanMapper {
         }
         if (mapping.converter() != BeanMapConverter.class) {
             sourceValue = Reflects.<BeanMapConverter>newInstance(mapping.converter()).convert(sourceValue, targetType, propertyName);
-        }
-        if (!Strings.isEmpty(mapping.source())) {
-            Reflects.PropertyNode propertyNode = Reflects.getProperties(source.getClass()).firstOrDefault(p -> eq(mapping.source(), p.propertyName));
-            if (propertyNode != null) {
-                sourceValue = Reflects.invokeMethod(propertyNode.getter, source);
-            }
         }
         return sourceValue;
     }
