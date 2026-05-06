@@ -506,10 +506,6 @@ public final class RssClient {
                 return false;
             }
             if (socksServer.isUdp2raw() && weightOf(socksServer) > 0) {
-                if (udpClient != null) {
-                    log.warn("rssConf socksServer {} udp2raw conflicts with udpClient", socksServer);
-                    return false;
-                }
                 if (tcpClient == null) {
                     log.warn("rssConf socksServer {} udp2raw requires tcpClient", socksServer);
                     return false;
