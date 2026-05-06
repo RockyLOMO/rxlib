@@ -139,10 +139,37 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private String render(ServerRequest request, Query filter, String stackHash, String actionMessage) {
         DiagnosticConfig config = currentConfig();
-        if (config.isFileH2Storage() && DiagnosticFileSupport.h2StorageBytes(config.getH2File()) <= 0L) {
-            StringBuilder body = new StringBuilder(256);
+        if (!hasH2Data(config)) {
+            StringBuilder body = new StringBuilder(8192);
+            appendHeader(body, config, filter);
+            appendGlobalFilter(body, filter);
             appendActionMessage(body, actionMessage);
-            body.append("<section class=\"card\"><h2>No H2 data</h2><p>Diagnostic H2 file was not found.</p></section>");
+            appendTabsStart(body);
+            appendH2MissingPanel(body, "overview", "Overview", true);
+            appendTabPanelStart(body, "runtime-state", false);
+            appendRuntimeState(body, request, filter);
+            appendTabPanelEnd(body);
+            appendH2MissingPanel(body, "incidents", "Incidents", false);
+            appendTabPanelStart(body, "exceptions", false);
+            appendExceptionTraces(body, filter);
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "method-traces", false);
+            appendMethodTraces(body, filter);
+            appendTabPanelEnd(body);
+            appendH2MissingPanel(body, "metrics", "Metrics", false);
+            appendH2MissingPanel(body, "rxlib", "Rx Metrics", false);
+            appendH2MissingPanel(body, "thread-cpu", "Thread CPU", false);
+            appendH2MissingPanel(body, "thread-state", "Thread State", false);
+            appendH2MissingPanel(body, "file-io", "File I/O", false);
+            appendH2MissingPanel(body, "net-io", "Net I/O", false);
+            appendH2MissingPanel(body, "file-size", "File Size", false);
+            appendTabPanelStart(body, "tools", false);
+            appendTools(body, filter);
+            appendTabPanelEnd(body);
+            appendTabPanelStart(body, "vm-options", false);
+            appendVmOptions(body, filter);
+            appendTabPanelEnd(body);
+            appendTabsEnd(body);
             return page("RXlib Diagnostics", body.toString());
         }
 
@@ -212,6 +239,10 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    private boolean hasH2Data(DiagnosticConfig config) {
+        return !config.isFileH2Storage() || DiagnosticFileSupport.h2StorageBytes(config.getH2File()) > 0L;
     }
 
     private void appendHeader(StringBuilder out, DiagnosticConfig config, Query filter) {
@@ -284,6 +315,13 @@ public class DiagnosticHttpHandler implements HttpServer.Handler {
 
     private void appendTabsEnd(StringBuilder out) {
         out.append("</div>");
+    }
+
+    private void appendH2MissingPanel(StringBuilder out, String id, String title, boolean active) {
+        appendTabPanelStart(out, id, active);
+        out.append("<section class=\"card\"><h2>").append(escape(title))
+                .append("</h2><p class=\"empty\">No H2 data. Diagnostic H2 file was not found.</p></section>");
+        appendTabPanelEnd(out);
     }
 
     private void appendOverview(StringBuilder out, List<Map<String, Object>> cpuRows,

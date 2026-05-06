@@ -400,6 +400,32 @@ public class ObjectPoolTest {
     }
 
     @Test
+    public void testThreadLocalValidationExceptionReleasesSlotOnBorrow() throws TimeoutException {
+        AtomicInteger created = new AtomicInteger();
+        AtomicBoolean failFirstOnBorrow = new AtomicBoolean(false);
+        ObjectPool<PooledResource> pool = new ObjectPool<>(0, 1,
+                () -> new PooledResource(created.incrementAndGet()),
+                x -> {
+                    if (failFirstOnBorrow.get() && x.id == 1) {
+                        throw new RuntimeException("validate failed");
+                    }
+                    return true;
+                });
+        pool.setBorrowTimeout(1000);
+
+        PooledResource first = pool.borrow();
+        pool.recycle(first);
+        failFirstOnBorrow.set(true);
+
+        PooledResource second = pool.borrow();
+        assertEquals(2, second.id, "L1 validate 异常后应 retire 旧对象并释放容量创建新对象");
+        assertTrue(first.closed.get(), "异常校验对象应被关闭");
+        assertEquals(1, pool.size(), "异常路径不能泄漏 totalCount 槽位");
+        pool.recycle(second);
+        pool.close();
+    }
+
+    @Test
     public void testInvalidObjectRetiredOnRecycle() throws TimeoutException {
         AtomicBoolean valid = new AtomicBoolean(true);
         ObjectPool<Object> pool = new ObjectPool<>(0, 2,

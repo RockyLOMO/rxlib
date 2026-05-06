@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -74,6 +76,27 @@ class ShellCommandTest {
             assertTrue(command.waitFor(10000));
             assertEquals(0, command.exitValue());
         }
+    }
+
+    @Test
+    void resolveWindowsProcessIdSkipsLookupCommandFallback() {
+        ShellCommand command = new ShellCommand("noop", null, Constants.DEFAULT_INTERVAL, false) {
+            @Override
+            List<String> runCommand(List<String> command) {
+                if ("powershell".equals(command.get(0))) {
+                    return Collections.emptyList();
+                }
+                return Arrays.asList(
+                        "Node,ProcessId,CommandLine",
+                        "HOST,200,cmd.exe /c ping -t 127.0.0.1 >nul",
+                        "HOST,100,wmic process where ParentProcessId=1 get ProcessId,CommandLine /format:csv");
+            }
+        };
+
+        Long pid = command.resolveWindowsProcessId(1L, Collections.<Long>emptySet(),
+                Arrays.asList("cmd", "/c", "ping -t 127.0.0.1 >nul"));
+
+        assertEquals(Long.valueOf(200L), pid);
     }
 
     private static String chainedEchoCommand() {
