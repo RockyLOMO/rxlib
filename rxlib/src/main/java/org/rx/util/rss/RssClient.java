@@ -539,7 +539,9 @@ public final class RssClient {
         Map<String, RssClientConf.SocksServer> serverById = indexSocksServers(socksServers);
 
         boolean hasWeighted = false;
-        ServerRouteMode routeMode = null;
+        boolean hasSocksMode = false;
+        boolean hasUdp2rawMode = false;
+        boolean hasTcpClientMode = false;
         LinkedHashSet<String> normalized = new LinkedHashSet<>();
         for (String serverId : user.getSocksServers()) {
             serverId = trimToNull(serverId);
@@ -552,19 +554,25 @@ public final class RssClient {
                 log.warn("rssConf shadowUser {} socksServer id {} not found", user.getUsername(), serverId);
                 return false;
             }
-            ServerRouteMode serverMode = routeMode(socksServer);
-            if (routeMode == null) {
-                routeMode = serverMode;
-            } else if (routeMode != serverMode) {
-                log.warn("rssConf shadowUser {} socksServers {} mixes route modes",
-                        user.getUsername(), user.getSocksServers());
-                return false;
-            }
             if (!normalized.add(serverId)) {
                 log.warn("rssConf shadowUser {} duplicate socksServer id {}", user.getUsername(), serverId);
                 return false;
             }
             if (weightOf(socksServer) > 0) {
+                ServerRouteMode serverMode = routeMode(socksServer);
+                switch (serverMode) {
+                    case SOCKS:
+                        hasSocksMode = true;
+                        break;
+                    case UDP2RAW:
+                        hasUdp2rawMode = true;
+                        break;
+                    case TCP_CLIENT:
+                        hasTcpClientMode = true;
+                        break;
+                    default:
+                        break;
+                }
                 hasWeighted = true;
             }
         }
@@ -573,12 +581,17 @@ public final class RssClient {
                     user.getUsername(), user.getSocksServers());
             return false;
         }
+        if (hasTcpClientMode && (hasSocksMode || hasUdp2rawMode)) {
+            log.warn("rssConf shadowUser {} socksServers {} mixes tcpClient with other route modes",
+                    user.getUsername(), user.getSocksServers());
+            return false;
+        }
         user.setSocksServers(new ArrayList<String>(normalized));
         return true;
     }
 
     enum ServerRouteMode {
-        SOCKS, UDP2RAW, TCP_CLIENT
+        SOCKS, UDP2RAW, TCP_CLIENT, MIXED
     }
 
     static ServerRouteMode routeMode(RssClientConf.SocksServer socksServer) {
@@ -609,13 +622,19 @@ public final class RssClient {
             return ServerRouteMode.SOCKS;
         }
         Map<String, RssClientConf.SocksServer> serverById = indexSocksServers(socksServers);
+        ServerRouteMode routeMode = null;
         for (String serverId : user.getSocksServers()) {
             RssClientConf.SocksServer socksServer = serverById.get(serverId);
-            if (socksServer != null) {
-                return routeMode(socksServer);
+            if (socksServer != null && weightOf(socksServer) > 0) {
+                ServerRouteMode serverMode = routeMode(socksServer);
+                if (routeMode == null) {
+                    routeMode = serverMode;
+                } else if (routeMode != serverMode) {
+                    return ServerRouteMode.MIXED;
+                }
             }
         }
-        return ServerRouteMode.SOCKS;
+        return routeMode == null ? ServerRouteMode.SOCKS : routeMode;
     }
 
     static boolean hasUdp2rawSocksServer(RssClientConf conf) {
@@ -914,6 +933,7 @@ public final class RssClient {
         config.setEnableUdp2raw(udp2raw);
         config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.DIRECT);
         config.setOptimalSettings(RssSupport.IN_OPS);
+        // config.setUdpMtu(UDP2RAW_MTU);
         config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
         config.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
         config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
