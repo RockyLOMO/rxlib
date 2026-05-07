@@ -98,7 +98,7 @@ final class Udp2rawServerEntryManager extends Disposable {
         String tunnelId = tunnelId(sessionHi, sessionLo);
         Udp2rawTunnelContext context = new Udp2rawTunnelContext(this, tunnelId, sessionHi, sessionLo,
                 secret, config.getUdp2rawAuthMode(), compressConfig, redundantConfig, redundantMode,
-                idleMillis, maxSessions, trafficUser, now);
+                idleMillis, maxSessions, config.getUdpMtu(), trafficUser, now);
         tunnels.put(tunnelId, context);
         DiagnosticMetrics.record("socks.udp2raw.tunnel.open.count", 1D, "result=success");
         DiagnosticMetrics.record("socks.udp2raw.tunnel.active.count", tunnels.size(), "action=open");
@@ -130,6 +130,10 @@ final class Udp2rawServerEntryManager extends Disposable {
             return null;
         }
         return tunnels.get(tunnelId(frame.getSessionHi(), frame.getSessionLo()));
+    }
+
+    Udp2rawTunnelContext context(String tunnelId) {
+        return tunnelId != null ? tunnels.get(tunnelId) : null;
     }
 
     Udp2rawCapabilities capabilities() {

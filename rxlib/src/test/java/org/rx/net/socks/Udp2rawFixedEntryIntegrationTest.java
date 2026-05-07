@@ -113,6 +113,188 @@ class Udp2rawFixedEntryIntegrationTest {
 
     @Test
     @Timeout(20)
+    void fixedEntryRepliesToAuthenticatedMtuProbe() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-mtu-probe-token");
+        SocksProxyServer proxy = null;
+        DatagramSocket client = null;
+        try {
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            config.setUdpMtu(1300);
+            proxy = new SocksProxyServer(config, null);
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-mtu");
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+
+            client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            client.setSoTimeout(5000);
+            sendRawUdp(client, entryAddress, buildMtuProbe(open, 77L, 1300));
+
+            java.net.DatagramPacket packet = receive(client);
+            assertEquals(entryAddress.getPort(), packet.getPort());
+            ByteBuf buf = Unpooled.wrappedBuffer(packet.getData(), 0, packet.getLength());
+            try {
+                Udp2rawFrame frame = Udp2rawCodec.decode(buf);
+                assertEquals(Udp2rawFrameType.MTU_ACK, frame.getType());
+                assertEquals(77L, frame.getPacketSeq());
+                assertTrue(frame.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG));
+                assertTrue(Udp2rawAuthenticator.verify(open.getSessionSecret(), frame, buf.slice()));
+                assertEquals(4, buf.readableBytes());
+                assertEquals(1300, buf.getInt(buf.readerIndex()));
+            } finally {
+                buf.release();
+            }
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void fixedEntrySendsResponseDirectionMtuProbeAndAcceptsAck() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-response-mtu-probe-token");
+        SocksProxyServer proxy = null;
+        DatagramSocket client = null;
+        DatagramSocket otherPeer = null;
+        try {
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            config.setUdpMtu(1300);
+            proxy = new SocksProxyServer(config, null);
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-response-mtu");
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+            Udp2rawTunnelContext context = proxy.udp2rawTunnelContext(open.getTunnelId());
+            assertNotNull(context);
+            assertNotNull(context.mtuState);
+
+            client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            client.setSoTimeout(5000);
+            sendRawUdp(client, entryAddress, buildMtuProbe(open, 88L, 1300));
+
+            java.net.DatagramPacket ackPacket = receive(client);
+            ByteBuf ackBuf = Unpooled.wrappedBuffer(ackPacket.getData(), 0, ackPacket.getLength());
+            try {
+                Udp2rawFrame ack = Udp2rawCodec.decode(ackBuf);
+                assertEquals(Udp2rawFrameType.MTU_ACK, ack.getType());
+                assertEquals(88L, ack.getPacketSeq());
+            } finally {
+                ackBuf.release();
+            }
+
+            java.net.DatagramPacket probePacket = receive(client);
+            assertEquals(1300, probePacket.getLength());
+            ByteBuf probeBuf = Unpooled.wrappedBuffer(probePacket.getData(), 0, probePacket.getLength());
+            long probeSeq;
+            try {
+                Udp2rawFrame probe = Udp2rawCodec.decode(probeBuf);
+                assertEquals(Udp2rawFrameType.MTU_PROBE, probe.getType());
+                assertTrue(probe.hasFlag(Udp2rawCodec.FLAG_AUTH_TAG));
+                assertTrue(Udp2rawAuthenticator.verify(open.getSessionSecret(), probe, probeBuf.slice()));
+                probeSeq = probe.getPacketSeq();
+            } finally {
+                probeBuf.release();
+            }
+
+            otherPeer = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            sendRawUdp(otherPeer, entryAddress, buildMtuAck(open, probeSeq, probePacket.getLength() - 40));
+            Thread.sleep(200L);
+            assertEquals(1300, context.mtuState.currentMtu(),
+                    "ACK from non-probed peer must not update response MTU");
+
+            sendRawUdp(client, entryAddress, buildMtuAck(open, probeSeq, probePacket.getLength() - 10));
+            waitForMtu(context, 1290, 2000L);
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+            if (otherPeer != null) {
+                otherPeer.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void fixedEntryMtuAckAuthFailureBlocksPeer() throws Exception {
+        String oldToken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-mtu-ack-bad-auth-token");
+        LinkedBlockingQueue<String> echoPayloads = new LinkedBlockingQueue<>();
+        Channel echo = null;
+        SocksProxyServer proxy = null;
+        DatagramSocket client = null;
+        try {
+            Bootstrap udpEcho = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(
+                    new SimpleChannelInboundHandler<DatagramPacket>() {
+                        @Override
+                        protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                            echoPayloads.add(msg.content().toString(StandardCharsets.UTF_8));
+                            ctx.writeAndFlush(new DatagramPacket(msg.content().retain(), msg.sender()));
+                        }
+                    }));
+            echo = udpEcho.bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+            InetSocketAddress echoAddress = (InetSocketAddress) echo.localAddress();
+
+            SocksConfig config = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            config.setEnableUdp2raw(true);
+            config.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
+            config.setUdpMtu(1300);
+            config.setUdp2rawBadAuthThreshold(1);
+            config.setUdp2rawBadAuthFuseSeconds(1);
+            proxy = new SocksProxyServer(config, null);
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("junit-mtu-ack-bad-auth");
+            Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(open.isSuccess());
+            InetSocketAddress entryAddress = new InetSocketAddress("127.0.0.1", open.getUdpEntryAddress().getPort());
+
+            client = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+            byte[] badAck = buildMtuAck(open, 1L, 1300);
+            badAck[badAck.length - 1] ^= 0x01;
+            sendRawUdp(client, entryAddress, badAck);
+            Thread.sleep(100L);
+
+            sendUdp2raw(client, entryAddress, open, 7001L,
+                    new InetSocketAddress("127.0.0.1", 30701), echoAddress, "blocked-by-mtu-ack");
+            assertNull(echoPayloads.poll(500, TimeUnit.MILLISECONDS),
+                    "bad MTU_ACK auth must feed the same peer block fuse as DATA/MTU_PROBE");
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+            if (proxy != null) {
+                proxy.close();
+            }
+            if (echo != null) {
+                echo.close();
+            }
+            RxConfig.INSTANCE.setRtoken(oldToken);
+        }
+    }
+
+    @Test
+    @Timeout(20)
     void fixedEntryCompressesResponseAndDropsRedundantRequest() throws Exception {
         String oldToken = RxConfig.INSTANCE.getRtoken();
         RxConfig.INSTANCE.setRtoken("udp2raw-p6-test-token");
@@ -536,6 +718,54 @@ class Udp2rawFixedEntryIntegrationTest {
                 InetAddress.getByName(entryAddress.getHostString()), entryAddress.getPort()));
     }
 
+    private static byte[] buildMtuProbe(Udp2rawOpenResult open, long seq, int mtu) {
+        ByteBuf payload = null;
+        ByteBuf authTag = null;
+        ByteBuf encoded = null;
+        try {
+            Udp2rawFrame frame = Udp2rawFrame.data(open.getSessionHi(), open.getSessionLo(), 0L, seq);
+            frame.setType(Udp2rawFrameType.MTU_PROBE);
+            frame.setFlags(Udp2rawCodec.FLAG_AUTH_TAG);
+            int headerBytes = Udp2rawCodec.FIXED_HEADER_LENGTH + 1 + Udp2rawAuthenticator.DEFAULT_TAG_BYTES;
+            int payloadBytes = Math.max(0, mtu - headerBytes);
+            payload = UnpooledByteBufAllocator.DEFAULT.directBuffer(payloadBytes, payloadBytes);
+            payload.writeZero(payloadBytes);
+            authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
+                    open.getSessionSecret(), frame, payload);
+            frame.setAuthTag(authTag);
+            encoded = Udp2rawCodec.encode(UnpooledByteBufAllocator.DEFAULT, frame, payload);
+            payload = null;
+            byte[] bytes = new byte[encoded.readableBytes()];
+            encoded.getBytes(encoded.readerIndex(), bytes);
+            return bytes;
+        } finally {
+            if (authTag != null) {
+                authTag.release();
+            }
+            if (payload != null) {
+                payload.release();
+            }
+            if (encoded != null) {
+                encoded.release();
+            }
+        }
+    }
+
+    private static byte[] buildMtuAck(Udp2rawOpenResult open, long seq, int acceptedMtu) {
+        ByteBuf encoded = null;
+        try {
+            encoded = Udp2rawMtuProbeSupport.encodeAck(UnpooledByteBufAllocator.DEFAULT,
+                    open.getSessionSecret(), open.getSessionHi(), open.getSessionLo(), seq, acceptedMtu);
+            byte[] bytes = new byte[encoded.readableBytes()];
+            encoded.getBytes(encoded.readerIndex(), bytes);
+            return bytes;
+        } finally {
+            if (encoded != null) {
+                encoded.release();
+            }
+        }
+    }
+
     private static byte[] buildCompressedUdp2raw(Udp2rawOpenResult open,
             InetSocketAddress clientSource, InetSocketAddress destination, String text) {
         UdpCompressConfig compressConfig = new UdpCompressConfig();
@@ -606,10 +836,22 @@ class Udp2rawFixedEntryIntegrationTest {
     }
 
     private static java.net.DatagramPacket receive(DatagramSocket socket) throws Exception {
-        byte[] bytes = new byte[1024];
+        byte[] bytes = new byte[2048];
         java.net.DatagramPacket packet = new java.net.DatagramPacket(bytes, bytes.length);
         socket.receive(packet);
         return packet;
+    }
+
+    private static void waitForMtu(Udp2rawTunnelContext context, int expected, long timeoutMillis)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (context.mtuState.currentMtu() == expected) {
+                return;
+            }
+            Thread.sleep(20L);
+        }
+        assertEquals(expected, context.mtuState.currentMtu());
     }
 
     private static void waitForTraffic(TestTrafficUser user, long timeoutMillis) throws InterruptedException {

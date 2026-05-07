@@ -141,8 +141,31 @@ public final class Udp2rawPayloadSupport {
     public static Sockets.UdpWriteResult writeEncoded(Channel channel, ByteBuf encoded,
             InetSocketAddress recipient, UdpRedundantConfig redundant, UdpRedundantStats stats,
             UdpRedundantMultiplierResolver resolver, String flowTag) {
+        return writeEncoded(channel, encoded, recipient, redundant, stats, resolver, flowTag, 0);
+    }
+
+    public static Sockets.UdpWriteResult writeEncoded(Channel channel, ByteBuf encoded,
+            InetSocketAddress recipient, UdpRedundantConfig redundant, UdpRedundantStats stats,
+            UdpRedundantMultiplierResolver resolver, String flowTag, int udpMtu) {
+        return writeEncoded(channel, encoded, recipient, redundant, stats, resolver, flowTag, udpMtu, null);
+    }
+
+    public static Sockets.UdpWriteResult writeEncoded(Channel channel, ByteBuf encoded,
+            InetSocketAddress recipient, UdpRedundantConfig redundant, UdpRedundantStats stats,
+            UdpRedundantMultiplierResolver resolver, String flowTag, int udpMtu, Udp2rawMtuState mtuState) {
         if (encoded == null) {
             return Sockets.UdpWriteResult.WRITE_THROWN;
+        }
+        int bytes = encoded.readableBytes();
+        if (udpMtu > 0 && bytes > udpMtu) {
+            Bytes.release(encoded);
+            String tags = appendDirection(flowTag);
+            DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D,
+                    tags + ",reason=mtu-exceeded");
+            DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.drop.count", 1D, tags);
+            DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.drop.bytes", bytes, tags);
+            recordMtuWriteResult(mtuState, Sockets.UdpWriteResult.MTU_EXCEEDED, bytes);
+            return Sockets.UdpWriteResult.MTU_EXCEEDED;
         }
         int multiplier = effectiveMultiplier(redundant, stats, resolver, recipient);
         int intervalMicros = redundant != null ? Math.max(0, redundant.getIntervalMicros()) : 0;
@@ -151,11 +174,15 @@ public final class Udp2rawPayloadSupport {
             if (multiplier <= 1) {
                 DatagramPacket packet = new DatagramPacket(encoded, recipient);
                 encoded = null;
-                return Sockets.writeUdp(channel, packet, METRIC_PREFIX, flowTag + ",redundant=false");
+                Sockets.UdpWriteResult result = Sockets.writeUdp(channel, packet,
+                        METRIC_PREFIX, flowTag + ",redundant=false");
+                recordMtuWriteResult(mtuState, result, bytes);
+                return result;
             }
 
             first = writeCopy(channel, encoded.retainedDuplicate(), recipient,
                     flowTag + ",redundant=true,copy=first");
+            recordMtuWriteResult(mtuState, first, bytes);
             for (int i = 1; i < multiplier; i++) {
                 ByteBuf copy = encoded.retainedDuplicate();
                 if (intervalMicros <= 0) {
@@ -169,6 +196,13 @@ public final class Udp2rawPayloadSupport {
             return first;
         } finally {
             Bytes.release(encoded);
+        }
+    }
+
+    private static void recordMtuWriteResult(Udp2rawMtuState mtuState,
+            Sockets.UdpWriteResult result, int bytes) {
+        if (mtuState != null && result == Sockets.UdpWriteResult.MTU_EXCEEDED) {
+            mtuState.onWriteMtuDrop(bytes, System.currentTimeMillis());
         }
     }
 

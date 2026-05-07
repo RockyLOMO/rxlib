@@ -46,6 +46,8 @@ import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
+import org.rx.net.socks.UdpPortHoppingMode;
+import org.rx.net.socks.UdpRedundantMode;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Udp2rawUpstream;
@@ -99,6 +101,7 @@ public final class RssClient {
     static final long UPSTREAM_CLOSE_MAX_WAIT_MILLIS = 60L * 1000L;
     static final int DEFAULT_UPSTREAM_HEALTH_CHECK_SECONDS = 5;
     static final int DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD = 3;
+    static final int UDP2RAW_MTU = 1300;
     static final long DEFAULT_PROCESS_DRAIN_MAX_WAIT_MILLIS = 180L * 1000L;
     static final long DEFAULT_PROCESS_DRAIN_TOKEN_TTL_MILLIS = 120L * 1000L;
     static final String PROCESS_DRAIN_MAX_WAIT_PROPERTY = "app.rss.drainMaxWaitMillis";
@@ -118,8 +121,7 @@ public final class RssClient {
     static ScheduledFuture<?> autoWhiteListTask;
     static int autoWhiteListTaskPeriodSeconds;
 
-    private RssClient() {
-    }
+    private RssClient() {}
 
     @SneakyThrows
     public static void launch(Map<String, String> options, int port) {
@@ -179,8 +181,7 @@ public final class RssClient {
     static final class RssProcessControl {
         static final AtomicBoolean REGISTERED = new AtomicBoolean();
 
-        private RssProcessControl() {
-        }
+        private RssProcessControl() {}
 
         static void register() {
             if (!REGISTERED.compareAndSet(false, true)) {
@@ -196,7 +197,7 @@ public final class RssClient {
                 Class<?> handlerClass = Class.forName("sun.misc.SignalHandler");
                 final Object signal = signalClass.getConstructor(String.class).newInstance(signalName);
                 Object handler = Proxy.newProxyInstance(RssClient.class.getClassLoader(),
-                        new Class<?>[]{handlerClass}, new InvocationHandler() {
+                        new Class<?>[] {handlerClass}, new InvocationHandler() {
                             @Override
                             public Object invoke(Object proxy, Method method, Object[] args) {
                                 if ("handle".equals(method.getName())) {
@@ -405,7 +406,8 @@ public final class RssClient {
         }
         conf.trafficRetentionDays = Math.max(1, conf.trafficRetentionDays);
         conf.memoryRetentionHours = conf.memoryRetentionHours <= 0
-                ? RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS : conf.memoryRetentionHours;
+                ? RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS
+                : conf.memoryRetentionHours;
         conf.connectTimeoutSeconds = Math.max(1, conf.connectTimeoutSeconds);
         conf.tcpTimeoutSeconds = Math.max(0, conf.tcpTimeoutSeconds);
         conf.udpTimeoutSeconds = Math.max(0, conf.udpTimeoutSeconds);
@@ -584,7 +586,8 @@ public final class RssClient {
             return ServerRouteMode.UDP2RAW;
         }
         return socksServer != null && (socksServer.getTcpClient() != null || socksServer.getUdpClient() != null)
-                ? ServerRouteMode.TCP_CLIENT : ServerRouteMode.SOCKS;
+                ? ServerRouteMode.TCP_CLIENT
+                : ServerRouteMode.SOCKS;
     }
 
     private static Map<String, RssClientConf.SocksServer> indexSocksServers(List<RssClientConf.SocksServer> socksServers) {
@@ -714,7 +717,7 @@ public final class RssClient {
     }
 
     static void addDnsInterceptorWeight(RandomList<DnsServer.ResolveInterceptor> dnsInterceptors,
-                                        SocksRpcContract facade, int weight) {
+            SocksRpcContract facade, int weight) {
         if (dnsInterceptors == null || facade == null || weight <= 0) {
             return;
         }
@@ -733,7 +736,7 @@ public final class RssClient {
     }
 
     private static void addRpcEndpointsByMode(RssClientConf conf, Map<String, InetSocketAddress> endpoints,
-                                              ServerRouteMode preferredMode) {
+            ServerRouteMode preferredMode) {
         if (conf == null || CollectionUtils.isEmpty(conf.socksServers)) {
             return;
         }
@@ -756,7 +759,7 @@ public final class RssClient {
     }
 
     static InetSocketAddress resolveRpcEndpoint(RssClientConf conf, InetSocketAddress socksServerEp,
-                                                Map<String, InetSocketAddress> rpcEndpointByServerHost) {
+            Map<String, InetSocketAddress> rpcEndpointByServerHost) {
         InetSocketAddress endpoint = rpcEndpointByServerHost == null ? null : rpcEndpointByServerHost.get(rpcHostKey(socksServerEp));
         return endpoint != null ? endpoint : Sockets.newEndpoint(socksServerEp, resolveRpcPort(conf, socksServerEp));
     }
@@ -766,10 +769,10 @@ public final class RssClient {
     }
 
     private static SocksRpcContract getOrCreateRpcFacade(RssClientConf conf, GeoManager geoMgr,
-                                                        InetSocketAddress socksServerEp,
-                                                        Map<String, InetSocketAddress> rpcEndpointByServerHost,
-                                                        Map<String, SocksRpcContract> facadeByRpcEndpoint,
-                                                        List<SocksRpcContract> createdFacades) {
+            InetSocketAddress socksServerEp,
+            Map<String, InetSocketAddress> rpcEndpointByServerHost,
+            Map<String, SocksRpcContract> facadeByRpcEndpoint,
+            List<SocksRpcContract> createdFacades) {
         InetSocketAddress rpcEndpoint = resolveRpcEndpoint(conf, socksServerEp, rpcEndpointByServerHost);
         String rpcKey = endpointKey(rpcEndpoint);
         SocksRpcContract facade = facadeByRpcEndpoint.get(rpcKey);
@@ -809,7 +812,7 @@ public final class RssClient {
     }
 
     static Map<String, RandomList<UpstreamSupport>> buildUserSocksServers(List<ShadowUser> shadowUsers,
-                                                                          Map<String, UpstreamSupport> supportByServerId) {
+            Map<String, UpstreamSupport> supportByServerId) {
         if (CollectionUtils.isEmpty(shadowUsers) || supportByServerId == null || supportByServerId.isEmpty()) {
             return Collections.emptyMap();
         }
@@ -907,13 +910,13 @@ public final class RssClient {
 
     static void configureInboundConfig(RssClientConf conf, SocksConfig config, boolean udp2raw) {
         config.setDebug(conf.hasDebugFlag());
+        // RSS udp2raw 入口必须启用服务端隧道能力，RPC open 才不会返回 unsupported。
+        config.setEnableUdp2raw(udp2raw);
         config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.DIRECT);
         config.setOptimalSettings(RssSupport.IN_OPS);
         config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
         config.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
         config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
-        config.setUdpRedundantMultiplier(2);
-        RssSupport.applyUdpCompressionTrial(config);
     }
 
     static void configureOutboundConfig(RssClientConf conf, SocksConfig config) {
@@ -921,6 +924,23 @@ public final class RssClient {
         config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
         config.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
         config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
+
+        config.setUdpMtu(UDP2RAW_MTU);
+        config.setUdpRedundantMultiplier(2);
+        config.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
+        config.setUdpRedundantAdaptive(true);
+        config.setUdpRedundantMinMultiplier(1);
+        config.setUdpRedundantMaxMultiplier(3);
+        config.setUdpRedundantLossThresholdHigh(0.20);
+        config.setUdpRedundantLossThresholdLow(0.05);
+        config.setUdpRedundantStablePeriods(3);
+
+        config.setUdpPortHoppingEnabled(true);
+        config.setUdpPortHoppingAdaptive(true);
+        config.setUdpPortHoppingMinHopCount(1);
+        config.setUdpPortHoppingMaxHopCount(2);
+        config.setUdpPortHoppingMinActiveHops(1);
+        config.setUdpPortHoppingMode(UdpPortHoppingMode.ROUND_ROBIN);
         applyUdpLeasePool(conf, config);
         RssSupport.applyUdpCompressionTrial(config);
     }
@@ -1183,7 +1203,7 @@ public final class RssClient {
     }
 
     static void updateUpstreamHealth(RssRuntime.UpstreamSnapshot snapshot, RandomList<UpstreamSupport> servers,
-                                     UpstreamSupport support, boolean healthy, boolean updateDns) {
+            UpstreamSupport support, boolean healthy, boolean updateDns) {
         if (support == null || servers == null) {
             return;
         }
@@ -1314,10 +1334,10 @@ public final class RssClient {
     }
 
     static RssRuntime.RssInServer createInSvr(RssClientConf conf, SocksConfig inConf, Authenticator authenticator,
-                                              TripleAction<SocksProxyServer, SocksContext> firstRoute,
-                                              AtomicReference<RandomList<UpstreamSupport>> socksServersRef,
-                                              AtomicReference<Map<String, RandomList<UpstreamSupport>>> userSocksServersRef,
-                                              GeoManager geoMgr) {
+            TripleAction<SocksProxyServer, SocksContext> firstRoute,
+            AtomicReference<RandomList<UpstreamSupport>> socksServersRef,
+            AtomicReference<Map<String, RandomList<UpstreamSupport>>> userSocksServersRef,
+            GeoManager geoMgr) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf);
         if (authenticator instanceof RssAuthenticator) {
             RssAuthenticator rssAuthenticator = (RssAuthenticator) authenticator;
@@ -1410,8 +1430,8 @@ public final class RssClient {
     }
 
     static RandomList<UpstreamSupport> resolveUserSocksServers(RandomList<UpstreamSupport> defaultServers,
-                                                               Map<String, RandomList<UpstreamSupport>> userServers,
-                                                               TrafficUser user) {
+            Map<String, RandomList<UpstreamSupport>> userServers,
+            TrafficUser user) {
         if (userServers == null || userServers.isEmpty() || user == null || user.isAnonymous()) {
             return defaultServers;
         }
@@ -1428,7 +1448,7 @@ public final class RssClient {
     }
 
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost,
-                                        UnresolvedEndpoint dstEp, boolean allowSourceSteering) {
+            UnresolvedEndpoint dstEp, boolean allowSourceSteering) {
         RssClientConf conf = rssConf;
         int steeringTtl = conf == null || conf.route == null ? 0 : conf.route.srcSteeringTTL;
         try {
@@ -1506,13 +1526,13 @@ public final class RssClient {
 
     static boolean isCommonStatelessPort(int port) {
         switch (port) {
-            case 53:    // DNS
-            case 80:    // HTTP
-            case 123:   // NTP
-            case 443:   // HTTPS / HTTP3 / QUIC
-            case 853:   // DNS over TLS
-            case 3478:  // STUN / TURN
-            case 5349:  // STUNS / TURNS
+            case 53: // DNS
+            case 80: // HTTP
+            case 123: // NTP
+            case 443: // HTTPS / HTTP3 / QUIC
+            case 853: // DNS over TLS
+            case 3478: // STUN / TURN
+            case 5349: // STUNS / TURNS
             case 8000:
             case 8008:
             case 8080:
@@ -1543,13 +1563,25 @@ public final class RssClient {
             return new Upstream(dstEp);
         }
         if (next.isUdp2raw()) {
-            return new Udp2rawUpstream(dstEp, config, next);
+            return new Udp2rawUpstream(dstEp, udp2rawRouteConfig(config), next);
         }
         InetSocketAddress udpClient = next.getUdpClient();
         if (udpClient != null) {
             return new UdpClientUpstream(dstEp, config, udpClient);
         }
         return new SocksUdpUpstream(dstEp, config, routeUpstream(config, next));
+    }
+
+    private static SocksConfig udp2rawRouteConfig(SocksConfig config) {
+        if (config == null) {
+            config = new SocksConfig();
+        }
+        if (config.getUdpMtu() > 0) {
+            return config;
+        }
+        SocksConfig routed = Sys.deepClone(config);
+        routed.setUdpMtu(UDP2RAW_MTU);
+        return routed;
     }
 
     static UpstreamSupport routeUpstream(SocksConfig inConf, UpstreamSupport next) {
@@ -1802,7 +1834,7 @@ public final class RssClient {
     }
 
     static AuthenticEndpoint resolveShadowEndpoint(SocketAddress inSvrAddress, SocketAddress inUdp2rawSvrAddress,
-                                                   String authUserName, boolean udp2raw) {
+            String authUserName, boolean udp2raw) {
         SocketAddress endpoint = inSvrAddress;
         if (udp2raw && inUdp2rawSvrAddress != null) {
             endpoint = inUdp2rawSvrAddress;

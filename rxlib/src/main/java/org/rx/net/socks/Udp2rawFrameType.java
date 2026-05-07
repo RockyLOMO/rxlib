@@ -4,7 +4,9 @@ public enum Udp2rawFrameType {
     DATA(1),
     PING(2),
     CLOSE(3),
-    RESET(4);
+    RESET(4),
+    MTU_PROBE(5),
+    MTU_ACK(6);
 
     private final int code;
 
