@@ -1052,7 +1052,7 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
-    public void normalizeAndValidateRssConfig_RejectsMixedUdp2rawAndNormalSocksServers() {
+    public void normalizeAndValidateRssConfig_AcceptsMixedUdp2rawAndNormalSocksServers() {
         RssClientConf conf = validRssConf();
         RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("tun-a", 1,
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
@@ -1061,7 +1061,25 @@ public class RssTest extends AbstractTester {
         conf.socksServers = Arrays.asList(conf.socksServers.get(0), udp2raw);
         conf.shadowUsers.get(0).setSocksServers(Arrays.asList("primary", "tun-a"));
 
-        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+        assertEquals(RssClient.ServerRouteMode.MIXED,
+                RssClient.userRouteMode(conf.shadowUsers.get(0), conf.socksServers));
+
+        RssRuntime.UpstreamSnapshot snapshot = null;
+        try {
+            snapshot = RssClient.buildUpstreams(conf, org.rx.net.support.GeoManager.INSTANCE);
+            assertTrue(snapshot.userSocksServers.get("ss-rocky").contains(snapshot.socksServers.get(0)));
+            assertTrue(snapshot.udp2rawUserSocksServers.get("ss-rocky").contains(snapshot.udp2rawSocksServers.get(0)));
+
+            RssRuntime.ShadowRoutePlan routePlan = RssRuntime.ShadowRoutePlan.mixedLocal(
+                    conf.shadowUsers.get(0), conf.socksServers,
+                    new LocalAddress("rss-in-mixed"), new LocalAddress("rss-in-tun-mixed"));
+            assertEquals(2, routePlan.supports.size());
+            assertEquals(1, routePlan.supports.getWeight(routePlan.supports.get(0)));
+            assertEquals(1, routePlan.supports.getWeight(routePlan.supports.get(1)));
+        } finally {
+            RssClient.closeUpstreamsQuietly(snapshot);
+        }
     }
 
     @Test
@@ -1080,6 +1098,20 @@ public class RssTest extends AbstractTester {
 
         assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
         assertEquals(Arrays.asList("tun-a", "tun-b"), conf.shadowUsers.get(0).getSocksServers());
+    }
+
+    @Test
+    public void normalizeAndValidateRssConfig_IgnoresDisabledMixedModeServer() {
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer disabledUdp2raw = new RssClientConf.SocksServer("tun-off", 0,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9910"));
+        disabledUdp2raw.setUdp2raw(true);
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), disabledUdp2raw);
+        conf.shadowUsers.get(0).setSocksServers(Arrays.asList("primary", "tun-off"));
+
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+        assertEquals(RssClient.ServerRouteMode.SOCKS,
+                RssClient.userRouteMode(conf.shadowUsers.get(0), conf.socksServers));
     }
 
     @Test
@@ -1327,9 +1359,9 @@ public class RssTest extends AbstractTester {
         RssClient.configureInboundConfig(conf, tunnel, true);
 
         assertFalse(normal.isEnableUdp2raw());
-        assertEquals(1300, normal.getUdpMtu());
+        assertEquals(0, normal.getUdpMtu());
         assertTrue(tunnel.isEnableUdp2raw());
-        assertEquals(1300, tunnel.getUdpMtu());
+        assertEquals(0, tunnel.getUdpMtu());
     }
 
     @Test

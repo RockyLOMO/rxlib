@@ -561,6 +561,18 @@ final class RssRuntime implements AutoCloseable {
             }
             return ShadowRoutePlan.direct(directServers);
         }
+        if (mode == ServerRouteMode.MIXED) {
+            if (inUdp2rawAddress == null) {
+                throw new InvalidException("No udp2raw in server user={}", usr.getUsername());
+            }
+            // 先按两类上游总权重选择本地入口，再由入口内按用户池二次选择具体上游。
+            ShadowRoutePlan mixedRoutePlan = ShadowRoutePlan.mixedLocal(usr, conf.socksServers,
+                    inSvrAddress, inUdp2rawAddress);
+            if (mixedRoutePlan.supports.isEmpty()) {
+                throw new InvalidException("No mixed local upstream user={}", usr.getUsername());
+            }
+            return mixedRoutePlan;
+        }
         if (mode == ServerRouteMode.UDP2RAW && inUdp2rawAddress == null) {
             throw new InvalidException("No udp2raw in server user={}", usr.getUsername());
         }
@@ -645,6 +657,55 @@ final class RssRuntime implements AutoCloseable {
             support.setConfiguredWeight(1);
             supports.add(support, 1);
             return new ShadowRoutePlan(toJsonString(endpoint), supports);
+        }
+
+        static ShadowRoutePlan mixedLocal(ShadowUser user, List<RssClientConf.SocksServer> socksServers,
+                                          SocketAddress inSvrAddress, SocketAddress inUdp2rawAddress) {
+            int socksWeight = 0;
+            int udp2rawWeight = 0;
+            if (user != null && user.getSocksServers() != null && socksServers != null) {
+                for (String serverId : user.getSocksServers()) {
+                    if (serverId == null) {
+                        continue;
+                    }
+                    for (RssClientConf.SocksServer socksServer : socksServers) {
+                        if (socksServer == null || !serverId.equals(socksServer.getId())) {
+                            continue;
+                        }
+                        int weight = weightOf(socksServer);
+                        if (weight <= 0) {
+                            break;
+                        }
+                        ServerRouteMode mode = routeMode(socksServer);
+                        if (mode == ServerRouteMode.SOCKS) {
+                            socksWeight += weight;
+                        } else if (mode == ServerRouteMode.UDP2RAW) {
+                            udp2rawWeight += weight;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            RandomList<UpstreamSupport> supports = new RandomList<>();
+            List<String> signatureParts = new ArrayList<>();
+            if (socksWeight > 0) {
+                AuthenticEndpoint endpoint = resolveShadowEndpoint(inSvrAddress, inUdp2rawAddress,
+                        user.getUsername(), false);
+                UpstreamSupport support = new UpstreamSupport(endpoint, null);
+                support.setConfiguredWeight(socksWeight);
+                supports.add(support, socksWeight);
+                signatureParts.add("SOCKS:" + socksWeight + "@" + endpoint);
+            }
+            if (udp2rawWeight > 0) {
+                AuthenticEndpoint endpoint = resolveShadowEndpoint(inSvrAddress, inUdp2rawAddress,
+                        user.getUsername(), true);
+                UpstreamSupport support = new UpstreamSupport(endpoint, null);
+                support.setConfiguredWeight(udp2rawWeight);
+                supports.add(support, udp2rawWeight);
+                signatureParts.add("UDP2RAW:" + udp2rawWeight + "@" + endpoint);
+            }
+            return new ShadowRoutePlan(toJsonString(signatureParts), supports);
         }
 
         static ShadowRoutePlan direct(RandomList<UpstreamSupport> supports) {
