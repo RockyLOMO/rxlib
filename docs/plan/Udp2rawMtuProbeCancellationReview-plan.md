@@ -154,28 +154,28 @@ currentMtu >= MIN_PROBE_DATAGRAM_BYTES
 
 ## 剩余建议
 
-### 1. tiny hard cap 被抬高的语义建议写入注释
+### 1. tiny hard cap 被抬高的语义已写入代码注释
 
 这轮把 tiny MTU 从“低于最小 probe 时不发 probe”改为“floor 到最小 probe frame”。这对协议级 probe 是合理的，但语义上意味着如果用户传入极小 hard cap，例如 `40`，状态机会把 current/max 提升到最小 control frame size。
 
-建议在 `Udp2rawMtuState` 构造器附近加注释说明：
+已在 `Udp2rawMtuState` 构造器附近加注释说明：
 
 - adaptive MTU 不支持低于 udp2raw MTU_PROBE 最小 datagram 的值。
 - 极小配置会被 floor 到 `MIN_PROBE_DATAGRAM_BYTES`，否则协议级 probe 无法工作。
 
-当前不是 blocker，但有助于避免以后误解“udpMtu hard cap 永不放大”。
+这不是 blocker，但能避免以后误解“udpMtu hard cap 永不放大”。
 
 ### 2. client-side probe 没有 pending peer，当前可接受
 
 client-side request probe 只发往 `state.udpTransportAddress`，ACK 由 `TunnelState` 和 seq 校验。相比 server response 方向，client 侧没有多 peer 问题。
 
-当前可接受；如果后续支持 client 侧 transport rebind 或多 upstream transport，再考虑绑定 pending transport address。
+设计结论：当前可接受，不改代码；如果后续支持 client 侧 transport rebind 或多 upstream transport，再考虑绑定 pending transport address。
 
 ### 3. local write ACCEPTED 仍不等于网络真实发送成功
 
 `Sockets.writeUdp(...) == ACCEPTED` 只能表示本地 write path 接受，不代表 UDP 包一定到达网络或对端。后续仍依赖 ACK timeout 处理真实丢包，这是 UDP 语义下合理的。
 
-这里不需要改，只建议在设计文档中明确 ACCEPTED 的语义是 local accepted。
+设计结论：这里不改业务代码，已在自适应 MTU 总设计中明确 `ACCEPTED` 的语义是 local accepted。
 
 ### 4. 仍建议实际跑 CI
 

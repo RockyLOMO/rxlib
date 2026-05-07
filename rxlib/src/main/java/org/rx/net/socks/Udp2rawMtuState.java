@@ -53,6 +53,7 @@ public final class Udp2rawMtuState {
             this.currentMtu = 0;
             return;
         }
+        // 协议级 MTU_PROBE 本身也有最小 datagram 长度，极小配置需 floor 到该值。
         int effectiveMax = maxMtu > 0
                 ? Math.max(maxMtu, Udp2rawMtuProbeSupport.MIN_PROBE_DATAGRAM_BYTES)
                 : MAX_MTU;

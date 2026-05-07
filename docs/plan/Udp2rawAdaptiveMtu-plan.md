@@ -271,9 +271,10 @@ static int encodedEndpointBytes(UnresolvedEndpoint endpoint);
    - 如果大于 state current MTU，按 MTU drop 处理，不调用 `Sockets.writeUdp`。
    - 如果小于等于 current MTU，调用 `Sockets.writeUdp`。
 5. 根据 `UdpWriteResult` 更新 adaptive MTU state。
-   - `ACCEPTED`：`onWriteAccepted(bytes)`。
+   - `ACCEPTED`：仅表示本地 UDP write path 已接受该写入，可调用 `onWriteAccepted(bytes)`；它不代表 datagram 已真实到达网络或对端。
    - MTU 超限/guard drop：`onWriteMtuDrop(bytes)`。
    - pending/not-writable 不应直接触发 MTU 回退。
+   - 真实网络丢包仍由协议级 `MTU_ACK` 超时、业务响应缺失或上层超时路径兜底判断。
 
 ### 修改 `Udp2rawHandler`
 
