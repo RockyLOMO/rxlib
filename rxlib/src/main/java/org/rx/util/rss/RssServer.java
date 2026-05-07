@@ -15,6 +15,7 @@ import org.rx.net.socks.Authenticator;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksUser;
+import org.rx.net.socks.UdpPortHoppingMode;
 import org.rx.net.socks.UdpRedundantMode;
 import org.rx.net.transport.TcpServerConfig;
 
@@ -27,8 +28,7 @@ public final class RssServer {
     static final int UDP2RAW_MTU = RssClient.UDP2RAW_MTU;
     static HttpServer httpServer;
 
-    private RssServer() {
-    }
+    private RssServer() {}
 
     public static void launch(Map<String, String> options, int port) {
         Integer udp2rawPort = Reflects.convertQuietly(options.get("udp2rawPort"), Integer.class);
@@ -74,9 +74,23 @@ public final class RssServer {
         config.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         config.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
         config.setOptimalSettings(RssSupport.OUT_OPS);
+
+        config.setUdpMtu(UDP2RAW_MTU);
         config.setUdpRedundantMultiplier(2);
         config.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
-        config.setUdpMtu(UDP2RAW_MTU);
+        config.setUdpRedundantAdaptive(true);
+        config.setUdpRedundantMinMultiplier(1);
+        config.setUdpRedundantMaxMultiplier(3);
+        config.setUdpRedundantLossThresholdHigh(0.20);
+        config.setUdpRedundantLossThresholdLow(0.05);
+        config.setUdpRedundantStablePeriods(3);
+
+        config.setUdpPortHoppingEnabled(true);
+        config.setUdpPortHoppingAdaptive(true);
+        config.setUdpPortHoppingMinHopCount(1);
+        config.setUdpPortHoppingMaxHopCount(2);
+        config.setUdpPortHoppingMinActiveHops(1);
+        config.setUdpPortHoppingMode(UdpPortHoppingMode.ROUND_ROBIN);
         RssSupport.applyUdpCompressionTrial(config);
     }
 
@@ -88,8 +102,7 @@ public final class RssServer {
     }
 
     static void serverInit() {
-        httpServer = HttpServer.getDefault().requestMapping("/getPublicIp", (request, response) ->
-                response.jsonBody(request.getRemoteEndpoint().getHostString()))
+        httpServer = HttpServer.getDefault().requestMapping("/getPublicIp", (request, response) -> response.jsonBody(request.getRemoteEndpoint().getHostString()))
                 .requestAsync("/hf", (request, response) -> {
                     String url = request.getQueryString().getFirst("fu");
                     Integer tm = Reflects.convertQuietly(request.getQueryString().getFirst("tm"), Integer.class);

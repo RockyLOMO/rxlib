@@ -3,9 +3,13 @@ on:
   workflow_dispatch:    # 支持手动触发
     inputs:
       servers:
-        description: "部署目标：all 或逗号分隔 server id，例如 main,new104"
+        description: "部署目标"
         required: true
-        default: "all"
+        type: choice
+        default: "main"
+        options:
+          - main
+          - new104
 
 jobs:
   build-and-push:
