@@ -53,12 +53,14 @@ public final class Udp2rawMtuState {
             this.currentMtu = 0;
             return;
         }
-        int effectiveMax = maxMtu > 0 ? maxMtu : MAX_MTU;
+        int effectiveMax = maxMtu > 0
+                ? Math.max(maxMtu, Udp2rawMtuProbeSupport.MIN_PROBE_DATAGRAM_BYTES)
+                : MAX_MTU;
         int effectiveMin = Math.max(576, minMtu);
         if (effectiveMin > effectiveMax) {
             effectiveMin = effectiveMax;
         }
-        this.minMtu = Math.max(1, effectiveMin);
+        this.minMtu = Math.max(Udp2rawMtuProbeSupport.MIN_PROBE_DATAGRAM_BYTES, effectiveMin);
         this.maxMtu = Math.max(this.minMtu, effectiveMax);
         this.currentMtu = clamp(initialMtu, this.minMtu, this.maxMtu);
         this.nextProbeAtMillis = System.currentTimeMillis() + 1_000L;
@@ -121,6 +123,18 @@ public final class Udp2rawMtuState {
 
     public boolean ack(long seq, long now) {
         return ack(seq, 0, now);
+    }
+
+    public synchronized boolean cancelPendingProbe(long seq, long now) {
+        if (seq == 0L || seq != pendingSeq) {
+            return false;
+        }
+        pendingSeq = 0L;
+        pendingMtu = 0;
+        pendingDeadlineMillis = 0L;
+        nextProbeAtMillis = Math.min(nextProbeAtMillis, now + PROBE_RETRY_MILLIS);
+        DiagnosticMetrics.record("socks.udp2raw.mtu.probe.count", 1D, "action=cancel,side=" + side);
+        return true;
     }
 
     public int currentMtu() {

@@ -709,11 +709,13 @@ public class Udp2rawUpstream extends Upstream {
                     METRIC_PREFIX, "flow=mtu-probe");
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
+                state.mtuState.cancelPendingProbe(probe.seq, System.currentTimeMillis());
                 DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D,
                         "action=local-drop,result=" + result);
             }
         } catch (Throwable e) {
             Bytes.release(encoded);
+            state.mtuState.cancelPendingProbe(probe.seq, System.currentTimeMillis());
             DiagnosticMetrics.record(METRIC_PREFIX + ".mtu.probe.count", 1D, "action=encode-fail");
             log.warn("udp2raw MTU probe send failed to {}", state.udpTransportAddress, e);
         }

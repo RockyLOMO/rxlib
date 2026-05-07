@@ -6,8 +6,8 @@ import io.netty.buffer.UnpooledByteBufAllocator;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -105,11 +105,34 @@ class Udp2rawMtuStateTest {
     }
 
     @Test
-    void tinyMtuDoesNotEmitOversizedProbe() {
+    void cancelPendingProbeDoesNotLowerOrAcceptLateAck() {
+        Udp2rawMtuState state = new Udp2rawMtuState(1300, "client");
+        long now = System.currentTimeMillis() + 1000L;
+
+        Udp2rawMtuState.Probe probe = state.nextProbe(now);
+        assertTrue(state.cancelPendingProbe(probe.seq, now + 10L));
+
+        assertFalse(state.ack(probe.seq, 1200, now + 20L));
+        assertEquals(1300, state.currentMtu());
+        assertNotNull(state.nextProbe(now + 6000L));
+        assertEquals(1300, state.currentMtu());
+    }
+
+    @Test
+    void tinyMtuFloorsToMinimumProbeFrame() {
         Udp2rawMtuState state = new Udp2rawMtuState(40, 1, 40, "client");
         long now = System.currentTimeMillis() + 1000L;
 
-        assertNull(state.nextProbe(now));
+        assertEquals(Udp2rawMtuProbeSupport.MIN_PROBE_DATAGRAM_BYTES, state.currentMtu());
+        Udp2rawMtuState.Probe probe = state.nextProbe(now);
+        assertEquals(Udp2rawMtuProbeSupport.MIN_PROBE_DATAGRAM_BYTES, probe.mtu);
+        ByteBuf encoded = Udp2rawMtuProbeSupport.encodeProbe(UnpooledByteBufAllocator.DEFAULT,
+                new byte[] {1}, 1L, 2L, probe.seq, probe.mtu);
+        try {
+            assertEquals(Udp2rawMtuProbeSupport.MIN_PROBE_DATAGRAM_BYTES, encoded.readableBytes());
+        } finally {
+            encoded.release();
+        }
         assertThrows(IllegalArgumentException.class, () -> Udp2rawMtuProbeSupport.encodeProbe(
                 UnpooledByteBufAllocator.DEFAULT, new byte[] {1}, 1L, 2L, 1L,
                 Udp2rawMtuProbeSupport.MIN_PROBE_DATAGRAM_BYTES - 1));
