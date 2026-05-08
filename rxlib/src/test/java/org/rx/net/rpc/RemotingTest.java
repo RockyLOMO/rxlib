@@ -470,6 +470,100 @@ public class RemotingTest extends AbstractTester {
     @Test
     @Order(6)
     @Timeout(20)
+    void clientPublish_directRoute_shouldReturnOnlyToCaller() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        UserManagerImpl impl = new UserManagerImpl();
+        startServer(impl, endpoint);
+
+        RpcClientConfig<UserManager> config1 = RpcClientConfig.statefulMode(endpoint, 0);
+        RpcClientConfig<UserManager> config2 = RpcClientConfig.statefulMode(endpoint, 0);
+        config1.getTcpConfig().setConnectTimeoutMillis(1000);
+        config2.getTcpConfig().setConnectTimeoutMillis(1000);
+        UserManager facade1 = Remoting.createFacade(UserManager.class, config1);
+        UserManager facade2 = Remoting.createFacade(UserManager.class, config2);
+        AtomicInteger client1Callbacks = new AtomicInteger();
+        AtomicInteger client2Callbacks = new AtomicInteger();
+        CountDownLatch client2Latch = new CountDownLatch(1);
+        try {
+            facade1.<RemotingEventArgs<String>>attachEvent(eventName, (s, e) -> client1Callbacks.incrementAndGet(), false);
+            facade2.<RemotingEventArgs<String>>attachEvent(eventName, (s, e) -> {
+                client2Callbacks.incrementAndGet();
+                client2Latch.countDown();
+            }, false);
+            sleep(300);
+
+            facade2.publishEvent(eventName, RemotingEventArgs.direct("direct-1"));
+            assertTrue(client2Latch.await(5, TimeUnit.SECONDS), "direct 事件应回传给发起方");
+            sleep(200);
+            assertEquals(0, client1Callbacks.get(), "非发起方不应收到 direct 事件");
+            assertEquals(1, client2Callbacks.get());
+        } finally {
+            facade1.close();
+            facade2.close();
+        }
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void clientPublish_computeRoute_shouldUseComputeSubscriberThenBroadcast() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        UserManagerImpl impl = new UserManagerImpl();
+        RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(port));
+        serverConfig.setEventComputeVersion((short) 1);
+        serverConfig.getTcpConfig().setReactorName("temp");
+        HybridServer server = Remoting.registerHybrid(impl, serverConfig);
+        AtomicInteger subscribePackets = new AtomicInteger();
+        server.onReceive.add((s, e) -> {
+            if (e.getValue() instanceof EventMessage) {
+                EventMessage message = (EventMessage) e.getValue();
+                if (message.flag == EventFlag.SUBSCRIBE && eventName.equals(message.eventName)) {
+                    subscribePackets.incrementAndGet();
+                }
+            }
+        });
+
+        RpcClientConfig<UserManager> config1 = RpcClientConfig.statefulMode(endpoint, 1);
+        RpcClientConfig<UserManager> config2 = RpcClientConfig.statefulMode(endpoint, 2);
+        config1.getTcpConfig().setConnectTimeoutMillis(1000);
+        config2.getTcpConfig().setConnectTimeoutMillis(1000);
+        UserManager facade1 = Remoting.createFacade(UserManager.class, config1);
+        UserManager facade2 = Remoting.createFacade(UserManager.class, config2);
+        AtomicInteger client1Callbacks = new AtomicInteger();
+        AtomicInteger client2Callbacks = new AtomicInteger();
+        CountDownLatch client1Latch = new CountDownLatch(1);
+        CountDownLatch client2Latch = new CountDownLatch(1);
+        try {
+            facade1.<RemotingEventArgs<String>>attachEvent(eventName, (s, e) -> {
+                client1Callbacks.incrementAndGet();
+                e.setValue("computed-" + e.getValue());
+                client1Latch.countDown();
+            }, false);
+            facade2.<RemotingEventArgs<String>>attachEvent(eventName, (s, e) -> {
+                client2Callbacks.incrementAndGet();
+                assertEquals("computed-work", e.getValue());
+                client2Latch.countDown();
+            }, false);
+            awaitEquals(subscribePackets, 2, 5000);
+
+            facade2.publishEvent(eventName, RemotingEventArgs.compute("work"));
+            assertTrue(client1Latch.await(5, TimeUnit.SECONDS), "compute 事件应先到计算订阅者");
+            assertTrue(client2Latch.await(5, TimeUnit.SECONDS), "compute 事件应广播给发起方");
+            sleep(200);
+            assertEquals(1, client1Callbacks.get());
+            assertEquals(1, client2Callbacks.get());
+        } finally {
+            facade1.close();
+            facade2.close();
+            server.close();
+        }
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
     void currentClientHandle_shouldFailOutsideServerRpcContext() {
         assertThrows(InvalidException.class, Remoting::currentClientHandle);
     }

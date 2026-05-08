@@ -31,6 +31,79 @@ rxlib 自研的高性能远程过程调用框架。支持 TCP 单一协议，也
 - 普通 request/response 调用可使用 `RpcClientConfig.poolMode(...)`，适合高并发短调用。
 - 事件订阅、事件广播、断线自动重订阅必须使用 `RpcClientConfig.statefulMode(...)`。池化客户端会在调用后回收到连接池并重置 handler，不具备稳定的长连接订阅语义。
 
+## 事件路由模式
+
+`Remoting` 的事件发布仍然保持统一签名：
+
+```java
+publishEvent(eventName, args)
+```
+
+事件类型不放在方法签名里，而是由 `args` 决定。推荐使用 `RemotingEventArgs<T>` 来显式指定路由模式。
+
+### 1. 普通事件（BROADCAST）
+
+默认模式。服务端收到事件后，会推送给该事件的所有订阅者。
+
+```java
+facade.publishEvent("onCallback", RemotingEventArgs.broadcast("hello"));
+// 也可以直接传普通 EventArgs，默认就是广播
+facade.publishEvent("onCallback", new UserEventArgs(PersonInfo.def));
+```
+
+适用场景：
+- 通知类消息
+- 状态变更广播
+- 所有订阅者都应该看到的事件
+
+### 2. 计算事件（COMPUTE）
+
+服务端先选择一个计算订阅者来处理 `args`，等这个客户端把参数补全后，再把最终结果广播出去。
+
+```java
+facade.publishEvent("onCallback", RemotingEventArgs.compute("work"));
+```
+
+典型流程：
+1. 服务端收到 `COMPUTE`
+2. 选择一个合适的客户端做参数计算
+3. 该客户端在本地事件回调里修改 `args`
+4. 服务端拿到修改后的结果后，再广播给其他订阅者
+
+适用场景：
+- 事件参数依赖客户端本地状态
+- 需要由某个版本的客户端补全数据
+- 服务端只负责分发，不负责计算细节
+
+### 3. 定向事件（DIRECT）
+
+只推送给发起这次 `publishEvent(...)` 的那个客户端，不广播给其他订阅者。
+
+```java
+facade.publishEvent("onCallback", RemotingEventArgs.direct("direct-1"));
+```
+
+适用场景：
+- 任务完成回执
+- 只给发起者看的提示
+- 请求方和其他订阅者需要完全隔离的事件
+
+### 事件参数定义
+
+```java
+@Getter
+@Setter
+public class RemotingEventArgs<T> extends NEventArgs<T> {
+    private EventDispatchMode dispatchMode = EventDispatchMode.BROADCAST;
+
+    public static <T> RemotingEventArgs<T> broadcast(T value) { ... }
+    public static <T> RemotingEventArgs<T> compute(T value) { ... }
+    public static <T> RemotingEventArgs<T> direct(T value) { ... }
+}
+```
+
+如果你不显式设置 `dispatchMode`，默认就是 `BROADCAST`。
+
 ## Hybrid 传输模式注意事项
 
 在 rxlib 的 RPC 模块中，`Remoting` 默认采用 TCP/UDP 混合传输（Hybrid）协议。
@@ -65,6 +138,8 @@ Remoting.register(contractInstance, rpcConf);
 2. **请求计算 (COMPUTE_ARGS)**：服务端根据配置选择一个客户端发送请求。此时服务端会同步等待客户端回传。
 3. **客户端计算**：被选中的客户端执行本地事件逻辑，更新 `args` 中的属性并回传给服务端。
 4. **最终广播 (BROADCAST)**：服务端收到回传后，将“计算完成”的参数广播给所有订阅该事件的客户端。
+
+> 注意：这里的 `computeArgs` 是服务端驱动的“参数计算流程”，和上面 `publishEvent(..., RemotingEventArgs.compute(...))` 的“计算事件”是同一套路由能力，只是入口不同。前者是服务端触发，后者是客户端触发。
 
 ### 配置策略 (RpcServerConfig)
 通过 `RpcServerConfig.setEventComputeVersion(short)` 进行控制：

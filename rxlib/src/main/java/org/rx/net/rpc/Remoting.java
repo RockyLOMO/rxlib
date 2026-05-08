@@ -22,6 +22,7 @@ import org.rx.core.RxConfig;
 import org.rx.core.StringBuilder;
 import org.rx.core.Sys;
 import org.rx.core.ThreadPool;
+import org.rx.core.Tasks;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
@@ -161,6 +162,107 @@ public final class Remoting {
         }
     }
 
+    private static EventDispatchMode resolveDispatchMode(EventArgs eventArgs) {
+        RemotingEventArgs<?> remotingEventArgs = as(eventArgs, RemotingEventArgs.class);
+        if (remotingEventArgs == null || remotingEventArgs.getDispatchMode() == null) {
+            return EventDispatchMode.BROADCAST;
+        }
+        return remotingEventArgs.getDispatchMode();
+    }
+
+    private static boolean sendEventToSession(HybridSession session, String eventName, EventArgs eventArgs) {
+        if (session == null || !session.isConnected()) {
+            return false;
+        }
+
+        EventMessage pack = new EventMessage(eventName, EventFlag.BROADCAST);
+        pack.eventArgs = eventArgs;
+        try {
+            session.send(pack, RemotingHybridOptions.event(pack));
+            log.info("serverSide event {} {} -> DIRECT", eventName, session.tcpRemoteEndpoint());
+            return true;
+        } catch (Exception e) {
+            log.warn("serverSide event {} {} -> DIRECT FAIL", eventName, session.tcpRemoteEndpoint(), e);
+            return false;
+        }
+    }
+
+    private static void dispatchPublishComputeAsync(ServerBean bean, ServerBean.EventBean eventBean, EventMessage p,
+            HybridSession session, HybridServer server) {
+        ServerBean.EventContext publishContext = new ServerBean.EventContext(p.eventArgs);
+        EventMessage computePack = prepareComputePack(bean, eventBean, p.eventName, p.eventArgs, publishContext);
+        if (computePack == null) {
+            log.info("serverSide event {} {} -> PUBLISH {}", p.eventName, session.tcpRemoteEndpoint(), EventDispatchMode.COMPUTE);
+            List<HybridSession> publishTargets = collectBroadcastTargets(bean, eventBean, publishContext);
+            List<Integer> allow = bean.config.getEventBroadcastVersions();
+            MetadataMessage meta = session == null ? null : session.attr(HANDSHAKE_META_KEY);
+            if (session != null && session.isConnected() && session != publishContext.computingSession
+                    && meta != null && (allow.isEmpty() || allow.contains(meta.getEventVersion()))) {
+                boolean found = false;
+                for (HybridSession target : publishTargets) {
+                    if (target == session) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    publishTargets.add(session);
+                }
+            }
+            doSendBroadcast(bean, p, publishContext, publishTargets);
+            return;
+        }
+
+        publishContext.computedPromise.addListener(future -> {
+            try {
+                eventBean.contextMap.remove(computePack.computeId, publishContext);
+                if (!future.isSuccess() && future.cause() != null) {
+                    log.warn("serverSide event {} {} -> COMPUTE_ARGS FAIL", p.eventName,
+                            publishContext.computingSession == null ? null : publishContext.computingSession.tcpRemoteEndpoint(), future.cause());
+                }
+                log.info("serverSide event {} {} -> PUBLISH {}", p.eventName, session.tcpRemoteEndpoint(), EventDispatchMode.COMPUTE);
+                List<HybridSession> publishTargets = collectBroadcastTargets(bean, eventBean, publishContext);
+                List<Integer> allow = bean.config.getEventBroadcastVersions();
+                MetadataMessage meta = session == null ? null : session.attr(HANDSHAKE_META_KEY);
+                if (session != null && session.isConnected() && session != publishContext.computingSession
+                        && meta != null && (allow.isEmpty() || allow.contains(meta.getEventVersion()))) {
+                    boolean found = false;
+                    for (HybridSession target : publishTargets) {
+                        if (target == session) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        publishTargets.add(session);
+                    }
+                }
+                doSendBroadcast(bean, p, publishContext, publishTargets);
+            } catch (Throwable ex) {
+                log.error("serverSide event {} {} -> COMPUTE_BROADCAST ERROR", p.eventName, session.tcpRemoteEndpoint(), ex);
+            }
+        });
+
+        long timeoutMillis = server.getConfig().getTcpServerConfig().getConnectTimeoutMillis();
+        Tasks.setTimeout(() -> {
+            if (!publishContext.computedPromise.isDone()) {
+                log.warn("serverSide event {} {} -> COMPUTE_ARGS TIMEOUT", p.eventName,
+                        publishContext.computingSession == null ? null : publishContext.computingSession.tcpRemoteEndpoint());
+                publishContext.computedPromise.trySuccess(publishContext.computedArgs);
+            }
+        }, timeoutMillis);
+
+        try {
+            publishContext.computingSession.send(computePack, RemotingHybridOptions.CONTROL);
+            log.info("serverSide event {} {} -> COMPUTE_ARGS WAIT {}", p.eventName,
+                    publishContext.computingSession.tcpRemoteEndpoint(), timeoutMillis);
+        } catch (Exception ex) {
+            publishContext.computedPromise.tryFailure(ex);
+            log.error("serverSide event {} {} -> COMPUTE_ARGS ERROR", p.eventName,
+                    publishContext.computingSession == null ? null : publishContext.computingSession.tcpRemoteEndpoint(), ex);
+        }
+    }
+
     private static boolean isSameClientSession(RemotingClientHandle client, HybridSession session) {
         return session != null && session.isConnected()
                 && Objects.equals(client.getPeerId(), session.remotePeerId())
@@ -191,13 +293,17 @@ public final class Remoting {
                         if (!(args[0] instanceof String) || BooleanUtils.isTrue(ref.isCompute.get())) {
                             return invokeSuper(m, p);
                         }
+                        EventArgs eventArgs = (EventArgs) args[1];
+                        EventDispatchMode dispatchMode = resolveDispatchMode(eventArgs);
                         ref.isCompute.remove();
 
-                        setReturnValue(clientBean, invokeSuper(m, p));
+                        if (dispatchMode == EventDispatchMode.BROADCAST) {
+                            setReturnValue(clientBean, invokeSuper(m, p));
+                        }
                         EventMessage eventMessage = new EventMessage((String) args[0], EventFlag.PUBLISH);
-                        eventMessage.eventArgs = (EventArgs) args[1];
+                        eventMessage.eventArgs = eventArgs;
                         pack = eventMessage;
-                        log.info("clientSide event {} -> PUBLISH", eventMessage.eventName);
+                        log.info("clientSide event {} -> PUBLISH {}", eventMessage.eventName, dispatchMode);
                     }
                     break;
                 case M_2:
@@ -552,7 +658,11 @@ public final class Remoting {
                         log.error("clientSide event {} -> {}", x.eventName, x.flag, ex);
                     } finally {
                         if (x.flag == EventFlag.COMPUTE_ARGS) {
-                            activeSession(client, session).send(x, RemotingHybridOptions.CONTROL);
+                            try {
+                                activeSession(client, session).send(x, RemotingHybridOptions.CONTROL);
+                            } finally {
+                                isCompute.remove();
+                            }
                         }
                     }
                     break;
@@ -793,10 +903,21 @@ public final class Remoting {
                     if (eventBean.listenerAttached.compareAndSet(false, true)) {
                         EventPublisher<?> eventTarget = (EventPublisher<?>) contractInstance;
                         eventTarget.attachEvent(p.eventName, (sender, args) -> {
-                            ServerBean.EventContext eventContext = new ServerBean.EventContext((EventArgs) args);
-                            EventMessage computePack = prepareComputePack(bean, eventBean, p.eventName, (EventArgs) args, eventContext);
-                            if (computePack != null) {
-                                awaitComputedArgs(eventBean, eventContext, computePack, s);
+                            EventArgs eventArgs = (EventArgs) args;
+                            EventDispatchMode dispatchMode = resolveDispatchMode(eventArgs);
+                            if (dispatchMode == EventDispatchMode.DIRECT) {
+                                if (!publishEventToCurrentClient(p.eventName, eventArgs)) {
+                                    log.warn("serverSide event {} {} -> DIRECT FAIL", p.eventName, session.tcpRemoteEndpoint());
+                                }
+                                return;
+                            }
+
+                            ServerBean.EventContext eventContext = new ServerBean.EventContext(eventArgs);
+                            if (dispatchMode == EventDispatchMode.COMPUTE) {
+                                EventMessage computePack = prepareComputePack(bean, eventBean, p.eventName, eventArgs, eventContext);
+                                if (computePack != null) {
+                                    awaitComputedArgs(eventBean, eventContext, computePack, s);
+                                }
                             }
                             List<HybridSession> broadcastTargets = collectBroadcastTargets(bean, eventBean, eventContext);
                             doSendBroadcast(bean, p, eventContext, broadcastTargets);
@@ -810,9 +931,19 @@ public final class Remoting {
                     eventBean.subscribe.remove(session);
                     break;
                 case PUBLISH:
+                    EventDispatchMode dispatchMode = resolveDispatchMode(p.eventArgs);
+                    if (dispatchMode == EventDispatchMode.DIRECT) {
+                        sendEventToSession(session, p.eventName, p.eventArgs);
+                        break;
+                    }
+                    if (dispatchMode == EventDispatchMode.COMPUTE) {
+                        dispatchPublishComputeAsync(bean, eventBean, p, session, s);
+                        break;
+                    }
+
                     ServerBean.EventContext publishContext = new ServerBean.EventContext(p.eventArgs);
                     publishContext.computingSession = session;
-                    log.info("serverSide event {} {} -> PUBLISH", p.eventName, session.tcpRemoteEndpoint());
+                    log.info("serverSide event {} {} -> PUBLISH {}", p.eventName, session.tcpRemoteEndpoint(), dispatchMode);
                     List<HybridSession> publishTargets = collectBroadcastTargets(bean, eventBean, publishContext);
                     doSendBroadcast(bean, p, publishContext, publishTargets);
                     break;
