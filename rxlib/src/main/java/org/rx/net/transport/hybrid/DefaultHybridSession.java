@@ -70,6 +70,21 @@ final class DefaultHybridSession implements HybridSession {
     }
 
     @Override
+    public long sessionId() {
+        return sessionId;
+    }
+
+    @Override
+    public String peerId() {
+        return peerId;
+    }
+
+    @Override
+    public String remotePeerId() {
+        return remotePeerId;
+    }
+
+    @Override
     public boolean isConnected() {
         return !closed && tcpClient != null && tcpClient.isConnected();
     }

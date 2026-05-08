@@ -51,6 +51,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -118,6 +119,53 @@ public final class Remoting {
     static final IdGenerator generator = new IdGenerator();
     static final Map<HybridClient, Map<Integer, ClientBean>> clientBeans = new ConcurrentHashMap<HybridClient, Map<Integer, ClientBean>>();
     static final Map<HybridClient, AtomicInteger> clientRefCounts = new ConcurrentHashMap<HybridClient, AtomicInteger>();
+
+    public static RemotingClientHandle currentClientHandle() {
+        RemotingContext ctx;
+        try {
+            ctx = RemotingContext.context();
+        } catch (IllegalArgumentException e) {
+            throw new InvalidException("No Remoting server RPC context");
+        }
+        HybridSession session = ctx.getClient();
+        if (ctx.getServer() == null || session == null) {
+            throw new InvalidException("No Remoting server RPC context");
+        }
+        return new RemotingClientHandle(ctx.getServer(), session.sessionId(), session.remotePeerId(), session.tcpRemoteEndpoint());
+    }
+
+    public static <TEvent extends EventArgs> boolean publishEventToCurrentClient(@NonNull String eventName, TEvent eventArgs) {
+        return publishEventToClient(currentClientHandle(), eventName, eventArgs);
+    }
+
+    public static <TEvent extends EventArgs> boolean publishEventToClient(RemotingClientHandle client,
+            @NonNull String eventName, TEvent eventArgs) {
+        if (client == null || client.getServer() == null) {
+            return false;
+        }
+
+        HybridSession session = client.getServer().getSession(client.getSessionId());
+        if (!isSameClientSession(client, session)) {
+            return false;
+        }
+
+        EventMessage pack = new EventMessage(eventName, EventFlag.BROADCAST);
+        pack.eventArgs = eventArgs;
+        try {
+            session.send(pack, RemotingHybridOptions.event(pack));
+            log.info("serverSide event {} {} -> DIRECTED", eventName, session.tcpRemoteEndpoint());
+            return true;
+        } catch (Exception e) {
+            log.warn("serverSide event {} {} -> DIRECTED FAIL", eventName, client.getTcpRemoteEndpoint(), e);
+            return false;
+        }
+    }
+
+    private static boolean isSameClientSession(RemotingClientHandle client, HybridSession session) {
+        return session != null && session.isConnected()
+                && Objects.equals(client.getPeerId(), session.remotePeerId())
+                && Objects.equals(client.getTcpRemoteEndpoint(), session.tcpRemoteEndpoint());
+    }
 
     @SneakyThrows
     public static <T> T createFacade(@NonNull Class<T> contract, @NonNull RpcClientConfig<T> config) {
@@ -391,6 +439,13 @@ public final class Remoting {
     }
 
     private static HybridClient borrowFacadeClient(ClientRef ref, Object proxyObject, RpcHybridClientPool pool) {
+        if (ref.config.isUsePool()) {
+            HybridClient client = pool.borrowClient();
+            init(client, proxyObject, ref.config, ref.isCompute, ref.subscribedEvents);
+            retainClient(client);
+            return client;
+        }
+
         if (ref.sync.v == null) {
             HybridClient candidate = pool.borrowClient();
             boolean returnCandidate = false;

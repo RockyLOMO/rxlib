@@ -8,6 +8,18 @@ import org.rx.core.NEventArgs;
 import java.net.InetSocketAddress;
 
 public interface HybridSession extends AutoCloseable, EventPublisher<HybridSession> {
+    default long sessionId() {
+        return 0L;
+    }
+
+    default String peerId() {
+        return null;
+    }
+
+    default String remotePeerId() {
+        return null;
+    }
+
     boolean isConnected();
 
     HybridRouteState routeState();

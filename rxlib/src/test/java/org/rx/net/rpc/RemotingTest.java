@@ -5,6 +5,7 @@ import org.junit.jupiter.api.*;
 import org.rx.AbstractTester;
 import org.rx.bean.ULID;
 import org.rx.core.EventArgs;
+import org.rx.core.EventPublisher;
 import org.rx.exception.InvalidException;
 import org.rx.net.transport.ClientDisconnectedException;
 import org.rx.net.transport.TcpServer;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -46,6 +48,56 @@ public class RemotingTest extends AbstractTester {
                 throw new RuntimeException(e);
             }
             return 1;
+        }
+    }
+
+    public interface DirectedEventService extends EventPublisher<DirectedEventService>, AutoCloseable {
+        default void close() {
+        }
+
+        String startDirectedTask(String taskId, int delayMillis);
+
+        boolean notifyCurrentClient(String taskId);
+    }
+
+    public static class DirectedTaskEventArgs extends EventArgs {
+        private static final long serialVersionUID = 5243381171393185311L;
+        private String taskId;
+
+        public DirectedTaskEventArgs() {
+        }
+
+        public DirectedTaskEventArgs(String taskId) {
+            this.taskId = taskId;
+        }
+
+        public String getTaskId() {
+            return taskId;
+        }
+    }
+
+    public static class DirectedEventServiceImpl implements DirectedEventService {
+        final AtomicReference<Boolean> lastSendResult = new AtomicReference<Boolean>();
+        final CountDownLatch sendLatch = new CountDownLatch(1);
+
+        @Override
+        public String startDirectedTask(String taskId, int delayMillis) {
+            final RemotingClientHandle client = Remoting.currentClientHandle();
+            org.rx.core.Tasks.run(() -> {
+                try {
+                    sleep(delayMillis);
+                    lastSendResult.set(Remoting.publishEventToClient(client, "taskCompleted",
+                            new DirectedTaskEventArgs(taskId)));
+                } finally {
+                    sendLatch.countDown();
+                }
+            });
+            return taskId;
+        }
+
+        @Override
+        public boolean notifyCurrentClient(String taskId) {
+            return Remoting.publishEventToCurrentClient("taskCompleted", new DirectedTaskEventArgs(taskId));
         }
     }
 
@@ -320,6 +372,106 @@ public class RemotingTest extends AbstractTester {
             facade.close();
             closeClientPool(config);
         }
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void directedEvent_shouldNotifyOnlyCallingClient() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        DirectedEventServiceImpl impl = new DirectedEventServiceImpl();
+        startServer(impl, endpoint);
+
+        RpcClientConfig<DirectedEventService> config1 = RpcClientConfig.statefulMode(endpoint, 0);
+        RpcClientConfig<DirectedEventService> config2 = RpcClientConfig.statefulMode(endpoint, 0);
+        config1.getTcpConfig().setConnectTimeoutMillis(1000);
+        config2.getTcpConfig().setConnectTimeoutMillis(1000);
+        DirectedEventService facade1 = Remoting.createFacade(DirectedEventService.class, config1);
+        DirectedEventService facade2 = Remoting.createFacade(DirectedEventService.class, config2);
+        AtomicInteger client1Callbacks = new AtomicInteger();
+        AtomicInteger client2Callbacks = new AtomicInteger();
+        CountDownLatch client1Latch = new CountDownLatch(1);
+        try {
+            facade1.<DirectedTaskEventArgs>attachEvent("taskCompleted", (s, e) -> {
+                if ("task-1".equals(e.getTaskId())) {
+                    client1Callbacks.incrementAndGet();
+                    client1Latch.countDown();
+                }
+            }, false);
+            facade2.<DirectedTaskEventArgs>attachEvent("taskCompleted", (s, e) -> {
+                if ("task-1".equals(e.getTaskId())) {
+                    client2Callbacks.incrementAndGet();
+                }
+            }, false);
+
+            assertEquals("task-1", facade1.startDirectedTask("task-1", 100));
+            assertTrue(client1Latch.await(5, TimeUnit.SECONDS), "调用方 client 应收到定向事件");
+            assertTrue(impl.sendLatch.await(5, TimeUnit.SECONDS), "服务端应完成定向发送");
+            assertEquals(Boolean.TRUE, impl.lastSendResult.get());
+            sleep(300);
+            assertEquals(1, client1Callbacks.get());
+            assertEquals(0, client2Callbacks.get(), "非调用方 client 不应收到定向事件");
+        } finally {
+            facade1.close();
+            facade2.close();
+        }
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void directedEvent_shouldReturnFalseWhenOriginalClientDisconnected() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        DirectedEventServiceImpl impl = new DirectedEventServiceImpl();
+        startServer(impl, endpoint);
+
+        RpcClientConfig<DirectedEventService> config = RpcClientConfig.statefulMode(endpoint, 0);
+        config.getTcpConfig().setConnectTimeoutMillis(1000);
+        DirectedEventService facade = Remoting.createFacade(DirectedEventService.class, config);
+        assertEquals("lost-task", facade.startDirectedTask("lost-task", 700));
+        facade.close();
+
+        assertTrue(impl.sendLatch.await(5, TimeUnit.SECONDS), "服务端异步任务应完成");
+        assertEquals(Boolean.FALSE, impl.lastSendResult.get());
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void publishEventToCurrentClient_shouldWorkInsideRpcThread() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        DirectedEventServiceImpl impl = new DirectedEventServiceImpl();
+        startServer(impl, endpoint);
+
+        RpcClientConfig<DirectedEventService> config = RpcClientConfig.statefulMode(endpoint, 0);
+        config.getTcpConfig().setConnectTimeoutMillis(1000);
+        DirectedEventService facade = Remoting.createFacade(DirectedEventService.class, config);
+        AtomicInteger callbacks = new AtomicInteger();
+        CountDownLatch latch = new CountDownLatch(1);
+        try {
+            facade.<DirectedTaskEventArgs>attachEvent("taskCompleted", (s, e) -> {
+                if ("sync-task".equals(e.getTaskId())) {
+                    callbacks.incrementAndGet();
+                    latch.countDown();
+                }
+            }, false);
+
+            assertTrue(facade.notifyCurrentClient("sync-task"));
+            assertTrue(latch.await(5, TimeUnit.SECONDS), "同步 RPC 线程内应可直接通知当前 client");
+            assertEquals(1, callbacks.get());
+        } finally {
+            facade.close();
+        }
+    }
+
+    @Test
+    @Order(6)
+    @Timeout(20)
+    void currentClientHandle_shouldFailOutsideServerRpcContext() {
+        assertThrows(InvalidException.class, Remoting::currentClientHandle);
     }
 
     @Test
