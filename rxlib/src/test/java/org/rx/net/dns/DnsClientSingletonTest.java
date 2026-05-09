@@ -1,5 +1,6 @@
 package org.rx.net.dns;
 
+import io.netty.resolver.dns.DnsServerAddressStreamProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,7 @@ import org.rx.exception.InvalidException;
 import org.rx.core.Tasks;
 
 import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
@@ -66,5 +68,24 @@ class DnsClientSingletonTest {
         assertThrows(InvalidException.class,
                 () -> DnsClient.nameServerProvider(Collections.emptyList(), false));
         assertNotNull(DnsClient.nameServerProvider(Collections.emptyList(), true));
+    }
+
+    @Test
+    void nameServerProvider_resolvesUnresolvedServerHostBeforeNettySanitize() {
+        DnsServerAddressStreamProvider provider = DnsClient.nameServerProvider(
+                Collections.singletonList(InetSocketAddress.createUnresolved("localhost", 53)), false);
+
+        InetSocketAddress first = provider.nameServerAddressStream("example.com").next();
+        assertNotNull(first.getAddress());
+        assertEquals(53, first.getPort());
+    }
+
+    @Test
+    void nameServerProvider_unresolvedServerHostHonorsLocalFallback() {
+        InetSocketAddress invalid = InetSocketAddress.createUnresolved("bad host", 53);
+
+        assertThrows(InvalidException.class,
+                () -> DnsClient.nameServerProvider(Collections.singletonList(invalid), false));
+        assertNotNull(DnsClient.nameServerProvider(Collections.singletonList(invalid), true));
     }
 }

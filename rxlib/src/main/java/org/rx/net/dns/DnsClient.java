@@ -17,6 +17,7 @@ import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -85,11 +86,46 @@ public class DnsClient extends Disposable {
             }
             throw new InvalidException("Empty dns server list and local system fallback disabled");
         }
-        return new DnsServerAddressStreamProviderImpl(new LinkedHashSet<>(nameServerList));
+        List<InetSocketAddress> servers = sanitizeNameServers(nameServerList);
+        if (servers.isEmpty()) {
+            if (localSystemFallback) {
+                log.warn("No resolved dns server available, fallback to platform default");
+                return DnsServerAddressStreamProviders.platformDefault();
+            }
+            throw new InvalidException("No resolved dns server available and local system fallback disabled");
+        }
+        return new DnsServerAddressStreamProviderImpl(servers);
     }
 
     public static boolean localSystemFallback() {
         return RxConfig.INSTANCE.getNet().getDns().isLocalSystemFallback();
+    }
+
+    static List<InetSocketAddress> sanitizeNameServers(Collection<InetSocketAddress> nameServerList) {
+        LinkedHashSet<InetSocketAddress> servers = new LinkedHashSet<>(nameServerList.size());
+        for (InetSocketAddress endpoint : nameServerList) {
+            if (endpoint == null) {
+                continue;
+            }
+
+            InetAddress address = endpoint.getAddress();
+            if (address != null) {
+                servers.add(new InetSocketAddress(address, endpoint.getPort()));
+                continue;
+            }
+
+            // Netty DNS server stream rejects unresolved server endpoints; resolve once during client init.
+            String host = endpoint.getHostString();
+            try {
+                InetAddress[] addresses = InetAddress.getAllByName(host);
+                for (InetAddress item : addresses) {
+                    servers.add(new InetSocketAddress(item, endpoint.getPort()));
+                }
+            } catch (UnknownHostException e) {
+                log.warn("Ignore unresolved dns server {}", endpoint, e);
+            }
+        }
+        return new ArrayList<>(servers);
     }
 
     static List<InetSocketAddress> parseNameServers(Collection<String> endpoints) {
