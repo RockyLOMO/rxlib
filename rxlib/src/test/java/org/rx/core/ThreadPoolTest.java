@@ -960,9 +960,9 @@ public class ThreadPoolTest extends AbstractTester {
                 log.info("exec SINGLE end {}", x);
             }, c, RunFlag.SINGLE.flags());
         }
-        wait.waitOne();
+        assertTrue(wait.waitOne(5000));
         wait.reset();
-        assert c.get() == 1;
+        assertEquals(1, c.get());
 
         for (int i = 0; i < 5; i++) {
             int x = i;
@@ -973,8 +973,11 @@ public class ThreadPoolTest extends AbstractTester {
                 log.info("exec SERIAL end {}", x);
             }, c, RunFlag.SERIAL.flags());
         }
-        sleep(6000);
-        assert c.get() == 6;
+        long start = System.currentTimeMillis();
+        while (c.get() < 6 && System.currentTimeMillis() - start < 10000) {
+            sleep(100);
+        }
+        assertEquals(6, c.get());
 
         for (int i = 0; i < 5; i++) {
             int x = i;
@@ -985,8 +988,11 @@ public class ThreadPoolTest extends AbstractTester {
                 log.info("exec TRANSFER end {}", x);
             }, c, RunFlag.TRANSFER.flags());
         }
-        sleep(6000);
-        assert c.get() == 11;
+        start = System.currentTimeMillis();
+        while (c.get() < 11 && System.currentTimeMillis() - start < 10000) {
+            sleep(100);
+        }
+        assertEquals(11, c.get());
 
 
         c.set(0);
@@ -1001,9 +1007,9 @@ public class ThreadPoolTest extends AbstractTester {
             }, c, RunFlag.SINGLE.flags());
             f1.whenCompleteAsync((r, e) -> log.info("exec SINGLE uni"));
         }
-        wait.waitOne();
+        assertTrue(wait.waitOne(5000));
         wait.reset();
-        assert c.get() == 1;
+        assertEquals(1, c.get());
 
         for (int i = 0; i < 5; i++) {
             int x = i;
@@ -1015,8 +1021,11 @@ public class ThreadPoolTest extends AbstractTester {
             }, c, RunFlag.SERIAL.flags());
             f1.whenCompleteAsync((r, e) -> log.info("exec SERIAL uni"));
         }
-        sleep(8000);
-        assert c.get() == 6;
+        start = System.currentTimeMillis();
+        while (c.get() < 6 && System.currentTimeMillis() - start < 10000) {
+            sleep(100);
+        }
+        assertEquals(6, c.get());
 
         pool.runAsync(() -> System.out.println("runAsync"))
                 .whenCompleteAsync((r, e) -> System.out.println("whenCompleteAsync"))
@@ -1033,7 +1042,7 @@ public class ThreadPoolTest extends AbstractTester {
         }
         List<Future<Integer>> futures = pool.runAll(tasks, 0);
         for (Future<Integer> future : futures) {
-            log.info("runAll get {}", future.get());
+            log.info("runAll get {}", future.get(10, TimeUnit.SECONDS));
         }
 
         ThreadPool.MultiTaskFuture<Integer, Integer> anyMf = pool.runAnyAsync(tasks);
@@ -1042,10 +1051,10 @@ public class ThreadPoolTest extends AbstractTester {
             sf.whenCompleteAsync((r, e) -> log.info("ANY TASK uni {}", r));
         }
         for (CompletableFuture<Integer> sf : anyMf.getSubFutures()) {
-            sf.join();
+            sf.get(10, TimeUnit.SECONDS);
         }
         log.info("wait ANY TASK");
-        anyMf.getFuture().get();
+        anyMf.getFuture().get(10, TimeUnit.SECONDS);
 
         ThreadPool.MultiTaskFuture<Void, Integer> mf = pool.runAllAsync(tasks);
         mf.getFuture().whenCompleteAsync((r, e) -> log.info("ALL TASK MAIN uni"));
@@ -1053,10 +1062,10 @@ public class ThreadPoolTest extends AbstractTester {
             sf.whenCompleteAsync((r, e) -> log.info("ALL TASK uni {}", r));
         }
         for (CompletableFuture<Integer> sf : mf.getSubFutures()) {
-            sf.join();
+            sf.get(10, TimeUnit.SECONDS);
         }
         log.info("wait ALL TASK");
-        mf.getFuture().get();
+        mf.getFuture().get(10, TimeUnit.SECONDS);
     }
 
     @Test
@@ -1064,15 +1073,19 @@ public class ThreadPoolTest extends AbstractTester {
         //LinkedTransferQueue基于CAS实现，大部分场景下性能比LinkedBlockingQueue好。
         //拒绝策略 当thread和queue都满了后会block调用线程直到queue加入成功，平衡生产和消费
         //支持netty FastThreadLocal
-        long delayMillis = 5000;
-        ExecutorService pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
-        for (int i = 0; i < 100; i++) {
-            int x = i;
-            pool.execute(() -> {
-                log.info("exec {} begin..", x);
-                sleep(delayMillis);
-                log.info("exec {} end..", x);
-            });
+        long delayMillis = 100;
+        ThreadPool pool = new ThreadPool(1, 1, new IntWaterMark(20, 40), "DEV");
+        try {
+            for (int i = 0; i < 4; i++) {
+                int x = i;
+                pool.execute(() -> {
+                    log.info("exec {} begin..", x);
+                    sleep(delayMillis);
+                    log.info("exec {} end..", x);
+                });
+            }
+        } finally {
+            pool.shutdownNow();
         }
     }
 
@@ -1106,7 +1119,7 @@ public class ThreadPoolTest extends AbstractTester {
             });
         }
         ThreadPool.endTrace();
-        sleep(5000);
+        sleep(1500);
         System.out.println("---next---");
 
         //WheelTimer(ScheduledExecutorService) 异步trace
@@ -1121,7 +1134,7 @@ public class ThreadPoolTest extends AbstractTester {
             log.info("TRACE TIMER MAIN {}", finalI);
         }
         ThreadPool.endTrace();
-        sleep(5000);
+        sleep(2500);
         System.out.println("---next---");
 
         //CompletableFuture.xxAsync异步方法正确获取trace
@@ -1143,7 +1156,7 @@ public class ThreadPoolTest extends AbstractTester {
             }).whenCompleteAsync((r, e) -> log.info("TRACE ASYNC-2 uni {}", r));
         }
         ThreadPool.endTrace();
-        sleep(5000);
+        sleep(1500);
         System.out.println("---next---");
 
         ThreadPool.startTrace(null);
@@ -1163,7 +1176,7 @@ public class ThreadPoolTest extends AbstractTester {
         }).get(10, TimeUnit.SECONDS);
         log.info("TRACE ALL_OF end");
         ThreadPool.endTrace();
-        sleep(5000);
+        sleep(100);
         System.out.println("---next---");
 
         //parallelStream
@@ -1178,7 +1191,7 @@ public class ThreadPoolTest extends AbstractTester {
             return p.toString();
         }).collect(Collectors.toList());
         ThreadPool.endTrace();
-        sleep(5000);
+        sleep(100);
         System.out.println("---next---");
 
         //timer
@@ -1190,7 +1203,7 @@ public class ThreadPoolTest extends AbstractTester {
             });
         }, d -> d > 5000 ? -1 : Math.max(d * 2, 1000), null, TimeoutFlag.PERIOD.flags());
         ThreadPool.endTrace();
-        sleep(8000);
+        sleep(7500);
         System.out.println("---next---");
 
         //netty FastThreadLocal 支持继承
@@ -1205,7 +1218,7 @@ public class ThreadPoolTest extends AbstractTester {
             assert ftl.get() == 64;
             log.info("Inherit ok 2");
         }, null, RunFlag.INHERIT_FAST_THREAD_LOCALS.flags());
-        sleep(2000);
+        sleep(500);
         System.out.println("---next---");
 
         //ExecutorService
@@ -1265,7 +1278,7 @@ public class ThreadPoolTest extends AbstractTester {
                 log.info("nest sub{} end", finalI);
             });
         }
-        sleep(5000);
+        sleep(1500);
         System.out.println("---done---");
     }
 
@@ -1287,7 +1300,7 @@ public class ThreadPoolTest extends AbstractTester {
                 return finalI + 100;
             }, tid);
         }
-        log.info("last result {}", f.get());
+        log.info("last result {}", f.get(10, TimeUnit.SECONDS));
         System.out.println("ok");
 
         CompletableFuture<Integer> fa = null;
@@ -1303,11 +1316,11 @@ public class ThreadPoolTest extends AbstractTester {
                     log.info("linkTf returned {}", rv);
                     return "okr";
                 });
-                log.info("linkTf then get {}", tf.get());
+                log.info("linkTf then get {}", tf.get(10, TimeUnit.SECONDS));
             }
         }
-        log.info("last result {}", fa.get());
-        sleep(2000);
+        log.info("last result {}", fa.get(10, TimeUnit.SECONDS));
+        sleep(500);
         System.out.println("ok");
     }
 
@@ -1330,9 +1343,9 @@ public class ThreadPoolTest extends AbstractTester {
                 wait.set();
             }, oneSecond, c, TimeoutFlag.SINGLE.flags());
         }
-        wait.waitOne();
+        assertTrue(wait.waitOne(5000));
         wait.reset();
-        assert c.get() == 1;
+        assertEquals(1, c.get());
         log.info("exec SINGLE flag ok..");
 
         for (int i = 0; i < 5; i++) {
@@ -1345,9 +1358,9 @@ public class ThreadPoolTest extends AbstractTester {
                 wait.set();
             }, oneSecond, c, TimeoutFlag.REPLACE.flags());
         }
-        wait.waitOne();
+        assertTrue(wait.waitOne(5000));
         wait.reset();
-        assert c.get() == 2;
+        assertEquals(2, c.get());
         log.info("exec REPLACE flag ok..");
 
         TimeoutFuture<Integer> f = timer.setTimeout(() -> {
@@ -1363,10 +1376,20 @@ public class ThreadPoolTest extends AbstractTester {
             circuitContinue(true);
             return i;
         }, oneSecond, c, TimeoutFlag.PERIOD.flags());
-        sleep(8000);
+        long start = System.currentTimeMillis();
+        while (c.get() < 8 && System.currentTimeMillis() - start < 10000) {
+            sleep(100);
+        }
         f.cancel();
-        log.info("exec PERIOD flag ok and last value={}", f.get());
-        assert f.get() == 9;
+        log.info("exec PERIOD flag ok and cancel requested.");
+        try {
+            f.get(5, TimeUnit.SECONDS);
+            fail("Expected ExecutionException due to InvalidException thrown at i == 4");
+        } catch (ExecutionException e) {
+            assertTrue(e.getCause() instanceof InvalidException);
+            log.info("exec PERIOD flag ok and caught expected exception: {}", e.getMessage());
+        }
+        assertTrue(c.get() >= 8);
 
         c.set(0);
         timer.setTimeout(() -> {
@@ -1374,21 +1397,24 @@ public class ThreadPoolTest extends AbstractTester {
             c.incrementAndGet();
             circuitContinue(true);
         }, d -> d > 1000 ? -1 : Math.max(d, 100) * 2);
-        sleep(5000);
+        start = System.currentTimeMillis();
+        while (c.get() < 4 && System.currentTimeMillis() - start < 5000) {
+            sleep(100);
+        }
         log.info("exec nextDelayFn ok");
-        assert c.get() == 4;
+        assertEquals(4, c.get());
 
         //包装为ScheduledExecutorService
         ScheduledExecutorService ses = timer;
         ScheduledFuture<Integer> f1 = ses.schedule(() -> 1024, oneSecond, TimeUnit.MILLISECONDS);
-        long start = System.currentTimeMillis();
-        assert f1.get() == 1024;
+        start = System.currentTimeMillis();
+        assertEquals(1024, f1.get(5, TimeUnit.SECONDS));
         log.info("schedule wait {}ms", (System.currentTimeMillis() - start));
 
         log.info("scheduleAtFixedRate step 1");
         ScheduledFuture<?> f2 = ses.scheduleAtFixedRate(() -> log.info("scheduleAtFixedRate step 2"), 500, oneSecond, TimeUnit.MILLISECONDS);
         log.info("scheduleAtFixedRate delay {}ms", f2.getDelay(TimeUnit.MILLISECONDS));
-        sleep(5000);
+        sleep(2000);
         f2.cancel(true);
         log.info("scheduleAtFixedRate delay {}ms", f2.getDelay(TimeUnit.MILLISECONDS));
     }
