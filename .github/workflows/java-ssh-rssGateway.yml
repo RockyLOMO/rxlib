@@ -168,24 +168,31 @@ jobs:
             set_java_alternative() {
               name="$1"
               binary="$2"
+              link="/usr/bin/${name}"
+              priority=2100
               if command -v update-alternatives >/dev/null 2>&1; then
-                run_as_root update-alternatives --set "$name" "$binary" || true
+                run_as_root update-alternatives --set "$name" "$binary" \
+                  || { run_as_root update-alternatives --install "$link" "$name" "$binary" "$priority" \
+                    && run_as_root update-alternatives --set "$name" "$binary"; } || true
               elif command -v alternatives >/dev/null 2>&1; then
-                run_as_root alternatives --set "$name" "$binary" || true
+                run_as_root alternatives --set "$name" "$binary" \
+                  || { run_as_root alternatives --install "$link" "$name" "$binary" "$priority" \
+                    && run_as_root alternatives --set "$name" "$binary"; } || true
               else
                 return 1
               fi
             }
 
             use_jdk21_default() {
-              if ! command -v update-alternatives >/dev/null 2>&1 && ! command -v alternatives >/dev/null 2>&1; then
-                return 1
-              fi
               for java21 in \
                 /usr/lib/jvm/java-21-openjdk-amd64/bin/java \
                 /usr/lib/jvm/java-21-openjdk/bin/java \
                 /usr/lib/jvm/java-21*/bin/java; do
                 if [ -x "$java21" ]; then
+                  JAVA_HOME="$(cd "$(dirname "$java21")/.." && pwd)"
+                  export JAVA_HOME
+                  export PATH="$(dirname "$java21"):${PATH}"
+                  hash -r 2>/dev/null || true
                   set_java_alternative java "$java21" || true
                   javac21="$(dirname "$java21")/javac"
                   if [ -x "$javac21" ]; then
