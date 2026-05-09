@@ -46,7 +46,7 @@ final class V2RayGeoIpIndex implements Closeable {
         LinkedHashMap<String, CodeMatcher> codes = new LinkedHashMap<>(byCode.size());
         for (Map.Entry<String, ArrayList<EntryMatcher>> e : byCode.entrySet()) {
             ArrayList<EntryMatcher> entries = e.getValue();
-            codes.put(e.getKey(), new CodeMatcher(entries.toArray(new EntryMatcher[entries.size()])));
+            codes.put(e.getKey(), buildCodeMatcher(e.getKey(), entries));
         }
         codeMatchers = Collections.unmodifiableMap(codes);
         orderedEntries = ordered.toArray(new EntryMatcher[ordered.size()]);
@@ -63,12 +63,16 @@ final class V2RayGeoIpIndex implements Closeable {
     }
 
     boolean matches(String code, byte[] ipBytes) {
-        String normalizedCode = normalizeCode(code, null);
-        if (normalizedCode == null || !isIpBytes(ipBytes)) {
+        if (!isIpBytes(ipBytes)) {
             return false;
         }
-        CodeMatcher matcher = codeMatchers.get(normalizedCode);
+        CodeMatcher matcher = matcher(code);
         return matcher != null && matcher.matches(ipBytes);
+    }
+
+    CodeMatcher matcher(String code) {
+        String normalizedCode = normalizeCode(code, null);
+        return normalizedCode == null ? null : codeMatchers.get(normalizedCode);
     }
 
     String lookupCode(byte[] ipBytes) {
@@ -95,6 +99,45 @@ final class V2RayGeoIpIndex implements Closeable {
             }
         }
         return new EntryMatcher(code, entry.inverseMatch, Ipv4RangeSet.build(ipv4), Ipv6RangeSet.build(ipv6));
+    }
+
+    private static CodeMatcher buildCodeMatcher(String code, ArrayList<EntryMatcher> entries) {
+        int normalCount = 0;
+        for (EntryMatcher entry : entries) {
+            if (!entry.inverseMatch) {
+                normalCount++;
+            }
+        }
+        if (normalCount <= 1) {
+            return new CodeMatcher(entries.toArray(new EntryMatcher[entries.size()]));
+        }
+
+        ArrayList<Ipv4Range> ipv4 = new ArrayList<>();
+        ArrayList<Ipv6Range> ipv6 = new ArrayList<>();
+        ArrayList<EntryMatcher> optimized = new ArrayList<>(entries.size() - normalCount + 1);
+        for (EntryMatcher entry : entries) {
+            if (entry.inverseMatch) {
+                optimized.add(entry);
+                continue;
+            }
+            addIpv4Ranges(ipv4, entry.ipv4);
+            addIpv6Ranges(ipv6, entry.ipv6);
+        }
+        optimized.add(0, new EntryMatcher(code, false, Ipv4RangeSet.build(ipv4), Ipv6RangeSet.build(ipv6)));
+        return new CodeMatcher(optimized.toArray(new EntryMatcher[optimized.size()]));
+    }
+
+    private static void addIpv4Ranges(ArrayList<Ipv4Range> target, Ipv4RangeSet ranges) {
+        for (int i = 0; i < ranges.starts.length; i++) {
+            target.add(new Ipv4Range(ranges.starts[i], ranges.ends[i]));
+        }
+    }
+
+    private static void addIpv6Ranges(ArrayList<Ipv6Range> target, Ipv6RangeSet ranges) {
+        for (int i = 0; i < ranges.startHighs.length; i++) {
+            target.add(new Ipv6Range(ranges.startHighs[i], ranges.startLows[i],
+                    ranges.endHighs[i], ranges.endLows[i]));
+        }
     }
 
     private static int addLookupCandidates(EntryMatcher matcher, int order, int candidateId,
@@ -252,7 +295,7 @@ final class V2RayGeoIpIndex implements Closeable {
         return GeoSiteMatcher.toLowerAscii(value);
     }
 
-    private static boolean isIpBytes(byte[] ipBytes) {
+    static boolean isIpBytes(byte[] ipBytes) {
         return ipBytes != null && (ipBytes.length == 4 || ipBytes.length == 16);
     }
 

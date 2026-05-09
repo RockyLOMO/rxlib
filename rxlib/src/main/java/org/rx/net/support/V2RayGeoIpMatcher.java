@@ -39,6 +39,17 @@ public final class V2RayGeoIpMatcher implements Closeable {
         return index != null && index.matches(code, ipBytes);
     }
 
+    /**
+     * 配置期预绑定 code；请求热点路径直接复用返回对象并传入已解析的 IP bytes。
+     */
+    public CodeMatcher matcher(String code) {
+        if (index == null) {
+            return null;
+        }
+        V2RayGeoIpIndex.CodeMatcher matcher = index.matcher(code);
+        return matcher == null ? null : new CodeMatcher(matcher);
+    }
+
     public String lookupCode(String ip) {
         String normalizedIp = GeoIPSearcher.trimAscii(ip);
         if (normalizedIp == null || normalizedIp.isEmpty()) {
@@ -70,5 +81,22 @@ public final class V2RayGeoIpMatcher implements Closeable {
         return normalizedIp == null || normalizedIp.isEmpty()
                 ? null
                 : NetUtil.createByteArrayFromIpAddressString(normalizedIp);
+    }
+
+    public static final class CodeMatcher {
+        final V2RayGeoIpIndex.CodeMatcher matcher;
+
+        CodeMatcher(V2RayGeoIpIndex.CodeMatcher matcher) {
+            this.matcher = matcher;
+        }
+
+        public boolean matches(byte[] ipBytes) {
+            return V2RayGeoIpIndex.isIpBytes(ipBytes) && matcher.matches(ipBytes);
+        }
+
+        public boolean matches(String ip) {
+            byte[] ipBytes = parseIp(ip);
+            return ipBytes != null && matcher.matches(ipBytes);
+        }
     }
 }

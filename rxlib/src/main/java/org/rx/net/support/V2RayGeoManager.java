@@ -115,13 +115,29 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     private void ensureLoaded() {
-        if (ipMatcher != null || siteIndex != null) {
+        boolean loadIp = shouldLoadGeoConfig(geoIpFile, geoIpFileUrl, "geoip.dat");
+        boolean loadSite = shouldLoadGeoConfig(geoSiteFile, geoSiteFileUrl, "geosite.dat");
+        if ((ipMatcher != null || !loadIp) && (siteIndex != null || !loadSite)) {
             return;
         }
-        if (!shouldLoadGeoConfig(geoIpFile, geoIpFileUrl, "geoip.dat")
-                && !shouldLoadGeoConfig(geoSiteFile, geoSiteFileUrl, "geosite.dat")) {
+        ensureLoadTask();
+    }
+
+    private void ensureIpLoaded() {
+        if (ipMatcher != null || !shouldLoadGeoConfig(geoIpFile, geoIpFileUrl, "geoip.dat")) {
             return;
         }
+        ensureLoadTask();
+    }
+
+    private void ensureSiteLoaded() {
+        if (siteIndex != null || !shouldLoadGeoConfig(geoSiteFile, geoSiteFileUrl, "geosite.dat")) {
+            return;
+        }
+        ensureLoadTask();
+    }
+
+    private void ensureLoadTask() {
         if (dTask == null) {
             synchronized (this) {
                 if (dTask == null) {
@@ -179,7 +195,7 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     public boolean matchSiteDirect(String domain) {
-        ensureLoaded();
+        ensureSiteLoaded();
         GeoSiteMatcher matcher = directSiteMatcher;
         if (matcher != null && matcher.matches(domain)) {
             return true;
@@ -189,7 +205,7 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     public GeoSiteMatcher directSiteMatcher() {
-        ensureLoaded();
+        ensureSiteLoaded();
         return directSiteMatcher;
     }
 
@@ -198,9 +214,20 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     public GeoSiteMatcher siteMatcher(String code, String attrFilter) {
-        ensureLoaded();
+        ensureSiteLoaded();
         V2RayGeoSiteIndex index = siteIndex;
         return index == null ? null : index.matcher(code, attrFilter);
+    }
+
+    /**
+     * 配置期编译 geosite matcher；请求期直接复用 GeoSiteMatcher.matches(domain)。
+     */
+    public GeoSiteMatcher compileGeoSiteMatcher(String code) {
+        return compileGeoSiteMatcher(code, null);
+    }
+
+    public GeoSiteMatcher compileGeoSiteMatcher(String code, String attrFilter) {
+        return siteMatcher(code, attrFilter);
     }
 
     public boolean matchGeoSite(String code, String domain) {
@@ -213,24 +240,39 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     public boolean matchGeoIp(String code, String ip) {
-        ensureLoaded();
+        ensureIpLoaded();
         V2RayGeoIpMatcher matcher = ipMatcher;
         return matcher != null && matcher.matches(code, ip);
     }
 
+    public boolean matchGeoIp(String code, byte[] ipBytes) {
+        ensureIpLoaded();
+        V2RayGeoIpMatcher matcher = ipMatcher;
+        return matcher != null && matcher.matches(code, ipBytes);
+    }
+
+    /**
+     * 配置期编译 geoip matcher；请求期直接复用 CodeMatcher.matches(byte[])。
+     */
+    public V2RayGeoIpMatcher.CodeMatcher compileGeoIpMatcher(String code) {
+        ensureIpLoaded();
+        V2RayGeoIpMatcher matcher = ipMatcher;
+        return matcher == null ? null : matcher.matcher(code);
+    }
+
     public String resolveGeoIpCode(String ip) {
-        ensureLoaded();
+        ensureIpLoaded();
         V2RayGeoIpMatcher matcher = ipMatcher;
         return matcher == null ? null : matcher.lookupCode(ip);
     }
 
     public V2RayGeoIpMatcher geoIpMatcher() {
-        ensureLoaded();
+        ensureIpLoaded();
         return ipMatcher;
     }
 
     public V2RayGeoSiteIndex geoSiteIndex() {
-        ensureLoaded();
+        ensureSiteLoaded();
         return siteIndex;
     }
 
