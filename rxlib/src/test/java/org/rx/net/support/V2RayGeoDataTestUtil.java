@@ -44,6 +44,16 @@ final class V2RayGeoDataTestUtil {
         return out.toByteArray();
     }
 
+    static byte[] domainWithAttributeMessages(int type, String value, byte[]... attributes) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        varint(out, 1, type);
+        string(out, 2, value);
+        for (byte[] attribute : attributes) {
+            message(out, 3, attribute);
+        }
+        return out.toByteArray();
+    }
+
     static byte[] geoIpList(byte[]... entries) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         for (byte[] entry : entries) {
@@ -102,6 +112,20 @@ final class V2RayGeoDataTestUtil {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         string(out, 1, key);
         varint(out, 2, 1);
+        return out.toByteArray();
+    }
+
+    static byte[] attribute(String key, boolean boolValue) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        string(out, 1, key);
+        varint(out, 2, boolValue ? 1 : 0);
+        return out.toByteArray();
+    }
+
+    static byte[] attribute(String key, long intValue) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        string(out, 1, key);
+        varint(out, 3, intValue);
         return out.toByteArray();
     }
 

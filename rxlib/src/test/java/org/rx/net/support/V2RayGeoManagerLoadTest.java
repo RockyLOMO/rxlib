@@ -28,11 +28,9 @@ public class V2RayGeoManagerLoadTest {
 
         try {
             GeoSiteMatcher matcher = manager.compileGeoSiteMatcher("cn");
-            manager.waitLoad();
-            matcher = matcher == null ? manager.compileGeoSiteMatcher("cn") : matcher;
-
             assertNotNull(matcher);
             assertTrue(matcher.matches("www.baidu.com"));
+            assertTrue(manager.dailyScheduled);
         } finally {
             manager.close();
         }
@@ -54,11 +52,9 @@ public class V2RayGeoManagerLoadTest {
 
         try {
             V2RayGeoIpMatcher.CodeMatcher matcher = manager.compileGeoIpMatcher("cn");
-            manager.waitLoad();
-            matcher = matcher == null ? manager.compileGeoIpMatcher("cn") : matcher;
-
             assertNotNull(matcher);
             assertTrue(matcher.matches(V2RayGeoDataTestUtil.ip4(1, 2, 3, 4)));
+            assertTrue(manager.dailyScheduled);
         } finally {
             manager.close();
         }

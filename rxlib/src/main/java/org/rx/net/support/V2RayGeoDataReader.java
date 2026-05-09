@@ -122,16 +122,29 @@ public final class V2RayGeoDataReader {
 
     private String readGeoSiteAttributeKey(Cursor cursor) {
         String key = null;
+        boolean present = true;
         while (cursor.hasRemaining()) {
             int tag = cursor.readTag();
-            if (fieldNumber(tag) == 1) {
-                expectWire(tag, WIRE_LENGTH_DELIMITED);
-                key = cursor.readString();
-            } else {
-                cursor.skipField(wireType(tag));
+            switch (fieldNumber(tag)) {
+                case 1:
+                    expectWire(tag, WIRE_LENGTH_DELIMITED);
+                    key = cursor.readString();
+                    break;
+                case 2:
+                    expectWire(tag, WIRE_VARINT);
+                    present = cursor.readVarint64() != 0L;
+                    break;
+                case 3:
+                    expectWire(tag, WIRE_VARINT);
+                    cursor.readVarint64();
+                    present = true;
+                    break;
+                default:
+                    cursor.skipField(wireType(tag));
+                    break;
             }
         }
-        return key;
+        return key != null && present ? key : null;
     }
 
     private GeoIpEntry readGeoIpEntry(Cursor cursor) {

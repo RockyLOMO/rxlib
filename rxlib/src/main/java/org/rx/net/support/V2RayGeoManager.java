@@ -39,6 +39,7 @@ public final class V2RayGeoManager implements Closeable {
     volatile GeoSiteMatcher directSiteMatcher;
     volatile GeoSiteMatcher directSiteExtraMatcher;
     volatile Future<Void> dTask;
+    volatile boolean dailyScheduled;
 
     private V2RayGeoManager() {
         this(true);
@@ -46,8 +47,8 @@ public final class V2RayGeoManager implements Closeable {
 
     V2RayGeoManager(boolean autoLoad) {
         if (autoLoad) {
+            ensureDailyScheduled();
             dTask = Tasks.run(() -> load(false));
-            Tasks.scheduleDaily(() -> load(true), dailyDownloadTime);
         }
     }
 
@@ -62,28 +63,28 @@ public final class V2RayGeoManager implements Closeable {
     public void setGeoIpFileUrl(String geoIpFileUrl) {
         this.geoIpFileUrl = geoIpFileUrl;
         if (shouldLoadGeoConfig(geoIpFile, geoIpFileUrl, "geoip.dat")) {
-            load(false);
+            ensureLoadTask();
         }
     }
 
     public void setGeoIpFile(String geoIpFile) {
         this.geoIpFile = geoIpFile;
         if (shouldLoadGeoConfig(geoIpFile, geoIpFileUrl, "geoip.dat")) {
-            load(false);
+            ensureLoadTask();
         }
     }
 
     public void setGeoSiteFileUrl(String geoSiteFileUrl) {
         this.geoSiteFileUrl = geoSiteFileUrl;
         if (shouldLoadGeoConfig(geoSiteFile, geoSiteFileUrl, "geosite.dat")) {
-            load(false);
+            ensureLoadTask();
         }
     }
 
     public void setGeoSiteFile(String geoSiteFile) {
         this.geoSiteFile = geoSiteFile;
         if (shouldLoadGeoConfig(geoSiteFile, geoSiteFileUrl, "geosite.dat")) {
-            load(false);
+            ensureLoadTask();
         }
     }
 
@@ -108,10 +109,7 @@ public final class V2RayGeoManager implements Closeable {
 
     public void waitLoad() throws ExecutionException, InterruptedException, TimeoutException {
         ensureLoaded();
-        Future<Void> t = dTask;
-        if (t != null) {
-            t.get(timeoutMillis, TimeUnit.MILLISECONDS);
-        }
+        awaitLoadTask();
     }
 
     private void ensureLoaded() {
@@ -138,6 +136,7 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     private void ensureLoadTask() {
+        ensureDailyScheduled();
         if (dTask == null) {
             synchronized (this) {
                 if (dTask == null) {
@@ -147,7 +146,28 @@ public final class V2RayGeoManager implements Closeable {
         }
     }
 
+    private void ensureDailyScheduled() {
+        if (dailyScheduled) {
+            return;
+        }
+        synchronized (this) {
+            if (dailyScheduled) {
+                return;
+            }
+            Tasks.scheduleDaily(() -> load(true), dailyDownloadTime);
+            dailyScheduled = true;
+        }
+    }
+
+    private void awaitLoadTask() throws ExecutionException, InterruptedException, TimeoutException {
+        Future<Void> t = dTask;
+        if (t != null) {
+            t.get(timeoutMillis, TimeUnit.MILLISECONDS);
+        }
+    }
+
     private synchronized void load(boolean force) {
+        ensureDailyScheduled();
         V2RayGeoIpMatcher oldIpMatcher = ipMatcher;
         V2RayGeoSiteIndex oldSiteIndex = siteIndex;
         V2RayGeoIpMatcher newIpMatcher = oldIpMatcher;
@@ -227,7 +247,19 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     public GeoSiteMatcher compileGeoSiteMatcher(String code, String attrFilter) {
-        return siteMatcher(code, attrFilter);
+        ensureSiteLoaded();
+        try {
+            awaitLoadTask();
+        } catch (ExecutionException e) {
+            throw ApplicationException.sneaky(e.getCause() == null ? e : e.getCause());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw ApplicationException.sneaky(e);
+        } catch (TimeoutException e) {
+            throw ApplicationException.sneaky(e);
+        }
+        V2RayGeoSiteIndex index = siteIndex;
+        return index == null ? null : index.matcher(code, attrFilter);
     }
 
     public boolean matchGeoSite(String code, String domain) {
@@ -256,6 +288,16 @@ public final class V2RayGeoManager implements Closeable {
      */
     public V2RayGeoIpMatcher.CodeMatcher compileGeoIpMatcher(String code) {
         ensureIpLoaded();
+        try {
+            awaitLoadTask();
+        } catch (ExecutionException e) {
+            throw ApplicationException.sneaky(e.getCause() == null ? e : e.getCause());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw ApplicationException.sneaky(e);
+        } catch (TimeoutException e) {
+            throw ApplicationException.sneaky(e);
+        }
         V2RayGeoIpMatcher matcher = ipMatcher;
         return matcher == null ? null : matcher.matcher(code);
     }
@@ -264,6 +306,12 @@ public final class V2RayGeoManager implements Closeable {
         ensureIpLoaded();
         V2RayGeoIpMatcher matcher = ipMatcher;
         return matcher == null ? null : matcher.lookupCode(ip);
+    }
+
+    public String resolveGeoIpCode(byte[] ipBytes) {
+        ensureIpLoaded();
+        V2RayGeoIpMatcher matcher = ipMatcher;
+        return matcher == null ? null : matcher.lookupCode(ipBytes);
     }
 
     public V2RayGeoIpMatcher geoIpMatcher() {
