@@ -52,6 +52,7 @@
         <skipTests>true</skipTests>
         <maven.test.skip>${skipTests}</maven.test.skip>
         <java.version>1.8</java.version>
+        <jdk.module.args></jdk.module.args>
         <gpg.skip>false</gpg.skip>
 
         <lombok.version>1.18.30</lombok.version>
@@ -212,6 +213,18 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>jdk9-plus-module-opens</id>
+            <activation>
+                <jdk>[9,)</jdk>
+            </activation>
+            <properties>
+                <jdk.module.args>--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED</jdk.module.args>
+            </properties>
+        </profile>
+    </profiles>
 
     <repositories>
         <repository>

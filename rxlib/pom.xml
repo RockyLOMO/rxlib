@@ -267,6 +267,7 @@
                 <version>3.2.5</version>
                 <configuration>
                     <skipTests>${skipTests}</skipTests>
+                    <argLine>${jdk.module.args}</argLine>
                 </configuration>
             </plugin>
         </plugins>

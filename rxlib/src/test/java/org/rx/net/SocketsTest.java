@@ -428,7 +428,9 @@ public class SocketsTest {
             InetAddress actual = InetAddress.getByName(host);
             assertEquals(expected.getHostAddress(), actual.getHostAddress());
             assertThrows(UnknownHostException.class, () -> InetAddress.getByName(negativeHost));
-            assertThrows(IllegalStateException.class, () -> InetAddress.getByName(blockedHost));
+            Exception blocked = assertThrows(Exception.class, () -> InetAddress.getByName(blockedHost));
+            assertTrue(blocked instanceof IllegalStateException
+                    || blocked instanceof UnknownHostException && blocked.getCause() instanceof IllegalStateException);
             assertNotNull(Sockets.nsInterceptor);
         } finally {
             // Keep proxy installed but restore interceptor to delegate to the platform resolver.

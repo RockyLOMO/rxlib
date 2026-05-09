@@ -66,6 +66,8 @@ import javax.security.auth.x500.X500Principal;
 import java.io.File;
 import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.math.BigInteger;
 import java.net.*;
@@ -236,6 +238,7 @@ public final class Sockets {
     static final Set<Integer> TCP_COMPRESS_BYPASS_PORTS = Collections.unmodifiableSet(new HashSet<>(java.util.Arrays.asList(
             22, 443, 465, 587, 636, 853, 989, 990, 993, 995, 3389, 8443, 9443)));
     static final String M_0 = "lookupAllHostAddr";
+    static final String M_1 = "lookupByName";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
@@ -387,10 +390,15 @@ public final class Sockets {
                         nsList.set(0, nsProxy(nsList.get(0)));
                         log.info("nsProxy jdk8 injected"); //jdk8
                     } catch (NoSuchFieldException e) {
-                        Field field = type.getDeclaredField("nameService");
-                        Reflects.setAccess(field);
-                        field.set(null, nsProxy(field.get(null)));
-                        log.info("nsProxy jdk17 injected"); //jdk17
+                        try {
+                            Field field = type.getDeclaredField("nameService");
+                            Reflects.setAccess(field);
+                            field.set(null, nsProxy(field.get(null)));
+                            log.info("nsProxy jdk9-17 injected"); //jdk17
+                        } catch (NoSuchFieldException ex) {
+                            injectInetAddressResolver(type);
+                            log.info("nsProxy jdk18+ injected"); //jdk21
+                        }
                     }
                 }
             }
@@ -446,8 +454,54 @@ public final class Sockets {
                     log.info("nsProxy error {}", e.getMessage());
                 }
             }
-            return Reflects.invokeMethod(method, ns, args);
+            return invokePlatformResolver(method, ns, args);
         });
+    }
+
+    @SneakyThrows
+    private static void injectInetAddressResolver(Class<?> type) {
+        Method resolverMethod = type.getDeclaredMethod("resolver");
+        Reflects.setAccess(resolverMethod);
+        Object resolver = resolverMethod.invoke(null);
+        Field field = type.getDeclaredField("resolver");
+        Reflects.setAccess(field);
+        field.set(null, inetAddressResolverProxy(resolver));
+    }
+
+    private static Object inetAddressResolverProxy(Object resolver) {
+        Class<?> resolverInterface = Reflects.loadClass("java.net.spi.InetAddressResolver", true, false);
+        if (resolverInterface == null) {
+            throw new InvalidException("InetAddressResolver not found");
+        }
+        return Proxy.newProxyInstance(resolverInterface.getClassLoader(), new Class[]{resolverInterface}, (pObject, method, args) -> {
+            if (Strings.hashEquals(method.getName(), M_1)) {
+                String host = (String) args[0];
+                DnsServer.ResolveInterceptor interceptor = nsInterceptor;
+                try {
+                    List<InetAddress> addresses = interceptor != null ? interceptor.resolveHost(null, host) : null;
+                    if (addresses != null) {
+                        if (addresses.isEmpty()) {
+                            throw new UnknownHostException(host);
+                        }
+                        return addresses.stream();
+                    }
+                } catch (IllegalStateException | UnknownHostException e) {
+                    throw e;
+                } catch (Exception e) {
+                    log.info("nsProxy error {}", e.getMessage());
+                }
+            }
+            return invokePlatformResolver(method, resolver, args);
+        });
+    }
+
+    private static Object invokePlatformResolver(Method method, Object target, Object[] args) throws Throwable {
+        try {
+            Reflects.setAccess(method);
+            return method.invoke(target, args);
+        } catch (InvocationTargetException e) {
+            throw e.getTargetException();
+        }
     }
 
     public static EventLoopGroup reactor(String reactorName, boolean isTcp) {
