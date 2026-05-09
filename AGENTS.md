@@ -60,6 +60,7 @@
 ## 6. 测试与验收要求
 - 小改动：必须补充对应单元测试并验证通过。
 - 大改动：必须补充单元测试 + 集成测试并验证通过。
+- 默认构建跳过测试；需要运行测试时必须显式传入 `-DskipTests=false`。
 - 网络相关优先回归：
   - `SocksProxyServerIntegrationTest`
   - `ShadowsocksServerIntegrationTest`

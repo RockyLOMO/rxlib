@@ -49,7 +49,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
-        <maven.test.skip>true</maven.test.skip>
+        <skipTests>true</skipTests>
+        <maven.test.skip>${skipTests}</maven.test.skip>
         <java.version>1.8</java.version>
         <gpg.skip>false</gpg.skip>
 
