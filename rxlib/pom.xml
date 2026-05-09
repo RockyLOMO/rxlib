@@ -20,19 +20,19 @@
         <commons-io.version>2.18.0</commons-io.version>
         <byte-buddy.version>1.17.8</byte-buddy.version>
         <!-- <zip4j.version>2.11.3</zip4j.version> -->
-        <caffeine.version>2.9.3</caffeine.version>
-        <h2.version>2.2.224</h2.version>
+        <caffeine.version>3.2.3</caffeine.version>
+        <h2.version>2.4.240</h2.version>
         <!--        <netty.version>4.2.2.Final</netty.version>-->
         <!--兼容用老版本-->
         <netty.version>4.1.128.Final</netty.version>
         <!--1.78.1有问题-->
         <bcprov.version>1.78</bcprov.version>
         <sshd.version>2.16.0</sshd.version>
-        <geoip2.version>2.17.0</geoip2.version>
+        <geoip2.version>5.0.2</geoip2.version>
         <fury.version>0.10.3</fury.version>
 
-        <spring.boot.version>2.5.15</spring.boot.version>
-        <spring.version>5.3.27</spring.version>
+        <spring.boot.version>2.7.18</spring.boot.version>
+        <spring.version>5.3.31</spring.version>
         <aspectj.version>1.9.7</aspectj.version>
     </properties>
 
@@ -261,6 +261,18 @@
     <build>
         <testSourceDirectory>src/test/java</testSourceDirectory>
         <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>

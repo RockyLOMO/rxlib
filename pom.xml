@@ -51,7 +51,7 @@
         <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
         <skipTests>true</skipTests>
         <maven.test.skip>${skipTests}</maven.test.skip>
-        <java.version>1.8</java.version>
+        <java.version>21</java.version>
         <jdk.module.args></jdk.module.args>
         <gpg.skip>false</gpg.skip>
 
