@@ -1,11 +1,11 @@
 package org.rx.net.support;
 
 import lombok.Setter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
 import org.rx.core.RxConfig;
 import org.rx.core.Tasks;
-import org.rx.exception.ApplicationException;
 import org.rx.io.Files;
 import org.rx.net.Sockets;
 import org.rx.net.http.AuthenticProxy;
@@ -17,10 +17,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 
 import static org.rx.core.Extends.ifNull;
@@ -46,47 +42,46 @@ public class GeoManager {
     String dailyDownloadTime = "06:30:00";
     volatile GeoIPSearcher ipSearcher;
     volatile GeoSiteMatcher siteMatcher;
-    volatile Future<Void> dTask;
 
-    public void setGeoSiteDirectRules(Set<String> geoSiteDirectRules) {
+    public synchronized void setGeoSiteDirectRules(Set<String> geoSiteDirectRules) {
         this.geoSiteDirectRules = geoSiteDirectRules;
-        load(false);
-    }
-
-    private void ensureLoaded() {
-        if (ipSearcher != null && siteMatcher != null) {
-            return;
-        }
-        if (dTask == null) {
-            synchronized (this) {
-                if (dTask == null) {
-                    dTask = Tasks.run(() -> load(false));
-                }
-            }
-        }
+        siteMatcher = null;
     }
 
     private GeoManager() {
-        dTask = Tasks.run(() -> load(false));
-        Tasks.scheduleDaily(() -> load(true), dailyDownloadTime);
     }
 
-    private synchronized void load(boolean force) {
-        try {
-            File ipf = innerDl(force, new File(geoIpFile), geoIpFileUrl);
-            GeoIPSearcher old = ipSearcher;
-            ipSearcher = new GeoIPSearcher(ipf);
-            Tasks.setTimeout(() -> tryClose(old), 2000);
+    private synchronized void loadIpSearcher() throws IOException {
+        if (ipSearcher != null) {
+            return;
+        }
+        File ipf = innerDl(false, new File(geoIpFile), geoIpFileUrl);
+        GeoIPSearcher old = ipSearcher;
+        ipSearcher = new GeoIPSearcher(ipf);
+        Tasks.setTimeout(() -> tryClose(old), 2000);
+    }
 
-            File sited = innerDl(force, new File(geoSiteDirectFile), geoSiteDirectFileUrl);
-            try (Stream<String> lines = java.nio.file.Files.lines(sited.toPath(), StandardCharsets.UTF_8)) {
-                siteMatcher = new GeoSiteMatcher(lines.iterator(), ifNull(geoSiteDirectRules, Collections.<String>emptySet()).iterator());
-            }
+    private synchronized void loadSiteMatcher() throws IOException {
+        if (siteMatcher != null) {
+            return;
+        }
+        buildSiteMatcher(innerDl(false, new File(geoSiteDirectFile), geoSiteDirectFileUrl));
+    }
+
+    private void buildSiteMatcher(File sited) throws IOException {
+        try (Stream<String> lines = java.nio.file.Files.lines(sited.toPath(), StandardCharsets.UTF_8)) {
+            siteMatcher = new GeoSiteMatcher(lines.iterator(), ifNull(geoSiteDirectRules, Collections.<String>emptySet()).iterator());
+        }
+    }
+
+    private void ensureSiteMatcherLoaded() {
+        if (siteMatcher != null) {
+            return;
+        }
+        try {
+            loadSiteMatcher();
         } catch (IOException e) {
-            log.error("geoip download error", e);
-            throw ApplicationException.sneaky(e);
-        } finally {
-            dTask = null;
+            log.error("geo site download error", e);
         }
     }
 
@@ -112,15 +107,18 @@ public class GeoManager {
         return f;
     }
 
-    public void waitLoad() throws ExecutionException, InterruptedException, TimeoutException {
-        Future<Void> t = dTask;
-        if (t != null) {
-            t.get(timeoutMillis, TimeUnit.MILLISECONDS);
-        }
+    @SneakyThrows
+    public void waitLoad() {
+        loadIpSearcher();
+        loadSiteMatcher();
     }
 
     public String getPublicIp() {
-        ensureLoaded();
+        try {
+            loadIpSearcher();
+        } catch (IOException e) {
+            log.error("geo ip download error", e);
+        }
         GeoIPSearcher r = ipSearcher;
         if (r == null) {
             return Sockets.getAnyLocalAddress().getHostAddress();
@@ -131,7 +129,11 @@ public class GeoManager {
     private static final IpGeolocation NOT_READY = new IpGeolocation(null, null, null, "notReady");
 
     public IpGeolocation resolveIp(String ip) {
-        ensureLoaded();
+        try {
+            loadIpSearcher();
+        } catch (IOException e) {
+            log.error("geo ip download error", e);
+        }
         GeoIPSearcher r = ipSearcher;
         if (r == null) {
             return NOT_READY;
@@ -145,7 +147,7 @@ public class GeoManager {
     }
 
     public boolean matchSiteDirect(String domain) {
-        ensureLoaded();
+        ensureSiteMatcherLoaded();
         GeoSiteMatcher r = siteMatcher;
         if (r == null) {
             return false;
