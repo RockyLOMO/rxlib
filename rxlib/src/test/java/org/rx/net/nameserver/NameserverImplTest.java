@@ -167,6 +167,24 @@ class NameserverImplTest {
 
     @Test
     @Timeout(20)
+    void replicaEndpointShouldResolveUnresolvedIpLiteral() throws Exception {
+        NameserverImpl server = newServer(freePort(), freePort(), freePort());
+        try {
+            Set<InetSocketAddress> endpoints = new java.util.HashSet<InetSocketAddress>();
+            endpoints.add(InetSocketAddress.createUnresolved("127.0.0.1", 854));
+
+            Set<InetSocketAddress> resolved = server.resolveReplicaEndpoints(endpoints);
+
+            assertEquals(1, resolved.size());
+            assertFalse(resolved.iterator().next().isUnresolved());
+            assertEquals(InetAddress.getByName("127.0.0.1"), resolved.iterator().next().getAddress());
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
     void replicaVersionShouldBeTrackedPerSource() throws Exception {
         NameserverImpl server = newServer(freePort(), freePort(), freePort());
         try {
