@@ -91,12 +91,19 @@ public class GeoManager {
     }
 
     private File innerDl(boolean force, File f, String fileUrl) throws IOException {
+        String url = GeoIPSearcher.trimAscii(fileUrl);
         if (force || !f.exists()) {
+            if (url == null || url.isEmpty()) {
+                if (!f.exists()) {
+                    throw new IOException("geo file not found " + f.getAbsolutePath());
+                }
+                return f;
+            }
             File tmp = new File(f.getPath() + ".tmp");
             log.info("geo download file {} -> {} begin", tmp.getAbsolutePath(), f.getAbsolutePath());
             try {
                 try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(timeoutMillis).setProxy(proxy))) {
-                    try (HttpClient.Response response = client.get(fileUrl)) {
+                    try (HttpClient.Response response = client.get(url)) {
                         response.bodyAsFile(tmp.getPath());
                     }
                 }
