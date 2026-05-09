@@ -17,7 +17,7 @@ on:
         default: true
         type: boolean
 #  push:
-#    branches: [ rss-17 ]
+#    branches: [ rss-21 ]
 
 jobs:
   build-and-push:
@@ -28,7 +28,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: rss-17
+          ref: rss-21
       - name: 显示当前分支
         run: git branch --show-current
 
