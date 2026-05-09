@@ -35,10 +35,10 @@ if ! [[ "${MAX_LIVE_PROCESSES}" =~ ^[0-9]+$ ]] || [ "${MAX_LIVE_PROCESSES}" -lt 
     MAX_LIVE_PROCESSES=2
 fi
 
-MEM_OPTIONS="-Xms2g -Xmx2g -Xss512k -XX:MaxMetaspaceSize=192m -XX:MaxDirectMemorySize=3g -XX:+UseCompressedClassPointers"
-GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
+MEM_OPTIONS="-Xms2g -Xmx2g -Xss512k -XX:MaxMetaspaceSize=192m -XX:ReservedCodeCacheSize=160m -XX:MaxDirectMemorySize=3g -XX:+UseCompressedClassPointers"
+GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=30 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=30 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
 APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.reusePortBindCount=${REUSE_PORT_BIND_COUNT} -Dapp.rss.drainMaxWaitMillis=$((DRAIN_TIMEOUT_SECONDS * 1000)) -Dapp.rss.drainTokenDir=${DRAIN_TOKEN_DIR} -Dapp.rss.drainTokenTtlMillis=${DRAIN_TOKEN_TTL_MILLIS} -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.directServers=192.168.31.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=false -Dapp.storage.h2Settings=CACHE_SIZE=16384;MAX_MEMORY_ROWS=4096;MAX_OPERATION_MEMORY=16384;WRITE_DELAY=200;AUTO_SERVER=TRUE -Dapp.storage.h2MaxConnections=6 -Dapp.diagnostic.h2Settings=CACHE_SIZE=4096;MAX_MEMORY_ROWS=1024;MAX_OPERATION_MEMORY=4096;WRITE_DELAY=1000;AUTO_SERVER=TRUE -Dapp.diagnostic.h2MaxConnections=2 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dio.netty.tryReflectionSetAccessible=true"
-JDK17_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
+JDK21_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
 JAVA_PROCESS_KEYWORD="app.jar -port=${PORT}"
@@ -241,7 +241,7 @@ build_dump_opts() {
     local slot="$1" heap_dir
     heap_dir="${SCRIPT_DIR}/heapdump-${slot}"
     mkdir -p "${heap_dir}" >/dev/null 2>&1 || true
-    echo "-Xlog:gc*,gc+age=trace,safepoint:file=./gc-${slot}.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${heap_dir} -XX:ErrorFile=${SCRIPT_DIR}/hs_err_${slot}_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED ${JDK17_MODULE_OPTS}"
+    echo "-Xlog:gc*,gc+age=trace,safepoint:file=./gc-${slot}.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${heap_dir} -XX:ErrorFile=${SCRIPT_DIR}/hs_err_${slot}_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED ${JDK21_MODULE_OPTS}"
 }
 
 build_logback_opts() {
