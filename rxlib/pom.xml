@@ -35,8 +35,6 @@
         <spring.version>5.3.27</spring.version>
         <aspectj.version>1.9.7</aspectj.version>
         
-        <!-- Override parent's test skip setting -->
-        <maven.test.skip>false</maven.test.skip>
     </properties>
 
     <dependencies>
@@ -269,7 +267,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-                    <skipTests>false</skipTests>
+                    <skipTests>${skipTests}</skipTests>
                 </configuration>
             </plugin>
         </plugins>

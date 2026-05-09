@@ -103,10 +103,27 @@ public final class HttpClientCookieJar {
     }
 
     public String loadForRequest(URI uri, SameSiteContext sameSiteContext, URI topLevelUri) {
+        List<StoredCookie> matched = cookies(uri, sameSiteContext, topLevelUri);
+        if (matched.isEmpty()) {
+            return null;
+        }
+        Collections.sort(matched, COOKIE_ORDER);
+        List<Cookie> encoded = new ArrayList<>(matched.size());
+        for (StoredCookie stored : matched) {
+            encoded.add(stored.cookie());
+        }
+        return ClientCookieEncoder.STRICT.encode(encoded);
+    }
+
+    public List<StoredCookie> cookies(URI uri) {
+        return cookies(uri, SameSiteContext.SAME_SITE, uri);
+    }
+
+    public List<StoredCookie> cookies(URI uri, SameSiteContext sameSiteContext, URI topLevelUri) {
         long now = System.currentTimeMillis();
         String host = canonicalHost(uri.getHost());
         if (Strings.isEmpty(host)) {
-            return null;
+            return Collections.emptyList();
         }
         boolean secureRequest = isSecureConnection(uri.getScheme(), host);
         String path = requestPath(uri);
@@ -123,15 +140,16 @@ public final class HttpClientCookieJar {
                 matched.add(stored);
             }
         }
-        if (matched.isEmpty()) {
-            return null;
-        }
         Collections.sort(matched, COOKIE_ORDER);
-        List<Cookie> encoded = new ArrayList<>(matched.size());
+        return matched;
+    }
+
+    public void clear(URI uri) {
+        List<StoredCookie> matched = cookies(uri);
         for (StoredCookie stored : matched) {
-            encoded.add(stored.cookie());
+            cookies.remove(stored);
+            storage.remove(stored);
         }
-        return ClientCookieEncoder.STRICT.encode(encoded);
     }
 
     public void saveFromResponse(URI uri, List<String> setCookies) {
@@ -415,10 +433,6 @@ public final class HttpClientCookieJar {
 
         @Override
         public void save(StoredCookie cookie) {
-            if (cookie.isSession()) {
-                remove(cookie);
-                return;
-            }
             db.save(cookie, true);
         }
 

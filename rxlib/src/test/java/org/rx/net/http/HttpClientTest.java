@@ -446,6 +446,13 @@ public class HttpClientTest {
                     assertTrue(response.bodyAsString().contains("persist-v2"));
                 }
             }
+
+            DefaultCookie sessionCookie = new DefaultCookie("sid-session", "session-v2");
+            sessionCookie.setPath("/");
+            jar.save(URI.create(BASE_URL + "/cookie-check"), sessionCookie);
+
+            HttpClientCookieJar reloadedSession = HttpClientCookieJar.storage(db);
+            assertTrue(reloadedSession.loadForRequest(URI.create(BASE_URL + "/cookie-check")).contains("sid-session=session-v2"));
         } finally {
             db.close();
             new File(path + ".mv.db").delete();
