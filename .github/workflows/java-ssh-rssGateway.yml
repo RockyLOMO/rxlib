@@ -156,9 +156,9 @@ jobs:
                 apt_get_retry update -qq
                 apt_get_retry install -y -qq openjdk-21-jdk-headless
               elif command -v dnf >/dev/null 2>&1; then
-                run_as_root dnf install -y java-21-openjdk-devel
+                run_as_root dnf --disablerepo=epel --disablerepo='epel-*' install -y java-21-openjdk-headless
               elif command -v yum >/dev/null 2>&1; then
-                run_as_root yum install -y java-21-openjdk-devel
+                run_as_root yum --disablerepo=epel --disablerepo='epel-*' install -y java-21-openjdk-headless
               else
                 echo "Error: unsupported package manager, please install JDK 21 manually."
                 exit 1

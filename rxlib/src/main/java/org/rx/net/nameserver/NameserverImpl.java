@@ -7,6 +7,7 @@ import org.rx.bean.RandomList;
 import org.rx.core.*;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
+import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
@@ -105,7 +106,7 @@ public class NameserverImpl implements Nameserver {
         if (ownDnsServer) {
             this.dnsServer.setTtl(config.getDnsTtl());
         }
-        svrEps.addAll(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toList());
+        svrEps.addAll(resolveReplicaEndpoints(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toSet()));
 
         rs = Remoting.registerHybrid(this, config.getRegisterPort(), false);
         rs.onDisconnected.add((s, e) -> {
@@ -177,7 +178,8 @@ public class NameserverImpl implements Nameserver {
     }
 
     public synchronized void syncRegister(@NonNull Set<InetSocketAddress> serverEndpoints) {
-        if (!svrEps.addAll(serverEndpoints) && serverEndpoints.containsAll(svrEps)) {
+        Set<InetSocketAddress> resolvedEndpoints = resolveReplicaEndpoints(serverEndpoints);
+        if (!svrEps.addAll(resolvedEndpoints) && resolvedEndpoints.containsAll(svrEps)) {
             return;
         }
 
@@ -186,10 +188,43 @@ public class NameserverImpl implements Nameserver {
         publishEventAsync(EVENT_CLIENT_SYNC, new NEventArgs<Set<InetSocketAddress>>(snapshot));
         ReplicaSnapshot packet = new ReplicaSnapshot(replicaSourceId, nextReplicaVersion(), snapshot, null);
         Tasks.setTimeout(() -> {
-            for (InetSocketAddress ssAddr : serverEndpoints) {
+            for (InetSocketAddress ssAddr : resolvedEndpoints) {
                 ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet);
             }
         }, syncDelay, svrEps, Constants.TIMER_REPLACE_FLAG);
+    }
+
+    Set<InetSocketAddress> resolveReplicaEndpoints(Set<InetSocketAddress> endpoints) {
+        Set<InetSocketAddress> result = new HashSet<InetSocketAddress>();
+        if (endpoints == null || endpoints.isEmpty()) {
+            return result;
+        }
+
+        for (InetSocketAddress endpoint : endpoints) {
+            if (endpoint == null) {
+                continue;
+            }
+            if (!endpoint.isUnresolved()) {
+                result.add(endpoint);
+                continue;
+            }
+
+            String host = endpoint.getHostString();
+            if (Sockets.isValidIp(host)) {
+                result.add(new InetSocketAddress(Sockets.parseIpAddress(host), endpoint.getPort()));
+                continue;
+            }
+
+            try {
+                List<InetAddress> addresses = DnsClient.directClient().resolveAll(host);
+                for (InetAddress address : addresses) {
+                    result.add(new InetSocketAddress(address, endpoint.getPort()));
+                }
+            } catch (Throwable e) {
+                log.warn("Ignore unresolved nameserver replica endpoint {}, UDP sync requires resolved recipient", endpoint, e);
+            }
+        }
+        return result;
     }
 
     public void syncDeregister(@NonNull DeregisterInfo deregisterInfo) {
