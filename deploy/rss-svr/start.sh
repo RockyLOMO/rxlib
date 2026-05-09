@@ -20,11 +20,11 @@ PORT=${PORT:-9900}
 UDP2RAW_PORT=${UDP2RAW_PORT:-9910}
 HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8082}
 REQUIRED_TCP_PORTS=("${PORT}" "${HTTP_SERVER_PORT}")
-MEM_OPTIONS="-Xms192m -Xmx192m -Xss256k -XX:MaxMetaspaceSize=96m -XX:MaxDirectMemorySize=640m -XX:+UseCompressedClassPointers"
-GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
+MEM_OPTIONS="-Xms256m -Xmx256m -Xss256k -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=96m -XX:MaxDirectMemorySize=640m -XX:+UseCompressedClassPointers"
+GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=30 -XX:ParallelGCThreads=2 -XX:ConcGCThreads=1 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=30 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
 APP_OPTIONS="-Dapp.net.reactorThreadAmount=2 -Dapp.net.connectTimeoutMillis=8000 -Dapp.net.dns.remoteServers=127.0.0.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=true -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dio.netty.tryReflectionSetAccessible=true"
-JDK17_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
-DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./heapdump-$(date +%Y%m%d_%H%M%S).hprof -XX:ErrorFile=./hs_err_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED ${JDK17_MODULE_OPTS}"
+JDK21_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
+DUMP_OPTS="-Xlog:gc*,gc+age=trace,safepoint:file=./gc.log:time,uptime:filecount=10,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./heapdump-$(date +%Y%m%d_%H%M%S).hprof -XX:ErrorFile=./hs_err_pid%p.log -XX:+CreateCoredumpOnCrash -XX:+ExitOnOutOfMemoryError --add-exports java.base/jdk.internal.ref=ALL-UNNAMED ${JDK21_MODULE_OPTS}"
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
 JAVA_PROCESS_KEYWORD="app.jar -port=${PORT}"
