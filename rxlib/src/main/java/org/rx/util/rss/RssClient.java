@@ -18,7 +18,6 @@ import org.rx.core.Tasks;
 import org.rx.core.config.YamlConfigSource;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
-import org.rx.io.DuplexStream;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
@@ -63,16 +62,13 @@ import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleAction;
 
 import java.io.File;
-import java.io.OutputStream;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -1785,22 +1781,32 @@ public final class RssClient {
         requestBody.put("sub_list", sDomains);
         log.info("ddns update all {}", requestBody);
 
-        URL u = new URL(url);
-        HttpURLConnection conn = (HttpURLConnection) u.openConnection();
-        try {
-            conn.setDoOutput(true);
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("Accept", "application/json");
-            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
-            conn.setRequestProperty("X-Signature", dynadotSign(apiKey, url, requestBody.toString()));
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
-            }
-            return DuplexStream.readString(conn.getInputStream(), StandardCharsets.UTF_8);
-        } finally {
-            conn.disconnect();
+        String body = requestBody.toString();
+        HttpClient.Request req = HttpClient.request(HttpMethod.POST, url)
+                .header(HttpHeaderNames.ACCEPT, "application/json")
+                .header(HttpHeaderNames.AUTHORIZATION, "Bearer " + apiKey)
+                .header("X-Signature", dynadotSign(apiKey, url, body))
+                .bytes(body.getBytes(StandardCharsets.UTF_8), "application/json");
+        try (HttpClient.Response response = RssSupport.MAIN_HTTP_CLIENT.execute(req)) {
+            return response.bodyAsString();
         }
+
+//        URL u = new URL(url);
+//        HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+//        try {
+//            conn.setDoOutput(true);
+//            conn.setRequestMethod("POST");
+//            conn.setRequestProperty("Content-Type", "application/json");
+//            conn.setRequestProperty("Accept", "application/json");
+//            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+//            conn.setRequestProperty("X-Signature", dynadotSign(apiKey, url, requestBody.toString()));
+//            try (OutputStream os = conn.getOutputStream()) {
+//                os.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
+//            }
+//            return DuplexStream.readString(conn.getInputStream(), StandardCharsets.UTF_8);
+//        } finally {
+//            conn.disconnect();
+//        }
     }
 
     static JSONObject getDDns(String apiKey, String domain) {
