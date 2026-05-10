@@ -14,6 +14,7 @@ import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingContext;
 import org.rx.net.transport.FuryUdpClientCodec;
 import org.rx.net.transport.UdpClient;
+import org.rx.net.transport.UdpClientConfig;
 import org.rx.net.transport.hybrid.HybridServer;
 import org.rx.net.transport.hybrid.HybridSession;
 
@@ -33,6 +34,14 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.core.Extends.*;
 
+/**
+ * Nameserver 的 registerPort 同时承载 TCP 注册入口，默认也作为 replica sync UDP 端口。
+ * <p>
+ * rssGateway 发布脚本依赖全局 {@code app.net.reusePortBindCount=2} 支持新旧进程同端口并行启动，
+ * 不能为了解决 854 sync UDP 日志而把全局 reuseport 降为 1，否则 replace/coexist 发布会退化或失败。
+ * replica sync 属于低频控制面流量，不参与 rssGateway 热切换，因此这里只在 Nameserver 自己的
+ * {@link UdpClientConfig} 上固定 {@code reusePortBindCount=1}，避免 854 UDP 继承全局多 bind。
+ */
 @Slf4j
 public class NameserverImpl implements Nameserver {
     @RequiredArgsConstructor
@@ -124,7 +133,11 @@ public class NameserverImpl implements Nameserver {
                 syncCodec.allowPrefix(prefix);
             }
         }
-        ss = new UdpClient(getSyncPort(), syncCodec);
+        UdpClientConfig syncConfig = new UdpClientConfig();
+        syncConfig.setCodec(syncCodec);
+        // Nameserver replica sync 是低频控制面流量，固定单 bind，避免继承全局 SO_REUSEPORT 多路绑定。
+        syncConfig.setReusePortBindCount(1);
+        ss = new UdpClient(getSyncPort(), syncConfig);
         ss.onReceive.add((s, e) -> {
             Object packet = e.getValue().packet;
             log.info("[{}] Replica {}", getSyncPort(), packet);
