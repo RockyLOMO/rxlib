@@ -28,6 +28,7 @@ import static org.rx.core.Extends.tryClose;
  * <p>match、resolve、geo 访问类 API 是 lazy non-blocking API，首次调用只触发后台加载，可能返回 false/null。</p>
  * <p>compile 和 waitLoad 是配置期同步 API，可能等待下载和 dat 解析；请求热点路径应复用编译后的 matcher。</p>
  * <p>set 配置异步触发加载，需要同步生效时调用 compile 或 waitLoad。</p>
+ * <p>close 是终态操作，关闭后不支持 reopen 或 reload。</p>
  */
 @Slf4j
 public final class V2RayGeoManager implements Closeable {
@@ -46,9 +47,8 @@ public final class V2RayGeoManager implements Closeable {
     volatile V2RayGeoSiteIndex siteIndex;
     volatile GeoSiteMatcher directSiteMatcher;
     volatile GeoSiteMatcher directSiteExtraMatcher;
-    volatile Future<Void> dTask;
-    volatile boolean dTaskLoadIp;
-    volatile boolean dTaskLoadSite;
+    volatile Future<Void> ipTask;
+    volatile Future<Void> siteTask;
     volatile boolean dailyScheduled;
     volatile List<? extends ScheduledFuture<?>> dailyTasks;
     volatile boolean closed;
@@ -60,9 +60,9 @@ public final class V2RayGeoManager implements Closeable {
     V2RayGeoManager(boolean autoLoad) {
         if (autoLoad) {
             ensureDailyScheduled();
-            dTaskLoadIp = true;
-            dTaskLoadSite = true;
-            dTask = Tasks.run(() -> load(false));
+            Future<Void> task = Tasks.run(() -> load(false, true, true));
+            ipTask = task;
+            siteTask = task;
         }
     }
 
@@ -133,7 +133,7 @@ public final class V2RayGeoManager implements Closeable {
                 this.dailyDownloadTime = dailyDownloadTime;
                 return;
             }
-            List<? extends ScheduledFuture<?>> newTasks = Tasks.scheduleDaily(() -> load(true), dailyDownloadTime);
+            List<? extends ScheduledFuture<?>> newTasks = Tasks.scheduleDaily(() -> load(true, true, true), dailyDownloadTime);
             if (closed) {
                 cancelTasks(newTasks);
                 throw closedException();
@@ -147,25 +147,22 @@ public final class V2RayGeoManager implements Closeable {
 
     public void reload() {
         checkOpen();
-        load(true);
+        load(true, true, true);
     }
 
     public void waitLoad() throws ExecutionException, InterruptedException, TimeoutException {
-        Future<Void> task = ensureLoaded();
-        if (task == null) {
-            task = dTask;
+        Future<Void> ip = ensureIpLoaded();
+        Future<Void> site = ensureSiteLoaded();
+        if (ip == null) {
+            ip = currentLoadTask(true);
         }
-        awaitLoadTask(task);
-    }
-
-    private Future<Void> ensureLoaded() {
-        checkOpen();
-        boolean loadIp = shouldLoadGeoConfig(geoIpFile, geoIpFileUrl, "geoip.dat");
-        boolean loadSite = shouldLoadGeoConfig(geoSiteFile, geoSiteFileUrl, "geosite.dat");
-        if ((ipMatcher != null || !loadIp) && (siteIndex != null || !loadSite)) {
-            return null;
+        if (site == null) {
+            site = currentLoadTask(false);
         }
-        return ensureLoadTask(ipMatcher == null && loadIp, siteIndex == null && loadSite);
+        awaitLoadTask(ip);
+        if (site != ip) {
+            awaitLoadTask(site);
+        }
     }
 
     private Future<Void> ensureIpLoaded() {
@@ -187,34 +184,23 @@ public final class V2RayGeoManager implements Closeable {
     private Future<Void> ensureLoadTask(boolean loadIp, boolean loadSite) {
         checkOpen();
         ensureDailyScheduled();
-        Future<Void> task = dTask;
-        if (task == null) {
-            synchronized (this) {
-                checkOpen();
-                task = dTask;
-                if (task == null) {
-                    task = Tasks.run(() -> load(false));
-                    dTask = task;
-                    dTaskLoadIp = loadIp;
-                    dTaskLoadSite = loadSite;
-                    if (closed) {
-                        task.cancel(true);
-                        dTask = null;
-                        dTaskLoadIp = false;
-                        dTaskLoadSite = false;
-                        throw closedException();
-                    }
-                } else {
-                    dTaskLoadIp = dTaskLoadIp || loadIp;
-                    dTaskLoadSite = dTaskLoadSite || loadSite;
+        Future<Void> task = null;
+        synchronized (this) {
+            checkOpen();
+            if (loadIp) {
+                task = ipTask;
+                if (!isTaskActive(task)) {
+                    task = Tasks.run(() -> load(false, true, false));
+                    ipTask = task;
                 }
             }
-        } else if ((loadIp && !dTaskLoadIp) || (loadSite && !dTaskLoadSite)) {
-            synchronized (this) {
-                if (dTask == task) {
-                    dTaskLoadIp = dTaskLoadIp || loadIp;
-                    dTaskLoadSite = dTaskLoadSite || loadSite;
+            if (loadSite) {
+                Future<Void> site = siteTask;
+                if (!isTaskActive(site)) {
+                    site = Tasks.run(() -> load(false, false, true));
+                    siteTask = site;
                 }
+                task = task == null ? site : task;
             }
         }
         if (closed) {
@@ -232,7 +218,7 @@ public final class V2RayGeoManager implements Closeable {
             if (dailyScheduled || closed) {
                 return;
             }
-            List<? extends ScheduledFuture<?>> newTasks = Tasks.scheduleDaily(() -> load(true), dailyDownloadTime);
+            List<? extends ScheduledFuture<?>> newTasks = Tasks.scheduleDaily(() -> load(true, true, true), dailyDownloadTime);
             if (closed) {
                 cancelTasks(newTasks);
                 return;
@@ -248,29 +234,26 @@ public final class V2RayGeoManager implements Closeable {
         }
     }
 
-    private synchronized void load(boolean force) {
+    private void load(boolean force, boolean loadIp, boolean loadSite) {
         if (closed) {
-            dTask = null;
-            dTaskLoadIp = false;
-            dTaskLoadSite = false;
             return;
         }
         ensureDailyScheduled();
-        V2RayGeoIpMatcher oldIpMatcher = ipMatcher;
-        V2RayGeoSiteIndex oldSiteIndex = siteIndex;
-        V2RayGeoIpMatcher newIpMatcher = oldIpMatcher;
-        V2RayGeoSiteIndex newSiteIndex = oldSiteIndex;
+        V2RayGeoIpMatcher newIpMatcher = null;
+        V2RayGeoSiteIndex newSiteIndex = null;
         GeoSiteMatcher newDirectSiteMatcher = directSiteMatcher;
         GeoSiteMatcher newDirectSiteExtraMatcher = directSiteExtraMatcher;
+        V2RayGeoIpMatcher oldIpMatcher = null;
+        V2RayGeoSiteIndex oldSiteIndex = null;
         boolean replaceIp = false;
         boolean replaceSite = false;
         try {
-            if (shouldLoadGeoConfig(geoIpFile, geoIpFileUrl, "geoip.dat")) {
+            if (loadIp && shouldLoadGeoConfig(geoIpFile, geoIpFileUrl, "geoip.dat")) {
                 File ipFile = innerDl(force, geoFile(geoIpFile, "geoip.dat"), geoIpFileUrl);
                 newIpMatcher = new V2RayGeoIpReader().read(ipFile);
                 replaceIp = true;
             }
-            if (shouldLoadGeoConfig(geoSiteFile, geoSiteFileUrl, "geosite.dat")) {
+            if (loadSite && shouldLoadGeoConfig(geoSiteFile, geoSiteFileUrl, "geosite.dat")) {
                 File siteFile = innerDl(force, geoFile(geoSiteFile, "geosite.dat"), geoSiteFileUrl);
                 newSiteIndex = new V2RayGeoSiteReader().read(siteFile);
                 newDirectSiteMatcher = newSiteIndex.matcher(directGeoSiteCode, null);
@@ -278,38 +261,48 @@ public final class V2RayGeoManager implements Closeable {
                 replaceSite = true;
             }
 
-            if (closed) {
+            synchronized (this) {
+                if (closed) {
+                    if (replaceIp) {
+                        tryClose(newIpMatcher);
+                        newIpMatcher = null;
+                    }
+                    if (replaceSite) {
+                        tryClose(newSiteIndex);
+                        newSiteIndex = null;
+                    }
+                    return;
+                }
                 if (replaceIp && newIpMatcher != oldIpMatcher) {
-                    tryClose(newIpMatcher);
+                    oldIpMatcher = ipMatcher;
+                    ipMatcher = newIpMatcher;
+                    newIpMatcher = null;
                 }
                 if (replaceSite && newSiteIndex != oldSiteIndex) {
-                    tryClose(newSiteIndex);
+                    oldSiteIndex = siteIndex;
+                    siteIndex = newSiteIndex;
+                    directSiteMatcher = newDirectSiteMatcher;
+                    directSiteExtraMatcher = newDirectSiteExtraMatcher;
+                    newSiteIndex = null;
                 }
-                return;
             }
             if (replaceIp) {
-                ipMatcher = newIpMatcher;
-                Tasks.setTimeout(() -> tryClose(oldIpMatcher), 2000);
+                final V2RayGeoIpMatcher closeIpMatcher = oldIpMatcher;
+                Tasks.setTimeout(() -> tryClose(closeIpMatcher), 2000);
             }
             if (replaceSite) {
-                siteIndex = newSiteIndex;
-                directSiteMatcher = newDirectSiteMatcher;
-                directSiteExtraMatcher = newDirectSiteExtraMatcher;
-                Tasks.setTimeout(() -> tryClose(oldSiteIndex), 2000);
+                final V2RayGeoSiteIndex closeSiteIndex = oldSiteIndex;
+                Tasks.setTimeout(() -> tryClose(closeSiteIndex), 2000);
             }
         } catch (Exception e) {
-            if (replaceIp && newIpMatcher != oldIpMatcher) {
+            if (newIpMatcher != null) {
                 tryClose(newIpMatcher);
             }
-            if (replaceSite && newSiteIndex != oldSiteIndex) {
+            if (newSiteIndex != null) {
                 tryClose(newSiteIndex);
             }
             log.error("v2ray geo load error", e);
             throw ApplicationException.sneaky(e);
-        } finally {
-            dTask = null;
-            dTaskLoadIp = false;
-            dTaskLoadSite = false;
         }
     }
 
@@ -430,18 +423,21 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         if (closed) {
             return;
         }
         closed = true;
 
-        Future<Void> task = dTask;
-        dTask = null;
-        dTaskLoadIp = false;
-        dTaskLoadSite = false;
-        if (task != null) {
-            task.cancel(true);
+        Future<Void> ip = ipTask;
+        Future<Void> site = siteTask;
+        ipTask = null;
+        siteTask = null;
+        if (ip != null) {
+            ip.cancel(true);
+        }
+        if (site != null && site != ip) {
+            site.cancel(true);
         }
         cancelTasks(dailyTasks);
         dailyTasks = null;
@@ -467,11 +463,12 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     private Future<Void> currentLoadTask(boolean ipSide) {
-        Future<Void> task = dTask;
-        if (task == null) {
-            return null;
-        }
-        return ipSide ? (dTaskLoadIp ? task : null) : (dTaskLoadSite ? task : null);
+        Future<Void> task = ipSide ? ipTask : siteTask;
+        return isTaskActive(task) ? task : null;
+    }
+
+    private boolean isTaskActive(Future<Void> task) {
+        return task != null && !task.isDone() && !task.isCancelled();
     }
 
     private void checkOpen() {

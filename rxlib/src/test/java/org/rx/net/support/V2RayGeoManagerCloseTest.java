@@ -32,7 +32,8 @@ public class V2RayGeoManagerCloseTest {
         manager.siteIndex = new V2RayGeoSiteReader().read(V2RayGeoDataTestUtil.geoSiteList());
 
         CompletableFuture<Void> pendingTask = new CompletableFuture<Void>();
-        manager.dTask = pendingTask;
+        manager.ipTask = pendingTask;
+        manager.siteTask = pendingTask;
         List<? extends ScheduledFuture<?>> dailyTasks = manager.dailyTasks;
 
         manager.close();
