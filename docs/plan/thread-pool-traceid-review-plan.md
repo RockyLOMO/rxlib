@@ -165,14 +165,14 @@ if (task.threadTraceStarted) {
 
 # 修改文件列表
 
-预计后续代码实现会修改或新增：
+实际代码实现已修改或新增：
 
 - `rxlib/src/main/java/org/rx/core/ThreadPool.java`
-- `rxlib/src/test/java/org/rx/core/ThreadPoolTest.java`
-  - 或新增 `rxlib/src/test/java/org/rx/core/ThreadPoolTraceIdTest.java`
+- `rxlib/src/main/java/org/rx/core/RxConfig.java`
+- `rxlib/src/test/java/org/rx/core/ThreadPoolTraceIdTest.java`
 - `docs/plan/thread-pool-traceid-review-plan.md`
 
-本阶段仅新增计划文档，不修改业务代码。
+已进入代码实现阶段，业务代码与回归测试已落地。
 
 # 风险点
 
@@ -202,3 +202,25 @@ mvn -B -U -Dgpg.skip=true -Dmaven.test.skip=false -DskipTests=false -Dtest=Threa
    - 新增 traceId 回归测试通过。
    - 既有 ThreadPool 队列、serial/single、shutdown 测试不受影响。
    - CI run 必须以 `conclusion=success` 才视为通过。
+
+# 实施结果
+
+已完成修复：
+
+1. `ThreadPool.Task` 增加 `threadTraceStarted` 状态，仅在任务执行前确实建立 trace 上下文时，任务结束后才调用 `endTrace()`。
+2. 新增线程池任务专用 trace 启动逻辑：
+   - worker 没有 trace 时，使用提交线程捕获的 traceId，捕获为空则生成新 traceId。
+   - worker 已有相同 trace 时，保留原 nesting 语义。
+   - worker 已有不同 trace 时，以 requires-new 语义切换到任务 trace，任务结束后恢复 worker 原 trace。
+3. `RxConfig.afterSet()` 对 `maxTraceDepth` 做正数归一化，避免默认值 0 放大 requires-new 丢弃风险。
+4. 新增 `ThreadPoolTraceIdTest` 覆盖：
+   - worker 已有 stale trace 时，任务使用提交线程捕获 trace。
+   - caller 无 trace 且 worker 有 stale trace 时，任务生成新 trace，不沿用 stale trace。
+   - `CALLER_RUNS` 中任务捕获 trace 与 caller 当前 trace 不同时，任务内使用捕获 trace，执行后恢复 caller trace。
+
+本地验证通过：
+
+```bash
+mvn -B -U -pl rxlib "-Dgpg.skip=true" "-Dmaven.test.skip=false" "-DskipTests=false" "-Dtest=ThreadPoolTraceIdTest" test
+mvn -B -U -pl rxlib "-Dgpg.skip=true" "-Dmaven.test.skip=false" "-DskipTests=false" "-Dtest=ThreadPoolTest,ThreadPoolWheelTimerRegressionTest,ThreadPoolTraceIdTest" test
+```

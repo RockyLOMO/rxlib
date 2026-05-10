@@ -606,6 +606,7 @@ public final class RxConfig {
         threadPool.minIdleSize = Math.max(1, threadPool.minIdleSize);
         threadPool.maxPoolSize = Math.max(threadPool.minIdleSize, threadPool.maxPoolSize);
         threadPool.resizeStep = Math.max(1, threadPool.resizeStep);
+        threadPool.maxTraceDepth = Math.max(1, threadPool.maxTraceDepth);
         if (threadPool.queueOfferMode == null) {
             threadPool.queueOfferMode = ThreadPoolQueueOfferMode.BLOCK;
         }
