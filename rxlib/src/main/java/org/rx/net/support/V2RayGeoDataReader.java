@@ -136,6 +136,7 @@ public final class V2RayGeoDataReader {
                     break;
                 case 3:
                     expectWire(tag, WIRE_VARINT);
+                    // 当前 matcher 只做 @attr 存在性过滤，int_value 的具体数值暂不参与匹配。
                     cursor.readVarint64();
                     present = true;
                     break;
