@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.core.RxConfig;
 import org.rx.net.SocketConfig;
+import org.rx.net.Sockets;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
@@ -13,6 +14,7 @@ import org.rx.net.transport.UdpClient;
 
 import java.io.Serializable;
 import java.lang.reflect.Field;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -182,6 +184,25 @@ class NameserverImplTest {
             assertEquals(1, resolved.size());
             assertFalse(resolved.iterator().next().isUnresolved());
             assertEquals(InetAddress.getByName("127.0.0.1"), resolved.iterator().next().getAddress());
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void replicaSelfSyncEndpointShouldMatchLocalAddresses() throws Exception {
+        int syncPort = freePort();
+        NameserverImpl server = newServer(freePort(), freePort(), syncPort);
+        try {
+            assertTrue(server.isLocalSyncEndpoint(new InetSocketAddress(InetAddress.getLoopbackAddress(), syncPort)));
+            assertFalse(server.isLocalSyncEndpoint(new InetSocketAddress(InetAddress.getLoopbackAddress(), syncPort + 1)));
+            assertFalse(server.isLocalSyncEndpoint(new InetSocketAddress(InetAddress.getByAddress(new byte[]{8, 8, 8, 8}), syncPort)));
+
+            List<Inet4Address> localAddresses = Sockets.getLocalAddresses(false);
+            if (!localAddresses.isEmpty()) {
+                assertTrue(server.isLocalSyncEndpoint(new InetSocketAddress(localAddresses.get(0), syncPort)));
+            }
         } finally {
             server.close();
         }
