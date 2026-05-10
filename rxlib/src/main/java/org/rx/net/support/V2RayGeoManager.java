@@ -158,7 +158,25 @@ public final class V2RayGeoManager implements Closeable {
 
     public void reload() {
         checkOpen();
-        load(true, true, true, closeVersion);
+        RuntimeException error = null;
+        int version = closeVersion;
+        try {
+            load(true, true, false, version);
+        } catch (RuntimeException e) {
+            error = e;
+        }
+        try {
+            load(true, false, true, version);
+        } catch (RuntimeException e) {
+            if (error == null) {
+                error = e;
+            } else {
+                error.addSuppressed(e);
+            }
+        }
+        if (error != null) {
+            throw error;
+        }
     }
 
     public void reloadAsync() {
