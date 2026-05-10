@@ -1,19 +1,23 @@
 package org.rx.net.nameserver;
 
+import io.netty.channel.Channel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.core.RxConfig;
+import org.rx.net.SocketConfig;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
+import org.rx.net.transport.UdpClient;
 
+import java.io.Serializable;
+import java.lang.reflect.Field;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
-import java.io.Serializable;
-import java.util.HashMap;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -198,6 +202,19 @@ class NameserverImplTest {
 
     @Test
     @Timeout(20)
+    void replicaSyncUdpShouldNotInheritGlobalReusePortBindCount() throws Exception {
+        NameserverImpl server = newServer(freePort(), freePort(), freePort());
+        try {
+            SocketConfig socketConfig = firstUdpChannel(server.ss).attr(SocketConfig.ATTR_CONF).get();
+
+            assertEquals(1, socketConfig.getReusePortBindCount());
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
     void lowerVersionFromDifferentSourceShouldBeAccepted() throws Exception {
         NameserverImpl server = newServer(freePort(), freePort(), freePort());
         try {
@@ -314,6 +331,14 @@ class NameserverImplTest {
         config.getTcpConfig().setConnectTimeoutMillis(1000);
         config.getTcpConfig().setWaitConnectMillis(300);
         return Remoting.createFacade(Nameserver.class, config);
+    }
+
+    @SuppressWarnings("unchecked")
+    static Channel firstUdpChannel(UdpClient client) throws Exception {
+        Field channelsField = UdpClient.class.getDeclaredField("channels");
+        channelsField.setAccessible(true);
+        List<Channel> channels = (List<Channel>) channelsField.get(client);
+        return channels.get(0);
     }
 
     static void assertContainsLoopback(List<InetAddress> hosts) {
