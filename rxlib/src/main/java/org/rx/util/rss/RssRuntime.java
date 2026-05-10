@@ -91,7 +91,7 @@ final class RssRuntime implements AutoCloseable {
         if (hasUdp2rawSocksServer(conf)) {
             inUdp2rawServer = createUdp2rawInServer(conf);
         }
-        app = new RssRpcApp(inServer.server);
+        app = new RssRpcApp(inServer.server, inUdp2rawServer != null ? inUdp2rawServer.server : null);
 
         activeConf = conf;
         rssConf = conf;
@@ -401,6 +401,7 @@ final class RssRuntime implements AutoCloseable {
         inServer = plan.newInServer;
         inUdp2rawServer = plan.newUdp2rawServer;
         app.setServer(inServer.server);
+        app.setUdp2rawServer(inUdp2rawServer != null ? inUdp2rawServer.server : null);
         plan.newInServer = null;
         plan.newUdp2rawServer = null;
         plan.oldInServer = null;
@@ -428,6 +429,7 @@ final class RssRuntime implements AutoCloseable {
             inServer = restoredInServer;
             inUdp2rawServer = restoredUdp2rawServer;
             app.setServer(restoredInServer.server);
+            app.setUdp2rawServer(restoredUdp2rawServer != null ? restoredUdp2rawServer.server : null);
         } catch (Throwable restoreError) {
             log.error("restore rss in server failed", restoreError);
         } finally {

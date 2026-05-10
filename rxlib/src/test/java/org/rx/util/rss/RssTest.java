@@ -42,9 +42,12 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcContract;
+import org.rx.net.socks.SocksRpcCapabilities;
 import org.rx.net.socks.SocksUser;
 import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficLoginInfo;
+import org.rx.net.socks.Udp2rawOpenRequest;
+import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.socks.UdpRedundantMode;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
@@ -1385,6 +1388,44 @@ public class RssTest extends AbstractTester {
         assertEquals(1300, config.getUdpMtu());
         assertTrue(config.isEnableUdp2raw());
         assertEquals(Sockets.newAnyEndpoint(40940), config.getListenAddress());
+    }
+
+    @Test
+    public void rssRpcApp_DelegatesUdp2rawTunnelToTunnelServer() {
+        SocksProxyServer normalServer = null;
+        SocksProxyServer tunnelServer = null;
+        try {
+            SocksConfig normalConfig = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            normalServer = new SocksProxyServer(normalConfig, null);
+
+            SocksConfig tunnelConfig = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            tunnelConfig.setEnableUdp2raw(true);
+            tunnelConfig.setUdp2rawMaxSessions(4);
+            tunnelServer = new SocksProxyServer(tunnelConfig, null);
+
+            RssRpcApp app = new RssRpcApp(normalServer, tunnelServer);
+            SocksRpcCapabilities capabilities = app.capabilities(SocksRpcContract.rpcToken());
+            assertTrue(capabilities.has(SocksRpcCapabilities.UDP_RELAY_GROUP));
+            assertTrue(capabilities.has(SocksRpcCapabilities.UDP2RAW_TUNNEL));
+            assertTrue(capabilities.isUdp2rawFixedEntry());
+            assertEquals(4, capabilities.getMaxUdp2rawSessions());
+
+            Udp2rawOpenRequest request = new Udp2rawOpenRequest();
+            request.setClientId("rss-rpc-app-test");
+            Udp2rawOpenResult result = app.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
+            assertTrue(result.isSupported());
+            assertTrue(result.isSuccess());
+            assertNotNull(result.getUdpEntryAddress());
+            assertTrue(app.heartbeatUdp2rawTunnel(result.getTunnelId(), SocksRpcContract.rpcToken()));
+            assertTrue(app.closeUdp2rawTunnel(result.getTunnelId(), SocksRpcContract.rpcToken()));
+        } finally {
+            if (normalServer != null) {
+                normalServer.close();
+            }
+            if (tunnelServer != null) {
+                tunnelServer.close();
+            }
+        }
     }
 
     @Test
