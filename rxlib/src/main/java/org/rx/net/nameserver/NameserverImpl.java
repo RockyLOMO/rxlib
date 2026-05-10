@@ -21,6 +21,7 @@ import org.rx.net.transport.hybrid.HybridSession;
 import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.core.Extends.*;
@@ -202,7 +204,7 @@ public class NameserverImpl implements Nameserver {
         ReplicaSnapshot packet = new ReplicaSnapshot(replicaSourceId, nextReplicaVersion(), snapshot, null);
         Tasks.setTimeout(() -> {
             for (InetSocketAddress ssAddr : resolvedEndpoints) {
-                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet);
+                sendReplicaPacket(ssAddr, packet);
             }
         }, syncDelay, svrEps, Constants.TIMER_REPLACE_FLAG);
     }
@@ -243,7 +245,7 @@ public class NameserverImpl implements Nameserver {
     public void syncDeregister(@NonNull DeregisterInfo deregisterInfo) {
         Tasks.setTimeout(() -> {
             for (InetSocketAddress ssAddr : svrEps) {
-                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), deregisterInfo);
+                sendReplicaPacket(ssAddr, deregisterInfo);
             }
         }, syncDelay, DeregisterInfo.class, Constants.TIMER_REPLACE_FLAG);
     }
@@ -252,7 +254,7 @@ public class NameserverImpl implements Nameserver {
         ReplicaSnapshot packet = new ReplicaSnapshot(replicaSourceId, nextReplicaVersion(), null, snapshotAttrs());
         Tasks.setTimeout(() -> {
             for (InetSocketAddress ssAddr : svrEps) {
-                ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet);
+                sendReplicaPacket(ssAddr, packet);
             }
         }, syncDelay, attrs, Constants.TIMER_REPLACE_FLAG);
     }
@@ -431,7 +433,35 @@ public class NameserverImpl implements Nameserver {
         ReplicaFullSync packet = new ReplicaFullSync(replicaSourceId, nextReplicaVersion(), new HashSet<InetSocketAddress>(svrEps),
                 snapshotHosts(), snapshotAttrs());
         for (InetSocketAddress ssAddr : packet.serverEndpoints) {
-            quietly(() -> ss.sendAsync(Sockets.newEndpoint(ssAddr, getSyncPort()), packet));
+            quietly(() -> sendReplicaPacket(ssAddr, packet));
+        }
+    }
+
+    void sendReplicaPacket(InetSocketAddress endpoint, Object packet) throws TimeoutException {
+        InetSocketAddress syncEndpoint = Sockets.newEndpoint(endpoint, getSyncPort());
+        if (isLocalSyncEndpoint(syncEndpoint)) {
+            log.debug("Skip nameserver replica self sync {}", Sockets.toString(syncEndpoint));
+            return;
+        }
+        ss.sendAsync(syncEndpoint, packet);
+    }
+
+    boolean isLocalSyncEndpoint(InetSocketAddress endpoint) {
+        if (endpoint == null || endpoint.isUnresolved() || endpoint.getPort() != getSyncPort()) {
+            return false;
+        }
+        InetAddress address = endpoint.getAddress();
+        if (address == null) {
+            return false;
+        }
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress()) {
+            return true;
+        }
+        try {
+            return NetworkInterface.getByInetAddress(address) != null;
+        } catch (Throwable e) {
+            log.debug("Check local sync endpoint failed {}", endpoint, e);
+            return false;
         }
     }
 
