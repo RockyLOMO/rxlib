@@ -46,4 +46,38 @@ public class V2RayGeoManagerCrossLoadIsolationTest {
             manager.close();
         }
     }
+
+    @Test
+    public void tryCompileGeoIpMatcherDoesNotWaitCurrentRefresh() {
+        V2RayGeoManager manager = new V2RayGeoManager(false);
+        manager.ipMatcher = new V2RayGeoIpReader().read(V2RayGeoDataTestUtil.geoIpList(
+                V2RayGeoDataTestUtil.geoIpEntry("cn", false,
+                        V2RayGeoDataTestUtil.cidr(V2RayGeoDataTestUtil.ip4(1, 2, 0, 0), 16))));
+        manager.ipTask = new CompletableFuture<Void>();
+
+        try {
+            V2RayGeoIpMatcher.CodeMatcher matcher = manager.tryCompileGeoIpMatcher("cn");
+            assertNotNull(matcher);
+            assertTrue(matcher.matches(V2RayGeoDataTestUtil.ip4(1, 2, 3, 4)));
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    public void tryCompileGeoSiteMatcherDoesNotWaitCurrentRefresh() {
+        V2RayGeoManager manager = new V2RayGeoManager(false);
+        manager.siteIndex = new V2RayGeoSiteReader().read(V2RayGeoDataTestUtil.geoSiteList(
+                V2RayGeoDataTestUtil.geoSiteEntry("cn",
+                        V2RayGeoDataTestUtil.domain(V2RayGeoDataReader.DOMAIN_TYPE_ROOT_DOMAIN, "baidu.com"))));
+        manager.siteTask = new CompletableFuture<Void>();
+
+        try {
+            GeoSiteMatcher matcher = manager.tryCompileGeoSiteMatcher("cn");
+            assertNotNull(matcher);
+            assertTrue(matcher.matches("www.baidu.com"));
+        } finally {
+            manager.close();
+        }
+    }
 }
