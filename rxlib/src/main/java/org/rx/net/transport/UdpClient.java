@@ -586,7 +586,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
                 Bytes.release(merged);
             }
         } catch (Throwable e) {
-            onHandlerError(e);
+            onHandlerError(e, sender);
         } finally {
             if (releasePayload) {
                 Bytes.release(payload);
@@ -835,6 +835,11 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         quietly(() -> publishEvent(onError, new NEventArgs<>(error)));
     }
 
+    void onHandlerError(Throwable error, InetSocketAddress sender) {
+        log.error("udp client error {} remote={}", localEndpoint, toIpPort(sender), error);
+        quietly(() -> publishEvent(onError, new NEventArgs<>(error)));
+    }
+
     @Override
     public void close() {
         for (SendContext context : pendingSends.values()) {
@@ -901,5 +906,13 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
             return endpoint;
         }
         return new InetSocketAddress(Sockets.getLoopbackAddress(), endpoint.getPort());
+    }
+
+    static String toIpPort(InetSocketAddress endpoint) {
+        if (endpoint == null) {
+            return "NULL";
+        }
+        String host = endpoint.getAddress() == null ? endpoint.getHostString() : endpoint.getAddress().getHostAddress();
+        return host + ":" + endpoint.getPort();
     }
 }
