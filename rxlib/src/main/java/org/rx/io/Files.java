@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 // import net.lingala.zip4j.model.enums.CompressionLevel;
 // import net.lingala.zip4j.model.enums.EncryptionMethod;
 // import org.apache.commons.collections4.CollectionUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.FileFilterUtils;
@@ -40,6 +41,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Stream;
 
+@Slf4j
 public class Files extends FilenameUtils {
     public static final CrudFile<File> CURD_FILE = new LocalCrudFile();
 
@@ -136,20 +138,49 @@ public class Files extends FilenameUtils {
         FileUtils.moveFile(src, dest);
     }
 
+    /**
+     * 原子移动文件到目标路径，失败时自动叠加后缀重试（最多 {@code maxRetries} 次）。
+     * 生成规则：baseName_1.ext → baseName_2.ext → …
+     * ATOMIC_MOVE 不支持时自动降级为 COPY_ATTRIBUTES + REPLACE_EXISTING。
+     */
     public static File moveFile(File src, File dest) throws IOException {
+        return moveFile(src, dest, 3);
+    }
+
+    public static File moveFile(File src, File dest, int maxRetries) throws IOException {
         IOException last = null;
-        for (int i = 0; i < 2; i++) {
+        // 第 0 次使用原始 dest，失败后从 _1 开始叠加
+        File current = dest;
+        for (int i = 0; i <= maxRetries; i++) {
             try {
-                FileUtils.moveFile(src, dest, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-                return dest;
+                doMoveFile(src, current);
+                return current;
             } catch (IOException e) {
-                String dn = dest.getName();
-                String newName = getBaseName(dn) + "_" + i + getExtension(dn);
-                dest = new File(dest.getParentFile(), newName);
+                log.error("moveFile failed attempt={} dest={}", i, current, e);
                 last = e;
+                // 叠加文件名：baseName_1.ext / baseName_2.ext …
+                String dn = dest.getName();
+                String ext = getExtension(dn);  // "txt"（无点）
+                String base = getBaseName(dn);   // "foo"
+                String suffix = ext.isEmpty() ? "" : "." + ext;
+                current = new File(dest.getParentFile(), base + "_" + (i + 1) + suffix);
             }
         }
         throw last;
+    }
+
+    @SneakyThrows
+    private static void doMoveFile(File src, File dest) throws IOException {
+        try {
+            // 优先原子移动
+            FileUtils.moveFile(src, dest, StandardCopyOption.COPY_ATTRIBUTES,
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            // 当前 FS 不支持原子移动，降级处理
+            log.warn("ATOMIC_MOVE not supported for {}, fallback to normal move", dest);
+            FileUtils.moveFile(src, dest, StandardCopyOption.COPY_ATTRIBUTES,
+                    StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
 //    public static void replaceFileAtomically(String originalPath, byte[] newContent) throws IOException {
