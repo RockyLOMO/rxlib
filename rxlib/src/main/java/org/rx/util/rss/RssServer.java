@@ -51,17 +51,18 @@ public final class RssServer {
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
+        SocksProxyServer outUdp2rawSvr = null;
         if (udp2rawPort != null && udp2rawPort > 0) {
             SocksConfig outTunConf = Sys.deepClone(outConf);
             configureUdp2rawOutboundConfig(outTunConf, debugFlag, udp2rawPort);
-            SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
+            outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
             outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         }
 
         int actualRpcPort = rpcPort == null ? port + 1 : rpcPort;
         RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(actualRpcPort));
         rpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
-        RssRpcApp app = new RssRpcApp(outSvr);
+        RssRpcApp app = new RssRpcApp(outSvr, outUdp2rawSvr);
         Remoting.register(app, rpcConf);
         serverInit();
         app.await();
