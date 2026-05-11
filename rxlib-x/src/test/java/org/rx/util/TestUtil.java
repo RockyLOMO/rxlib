@@ -1,8 +1,9 @@
 package org.rx.util;
 
 import lombok.extern.slf4j.Slf4j;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.rx.util.Helper;
 import org.rx.util.pinyin.Pinyin;
 
 @Slf4j
@@ -10,21 +11,21 @@ public class TestUtil {
     @Test
     public void pinyin() {
         String l = "小王，abc";
-        System.out.println(l.length());
+        Assertions.assertEquals(6, l.length());
         l = "小范";
         String pyn = Pinyin.toPinyin(l, "_");
-        System.out.println(pyn);
+        Assertions.assertEquals("XIAO_FAN", pyn);
 
         String subject = "什么小范小范，吃饭啦！,好的";
         String pySubject = Pinyin.toPinyin(subject, "_");
-        System.out.println(pySubject);
+        Assertions.assertEquals("SHEN_ME_XIAO_FAN_XIAO_FAN_，_CHI_FAN_LA_！_,_HAO_DE", pySubject);
 
         String n = "小范", n1 = "XIAO_FAN";
-        System.out.println(getSubject("今天天气如何", n, n1));
-        System.out.println(getSubject("小范，今天天气如何", n, n1));
-        System.out.println(getSubject("小饭，今天天气如何", n, n1));
-        System.out.println(getSubject("总之呐，小范，今天天气如何", n, n1));
-        System.out.println(getSubject("总之呐，小饭，今天天气如何", n, n1));
+        Assertions.assertNull(getSubject("今天天气如何", n, n1));
+        Assertions.assertEquals("，今天天气如何", getSubject("小范，今天天气如何", n, n1));
+        Assertions.assertEquals("，今天天气如何", getSubject("小饭，今天天气如何", n, n1));
+        Assertions.assertEquals("，今天天气如何", getSubject("总之呐，小范，今天天气如何", n, n1));
+        Assertions.assertEquals("，今天天气如何", getSubject("总之呐，小饭，今天天气如何", n, n1));
     }
 
     String getSubject(String line, String name, String pinyinName) {
@@ -55,6 +56,8 @@ public class TestUtil {
 
     @Test
     public void email() {
-        Helper.sendEmail("hw", "abc", "rockywong.chn@qq.com");
+        // 外部 SMTP 是集成测试依赖，默认单测不走真实网络。
+        Assumptions.assumeTrue("true".equalsIgnoreCase(System.getenv("RXLIB_X_SMTP_TEST")));
+        Helper.sendEmail("hw", System.getenv("RXLIB_X_SMTP_PASSWORD"), System.getenv("RXLIB_X_SMTP_TO"));
     }
 }
