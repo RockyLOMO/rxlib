@@ -87,9 +87,11 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                     executionStarted = true;
                     executedCount.increment();
                     recordDiagnosticMetrics(false);
-                    beginTrace(traceId, stackTrace);
-                    boolean doContinue = flags.has(TimeoutFlag.PERIOD);
+                    boolean traceStarted = false;
+                    boolean doContinue = false;
                     try {
+                        traceStarted = beginTrace(traceId, stackTrace);
+                        doContinue = flags.has(TimeoutFlag.PERIOD);
                         T value = fn.get();
                         result = value;
                         return value;
@@ -103,7 +105,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                             onExecutionFinished(ThreadPool.continueFlag(doContinue), timeout.timer());
                         } finally {
                             try {
-                                endTrace();
+                                endTrace(traceStarted);
                             } finally {
                                 runningTaskCount.decrementAndGet();
                             }
@@ -377,8 +379,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                     executionRunning = true;
                     executedCount.increment();
                     recordDiagnosticMetrics(false);
-                    beginTrace(traceId, stackTrace);
+                    boolean traceStarted = false;
                     try {
+                        traceStarted = beginTrace(traceId, stackTrace);
                         command.run();
                         scheduleNext();
                     } catch (Throwable e) {
@@ -389,7 +392,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                         throw e;
                     } finally {
                         try {
-                            endTrace();
+                            endTrace(traceStarted);
                         } finally {
                             executionRunning = false;
                             runningTaskCount.decrementAndGet();
@@ -730,14 +733,17 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
         return new Throwable().getStackTrace();
     }
 
-    private void beginTrace(String traceId, StackTraceElement[] stackTrace) {
-        ThreadPool.startTrace(traceId);
+    private boolean beginTrace(String traceId, StackTraceElement[] stackTrace) {
+        boolean traceStarted = ThreadPool.startTaskTrace(traceId);
         ThreadPool.CTX_STACK_TRACE.set(stackTrace != null ? stackTrace : Boolean.TRUE);
+        return traceStarted;
     }
 
-    private void endTrace() {
+    private void endTrace(boolean traceStarted) {
         ThreadPool.CTX_STACK_TRACE.remove();
-        ThreadPool.endTrace();
+        if (traceStarted) {
+            ThreadPool.endTrace();
+        }
     }
 
     private void ensureRunning() {

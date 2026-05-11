@@ -698,7 +698,7 @@ public class ThreadPool extends ThreadPoolExecutor {
     }
 
     @SneakyThrows
-    private static boolean startTaskTrace(String traceId) {
+    static boolean startTaskTrace(String traceId) {
         LinkedList<Object> queue = CTX_TRACE_ID.get();
         Object peek = queue.peek();
         Tuple<String, Integer> nestTid = null;
