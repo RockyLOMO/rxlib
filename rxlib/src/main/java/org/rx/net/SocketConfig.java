@@ -57,7 +57,7 @@ public class SocketConfig implements Serializable {
      */
     private int tcpCompressionLevel = -1;
     // 1 = AES, 2 = XChaCha20Poly1305
-    private short cipher = 2;
+    private short cipher = 1;
     private byte[] cipherKey;
 
     public FlagsEnum<TransportFlags> getTransportFlags() {
