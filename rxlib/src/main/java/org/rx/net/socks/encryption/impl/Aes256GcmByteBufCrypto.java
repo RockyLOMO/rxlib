@@ -88,6 +88,7 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
     private final ByteBuffer decLenBuffer = ByteBuffer.wrap(decLenBytes);
 
     private boolean readingLengthPhase = true;
+    private int saltBytesRead;
     private int currentPayloadLength;
     private int phaseBytesRead;
     private ByteBuf pendingEncrypted;
@@ -193,14 +194,9 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
     private void decryptTcp(ByteBuf in, ByteBuf out) {
         try {
             if (decCipher == null) {
-                if (in.readableBytes() < SALT_LENGTH + TAG_LENGTH) {
-                    throw new DecoderException("Packet too short");
+                if (!readTcpSalt(in)) {
+                    return;
                 }
-                byte[] salt = SALT_BUF.get();
-                in.readBytes(salt, 0, SALT_LENGTH);
-                decSubkey = genSubkey(salt);
-                decCipher = Cipher.getInstance(CIPHER_NAME);
-                resetDecryptState();
             }
 
             while (in.isReadable()) {
@@ -228,6 +224,32 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
         } catch (GeneralSecurityException e) {
             throw new DecoderException("AES-256-GCM TCP decrypt failed", e);
         }
+    }
+
+    private boolean readTcpSalt(ByteBuf in) throws GeneralSecurityException {
+        byte[] salt = SALT_BUF.get();
+        if (saltBytesRead == 0 && in.readableBytes() >= SALT_LENGTH) {
+            in.readBytes(salt, 0, SALT_LENGTH);
+        } else {
+            int readNow = Math.min(SALT_LENGTH - saltBytesRead, in.readableBytes());
+            if (readNow <= 0) {
+                return false;
+            }
+            ByteBuf pending = pendingEncrypted();
+            pending.writeBytes(in, in.readerIndex(), readNow);
+            in.skipBytes(readNow);
+            saltBytesRead += readNow;
+            if (saltBytesRead < SALT_LENGTH) {
+                return false;
+            }
+            pending.getBytes(0, salt, 0, SALT_LENGTH);
+            pending.clear();
+            saltBytesRead = 0;
+        }
+        decSubkey = genSubkey(salt);
+        decCipher = Cipher.getInstance(CIPHER_NAME);
+        resetDecryptState();
+        return true;
     }
 
     private void decryptTcpPhase(ByteBuf in, int index, int length, ByteBuf out) throws GeneralSecurityException {
