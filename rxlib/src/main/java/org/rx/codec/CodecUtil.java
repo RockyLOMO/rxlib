@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.SneakyThrows;
-import org.bouncycastle.util.encoders.HexTranslator;
 import org.rx.io.Bytes;
 import org.rx.io.FileStream;
 import org.rx.io.MemoryStream;
@@ -21,7 +20,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 public class CodecUtil {
-    static final HexTranslator HEX = new HexTranslator();
+    private static final byte[] HEX_TABLE = "0123456789abcdef".getBytes(StandardCharsets.US_ASCII);
     static final FastThreadLocal<SecureRandom> secureRandom = new FastThreadLocal<>();
 
     public static SecureRandom threadLocalSecureRandom() {
@@ -48,12 +47,38 @@ public class CodecUtil {
 
     public static int encodeHex(byte[] in, int inOff, int length,
                                 byte[] out, int outOff) {
-        return HEX.encode(in, inOff, length, out, outOff);
+        for (int i = 0; i < length; i++) {
+            int v = in[inOff + i] & 0xFF;
+            out[outOff + (i << 1)] = HEX_TABLE[v >>> 4];
+            out[outOff + (i << 1) + 1] = HEX_TABLE[v & 0x0F];
+        }
+        return length << 1;
     }
 
     public static int decodeHex(byte[] in, int inOff, int length,
                                 byte[] out, int outOff) {
-        return HEX.decode(in, inOff, length, out, outOff);
+        if ((length & 1) != 0) {
+            throw new IllegalArgumentException("Hex length must be even");
+        }
+        int end = inOff + length;
+        int j = outOff;
+        for (int i = inOff; i < end; i += 2) {
+            out[j++] = (byte) ((decodeHexNibble(in[i]) << 4) | decodeHexNibble(in[i + 1]));
+        }
+        return length >> 1;
+    }
+
+    private static int decodeHexNibble(byte c) {
+        if (c >= '0' && c <= '9') {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f') {
+            return c - 'a' + 10;
+        }
+        if (c >= 'A' && c <= 'F') {
+            return c - 'A' + 10;
+        }
+        throw new IllegalArgumentException("Invalid hex char: " + (char) c);
     }
 
     //org.apache.commons.codec.binary.Base64.isBase64(base64String) may not right

@@ -162,11 +162,14 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <!-- Shadowsocks only supports aes-256-gcm JDK/JCE path now; keep BC disabled. -->
+        <!--
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
             <version>${bcprov.version}</version>
         </dependency>
+        -->
         <dependency>
             <groupId>org.apache.sshd</groupId>
             <artifactId>sshd-netty</artifactId>

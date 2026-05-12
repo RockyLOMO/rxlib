@@ -1738,7 +1738,7 @@ public class RssTest extends AbstractTester {
 
         AuthenticEndpoint inSrvEp = new AuthenticEndpoint(Sockets.newLoopbackEndpoint(inSvrPort));
         ShadowsocksConfig frontConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(ssPort),
-                CipherKind.AES_128_GCM.getCipherName(), socks5Pwd);
+                CipherKind.AES_256_GCM.getCipherName(), socks5Pwd);
         ShadowsocksServer frontSvr = new ShadowsocksServer(frontConf);
         frontSvr.onTcpRoute.replace((s, e) -> e.setUpstream(new SocksTcpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null))));
         frontSvr.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null))));

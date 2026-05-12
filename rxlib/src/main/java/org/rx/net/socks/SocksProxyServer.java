@@ -2,7 +2,6 @@ package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
-import io.netty.channel.DefaultEventLoopGroup;
 import io.netty.channel.local.LocalAddress;
 import io.netty.channel.local.LocalServerChannel;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
@@ -152,9 +151,9 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     }
 
     private MemoryBind createMemoryServer() {
-        EventLoopGroup reactor = Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true);
+        EventLoopGroup reactor = Sockets.localReactor(Sockets.ReactorNames.SHARED_LOCAL);
         ServerBootstrap localBootstrap = new ServerBootstrap()
-                .group(new DefaultEventLoopGroup(1), reactor)
+                .group(reactor, reactor)
                 .channel(LocalServerChannel.class)
                 .childHandler(new ChannelInitializer<Channel>() {
                     @Override
