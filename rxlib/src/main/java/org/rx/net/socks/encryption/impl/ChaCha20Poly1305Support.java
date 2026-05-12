@@ -1,47 +1,21 @@
 package org.rx.net.socks.encryption.impl;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.rx.codec.ChaCha20Engine;
 
 import javax.crypto.AEADBadTagException;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 
 final class ChaCha20Poly1305Support {
     private static final int BLOCK_SIZE = ChaCha20Engine.BLOCK_SIZE_BYTES;
     private static final int TAG_LENGTH = 16;
     private static final int POLY_LIMB_MASK = 0x3ffffff;
-    private static final FastThreadLocal<byte[]> CHACHA_BLOCK = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() {
-            return new byte[BLOCK_SIZE];
-        }
-    };
-    private static final FastThreadLocal<byte[]> POLY_KEY = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() {
-            return new byte[32];
-        }
-    };
-    private static final FastThreadLocal<byte[]> PARTIAL_BLOCK = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() {
-            return new byte[TAG_LENGTH];
-        }
-    };
-    private static final FastThreadLocal<byte[]> LEN_BLOCK = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() {
-            return new byte[TAG_LENGTH];
-        }
-    };
-    private static final FastThreadLocal<byte[]> TAG_BUF = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() {
-            return new byte[TAG_LENGTH];
-        }
-    };
+    private static final FastThreadLocal<ByteBuf> CHACHA_BLOCK = pooledBuffer(BLOCK_SIZE);
+    private static final FastThreadLocal<ByteBuf> PARTIAL_BLOCK = pooledBuffer(TAG_LENGTH);
+    private static final FastThreadLocal<ByteBuf> LEN_BLOCK = pooledBuffer(TAG_LENGTH);
+    private static final FastThreadLocal<ByteBuf> TAG_BUF = pooledBuffer(TAG_LENGTH);
     private static final FastThreadLocal<Poly1305State> POLY_STATE = new FastThreadLocal<Poly1305State>() {
         @Override
         protected Poly1305State initialValue() {
@@ -56,8 +30,7 @@ final class ChaCha20Poly1305Support {
         out.ensureWritable(length + TAG_LENGTH);
         int outIndex = out.writerIndex();
         xor(key, nonce, input, length, out, outIndex);
-        byte[] tag = tag(key, nonce, null, 0, 0, out, outIndex, length);
-        out.setBytes(outIndex + length, tag, 0, TAG_LENGTH);
+        writeTag(key, nonce, null, 0, 0, out, outIndex, length, out, outIndex + length);
         out.writerIndex(outIndex + length + TAG_LENGTH);
         return length + TAG_LENGTH;
     }
@@ -66,8 +39,7 @@ final class ChaCha20Poly1305Support {
         out.ensureWritable(length + TAG_LENGTH);
         int outIndex = out.writerIndex();
         xor(key, nonce, in, index, length, out, outIndex);
-        byte[] tag = tag(key, nonce, null, 0, 0, out, outIndex, length);
-        out.setBytes(outIndex + length, tag, 0, TAG_LENGTH);
+        writeTag(key, nonce, null, 0, 0, out, outIndex, length, out, outIndex + length);
         out.writerIndex(outIndex + length + TAG_LENGTH);
         return length + TAG_LENGTH;
     }
@@ -77,8 +49,7 @@ final class ChaCha20Poly1305Support {
         out.ensureWritable(length + TAG_LENGTH);
         int outIndex = out.writerIndex();
         xor(key, nonce, in, index, length, out, outIndex);
-        byte[] tag = tag(key, nonce, aad, aadIndex, aadLength, out, outIndex, length);
-        out.setBytes(outIndex + length, tag, 0, TAG_LENGTH);
+        writeTag(key, nonce, aad, aadIndex, aadLength, out, outIndex, length, out, outIndex + length);
         out.writerIndex(outIndex + length + TAG_LENGTH);
         return length + TAG_LENGTH;
     }
@@ -124,10 +95,11 @@ final class ChaCha20Poly1305Support {
 
     private static void verify(byte[] key, byte[] nonce, ByteBuf aad, int aadIndex, int aadLength,
                                ByteBuf in, int cipherIndex, int cipherLen, int tagIndex) throws AEADBadTagException {
-        byte[] expected = tag(key, nonce, aad, aadIndex, aadLength, in, cipherIndex, cipherLen);
+        ByteBuf expected = scratch(TAG_BUF, TAG_LENGTH);
+        writeTag(key, nonce, aad, aadIndex, aadLength, in, cipherIndex, cipherLen, expected, 0);
         int diff = 0;
         for (int i = 0; i < TAG_LENGTH; i++) {
-            diff |= expected[i] ^ in.getByte(tagIndex + i);
+            diff |= expected.getByte(i) ^ in.getByte(tagIndex + i);
         }
         if (diff != 0) {
             throw new AEADBadTagException("Tag mismatch");
@@ -135,15 +107,15 @@ final class ChaCha20Poly1305Support {
     }
 
     private static void xor(byte[] key, byte[] nonce, ByteBuffer input, int length, ByteBuf out, int outIndex) {
-        byte[] block = CHACHA_BLOCK.get();
+        ByteBuf block = scratch(CHACHA_BLOCK, BLOCK_SIZE);
         int remaining = length;
         int counter = 1;
         int dst = outIndex;
         while (remaining > 0) {
-            ChaCha20Engine.block(key, nonce, counter++, block);
+            ChaCha20Engine.block(key, nonce, counter++, block, 0);
             int n = Math.min(remaining, BLOCK_SIZE);
             for (int i = 0; i < n; i++) {
-                out.setByte(dst + i, (byte) (input.get() ^ block[i]));
+                out.setByte(dst + i, (byte) (input.get() ^ block.getByte(i)));
             }
             dst += n;
             remaining -= n;
@@ -151,16 +123,16 @@ final class ChaCha20Poly1305Support {
     }
 
     private static void xor(byte[] key, byte[] nonce, ByteBuf in, int index, int length, ByteBuf out, int outIndex) {
-        byte[] block = CHACHA_BLOCK.get();
+        ByteBuf block = scratch(CHACHA_BLOCK, BLOCK_SIZE);
         int remaining = length;
         int counter = 1;
         int src = index;
         int dst = outIndex;
         while (remaining > 0) {
-            ChaCha20Engine.block(key, nonce, counter++, block);
+            ChaCha20Engine.block(key, nonce, counter++, block, 0);
             int n = Math.min(remaining, BLOCK_SIZE);
             for (int i = 0; i < n; i++) {
-                out.setByte(dst + i, (byte) (in.getByte(src + i) ^ block[i]));
+                out.setByte(dst + i, (byte) (in.getByte(src + i) ^ block.getByte(i)));
             }
             src += n;
             dst += n;
@@ -169,58 +141,46 @@ final class ChaCha20Poly1305Support {
     }
 
     private static void xor(byte[] key, byte[] nonce, ByteBuf in, int index, int length, ByteBuffer out) {
-        byte[] block = CHACHA_BLOCK.get();
+        ByteBuf block = scratch(CHACHA_BLOCK, BLOCK_SIZE);
         int remaining = length;
         int counter = 1;
         int src = index;
         while (remaining > 0) {
-            ChaCha20Engine.block(key, nonce, counter++, block);
+            ChaCha20Engine.block(key, nonce, counter++, block, 0);
             int n = Math.min(remaining, BLOCK_SIZE);
             for (int i = 0; i < n; i++) {
-                out.put((byte) (in.getByte(src + i) ^ block[i]));
+                out.put((byte) (in.getByte(src + i) ^ block.getByte(i)));
             }
             src += n;
             remaining -= n;
         }
     }
 
-    private static byte[] tag(byte[] key, byte[] nonce, ByteBuf aad, int aadIndex, int aadLength,
-                              ByteBuf ciphertext, int index, int length) {
-        byte[] polyKey = POLY_KEY.get();
-        byte[] firstBlock = CHACHA_BLOCK.get();
-        ChaCha20Engine.block(key, nonce, 0, firstBlock);
-        System.arraycopy(firstBlock, 0, polyKey, 0, polyKey.length);
-        return poly1305(polyKey, aad, aadIndex, aadLength, ciphertext, index, length);
+    private static void writeTag(byte[] key, byte[] nonce, ByteBuf aad, int aadIndex, int aadLength,
+                                 ByteBuf ciphertext, int index, int length, ByteBuf tagOut, int tagIndex) {
+        ByteBuf firstBlock = scratch(CHACHA_BLOCK, BLOCK_SIZE);
+        ChaCha20Engine.block(key, nonce, 0, firstBlock, 0);
+        poly1305(firstBlock, aad, aadIndex, aadLength, ciphertext, index, length, tagOut, tagIndex);
     }
 
-    private static byte[] poly1305(byte[] key, ByteBuf aad, int aadIndex, int aadLength,
-                                   ByteBuf ciphertext, int index, int length) {
+    private static void poly1305(ByteBuf key, ByteBuf aad, int aadIndex, int aadLength,
+                                 ByteBuf ciphertext, int index, int length, ByteBuf tagOut, int tagIndex) {
         Poly1305State state = POLY_STATE.get();
-        state.init(key);
+        state.init(key, 0);
         state.updatePadded(aad, aadIndex, aadLength);
         state.updatePadded(ciphertext, index, length);
 
-        byte[] lenBlock = LEN_BLOCK.get();
-        Arrays.fill(lenBlock, (byte) 0);
+        ByteBuf lenBlock = zeroScratch(LEN_BLOCK, TAG_LENGTH);
         writeLongLE(aadLength, lenBlock, 0);
         writeLongLE(length, lenBlock, 8);
-        byte[] tag = TAG_BUF.get();
         state.processBlock(lenBlock, 0, true);
-        state.finish(tag);
-        return tag;
+        state.finish(tagOut, tagIndex);
     }
 
-    private static void writeLongLE(long value, byte[] out, int off) {
+    private static void writeLongLE(long value, ByteBuf out, int off) {
         for (int i = 0; i < 8; i++) {
-            out[off + i] = (byte) (value >>> (i << 3));
+            out.setByte(off + i, (int) (value >>> (i << 3)));
         }
-    }
-
-    private static long le32(byte[] in, int off) {
-        return ((long) in[off] & 0xFF)
-                | (((long) in[off + 1] & 0xFF) << 8)
-                | (((long) in[off + 2] & 0xFF) << 16)
-                | (((long) in[off + 3] & 0xFF) << 24);
     }
 
     private static long le32(ByteBuf in, int off) {
@@ -230,11 +190,38 @@ final class ChaCha20Poly1305Support {
                 | (((long) in.getByte(off + 3) & 0xFF) << 24);
     }
 
-    private static void writeIntLE(long value, byte[] out, int off) {
-        out[off] = (byte) value;
-        out[off + 1] = (byte) (value >>> 8);
-        out[off + 2] = (byte) (value >>> 16);
-        out[off + 3] = (byte) (value >>> 24);
+    private static void writeIntLE(long value, ByteBuf out, int off) {
+        out.setByte(off, (int) value);
+        out.setByte(off + 1, (int) (value >>> 8));
+        out.setByte(off + 2, (int) (value >>> 16));
+        out.setByte(off + 3, (int) (value >>> 24));
+    }
+
+    private static FastThreadLocal<ByteBuf> pooledBuffer(final int capacity) {
+        return new FastThreadLocal<ByteBuf>() {
+            @Override
+            protected ByteBuf initialValue() {
+                return PooledByteBufAllocator.DEFAULT.directBuffer(capacity, capacity);
+            }
+
+            @Override
+            protected void onRemoval(ByteBuf value) {
+                value.release();
+            }
+        };
+    }
+
+    private static ByteBuf scratch(FastThreadLocal<ByteBuf> local, int length) {
+        ByteBuf buf = local.get();
+        buf.clear();
+        buf.writerIndex(length);
+        return buf;
+    }
+
+    private static ByteBuf zeroScratch(FastThreadLocal<ByteBuf> local, int length) {
+        ByteBuf buf = scratch(local, length);
+        buf.setZero(0, length);
+        return buf;
     }
 
     private static final class Poly1305State {
@@ -243,11 +230,11 @@ final class ChaCha20Poly1305Support {
         private long h0, h1, h2, h3, h4;
         private long pad0, pad1, pad2, pad3;
 
-        void init(byte[] key) {
-            long t0 = le32(key, 0);
-            long t1 = le32(key, 4);
-            long t2 = le32(key, 8);
-            long t3 = le32(key, 12);
+        void init(ByteBuf key, int index) {
+            long t0 = le32(key, index);
+            long t1 = le32(key, index + 4);
+            long t2 = le32(key, index + 8);
+            long t3 = le32(key, index + 12);
 
             r0 = t0 & 0x3ffffffL;
             r1 = ((t0 >>> 26) | (t1 << 6)) & 0x3ffff03L;
@@ -259,10 +246,10 @@ final class ChaCha20Poly1305Support {
             s3 = r3 * 5L;
             s4 = r4 * 5L;
             h0 = h1 = h2 = h3 = h4 = 0L;
-            pad0 = le32(key, 16);
-            pad1 = le32(key, 20);
-            pad2 = le32(key, 24);
-            pad3 = le32(key, 28);
+            pad0 = le32(key, index + 16);
+            pad1 = le32(key, index + 20);
+            pad2 = le32(key, index + 24);
+            pad3 = le32(key, index + 28);
         }
 
         void updatePadded(ByteBuf in, int index, int length) {
@@ -277,22 +264,13 @@ final class ChaCha20Poly1305Support {
                 remaining -= TAG_LENGTH;
             }
             if (remaining > 0) {
-                byte[] block = PARTIAL_BLOCK.get();
-                Arrays.fill(block, (byte) 0);
+                ByteBuf block = zeroScratch(PARTIAL_BLOCK, TAG_LENGTH);
                 in.getBytes(src, block, 0, remaining);
                 processBlock(block, 0, true);
             }
         }
 
         void processBlock(ByteBuf in, int index, boolean hibit) {
-            long t0 = le32(in, index);
-            long t1 = le32(in, index + 4);
-            long t2 = le32(in, index + 8);
-            long t3 = le32(in, index + 12);
-            process(t0, t1, t2, t3, hibit);
-        }
-
-        void processBlock(byte[] in, int index, boolean hibit) {
             long t0 = le32(in, index);
             long t1 = le32(in, index + 4);
             long t2 = le32(in, index + 8);
@@ -333,7 +311,7 @@ final class ChaCha20Poly1305Support {
             h1 += c;
         }
 
-        void finish(byte[] tag) {
+        void finish(ByteBuf tag, int index) {
             long c = h1 >>> 26;
             h1 &= POLY_LIMB_MASK;
             h2 += c;
@@ -381,10 +359,10 @@ final class ChaCha20Poly1305Support {
             f2 += pad2 + (f1 >>> 32);
             f3 += pad3 + (f2 >>> 32);
 
-            writeIntLE(f0, tag, 0);
-            writeIntLE(f1, tag, 4);
-            writeIntLE(f2, tag, 8);
-            writeIntLE(f3, tag, 12);
+            writeIntLE(f0, tag, index);
+            writeIntLE(f1, tag, index + 4);
+            writeIntLE(f2, tag, index + 8);
+            writeIntLE(f3, tag, index + 12);
         }
     }
 }
