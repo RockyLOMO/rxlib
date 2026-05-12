@@ -20,6 +20,8 @@ import java.util.EnumSet;
 import java.util.Set;
 
 public class Bytes {
+    public static final ByteBuffer EMPTY_NIO = ByteBuffer.allocate(0);
+
     static final Object unsafe;
     static final Method invokeCleanerMethod;
 

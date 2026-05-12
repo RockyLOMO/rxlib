@@ -21,6 +21,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class ShadowsocksPythonClientIntegrationTest {
     @Test
     @Timeout(20)
+    void pythonClient_connectsThroughAes128GcmShadowsocksServer() throws Exception {
+        runPythonClient(CipherKind.AES_128_GCM.getCipherName(), "python-aes128-gcm", "python-aes128-gcm-ok");
+    }
+
+    @Test
+    @Timeout(20)
     void pythonClient_connectsThroughAes256GcmShadowsocksServer() throws Exception {
         runPythonClient(CipherKind.AES_256_GCM.getCipherName(), "python-aes256-gcm", "python-aes256-gcm-ok");
     }
@@ -90,23 +96,29 @@ class ShadowsocksPythonClientIntegrationTest {
                 "password = sys.argv[3].encode()",
                 "method = sys.argv[4]",
                 "payload = sys.argv[5].encode()",
+                "def key_len():",
+                "    if method == 'aes-128-gcm':",
+                "        return 16",
+                "    return 32",
                 "def evp_bytes_to_key(pwd):",
                 "    out = b''",
                 "    prev = b''",
-                "    while len(out) < 32:",
+                "    n = key_len()",
+                "    while len(out) < n:",
                 "        prev = hashlib.md5(prev + pwd).digest()",
                 "        out += prev",
-                "    return out[:32]",
+                "    return out[:n]",
                 "def hkdf_sha1(key, salt):",
                 "    prk = hmac.new(salt, key, hashlib.sha1).digest()",
                 "    out = b''",
                 "    prev = b''",
                 "    i = 1",
-                "    while len(out) < 32:",
+                "    n = key_len()",
+                "    while len(out) < n:",
                 "        prev = hmac.new(prk, prev + b'ss-subkey' + bytes([i]), hashlib.sha1).digest()",
                 "        out += prev",
                 "        i += 1",
-                "    return out[:32]",
+                "    return out[:n]",
                 "def inc(n):",
                 "    for i in range(len(n)):",
                 "        n[i] = (n[i] + 1) & 255",
@@ -121,11 +133,13 @@ class ShadowsocksPythonClientIntegrationTest {
                 "        data += chunk",
                 "    return data",
                 "master = evp_bytes_to_key(password)",
-                "salt = os.urandom(32)",
+                "salt = os.urandom(key_len())",
                 "subkey = hkdf_sha1(master, salt)",
                 "enc_nonce = bytearray(12)",
                 "dec_nonce = bytearray(12)",
                 "def new_aead(k):",
+                "    if method == 'aes-128-gcm':",
+                "        return AESGCM(k)",
                 "    if method == 'aes-256-gcm':",
                 "        return AESGCM(k)",
                 "    if method == 'chacha20-ietf-poly1305':",
@@ -151,7 +165,7 @@ class ShadowsocksPythonClientIntegrationTest {
                 "addr = b'\\x01' + socket.inet_aton('127.0.0.1') + struct.pack('>H', echo_port)",
                 "with socket.create_connection(('127.0.0.1', ss_port), timeout=5) as sock:",
                 "    sock.sendall(salt + encrypt_chunk(addr + payload))",
-                "    resp_salt = recvn(sock, 32)",
+                "    resp_salt = recvn(sock, key_len())",
                 "    resp_subkey = hkdf_sha1(master, resp_salt)",
                 "    data = decrypt_chunk(sock, resp_subkey)",
                 "    sys.stdout.write(data.decode())");

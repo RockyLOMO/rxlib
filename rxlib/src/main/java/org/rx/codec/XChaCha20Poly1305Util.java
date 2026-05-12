@@ -7,6 +7,8 @@ import io.netty.util.concurrent.FastThreadLocal;
 import org.rx.core.Linq;
 import org.rx.core.RxConfig;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Arrays;
 
 public class XChaCha20Poly1305Util {
@@ -39,6 +41,12 @@ public class XChaCha20Poly1305Util {
         @Override
         protected Poly1305State initialValue() {
             return new Poly1305State();
+        }
+    };
+    private static final FastThreadLocal<MessageDigest> KEY_DIGEST = new FastThreadLocal<MessageDigest>() {
+        @Override
+        protected MessageDigest initialValue() throws Exception {
+            return MessageDigest.getInstance("SHA-256");
         }
     };
 
@@ -146,6 +154,22 @@ public class XChaCha20Poly1305Util {
 
     public static byte[] generateKey() {
         return CodecUtil.secureRandomBytes(KEY_LEN);
+    }
+
+    public static byte[] generateKey(String seed) {
+        if (seed == null) {
+            throw new IllegalArgumentException("Key seed is null");
+        }
+        return generateKey(seed.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static byte[] generateKey(byte[] seed) {
+        if (seed == null) {
+            throw new IllegalArgumentException("Key seed is null");
+        }
+        MessageDigest digest = KEY_DIGEST.get();
+        digest.reset();
+        return digest.digest(seed);
     }
 
     public static byte[] encrypt(byte[] plaintext) {
