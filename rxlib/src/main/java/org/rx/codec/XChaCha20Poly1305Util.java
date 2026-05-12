@@ -1,54 +1,147 @@
 package org.rx.codec;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
+import io.netty.util.concurrent.FastThreadLocal;
 import org.rx.core.Linq;
 import org.rx.core.RxConfig;
 
-import java.math.BigInteger;
 import java.util.Arrays;
 
 public class XChaCha20Poly1305Util {
     private static final int KEY_LEN = ChaCha20Engine.KEY_SIZE_BYTES;
     private static final int NONCE_LEN = ChaCha20Engine.X_NONCE_SIZE_BYTES;
+    private static final int NONCE12_LEN = ChaCha20Engine.IETF_NONCE_SIZE_BYTES;
+    private static final int BLOCK_SIZE = ChaCha20Engine.BLOCK_SIZE_BYTES;
     private static final int TAG_LEN = 16;
-    private static final BigInteger P = BigInteger.ONE.shiftLeft(130).subtract(BigInteger.valueOf(5));
-    private static final BigInteger MASK_128 = BigInteger.ONE.shiftLeft(128).subtract(BigInteger.ONE);
+    private static final int POLY_LIMB_MASK = 0x3ffffff;
+
+    private static final FastThreadLocal<byte[]> NONCE_BUF = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() {
+            return new byte[NONCE_LEN];
+        }
+    };
+    private static final FastThreadLocal<byte[]> SUB_KEY_BUF = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() {
+            return new byte[KEY_LEN];
+        }
+    };
+    private static final FastThreadLocal<byte[]> NONCE12_BUF = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() {
+            return new byte[NONCE12_LEN];
+        }
+    };
+    private static final FastThreadLocal<Poly1305State> POLY_STATE = new FastThreadLocal<Poly1305State>() {
+        @Override
+        protected Poly1305State initialValue() {
+            return new Poly1305State();
+        }
+    };
 
     public static byte[] encrypt(byte[] key, byte[] plaintext) {
-        checkKey(key);
-        byte[] nonce = CodecUtil.secureRandomBytes(NONCE_LEN);
-        byte[] subKey = ChaCha20Engine.xChaCha20SubKey(key, nonce);
-        byte[] nonce12 = ChaCha20Engine.xChaCha20IetfNonce(nonce);
-        byte[] ciphertext = new byte[plaintext.length];
-        ChaCha20Engine.xor(subKey, nonce12, 1, plaintext, 0, plaintext.length, ciphertext, 0);
+        if (plaintext == null) {
+            throw new IllegalArgumentException("Plaintext is null");
+        }
+        ByteBuf in = Unpooled.wrappedBuffer(plaintext);
+        ByteBuf out = PooledByteBufAllocator.DEFAULT.heapBuffer(NONCE_LEN + plaintext.length + TAG_LEN);
+        try {
+            encrypt(key, in, out);
+            return readBytes(out);
+        } finally {
+            in.release();
+            out.release();
+        }
+    }
 
-        byte[] tag = doMac(subKey, nonce12, ciphertext);
-        byte[] output = new byte[NONCE_LEN + ciphertext.length + TAG_LEN];
-        System.arraycopy(nonce, 0, output, 0, NONCE_LEN);
-        System.arraycopy(ciphertext, 0, output, NONCE_LEN, ciphertext.length);
-        System.arraycopy(tag, 0, output, NONCE_LEN + ciphertext.length, TAG_LEN);
-        return output;
+    public static ByteBuf encrypt(byte[] key, ByteBuf plaintext, ByteBuf out) {
+        checkKey(key);
+        if (plaintext == null || out == null) {
+            throw new IllegalArgumentException("Input or output is null");
+        }
+        int length = plaintext.readableBytes();
+        out.ensureWritable(NONCE_LEN + length + TAG_LEN);
+        int outIndex = out.writerIndex();
+        byte[] nonce = NONCE_BUF.get();
+        byte[] subKey = SUB_KEY_BUF.get();
+        byte[] nonce12 = NONCE12_BUF.get();
+        ByteBuf firstBlock = pooledBuffer(BLOCK_SIZE);
+        ByteBuf lenBlock = pooledBuffer(TAG_LEN);
+        ByteBuf partialBlock = pooledBuffer(TAG_LEN);
+        try {
+            CodecUtil.threadLocalSecureRandom().nextBytes(nonce);
+            ChaCha20Engine.xChaCha20SubKey(key, nonce, subKey);
+            ChaCha20Engine.xChaCha20IetfNonce(nonce, nonce12);
+
+            out.writeBytes(nonce);
+            int cipherIndex = outIndex + NONCE_LEN;
+            ChaCha20Engine.xor(subKey, nonce12, 1, plaintext, plaintext.readerIndex(), length, out, cipherIndex);
+            writeTag(subKey, nonce12, out, cipherIndex, length, out, cipherIndex + length,
+                    firstBlock, lenBlock, partialBlock);
+            out.writerIndex(outIndex + NONCE_LEN + length + TAG_LEN);
+            return out;
+        } finally {
+            Arrays.fill(nonce, (byte) 0);
+            Arrays.fill(subKey, (byte) 0);
+            Arrays.fill(nonce12, (byte) 0);
+            release(firstBlock, lenBlock, partialBlock);
+        }
     }
 
     public static byte[] decrypt(byte[] key, byte[] input) {
+        if (input == null) {
+            throw new IllegalArgumentException("Input is null");
+        }
+        ByteBuf in = Unpooled.wrappedBuffer(input);
+        ByteBuf out = PooledByteBufAllocator.DEFAULT.heapBuffer(Math.max(0, input.length - NONCE_LEN - TAG_LEN));
+        try {
+            decrypt(key, in, out);
+            return readBytes(out);
+        } finally {
+            in.release();
+            out.release();
+        }
+    }
+
+    public static ByteBuf decrypt(byte[] key, ByteBuf input, ByteBuf out) {
         checkKey(key);
-        if (input == null || input.length < NONCE_LEN + TAG_LEN) {
+        if (input == null || out == null) {
+            throw new IllegalArgumentException("Input or output is null");
+        }
+        int length = input.readableBytes();
+        if (length < NONCE_LEN + TAG_LEN) {
             throw new IllegalArgumentException("Input too short");
         }
 
-        byte[] nonce = Arrays.copyOfRange(input, 0, NONCE_LEN);
-        byte[] subKey = ChaCha20Engine.xChaCha20SubKey(key, nonce);
-        byte[] nonce12 = ChaCha20Engine.xChaCha20IetfNonce(nonce);
-        int cipherLen = input.length - NONCE_LEN - TAG_LEN;
-        byte[] ciphertext = Arrays.copyOfRange(input, NONCE_LEN, NONCE_LEN + cipherLen);
-        byte[] tag = Arrays.copyOfRange(input, NONCE_LEN + cipherLen, input.length);
-        byte[] computedTag = doMac(subKey, nonce12, ciphertext);
-        if (!equalsConstantTime(tag, computedTag)) {
-            throw new SecurityException("Tag mismatch");
-        }
+        int inputIndex = input.readerIndex();
+        int cipherLen = length - NONCE_LEN - TAG_LEN;
+        int cipherIndex = inputIndex + NONCE_LEN;
+        int tagIndex = cipherIndex + cipherLen;
+        byte[] subKey = SUB_KEY_BUF.get();
+        byte[] nonce12 = NONCE12_BUF.get();
+        ByteBuf firstBlock = pooledBuffer(BLOCK_SIZE);
+        ByteBuf lenBlock = pooledBuffer(TAG_LEN);
+        ByteBuf partialBlock = pooledBuffer(TAG_LEN);
+        ByteBuf expectedTag = pooledBuffer(TAG_LEN);
+        try {
+            ChaCha20Engine.xChaCha20SubKey(key, input, inputIndex, subKey);
+            ChaCha20Engine.xChaCha20IetfNonce(input, inputIndex, nonce12);
+            verifyTag(subKey, nonce12, input, cipherIndex, cipherLen, tagIndex,
+                    firstBlock, lenBlock, partialBlock, expectedTag);
 
-        byte[] plaintext = new byte[cipherLen];
-        ChaCha20Engine.xor(subKey, nonce12, 1, ciphertext, 0, cipherLen, plaintext, 0);
-        return plaintext;
+            out.ensureWritable(cipherLen);
+            int outIndex = out.writerIndex();
+            ChaCha20Engine.xor(subKey, nonce12, 1, input, cipherIndex, cipherLen, out, outIndex);
+            out.writerIndex(outIndex + cipherLen);
+            return out;
+        } finally {
+            Arrays.fill(subKey, (byte) 0);
+            Arrays.fill(nonce12, (byte) 0);
+            release(firstBlock, lenBlock, partialBlock, expectedTag);
+        }
     }
 
     public static byte[] generateKey() {
@@ -56,13 +149,24 @@ public class XChaCha20Poly1305Util {
     }
 
     public static byte[] encrypt(byte[] plaintext) {
-        return encrypt(Linq.from(RxConfig.INSTANCE.getNet().getCiphers()).where(p -> p.startsWith("2,"))
-                .select(p -> CodecUtil.convertFromBase64(p.substring(2))).first(), plaintext);
+        return encrypt(defaultKey(), plaintext);
+    }
+
+    public static ByteBuf encrypt(ByteBuf plaintext, ByteBuf out) {
+        return encrypt(defaultKey(), plaintext, out);
     }
 
     public static byte[] decrypt(byte[] input) {
-        return decrypt(Linq.from(RxConfig.INSTANCE.getNet().getCiphers()).where(p -> p.startsWith("2,"))
-                .select(p -> CodecUtil.convertFromBase64(p.substring(2))).first(), input);
+        return decrypt(defaultKey(), input);
+    }
+
+    public static ByteBuf decrypt(ByteBuf input, ByteBuf out) {
+        return decrypt(defaultKey(), input, out);
+    }
+
+    private static byte[] defaultKey() {
+        return Linq.from(RxConfig.INSTANCE.getNet().getCiphers()).where(p -> p.startsWith("2,"))
+                .select(p -> CodecUtil.convertFromBase64(p.substring(2))).first();
     }
 
     private static void checkKey(byte[] key) {
@@ -71,84 +175,233 @@ public class XChaCha20Poly1305Util {
         }
     }
 
-    private static byte[] doMac(byte[] subKey, byte[] nonce12, byte[] ciphertext) {
-        byte[] firstBlock = new byte[ChaCha20Engine.BLOCK_SIZE_BYTES];
-        ChaCha20Engine.block(subKey, nonce12, 0, firstBlock);
-        byte[] macKey = Arrays.copyOf(firstBlock, 32);
-        byte[] macData = macData(ciphertext);
-        return poly1305(macKey, macData);
+    private static void writeTag(byte[] subKey, byte[] nonce12, ByteBuf ciphertext, int index, int length,
+                                 ByteBuf tagOut, int tagIndex, ByteBuf firstBlock, ByteBuf lenBlock,
+                                 ByteBuf partialBlock) {
+        scratch(firstBlock, BLOCK_SIZE);
+        ChaCha20Engine.block(subKey, nonce12, 0, firstBlock, 0);
+        poly1305(firstBlock, ciphertext, index, length, tagOut, tagIndex, lenBlock, partialBlock);
     }
 
-    private static byte[] macData(byte[] ciphertext) {
-        int paddedCipherLen = paddedLength(ciphertext.length);
-        byte[] data = new byte[paddedCipherLen + 16];
-        System.arraycopy(ciphertext, 0, data, 0, ciphertext.length);
-        writeLongLE(0, data, paddedCipherLen);
-        writeLongLE(ciphertext.length, data, paddedCipherLen + 8);
-        return data;
-    }
-
-    private static int paddedLength(int len) {
-        return (len + 15) & ~15;
-    }
-
-    private static byte[] poly1305(byte[] key, byte[] msg) {
-        byte[] rBytes = Arrays.copyOfRange(key, 0, 16);
-        rBytes[3] &= 15;
-        rBytes[7] &= 15;
-        rBytes[11] &= 15;
-        rBytes[15] &= 15;
-        rBytes[4] &= 252;
-        rBytes[8] &= 252;
-        rBytes[12] &= 252;
-
-        BigInteger r = littleEndian(rBytes, 0, 16);
-        BigInteger s = littleEndian(key, 16, 16);
-        BigInteger acc = BigInteger.ZERO;
-        for (int i = 0; i < msg.length; i += 16) {
-            int len = Math.min(16, msg.length - i);
-            byte[] block = new byte[len + 1];
-            System.arraycopy(msg, i, block, 0, len);
-            block[len] = 1;
-            acc = acc.add(littleEndian(block, 0, block.length)).multiply(r).mod(P);
+    private static void verifyTag(byte[] subKey, byte[] nonce12, ByteBuf input, int cipherIndex,
+                                  int cipherLen, int tagIndex, ByteBuf firstBlock, ByteBuf lenBlock,
+                                  ByteBuf partialBlock, ByteBuf expected) {
+        scratch(expected, TAG_LEN);
+        writeTag(subKey, nonce12, input, cipherIndex, cipherLen, expected, 0,
+                firstBlock, lenBlock, partialBlock);
+        int diff = 0;
+        for (int i = 0; i < TAG_LEN; i++) {
+            diff |= expected.getByte(i) ^ input.getByte(tagIndex + i);
         }
-        return toLittleEndian(acc.add(s).and(MASK_128), TAG_LEN);
-    }
-
-    private static BigInteger littleEndian(byte[] b, int off, int len) {
-        byte[] be = new byte[len + 1];
-        for (int i = 0; i < len; i++) {
-            be[len - i] = b[off + i];
+        if (diff != 0) {
+            throw new SecurityException("Tag mismatch");
         }
-        return new BigInteger(be);
     }
 
-    private static byte[] toLittleEndian(BigInteger value, int len) {
-        byte[] be = value.toByteArray();
-        byte[] out = new byte[len];
-        for (int i = 0; i < len; i++) {
-            int src = be.length - 1 - i;
-            if (src >= 0) {
-                out[i] = be[src];
+    private static void poly1305(ByteBuf key, ByteBuf ciphertext, int index, int length,
+                                 ByteBuf tagOut, int tagIndex, ByteBuf lenBlock, ByteBuf partialBlock) {
+        Poly1305State state = POLY_STATE.get();
+        state.init(key, 0);
+        state.updatePadded(ciphertext, index, length, partialBlock);
+
+        zeroScratch(lenBlock, TAG_LEN);
+        writeLongLE(0, lenBlock, 0);
+        writeLongLE(length, lenBlock, 8);
+        state.processBlock(lenBlock, 0, true);
+        state.finish(tagOut, tagIndex);
+    }
+
+    private static byte[] readBytes(ByteBuf buf) {
+        byte[] bytes = new byte[buf.readableBytes()];
+        buf.readBytes(bytes);
+        return bytes;
+    }
+
+    private static void writeLongLE(long value, ByteBuf out, int off) {
+        for (int i = 0; i < 8; i++) {
+            out.setByte(off + i, (int) (value >>> (i << 3)));
+        }
+    }
+
+    private static long le32(ByteBuf in, int off) {
+        return ((long) in.getByte(off) & 0xFF)
+                | (((long) in.getByte(off + 1) & 0xFF) << 8)
+                | (((long) in.getByte(off + 2) & 0xFF) << 16)
+                | (((long) in.getByte(off + 3) & 0xFF) << 24);
+    }
+
+    private static void writeIntLE(long value, ByteBuf out, int off) {
+        out.setByte(off, (int) value);
+        out.setByte(off + 1, (int) (value >>> 8));
+        out.setByte(off + 2, (int) (value >>> 16));
+        out.setByte(off + 3, (int) (value >>> 24));
+    }
+
+    private static ByteBuf pooledBuffer(int capacity) {
+        ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(capacity, capacity);
+        buf.writerIndex(capacity);
+        return buf;
+    }
+
+    private static ByteBuf scratch(ByteBuf buf, int length) {
+        buf.clear();
+        buf.writerIndex(length);
+        return buf;
+    }
+
+    private static ByteBuf zeroScratch(ByteBuf buf, int length) {
+        scratch(buf, length);
+        buf.setZero(0, length);
+        return buf;
+    }
+
+    private static void release(ByteBuf... buffers) {
+        for (ByteBuf buf : buffers) {
+            if (buf != null && buf.refCnt() > 0) {
+                buf.release();
             }
         }
-        return out;
     }
 
-    private static void writeLongLE(long value, byte[] out, int off) {
-        for (int i = 0; i < 8; i++) {
-            out[off + i] = (byte) (value >>> (i << 3));
-        }
-    }
+    private static final class Poly1305State {
+        private long r0, r1, r2, r3, r4;
+        private long s1, s2, s3, s4;
+        private long h0, h1, h2, h3, h4;
+        private long pad0, pad1, pad2, pad3;
 
-    private static boolean equalsConstantTime(byte[] a, byte[] b) {
-        if (a.length != b.length) {
-            return false;
+        void init(ByteBuf key, int index) {
+            long t0 = le32(key, index);
+            long t1 = le32(key, index + 4);
+            long t2 = le32(key, index + 8);
+            long t3 = le32(key, index + 12);
+
+            r0 = t0 & 0x3ffffffL;
+            r1 = ((t0 >>> 26) | (t1 << 6)) & 0x3ffff03L;
+            r2 = ((t1 >>> 20) | (t2 << 12)) & 0x3ffc0ffL;
+            r3 = ((t2 >>> 14) | (t3 << 18)) & 0x3f03fffL;
+            r4 = (t3 >>> 8) & 0x00fffffL;
+            s1 = r1 * 5L;
+            s2 = r2 * 5L;
+            s3 = r3 * 5L;
+            s4 = r4 * 5L;
+            h0 = h1 = h2 = h3 = h4 = 0L;
+            pad0 = le32(key, index + 16);
+            pad1 = le32(key, index + 20);
+            pad2 = le32(key, index + 24);
+            pad3 = le32(key, index + 28);
         }
-        int diff = 0;
-        for (int i = 0; i < a.length; i++) {
-            diff |= a[i] ^ b[i];
+
+        void updatePadded(ByteBuf in, int index, int length, ByteBuf partialBlock) {
+            if (length <= 0) {
+                return;
+            }
+            int remaining = length;
+            int src = index;
+            while (remaining >= TAG_LEN) {
+                processBlock(in, src, true);
+                src += TAG_LEN;
+                remaining -= TAG_LEN;
+            }
+            if (remaining > 0) {
+                ByteBuf block = zeroScratch(partialBlock, TAG_LEN);
+                in.getBytes(src, block, 0, remaining);
+                processBlock(block, 0, true);
+            }
         }
-        return diff == 0;
+
+        void processBlock(ByteBuf in, int index, boolean hibit) {
+            long t0 = le32(in, index);
+            long t1 = le32(in, index + 4);
+            long t2 = le32(in, index + 8);
+            long t3 = le32(in, index + 12);
+            process(t0, t1, t2, t3, hibit);
+        }
+
+        private void process(long t0, long t1, long t2, long t3, boolean hibit) {
+            h0 += t0 & 0x3ffffffL;
+            h1 += ((t0 >>> 26) | (t1 << 6)) & 0x3ffffffL;
+            h2 += ((t1 >>> 20) | (t2 << 12)) & 0x3ffffffL;
+            h3 += ((t2 >>> 14) | (t3 << 18)) & 0x3ffffffL;
+            h4 += (t3 >>> 8) | (hibit ? (1L << 24) : 0L);
+
+            long d0 = h0 * r0 + h1 * s4 + h2 * s3 + h3 * s2 + h4 * s1;
+            long d1 = h0 * r1 + h1 * r0 + h2 * s4 + h3 * s3 + h4 * s2;
+            long d2 = h0 * r2 + h1 * r1 + h2 * r0 + h3 * s4 + h4 * s3;
+            long d3 = h0 * r3 + h1 * r2 + h2 * r1 + h3 * r0 + h4 * s4;
+            long d4 = h0 * r4 + h1 * r3 + h2 * r2 + h3 * r1 + h4 * r0;
+
+            long c = d0 >>> 26;
+            h0 = d0 & POLY_LIMB_MASK;
+            d1 += c;
+            c = d1 >>> 26;
+            h1 = d1 & POLY_LIMB_MASK;
+            d2 += c;
+            c = d2 >>> 26;
+            h2 = d2 & POLY_LIMB_MASK;
+            d3 += c;
+            c = d3 >>> 26;
+            h3 = d3 & POLY_LIMB_MASK;
+            d4 += c;
+            c = d4 >>> 26;
+            h4 = d4 & POLY_LIMB_MASK;
+            h0 += c * 5L;
+            c = h0 >>> 26;
+            h0 &= POLY_LIMB_MASK;
+            h1 += c;
+        }
+
+        void finish(ByteBuf tag, int index) {
+            long c = h1 >>> 26;
+            h1 &= POLY_LIMB_MASK;
+            h2 += c;
+            c = h2 >>> 26;
+            h2 &= POLY_LIMB_MASK;
+            h3 += c;
+            c = h3 >>> 26;
+            h3 &= POLY_LIMB_MASK;
+            h4 += c;
+            c = h4 >>> 26;
+            h4 &= POLY_LIMB_MASK;
+            h0 += c * 5L;
+            c = h0 >>> 26;
+            h0 &= POLY_LIMB_MASK;
+            h1 += c;
+
+            long g0 = h0 + 5L;
+            c = g0 >>> 26;
+            g0 &= POLY_LIMB_MASK;
+            long g1 = h1 + c;
+            c = g1 >>> 26;
+            g1 &= POLY_LIMB_MASK;
+            long g2 = h2 + c;
+            c = g2 >>> 26;
+            g2 &= POLY_LIMB_MASK;
+            long g3 = h3 + c;
+            c = g3 >>> 26;
+            g3 &= POLY_LIMB_MASK;
+            long g4 = h4 + c - (1L << 26);
+
+            long mask = ~(g4 >> 63);
+            h0 = (h0 & ~mask) | (g0 & mask);
+            h1 = (h1 & ~mask) | (g1 & mask);
+            h2 = (h2 & ~mask) | (g2 & mask);
+            h3 = (h3 & ~mask) | (g3 & mask);
+            h4 = (h4 & ~mask) | (g4 & mask);
+
+            long f0 = (h0 | (h1 << 26)) & 0xffffffffL;
+            long f1 = ((h1 >>> 6) | (h2 << 20)) & 0xffffffffL;
+            long f2 = ((h2 >>> 12) | (h3 << 14)) & 0xffffffffL;
+            long f3 = ((h3 >>> 18) | (h4 << 8)) & 0xffffffffL;
+
+            f0 += pad0;
+            f1 += pad1 + (f0 >>> 32);
+            f2 += pad2 + (f1 >>> 32);
+            f3 += pad3 + (f2 >>> 32);
+
+            writeIntLE(f0, tag, index);
+            writeIntLE(f1, tag, index + 4);
+            writeIntLE(f2, tag, index + 8);
+            writeIntLE(f3, tag, index + 12);
+        }
     }
 }

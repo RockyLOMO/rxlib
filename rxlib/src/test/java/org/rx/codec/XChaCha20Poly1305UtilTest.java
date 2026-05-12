@@ -1,5 +1,7 @@
 package org.rx.codec;
 
+import io.netty.buffer.ByteBuf;
+import org.rx.io.Bytes;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -41,6 +43,34 @@ class XChaCha20Poly1305UtilTest {
 
         assertThrows(SecurityException.class, () -> XChaCha20Poly1305Util.decrypt(key, encrypted));
         assertThrows(IllegalArgumentException.class, () -> XChaCha20Poly1305Util.decrypt(key, new byte[39]));
+    }
+
+    @Test
+    void byteBufOverloads_writeIntoProvidedPooledBuffers() {
+        byte[] key = XChaCha20Poly1305Util.generateKey();
+        byte[] payload = payload(257);
+        ByteBuf input = Bytes.directBuffer(payload.length);
+        ByteBuf encrypted = Bytes.directBuffer(payload.length + 40);
+        ByteBuf decrypted = Bytes.directBuffer(payload.length);
+        try {
+            input.writeBytes(payload);
+            XChaCha20Poly1305Util.encrypt(key, input, encrypted);
+            assertEquals(24 + payload.length + 16, encrypted.readableBytes());
+            assertEquals(payload.length, input.readableBytes());
+
+            XChaCha20Poly1305Util.decrypt(key, encrypted, decrypted);
+            assertArrayEquals(payload, readBytes(decrypted));
+        } finally {
+            input.release();
+            encrypted.release();
+            decrypted.release();
+        }
+    }
+
+    private static byte[] readBytes(ByteBuf buf) {
+        byte[] bytes = new byte[buf.readableBytes()];
+        buf.readBytes(bytes);
+        return bytes;
     }
 
     private static byte[] payload(int len) {

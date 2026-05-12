@@ -58,6 +58,18 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
             return new byte[20];
         }
     };
+    private static final FastThreadLocal<byte[]> HKDF_PRK = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() {
+            return new byte[20];
+        }
+    };
+    private static final FastThreadLocal<byte[]> UDP_SUBKEY = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() {
+            return new byte[KEY_LENGTH];
+        }
+    };
     private static final FastThreadLocal<Cipher> UDP_ENC_CIPHER = new FastThreadLocal<Cipher>() {
         @Override
         protected Cipher initialValue() throws Exception {
@@ -165,9 +177,10 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
     private void encryptTcp(ByteBuf in, ByteBuf out) {
         try {
             if (encCipher == null) {
-                byte[] salt = CodecUtil.secureRandomBytes(SALT_LENGTH);
+                byte[] salt = randomSalt();
                 out.writeBytes(salt);
-                encSubkey = genSubkey(salt);
+                encSubkey = new byte[KEY_LENGTH];
+                genSubkey(salt, encSubkey);
                 encCipher = Cipher.getInstance(CIPHER_NAME);
             }
 
@@ -246,7 +259,8 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
             pending.clear();
             saltBytesRead = 0;
         }
-        decSubkey = genSubkey(salt);
+        decSubkey = new byte[KEY_LENGTH];
+        genSubkey(salt, decSubkey);
         decCipher = Cipher.getInstance(CIPHER_NAME);
         resetDecryptState();
         return true;
@@ -282,9 +296,10 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
 
     private void encryptUdp(ByteBuf in, ByteBuf out) {
         try {
-            byte[] salt = CodecUtil.secureRandomBytes(SALT_LENGTH);
+            byte[] salt = randomSalt();
             out.writeBytes(salt);
-            byte[] subkey = genSubkey(salt);
+            byte[] subkey = UDP_SUBKEY.get();
+            genSubkey(salt, subkey);
             Cipher cipher = UDP_ENC_CIPHER.get();
             initCipher(cipher, Cipher.ENCRYPT_MODE, subkey, ZERO_NONCE);
             int len = in.readableBytes();
@@ -303,7 +318,8 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
             }
             byte[] salt = SALT_BUF.get();
             in.readBytes(salt, 0, SALT_LENGTH);
-            byte[] subkey = genSubkey(salt);
+            byte[] subkey = UDP_SUBKEY.get();
+            genSubkey(salt, subkey);
             Cipher cipher = UDP_DEC_CIPHER.get();
             initCipher(cipher, Cipher.DECRYPT_MODE, subkey, ZERO_NONCE);
             int len = in.readableBytes();
@@ -369,11 +385,15 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
         cipher.init(mode, new SecretKeySpec(key, AES), new GCMParameterSpec(TAG_BITS, nonce));
     }
 
-    private byte[] genSubkey(byte[] salt) throws GeneralSecurityException {
+    private void genSubkey(byte[] salt, byte[] okm) throws GeneralSecurityException {
         Mac mac = HKDF_MAC.get();
-        byte[] prk = mac(HKDF_ALGORITHM, salt, ssKey.getEncoded(), mac);
-        byte[] okm = new byte[KEY_LENGTH];
+        byte[] prk = HKDF_PRK.get();
+        mac.init(new SecretKeySpec(salt, HKDF_ALGORITHM));
+        mac.update(ssKey.getEncoded());
+        mac.doFinal(prk, 0);
+
         byte[] block = HKDF_BLOCK.get();
+        Arrays.fill(okm, (byte) 0);
         int copied = 0;
         int counter = 1;
         int blockLen = 0;
@@ -391,12 +411,13 @@ public class Aes256GcmByteBufCrypto implements ICrypto, AutoCloseable {
             copied += copy;
         }
         Arrays.fill(prk, (byte) 0);
-        return okm;
+        Arrays.fill(block, (byte) 0);
     }
 
-    private byte[] mac(String algorithm, byte[] key, byte[] data, Mac mac) throws GeneralSecurityException {
-        mac.init(new SecretKeySpec(key, algorithm));
-        return mac.doFinal(data);
+    private byte[] randomSalt() {
+        byte[] salt = SALT_BUF.get();
+        CodecUtil.threadLocalSecureRandom().nextBytes(salt);
+        return salt;
     }
 
     private ByteBuf allocate(int initialCapacity) {

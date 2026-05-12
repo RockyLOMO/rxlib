@@ -1,7 +1,8 @@
 package org.rx.codec;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,12 @@ import java.security.SecureRandom;
 public class AESUtil {
     static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
     static final int KEY_SIZE = 128; //256
+    private static final FastThreadLocal<ByteBuffer> EMPTY_NIO = new FastThreadLocal<ByteBuffer>() {
+        @Override
+        protected ByteBuffer initialValue() {
+            return ByteBuffer.allocate(0);
+        }
+    };
     private static String lastDate;
     private static byte[] dateKey;
 
@@ -85,23 +92,44 @@ public class AESUtil {
     public static ByteBuf encrypt(@NonNull ByteBuf buf, byte[] key) {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
         cipher.init(Cipher.ENCRYPT_MODE, generateKey(key));
-        ByteBuffer in = buf.nioBuffer();
-        int outputSize = cipher.getOutputSize(in.remaining());
-        ByteBuffer out = ByteBuffer.allocateDirect(outputSize);
-        cipher.doFinal(in, out);
-        return Unpooled.wrappedBuffer((ByteBuffer) out.flip());
+        ByteBuf out = PooledByteBufAllocator.DEFAULT.directBuffer(cipher.getOutputSize(buf.readableBytes()));
+        try {
+            applyCipher(cipher, buf, out, false);
+            return out;
+        } catch (Throwable e) {
+            out.release();
+            throw e;
+        }
     }
 
     @SneakyThrows
     public static ByteBuf decrypt(@NonNull ByteBuf buf, byte[] key) {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, generateKey(key));
-        ByteBuffer in = buf.nioBuffer();
-        int outputSize = cipher.getOutputSize(in.remaining());
-        ByteBuffer out = ByteBuffer.allocateDirect(outputSize);
-        cipher.doFinal(in, out);
-        buf.skipBytes(buf.readableBytes());
-        return Unpooled.wrappedBuffer((ByteBuffer) out.flip());
+        ByteBuf out = PooledByteBufAllocator.DEFAULT.directBuffer(cipher.getOutputSize(buf.readableBytes()));
+        try {
+            applyCipher(cipher, buf, out, true);
+            return out;
+        } catch (Throwable e) {
+            out.release();
+            throw e;
+        }
+    }
+
+    @SneakyThrows
+    public static ByteBuf encrypt(@NonNull ByteBuf buf, byte[] key, @NonNull ByteBuf out) {
+        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
+        cipher.init(Cipher.ENCRYPT_MODE, generateKey(key));
+        applyCipher(cipher, buf, out, false);
+        return out;
+    }
+
+    @SneakyThrows
+    public static ByteBuf decrypt(@NonNull ByteBuf buf, byte[] key, @NonNull ByteBuf out) {
+        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
+        cipher.init(Cipher.DECRYPT_MODE, generateKey(key));
+        applyCipher(cipher, buf, out, true);
+        return out;
     }
 
     @SneakyThrows
@@ -116,5 +144,35 @@ public class AESUtil {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, generateKey(key));
         return cipher.doFinal(data);
+    }
+
+    private static void applyCipher(Cipher cipher, ByteBuf in, ByteBuf out, boolean consume) throws Exception {
+        int length = in.readableBytes();
+        out.ensureWritable(cipher.getOutputSize(length));
+        int writerIndex = out.writerIndex();
+        ByteBuffer output = out.nioBuffer(writerIndex, out.writableBytes());
+        int start = output.position();
+        if (length == 0) {
+            ByteBuffer empty = EMPTY_NIO.get();
+            empty.clear();
+            cipher.doFinal(empty, output);
+        } else if (in.nioBufferCount() == 1) {
+            cipher.doFinal(in.nioBuffer(in.readerIndex(), length), output);
+        } else {
+            ByteBuffer[] buffers = in.nioBuffers(in.readerIndex(), length);
+            for (ByteBuffer buffer : buffers) {
+                if (!buffer.hasRemaining()) {
+                    continue;
+                }
+                cipher.update(buffer, output);
+            }
+            ByteBuffer empty = EMPTY_NIO.get();
+            empty.clear();
+            cipher.doFinal(empty, output);
+        }
+        out.writerIndex(writerIndex + output.position() - start);
+        if (consume) {
+            in.skipBytes(length);
+        }
     }
 }
