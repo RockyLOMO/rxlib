@@ -7,6 +7,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.DecoderException;
 import org.junit.jupiter.api.Test;
 import org.rx.codec.CodecUtil;
+import org.rx.net.socks.encryption.impl.Aes128GcmByteBufCrypto;
 import org.rx.net.socks.encryption.impl.Aes256GcmByteBufCrypto;
 
 import javax.crypto.Cipher;
@@ -79,10 +80,13 @@ class Aes256GcmByteBufCryptoTest {
     void tcpDecrypt_supportsSaltSplitAcrossReads() {
         ICrypto aesEnc = ICrypto.get(CipherKind.AES_256_GCM.getCipherName(), "pwd");
         ICrypto aesDec = ICrypto.get(CipherKind.AES_256_GCM.getCipherName(), "pwd");
+        ICrypto aes128Enc = ICrypto.get(CipherKind.AES_128_GCM.getCipherName(), "pwd");
+        ICrypto aes128Dec = ICrypto.get(CipherKind.AES_128_GCM.getCipherName(), "pwd");
         ICrypto chachaEnc = ICrypto.get(CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "pwd");
         ICrypto chachaDec = ICrypto.get(CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "pwd");
-        assertTcpDecryptSupportsSaltSplit(aesEnc, aesDec, "aes-split-salt");
-        assertTcpDecryptSupportsSaltSplit(chachaEnc, chachaDec, "chacha-split-salt");
+        assertTcpDecryptSupportsSaltSplit(aesEnc, aesDec, "aes-split-salt", 32);
+        assertTcpDecryptSupportsSaltSplit(aes128Enc, aes128Dec, "aes128-split-salt", 16);
+        assertTcpDecryptSupportsSaltSplit(chachaEnc, chachaDec, "chacha-split-salt", 32);
     }
 
     @Test
@@ -90,13 +94,30 @@ class Aes256GcmByteBufCryptoTest {
         String password = "deterministic-password";
         byte[] salt = payload(32);
         byte[] plaintext = "shadowsocks-aead-vector".getBytes(StandardCharsets.UTF_8);
-        byte[] packet = aes256GcmTcpPacketByJce(password, salt, plaintext);
+        byte[] packet = aesGcmTcpPacketByJce(password, salt, plaintext, 32);
         assertEquals("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
                         + "eea01a1e33e4a2b10c843ee295810b2baf4c48f9629bf3bff90e1f17c19e2b"
                         + "0348028199d1515e85536d4d865f6f076f89968ec8e07c7908be",
                 CodecUtil.toHex(packet));
 
         ICrypto dec = ICrypto.get(CipherKind.AES_256_GCM.getCipherName(), password);
+        ByteBuf out = null;
+        try {
+            out = dec.decrypt(Unpooled.wrappedBuffer(packet));
+            assertArrayEquals(plaintext, readBytes(out));
+        } finally {
+            release(out);
+            close(dec);
+        }
+    }
+
+    @Test
+    void aes128GcmTcp_decryptsDeterministicJceVector() throws Exception {
+        String password = "deterministic-password";
+        byte[] salt = payload(16);
+        byte[] plaintext = "shadowsocks-aead-vector".getBytes(StandardCharsets.UTF_8);
+        byte[] packet = aesGcmTcpPacketByJce(password, salt, plaintext, 16);
+        ICrypto dec = ICrypto.get(CipherKind.AES_128_GCM.getCipherName(), password);
         ByteBuf out = null;
         try {
             out = dec.decrypt(Unpooled.wrappedBuffer(packet));
@@ -168,6 +189,34 @@ class Aes256GcmByteBufCryptoTest {
     }
 
     @Test
+    void aes128Gcm_tcpAndUdpRoundTrip() {
+        Aes128GcmByteBufCrypto tcpEnc = new Aes128GcmByteBufCrypto(CipherKind.AES_128_GCM.getCipherName(), "pwd");
+        Aes128GcmByteBufCrypto tcpDec = new Aes128GcmByteBufCrypto(CipherKind.AES_128_GCM.getCipherName(), "pwd");
+        ICrypto udpEnc = ICrypto.get(CipherKind.AES_128_GCM.getCipherName(), "pwd", true);
+        ICrypto udpDec = ICrypto.get(CipherKind.AES_128_GCM.getCipherName(), "pwd", true);
+        tcpEnc.setForUdp(false);
+        tcpDec.setForUdp(false);
+        ByteBuf tcpInput = Unpooled.copiedBuffer("aes128-tcp", StandardCharsets.UTF_8);
+        ByteBuf udpInput = Unpooled.copiedBuffer("aes128-udp", StandardCharsets.UTF_8);
+        ByteBuf tcpEncrypted = null;
+        ByteBuf tcpDecrypted = null;
+        ByteBuf udpEncrypted = null;
+        ByteBuf udpDecrypted = null;
+        try {
+            tcpEncrypted = tcpEnc.encrypt(tcpInput);
+            tcpDecrypted = tcpDec.decrypt(tcpEncrypted);
+            assertEquals("aes128-tcp", tcpDecrypted.toString(StandardCharsets.UTF_8));
+
+            udpEncrypted = udpEnc.encrypt(udpInput);
+            udpDecrypted = udpDec.decrypt(udpEncrypted);
+            assertEquals("aes128-udp", udpDecrypted.toString(StandardCharsets.UTF_8));
+        } finally {
+            release(tcpInput, tcpEncrypted, tcpDecrypted, udpInput, udpEncrypted, udpDecrypted);
+            close(tcpEnc, tcpDec, udpEnc, udpDec);
+        }
+    }
+
+    @Test
     void decrypt_rejectsTamperedUdpPacket() {
         ICrypto enc = ICrypto.get(CipherKind.AES_256_GCM.getCipherName(), "pwd", true);
         ICrypto dec = ICrypto.get(CipherKind.AES_256_GCM.getCipherName(), "pwd", true);
@@ -186,7 +235,6 @@ class Aes256GcmByteBufCryptoTest {
 
     @Test
     void cipherKind_rejectsRemovedCiphers() {
-        assertThrows(IllegalArgumentException.class, () -> ICrypto.get("aes-128-gcm", "pwd"));
         assertThrows(IllegalArgumentException.class, () -> ICrypto.get("aes-192-gcm", "pwd"));
     }
 
@@ -230,7 +278,7 @@ class Aes256GcmByteBufCryptoTest {
         return bytes;
     }
 
-    private static void assertTcpDecryptSupportsSaltSplit(ICrypto enc, ICrypto dec, String message) {
+    private static void assertTcpDecryptSupportsSaltSplit(ICrypto enc, ICrypto dec, String message, int saltLength) {
         ByteBuf input = Unpooled.copiedBuffer(message, StandardCharsets.UTF_8);
         ByteBuf encrypted = null;
         ByteBuf part1 = null;
@@ -242,8 +290,8 @@ class Aes256GcmByteBufCryptoTest {
         try {
             encrypted = enc.encrypt(input);
             part1 = encrypted.retainedSlice(0, 7);
-            part2 = encrypted.retainedSlice(7, 25);
-            part3 = encrypted.retainedSlice(32, encrypted.readableBytes() - 32);
+            part2 = encrypted.retainedSlice(7, saltLength - 7);
+            part3 = encrypted.retainedSlice(saltLength, encrypted.readableBytes() - saltLength);
 
             out1 = dec.decrypt(part1);
             assertFalse(out1.isReadable());
@@ -257,8 +305,8 @@ class Aes256GcmByteBufCryptoTest {
         }
     }
 
-    private static byte[] aes256GcmTcpPacketByJce(String password, byte[] salt, byte[] plaintext) throws Exception {
-        byte[] subkey = hkdfSha1(evpBytesToKey(password, 32), salt, 32);
+    private static byte[] aesGcmTcpPacketByJce(String password, byte[] salt, byte[] plaintext, int keyLength) throws Exception {
+        byte[] subkey = hkdfSha1(evpBytesToKey(password, keyLength), salt, keyLength);
         byte[] nonce = new byte[12];
         byte[] len = new byte[]{(byte) (plaintext.length >>> 8), (byte) plaintext.length};
         byte[] lenChunk = aesGcm(subkey, nonce, len);
@@ -306,7 +354,7 @@ class Aes256GcmByteBufCryptoTest {
     private static byte[] evpBytesToKey(String password, int length) throws Exception {
         MessageDigest md5 = MessageDigest.getInstance("MD5");
         byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_8);
-        byte[] keys = new byte[32];
+        byte[] keys = new byte[length];
         byte[] previous = new byte[0];
         int offset = 0;
         while (offset < keys.length) {

@@ -8,24 +8,50 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.core.Strings;
+import org.rx.io.Bytes;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
-import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
+import java.security.MessageDigest;
+import java.util.Arrays;
 
 //symmetrical encryption
 @Slf4j
 public class AESUtil {
-    static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
-    static final int KEY_SIZE = 128; //256
-    private static final FastThreadLocal<ByteBuffer> EMPTY_NIO = new FastThreadLocal<ByteBuffer>() {
+    static final String AES_ALGORITHM = "AES/GCM/NoPadding";
+    static final int KEY_SIZE = 128;
+    private static final String AES = "AES";
+    private static final int KEY_LENGTH = KEY_SIZE / 8;
+    private static final int NONCE_LENGTH = 12;
+    private static final int TAG_LENGTH = 16;
+    private static final int TAG_BITS = TAG_LENGTH * 8;
+    private static final FastThreadLocal<Cipher> ENC_CIPHER = new FastThreadLocal<Cipher>() {
         @Override
-        protected ByteBuffer initialValue() {
-            return ByteBuffer.allocate(0);
+        protected Cipher initialValue() throws Exception {
+            return Cipher.getInstance(AES_ALGORITHM);
+        }
+    };
+    private static final FastThreadLocal<Cipher> DEC_CIPHER = new FastThreadLocal<Cipher>() {
+        @Override
+        protected Cipher initialValue() throws Exception {
+            return Cipher.getInstance(AES_ALGORITHM);
+        }
+    };
+    private static final FastThreadLocal<MessageDigest> KEY_DIGEST = new FastThreadLocal<MessageDigest>() {
+        @Override
+        protected MessageDigest initialValue() throws Exception {
+            return MessageDigest.getInstance("SHA-256");
+        }
+    };
+    private static final FastThreadLocal<byte[]> NONCE_BUF = new FastThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() {
+            return new byte[NONCE_LENGTH];
         }
     };
     private static String lastDate;
@@ -81,20 +107,29 @@ public class AESUtil {
 
     @SneakyThrows
     public static SecretKey generateKey(byte[] seed) {
-        SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
-        random.setSeed(seed);
-        KeyGenerator keygen = KeyGenerator.getInstance("AES");
-        keygen.init(KEY_SIZE, random);
-        return keygen.generateKey();
+        MessageDigest digest = KEY_DIGEST.get();
+        digest.reset();
+        byte[] hash = digest.digest(seed);
+        try {
+            return new SecretKeySpec(hash, 0, KEY_LENGTH, AES);
+        } finally {
+            Arrays.fill(hash, (byte) 0);
+        }
+    }
+
+    public static byte[] generateKey(@NonNull String seed) {
+        return generateKey(seed.getBytes(StandardCharsets.UTF_8)).getEncoded();
     }
 
     @SneakyThrows
     public static ByteBuf encrypt(@NonNull ByteBuf buf, byte[] key) {
-        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
-        cipher.init(Cipher.ENCRYPT_MODE, generateKey(key));
-        ByteBuf out = PooledByteBufAllocator.DEFAULT.directBuffer(cipher.getOutputSize(buf.readableBytes()));
+        Cipher cipher = ENC_CIPHER.get();
+        byte[] nonce = randomNonce();
+        initCipher(cipher, Cipher.ENCRYPT_MODE, key, nonce);
+        ByteBuf out = PooledByteBufAllocator.DEFAULT.directBuffer(NONCE_LENGTH + cipher.getOutputSize(buf.readableBytes()));
         try {
-            applyCipher(cipher, buf, out, false);
+            out.writeBytes(nonce, 0, NONCE_LENGTH);
+            applyCipher(cipher, buf, buf.readerIndex(), buf.readableBytes(), out);
             return out;
         } catch (Throwable e) {
             out.release();
@@ -104,11 +139,17 @@ public class AESUtil {
 
     @SneakyThrows
     public static ByteBuf decrypt(@NonNull ByteBuf buf, byte[] key) {
-        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
-        cipher.init(Cipher.DECRYPT_MODE, generateKey(key));
-        ByteBuf out = PooledByteBufAllocator.DEFAULT.directBuffer(cipher.getOutputSize(buf.readableBytes()));
+        int readable = buf.readableBytes();
+        checkInputLength(readable);
+        Cipher cipher = DEC_CIPHER.get();
+        byte[] nonce = NONCE_BUF.get();
+        int readerIndex = buf.readerIndex();
+        buf.getBytes(readerIndex, nonce, 0, NONCE_LENGTH);
+        initCipher(cipher, Cipher.DECRYPT_MODE, key, nonce);
+        ByteBuf out = PooledByteBufAllocator.DEFAULT.directBuffer(Math.max(0, cipher.getOutputSize(readable - NONCE_LENGTH)));
         try {
-            applyCipher(cipher, buf, out, true);
+            applyCipher(cipher, buf, readerIndex + NONCE_LENGTH, readable - NONCE_LENGTH, out);
+            buf.skipBytes(readable);
             return out;
         } catch (Throwable e) {
             out.release();
@@ -118,61 +159,93 @@ public class AESUtil {
 
     @SneakyThrows
     public static ByteBuf encrypt(@NonNull ByteBuf buf, byte[] key, @NonNull ByteBuf out) {
-        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
-        cipher.init(Cipher.ENCRYPT_MODE, generateKey(key));
-        applyCipher(cipher, buf, out, false);
+        Cipher cipher = ENC_CIPHER.get();
+        byte[] nonce = randomNonce();
+        initCipher(cipher, Cipher.ENCRYPT_MODE, key, nonce);
+        out.ensureWritable(NONCE_LENGTH + cipher.getOutputSize(buf.readableBytes()));
+        out.writeBytes(nonce, 0, NONCE_LENGTH);
+        applyCipher(cipher, buf, buf.readerIndex(), buf.readableBytes(), out);
         return out;
     }
 
     @SneakyThrows
     public static ByteBuf decrypt(@NonNull ByteBuf buf, byte[] key, @NonNull ByteBuf out) {
-        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
-        cipher.init(Cipher.DECRYPT_MODE, generateKey(key));
-        applyCipher(cipher, buf, out, true);
+        int readable = buf.readableBytes();
+        checkInputLength(readable);
+        Cipher cipher = DEC_CIPHER.get();
+        byte[] nonce = NONCE_BUF.get();
+        int readerIndex = buf.readerIndex();
+        buf.getBytes(readerIndex, nonce, 0, NONCE_LENGTH);
+        initCipher(cipher, Cipher.DECRYPT_MODE, key, nonce);
+        applyCipher(cipher, buf, readerIndex + NONCE_LENGTH, readable - NONCE_LENGTH, out);
+        buf.skipBytes(readable);
         return out;
     }
 
     @SneakyThrows
     public static byte[] encrypt(byte[] data, byte[] key) {
-        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
-        cipher.init(Cipher.ENCRYPT_MODE, generateKey(key));
-        return cipher.doFinal(data);
+        Cipher cipher = ENC_CIPHER.get();
+        byte[] nonce = randomNonce();
+        initCipher(cipher, Cipher.ENCRYPT_MODE, key, nonce);
+        byte[] out = new byte[NONCE_LENGTH + cipher.getOutputSize(data.length)];
+        System.arraycopy(nonce, 0, out, 0, NONCE_LENGTH);
+        int written = cipher.doFinal(data, 0, data.length, out, NONCE_LENGTH);
+        return trim(out, NONCE_LENGTH + written);
     }
 
     @SneakyThrows
     public static byte[] decrypt(byte[] data, byte[] key) {
-        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
-        cipher.init(Cipher.DECRYPT_MODE, generateKey(key));
-        return cipher.doFinal(data);
+        checkInputLength(data.length);
+        Cipher cipher = DEC_CIPHER.get();
+        initCipher(cipher, Cipher.DECRYPT_MODE, key, data, 0);
+        byte[] out = new byte[Math.max(0, cipher.getOutputSize(data.length - NONCE_LENGTH))];
+        int written = cipher.doFinal(data, NONCE_LENGTH, data.length - NONCE_LENGTH, out, 0);
+        return trim(out, written);
     }
 
-    private static void applyCipher(Cipher cipher, ByteBuf in, ByteBuf out, boolean consume) throws Exception {
-        int length = in.readableBytes();
+    private static void initCipher(Cipher cipher, int mode, byte[] key, byte[] nonce) throws Exception {
+        cipher.init(mode, generateKey(key), new GCMParameterSpec(TAG_BITS, nonce));
+    }
+
+    private static void initCipher(Cipher cipher, int mode, byte[] key, byte[] nonce, int nonceOffset) throws Exception {
+        cipher.init(mode, generateKey(key), new GCMParameterSpec(TAG_BITS, nonce, nonceOffset, NONCE_LENGTH));
+    }
+
+    private static byte[] randomNonce() {
+        byte[] nonce = NONCE_BUF.get();
+        CodecUtil.threadLocalSecureRandom().nextBytes(nonce);
+        return nonce;
+    }
+
+    private static void checkInputLength(int length) {
+        if (length < NONCE_LENGTH + TAG_LENGTH) {
+            throw new IllegalArgumentException("AES-GCM input too short");
+        }
+    }
+
+    private static byte[] trim(byte[] out, int length) {
+        return length == out.length ? out : Arrays.copyOf(out, length);
+    }
+
+    private static void applyCipher(Cipher cipher, ByteBuf in, int index, int length, ByteBuf out) throws Exception {
         out.ensureWritable(cipher.getOutputSize(length));
         int writerIndex = out.writerIndex();
         ByteBuffer output = out.nioBuffer(writerIndex, out.writableBytes());
         int start = output.position();
         if (length == 0) {
-            ByteBuffer empty = EMPTY_NIO.get();
-            empty.clear();
-            cipher.doFinal(empty, output);
+            cipher.doFinal(Bytes.EMPTY_NIO, output);
         } else if (in.nioBufferCount() == 1) {
-            cipher.doFinal(in.nioBuffer(in.readerIndex(), length), output);
+            cipher.doFinal(in.nioBuffer(index, length), output);
         } else {
-            ByteBuffer[] buffers = in.nioBuffers(in.readerIndex(), length);
+            ByteBuffer[] buffers = in.nioBuffers(index, length);
             for (ByteBuffer buffer : buffers) {
                 if (!buffer.hasRemaining()) {
                     continue;
                 }
                 cipher.update(buffer, output);
             }
-            ByteBuffer empty = EMPTY_NIO.get();
-            empty.clear();
-            cipher.doFinal(empty, output);
+            cipher.doFinal(Bytes.EMPTY_NIO, output);
         }
         out.writerIndex(writerIndex + output.position() - start);
-        if (consume) {
-            in.skipBytes(length);
-        }
     }
 }

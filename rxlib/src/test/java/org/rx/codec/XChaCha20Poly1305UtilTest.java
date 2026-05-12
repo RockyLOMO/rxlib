@@ -10,6 +10,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class XChaCha20Poly1305UtilTest {
     @Test
+    void generateKeyFromString_returnsXChaCha20KeyBytes() {
+        byte[] key = XChaCha20Poly1305Util.generateKey("string-key");
+        assertEquals(32, key.length);
+        assertArrayEquals(key, XChaCha20Poly1305Util.generateKey("string-key"));
+        assertArrayEquals("payload".getBytes(StandardCharsets.UTF_8),
+                XChaCha20Poly1305Util.decrypt(key,
+                        XChaCha20Poly1305Util.encrypt(key, "payload".getBytes(StandardCharsets.UTF_8))));
+    }
+
+    @Test
     void decrypt_acceptsPyCryptodomeVector() {
         byte[] key = CodecUtil.fromHex("000102030405060708090a0b0c0d0e0f"
                 + "101112131415161718191a1b1c1d1e1f");

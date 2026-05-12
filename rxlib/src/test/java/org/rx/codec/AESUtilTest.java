@@ -8,9 +8,19 @@ import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AESUtilTest {
+    @Test
+    void generateKeyFromString_returnsAes128KeyBytes() {
+        byte[] key = AESUtil.generateKey("string-key");
+        assertEquals(16, key.length);
+        assertArrayEquals(key, AESUtil.generateKey("string-key"));
+        assertArrayEquals("payload".getBytes(StandardCharsets.UTF_8),
+                AESUtil.decrypt(AESUtil.encrypt("payload".getBytes(StandardCharsets.UTF_8), key), key));
+    }
+
     @Test
     void byteBufOverloads_writeIntoProvidedPooledBuffers() {
         byte[] key = "pooled-aes-key".getBytes(StandardCharsets.UTF_8);
@@ -22,6 +32,7 @@ class AESUtilTest {
             input.writeBytes(payload);
             AESUtil.encrypt(input, key, encrypted);
             assertTrue(encrypted.isDirect());
+            assertEquals(12 + payload.length + 16, encrypted.readableBytes());
             assertEquals(payload.length, input.readableBytes());
 
             AESUtil.decrypt(encrypted, key, decrypted);
@@ -31,6 +42,26 @@ class AESUtilTest {
             input.release();
             encrypted.release();
             decrypted.release();
+        }
+    }
+
+    @Test
+    void decrypt_rejectsTamperedCiphertext() {
+        byte[] key = "pooled-aes-key".getBytes(StandardCharsets.UTF_8);
+        byte[] payload = "auth payload".getBytes(StandardCharsets.UTF_8);
+        ByteBuf input = Bytes.directBuffer(payload.length);
+        ByteBuf encrypted = null;
+        try {
+            input.writeBytes(payload);
+            encrypted = AESUtil.encrypt(input, key);
+            encrypted.setByte(encrypted.writerIndex() - 1, encrypted.getByte(encrypted.writerIndex() - 1) ^ 1);
+            ByteBuf packet = encrypted;
+            assertThrows(Exception.class, () -> AESUtil.decrypt(packet, key));
+        } finally {
+            input.release();
+            if (encrypted != null) {
+                encrypted.release();
+            }
         }
     }
 
