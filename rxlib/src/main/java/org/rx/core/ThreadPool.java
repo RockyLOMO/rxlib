@@ -451,6 +451,7 @@ public class ThreadPool extends ThreadPoolExecutor {
         volatile boolean skipExecution;
         volatile boolean singleLockAcquired;
         volatile boolean threadLocalMapSet;
+        volatile boolean threadTraceStarted;
         volatile InternalThreadLocalMap oldThreadLocalMap;
 
         private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
@@ -616,6 +617,25 @@ public class ThreadPool extends ThreadPoolExecutor {
         return startTrace(traceId, false);
     }
 
+    private static String newTraceId() {
+        String tid = null;
+        if (traceIdGenerator != null) {
+            try {
+                tid = traceIdGenerator.invoke();
+            } catch (Throwable e) {
+                log.error("startTrace", e);
+            }
+        }
+        if (tid == null) {
+            tid = ULID.randomULID().toBase64String();
+        }
+        return tid;
+    }
+
+    private static boolean traceDepthExceeded(LinkedList<Object> queue) {
+        return queue.size() > RxConfig.INSTANCE.threadPool.maxTraceDepth;
+    }
+
     @SneakyThrows
     public static String startTrace(String traceId, boolean requiresNew) {
         LinkedList<Object> queue = CTX_TRACE_ID.get();
@@ -628,16 +648,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (traceId != null) {
                 tid = traceId;
             } else {
-                if (traceIdGenerator != null) {
-                    try {
-                        tid = traceIdGenerator.invoke();
-                    } catch (Throwable e) {
-                        log.error("startTrace", e);
-                    }
-                }
-                if (tid == null) {
-                    tid = ULID.randomULID().toBase64String();
-                }
+                tid = newTraceId();
             }
             queue.addFirst(tid);
             f = 1;
@@ -647,7 +658,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     log.warn("RTrace - The traceId already mapped to {} and can not set to {}", peek, traceId);
                 } else {
                     log.info("RTrace - Trace requires new to {} with parent {}", traceId, peek);
-                    if (queue.size() > RxConfig.INSTANCE.threadPool.maxTraceDepth) {
+                    if (traceDepthExceeded(queue)) {
                         log.warn("RTrace - Discard traceId {}", traceId);
                     } else {
                         queue.addFirst(tid = traceId);
@@ -655,7 +666,7 @@ public class ThreadPool extends ThreadPoolExecutor {
                     f = 3;
                 }
             } else {
-                if (queue.size() > RxConfig.INSTANCE.threadPool.maxTraceDepth) {
+                if (traceDepthExceeded(queue)) {
                     log.warn("RTrace - Discard traceId {}", peek);
                 } else {
                     queue.poll();
@@ -684,6 +695,66 @@ public class ThreadPool extends ThreadPoolExecutor {
             }
         }
         return tid;
+    }
+
+    @SneakyThrows
+    static boolean startTaskTrace(String traceId) {
+        LinkedList<Object> queue = CTX_TRACE_ID.get();
+        Object peek = queue.peek();
+        Tuple<String, Integer> nestTid = null;
+        String current = peek instanceof Tuple ? (nestTid = (Tuple<String, Integer>) peek).left : (String) peek;
+        String tid = traceId;
+        byte f;
+
+        if (current == null) {
+            if (tid == null) {
+                tid = newTraceId();
+            }
+            queue.addFirst(tid);
+            f = 1;
+        } else if (tid != null && tid.equals(current)) {
+            if (traceDepthExceeded(queue)) {
+                log.warn("RTrace - Discard traceId {}", peek);
+                onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, current);
+                return false;
+            }
+            queue.poll();
+            if (nestTid == null) {
+                nestTid = Tuple.of(current, 1);
+            }
+            nestTid.right++;
+            queue.addFirst(nestTid);
+            tid = current;
+            f = 2;
+        } else {
+            if (tid == null) {
+                tid = newTraceId();
+            }
+            log.info("RTrace - Trace requires new to {} with parent {}", tid, peek);
+            if (traceDepthExceeded(queue)) {
+                log.warn("RTrace - Discard traceId {}", tid);
+                onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, current);
+                return false;
+            }
+            queue.addFirst(tid);
+            f = 3;
+        }
+
+        onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, tid);
+        if (log.isDebugEnabled()) {
+            switch (f) {
+                case 1:
+                    log.debug("RTrace - start new {}", queue);
+                    break;
+                case 2:
+                    log.debug("RTrace - start nest {}", queue);
+                    break;
+                case 3:
+                    log.debug("RTrace - start requires new {}", queue);
+                    break;
+            }
+        }
+        return true;
     }
 
     public static String traceId() {
@@ -1112,7 +1183,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             setThreadLocalMap(t, copyThreadLocalMap(task.parent));
         }
         if (flags.has(RunFlag.THREAD_TRACE)) {
-            startTrace(task.traceId);
+            task.threadTraceStarted = startTaskTrace(task.traceId);
         }
     }
 
@@ -1159,8 +1230,9 @@ public class ThreadPool extends ThreadPoolExecutor {
             task.oldThreadLocalMap = null;
             task.threadLocalMapSet = false;
         }
-        if (flags.has(RunFlag.THREAD_TRACE)) {
+        if (task.threadTraceStarted) {
             endTrace();
+            task.threadTraceStarted = false;
         }
     }
 

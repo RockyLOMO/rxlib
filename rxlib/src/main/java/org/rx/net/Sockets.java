@@ -26,6 +26,7 @@ import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.netty.resolver.AddressResolverGroup;
 import io.netty.resolver.DefaultAddressResolverGroup;
 import io.netty.resolver.ResolvedAddressTypes;
@@ -38,10 +39,6 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.GeneralName;
-import org.bouncycastle.asn1.x509.GeneralNamesBuilder;
-import org.bouncycastle.x509.X509V3CertificateGenerator;
 import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.$;
 import org.rx.bean.FlagsEnum;
@@ -62,20 +59,14 @@ import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 
 import javax.net.ssl.KeyManagerFactory;
-import javax.security.auth.x500.X500Principal;
 import java.io.File;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.math.BigInteger;
 import java.net.*;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.security.KeyStore;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -112,6 +103,7 @@ public final class Sockets {
     public interface ReactorNames {
         String SHARED_TCP = "_TCP";
         String SHARED_UDP = "_UDP";
+        String SHARED_LOCAL = "_LOCAL";
         String RPC = "RPC";
     }
 
@@ -241,6 +233,7 @@ public final class Sockets {
     static final String M_1 = "lookupByName";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
+    static final Map<String, EventLoopGroup> localReactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
     /** 共享 TCP Bootstrap 解析器：走直连 DNS Client。 */
@@ -511,6 +504,14 @@ public final class Sockets {
         });
     }
 
+    public static EventLoopGroup localReactor(String reactorName) {
+        String rn = reactorName == null ? ReactorNames.SHARED_LOCAL : reactorName;
+        return localReactors.computeIfAbsent(rn, k -> {
+            int amount = RxConfig.INSTANCE.getNet().getReactorThreadAmount();
+            return new DefaultEventLoopGroup(amount <= 0 ? 1 : amount);
+        });
+    }
+
     public static ThreadPool newRpcScheduler() {
         int threads = Math.max(4, Constants.CPU_THREADS * 2);
         int queueCapacity = Math.max(1024, Constants.CPU_THREADS * 256);
@@ -692,11 +693,11 @@ public final class Sockets {
 
         ServerBootstrapConfig config = bootstrap.config();
         EventLoopGroup group = config.group();
-        if (group != null) {
+        if (group != null && !localReactors.containsValue(group)) {
             group.shutdownGracefully();
         }
         group = config.childGroup();
-        if (group != null && !reactors.containsValue(group)) {
+        if (group != null && !reactors.containsValue(group) && !localReactors.containsValue(group)) {
             group.shutdownGracefully();
         }
     }
@@ -721,7 +722,12 @@ public final class Sockets {
         if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_UDP)) {
             rn = ReactorNames.SHARED_TCP;
         }
-        if (eventLoopGroup == null) {
+        boolean localConnect = connectHint instanceof LocalAddress;
+        if (localConnect && (eventLoopGroup == null
+                || eventLoopGroup instanceof NioEventLoopGroup
+                || eventLoopGroup instanceof EpollEventLoopGroup)) {
+            eventLoopGroup = localReactor(rn);
+        } else if (eventLoopGroup == null) {
             eventLoopGroup = reactor(rn, true);
         }
 
@@ -732,7 +738,7 @@ public final class Sockets {
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
         Bootstrap b = new Bootstrap().group(eventLoopGroup);
         b.attr(SocketConfig.ATTR_CONF, config);
-        if (connectHint instanceof LocalAddress) {
+        if (localConnect) {
             b.channel(LocalChannel.class)
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis);
         } else {
@@ -961,12 +967,8 @@ public final class Sockets {
 
     @SneakyThrows
     public static SslContext getSelfSignedTls() {
-        SecureRandom random = new SecureRandom();
-        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-        keyPairGenerator.initialize(2048, random);
-        KeyPair keyPair = keyPairGenerator.generateKeyPair();
-        X509Certificate certificate = newSelfSignedCertificate(keyPair, random);
-        return SslContextBuilder.forServer(keyPair.getPrivate(), certificate).build();
+        SelfSignedCertificate certificate = new SelfSignedCertificate("localhost");
+        return SslContextBuilder.forServer(certificate.certificate(), certificate.privateKey()).build();
     }
 
     @SneakyThrows
@@ -991,39 +993,6 @@ public final class Sockets {
             return SslContextBuilder.forServer(kmf).build();
         }
         return SslContextBuilder.forServer(file, file, certificatePassword).build();
-    }
-
-    @SneakyThrows
-    static X509Certificate newSelfSignedCertificate(KeyPair keyPair, SecureRandom random) {
-        long now = System.currentTimeMillis();
-        X500Principal principal = new X500Principal("CN=localhost");
-        X509V3CertificateGenerator generator = new X509V3CertificateGenerator();
-        generator.setSerialNumber(new BigInteger(64, random).abs().add(BigInteger.ONE));
-        generator.setIssuerDN(principal);
-        generator.setSubjectDN(principal);
-        generator.setNotBefore(new Date(now - TimeUnit.DAYS.toMillis(1)));
-        generator.setNotAfter(new Date(now + TimeUnit.DAYS.toMillis(3650)));
-        generator.setPublicKey(keyPair.getPublic());
-        generator.setSignatureAlgorithm("SHA256withRSA");
-
-        GeneralNamesBuilder subjectAltNames = new GeneralNamesBuilder();
-        subjectAltNames.addName(new GeneralName(GeneralName.dNSName, "localhost"));
-        addLocalHostName(subjectAltNames);
-        subjectAltNames.addName(new GeneralName(GeneralName.iPAddress, "127.0.0.1"));
-        subjectAltNames.addName(new GeneralName(GeneralName.iPAddress, "::1"));
-        generator.addExtension(Extension.subjectAlternativeName, false, subjectAltNames.build());
-        return generator.generate(keyPair.getPrivate(), random);
-    }
-
-    private static void addLocalHostName(GeneralNamesBuilder subjectAltNames) {
-        try {
-            String hostName = InetAddress.getLocalHost().getHostName();
-            if (!Strings.isEmpty(hostName) && !Strings.hashEquals(hostName, "localhost")) {
-                subjectAltNames.addName(new GeneralName(GeneralName.dNSName, hostName));
-            }
-        } catch (Throwable e) {
-            log.debug("local host name unavailable", e);
-        }
     }
 
     public static void dumpPipeline(String prefix, Channel channel) {

@@ -1,0 +1,130 @@
+package org.rx.core;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.rx.util.function.Func;
+
+import java.util.UUID;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+public class WheelTimerTraceIdTest {
+    private ThreadPool pool;
+    private WheelTimer timer;
+    private Func<String> oldTraceIdGenerator;
+    private long oldSlowMethodElapsedMicros;
+
+    @BeforeEach
+    void setUp() {
+        oldTraceIdGenerator = ThreadPool.traceIdGenerator;
+        oldSlowMethodElapsedMicros = RxConfig.INSTANCE.getTrace().getSlowMethodElapsedMicros();
+        RxConfig.INSTANCE.getTrace().setSlowMethodElapsedMicros(0);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (timer != null) {
+            timer.shutdownNow();
+        }
+        if (pool != null && !pool.isShutdown()) {
+            pool.shutdownNow();
+        }
+        ThreadPool.traceIdGenerator = oldTraceIdGenerator;
+        RxConfig.INSTANCE.getTrace().setSlowMethodElapsedMicros(oldSlowMethodElapsedMicros);
+        ThreadPool.CTX_TRACE_ID.get().clear();
+    }
+
+    @Test
+    void wheelTimerUsesCapturedTraceWhenWorkerHasDifferentTrace() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        AtomicReference<String> traceInTask = new AtomicReference<>();
+        AtomicReference<String> workerTraceAfterTask = new AtomicReference<>();
+        String staleTrace = "timer-worker-stale-" + UUID.randomUUID();
+        String capturedTrace = "timer-captured-" + UUID.randomUUID();
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setTraceName(null);
+            conf.setMaxTraceDepth(5);
+            pool = ThreadPool.fixed("WT-TRACE-CAPTURED", 1, 8);
+            timer = new WheelTimer(pool);
+
+            pool.runAsync(() -> ThreadPool.startTrace(staleTrace)).get(5, TimeUnit.SECONDS);
+
+            ThreadPool.startTrace(capturedTrace);
+            try {
+                ScheduledFuture<?> future = timer.schedule(() -> traceInTask.set(ThreadPool.traceId()), 0, TimeUnit.MILLISECONDS);
+                future.get(5, TimeUnit.SECONDS);
+                assertEquals(capturedTrace, traceInTask.get());
+                assertEquals(capturedTrace, ThreadPool.traceId());
+            } finally {
+                ThreadPool.endTrace();
+            }
+
+            pool.runAsync(() -> workerTraceAfterTask.set(ThreadPool.traceId())).get(5, TimeUnit.SECONDS);
+            assertEquals(staleTrace, workerTraceAfterTask.get());
+            pool.runAsync(() -> ThreadPool.endTrace()).get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void wheelTimerGeneratesNewTraceWhenCallerHasNoTraceAndWorkerHasDifferentTrace() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        AtomicReference<String> traceInTask = new AtomicReference<>();
+        AtomicReference<String> workerTraceAfterTask = new AtomicReference<>();
+        String staleTrace = "timer-worker-stale-" + UUID.randomUUID();
+        String generatedTrace = "timer-generated-" + UUID.randomUUID();
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setTraceName(null);
+            conf.setMaxTraceDepth(5);
+            ThreadPool.traceIdGenerator = () -> generatedTrace;
+            pool = ThreadPool.fixed("WT-TRACE-GENERATED", 1, 8);
+            timer = new WheelTimer(pool);
+
+            pool.runAsync(() -> ThreadPool.startTrace(staleTrace)).get(5, TimeUnit.SECONDS);
+
+            ScheduledFuture<?> future = timer.schedule(() -> traceInTask.set(ThreadPool.traceId()), 0, TimeUnit.MILLISECONDS);
+            future.get(5, TimeUnit.SECONDS);
+            assertEquals(generatedTrace, traceInTask.get());
+            assertNotEquals(staleTrace, traceInTask.get());
+            assertNull(ThreadPool.traceId());
+
+            pool.runAsync(() -> workerTraceAfterTask.set(ThreadPool.traceId())).get(5, TimeUnit.SECONDS);
+            assertEquals(staleTrace, workerTraceAfterTask.get());
+            pool.runAsync(() -> ThreadPool.endTrace()).get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void wheelTimerKeepsCapturedTraceWhenThreadPoolAutoTraceIsEnabled() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        AtomicInteger autoTraceSeq = new AtomicInteger();
+        AtomicReference<String> traceInTask = new AtomicReference<>();
+        String capturedTrace = "timer-captured-" + UUID.randomUUID();
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setTraceName("rx-traceId");
+            conf.setMaxTraceDepth(5);
+            ThreadPool.traceIdGenerator = () -> "timer-auto-" + autoTraceSeq.incrementAndGet();
+            pool = ThreadPool.fixed("WT-TRACE-AUTO", 1, 8);
+            timer = new WheelTimer(pool);
+
+            timer.schedule(() -> {
+            }, 0, TimeUnit.MILLISECONDS).get(5, TimeUnit.SECONDS);
+
+            ThreadPool.startTrace(capturedTrace);
+            try {
+                ScheduledFuture<?> future = timer.schedule(() -> traceInTask.set(ThreadPool.traceId()), 0, TimeUnit.MILLISECONDS);
+                future.get(5, TimeUnit.SECONDS);
+                assertEquals(capturedTrace, traceInTask.get());
+                assertEquals(capturedTrace, ThreadPool.traceId());
+            } finally {
+                ThreadPool.endTrace();
+            }
+        }
+    }
+}

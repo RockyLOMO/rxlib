@@ -22,9 +22,7 @@
         <!-- <zip4j.version>2.11.3</zip4j.version> -->
         <caffeine.version>3.2.3</caffeine.version>
         <h2.version>2.4.240</h2.version>
-        <!--        <netty.version>4.2.2.Final</netty.version>-->
-        <!--兼容用老版本-->
-        <netty.version>4.1.128.Final</netty.version>
+        <netty.version>4.2.12.Final</netty.version>
         <!--1.78.1有问题-->
         <bcprov.version>1.78</bcprov.version>
         <sshd.version>2.16.0</sshd.version>
@@ -154,13 +152,24 @@
                     <groupId>io.netty</groupId>
                     <artifactId>netty-codec-stomp</artifactId>
                 </exclusion>
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>netty-transport-classes-io_uring</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>netty-transport-native-io_uring</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
+        <!-- Shadowsocks only supports aes-256-gcm JDK/JCE path now; keep BC disabled. -->
+        <!--
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
             <version>${bcprov.version}</version>
         </dependency>
+        -->
         <dependency>
             <groupId>org.apache.sshd</groupId>
             <artifactId>sshd-netty</artifactId>

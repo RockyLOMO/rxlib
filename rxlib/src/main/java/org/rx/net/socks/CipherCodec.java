@@ -14,6 +14,7 @@ import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.encryption.ICrypto;
 
+import javax.crypto.BadPaddingException;
 import java.util.List;
 
 @Slf4j
@@ -85,7 +86,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
                 }
             }
         } catch (Exception e) {
-            if (e instanceof org.bouncycastle.crypto.InvalidCipherTextException) {
+            if (isAuthenticationFailure(e)) {
                 log.warn("cipher decode fail {}", rootMessage(e)); // 可能是密码错误或协议嗅探
                 if (!isUdp) {
                     inbound.close();
@@ -93,6 +94,28 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
                 return;
             }
             throw e;
+        }
+    }
+
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        closeCrypto(ctx.channel());
+        super.handlerRemoved(ctx);
+    }
+
+    private static boolean isAuthenticationFailure(Throwable e) {
+        for (Throwable c = e; c != null; c = c.getCause()) {
+            if (c instanceof BadPaddingException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void closeCrypto(Channel channel) throws Exception {
+        ICrypto crypt = channel.attr(ShadowsocksConfig.CIPHER).getAndSet(null);
+        if (crypt instanceof AutoCloseable) {
+            ((AutoCloseable) crypt).close();
         }
     }
 

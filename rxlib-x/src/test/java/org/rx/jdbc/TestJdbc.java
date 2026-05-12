@@ -1,8 +1,8 @@
 package org.rx.jdbc;
 
 import lombok.Data;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.rx.bean.DateTime;
 import org.rx.io.EntityQueryLambda;
 
 import java.util.Date;
@@ -29,9 +29,9 @@ public class TestJdbc {
         po.setId(1L);
         po.setUserName("rocky");
         po.setAge(16);
-        po.setCreateAt(DateTime.now());
-        po.setModifyAt(new Date());
-        System.out.println(JdbcUtil.buildInsertSql(po, t -> t.getSimpleName().toUpperCase(), c -> {
+        po.setCreateAt(new Date(0));
+        po.setModifyAt(new Date(0));
+        String insertSql = JdbcUtil.buildInsertSql(po, t -> t.getSimpleName().toUpperCase(), c -> {
             switch (c) {
                 case "id":
                     return "_id";
@@ -42,7 +42,13 @@ public class TestJdbc {
                 return "2024-01-01";
             }
             return v;
-        }));
-        System.out.println(JdbcUtil.buildUpdateSql(po, new EntityQueryLambda<>(PoUser.class).eq(PoUser::getId, 1024).eq(PoUser::getUserName, "wyf")));
+        });
+        String updateSql = JdbcUtil.buildUpdateSql(po, new EntityQueryLambda<>(PoUser.class).eq(PoUser::getId, 1024).eq(PoUser::getUserName, "wyf"));
+
+        Assertions.assertTrue(insertSql.startsWith("INSERT INTO POUSER"));
+        Assertions.assertTrue(insertSql.contains("`_id`"));
+        Assertions.assertTrue(insertSql.contains("'rocky'"));
+        Assertions.assertTrue(updateSql.startsWith("UPDATE po_user SET"));
+        Assertions.assertTrue(updateSql.contains("WHERE id=1024 AND user_name='wyf'"));
     }
 }
