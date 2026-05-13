@@ -48,7 +48,8 @@ public class DnsClient extends Disposable {
         if (directClient == null) {
             synchronized (DnsClient.class) {
                 if (directClient == null) {
-                    directClient = new DnsClient(directNameServers(), localSystemFallback());
+                    List<InetSocketAddress> nameServers = directNameServers();
+                    directClient = new DnsClient(nameServers, nameServers.isEmpty() || localSystemFallback());
                 }
             }
         }

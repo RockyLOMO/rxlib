@@ -15,14 +15,13 @@ import java.net.SocketAddress;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 
-import static org.rx.core.Extends.circuitContinue;
-
 public abstract class AbstractTcpReconnectClient extends Disposable {
     protected Bootstrap bootstrap;
     @Getter
     protected volatile Channel channel;
     protected volatile ChannelFuture connectingFuture;
     private volatile CompletableFuture<Void> connectPromise;
+    private volatile long reconnectDelayMs;
 
     public boolean isConnected() {
         Channel c = channel;
@@ -84,7 +83,11 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
 
     protected final synchronized void doConnect(boolean reconnect) {
         if (isConnected()) {
+            reconnectDelayMs = 0L;
             completeConnectSuccess();
+            return;
+        }
+        if (connectingFuture != null && !connectingFuture.isDone()) {
             return;
         }
         if (reconnect && !canRetryConnect()) {
@@ -123,6 +126,7 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
                     return;
                 }
 
+                reconnectDelayMs = 0L;
                 channel = connectedChannel;
                 onConnectSuccess(endpoint, reconnect, connectedChannel);
                 completeConnectSuccess();
@@ -142,18 +146,15 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
         if (bootstrap == null) {
             return;
         }
-        Tasks.setTimeout(() -> doConnect(true), 1000, this, Constants.TIMER_REPLACE_FLAG);
+        Tasks.setTimeout(() -> doConnect(true), 1000, this, Constants.TIMER_SINGLE_FLAG);
     }
 
     private void scheduleRetry(SocketAddress endpoint) {
-        Tasks.timer().setTimeout(() -> {
-            doConnect(true);
-            circuitContinue(canRetryConnect());
-        }, d -> {
-            long delay = d >= 5000 ? 5000 : Math.max(d * 2, 100);
-            onReconnectRetry(endpoint, delay);
-            return delay;
-        }, this, Constants.TIMER_SINGLE_FLAG);
+        long previous = reconnectDelayMs;
+        long delay = previous >= 5000 ? 5000 : Math.max(previous * 2, 100);
+        reconnectDelayMs = delay;
+        onReconnectRetry(endpoint, delay);
+        Tasks.setTimeout(() -> doConnect(true), delay, this, Constants.TIMER_REPLACE_FLAG);
     }
 
     private boolean canRetryConnect() {

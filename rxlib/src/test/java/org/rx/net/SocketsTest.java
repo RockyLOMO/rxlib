@@ -48,10 +48,13 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class SocketsTest {
+    private final List<String> originalDirectServers = new ArrayList<>(RxConfig.INSTANCE.getNet().getDns().getDirectServers());
     private final List<String> originalRemoteServers = new ArrayList<>(RxConfig.INSTANCE.getNet().getDns().getRemoteServers());
 
     @AfterEach
     void restoreTcpDnsResolver() throws Exception {
+        RxConfig.INSTANCE.getNet().getDns().getDirectServers().clear();
+        RxConfig.INSTANCE.getNet().getDns().getDirectServers().addAll(originalDirectServers);
         RxConfig.INSTANCE.getNet().getDns().getRemoteServers().clear();
         RxConfig.INSTANCE.getNet().getDns().getRemoteServers().addAll(originalRemoteServers);
         for (String fieldName : new String[]{"tcpDirectDnsAddressResolverGroup", "tcpRemoteDnsAddressResolverGroup"}) {
@@ -628,6 +631,9 @@ public class SocketsTest {
 
     @Test
     public void testBootstrapDirectDnsModeUsesDirectResolver() {
+        RxConfig.INSTANCE.getNet().getDns().getDirectServers().clear();
+        RxConfig.INSTANCE.getNet().getDns().getDirectServers().add("127.0.0.1:5353");
+
         SocksConfig config = new SocksConfig();
         config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.DIRECT);
 
@@ -637,10 +643,12 @@ public class SocketsTest {
     }
 
     @Test
-    public void testBootstrapDefaultUsesDirectResolver() {
+    public void testBootstrapDefaultUsesSystemResolverWhenDirectDnsUnset() {
+        RxConfig.INSTANCE.getNet().getDns().getDirectServers().clear();
+
         Bootstrap bootstrap = Sockets.bootstrap(new SocketConfig(), ch -> {
         });
-        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), bootstrap.config().resolver());
+        assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
     }
 
     private DiagnosticConfig memDiagnosticConfig(String name) {

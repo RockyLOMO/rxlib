@@ -185,17 +185,18 @@ public class RemotingTest extends AbstractTester {
     @Test
     @Order(1)
     @Timeout(120)
-    void rpcStatefulApi() {
+    void rpcStatefulApi() throws Exception {
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", freePort());
         UserManagerImpl svcImpl = new UserManagerImpl();
-        startServer(svcImpl, endpoint_3307);
+        startServer(svcImpl, endpoint);
 
         List<UserManager> facadeGroup = new ArrayList<>();
-        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
-        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0)));
+        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint, 0)));
+        facadeGroup.add(Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint, 0)));
 
         rpcApiEvent(svcImpl, facadeGroup);
         // 同一组 facade 依赖自动重连；Remoting onReconnected 在 EventLoop 上排队重发在途包 + TcpServer 关服后仍 flush 应答
-        restartServer(svcImpl, endpoint_3307, startDelay);
+        restartServer(svcImpl, endpoint, startDelay);
         rpcApiEvent(svcImpl, facadeGroup);
     }
 
@@ -205,14 +206,15 @@ public class RemotingTest extends AbstractTester {
     @Test
     @Order(5)
     @Timeout(120)
-    void rpcStateful_singleFacade_survivesTwoRestartsOnSamePort() {
+    void rpcStateful_singleFacade_survivesTwoRestartsOnSamePort() throws Exception {
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", freePort());
         UserManagerImpl impl = new UserManagerImpl();
-        startServer(impl, endpoint_3307);
-        UserManager facade = Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint_3307, 0));
+        startServer(impl, endpoint);
+        UserManager facade = Remoting.createFacade(UserManager.class, RpcClientConfig.statefulMode(endpoint, 0));
         assertEquals(2, facade.computeLevel(1, 1));
-        restartServer(impl, endpoint_3307, startDelay);
+        restartServer(impl, endpoint, startDelay);
         assertEquals(2, facade.computeLevel(1, 1));
-        restartServer(impl, endpoint_3307, startDelay);
+        restartServer(impl, endpoint, startDelay);
         assertEquals(2, facade.computeLevel(1, 1));
     }
 
@@ -720,13 +722,14 @@ public class RemotingTest extends AbstractTester {
     @Test
     @Order(2)
     @Timeout(60)
-    void rpcStatefulImpl() {
-        RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(3307));
+    void rpcStatefulImpl() throws Exception {
+        int port = freePort();
+        RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(port));
         serverConfig.setEventComputeVersion((short) 2);
         UserManagerImpl server = new UserManagerImpl();
         serverHost.put(server, Remoting.register(server, serverConfig));
 
-        RpcClientConfig<UserManagerImpl> config = RpcClientConfig.statefulMode("127.0.0.1:3307", 1);
+        RpcClientConfig<UserManagerImpl> config = RpcClientConfig.statefulMode("127.0.0.1:" + port, 1);
         config.setInitHandler((p, c) -> {
             log.info("onHandshake computeLevel: {}", p.computeLevel(1, 2));
         });
@@ -766,17 +769,19 @@ public class RemotingTest extends AbstractTester {
     @Test
     @Order(3)
     @Timeout(120)
-    void rpcReconnect() {
+    void rpcReconnect() throws Exception {
+        InetSocketAddress firstEndpoint = new InetSocketAddress("127.0.0.1", freePort());
+        InetSocketAddress secondEndpoint = new InetSocketAddress("127.0.0.1", freePort());
         UserManagerImpl svcImpl = new UserManagerImpl();
-        startServer(svcImpl, endpoint_3307);
+        startServer(svcImpl, firstEndpoint);
 
         java.util.concurrent.atomic.AtomicBoolean connected = new java.util.concurrent.atomic.AtomicBoolean(false);
-        RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(endpoint_3307, 0);
+        RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(firstEndpoint, 0);
         config.setInitHandler((p, c) -> {
             p.attachEvent(eventName, (s, e) -> log.info("attachEvent callback"), false);
             c.onReconnecting.add((s, e) -> {
-                InetSocketAddress next = eq(e.getValue().getPort(), endpoint_3307.getPort())
-                        ? endpoint_3308 : endpoint_3307;
+                InetSocketAddress next = eq(e.getValue().getPort(), firstEndpoint.getPort())
+                        ? secondEndpoint : firstEndpoint;
                 log.info("reconnect -> {}", next);
                 e.setValue(next);
             });
@@ -788,7 +793,7 @@ public class RemotingTest extends AbstractTester {
         assertEquals(2, userManager.computeLevel(1, 1));
         userManager.publishEvent(eventName, EventArgs.EMPTY);
 
-        restartServer(svcImpl, endpoint_3308, startDelay);
+        restartServer(svcImpl, secondEndpoint, startDelay);
         sleep(3000);
 
         int max = 10;
@@ -809,16 +814,17 @@ public class RemotingTest extends AbstractTester {
     @Test
     @Order(4)
     @Timeout(60)
-    void rpcPoolMode() throws InterruptedException {
+    void rpcPoolMode() throws Exception {
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", freePort());
         serverHost.put(HttpUserManager.INSTANCE,
-                Remoting.register(HttpUserManager.INSTANCE, endpoint_3307.getPort(), true));
+                Remoting.register(HttpUserManager.INSTANCE, endpoint.getPort(), true));
 
         int tcount = 50;
         int threadCount = 8;
         CountDownLatch latch = new CountDownLatch(tcount);
         AtomicReference<Throwable> firstError = new AtomicReference<>();
         HttpUserManager facade = Remoting.createFacade(
-                HttpUserManager.class, RpcClientConfig.poolMode(endpoint_3307, 1, threadCount));
+                HttpUserManager.class, RpcClientConfig.poolMode(endpoint, 1, threadCount));
 
         for (int i = 0; i < tcount; i++) {
             int finalI = i;
