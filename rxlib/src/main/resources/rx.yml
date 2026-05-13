@@ -78,8 +78,7 @@ app:
       dohTimeoutMillis: 5000
       dohMaxInFlight: 64
       dohEndpoints: []
-      directServers:
-        - "114.114.114.114:53"
+      directServers: []
       remoteServers:
         - "8.8.8.8:53"
         - "1.1.1.1:53"

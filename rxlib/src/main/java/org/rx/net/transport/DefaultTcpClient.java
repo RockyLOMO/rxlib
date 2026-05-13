@@ -39,6 +39,8 @@ import static org.rx.core.Extends.tryAs;
 
 @Slf4j
 public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpClient {
+    static final long RECONNECT_WARN_INTERVAL_MILLIS = 30 * 1000L;
+
     @RequiredArgsConstructor
     static class ClientHandler extends ChannelInboundHandlerAdapter {
         final DefaultTcpClient owner;
@@ -129,6 +131,8 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
     @Getter
     volatile long heartbeatRttMillis = -1L;
     volatile InetSocketAddress connectingEp;
+    volatile long lastReconnectWarnMillis;
+    volatile long suppressedReconnectWarns;
 
     @Override
     public @NonNull ThreadPool asyncScheduler() {
@@ -222,6 +226,8 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
     protected void onConnectSuccess(SocketAddress endpoint, boolean reconnect, Channel channel) {
         InetSocketAddress ep = (InetSocketAddress) endpoint;
         connectingEp = null;
+        lastReconnectWarnMillis = 0L;
+        suppressedReconnectWarns = 0L;
         config.setServerEndpoint(ep);
         remoteEndpoint = (InetSocketAddress) channel.remoteAddress();
         localEndpoint = (InetSocketAddress) channel.localAddress();
@@ -240,6 +246,25 @@ public class DefaultTcpClient extends AbstractTcpReconnectClient implements TcpC
 
     @Override
     protected void onReconnectRetry(SocketAddress endpoint, long delayMs) {
+        if (delayMs < 5000) {
+            log.debug("{} reconnect {} failed will re-attempt in {}ms", this, endpoint, delayMs);
+            return;
+        }
+
+        long now = NtpClock.UTC.millis();
+        if (now - lastReconnectWarnMillis < RECONNECT_WARN_INTERVAL_MILLIS) {
+            suppressedReconnectWarns++;
+            log.debug("{} reconnect {} failed will re-attempt in {}ms", this, endpoint, delayMs);
+            return;
+        }
+
+        lastReconnectWarnMillis = now;
+        long suppressed = suppressedReconnectWarns;
+        suppressedReconnectWarns = 0L;
+        if (suppressed > 0) {
+            log.warn("{} reconnect {} failed will re-attempt in {}ms, suppressed={}", this, endpoint, delayMs, suppressed);
+            return;
+        }
         log.warn("{} reconnect {} failed will re-attempt in {}ms", this, endpoint, delayMs);
     }
 

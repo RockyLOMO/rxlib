@@ -256,25 +256,31 @@ public final class Sockets {
             return DefaultAddressResolverGroup.INSTANCE;
         }
         if (isDirectDnsMode(mode)) {
+            Collection<InetSocketAddress> nameServerList = DnsClient.directNameServers();
+            if (CollectionUtils.isEmpty(nameServerList)) {
+                return DefaultAddressResolverGroup.INSTANCE;
+            }
+
             AddressResolverGroup<InetSocketAddress> g = tcpDirectDnsAddressResolverGroup;
             if (g != null) {
                 return g;
             }
             synchronized (Sockets.class) {
                 if (tcpDirectDnsAddressResolverGroup == null) {
-                    tcpDirectDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT);
+                    tcpDirectDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT, nameServerList);
                 }
                 return tcpDirectDnsAddressResolverGroup;
             }
         }
         if (isRemoteDnsMode(mode)) {
+            Collection<InetSocketAddress> nameServerList = DnsClient.remoteNameServers();
             AddressResolverGroup<InetSocketAddress> g = tcpRemoteDnsAddressResolverGroup;
             if (g != null) {
                 return g;
             }
             synchronized (Sockets.class) {
                 if (tcpRemoteDnsAddressResolverGroup == null) {
-                    tcpRemoteDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.REMOTE);
+                    tcpRemoteDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.REMOTE, nameServerList);
                 }
                 return tcpRemoteDnsAddressResolverGroup;
             }
@@ -282,21 +288,12 @@ public final class Sockets {
         return DefaultAddressResolverGroup.INSTANCE;
     }
 
-    private static AddressResolverGroup<InetSocketAddress> buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode mode) {
-        DnsClient client;
-        Collection<InetSocketAddress> nameServerList;
-        if (isDirectDnsMode(mode)) {
-            client = DnsClient.directClient();
-            nameServerList = DnsClient.directNameServers();
-        } else {
-            client = DnsClient.remoteClient();
-            nameServerList = DnsClient.remoteNameServers();
-        }
-
+    private static AddressResolverGroup<InetSocketAddress> buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode mode,
+                                                                                          Collection<InetSocketAddress> nameServerList) {
         DnsNameResolverBuilder nb = new DnsNameResolverBuilder()
                 .channelType(udpChannelClass())
                 .socketChannelType(tcpChannelClass())
-                .nameServerProvider(client.getNameServerProvider())
+                .nameServerProvider(DnsClient.nameServerProvider(nameServerList, DnsClient.localSystemFallback()))
                 .ttl(5, 300)
                 .negativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL)
                 .queryTimeoutMillis(TimeUnit.SECONDS.toMillis(5))

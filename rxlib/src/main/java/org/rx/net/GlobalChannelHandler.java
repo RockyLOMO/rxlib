@@ -6,6 +6,7 @@ import io.netty.channel.unix.Errors;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.rx.net.transport.TcpClientConfig;
 
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
@@ -57,6 +58,11 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
                 if (!f.isSuccess()) {
                     Throwable cause = f.cause();
                     if (isExpectedConnectFailure(cause)) {
+                        SocketConfig config = ch.attr(SocketConfig.ATTR_CONF).get();
+                        if (config instanceof TcpClientConfig && ((TcpClientConfig) config).isEnableReconnect()) {
+                            log.debug("Channel[{}] {} connect to {} fail {}", ch.id(), pn, remoteAddress, connectFailureSummary(cause));
+                            return;
+                        }
                         log.warn("Channel[{}] {} connect to {} fail {}", ch.id(), pn, remoteAddress, connectFailureSummary(cause));
                         return;
                     }

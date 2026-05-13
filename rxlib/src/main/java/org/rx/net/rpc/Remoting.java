@@ -361,21 +361,14 @@ public final class Remoting {
                                 HybridSession requestSession = resolveSession(client, session);
                                 Map<Integer, ClientBean> waitMap = getClientBeans(client);
                                 waitMap.put(clientBean.pack.id, clientBean);
-                                sendRequest(client, requestSession, methodMessage);
-                                int timeoutMillis = resolveRequestTimeout(config, client);
-                                if (!clientBean.syncRoot.waitOne(timeoutMillis)) {
-                                    if (!client.isConnected()) {
-                                        throw new ClientDisconnectedException(currentRemoteEndpoint(client));
-                                    }
-                                    if (clientBean.pack.returnValue == null) {
-                                        throw new TimeoutException(String.format("The method %s read timeout", clientBean.pack.methodName));
+                                try {
+                                    sendRequest(client, requestSession, methodMessage);
+                                } catch (ClientDisconnectedException e) {
+                                    if (!client.getConfig().getTcpClientConfig().isEnableReconnect()) {
+                                        throw e;
                                     }
                                 }
-                                clientBean.syncRoot.reset();
-                                if (clientBean.pack.errorMessage != null) {
-                                    throw new RemotingException(clientBean.pack.errorMessage);
-                                }
-                                return clientBean.pack.returnValue;
+                                return awaitMethodResponse(config, client, clientBean);
                             });
                 }
                 sendPacket(client, session, pack);
@@ -390,16 +383,7 @@ public final class Remoting {
                 }
 
                 if (isMethodCall) {
-                    int timeoutMillis = resolveRequestTimeout(config, client);
-                    if (!clientBean.syncRoot.waitOne(timeoutMillis)) {
-                        if (clientBean.pack.returnValue == null) {
-                            throw e;
-                        }
-                    }
-                    clientBean.syncRoot.reset();
-                    if (clientBean.pack.errorMessage != null) {
-                        throw new RemotingException(clientBean.pack.errorMessage);
-                    }
+                    throw e;
                 } else if (isSubscriptionPacket(pack)) {
                     log.info("clientSide event subscription deferred until reconnect");
                 } else {
@@ -694,6 +678,24 @@ public final class Remoting {
                 log.warn("clientSide resent pack[{}] fail", value.pack.id);
             }
         }
+    }
+
+    @SneakyThrows
+    private static Object awaitMethodResponse(RpcClientConfig<?> config, HybridClient client, ClientBean clientBean) {
+        int timeoutMillis = resolveRequestTimeout(config, client);
+        if (!clientBean.syncRoot.waitOne(timeoutMillis)) {
+            if (!client.isConnected()) {
+                throw new ClientDisconnectedException(currentRemoteEndpoint(client));
+            }
+            if (clientBean.pack.returnValue == null) {
+                throw new TimeoutException(String.format("The method %s read timeout", clientBean.pack.methodName));
+            }
+        }
+        clientBean.syncRoot.reset();
+        if (clientBean.pack.errorMessage != null) {
+            throw new RemotingException(clientBean.pack.errorMessage);
+        }
+        return clientBean.pack.returnValue;
     }
 
     private static void retainClient(HybridClient client) {
