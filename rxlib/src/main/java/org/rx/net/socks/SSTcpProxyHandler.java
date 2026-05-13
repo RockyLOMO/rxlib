@@ -32,7 +32,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         }).connect(upDstEp.socketAddress()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                log.warn("SS TCP connect to backend {}[{}] fail", upDstEp, dstEp, f.cause());
+                logConnectFailure(upDstEp, dstEp, f.cause());
                 Sockets.closeOnFlushed(inbound);
                 return;
             }
@@ -47,5 +47,15 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         SocksContext.markCtx(inbound, outboundFuture, e);
 
         ctx.fireChannelRead(msg).pipeline().remove(this);
+    }
+
+    static void logConnectFailure(UnresolvedEndpoint upDstEp, UnresolvedEndpoint dstEp, Throwable cause) {
+        log.warn("SS TCP connect to backend {}[{}] fail source={} cause={} message={}",
+                upDstEp, dstEp, SSTcpProxyHandler.class.getName(),
+                cause == null ? "unknown" : cause.getClass().getName(),
+                cause == null ? "" : cause.getMessage());
+        if (log.isDebugEnabled()) {
+            log.debug("SS TCP connect to backend {}[{}] full failure", upDstEp, dstEp, cause);
+        }
     }
 }
