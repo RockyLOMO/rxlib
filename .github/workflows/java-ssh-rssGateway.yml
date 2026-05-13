@@ -16,8 +16,8 @@ on:
         required: true
         default: true
         type: boolean
-#  push:
-#    branches: [ rss-21 ]
+  push:
+    branches: [ rss-21 ]
 
 jobs:
   build-and-push:
@@ -47,7 +47,7 @@ jobs:
           echo "REMOTE_DIR=rss" >> $GITHUB_ENV
           echo "HEALTH_URL=cloud.f-li.cn:6899" >> $GITHUB_ENV
           echo "DEPLOY_MODE=${{ inputs.deploy_mode || 'replace' }}" >> $GITHUB_ENV
-          if [[ "${{ inputs.reuseport_migration_fallback }}" == "true" ]]; then
+          if [[ "${{ github.event_name != 'workflow_dispatch' || inputs.reuseport_migration_fallback }}" == "true" ]]; then
             echo "REUSEPORT_MIGRATION_FALLBACK=1" >> $GITHUB_ENV
           else
             echo "REUSEPORT_MIGRATION_FALLBACK=0" >> $GITHUB_ENV
@@ -272,7 +272,7 @@ jobs:
           echo "healthy=false" >> $GITHUB_OUTPUT
           exit 1
       - name: Rollback to latest on Health Check Failure
-        if: (steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure') && (inputs.deploy_mode == 'replace')
+        if: (steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure') && ((inputs.deploy_mode || 'replace') == 'replace')
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -285,7 +285,7 @@ jobs:
             ./rollback.sh
             echo "Health check failed. Rolling back to latest tag."
       - name: Keep coexist deployment for manual check on Health Check Failure
-        if: (steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure') && (inputs.deploy_mode == 'coexist')
+        if: (steps.health-check.outputs.healthy == 'false' || steps.health-check.outcome == 'failure') && ((inputs.deploy_mode || 'replace') == 'coexist')
         run: |
           echo "Health check failed in coexist mode. Old process is kept; inspect app-a/app-b logs and kill the bad slot manually."
           exit 1
