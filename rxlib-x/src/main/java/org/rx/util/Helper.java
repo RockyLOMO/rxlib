@@ -17,6 +17,7 @@ import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.function.Function;
@@ -78,6 +79,7 @@ public class Helper {
         config.password = firstNonBlank(System.getProperty("app.smtp.password"), System.getProperty("app.smtp.pwd"), smtp == null ? null : smtp.getPassword());
         config.from = firstNonBlank(System.getProperty("app.smtp.from"), smtp == null ? null : smtp.getFrom(), config.username);
         config.to = firstNonBlank(System.getProperty("app.smtp.to"), smtp == null ? null : smtp.getTo());
+        config.proxy = firstNonBlank(System.getProperty("app.smtp.proxy"), smtp == null ? null : smtp.getProxy());
         config.from = firstNonBlank(config.from, config.username);
         return config;
     }
@@ -96,6 +98,7 @@ public class Helper {
         props.put("mail.smtp.connectiontimeout", String.valueOf(config.timeoutMillis));
         props.put("mail.smtp.timeout", String.valueOf(config.timeoutMillis));
         props.put("mail.smtp.writetimeout", String.valueOf(config.timeoutMillis));
+        applyProxy(props, config.proxy);
         Session session = Session.getInstance(props, new Authenticator() {
             protected PasswordAuthentication getPasswordAuthentication() {
                 return new PasswordAuthentication(config.username, config.password);
@@ -149,6 +152,40 @@ public class Helper {
         return fallback == null ? defaultValue : fallback;
     }
 
+    private static void applyProxy(Properties props, String proxy) {
+        if (isBlank(proxy)) {
+            return;
+        }
+        URI uri = URI.create(proxy);
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if (isBlank(scheme) || isBlank(host)) {
+            throw new InvalidException("Invalid SMTP proxy: {}", proxy);
+        }
+        int port = uri.getPort();
+        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+            props.put("mail.smtp.proxy.host", host);
+            if (port > 0) {
+                props.put("mail.smtp.proxy.port", String.valueOf(port));
+            }
+            String userInfo = uri.getUserInfo();
+            if (!isBlank(userInfo)) {
+                int split = userInfo.indexOf(':');
+                props.put("mail.smtp.proxy.user", split == -1 ? userInfo : userInfo.substring(0, split));
+                if (split != -1) {
+                    props.put("mail.smtp.proxy.password", userInfo.substring(split + 1));
+                }
+            }
+        } else if ("socks".equalsIgnoreCase(scheme) || "socks5".equalsIgnoreCase(scheme)) {
+            props.put("mail.smtp.socks.host", host);
+            if (port > 0) {
+                props.put("mail.smtp.socks.port", String.valueOf(port));
+            }
+        } else {
+            throw new InvalidException("Unsupported SMTP proxy scheme: {}", scheme);
+        }
+    }
+
     private static class SmtpConfig {
         String host;
         int port;
@@ -159,6 +196,7 @@ public class Helper {
         String password;
         String from;
         String to;
+        String proxy;
     }
 
     public static void replaceExcel(InputStream in, OutputStream out, String sheetName, TripleFunc<Integer, List<Object>, List<Object>> fn, boolean is2003File) {

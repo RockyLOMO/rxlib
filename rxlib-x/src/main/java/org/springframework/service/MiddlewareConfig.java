@@ -35,5 +35,6 @@ public class MiddlewareConfig {
         private String password;
         private String from;
         private String to;
+        private String proxy;
     }
 }
