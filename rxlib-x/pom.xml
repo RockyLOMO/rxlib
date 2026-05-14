@@ -22,7 +22,7 @@
         <redisson.version>4.3.1</redisson.version>
         <guava.version>32.1.1-jre</guava.version>
 
-        <javaxMail.version>1.6.2</javaxMail.version>
+        <jakartaMail.version>1.6.8</jakartaMail.version>
         <poi.version>5.4.1</poi.version>
     </properties>
 
@@ -92,8 +92,8 @@
         </dependency>
         <dependency>
             <groupId>com.sun.mail</groupId>
-            <artifactId>javax.mail</artifactId>
-            <version>${javaxMail.version}</version>
+            <artifactId>jakarta.mail</artifactId>
+            <version>${jakartaMail.version}</version>
         </dependency>
     </dependencies>
     <build>
