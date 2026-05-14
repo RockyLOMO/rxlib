@@ -142,6 +142,7 @@ jobs:
             -pl rxlib,rxlib-x -am \
             -Dmaven.test.skip=true -DskipTests=true \
             -Dgpg.skip=false \
+            -Dmaven.gpg.skip=false \
             --no-transfer-progress \
             --batch-mode
 

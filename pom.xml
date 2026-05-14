@@ -53,7 +53,8 @@
         <maven.test.skip>${skipTests}</maven.test.skip>
         <java.version>1.8</java.version>
         <jdk.module.args></jdk.module.args>
-        <gpg.skip>false</gpg.skip>
+        <gpg.skip>true</gpg.skip>
+        <maven.gpg.skip>${gpg.skip}</maven.gpg.skip>
 
         <lombok.version>1.18.30</lombok.version>
         <junit.version>5.9.1</junit.version>
