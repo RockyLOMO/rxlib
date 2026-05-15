@@ -56,7 +56,7 @@
         <gpg.skip>true</gpg.skip>
         <maven.gpg.skip>${gpg.skip}</maven.gpg.skip>
 
-        <lombok.version>1.18.30</lombok.version>
+        <lombok.version>1.18.46</lombok.version>
         <junit.version>5.9.1</junit.version>
         <jmh.version>1.36</jmh.version>
     </properties>
