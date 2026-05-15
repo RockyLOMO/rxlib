@@ -12,14 +12,18 @@ import io.netty.util.NetUtil;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.Constants;
+import org.rx.core.RxConfig;
 import org.rx.core.cache.MemoryCache;
-import org.rx.exception.InvalidException;
+import org.rx.io.Files;
 import org.rx.net.Sockets;
+import org.rx.net.http.AuthenticProxy;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpClientConfig;
 
 import java.io.Closeable;
 import java.io.File;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.Optional;
@@ -29,19 +33,23 @@ import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class GeoIPSearcher implements Closeable {
-    static final long CACHE_PUBLIC_IP_NANOS = TimeUnit.HOURS.toNanos(2);
+    public static final GeoIPSearcher INSTANCE = new GeoIPSearcher(true);
     static final IpGeolocation PRIVATE_IP = new IpGeolocation(null, null, null, "private");
     static final IpGeolocation UNKNOWN_IP = new IpGeolocation(null, null, null, "unknown");
-    private static final String[] defaultPublicIpServices = new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
+    static final IpGeolocation NOT_READY = new IpGeolocation(null, null, null, "notReady");
 
-    final DatabaseReader reader;
+    final boolean autoLoad;
+    volatile DatabaseReader reader;
     final Cache<String, IpGeolocation> lookupCache = MemoryCache.<String, IpGeolocation>rootBuilder()
             .maximumSize(4096)
             .expireAfterWrite(10, TimeUnit.MINUTES)
             .build();
     @Setter
-    String resolveServer = org.rx.core.Constants.rSS();
-    volatile PublicIpSnapshot publicIpSnapshot = PublicIpSnapshot.empty;
+    int timeoutMillis = 5 * 60 * 1000;
+    @Setter
+    AuthenticProxy proxy;
+    String geoIpFileUrl = "https://" + Constants.rCloud() + ":6501/Country.mmdb?rtoken=" + RxConfig.INSTANCE.getRtoken();
+    String geoIpFile = "geoip.mmdb";
 
     public GeoIPSearcher(File database) {
         this(buildReader(database));
@@ -49,6 +57,12 @@ public class GeoIPSearcher implements Closeable {
 
     GeoIPSearcher(DatabaseReader reader) {
         this.reader = reader;
+        this.autoLoad = false;
+    }
+
+    private GeoIPSearcher(boolean autoLoad) {
+        this.reader = null;
+        this.autoLoad = autoLoad;
     }
 
     @SneakyThrows
@@ -63,29 +77,24 @@ public class GeoIPSearcher implements Closeable {
     @Override
     public void close() {
         tryClose(reader);
+        reader = null;
+        lookupCache.invalidateAll();
     }
 
-    public String getPublicIp() {
-        PublicIpSnapshot snapshot = publicIpSnapshot;
-        long now = System.nanoTime();
-        if (snapshot.isFresh(now)) {
-            return snapshot.ip;
-        }
+    public synchronized void setGeoIpFileUrl(String geoIpFileUrl) {
+        this.geoIpFileUrl = geoIpFileUrl;
+        unloadReader();
+    }
 
-        try (HttpClient client = createPublicIpClient()) {
-            for (String service : publicIpServices()) {
-                try {
-                    String ip = trimAscii(queryPublicIp(client, service));
-                    if (Sockets.isValidIp(ip)) {
-                        publicIpSnapshot = new PublicIpSnapshot(ip, System.nanoTime());
-                        return ip;
-                    }
-                } catch (Exception e) {
-                    log.warn("getPublicIp retry service={}", service, e);
-                }
-            }
+    public synchronized void setGeoIpFile(String geoIpFile) {
+        this.geoIpFile = geoIpFile;
+        unloadReader();
+    }
+
+    public void waitLoad() {
+        if (autoLoad) {
+            ensureReaderLoadedQuietly();
         }
-        throw new InvalidException("getPublicIp fail");
     }
 
     public IpGeolocation lookup(String host) {
@@ -98,28 +107,40 @@ public class GeoIPSearcher implements Closeable {
         if (ipBytes == null) {
             return UNKNOWN_IP;
         }
-        String cacheKey = NetUtil.bytesToIpAddress(ipBytes);
-        return lookupCache.get(cacheKey, k -> doLookup(ipBytes));
-    }
-
-    @SneakyThrows
-    private IpGeolocation doLookup(byte[] ipBytes) {
-        InetAddress ip = InetAddress.getByAddress(ipBytes);
+        InetAddress ip = toAddress(ipBytes);
         if (Sockets.isPrivateIp(ip)) {
             return PRIVATE_IP;
         }
-        if (reader == null) {
-            return UNKNOWN_IP;
-        }
-
         if (ip.isAnyLocalAddress()) {
             return UNKNOWN_IP;
         }
-        IpGeolocation geolocation = tryLookupCity(ip);
-        return geolocation != null ? geolocation : tryLookupCountry(ip);
+
+        DatabaseReader current = reader;
+        if (current == null && autoLoad) {
+            current = ensureReaderLoadedQuietly();
+            if (current == null) {
+                return NOT_READY;
+            }
+        }
+        if (current == null) {
+            return UNKNOWN_IP;
+        }
+        String cacheKey = NetUtil.bytesToIpAddress(ipBytes);
+        final InetAddress target = ip;
+        final DatabaseReader searcher = current;
+        return lookupCache.get(cacheKey, k -> doLookup(target, searcher));
     }
 
-    private IpGeolocation tryLookupCity(InetAddress ip) {
+    public IpGeolocation resolveIp(String ip) {
+        return lookup(ip);
+    }
+
+    private IpGeolocation doLookup(InetAddress ip, DatabaseReader reader) {
+        IpGeolocation geolocation = tryLookupCity(ip, reader);
+        return geolocation != null ? geolocation : tryLookupCountry(ip, reader);
+    }
+
+    private IpGeolocation tryLookupCity(InetAddress ip, DatabaseReader reader) {
         try {
             Optional<CityResponse> cityResponse = reader.tryCity(ip);
             if (!cityResponse.isPresent()) {
@@ -135,7 +156,7 @@ public class GeoIPSearcher implements Closeable {
         }
     }
 
-    private IpGeolocation tryLookupCountry(InetAddress ip) {
+    private IpGeolocation tryLookupCountry(InetAddress ip, DatabaseReader reader) {
         try {
             Optional<CountryResponse> countryResponse = reader.tryCountry(ip);
             if (!countryResponse.isPresent()) {
@@ -149,20 +170,69 @@ public class GeoIPSearcher implements Closeable {
         }
     }
 
-    HttpClient createPublicIpClient() {
-        return new HttpClient(new HttpClientConfig().setTimeoutMillis(5000));
-    }
-
-    String[] publicIpServices() {
-        return resolveServer != null
-                ? new String[]{"https://" + resolveServer + ":8082/getPublicIp", defaultPublicIpServices[0], defaultPublicIpServices[1]}
-                : defaultPublicIpServices;
-    }
-
-    String queryPublicIp(HttpClient client, String service) {
-        try (HttpClient.Response response = client.get(service)) {
-            return response.bodyAsString();
+    private DatabaseReader ensureReaderLoadedQuietly() {
+        try {
+            return loadReader(false);
+        } catch (IOException e) {
+            log.error("geo ip download error", e);
+            return null;
         }
+    }
+
+    private synchronized DatabaseReader loadReader(boolean force) throws IOException {
+        DatabaseReader current = reader;
+        if (!force && current != null) {
+            return current;
+        }
+        File ipFile = innerDl(force, new File(geoIpFile), geoIpFileUrl);
+        DatabaseReader next = buildReader(ipFile);
+        reader = next;
+        lookupCache.invalidateAll();
+        tryClose(current);
+        return next;
+    }
+
+    private File innerDl(boolean force, File file, String fileUrl) throws IOException {
+        String url = trimAscii(fileUrl);
+        if (!force && file.exists()) {
+            return file;
+        }
+        if (url == null || url.isEmpty()) {
+            if (!file.exists()) {
+                throw new IOException("geo file not found " + file.getAbsolutePath());
+            }
+            return file;
+        }
+
+        File tmp = new File(file.getPath() + ".tmp");
+        log.info("geo download file {} -> {} begin", tmp.getAbsolutePath(), file.getAbsolutePath());
+        try {
+            try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(timeoutMillis).setProxy(proxy))) {
+                try (HttpClient.Response response = client.get(url)) {
+                    response.bodyAsFile(tmp.getPath());
+                }
+            }
+            File moved = Files.moveFile(tmp, file);
+            log.info("geo download file {} -> {} end", tmp.getAbsolutePath(), moved.getAbsolutePath());
+            return moved;
+        } catch (Exception e) {
+            if (tmp.exists()) {
+                tmp.delete();
+            }
+            throw e;
+        }
+    }
+
+    private synchronized void unloadReader() {
+        DatabaseReader old = reader;
+        reader = null;
+        lookupCache.invalidateAll();
+        tryClose(old);
+    }
+
+    @SneakyThrows
+    private static InetAddress toAddress(byte[] ipBytes) {
+        return InetAddress.getByAddress(ipBytes);
     }
 
     static String trimAscii(String value) {
@@ -178,20 +248,5 @@ public class GeoIPSearcher implements Closeable {
             end--;
         }
         return start == 0 && end == value.length() ? value : value.substring(start, end);
-    }
-
-    static final class PublicIpSnapshot {
-        static final PublicIpSnapshot empty = new PublicIpSnapshot(null, 0L);
-        final String ip;
-        final long refreshTime;
-
-        PublicIpSnapshot(String ip, long refreshTime) {
-            this.ip = ip;
-            this.refreshTime = refreshTime;
-        }
-
-        boolean isFresh(long now) {
-            return ip != null && now - refreshTime < CACHE_PUBLIC_IP_NANOS;
-        }
     }
 }

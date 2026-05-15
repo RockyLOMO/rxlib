@@ -1,14 +1,14 @@
 # 背景
 
-用户要求在 `rockylomo/rxlib` 仓库 `master` 分支中，围绕 `RssClientConf` 类上的 `public List<ShadowUser> shadowUsers;` 增加“用户级别的 v2ray 配置规则”，规则实现参考 `V2RayGeoManager`，并给出 `RssClient` 的接入计划方案。
+用户要求在 `rockylomo/rxlib` 仓库 `master` 分支中，围绕 `RssClientConf` 类上的 `public List<ShadowUser> shadowUsers;` 增加用户级 `route` 路由规则，规则实现参考 `V2RayGeoManager`，并给出 `RssClient` 的接入计划方案。
 
-本阶段只提交计划文档，不修改业务代码。后续只有在用户明确要求“按计划执行 / 开始修改代码 / 实现代码”后，才进入代码实现阶段。
+当前已进入代码实现阶段，用户级规则按有序配置行落地，老分组字段不再兼容。
 
 # 任务类型判断
 
 本次归类为新需求。
 
-原因：用户明确提出新增用户级 v2ray 规则能力，涉及配置模型扩展、规则编译、用户维度路由决策和 `RssClient` 接入链路调整。
+原因：用户明确提出新增用户级 route 规则能力，涉及配置模型扩展、规则编译、用户维度路由决策和 `RssClient` 接入链路调整。
 
 # 当前上下文
 
@@ -39,10 +39,10 @@
 
 # 目标
 
-1. 在 `RssClientConf.shadowUsers` 的每个 `ShadowUser` 上支持用户级 v2ray 规则配置。
-2. 用户级规则可表达 GeoSite、GeoIP、domain 额外规则，以及默认路由动作。
+1. 在 `RssClientConf.shadowUsers` 的每个 `ShadowUser` 上支持用户级 `route` 规则配置。
+2. 用户级规则可用有序规则行表达 GeoSite、GeoIP、domain、IP、CIDR、`default` 目标。
 3. 规则实现复用 `V2RayGeoManager`，不重复解析 `geosite.dat` / `geoip.dat`。
-4. `RssClient` 在处理请求目标时，能按当前认证或匹配到的 `ShadowUser` 读取该用户规则，决定走代理、直连、阻断或默认行为。
+4. `RssClient` 在处理请求目标时，能按当前认证或匹配到的 `ShadowUser` 读取该用户规则，决定走代理、直连或阻断。
 5. 规则编译在配置加载或用户对象构建阶段完成，热路径只做 matcher 判断。
 6. 保持 Java 8 兼容，不引入重型依赖，不改 secrets / token / 证书 / 私钥。
 
@@ -50,40 +50,63 @@
 
 1. 不重写 `V2RayGeoManager` 的 geodat 下载、热更新和索引实现。
 2. 不升级 JDK、Netty、Maven 插件或大版本依赖。
-3. 不修改已有全局 direct 规则语义，除非接入点需要明确优先级。
+3. 不继续保留 `RssClient` 旧的 `GeoManager` 全局 direct 判断链路。
 4. 不做 UI、配置中心或发布流程改造。
-5. 不改变已有 `shadowUsers` 的兼容反序列化行为；新增字段必须允许为空。
+5. 老分组字段不做兼容；配置统一迁移到 `rules` 有序列表。
 6. 不自动发布 release。
 
 # 设计方案
 
 ## 配置模型
 
-建议在 `ShadowUser` 中新增可选字段：
+在 `shadowUsers` 同级增加全局默认规则：
 
 ```java
-public V2RayUserRule v2rayRule;
+public List<ShadowUser> shadowUsers;
+public List<String> defaultRouteRules;
 ```
 
-新增配置类建议命名为 `V2RayUserRule` 或 `ShadowUserV2RayRule`：
+在 `ShadowUser` 中新增可选字段：
+
+```java
+public V2RayUserRule route;
+```
+
+新增配置类命名为 `V2RayUserRule`：
 
 ```java
 public class V2RayUserRule {
     public Boolean enabled;
-    public List<String> proxyGeoSites;
-    public List<String> directGeoSites;
-    public List<String> blockGeoSites;
-    public List<String> proxyGeoIps;
-    public List<String> directGeoIps;
-    public List<String> blockGeoIps;
-    public Set<String> proxyDomains;
-    public Set<String> directDomains;
-    public Set<String> blockDomains;
-    public RouteAction defaultAction;
+    public List<String> rules;
 }
 ```
 
-`RouteAction` 建议包含 `PROXY`、`DIRECT`、`BLOCK`、`DEFAULT`。如果项目已有等价路由枚举或配置类，应优先复用现有类型。
+`rules` 每行格式为：
+
+```text
+<目标规则> <动作>
+```
+
+示例：
+
+```text
+192.168.31.1 direct
+geoip:cn proxy
+geosite:cn direct
+example.com direct
+10.0.0.0/8 block
+default proxy
+```
+
+`V2RayRouteAction` 包含 `PROXY`、`DIRECT`、`BLOCK`。`default` 是规则目标关键字，表示前面所有规则都未命中时的兜底动作。
+
+`defaultRouteRules` 默认值：
+
+```text
+geosite:cn direct
+geoip:cn direct
+default proxy
+```
 
 ## 运行期规则对象
 
@@ -91,7 +114,7 @@ public class V2RayUserRule {
 
 ```java
 public final class V2RayUserRuleMatcher {
-    RouteAction match(String host, byte[] ipBytes);
+    V2RayRouteAction match(String host, byte[] ipBytes);
 }
 ```
 
@@ -100,21 +123,23 @@ public final class V2RayUserRuleMatcher {
 - 在配置加载或 `RssClient` 初始化阶段编译 `geoSite code` 为 `GeoSiteMatcher`。
 - 编译 `geoIp code` 为 `V2RayGeoIpMatcher.CodeMatcher`。
 - 编译或缓存自定义 domain 规则。
-- 热路径按 block -> direct -> proxy -> default 顺序判断。
-- matcher 缺失或 geodat 未加载时返回 `DEFAULT`，避免破坏旧配置。
+- 热路径按配置行顺序判断，先命中先生效。
+- 用户 `route` 为空或 `enabled=false` 时不创建用户 matcher，请求回落到全局 `defaultRouteRules` matcher。
 
 ## 规则优先级
 
-建议优先级：
+规则优先级就是 `rules` 的先后顺序，越靠前优先级越高。
 
-1. 用户级 `blockDomains` / `blockGeoSites` / `blockGeoIps`
-2. 用户级 `directDomains` / `directGeoSites` / `directGeoIps`
-3. 用户级 `proxyDomains` / `proxyGeoSites` / `proxyGeoIps`
-4. 现有全局规则或 `RssClient` 原有路由逻辑
-5. 用户级 `defaultAction`
-6. 系统默认行为
+例如：
 
-如现有 `RssClient` 已有明确 direct/proxy 策略，实现阶段按当前代码语义确认第 4 与第 5 的相对顺序；默认不破坏原有全局逻辑，用户只配置命中规则时才覆盖。
+```text
+192.168.31.1 direct
+geoip:cn proxy
+```
+
+当目标为 `192.168.31.1` 且同时满足后续 `geoip:cn` 时，按第一行走 `direct`。
+
+`ShadowUser.route` 为空或未启用时使用全局 `defaultRouteRules`。默认全局规则为 `geosite:cn direct`、`geoip:cn direct`、`default proxy`，即 cn 直连，其他代理。
 
 ## `V2RayGeoManager` 复用方式
 
@@ -125,7 +150,7 @@ V2RayGeoManager.INSTANCE.tryCompileGeoSiteMatcher(code, attrFilter);
 V2RayGeoManager.INSTANCE.tryCompileGeoIpMatcher(code);
 ```
 
-原因：避免 `RssClient` 初始化或请求热路径被 geodat 下载、解析阻塞。如果 geodat 已加载，则直接复用当前快照；如果未加载，则该用户规则暂时降级为 `DEFAULT`，后续可通过 reload 或重建 matcher 生效。
+原因：避免 `RssClient` 初始化或请求热路径被 geodat 下载、解析阻塞。如果 geodat 已加载，则直接复用当前快照；如果未加载，相关 geo 规则本次不命中，由后续有序规则或 `default` 兜底。
 
 如业务要求启动时必须强校验规则，可在配置加载阶段改用阻塞 `compile*` 方法，并将失败作为配置错误抛出，但第一版建议采用非阻塞 try 编译加日志告警。
 
@@ -136,11 +161,11 @@ V2RayGeoManager.INSTANCE.tryCompileGeoIpMatcher(code);
 计划接入步骤：
 
 1. 配置加载后遍历 `RssClientConf.shadowUsers`。
-2. 对每个 `ShadowUser.v2rayRule` 构建 `V2RayUserRuleMatcher`。
+2. 对每个 `ShadowUser.route` 构建 `V2RayUserRuleMatcher`。
 3. 将 matcher 挂到 `ShadowUser` transient 字段，或放入 `Map<userKey, V2RayUserRuleMatcher>`，避免影响序列化输出。
 4. `RssClient` 每次处理目标时，根据当前用户取 matcher。
 5. 调用 `matcher.match(host, ipBytes)`。
-6. `BLOCK` 复用现有错误关闭或拒绝策略；`DIRECT` 走现有直连路径；`PROXY` 走现有代理 / v2ray / upstream 路径；`DEFAULT` 完全沿用旧逻辑。
+6. `BLOCK` 复用现有错误关闭或拒绝策略；`DIRECT` 走现有直连路径；`PROXY` 走现有代理 / upstream 路径；未命中则由 `default` 规则兜底。
 7. 配置热更新时重建 matcher，以新对象替换旧对象；不手动 close `V2RayGeoManager.INSTANCE`。
 
 ## 异常处理
@@ -168,8 +193,8 @@ V2RayGeoManager.INSTANCE.tryCompileGeoIpMatcher(code);
 后续代码实现阶段预计修改或新增：
 
 1. `RssClientConf` 所在文件：保留 `public List<ShadowUser> shadowUsers;`，增加用户级规则初始化入口。
-2. `ShadowUser` 所在文件：增加可选 `v2rayRule` 字段，必要时增加 transient matcher 或用户 key。
-3. 新增 `V2RayUserRule` / `ShadowUserV2RayRule`。
+2. `ShadowUser` 所在文件：增加可选 `route` 字段和 transient matcher。
+3. 新增 `V2RayUserRule`。
 4. 新增 `V2RayUserRuleMatcher`。
 5. `RssClient` 所在文件：在配置加载、用户选择和目标路由决策处接入用户规则。
 6. 测试文件：新增或扩展 RssClient / rule matcher 单元测试。
@@ -179,7 +204,7 @@ V2RayGeoManager.INSTANCE.tryCompileGeoIpMatcher(code);
 1. `RssClient` / `RssClientConf` / `ShadowUser` 当前路径未在可见文件树中定位，后续实现需先确认源文件位置。
 2. 用户级规则优先级若与现有全局规则冲突，可能改变历史路由行为。
 3. GeoSite / GeoIP matcher 编译若放入请求热路径，会引入性能风险，必须避免。
-4. geodat 文件缺失或下载失败时，规则可能降级为 `DEFAULT`，需要日志可观测。
+4. geodat 文件缺失或下载失败时，geo 规则不命中，需要日志可观测。
 5. 新增字段需保持 JSON/YAML 等配置反序列化向后兼容。
 6. 配置热更新并发发生时，matcher 替换需保证可见性和不可变性。
 7. 阻断行为需复用现有协议错误处理，否则客户端表现可能不一致。
@@ -198,7 +223,7 @@ mvn -pl rxlib -am -DskipTests compile
 2. 单元测试：
 
 - 用户规则 matcher：空配置、disabled、domain direct/proxy/block、geosite code 编译失败、geoip 命中、block 优先级。
-- RssClient 接入：相同目标在不同 ShadowUser 下得到不同动作；未配置用户规则时保持旧逻辑；配置热更新后新 matcher 生效。
+- RssClient 接入：相同目标在不同 ShadowUser 下得到不同动作；未配置用户规则时走默认 cn direct / 其他 proxy；配置热更新后新 matcher 生效。
 
 3. GitHub Actions：
 
@@ -209,7 +234,7 @@ mvn -pl rxlib -am -DskipTests compile
 
 4. 人工验证：
 
-- userA：`directGeoSites=["cn"]`
-- userB：`proxyGeoSites=["geolocation-!cn"]`
+- userA：`route.rules=["geosite:cn direct","default proxy"]`
+- userB：`route.rules=["geosite:cn proxy","default direct"]`
 - 对相同 domain 验证不同用户得到不同路由结果。
-- 验证旧配置不包含 `v2rayRule` 时行为完全不变。
+- 验证用户未配置 `route` 或 `route.enabled=false` 时，全局 `defaultRouteRules` 默认 cn direct / 其他 proxy 生效。

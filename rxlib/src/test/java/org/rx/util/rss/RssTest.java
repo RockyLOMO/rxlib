@@ -763,7 +763,7 @@ public class RssTest extends AbstractTester {
         try {
             RssClient.rssConf = conf;
             RssClient.ForwardingSocksRpcContract contract =
-                    new RssClient.ForwardingSocksRpcContract(delegate, null);
+                    new RssClient.ForwardingSocksRpcContract(delegate);
 
             List<InetAddress> result = contract.resolveHost(
                     InetAddress.getByAddress(new byte[]{10, 0, 0, 1}), "www.google.com");
@@ -951,7 +951,7 @@ public class RssTest extends AbstractTester {
 
         RssRuntime.UpstreamSnapshot snapshot = null;
         try {
-            snapshot = RssClient.buildUpstreams(conf, org.rx.net.support.GeoManager.INSTANCE);
+            snapshot = RssClient.buildUpstreams(conf);
             UpstreamSupport mainSupport = snapshot.socksServers.get(0);
             UpstreamSupport backupSupport = snapshot.socksServers.get(1);
             UpstreamSupport tunSupport = snapshot.udp2rawSocksServers.get(0);
@@ -1070,7 +1070,7 @@ public class RssTest extends AbstractTester {
 
         RssRuntime.UpstreamSnapshot snapshot = null;
         try {
-            snapshot = RssClient.buildUpstreams(conf, org.rx.net.support.GeoManager.INSTANCE);
+            snapshot = RssClient.buildUpstreams(conf);
             assertTrue(snapshot.userSocksServers.get("ss-rocky").contains(snapshot.socksServers.get(0)));
             assertTrue(snapshot.udp2rawUserSocksServers.get("ss-rocky").contains(snapshot.udp2rawSocksServers.get(0)));
 

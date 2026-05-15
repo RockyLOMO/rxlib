@@ -46,7 +46,7 @@ import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.GeoManager;
+import org.rx.net.support.GeoIPSearcher;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.SftpClient;
@@ -599,14 +599,15 @@ public class TestSocks extends AbstractTester {
         assert Sockets.isBypass(Arrays.toList("*google.com"), "google.com");
         assert Sockets.isBypass(Arrays.toList("*google.com"), "rx.google.com");
 
-        GeoManager geoIPSearcher = GeoManager.INSTANCE;
+        GeoIPSearcher geoIPSearcher = GeoIPSearcher.INSTANCE;
 //        geoLite2.waitDownload();
         System.out.println(geoIPSearcher.resolveIp("8.8.8.8"));
         sleep(10 * 1000);
         System.out.println(geoIPSearcher.resolveIp("192.168.31.2"));
-        log.info("{}", geoIPSearcher.resolveIp(geoIPSearcher.getPublicIp()));
-        log.info(geoIPSearcher.getPublicIp());
-        log.info(geoIPSearcher.getPublicIp());
+        String publicIp = Sockets.getPublicIp();
+        log.info("{}", geoIPSearcher.resolveIp(publicIp));
+        log.info(publicIp);
+        log.info(Sockets.getPublicIp());
 
 //        String h = "google.com";
 //        System.out.println(IPSearcher.DEFAULT.search(h));

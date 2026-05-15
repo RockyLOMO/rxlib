@@ -9,7 +9,6 @@ import org.rx.core.StringBuilder;
 import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.io.Bytes;
-import org.rx.net.support.GeoManager;
 import org.rx.net.support.UltraDomainTrieMatcher;
 import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
@@ -75,14 +74,6 @@ public class TestBean extends AbstractTester {
 //        assert !domainMatcher.matches("mail.exampl2.com"); // domain
 //        assert !domainMatcher.matches("xgoogl2x.com");     // keyword
 //        assert !domainMatcher.matches("2test.abc");        // regexp
-
-        GeoManager geoMgr = GeoManager.INSTANCE;
-        geoMgr.waitLoad();
-        assert !geoMgr.matchSiteDirect("www.google.com");
-        assert !geoMgr.matchSiteDirect("www.Google.com");
-        assert geoMgr.matchSiteDirect("2google.com");
-        assert geoMgr.matchSiteDirect("2Google.com");
-        assert !geoMgr.matchSiteDirect("google.com");
     }
 
     @SneakyThrows

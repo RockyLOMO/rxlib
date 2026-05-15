@@ -52,13 +52,12 @@ import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Udp2rawUpstream;
 import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.GeoManager;
-import org.rx.net.support.IpGeolocation;
+import org.rx.net.support.GeoSiteMatcher;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
+import org.rx.net.support.V2RayGeoManager;
 import org.rx.net.transport.TcpClientConfig;
 import org.rx.util.function.BiFunc;
-import org.rx.util.function.QuadraFunc;
 import org.rx.util.function.TripleAction;
 
 import java.io.File;
@@ -109,6 +108,8 @@ public final class RssClient {
     static RrpServer rrpServer;
     static String rrpToken;
     static Integer rrpPort;
+    static volatile GeoSiteMatcher dnsCnSiteMatcher;
+    static volatile long dnsCnSiteMatcherNextTryNanos;
     static HttpServer httpServer;
     static NameserverImpl nameserver;
     static RssUserTrafficStore trafficStore;
@@ -283,11 +284,9 @@ public final class RssClient {
 
     static final class ForwardingSocksRpcContract implements SocksRpcContract {
         final SocksRpcContract delegate;
-        final GeoManager geoMgr;
 
-        ForwardingSocksRpcContract(SocksRpcContract delegate, GeoManager geoMgr) {
+        ForwardingSocksRpcContract(SocksRpcContract delegate) {
             this.delegate = delegate;
-            this.geoMgr = geoMgr;
         }
 
         @Override
@@ -300,23 +299,23 @@ public final class RssClient {
             boolean outProxy;
             String ext;
             RssClientConf conf = rssConf;
-            RssClientConf.RouteConf routeConf = conf.route;
-            if (routeConf.enable) {
+            RssClientConf.RouteConf routeConf = conf == null ? null : conf.route;
+            if (routeConf != null && routeConf.enable) {
                 if (routeConf.srcIpProxyRules != null && routeConf.srcIpProxyRules.contains(srcIp)) {
                     outProxy = true;
                     ext = "srcIp:proxy";
-                } else if (geoMgr.matchSiteDirect(host)) {
+                } else if (matchDnsCnGeoSite(host)) {
                     outProxy = false;
-                    ext = "geosite:direct";
+                    ext = "geosite:cn";
                 } else {
                     outProxy = true;
-                    ext = "geosite:proxy";
+                    ext = "default:proxy";
                 }
             } else {
                 outProxy = true;
                 ext = "routeDisabled";
             }
-            if (conf.hasRouteFlag()) {
+            if (conf != null && conf.hasRouteFlag()) {
                 log.info("route dns {}+{} {} <- {}", srcIp, host, outProxy ? "PROXY" : "DIRECT", ext);
             }
             List<InetAddress> result = outProxy ? delegate.resolveHost(srcIp, host) : DnsClient.directClient().resolveAll(host);
@@ -390,6 +389,33 @@ public final class RssClient {
         }
     }
 
+    static boolean matchDnsCnGeoSite(String host) {
+        if (Strings.isBlank(host) || V2RayUserRuleMatcher.mayBeIpLiteral(host)) {
+            return false;
+        }
+        GeoSiteMatcher matcher = dnsCnSiteMatcher;
+        if (matcher != null) {
+            return matcher.matches(host);
+        }
+
+        long now = System.nanoTime();
+        if (now < dnsCnSiteMatcherNextTryNanos) {
+            return false;
+        }
+        dnsCnSiteMatcherNextTryNanos = now + V2RayUserRuleMatcher.GEO_MATCHER_RETRY_NANOS;
+        matcher = V2RayGeoManager.INSTANCE.tryCompileGeoSiteMatcher("cn");
+        if (matcher != null) {
+            dnsCnSiteMatcher = matcher;
+            return matcher.matches(host);
+        }
+        try {
+            V2RayGeoManager.INSTANCE.reloadAsync();
+        } catch (RuntimeException e) {
+            log.warn("rss dns cn geosite reload request failed", e);
+        }
+        return false;
+    }
+
     static boolean normalizeAndValidateRssConfig(RssClientConf conf) {
         if (conf == null) {
             return false;
@@ -429,6 +455,9 @@ public final class RssClient {
         if (!normalizeAndValidateSocksServerIds(conf)) {
             return false;
         }
+        if (!normalizeAndValidateDefaultRouteRules(conf)) {
+            return false;
+        }
         if (conf.rrpPort != null && conf.rrpPort <= 0) {
             return false;
         }
@@ -443,6 +472,9 @@ public final class RssClient {
                 return false;
             }
             if (!normalizeAndValidateUserSocksServers(user, conf.socksServers)) {
+                return false;
+            }
+            if (!normalizeAndValidateUserRoute(user)) {
                 return false;
             }
         }
@@ -586,6 +618,31 @@ public final class RssClient {
         return true;
     }
 
+    private static boolean normalizeAndValidateDefaultRouteRules(RssClientConf conf) {
+        try {
+            if (CollectionUtils.isEmpty(conf.defaultRouteRules)) {
+                conf.defaultRouteRules = V2RayUserRuleMatcher.defaultRouteRules();
+            }
+            conf.defaultRouteMatcher = V2RayUserRuleMatcher.compileDefaultRouteRules(
+                    conf.defaultRouteRules, V2RayGeoManager.INSTANCE);
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("rssConf defaultRouteRules invalid", e);
+            return false;
+        }
+    }
+
+    private static boolean normalizeAndValidateUserRoute(ShadowUser user) {
+        try {
+            user.setRouteMatcher(V2RayUserRuleMatcher.compile(
+                    user.getRoute(), V2RayGeoManager.INSTANCE, user.getUsername()));
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("rssConf shadowUser {} route invalid", user.getUsername(), e);
+            return false;
+        }
+    }
+
     enum ServerRouteMode {
         SOCKS, UDP2RAW, TCP_CLIENT, MIXED
     }
@@ -660,7 +717,7 @@ public final class RssClient {
         return weight != null ? Math.max(0, weight) : 0;
     }
 
-    static RssRuntime.UpstreamSnapshot buildUpstreams(RssClientConf conf, GeoManager geoMgr) {
+    static RssRuntime.UpstreamSnapshot buildUpstreams(RssClientConf conf) {
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
         RandomList<UpstreamSupport> udp2rawSocksServers = new RandomList<>();
         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
@@ -681,7 +738,7 @@ public final class RssClient {
                     continue;
                 }
                 InetSocketAddress socksServerEp = socksServer.requireEndpoint();
-                SocksRpcContract facade = getOrCreateRpcFacade(conf, geoMgr, socksServerEp,
+                SocksRpcContract facade = getOrCreateRpcFacade(conf, socksServerEp,
                         rpcEndpointByServerHost, facadeByRpcEndpoint, createdFacades);
                 UpstreamSupport support = new UpstreamSupport(socksServer, facade);
                 support.setConfiguredWeight(weight);
@@ -703,7 +760,7 @@ public final class RssClient {
                     continue;
                 }
                 InetSocketAddress socksServerEp = socksServer.requireEndpoint();
-                SocksRpcContract facade = getOrCreateRpcFacade(conf, geoMgr, socksServerEp,
+                SocksRpcContract facade = getOrCreateRpcFacade(conf, socksServerEp,
                         rpcEndpointByServerHost, facadeByRpcEndpoint, createdFacades);
                 UpstreamSupport support = new UpstreamSupport(socksServer, facade);
                 support.setConfiguredWeight(weight);
@@ -783,8 +840,7 @@ public final class RssClient {
         return conf != null && conf.rpcPort > 0 ? conf.rpcPort : socksServerEp.getPort() + 1;
     }
 
-    private static SocksRpcContract getOrCreateRpcFacade(RssClientConf conf, GeoManager geoMgr,
-            InetSocketAddress socksServerEp,
+    private static SocksRpcContract getOrCreateRpcFacade(RssClientConf conf, InetSocketAddress socksServerEp,
             Map<String, InetSocketAddress> rpcEndpointByServerHost,
             Map<String, SocksRpcContract> facadeByRpcEndpoint,
             List<SocksRpcContract> createdFacades) {
@@ -800,7 +856,7 @@ public final class RssClient {
         rpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(conf));
         TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
         tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
-        facade = new ForwardingSocksRpcContract(Remoting.createFacade(SocksRpcContract.class, rpcConf), geoMgr);
+        facade = new ForwardingSocksRpcContract(Remoting.createFacade(SocksRpcContract.class, rpcConf));
         facadeByRpcEndpoint.put(rpcKey, facade);
         createdFacades.add(facade);
         return facade;
@@ -1349,11 +1405,23 @@ public final class RssClient {
         return new LocalAddress(localNamePrefix + port);
     }
 
+    static V2RayRouteAction matchRoute(V2RayUserRuleMatcher matcher, String host) {
+        if (matcher == null) {
+            RssClientConf conf = rssConf;
+            matcher = conf == null ? null : conf.defaultRouteMatcher;
+        }
+        return matcher == null ? V2RayRouteAction.PROXY : matcher.match(host);
+    }
+
+    static V2RayRouteAction matchUserRoute(TrafficUser user, String host) {
+        V2RayUserRuleMatcher matcher = user instanceof ShadowUser ? ((ShadowUser) user).getRouteMatcher() : null;
+        return matchRoute(matcher, host);
+    }
+
     static RssRuntime.RssInServer createInSvr(RssClientConf conf, SocksConfig inConf, Authenticator authenticator,
             TripleAction<SocksProxyServer, SocksContext> firstRoute,
             AtomicReference<RandomList<UpstreamSupport>> socksServersRef,
-            AtomicReference<Map<String, RandomList<UpstreamSupport>>> userSocksServersRef,
-            GeoManager geoMgr) {
+            AtomicReference<Map<String, RandomList<UpstreamSupport>>> userSocksServersRef) {
         SocksProxyServer inSvr = new SocksProxyServer(inConf);
         if (authenticator instanceof RssAuthenticator) {
             RssAuthenticator rssAuthenticator = (RssAuthenticator) authenticator;
@@ -1379,55 +1447,43 @@ public final class RssClient {
             }
             return next;
         };
-        QuadraFunc<InetSocketAddress, UnresolvedEndpoint, String, Boolean> routeingFn = (srcEp, dstEp, transType) -> {
-            String host = dstEp.getHost();
-            boolean outProxy;
-            long begin;
-            String ext;
-            RssClientConf.RouteConf routeConf = rssConf.route;
-            if (routeConf.enable) {
-                begin = System.nanoTime();
-                if (routeConf.srcIpProxyRules != null && routeConf.srcIpProxyRules.contains(srcEp.getAddress())) {
-                    outProxy = true;
-                    ext = "srcIp:proxy";
-                } else if (!Sockets.isValidIp(host)) {
-                    if (geoMgr.matchSiteDirect(host)) {
-                        outProxy = false;
-                        ext = "geosite:direct";
-                    } else {
-                        outProxy = true;
-                        ext = "geosite:proxy";
-                    }
-                } else {
-                    IpGeolocation geo = geoMgr.resolveIp(host);
-                    String category = geo.getCategory();
-                    outProxy = !Strings.equalsIgnoreCase(category, "cn") && !Strings.equalsIgnoreCase(category, "private");
-                    ext = "geoip:" + category;
-                }
-            } else {
-                outProxy = true;
-                begin = 0L;
-                ext = "routeDisabled";
-            }
-            if (rssConf.hasRouteFlag()) {
-                log.info("route dst {} {} {} <- {} {}",
-                        transType, host, outProxy ? "PROXY" : "DIRECT", ext,
-                        Sys.formatNanosElapsed(System.nanoTime() - begin));
-            }
-            return outProxy;
-        };
         inSvr.onTcpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
                 return;
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             SocksConfig currentOutConf = outConfRef.get();
-            if (routeingFn.apply(e.getSource(), dstEp, "TCP")) {
-                e.setUpstream(new SocksTcpUpstream(dstEp, currentOutConf,
-                        routeUpstream(currentOutConf, selectUpstreamFn.apply(e))));
-            } else {
-                e.setUpstream(new Upstream(dstEp));
+            RssClientConf currentConf = rssConf;
+            boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
+            long userRuleBegin = routeLog ? System.nanoTime() : 0L;
+            boolean userRoute = e.getUser() instanceof ShadowUser && ((ShadowUser) e.getUser()).getRouteMatcher() != null;
+            V2RayRouteAction userRuleAction = matchUserRoute(e.getUser(), dstEp.getHost());
+            if (userRuleAction == V2RayRouteAction.BLOCK) {
+                if (routeLog) {
+                    log.info("route dst TCP {} BLOCK <- {} {}",
+                            dstEp.getHost(), userRoute ? "user:route" : "defaultRoute",
+                            Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+                }
+                String username = e.getUser() == null ? "anonymous" : e.getUser().getUsername();
+                throw new InvalidException("rss route rule block user={} trans=TCP dst={}", username, dstEp);
             }
+            if (userRuleAction == V2RayRouteAction.DIRECT) {
+                if (routeLog) {
+                    log.info("route dst TCP {} DIRECT <- {} {}",
+                            dstEp.getHost(), userRoute ? "user:route" : "defaultRoute",
+                            Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+                }
+                e.setUpstream(new Upstream(dstEp));
+                return;
+            }
+            if (routeLog) {
+                log.info("route dst TCP {} PROXY <- {} {}",
+                        dstEp.getHost(),
+                        userRoute ? "user:route" : "defaultRoute",
+                        Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+            }
+            e.setUpstream(new SocksTcpUpstream(dstEp, currentOutConf,
+                    routeUpstream(currentOutConf, selectUpstreamFn.apply(e))));
         });
         inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
@@ -1435,11 +1491,36 @@ public final class RssClient {
             }
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             SocksConfig currentOutConf = outConfRef.get();
-            if (routeingFn.apply(e.getSource(), dstEp, "UDP")) {
-                e.setUpstream(createUdpRouteUpstream(dstEp, currentOutConf, selectUpstreamFn.apply(e)));
-            } else {
-                e.setUpstream(new Upstream(dstEp));
+            RssClientConf currentConf = rssConf;
+            boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
+            long userRuleBegin = routeLog ? System.nanoTime() : 0L;
+            boolean userRoute = e.getUser() instanceof ShadowUser && ((ShadowUser) e.getUser()).getRouteMatcher() != null;
+            V2RayRouteAction userRuleAction = matchUserRoute(e.getUser(), dstEp.getHost());
+            if (userRuleAction == V2RayRouteAction.BLOCK) {
+                if (routeLog) {
+                    log.info("route dst UDP {} BLOCK <- {} {}",
+                            dstEp.getHost(), userRoute ? "user:route" : "defaultRoute",
+                            Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+                }
+                String username = e.getUser() == null ? "anonymous" : e.getUser().getUsername();
+                throw new InvalidException("rss route rule block user={} trans=UDP dst={}", username, dstEp);
             }
+            if (userRuleAction == V2RayRouteAction.DIRECT) {
+                if (routeLog) {
+                    log.info("route dst UDP {} DIRECT <- {} {}",
+                            dstEp.getHost(), userRoute ? "user:route" : "defaultRoute",
+                            Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+                }
+                e.setUpstream(new Upstream(dstEp));
+                return;
+            }
+            if (routeLog) {
+                log.info("route dst UDP {} PROXY <- {} {}",
+                        dstEp.getHost(),
+                        userRoute ? "user:route" : "defaultRoute",
+                        Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+            }
+            e.setUpstream(createUdpRouteUpstream(dstEp, currentOutConf, selectUpstreamFn.apply(e)));
         });
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         return new RssRuntime.RssInServer(inSvr, inConf, outConfRef, sourceSteeringEnabled);
@@ -1709,7 +1790,7 @@ public final class RssClient {
             return;
         }
 
-        InetAddress wanIp = Sockets.parseIpAddress(GeoManager.INSTANCE.getPublicIp());
+        InetAddress wanIp = Sockets.parseIpAddress(Sockets.getPublicIp());
         List<String> subDomains = Linq.from(conf.ddnsDomains)
                 .where(sd -> !DnsClient.directClient().resolveAll(sd).contains(wanIp))
                 .select(sd -> sd.substring(0, sd.indexOf("."))).toList();

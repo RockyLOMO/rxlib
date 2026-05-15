@@ -1,6 +1,7 @@
 package org.rx.util.rss;
 
 import com.alibaba.fastjson2.JSONFactory;
+import com.alibaba.fastjson2.annotation.JSONField;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.reader.ObjectReader;
 import lombok.Getter;
@@ -44,6 +45,10 @@ public class RssClientConf {
 
     // socks
     public List<ShadowUser> shadowUsers;
+    public List<String> defaultRouteRules;
+    @JSONField(serialize = false, deserialize = false)
+    @ToString.Exclude
+    transient V2RayUserRuleMatcher defaultRouteMatcher;
     public List<SocksServer> socksServers;
     // false=LocalAddress 进程内转发，true=127.0.0.1:port 真实监听
     public boolean socksBindPort;
