@@ -43,7 +43,7 @@ public class RssClientConf {
 
     // socks
     public List<ShadowUser> shadowUsers;
-    public List<String> defaultRouteRules;
+    public UserRule defaultRoute;
     @JSONField(serialize = false, deserialize = false)
     @ToString.Exclude
     transient UserRuleMatcher defaultRouteMatcher;

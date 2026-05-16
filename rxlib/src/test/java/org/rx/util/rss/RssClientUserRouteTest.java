@@ -33,12 +33,14 @@ public class RssClientUserRouteTest {
     }
 
     @Test
-    public void normalizeFallsBackToDefaultRouteRulesWhenUserRouteDisabled() {
+    public void normalizeFallsBackToDefaultRouteWhenUserRouteDisabled() {
         RssClientConf oldConf = RssClient.rssConf;
         RssClientConf conf = validRssConf();
-        conf.defaultRouteRules = Arrays.asList(
+        UserRule defaultRoute = new UserRule();
+        defaultRoute.setRules(Arrays.asList(
                 "srcIp 192.168.31.7 block",
-                "default proxy");
+                "default proxy"));
+        conf.defaultRoute = defaultRoute;
         UserRule route = new UserRule();
         route.setEnabled(Boolean.FALSE);
         conf.shadowUsers.get(0).setRoute(route);
@@ -59,16 +61,44 @@ public class RssClientUserRouteTest {
     }
 
     @Test
+    public void normalizeBuildsDefaultRouteWhenMissingRules() {
+        RssClientConf oldConf = RssClient.rssConf;
+        RssClientConf conf = validRssConf();
+
+        try {
+            assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+            RssClient.rssConf = conf;
+
+            assertEquals(Boolean.TRUE, conf.defaultRoute.getEnabled());
+            assertEquals(RouteAction.PROXY, RssClient.matchUserRoute(TrafficUser.ANONYMOUS, "unknown.example"));
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
+    }
+
+    @Test
     public void sourceSteeringTtlReadsShadowUserRouteAndHonorsDisabledRoute() {
+        RssClientConf oldConf = RssClient.rssConf;
+        RssClientConf conf = new RssClientConf();
+        UserRule defaultRoute = new UserRule();
+        defaultRoute.setEnabled(Boolean.TRUE);
+        defaultRoute.setSrcSteeringTTL(30);
+        conf.defaultRoute = defaultRoute;
+        RssClient.rssConf = conf;
         ShadowUser user = new ShadowUser();
         UserRule route = new UserRule();
         route.setSrcSteeringTTL(60);
         user.setRoute(route);
 
-        assertEquals(60, RssClient.sourceSteeringTtl(user));
+        try {
+            assertEquals(60, RssClient.sourceSteeringTtl(user));
 
-        route.setEnabled(Boolean.FALSE);
-        assertEquals(0, RssClient.sourceSteeringTtl(user));
+            route.setEnabled(Boolean.FALSE);
+            assertEquals(30, RssClient.sourceSteeringTtl(user));
+            assertEquals(30, RssClient.sourceSteeringTtl(TrafficUser.ANONYMOUS));
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
     }
 
     private static RssClientConf validRssConf() {

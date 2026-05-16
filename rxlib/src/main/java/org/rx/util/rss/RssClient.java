@@ -418,7 +418,7 @@ public final class RssClient {
         if (!normalizeAndValidateSocksServerIds(conf)) {
             return false;
         }
-        if (!normalizeAndValidateDefaultRouteRules(conf)) {
+        if (!normalizeAndValidateDefaultRoute(conf)) {
             return false;
         }
         if (conf.rrpPort != null && conf.rrpPort <= 0) {
@@ -581,16 +581,23 @@ public final class RssClient {
         return true;
     }
 
-    private static boolean normalizeAndValidateDefaultRouteRules(RssClientConf conf) {
+    private static boolean normalizeAndValidateDefaultRoute(RssClientConf conf) {
         try {
-            if (CollectionUtils.isEmpty(conf.defaultRouteRules)) {
-                conf.defaultRouteRules = UserRuleMatcher.defaultRouteRules();
+            if (conf.defaultRoute == null) {
+                conf.defaultRoute = UserRuleMatcher.defaultRoute();
+            } else {
+                if (conf.defaultRoute.getEnabled() == null) {
+                    conf.defaultRoute.setEnabled(Boolean.TRUE);
+                }
+                conf.defaultRoute.setSrcSteeringTTL(Math.max(0, conf.defaultRoute.getSrcSteeringTTL()));
+                if (CollectionUtils.isEmpty(conf.defaultRoute.getRules())) {
+                    conf.defaultRoute.setRules(UserRuleMatcher.defaultRoute().getRules());
+                }
             }
-            conf.defaultRouteMatcher = UserRuleMatcher.compileDefaultRouteRules(
-                    conf.defaultRouteRules, V2RayGeoManager.INSTANCE);
+            conf.defaultRouteMatcher = UserRuleMatcher.compileDefaultRoute(conf.defaultRoute, V2RayGeoManager.INSTANCE);
             return true;
         } catch (RuntimeException e) {
-            log.warn("rssConf defaultRouteRules invalid", e);
+            log.warn("rssConf defaultRoute invalid", e);
             return false;
         }
     }
@@ -1546,10 +1553,18 @@ public final class RssClient {
     }
 
     static int sourceSteeringTtl(TrafficUser user) {
-        if (!(user instanceof ShadowUser)) {
-            return 0;
+        if (user instanceof ShadowUser) {
+            UserRule route = ((ShadowUser) user).getRoute();
+            if (route != null && !Boolean.FALSE.equals(route.getEnabled())) {
+                return Math.max(0, route.getSrcSteeringTTL());
+            }
         }
-        UserRule route = ((ShadowUser) user).getRoute();
+        return defaultRouteSteeringTtl();
+    }
+
+    static int defaultRouteSteeringTtl() {
+        RssClientConf conf = rssConf;
+        UserRule route = conf == null ? null : conf.defaultRoute;
         return route == null || Boolean.FALSE.equals(route.getEnabled()) ? 0 : Math.max(0, route.getSrcSteeringTTL());
     }
 

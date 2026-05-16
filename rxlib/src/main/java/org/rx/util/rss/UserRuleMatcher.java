@@ -48,12 +48,22 @@ public final class UserRuleMatcher {
         return compileRules(rule.getRules(), manager, username);
     }
 
-    public static UserRuleMatcher compileDefaultRouteRules(List<String> rules, V2RayGeoManager manager) {
-        return compileRules(CollectionUtils.isEmpty(rules) ? DEFAULT_ROUTE_RULES : rules, manager, "defaultRouteRules");
+    public static UserRuleMatcher compileDefaultRoute(UserRule rule, V2RayGeoManager manager) {
+        if (rule == null) {
+            return compileRules(DEFAULT_ROUTE_RULES, manager, "defaultRoute");
+        }
+        if (Boolean.FALSE.equals(rule.getEnabled())) {
+            return null;
+        }
+        return compileRules(CollectionUtils.isEmpty(rule.getRules()) ? DEFAULT_ROUTE_RULES : rule.getRules(),
+                manager, "defaultRoute");
     }
 
-    static List<String> defaultRouteRules() {
-        return DEFAULT_ROUTE_RULES;
+    static UserRule defaultRoute() {
+        UserRule rule = new UserRule();
+        rule.setEnabled(Boolean.TRUE);
+        rule.setRules(DEFAULT_ROUTE_RULES);
+        return rule;
     }
 
     private static UserRuleMatcher compileRules(List<String> lines, V2RayGeoManager manager, String name) {

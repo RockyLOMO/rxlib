@@ -77,7 +77,7 @@ public class UserRuleMatcherTest {
                     V2RayGeoDataTestUtil.geoIpEntry("cn", false,
                             V2RayGeoDataTestUtil.cidr(V2RayGeoDataTestUtil.ip4(1, 2, 0, 0), 16))));
 
-            UserRuleMatcher matcher = UserRuleMatcher.compileDefaultRouteRules(null, manager);
+            UserRuleMatcher matcher = UserRuleMatcher.compileDefaultRoute(null, manager);
 
             assertEquals(RouteAction.DIRECT, matcher.match("map.baidu.com"));
             assertEquals(RouteAction.DIRECT, matcher.match("1.2.3.4"));
