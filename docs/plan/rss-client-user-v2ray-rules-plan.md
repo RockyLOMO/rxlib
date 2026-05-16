@@ -77,6 +77,7 @@ public V2RayUserRule route;
 ```java
 public class V2RayUserRule {
     public Boolean enabled;
+    public int srcSteeringTTL;
     public List<String> rules;
 }
 ```
@@ -90,6 +91,10 @@ public class V2RayUserRule {
 示例：
 
 ```text
+srcIp 192.168.31.7 direct
+srcPort 40000-50000 block
+dstIp 8.8.8.8 proxy
+dstPort 443 direct
 192.168.31.1 direct
 geoip:cn proxy
 geosite:cn direct
@@ -97,6 +102,10 @@ example.com direct
 10.0.0.0/8 block
 default proxy
 ```
+
+其中 `srcIp/srcPort/dstIp/dstPort` 是端点限定前缀；`dstIp 8.8.8.8 proxy` 与旧写法 `8.8.8.8 proxy` 都表示目标 IP 规则。IP 支持精确值和 CIDR，端口支持精确值和 `min-max` 范围。
+
+`srcSteeringTTL` 放在 `ShadowUser.route` 下，表示该用户按源 IP 选择上游后的亲和缓存秒数，0 表示关闭；443、80、53、123 等常见无状态端口仍跳过该粘滞缓存。
 
 `V2RayRouteAction` 包含 `PROXY`、`DIRECT`、`BLOCK`。`default` 是规则目标关键字，表示前面所有规则都未命中时的兜底动作。
 
@@ -115,6 +124,7 @@ default proxy
 ```java
 public final class V2RayUserRuleMatcher {
     V2RayRouteAction match(String host, byte[] ipBytes);
+    V2RayRouteAction match(String host, int dstPort, InetSocketAddress srcEp);
 }
 ```
 
@@ -133,11 +143,12 @@ public final class V2RayUserRuleMatcher {
 例如：
 
 ```text
-192.168.31.1 direct
+srcIp 192.168.31.7 direct
+dstIp 192.168.31.7 proxy
 geoip:cn proxy
 ```
 
-当目标为 `192.168.31.1` 且同时满足后续 `geoip:cn` 时，按第一行走 `direct`。
+当来源为 `192.168.31.7` 且目标也满足后续 `dstIp` / `geoip:cn` 时，按第一行走 `direct`。
 
 `ShadowUser.route` 为空或未启用时使用全局 `defaultRouteRules`。默认全局规则为 `geosite:cn direct`、`geoip:cn direct`、`default proxy`，即 cn 直连，其他代理。
 
