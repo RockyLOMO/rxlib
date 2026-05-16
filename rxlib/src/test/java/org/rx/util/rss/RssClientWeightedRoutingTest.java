@@ -32,7 +32,7 @@ class RssClientWeightedRoutingTest {
     void nextUpstream_RespectsWeightsAcrossDifferentSourceIps() throws Exception {
         RssClientConf oldConf = RssClient.rssConf;
         try {
-            RssClient.rssConf = rssConfWithSteeringTtl(60);
+            RssClient.rssConf = new RssClientConf();
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 9);
             UpstreamSupport backup = upstream("127.0.0.1", 1081, 1);
             RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
@@ -62,15 +62,15 @@ class RssClientWeightedRoutingTest {
     void nextUpstream_KeepsSameSourceIpPinnedWithinSteeringTtl() throws Exception {
         RssClientConf oldConf = RssClient.rssConf;
         try {
-            RssClient.rssConf = rssConfWithSteeringTtl(60);
+            RssClient.rssConf = new RssClientConf();
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 9);
             UpstreamSupport backup = upstream("127.0.0.1", 1081, 1);
             RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
             InetAddress source = InetAddress.getByName("10.250.0.7");
 
-            UpstreamSupport first = RssClient.nextUpstream(servers, source);
+            UpstreamSupport first = RssClient.nextUpstream(servers, source, null, true, 60);
             for (int i = 0; i < 200; i++) {
-                assertSame(first, RssClient.nextUpstream(servers, source),
+                assertSame(first, RssClient.nextUpstream(servers, source, null, true, 60),
                         "同源 IP 在 srcSteeringTTL 内应固定到首次选中的上游");
             }
         } finally {
@@ -82,18 +82,18 @@ class RssClientWeightedRoutingTest {
     void nextUpstream_SkipsSourceSteeringForCommonStatelessPorts() throws Exception {
         RssClientConf oldConf = RssClient.rssConf;
         try {
-            RssClient.rssConf = rssConfWithSteeringTtl(60);
+            RssClient.rssConf = new RssClientConf();
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
             UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
             RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
             InetAddress source = InetAddress.getByName("10.250.0.8");
             UnresolvedEndpoint https = new UnresolvedEndpoint("example.com", 443);
 
-            assertSame(primary, RssClient.nextUpstream(servers, source, https));
+            assertSame(primary, RssClient.nextUpstream(servers, source, https, true, 60));
             servers.setWeight(primary, 0);
             servers.setWeight(backup, 1);
 
-            assertSame(backup, RssClient.nextUpstream(servers, source, https),
+            assertSame(backup, RssClient.nextUpstream(servers, source, https, true, 60),
                     "443 这类无状态常见端口不应被同源 IP 粘滞缓存固定");
         } finally {
             RssClient.rssConf = oldConf;
@@ -104,18 +104,18 @@ class RssClientWeightedRoutingTest {
     void nextUpstream_KeepsSourceSteeringForStatefulPorts() throws Exception {
         RssClientConf oldConf = RssClient.rssConf;
         try {
-            RssClient.rssConf = rssConfWithSteeringTtl(60);
+            RssClient.rssConf = new RssClientConf();
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
             UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
             RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
             InetAddress source = InetAddress.getByName("10.250.0.9");
             UnresolvedEndpoint ssh = new UnresolvedEndpoint("example.com", 22);
 
-            assertSame(primary, RssClient.nextUpstream(servers, source, ssh));
+            assertSame(primary, RssClient.nextUpstream(servers, source, ssh, true, 60));
             servers.setWeight(primary, 0);
             servers.setWeight(backup, 1);
 
-            assertSame(primary, RssClient.nextUpstream(servers, source, ssh),
+            assertSame(primary, RssClient.nextUpstream(servers, source, ssh, true, 60),
                     "非无状态端口仍应保留 srcSteeringTTL 粘滞缓存");
         } finally {
             RssClient.rssConf = oldConf;
@@ -126,18 +126,18 @@ class RssClientWeightedRoutingTest {
     void nextUpstream_DisablesSourceSteeringForClosingOldInstance() throws Exception {
         RssClientConf oldConf = RssClient.rssConf;
         try {
-            RssClient.rssConf = rssConfWithSteeringTtl(60);
+            RssClient.rssConf = new RssClientConf();
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
             UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
             RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
             InetAddress source = InetAddress.getByName("10.250.0.10");
             UnresolvedEndpoint ssh = new UnresolvedEndpoint("example.com", 22);
 
-            assertSame(primary, RssClient.nextUpstream(servers, source, ssh, true));
+            assertSame(primary, RssClient.nextUpstream(servers, source, ssh, true, 60));
             servers.setWeight(primary, 0);
             servers.setWeight(backup, 1);
 
-            assertSame(backup, RssClient.nextUpstream(servers, source, ssh, false),
+            assertSame(backup, RssClient.nextUpstream(servers, source, ssh, false, 60),
                     "热加载旧实例关闭 source steering 后不应继续命中同源 IP 粘滞缓存");
         } finally {
             RssClient.rssConf = oldConf;
@@ -151,13 +151,6 @@ class RssClientWeightedRoutingTest {
         assertTrue(RssClient.isCommonStatelessPort(53));
         assertTrue(RssClient.isCommonStatelessPort(123));
         assertTrue(!RssClient.isCommonStatelessPort(22));
-    }
-
-    private static RssClientConf rssConfWithSteeringTtl(int ttlSeconds) {
-        RssClientConf conf = new RssClientConf();
-        conf.route = new RssClientConf.RouteConf();
-        conf.route.srcSteeringTTL = ttlSeconds;
-        return conf;
     }
 
     private static RandomList<UpstreamSupport> weightedServers(UpstreamSupport primary, UpstreamSupport backup) {

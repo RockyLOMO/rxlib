@@ -1,6 +1,6 @@
 package org.rx.util.rss;
 
-public enum V2RayRouteAction {
+public enum RouteAction {
     PROXY,
     DIRECT,
     BLOCK

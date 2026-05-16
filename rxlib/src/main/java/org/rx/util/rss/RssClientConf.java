@@ -12,11 +12,9 @@ import org.rx.net.Sockets;
 import org.rx.net.nameserver.NameserverConfig;
 
 import java.io.Serializable;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Getter
 @Setter
@@ -48,7 +46,7 @@ public class RssClientConf {
     public List<String> defaultRouteRules;
     @JSONField(serialize = false, deserialize = false)
     @ToString.Exclude
-    transient V2RayUserRuleMatcher defaultRouteMatcher;
+    transient UserRuleMatcher defaultRouteMatcher;
     public List<SocksServer> socksServers;
     // false=LocalAddress 进程内转发，true=127.0.0.1:port 真实监听
     public boolean socksBindPort;
@@ -80,9 +78,6 @@ public class RssClientConf {
     // rrp
     public String rrpToken;
     public Integer rrpPort;
-
-    // route
-    public RouteConf route = new RouteConf();
 
     // ddns
     public int ddnsJobSeconds;
@@ -152,15 +147,5 @@ public class RssClientConf {
             this.weight = weight;
             this.endpoint = endpoint;
         }
-    }
-
-    @Getter
-    @Setter
-    @ToString
-    public static class RouteConf {
-        public boolean enable;
-        public Set<String> dstGeoSiteDirectRules;
-        public Set<InetAddress> srcIpProxyRules;
-        public int srcSteeringTTL;
     }
 }

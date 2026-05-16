@@ -31,12 +31,12 @@ public class ShadowUser implements Serializable, TrafficUser {
     String socksUser;
     // 为空表示使用全局 socksServers；非空时只使用这些上游 id。
     List<String> socksServers;
-    V2RayUserRule route;
+    UserRule route;
     @Getter(AccessLevel.PACKAGE)
     @Setter(AccessLevel.PACKAGE)
     @JSONField(serialize = false, deserialize = false)
     @ToString.Exclude
-    transient V2RayUserRuleMatcher routeMatcher;
+    transient UserRuleMatcher routeMatcher;
     int ipLimit = -1;
     DateTime lastResetTime;
     final Map<InetAddress, TrafficLoginInfo> loginIps = new ConcurrentHashMap<>(4);

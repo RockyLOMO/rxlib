@@ -561,7 +561,6 @@ public class RssTest extends AbstractTester {
         RssClientConf oldConf = RssClient.rssConf;
         try {
             RssClient.rssConf = new RssClientConf();
-            RssClient.rssConf.route = new RssClientConf.RouteConf();
 
             assertThrows(InvalidException.class,
                     () -> RssClient.nextUpstream(new RandomList<UpstreamSupport>(), java.net.InetAddress.getByName("127.0.0.1")));
@@ -576,15 +575,13 @@ public class RssTest extends AbstractTester {
         RssClientConf oldConf = RssClient.rssConf;
         try {
             RssClient.rssConf = new RssClientConf();
-            RssClient.rssConf.route = new RssClientConf.RouteConf();
-            RssClient.rssConf.route.srcSteeringTTL = 60;
             RandomList<UpstreamSupport> servers = new RandomList<>();
             UpstreamSupport first = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), null);
             first.setConfiguredWeight(1);
             servers.add(first, 1);
             InetAddress source = InetAddress.getByName("127.0.0.1");
 
-            assertSame(first, RssClient.nextUpstream(servers, source));
+            assertSame(first, RssClient.nextUpstream(servers, source, null, true, 60));
 
             UpstreamSupport second = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1081)), null);
             second.setConfiguredWeight(1);
@@ -592,7 +589,7 @@ public class RssTest extends AbstractTester {
             first.setHealthy(false);
             servers.setWeight(first, 0);
 
-            assertSame(second, RssClient.nextUpstream(servers, source));
+            assertSame(second, RssClient.nextUpstream(servers, source, null, true, 60));
         } finally {
             RssClient.rssConf = oldConf;
         }
@@ -605,7 +602,6 @@ public class RssTest extends AbstractTester {
         try {
             RssClient.rssConf = new RssClientConf();
             RssClient.rssConf.upstreamFailOpenWhenAllDown = true;
-            RssClient.rssConf.route = new RssClientConf.RouteConf();
             RandomList<UpstreamSupport> servers = new RandomList<>();
             UpstreamSupport main = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), null);
             main.setConfiguredWeight(1);
@@ -625,7 +621,6 @@ public class RssTest extends AbstractTester {
         try {
             RssClient.rssConf = new RssClientConf();
             RssClient.rssConf.upstreamFailOpenWhenAllDown = false;
-            RssClient.rssConf.route = new RssClientConf.RouteConf();
             RandomList<UpstreamSupport> servers = new RandomList<>();
             UpstreamSupport main = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)), null);
             main.setConfiguredWeight(1);
@@ -739,10 +734,9 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
-    public void forwardingDns_routeDisabledNullRemoteResultDoesNotFallbackToLocalDns() throws Exception {
+    public void forwardingDns_proxyRouteNullRemoteResultDoesNotFallbackToLocalDns() throws Exception {
         RssClientConf old = RssClient.rssConf;
         RssClientConf conf = validRssConf();
-        conf.route.enable = false;
         AtomicInteger calls = new AtomicInteger();
         SocksRpcContract delegate = new SocksRpcContract() {
             @Override

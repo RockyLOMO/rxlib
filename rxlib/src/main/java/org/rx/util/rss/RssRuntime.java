@@ -532,6 +532,9 @@ final class RssRuntime implements AutoCloseable {
             user.setSsPort(oldRef.ssPort);
             user.setSsPwd(oldRef.ssPwd);
             user.setRouteMatcher(oldRef.routeMatcher);
+            UserRule route = new UserRule();
+            route.setSrcSteeringTTL(oldRef.srcSteeringTTL);
+            user.setRoute(route);
             ShadowServerRef restored = createShadowServer(activeConf, user, oldRef.routePlan);
             shadowServers.put(restored.username, restored);
         } catch (Throwable e) {
@@ -590,16 +593,16 @@ final class RssRuntime implements AutoCloseable {
         SocksConfig toInConf = new SocksConfig();
         toInConf.setOptimalSettings(RssSupport.IN_OPS);
         ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(),
-                routePlan, ssSvr, usr.getRouteMatcher());
+                routePlan, ssSvr, usr.getRouteMatcher(), sourceSteeringTtl(usr));
         ssSvr.onTcpRoute.replace((s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             RssClientConf currentConf = rssConf;
             boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
             long userRuleBegin = routeLog ? System.nanoTime() : 0L;
-            V2RayUserRuleMatcher matcher = ref.routeMatcher;
+            UserRuleMatcher matcher = ref.routeMatcher;
             boolean userRoute = matcher != null;
-            V2RayRouteAction userRuleAction = matchRoute(matcher, dstEp.getHost());
-            if (userRuleAction == V2RayRouteAction.BLOCK) {
+            RouteAction userRuleAction = matchRoute(matcher, dstEp.getHost(), dstEp.getPort(), e.getSource());
+            if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
                     log.info("SS TCP route {} BLOCK <- {} {}",
                             dstEp, userRoute ? "user:route" : "defaultRoute",
@@ -608,7 +611,7 @@ final class RssRuntime implements AutoCloseable {
                 throw new InvalidException("rss route rule block user={} trans=SS-TCP dst={}",
                         ref.username, dstEp);
             }
-            if (userRuleAction == V2RayRouteAction.DIRECT) {
+            if (userRuleAction == RouteAction.DIRECT) {
                 if (routeLog) {
                     log.info("SS TCP route {} DIRECT <- {} {}",
                             dstEp, userRoute ? "user:route" : "defaultRoute",
@@ -617,12 +620,12 @@ final class RssRuntime implements AutoCloseable {
                 e.setUpstream(new Upstream(dstEp));
                 return;
             }
-            if (userRuleAction == V2RayRouteAction.PROXY && routeLog) {
+            if (userRuleAction == RouteAction.PROXY && routeLog) {
                 log.info("SS TCP route {} PROXY <- {} {}",
                         dstEp, userRoute ? "user:route" : "defaultRoute",
                         org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
-            UpstreamSupport svrSupport = routePlan.nextSupport();
+            UpstreamSupport svrSupport = routePlan.nextSupport(e.getSource().getAddress(), dstEp, ref.srcSteeringTTL);
             if (currentConf != null && currentConf.hasDebugFlag()) {
                 log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
@@ -633,10 +636,10 @@ final class RssRuntime implements AutoCloseable {
             RssClientConf currentConf = rssConf;
             boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
             long userRuleBegin = routeLog ? System.nanoTime() : 0L;
-            V2RayUserRuleMatcher matcher = ref.routeMatcher;
+            UserRuleMatcher matcher = ref.routeMatcher;
             boolean userRoute = matcher != null;
-            V2RayRouteAction userRuleAction = matchRoute(matcher, dstEp.getHost());
-            if (userRuleAction == V2RayRouteAction.BLOCK) {
+            RouteAction userRuleAction = matchRoute(matcher, dstEp.getHost(), dstEp.getPort(), e.getSource());
+            if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
                     log.info("SS UDP route {} BLOCK <- {} {}",
                             dstEp, userRoute ? "user:route" : "defaultRoute",
@@ -645,7 +648,7 @@ final class RssRuntime implements AutoCloseable {
                 throw new InvalidException("rss route rule block user={} trans=SS-UDP dst={}",
                         ref.username, dstEp);
             }
-            if (userRuleAction == V2RayRouteAction.DIRECT) {
+            if (userRuleAction == RouteAction.DIRECT) {
                 if (routeLog) {
                     log.info("SS UDP route {} DIRECT <- {} {}",
                             dstEp, userRoute ? "user:route" : "defaultRoute",
@@ -654,12 +657,12 @@ final class RssRuntime implements AutoCloseable {
                 e.setUpstream(new Upstream(dstEp));
                 return;
             }
-            if (userRuleAction == V2RayRouteAction.PROXY && routeLog) {
+            if (userRuleAction == RouteAction.PROXY && routeLog) {
                 log.info("SS UDP route {} PROXY <- {} {}",
                         dstEp, userRoute ? "user:route" : "defaultRoute",
                         org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
-            UpstreamSupport svrSupport = routePlan.nextSupport();
+            UpstreamSupport svrSupport = routePlan.nextSupport(e.getSource().getAddress(), dstEp, ref.srcSteeringTTL);
             if (currentConf != null && currentConf.hasDebugFlag()) {
                 log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
@@ -775,8 +778,8 @@ final class RssRuntime implements AutoCloseable {
             return new ShadowRoutePlan(toJsonString(signatureParts), supports);
         }
 
-        UpstreamSupport nextSupport() {
-            return supports.next();
+        UpstreamSupport nextSupport(InetAddress srcHost, UnresolvedEndpoint dstEp, int steeringTtl) {
+            return useSourceSteering(steeringTtl, dstEp) ? supports.next(srcHost, steeringTtl, true) : supports.next();
         }
     }
 
@@ -786,20 +789,23 @@ final class RssRuntime implements AutoCloseable {
         final String ssPwd;
         final ShadowRoutePlan routePlan;
         final ShadowsocksServer server;
-        volatile V2RayUserRuleMatcher routeMatcher;
+        volatile UserRuleMatcher routeMatcher;
+        volatile int srcSteeringTTL;
 
         ShadowServerRef(String username, int ssPort, String ssPwd, ShadowRoutePlan routePlan,
-                        ShadowsocksServer server, V2RayUserRuleMatcher routeMatcher) {
+                        ShadowsocksServer server, UserRuleMatcher routeMatcher, int srcSteeringTTL) {
             this.username = username;
             this.ssPort = ssPort;
             this.ssPwd = ssPwd;
             this.routePlan = routePlan;
             this.server = server;
             this.routeMatcher = routeMatcher;
+            this.srcSteeringTTL = Math.max(0, srcSteeringTTL);
         }
 
         void updateRouteMatcher(ShadowUser user) {
             routeMatcher = user == null ? null : user.getRouteMatcher();
+            srcSteeringTTL = sourceSteeringTtl(user);
         }
 
         boolean matches(ShadowUser user, String nextRouteSignature, boolean forceRebuild) {
