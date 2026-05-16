@@ -1402,7 +1402,7 @@ public final class RssClient {
         AtomicReference<SocksConfig> outConfRef = new AtomicReference<>(outConf);
         AtomicBoolean sourceSteeringEnabled = new AtomicBoolean(true);
         BiFunc<SocksContext, UpstreamSupport> selectUpstreamFn = e -> {
-            InetAddress srcHost = e.getSource().getAddress();
+            InetAddress srcHost = sourceAddress(e.getSource());
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             RandomList<UpstreamSupport> servers = resolveUserSocksServers(socksServersRef.get(),
                     userSocksServersRef == null ? null : userSocksServersRef.get(), e.getUser());
@@ -1523,7 +1523,7 @@ public final class RssClient {
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost,
             UnresolvedEndpoint dstEp, boolean allowSourceSteering, int steeringTtl) {
         try {
-            UpstreamSupport next = allowSourceSteering && useSourceSteering(steeringTtl, dstEp)
+            UpstreamSupport next = allowSourceSteering && srcHost != null && useSourceSteering(steeringTtl, dstEp)
                     ? socksServers.next(srcHost, steeringTtl, true)
                     : socksServers.next();
             if (next.isHealthy()) {
@@ -1551,6 +1551,10 @@ public final class RssClient {
         }
         UserRule route = ((ShadowUser) user).getRoute();
         return route == null || Boolean.FALSE.equals(route.getEnabled()) ? 0 : Math.max(0, route.getSrcSteeringTTL());
+    }
+
+    static InetAddress sourceAddress(InetSocketAddress source) {
+        return source == null ? null : source.getAddress();
     }
 
     static UpstreamSupport tryNextFailOpen(RandomList<UpstreamSupport> socksServers, InetAddress srcHost) {

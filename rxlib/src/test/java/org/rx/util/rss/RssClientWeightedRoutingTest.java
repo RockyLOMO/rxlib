@@ -145,6 +145,43 @@ class RssClientWeightedRoutingTest {
     }
 
     @Test
+    void nextUpstream_FallsBackToWeightedSelectionWhenSourceIpMissing() throws Exception {
+        RssClientConf oldConf = RssClient.rssConf;
+        try {
+            RssClient.rssConf = new RssClientConf();
+            UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
+            UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
+            RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
+            UnresolvedEndpoint ssh = new UnresolvedEndpoint("example.com", 22);
+
+            assertSame(primary, RssClient.nextUpstream(servers, null, ssh, true, 60));
+            servers.setWeight(primary, 0);
+            servers.setWeight(backup, 1);
+
+            assertSame(backup, RssClient.nextUpstream(servers, null, ssh, true, 60),
+                    "源 IP 缺失时不应用 null key 写入同源 IP 粘滞缓存");
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
+    }
+
+    @Test
+    void shadowRoutePlan_FallsBackToWeightedSelectionWhenSourceIpMissing() {
+        UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
+        UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
+        RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
+        RssRuntime.ShadowRoutePlan plan = RssRuntime.ShadowRoutePlan.direct(servers);
+        UnresolvedEndpoint ssh = new UnresolvedEndpoint("example.com", 22);
+
+        assertSame(primary, plan.nextSupport(null, ssh, 60));
+        servers.setWeight(primary, 0);
+        servers.setWeight(backup, 1);
+
+        assertSame(backup, plan.nextSupport(null, ssh, 60),
+                "SS route plan 源 IP 缺失时不应使用同源 IP 粘滞缓存");
+    }
+
+    @Test
     void commonStatelessPortList_CoversHttpAndFrequentlyStatelessProtocols() {
         assertTrue(RssClient.isCommonStatelessPort(80));
         assertTrue(RssClient.isCommonStatelessPort(443));

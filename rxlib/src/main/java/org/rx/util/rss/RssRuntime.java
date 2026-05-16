@@ -625,7 +625,7 @@ final class RssRuntime implements AutoCloseable {
                         dstEp, userRoute ? "user:route" : "defaultRoute",
                         org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
-            UpstreamSupport svrSupport = routePlan.nextSupport(e.getSource().getAddress(), dstEp, ref.srcSteeringTTL);
+            UpstreamSupport svrSupport = routePlan.nextSupport(sourceAddress(e.getSource()), dstEp, ref.srcSteeringTTL);
             if (currentConf != null && currentConf.hasDebugFlag()) {
                 log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
@@ -662,7 +662,7 @@ final class RssRuntime implements AutoCloseable {
                         dstEp, userRoute ? "user:route" : "defaultRoute",
                         org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
-            UpstreamSupport svrSupport = routePlan.nextSupport(e.getSource().getAddress(), dstEp, ref.srcSteeringTTL);
+            UpstreamSupport svrSupport = routePlan.nextSupport(sourceAddress(e.getSource()), dstEp, ref.srcSteeringTTL);
             if (currentConf != null && currentConf.hasDebugFlag()) {
                 log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
@@ -779,7 +779,9 @@ final class RssRuntime implements AutoCloseable {
         }
 
         UpstreamSupport nextSupport(InetAddress srcHost, UnresolvedEndpoint dstEp, int steeringTtl) {
-            return useSourceSteering(steeringTtl, dstEp) ? supports.next(srcHost, steeringTtl, true) : supports.next();
+            return srcHost != null && useSourceSteering(steeringTtl, dstEp)
+                    ? supports.next(srcHost, steeringTtl, true)
+                    : supports.next();
         }
     }
 
