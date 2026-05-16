@@ -17,6 +17,7 @@ import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.function.Function;
@@ -26,20 +27,81 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class Helper {
+    private static final String DEFAULT_SMTP_HOST = "smtp.gmail.com";
+    private static final int DEFAULT_SMTP_PORT = 587;
+    private static final String DEFAULT_SMTP_FROM_NAME = "System";
+
     public static void sendEmail(String body) {
-        MiddlewareConfig config = SpringContext.getBean(MiddlewareConfig.class);
-        Helper.sendEmail(body, config.getSmtpPwd(), config.getSmtpTo());
+        sendEmail(body, (String) null);
     }
 
-    public static void sendEmail(String body, @NonNull String password, @NonNull String toEmail) {
-        final String fromEmail = "17091916400@163.com";
+    public static void sendEmail(String body, String toEmail) {
+        SmtpConfig config = loadSmtpConfig();
+        config.to = firstNonBlank(toEmail, config.to, config.username);
+        sendEmail(body, config);
+    }
+
+    public static void sendEmail(String body, @NonNull String username, @NonNull String password) {
+        SmtpConfig config = loadSmtpConfig();
+        config.username = username;
+        config.password = password;
+        config.from = firstNonBlank(config.from, username);
+        config.to = firstNonBlank(config.to, username);
+        sendEmail(body, config);
+    }
+
+    public static void sendEmail(String body, @NonNull String username, @NonNull String password, @NonNull String toEmail) {
+        SmtpConfig config = loadSmtpConfig();
+        config.username = username;
+        config.password = password;
+        config.from = firstNonBlank(config.from, username);
+        config.to = toEmail;
+        sendEmail(body, config);
+    }
+
+    private static SmtpConfig loadSmtpConfig() {
+        SmtpConfig config = new SmtpConfig();
+        MiddlewareConfig.SmtpConfig smtp = null;
+        if (SpringContext.isInitiated()) {
+            MiddlewareConfig middlewareConfig = SpringContext.getBean(MiddlewareConfig.class, false);
+            if (middlewareConfig != null) {
+                smtp = middlewareConfig.getSmtp();
+            }
+        }
+
+        config.host = firstNonBlank(System.getProperty("app.smtp.host"), smtp == null ? null : smtp.getHost(), DEFAULT_SMTP_HOST);
+        config.port = parseInt(System.getProperty("app.smtp.port"), smtp == null ? null : smtp.getPort(), DEFAULT_SMTP_PORT);
+        config.ssl = parseBoolean(System.getProperty("app.smtp.ssl"), smtp == null ? null : smtp.getSsl(), false);
+        config.startTls = parseBoolean(firstNonBlank(System.getProperty("app.smtp.startTls"), System.getProperty("app.smtp.starttls")),
+                smtp == null ? null : smtp.getStartTls(), !config.ssl);
+        config.timeoutMillis = parseInt(System.getProperty("app.smtp.timeoutMillis"), smtp == null ? null : smtp.getTimeoutMillis(), 15000);
+        config.username = firstNonBlank(System.getProperty("app.smtp.username"), System.getProperty("app.smtp.user"), smtp == null ? null : smtp.getUsername());
+        config.password = firstNonBlank(System.getProperty("app.smtp.password"), System.getProperty("app.smtp.pwd"), smtp == null ? null : smtp.getPassword());
+        config.from = firstNonBlank(System.getProperty("app.smtp.from"), smtp == null ? null : smtp.getFrom(), config.username);
+        config.to = firstNonBlank(System.getProperty("app.smtp.to"), smtp == null ? null : smtp.getTo());
+        config.proxy = firstNonBlank(System.getProperty("app.smtp.proxy"), smtp == null ? null : smtp.getProxy());
+        config.from = firstNonBlank(config.from, config.username);
+        return config;
+    }
+
+    private static void sendEmail(String body, SmtpConfig config) {
+        if (isBlank(config.username) || isBlank(config.password) || isBlank(config.to)) {
+            throw new InvalidException("SMTP config missing, set -Dapp.smtp.username / -Dapp.smtp.password / -Dapp.smtp.to or app.smtp.*");
+        }
         Properties props = new Properties();
-        props.put("mail.smtp.host", "smtp.163.com");
-        props.put("mail.smtp.port", "25");
+        props.put("mail.smtp.host", config.host);
+        props.put("mail.smtp.port", String.valueOf(config.port));
         props.put("mail.smtp.auth", "true");
+        props.put("mail.smtp.ssl.enable", String.valueOf(config.ssl));
+        props.put("mail.smtp.starttls.enable", String.valueOf(config.startTls));
+        props.put("mail.smtp.starttls.required", String.valueOf(config.startTls));
+        props.put("mail.smtp.connectiontimeout", String.valueOf(config.timeoutMillis));
+        props.put("mail.smtp.timeout", String.valueOf(config.timeoutMillis));
+        props.put("mail.smtp.writetimeout", String.valueOf(config.timeoutMillis));
+        applyProxy(props, config.proxy);
         Session session = Session.getInstance(props, new Authenticator() {
             protected PasswordAuthentication getPasswordAuthentication() {
-                return new PasswordAuthentication(fromEmail, password);
+                return new PasswordAuthentication(config.username, config.password);
             }
         });
 
@@ -49,18 +111,92 @@ public class Helper {
             msg.addHeader("format", "flowed");
             msg.addHeader("Content-Transfer-Encoding", "8bit");
 
-            msg.setFrom(new InternetAddress(fromEmail, "System"));
+            msg.setFrom(new InternetAddress(config.from, DEFAULT_SMTP_FROM_NAME));
             msg.setReplyTo(InternetAddress.parse("no_reply@x.cn", false));
 
             msg.setSubject("Notification", "UTF-8");
             msg.setText(body, "UTF-8");
             msg.setSentDate(new Date());
 
-            msg.setRecipients(Message.RecipientType.TO, InternetAddress.parse(toEmail, false));
+            msg.setRecipients(Message.RecipientType.TO, InternetAddress.parse(config.to, false));
             Transport.send(msg);
         } catch (Exception e) {
-            log.warn("sendEmail {}", e.getMessage());
+            throw new InvalidException("sendEmail failed: {}", e.getMessage(), e);
         }
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private static int parseInt(String value, Integer fallback, int defaultValue) {
+        if (!isBlank(value)) {
+            return Integer.parseInt(value);
+        }
+        return fallback == null ? defaultValue : fallback;
+    }
+
+    private static boolean parseBoolean(String value, Boolean fallback, boolean defaultValue) {
+        if (!isBlank(value)) {
+            return Boolean.parseBoolean(value);
+        }
+        return fallback == null ? defaultValue : fallback;
+    }
+
+    private static void applyProxy(Properties props, String proxy) {
+        if (isBlank(proxy)) {
+            return;
+        }
+        URI uri = URI.create(proxy);
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if (isBlank(scheme) || isBlank(host)) {
+            throw new InvalidException("Invalid SMTP proxy: {}", proxy);
+        }
+        int port = uri.getPort();
+        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+            props.put("mail.smtp.proxy.host", host);
+            if (port > 0) {
+                props.put("mail.smtp.proxy.port", String.valueOf(port));
+            }
+            String userInfo = uri.getUserInfo();
+            if (!isBlank(userInfo)) {
+                int split = userInfo.indexOf(':');
+                props.put("mail.smtp.proxy.user", split == -1 ? userInfo : userInfo.substring(0, split));
+                if (split != -1) {
+                    props.put("mail.smtp.proxy.password", userInfo.substring(split + 1));
+                }
+            }
+        } else if ("socks".equalsIgnoreCase(scheme) || "socks5".equalsIgnoreCase(scheme)) {
+            props.put("mail.smtp.socks.host", host);
+            if (port > 0) {
+                props.put("mail.smtp.socks.port", String.valueOf(port));
+            }
+        } else {
+            throw new InvalidException("Unsupported SMTP proxy scheme: {}", scheme);
+        }
+    }
+
+    private static class SmtpConfig {
+        String host;
+        int port;
+        boolean ssl;
+        boolean startTls;
+        int timeoutMillis;
+        String username;
+        String password;
+        String from;
+        String to;
+        String proxy;
     }
 
     public static void replaceExcel(InputStream in, OutputStream out, String sheetName, TripleFunc<Integer, List<Object>, List<Object>> fn, boolean is2003File) {

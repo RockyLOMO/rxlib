@@ -1,10 +1,14 @@
 package org.rx.util;
 
 import lombok.extern.slf4j.Slf4j;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.rx.util.pinyin.Pinyin;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.List;
 
 @Slf4j
 public class TestUtil {
@@ -55,9 +59,23 @@ public class TestUtil {
     }
 
     @Test
+    @SuppressWarnings("ConstantConditions")
     public void email() {
-        // 外部 SMTP 是集成测试依赖，默认单测不走真实网络。
-        Assumptions.assumeTrue("true".equalsIgnoreCase(System.getenv("RXLIB_X_SMTP_TEST")));
-        Helper.sendEmail("hw", System.getenv("RXLIB_X_SMTP_PASSWORD"), System.getenv("RXLIB_X_SMTP_TO"));
+        String username = null;
+        String password = null;
+        try {
+            List<String> lines = Files.readAllLines(Paths.get("D:\\projs_r\\smtp.txt"), StandardCharsets.UTF_8);
+            for (String line : lines) {
+                if (line.startsWith("Usr:")) {
+                    username = line.substring(4).trim();
+                } else if (line.startsWith("Pwd:")) {
+                    password = line.substring(4).trim();
+                }
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("smtp.txt not found", e);
+        }
+        System.setProperty("app.smtp.timeoutMillis", "5000");
+        Helper.sendEmail("hw", username, password);
     }
 }

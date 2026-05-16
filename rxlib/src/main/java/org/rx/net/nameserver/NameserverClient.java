@@ -10,7 +10,6 @@ import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
-import org.rx.net.support.GeoManager;
 import org.rx.util.function.Action;
 import org.rx.util.function.Func;
 
@@ -59,7 +58,7 @@ public final class NameserverClient extends Disposable {
     final String appName;
     final RandomList<NsInfo> holder = new RandomList<>();
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
-    volatile Func<String> publicIpResolver = () -> GeoManager.INSTANCE.getPublicIp();
+    volatile Func<String> publicIpResolver = Sockets::getPublicIp;
 
     public Set<InetSocketAddress> registerEndpoints() {
         return Linq.from(holder).select(p -> p.registerEndpoint).toSet();

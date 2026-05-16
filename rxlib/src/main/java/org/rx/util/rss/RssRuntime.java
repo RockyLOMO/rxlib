@@ -20,7 +20,6 @@ import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.GeoManager;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
@@ -46,7 +45,6 @@ import static org.rx.util.rss.RssClient.*;
 final class RssRuntime implements AutoCloseable {
     final int port;
     final int udp2rawPort;
-    final GeoManager geoMgr = GeoManager.INSTANCE;
     final AtomicReference<RandomList<UpstreamSupport>> socksServersRef = new AtomicReference<>();
     final AtomicReference<RandomList<UpstreamSupport>> udp2rawSocksServersRef = new AtomicReference<>();
     final AtomicReference<Map<String, RandomList<UpstreamSupport>>> userSocksServersRef = new AtomicReference<>();
@@ -70,7 +68,7 @@ final class RssRuntime implements AutoCloseable {
         this.port = port;
         udp2rawPort = port + 10;
 
-        UpstreamSnapshot snapshot = buildUpstreams(conf, geoMgr);
+        UpstreamSnapshot snapshot = buildUpstreams(conf);
         socksServersRef.set(snapshot.socksServers);
         udp2rawSocksServersRef.set(snapshot.udp2rawSocksServers);
         userSocksServersRef.set(snapshot.userSocksServers);
@@ -95,7 +93,6 @@ final class RssRuntime implements AutoCloseable {
 
         activeConf = conf;
         rssConf = conf;
-        geoMgr.setGeoSiteDirectRules(conf.route.dstGeoSiteDirectRules);
         applyShadowServersPlan(buildShadowServers(conf, inServer, inUdp2rawServer, true));
         clientInit(authenticator);
         addPublicIpWhiteList();
@@ -118,7 +115,7 @@ final class RssRuntime implements AutoCloseable {
         boolean rebuildShadowServers = restartInServers || shadowServerRestartRequired(currentConf, newConf);
 
         try {
-            nextUpstream = buildUpstreams(newConf, geoMgr);
+            nextUpstream = buildUpstreams(newConf);
             if (restartInServers) {
                 inServersPlan = prepareInServersPlan(newConf);
             }
@@ -179,7 +176,6 @@ final class RssRuntime implements AutoCloseable {
             applyShadowServersPlan(shadowPlan);
             shadowPlan = null;
             applyLiveConfig(newConf);
-            geoMgr.setGeoSiteDirectRules(newConf.route.dstGeoSiteDirectRules);
             configureDdnsSchedule(newConf);
             configureAutoWhiteListSchedule(newConf, this);
             commitRrpServerPlan(rrpPlan);
@@ -209,7 +205,7 @@ final class RssRuntime implements AutoCloseable {
 
     void addPublicIpWhiteList() {
         try {
-            InetAddress addr = Sockets.parseIpAddress(geoMgr.getPublicIp());
+            InetAddress addr = Sockets.parseIpAddress(Sockets.getPublicIp());
             eachQuietly(socksServersRef.get(), p -> p.getFacade().addWhiteList(addr, SocksRpcContract.rpcToken()));
         } catch (Throwable e) {
             log.warn("rss auto whitelist failed", e);
@@ -349,7 +345,7 @@ final class RssRuntime implements AutoCloseable {
         SocksConfig inConf = new SocksConfig(resolveRuntimeListenAddress(conf, port, "rss-in-", uniqueLocalAddress));
         configureInboundConfig(conf, inConf, false);
         log.info("rssConf socksBindPort={}, inListenAddress={}", conf.socksBindPort, inConf.getListenAddress());
-        return createInSvr(conf, inConf, authenticator, this::firstRoute, socksServersRef, userSocksServersRef, geoMgr);
+        return createInSvr(conf, inConf, authenticator, this::firstRoute, socksServersRef, userSocksServersRef);
     }
 
     private RssInServer createUdp2rawInServer(RssClientConf conf) {
@@ -360,7 +356,7 @@ final class RssRuntime implements AutoCloseable {
         SocksConfig inTunConf = new SocksConfig(resolveRuntimeListenAddress(conf, udp2rawPort, "rss-in-tun-", uniqueLocalAddress));
         configureInboundConfig(conf, inTunConf, true);
         return createInSvr(conf, inTunConf, authenticator, this::firstRoute,
-                udp2rawSocksServersRef, udp2rawUserSocksServersRef, geoMgr);
+                udp2rawSocksServersRef, udp2rawUserSocksServersRef);
     }
 
     private SocketAddress resolveRuntimeListenAddress(RssClientConf conf, int listenPort, String localNamePrefix, boolean uniqueLocalAddress) {
@@ -481,6 +477,7 @@ final class RssRuntime implements AutoCloseable {
                 ShadowRoutePlan routePlan = resolveShadowRoutePlan(conf, usr, inSvrAddress, inUdp2rawAddress);
                 ShadowServerRef oldRef = shadowServers.get(username);
                 if (oldRef != null && oldRef.matches(usr, routePlan.signature, forceRebuild)) {
+                    oldRef.updateRouteMatcher(usr);
                     plan.next.put(username, oldRef);
                     continue;
                 }
@@ -534,6 +531,10 @@ final class RssRuntime implements AutoCloseable {
             user.setUsername(oldRef.username);
             user.setSsPort(oldRef.ssPort);
             user.setSsPwd(oldRef.ssPwd);
+            user.setRouteMatcher(oldRef.routeMatcher);
+            UserRule route = new UserRule();
+            route.setSrcSteeringTTL(oldRef.srcSteeringTTL);
+            user.setRoute(route);
             ShadowServerRef restored = createShadowServer(activeConf, user, oldRef.routePlan);
             shadowServers.put(restored.username, restored);
         } catch (Throwable e) {
@@ -591,19 +592,78 @@ final class RssRuntime implements AutoCloseable {
         ShadowsocksServer ssSvr = new ShadowsocksServer(ssConf);
         SocksConfig toInConf = new SocksConfig();
         toInConf.setOptimalSettings(RssSupport.IN_OPS);
-        ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(), routePlan, ssSvr);
+        ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(),
+                routePlan, ssSvr, usr.getRouteMatcher(), sourceSteeringTtl(usr));
         ssSvr.onTcpRoute.replace((s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            UpstreamSupport svrSupport = routePlan.nextSupport();
-            if (rssConf.hasDebugFlag()) {
+            RssClientConf currentConf = rssConf;
+            boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
+            long userRuleBegin = routeLog ? System.nanoTime() : 0L;
+            UserRuleMatcher matcher = ref.routeMatcher;
+            boolean userRoute = matcher != null;
+            RouteAction userRuleAction = matchRoute(matcher, dstEp.getHost(), dstEp.getPort(), e.getSource());
+            if (userRuleAction == RouteAction.BLOCK) {
+                if (routeLog) {
+                    log.info("SS TCP route {} BLOCK <- {} {}",
+                            dstEp, userRoute ? "user:route" : "defaultRoute",
+                            org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+                }
+                throw new InvalidException("rss route rule block user={} trans=SS-TCP dst={}",
+                        ref.username, dstEp);
+            }
+            if (userRuleAction == RouteAction.DIRECT) {
+                if (routeLog) {
+                    log.info("SS TCP route {} DIRECT <- {} {}",
+                            dstEp, userRoute ? "user:route" : "defaultRoute",
+                            org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+                }
+                e.setUpstream(new Upstream(dstEp));
+                return;
+            }
+            if (userRuleAction == RouteAction.PROXY && routeLog) {
+                log.info("SS TCP route {} PROXY <- {} {}",
+                        dstEp, userRoute ? "user:route" : "defaultRoute",
+                        org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+            }
+            UpstreamSupport svrSupport = routePlan.nextSupport(sourceAddress(e.getSource()), dstEp, ref.srcSteeringTTL);
+            if (currentConf != null && currentConf.hasDebugFlag()) {
                 log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
             e.setUpstream(new SocksTcpUpstream(dstEp, toInConf, svrSupport));
         });
         ssSvr.onUdpRoute.replace((s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
-            UpstreamSupport svrSupport = routePlan.nextSupport();
-            if (rssConf.hasDebugFlag()) {
+            RssClientConf currentConf = rssConf;
+            boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
+            long userRuleBegin = routeLog ? System.nanoTime() : 0L;
+            UserRuleMatcher matcher = ref.routeMatcher;
+            boolean userRoute = matcher != null;
+            RouteAction userRuleAction = matchRoute(matcher, dstEp.getHost(), dstEp.getPort(), e.getSource());
+            if (userRuleAction == RouteAction.BLOCK) {
+                if (routeLog) {
+                    log.info("SS UDP route {} BLOCK <- {} {}",
+                            dstEp, userRoute ? "user:route" : "defaultRoute",
+                            org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+                }
+                throw new InvalidException("rss route rule block user={} trans=SS-UDP dst={}",
+                        ref.username, dstEp);
+            }
+            if (userRuleAction == RouteAction.DIRECT) {
+                if (routeLog) {
+                    log.info("SS UDP route {} DIRECT <- {} {}",
+                            dstEp, userRoute ? "user:route" : "defaultRoute",
+                            org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+                }
+                e.setUpstream(new Upstream(dstEp));
+                return;
+            }
+            if (userRuleAction == RouteAction.PROXY && routeLog) {
+                log.info("SS UDP route {} PROXY <- {} {}",
+                        dstEp, userRoute ? "user:route" : "defaultRoute",
+                        org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
+            }
+            UpstreamSupport svrSupport = routePlan.nextSupport(sourceAddress(e.getSource()), dstEp, ref.srcSteeringTTL);
+            if (currentConf != null && currentConf.hasDebugFlag()) {
                 log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
             e.setUpstream(createUdpRouteUpstream(dstEp, toInConf, svrSupport));
@@ -718,8 +778,10 @@ final class RssRuntime implements AutoCloseable {
             return new ShadowRoutePlan(toJsonString(signatureParts), supports);
         }
 
-        UpstreamSupport nextSupport() {
-            return supports.next();
+        UpstreamSupport nextSupport(InetAddress srcHost, UnresolvedEndpoint dstEp, int steeringTtl) {
+            return srcHost != null && useSourceSteering(steeringTtl, dstEp)
+                    ? supports.next(srcHost, steeringTtl, true)
+                    : supports.next();
         }
     }
 
@@ -729,14 +791,23 @@ final class RssRuntime implements AutoCloseable {
         final String ssPwd;
         final ShadowRoutePlan routePlan;
         final ShadowsocksServer server;
+        volatile UserRuleMatcher routeMatcher;
+        volatile int srcSteeringTTL;
 
         ShadowServerRef(String username, int ssPort, String ssPwd, ShadowRoutePlan routePlan,
-                        ShadowsocksServer server) {
+                        ShadowsocksServer server, UserRuleMatcher routeMatcher, int srcSteeringTTL) {
             this.username = username;
             this.ssPort = ssPort;
             this.ssPwd = ssPwd;
             this.routePlan = routePlan;
             this.server = server;
+            this.routeMatcher = routeMatcher;
+            this.srcSteeringTTL = Math.max(0, srcSteeringTTL);
+        }
+
+        void updateRouteMatcher(ShadowUser user) {
+            routeMatcher = user == null ? null : user.getRouteMatcher();
+            srcSteeringTTL = sourceSteeringTtl(user);
         }
 
         boolean matches(ShadowUser user, String nextRouteSignature, boolean forceRebuild) {

@@ -51,6 +51,8 @@ import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DoHClient;
 import org.rx.net.dns.DnsServer;
+import org.rx.net.http.HttpClient;
+import org.rx.net.http.HttpClientConfig;
 import org.rx.net.socks.ShadowsocksConfig;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.EndpointTracer;
@@ -229,6 +231,8 @@ public final class Sockets {
     static final int DEFAULT_UDP_WRITE_LIMIT_BYTES = 256 * 1024;
     static final Set<Integer> TCP_COMPRESS_BYPASS_PORTS = Collections.unmodifiableSet(new HashSet<>(java.util.Arrays.asList(
             22, 443, 465, 587, 636, 853, 989, 990, 993, 995, 3389, 8443, 9443)));
+    static final long CACHE_PUBLIC_IP_NANOS = TimeUnit.HOURS.toNanos(2);
+    static final String[] DEFAULT_PUBLIC_IP_SERVICES = new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
     static final String M_0 = "lookupAllHostAddr";
     static final String M_1 = "lookupByName";
     static final LoggingHandler DEFAULT_LOG = new LoggingHandler(LogLevel.INFO);
@@ -236,6 +240,7 @@ public final class Sockets {
     static final Map<String, EventLoopGroup> localReactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
+    static volatile PublicIpSnapshot publicIpSnapshot = PublicIpSnapshot.empty;
     /** 共享 TCP Bootstrap 解析器：走直连 DNS Client。 */
     static volatile AddressResolverGroup<InetSocketAddress> tcpDirectDnsAddressResolverGroup;
     /** 共享 TCP Bootstrap 解析器：走远程 DNS Client。 */
@@ -1523,6 +1528,57 @@ public final class Sockets {
         return NetUtil.isValidIpV4Address(ip) || NetUtil.isValidIpV6Address(ip);
     }
 
+    public static String getPublicIp() {
+        PublicIpSnapshot snapshot = publicIpSnapshot;
+        long now = System.nanoTime();
+        if (snapshot.isFresh(now)) {
+            return snapshot.ip;
+        }
+
+        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(5000))) {
+            for (String service : publicIpServices()) {
+                try {
+                    String ip = trimAscii(queryPublicIp(client, service));
+                    if (isValidIp(ip)) {
+                        publicIpSnapshot = new PublicIpSnapshot(ip, System.nanoTime());
+                        return ip;
+                    }
+                } catch (Exception e) {
+                    log.warn("getPublicIp retry service={}", service, e);
+                }
+            }
+        }
+        throw new InvalidException("getPublicIp fail");
+    }
+
+    private static String[] publicIpServices() {
+        String resolveServer = Strings.trimToNull(Constants.rSS());
+        return resolveServer != null
+                ? new String[]{"https://" + resolveServer + ":8082/getPublicIp", DEFAULT_PUBLIC_IP_SERVICES[0], DEFAULT_PUBLIC_IP_SERVICES[1]}
+                : DEFAULT_PUBLIC_IP_SERVICES;
+    }
+
+    private static String queryPublicIp(HttpClient client, String service) {
+        try (HttpClient.Response response = client.get(service)) {
+            return response.bodyAsString();
+        }
+    }
+
+    private static String trimAscii(String value) {
+        if (value == null) {
+            return null;
+        }
+        int start = 0;
+        int end = value.length();
+        while (start < end && value.charAt(start) <= ' ') {
+            start++;
+        }
+        while (end > start && value.charAt(end - 1) <= ' ') {
+            end--;
+        }
+        return start == 0 && end == value.length() ? value : value.substring(start, end);
+    }
+
     public static InetSocketAddress getRemoteAddress(Channel channel) {
         if (channel == null)
             return null;
@@ -1741,6 +1797,21 @@ public final class Sockets {
             return toString((InetSocketAddress) endpoint);
         }
         return endpoint == null ? "NULL" : endpoint.toString();
+    }
+
+    static final class PublicIpSnapshot {
+        static final PublicIpSnapshot empty = new PublicIpSnapshot(null, 0L);
+        final String ip;
+        final long refreshTime;
+
+        PublicIpSnapshot(String ip, long refreshTime) {
+            this.ip = ip;
+            this.refreshTime = refreshTime;
+        }
+
+        boolean isFresh(long now) {
+            return ip != null && now - refreshTime < CACHE_PUBLIC_IP_NANOS;
+        }
     }
 
     public static InetSocketAddress asInetAddress(SocketAddress endpoint) {

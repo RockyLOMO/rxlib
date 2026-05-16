@@ -15,7 +15,7 @@ import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
 import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficLoginInfo;
-import org.rx.net.support.GeoManager;
+import org.rx.net.support.GeoIPSearcher;
 import org.rx.net.support.IpGeolocation;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.util.rss.RssUserTrafficStore.LoginIpTrafficSummary;
@@ -100,7 +100,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     static volatile GeoLookup geoLookup = new GeoLookup() {
         @Override
         public IpGeolocation resolve(String ip) {
-            return GeoManager.INSTANCE.resolveIp(ip);
+            return GeoIPSearcher.INSTANCE.lookup(ip);
         }
     };
 

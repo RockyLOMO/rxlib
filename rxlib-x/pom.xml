@@ -15,14 +15,14 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <lombok.version>1.18.30</lombok.version>
+        <lombok.version>1.18.46</lombok.version>
         <mysql.version>5.1.49</mysql.version>
         <HikariCP.version>4.0.3</HikariCP.version>
         <druid.version>1.2.21</druid.version>
         <redisson.version>4.3.1</redisson.version>
         <guava.version>32.1.1-jre</guava.version>
 
-        <javaxMail.version>1.6.2</javaxMail.version>
+        <jakartaMail.version>1.6.8</jakartaMail.version>
         <poi.version>5.4.1</poi.version>
     </properties>
 
@@ -92,8 +92,8 @@
         </dependency>
         <dependency>
             <groupId>com.sun.mail</groupId>
-            <artifactId>javax.mail</artifactId>
-            <version>${javaxMail.version}</version>
+            <artifactId>jakarta.mail</artifactId>
+            <version>${jakartaMail.version}</version>
         </dependency>
     </dependencies>
     <build>

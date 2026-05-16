@@ -22,6 +22,19 @@ public class MiddlewareConfig {
     private String crawlerEndpoint;
     private String fiddlerEndpoint;
 
-    private String smtpPwd;
-    private String smtpTo;
+    private SmtpConfig smtp = new SmtpConfig();
+
+    @Data
+    public static class SmtpConfig {
+        private String host;
+        private Integer port;
+        private Boolean ssl;
+        private Boolean startTls;
+        private Integer timeoutMillis;
+        private String username;
+        private String password;
+        private String from;
+        private String to;
+        private String proxy;
+    }
 }
