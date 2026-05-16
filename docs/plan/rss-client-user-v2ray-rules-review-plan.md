@@ -1,31 +1,51 @@
 # 背景
 
-用户要求在当前已更新分支 `agent/rss-client-user-v2ray-rules-plan` 上再次 review。当前分支已经不只是计划文档，已有用户级 route/v2ray 规则相关实现、重命名和测试提交。本次按 Review 类任务处理：只 review 现有实现，提交 review 计划文档，不修改业务代码。
+用户要求在当前已更新分支 `agent/rss-client-user-v2ray-rules-plan` 上再次 review，并明确说明：上一次 review 计划中的第 2、3、4 点不修改。
 
-本次 review 到的当前 HEAD 为 `a4817942ce954fec87dff433901d7f9c89ee92b0`。
+本次按 Review 类任务处理：只 review 最新代码，更新 review 计划文档，不修改业务代码。本次 review 到的当前 HEAD 为 `6542085f1effc380fc2ea96250eb8c9f6a2698d1`。
 
 # 任务类型判断
 
 本次归类为 Review / 修复 / 优化需求。
 
-原因：分支上已经出现 `UserRule`、`UserRuleMatcher`、`RouteAction`、`RssClient`、`RssRuntime` 等实现变更，需要检查调用链、边界条件、兼容性风险、性能风险和测试覆盖，并给出后续修复计划。按照流程，本阶段仅提交 review 计划文档，等待用户明确要求后再修改业务代码。
+原因：分支上已有用户级 route 规则实现，且用户明确要求“代码更新了，再 review 下”。按照流程，本阶段只 review 相关代码、更新计划文档并提交，等待用户明确要求后才进入代码修改阶段。
 
 # 当前上下文
 
 ## 已 review 的文件
 
+本轮重点 review 了从上次 review commit `9e632458648f9d5d63d36db3e6065e51662dac1a` 到当前 HEAD 的新增 diff：
+
+- `rxlib/src/main/java/org/rx/util/rss/RssClient.java`
+- `rxlib/src/main/java/org/rx/util/rss/RssRuntime.java`
+- `rxlib/src/main/java/org/rx/util/rss/UserRuleMatcher.java`
+- `rxlib/src/test/java/org/rx/net/support/UserRuleMatcherTest.java`
+- `rxlib/src/test/java/org/rx/util/rss/RssClientWeightedRoutingTest.java`
+- `docs/plan/rss-client-user-v2ray-rules-plan.md`
+
+同时结合既有相关文件继续确认：
+
 - `rxlib/src/main/java/org/rx/util/rss/RssClientConf.java`
 - `rxlib/src/main/java/org/rx/util/rss/ShadowUser.java`
 - `rxlib/src/main/java/org/rx/util/rss/UserRule.java`
-- `rxlib/src/main/java/org/rx/util/rss/UserRuleMatcher.java`
 - `rxlib/src/main/java/org/rx/util/rss/RouteAction.java`
-- `rxlib/src/main/java/org/rx/util/rss/RssClient.java`
-- `rxlib/src/main/java/org/rx/util/rss/RssRuntime.java`
-- `rxlib/src/test/java/org/rx/net/support/UserRuleMatcherTest.java`
 - `rxlib/src/test/java/org/rx/util/rss/RssClientUserRouteTest.java`
-- `rxlib/src/test/java/org/rx/util/rss/RssClientWeightedRoutingTest.java`
 - `rxlib/src/test/java/org/rx/util/rss/RssTest.java`
-- `docs/plan/rss-client-user-v2ray-rules-plan.md`
+
+## 本轮新增代码变化
+
+1. `RssClient` 新增 `sourceAddress(InetSocketAddress source)`，并在通用入站上游选择里把 `e.getSource().getAddress()` 改成统一判空方法。
+2. `RssClient.nextUpstream(...)` 现在只有在 `allowSourceSteering && srcHost != null && useSourceSteering(...)` 时才使用 source steering，否则降级为普通 weighted 选择。
+3. `RssRuntime` 的 SS TCP/UDP route handler 也改为通过 `sourceAddress(e.getSource())` 获取源 IP。
+4. `RssRuntime.ShadowRoutePlan.nextSupport(...)` 在 `srcHost == null` 时降级为普通 weighted 选择。
+5. `UserRuleMatcherTest` 新增：
+   - domain 目标不会因为 `geoip:` 命中，除非显式传入目标 IP bytes。
+   - `dstIp` 使用目标 IP bytes。
+   - `srcIp` 在 source endpoint 未解析时不命中且不抛异常。
+6. `RssClientWeightedRoutingTest` 新增：
+   - `nextUpstream` 在 source IP 缺失时不写入 null key 粘滞缓存。
+   - `ShadowRoutePlan.nextSupport` 在 source IP 缺失时降级为 weighted 选择。
+7. `docs/plan/rss-client-user-v2ray-rules-plan.md` 已同步新命名和语义：`V2Ray*` 改为 `UserRule` / `UserRuleMatcher` / `RouteAction`，并明确 `geoip/dstIp/ip/cidr` 不主动 DNS 解析。
 
 ## 关键调用链
 
@@ -40,229 +60,164 @@
    - `RssClient.createInSvr(...)`
    - 根据 `TrafficUser` 取 `ShadowUser.routeMatcher`
    - `matchUserRoute(user, dstHost, dstPort, sourceEp)`
-   - `BLOCK` 抛错拒绝，`DIRECT` 直连，`PROXY` 选上游。
+   - `BLOCK` 拒绝，`DIRECT` 直连，`PROXY` 选上游。
 
-3. Shadow/SS 专属链路：
+3. Shadow / SS 专属链路：
    - `RssRuntime.buildShadowServers(...)`
    - `createShadowServer(...)`
    - `ShadowsocksServer.onTcpRoute/onUdpRoute`
    - `matchRoute(ref.routeMatcher, dstHost, dstPort, sourceEp)`
-   - `routePlan.nextSupport(sourceIp, dstEp, srcSteeringTTL)`。
+   - `routePlan.nextSupport(sourceAddress(sourceEp), dstEp, srcSteeringTTL)`。
 
 4. DNS 链路：
    - `DnsRemoteServer.ResolveInterceptor.resolveHost(srcIp, host)`
-   - 目前调用 `matchRoute(null, host)`，只走全局 `defaultRouteMatcher`，不走用户级 `ShadowUser.route`。
+   - 当前仍调用 `matchRoute(null, host)`，只走全局 `defaultRouteMatcher`，不走用户级 `ShadowUser.route`。
 
 5. 热更新链路：
    - `RssRuntime.buildShadowServers(...)`
    - 复用旧 `ShadowServerRef` 时调用 `oldRef.updateRouteMatcher(usr)`
    - `updateRouteMatcher` 会刷新 `routeMatcher` 与 `srcSteeringTTL`。
 
-## 当前实现意图
+## 本轮 review 结论
 
-当前实现已经从最初计划中的 `V2Ray*` 命名收敛为通用 route 命名：
+1. 上次第 1 点“`geoip:` / `dstIp` 对域名目标不会命中”已经从风险变为明确设计边界。
+   - 计划文档已说明不在 matcher 内主动 DNS 解析。
+   - `UserRuleMatcherTest.matchGeoIpRequiresIpBytesForDomainTargets` 和 `matchDstIpRulesUseDestinationIpBytes` 已覆盖。
 
-- `V2RayRouteAction` -> `RouteAction`
-- `V2RayUserRule` -> `UserRule`
-- `V2RayUserRuleMatcher` -> `UserRuleMatcher`
+2. 上次第 5 点 source steering 空源地址风险已做代码防御。
+   - `RssClient.sourceAddress(...)` 集中处理空 source。
+   - 通用入站 `nextUpstream` 与 SS 专属 `ShadowRoutePlan.nextSupport` 都在 `srcHost == null` 时降级普通 weighted 选择。
+   - 新测试覆盖了缺失 source IP 的退化行为。
 
-配置模型变为：
+3. 用户明确要求不修改的第 2、3、4 点保持不改。
+   - DNS 仍是全局 `defaultRouteRules`，不做用户级 DNS。
+   - 不恢复 / 不迁移旧 `RssClientConf.RouteConf`。
+   - `defaultRouteRules` 默认启用行为保持不变。
 
-```java
-public class UserRule {
-    public Boolean enabled;
-    public int srcSteeringTTL;
-    public List<String> rules;
-}
-```
-
-规则使用有序文本格式：
-
-```text
-srcIp 192.168.31.7 direct
-srcPort 40000-50000 block
-dstIp 8.8.8.8 proxy
-dstPort 443 direct
-geosite:cn direct
-geoip:cn direct
-default proxy
-```
-
-## 已发现的问题或风险
-
-1. `geoip:` / `dstIp` 对域名目标不会命中。
-   - 当前 `RssClient` / `RssRuntime` 调用 `match(..., host, dstPort, srcEp)` 时没有传入解析后的目标 IP bytes。
-   - `UserRuleMatcher` 只有在 host 是 IP literal 或显式传入 ipBytes 时才有目标 IP bytes。
-   - 因此目标为域名时，`geosite:` / domain 规则可生效，但 `geoip:` / `dstIp` 规则不会基于 DNS 解析结果生效。
-
-2. DNS 路由当前是全局策略，不是用户级策略。
-   - DNS `resolveHost(srcIp, host)` 没有用户上下文，目前只调用 `matchRoute(null, host)`。
-   - 如果某个用户希望 `route` 中 `block/proxy/direct` 对 DNS 解析也生效，当前实现无法区分用户。
-   - 如果设计目标是“DNS 只走全局 defaultRouteRules，真正用户级路由在 CONNECT/UDP 目标阶段生效”，需要在文档和日志中明确。
-
-3. `RssClientConf.RouteConf` 被删除存在兼容风险。
-   - 旧字段 `route.enable`、`route.dstGeoSiteDirectRules`、`route.srcIpProxyRules`、`route.srcSteeringTTL` 已从配置类删除。
-   - 老配置如果仍包含 `route`，可能被忽略，行为从旧 route 策略切换到默认 `defaultRouteRules`。
-   - 需要明确是否保留向后兼容迁移逻辑，或至少补充迁移说明和测试。
-
-4. 默认路由策略变为默认启用。
-   - `defaultRouteRules` 为空时会使用 `geosite:cn direct`、`geoip:cn direct`、`default proxy`。
-   - 这符合当前 plan 更新后的目标，但相对旧 `route.enable=false` 的语义可能是行为变化，需要确认是预期变更。
-
-5. Source steering 的源地址空值需要防御。
-   - `RssRuntime` 在 SS TCP/UDP route 中使用 `e.getSource().getAddress()` 参与上游亲和。
-   - 如果 source endpoint 为空或未解析，可能导致 NPE 或不符合预期的 key 行为。
-   - 建议在调用处显式判空，无法拿到源 IP 时降级为普通 weighted next。
-
-6. 测试覆盖仍偏 matcher 层和静态方法层。
-   - `UserRuleMatcherTest` 覆盖了规则顺序、端点 IP/端口、default、disabled 等。
-   - `RssClientUserRouteTest` 覆盖了 normalize 和 `matchUserRoute`。
-   - 还缺少 `RssRuntime.createShadowServer` route handler 层的覆盖，尤其是 SS TCP/UDP 的 `srcIp/srcPort/dstIp/dstPort`、`BLOCK`、`DIRECT`、热更新复用旧 server 刷新 matcher 和 `srcSteeringTTL` 的路径。
+4. 仍建议补充运行时 handler 层测试。
+   - 目前 matcher 层、静态 route 方法和 weighted routing 测试已加强。
+   - 但 `RssRuntime.createShadowServer(...)` 内部 `ShadowsocksServer.onTcpRoute/onUdpRoute` 的实际 handler 路径仍缺少直接覆盖。
+   - 该点不要求立即改业务代码，但如果后续继续完善测试，建议优先补这部分。
 
 # 目标
 
-1. 明确当前实现是否符合“用户级 route 规则”的语义边界。
-2. 确认 DNS 阶段是否必须用户感知，还是只作为全局默认策略。
-3. 检查并修复可能的空源地址、旧配置迁移和默认行为变化风险。
-4. 补充缺失测试，覆盖运行时 route handler，而不只覆盖 matcher。
-5. 保持 Java 8 兼容，不引入重型依赖，不做无关重构。
+1. 记录本轮最新代码 review 结果。
+2. 按用户要求把上次 review 计划中的第 2、3、4 点明确列为不修改项。
+3. 保留可执行的后续验证方案。
+4. 不修改业务代码，不触发 CI，不声称 CI 通过。
 
 # 非目标
 
-1. 不重写 `V2RayGeoManager`、geodat 下载或索引实现。
-2. 不升级 JDK、Netty、Maven 插件或大版本依赖。
-3. 不引入新的配置中心或 UI。
-4. 不自动发布 release。
-5. 不在 review 阶段修改业务代码。
-6. 不改变 secrets、token、证书、私钥。
+本轮明确不做以下事情：
+
+1. 不把 DNS 路由改成用户级策略。
+2. 不恢复、不迁移、不兼容旧 `RssClientConf.RouteConf`。
+3. 不改变 `defaultRouteRules` 默认启用行为。
+4. 不改 `V2RayGeoManager`、geodat 下载或索引实现。
+5. 不升级 JDK、Netty、Maven 插件或大版本依赖。
+6. 不引入新配置中心或 UI。
+7. 不自动发布 release。
+8. 不修改 secrets、token、证书、私钥。
+9. 不在 review 阶段修改业务代码。
 
 # 设计方案
 
-## 1. 明确 GeoIP / dstIp 语义
+## 1. 保留现有 GeoIP / dstIp 语义
 
-建议第一版定义为：
+当前设计保留：
 
 - `domain` / `geosite:` 规则用于域名目标。
-- `ip:` / `cidr:` / `dstIp` / `geoip:` 规则用于目标已经是 IP literal，或调用方能够提供目标 IP bytes 的场景。
-- 不在 route matcher 内部主动 DNS 解析，避免在 Netty route 热路径引入阻塞或额外 DNS 污染。
+- `ip:` / `cidr:` / `dstIp` / `geoip:` 规则用于目标已经是 IP literal，或调用方显式提供目标 IP bytes 的场景。
+- `UserRuleMatcher` 内部不主动 DNS 解析，避免在 Netty route 热路径引入阻塞或额外 DNS 污染。
 
-如果需要让域名目标也走 GeoIP，则后续应在已有 DNS 解析结果可用的位置传入 `ipBytes`，而不是在 `UserRuleMatcher` 内部解析。
+本轮不建议再改该语义。
 
-## 2. 明确 DNS 策略边界
+## 2. 保留全局 DNS 路由边界
 
-建议保留当前实现的全局 DNS 策略，但补充注释和测试：
+根据用户要求，上次第 2 点不修改。因此当前 DNS 设计保持：
 
-- DNS `ResolveInterceptor` 没有用户上下文，因此只应用 `defaultRouteRules`。
-- 用户级 `ShadowUser.route` 在 TCP/UDP 目标 route 阶段生效。
-- 若未来需要用户级 DNS，需要从认证会话或 source endpoint 建立用户上下文映射，再单独设计。
+- DNS `ResolveInterceptor` 没有用户上下文，只应用 `defaultRouteRules`。
+- 用户级 `ShadowUser.route` 只在 TCP/UDP 目标 route 阶段生效。
+- 后续不在本任务中设计用户级 DNS。
 
-## 3. 兼容旧 RouteConf
+## 3. 不处理旧 RouteConf 兼容
 
-两种可选策略：
+根据用户要求，上次第 3 点不修改。因此当前行为保持：
 
-- 保守兼容：保留 deprecated `RssClientConf.RouteConf route` 字段，反序列化后迁移到 `defaultRouteRules` / `UserRule.srcSteeringTTL`，并在注释中标记废弃。
-- 明确破坏性变更：不保留旧字段，但在文档中写出迁移方式，并增加测试确认旧字段不会误导。
+- 不恢复 `RssClientConf.RouteConf`。
+- 不在 normalize 阶段迁移旧 `route.*` 字段。
+- 老配置迁移由文档或外部配置调整承担，不在本轮代码里兼容。
 
-建议优先保守兼容，避免生产配置升级后静默改变路由行为。
+## 4. 不改变默认路由启用行为
 
-## 4. Source steering 判空
+根据用户要求，上次第 4 点不修改。因此当前行为保持：
 
-建议新增小工具方法：
+- `defaultRouteRules` 为空时使用默认规则：
+  - `geosite:cn direct`
+  - `geoip:cn direct`
+  - `default proxy`
+- 不恢复旧的 `route.enable=false` 风格全局开关。
 
-```java
-static InetAddress sourceAddress(InetSocketAddress source) {
-    return source == null ? null : source.getAddress();
-}
-```
+## 5. 后续可选测试增强
 
-并在 `nextSupport` / `nextUpstream` 中：
+如果后续用户要求继续完善，建议只补测试，不改变业务语义：
 
-- `steeringTtl <= 0`：普通 weighted next。
-- `srcHost == null`：普通 weighted next。
-- 端口属于常见无状态端口：普通 weighted next。
-- 其它情况才使用 source steering。
-
-## 5. 测试补齐
-
-建议增加或扩展以下测试：
-
-1. `UserRuleMatcherTest`
-   - 域名目标 + `geoip:` 不命中，IP literal + `geoip:` 命中。
-   - `dstIp` 与 `ip:`/`cidr:` 行为一致。
-   - `srcIp` 在 `srcEp` 地址为空时不命中且不异常。
-
-2. `RssClientUserRouteTest`
-   - `defaultRouteRules` 为空时默认规则生效。
-   - 用户 route disabled 时走 defaultRouteRules。
-   - 非 ShadowUser 只走 defaultRouteRules。
-
-3. `RssRuntime` 相关测试
-   - 复用旧 `ShadowServerRef` 时 `updateRouteMatcher` 刷新 matcher。
-   - `srcSteeringTTL` 随用户 route 更新。
-   - SS TCP/UDP route handler 传递 `dstPort` 和 `sourceEp` 后，`srcPort/dstPort/srcIp` 规则能命中。
-   - source address 为空时不会 NPE。
+1. 增加 `RssRuntime` 内部 route handler 覆盖：
+   - SS TCP `srcIp/srcPort/dstIp/dstPort` 命中。
+   - SS UDP `srcIp/srcPort/dstIp/dstPort` 命中。
+   - `BLOCK` 拒绝路径。
+   - `DIRECT` 直连路径。
+2. 覆盖热更新复用旧 `ShadowServerRef` 后：
+   - `routeMatcher` 更新。
+   - `srcSteeringTTL` 更新。
+3. 覆盖 source endpoint 为 null / unresolved 时：
+   - 不 NPE。
+   - 不写入 source steering null key。
 
 # 修改文件列表
 
-本 review 阶段新增：
+本 review 阶段修改：
 
 1. `docs/plan/rss-client-user-v2ray-rules-review-plan.md`
 
-若后续进入修复实现阶段，预计修改或新增：
+本 review 阶段不修改业务代码。
 
-1. `rxlib/src/main/java/org/rx/util/rss/RssClient.java`
-   - 明确 DNS route 语义，必要时调整注释/日志。
-   - 对 source address / source endpoint 做判空保护。
+若后续仅补测试，预计可能修改：
 
-2. `rxlib/src/main/java/org/rx/util/rss/RssRuntime.java`
-   - 对 SS TCP/UDP route 中 source address 做判空。
-   - 必要时调整 `ShadowRoutePlan.nextSupport(...)` 退化逻辑。
-
-3. `rxlib/src/main/java/org/rx/util/rss/RssClientConf.java`
-   - 根据决策保留 deprecated `RouteConf` 并迁移，或补充迁移说明。
-
-4. `rxlib/src/main/java/org/rx/util/rss/UserRuleMatcher.java`
-   - 根据最终语义补充注释或小范围行为修正。
-
-5. `rxlib/src/test/java/org/rx/net/support/UserRuleMatcherTest.java`
-   - 增加域名 + GeoIP 不命中、IP literal + GeoIP 命中、srcEp 空地址等测试。
-
-6. `rxlib/src/test/java/org/rx/util/rss/RssClientUserRouteTest.java`
-   - 增加默认规则和旧配置迁移测试。
-
-7. `rxlib/src/test/java/org/rx/util/rss/RssClientWeightedRoutingTest.java` / `RssTest.java`
-   - 增加 source steering 判空和退化测试。
+1. `rxlib/src/test/java/org/rx/util/rss/RssClientWeightedRoutingTest.java`
+2. `rxlib/src/test/java/org/rx/util/rss/RssClientUserRouteTest.java`
+3. 可能新增一个专门覆盖 `RssRuntime` route handler 的测试类。
 
 # 风险点
 
-1. 保持旧配置兼容可能需要同时支持新旧字段，增加 normalize 复杂度。
-2. 若强行让域名目标走 GeoIP，可能引入阻塞 DNS、重复解析或 DNS 污染风险。
-3. DNS 阶段如果引入用户上下文，会影响现有 DNS server 架构和缓存模型，范围较大。
-4. `defaultRouteRules` 默认启用可能改变旧行为，必须通过迁移说明或兼容字段降低风险。
-5. source steering 修复必须避免破坏现有 weighted routing 与 fail-open/fail-close 逻辑。
-6. 新增测试如果依赖 geodat 下载，会导致 CI 不稳定；应使用现有 `V2RayGeoDataTestUtil` 构造内存 geodat。
+1. 运行时 handler 层覆盖仍不足，matcher 层通过不等于 SS TCP/UDP handler 全链路一定通过。
+2. 不兼容旧 `RouteConf` 是有意保留的破坏性风险，后续配置升级需人工确认。
+3. DNS 不用户化是有意保留的语义边界，用户级规则不会影响 DNS 阶段。
+4. 默认路由默认启用是有意保留的行为变化风险。
+5. 若新增测试依赖真实 geodat 下载，会导致 CI 不稳定；测试应继续使用现有 `V2RayGeoDataTestUtil` 构造内存 geodat。
 
 # 验证方案
 
-1. 本 review 阶段：
-   - 仅提交计划文档，不触发 CI，不声明 CI 通过。
+本 review 阶段：
 
-2. 后续修复实现阶段本地/CI 编译：
+- 只提交 review 计划文档。
+- 不触发 GitHub Actions。
+- 不声明 CI 通过。
+
+后续如果进入代码或测试补充阶段，建议验证：
 
 ```bash
 mvn -pl rxlib -am -DskipTests compile
 ```
 
-3. 后续单元测试建议：
-
 ```bash
 mvn -pl rxlib -am -DskipTests=false -Dtest=UserRuleMatcherTest,RssClientUserRouteTest,RssClientWeightedRoutingTest,RssTest test
 ```
 
-4. GitHub Actions：
+GitHub Actions：
 
 - 代码 commit 后触发 `jdk8-unit-tests.yml`。
 - `test_classes` 建议传：`UserRuleMatcherTest,RssClientUserRouteTest,RssClientWeightedRoutingTest,RssTest`。
 - 查询 workflow run 时必须按当前分支过滤。
 - 只有 `conclusion=success` 才认为 CI 通过。
-- 若 CI 失败，按编译失败、测试失败、格式失败、依赖下载失败、JDK 版本不兼容、环境问题分类处理。
+- 如果 CI 失败，按编译失败、测试失败、格式失败、依赖下载失败、JDK 版本不兼容、环境问题分类处理。
