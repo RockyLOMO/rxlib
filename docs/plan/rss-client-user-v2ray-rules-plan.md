@@ -69,13 +69,13 @@ public List<String> defaultRouteRules;
 在 `ShadowUser` 中新增可选字段：
 
 ```java
-public V2RayUserRule route;
+public UserRule route;
 ```
 
-新增配置类命名为 `V2RayUserRule`：
+新增配置类命名为 `UserRule`：
 
 ```java
-public class V2RayUserRule {
+public class UserRule {
     public Boolean enabled;
     public int srcSteeringTTL;
     public List<String> rules;
@@ -105,9 +105,11 @@ default proxy
 
 其中 `srcIp/srcPort/dstIp/dstPort` 是端点限定前缀；`dstIp 8.8.8.8 proxy` 与旧写法 `8.8.8.8 proxy` 都表示目标 IP 规则。IP 支持精确值和 CIDR，端口支持精确值和 `min-max` 范围。
 
-`srcSteeringTTL` 放在 `ShadowUser.route` 下，表示该用户按源 IP 选择上游后的亲和缓存秒数，0 表示关闭；443、80、53、123 等常见无状态端口仍跳过该粘滞缓存。
+`geoip:` / `dstIp` / `ip:` / `cidr:` 只匹配目标已经是 IP literal，或调用方显式传入目标 IP bytes 的场景；目标仍是 domain 且没有解析结果时，不在 matcher 内主动 DNS 解析。
 
-`V2RayRouteAction` 包含 `PROXY`、`DIRECT`、`BLOCK`。`default` 是规则目标关键字，表示前面所有规则都未命中时的兜底动作。
+`srcSteeringTTL` 放在 `ShadowUser.route` 下，表示该用户按源 IP 选择上游后的亲和缓存秒数，0 表示关闭；443、80、53、123 等常见无状态端口仍跳过该粘滞缓存。源地址为空或未解析时降级为普通 weighted 选择，不写入 null key 粘滞缓存。
+
+`RouteAction` 包含 `PROXY`、`DIRECT`、`BLOCK`。`default` 是规则目标关键字，表示前面所有规则都未命中时的兜底动作。
 
 `defaultRouteRules` 默认值：
 
@@ -119,12 +121,12 @@ default proxy
 
 ## 运行期规则对象
 
-新增 `V2RayUserRuleMatcher`，负责把配置转换为热路径可用 matcher：
+新增 `UserRuleMatcher`，负责把配置转换为热路径可用 matcher：
 
 ```java
-public final class V2RayUserRuleMatcher {
-    V2RayRouteAction match(String host, byte[] ipBytes);
-    V2RayRouteAction match(String host, int dstPort, InetSocketAddress srcEp);
+public final class UserRuleMatcher {
+    RouteAction match(String host, byte[] ipBytes);
+    RouteAction match(String host, int dstPort, InetSocketAddress srcEp);
 }
 ```
 
@@ -172,8 +174,8 @@ V2RayGeoManager.INSTANCE.tryCompileGeoIpMatcher(code);
 计划接入步骤：
 
 1. 配置加载后遍历 `RssClientConf.shadowUsers`。
-2. 对每个 `ShadowUser.route` 构建 `V2RayUserRuleMatcher`。
-3. 将 matcher 挂到 `ShadowUser` transient 字段，或放入 `Map<userKey, V2RayUserRuleMatcher>`，避免影响序列化输出。
+2. 对每个 `ShadowUser.route` 构建 `UserRuleMatcher`。
+3. 将 matcher 挂到 `ShadowUser` transient 字段，或放入 `Map<userKey, UserRuleMatcher>`，避免影响序列化输出。
 4. `RssClient` 每次处理目标时，根据当前用户取 matcher。
 5. 调用 `matcher.match(host, ipBytes)`。
 6. `BLOCK` 复用现有错误关闭或拒绝策略；`DIRECT` 走现有直连路径；`PROXY` 走现有代理 / upstream 路径；未命中则由 `default` 规则兜底。
@@ -183,7 +185,7 @@ V2RayGeoManager.INSTANCE.tryCompileGeoIpMatcher(code);
 
 - 配置为空或 `enabled=false`：视为未启用。
 - geosite / geoip code 不存在：记录 warn，相关 matcher 为空，不影响其它规则。
-- host 为空但 IP 存在：只执行 GeoIP 规则。
+- host 为空但 IP 存在：只执行 IP / GeoIP 规则。
 - 目标为 domain 且尚未解析 IP：先执行 domain / GeoSite 规则，避免额外 DNS 解析。
 - 规则解析异常：记录用户标识和规则 code，但不打印敏感密码。
 - 阻断动作：复用现有协议错误处理，不新增协议错误格式。
@@ -205,8 +207,8 @@ V2RayGeoManager.INSTANCE.tryCompileGeoIpMatcher(code);
 
 1. `RssClientConf` 所在文件：保留 `public List<ShadowUser> shadowUsers;`，增加用户级规则初始化入口。
 2. `ShadowUser` 所在文件：增加可选 `route` 字段和 transient matcher。
-3. 新增 `V2RayUserRule`。
-4. 新增 `V2RayUserRuleMatcher`。
+3. 新增 `UserRule`。
+4. 新增 `UserRuleMatcher`。
 5. `RssClient` 所在文件：在配置加载、用户选择和目标路由决策处接入用户规则。
 6. 测试文件：新增或扩展 RssClient / rule matcher 单元测试。
 
@@ -239,7 +241,7 @@ mvn -pl rxlib -am -DskipTests compile
 3. GitHub Actions：
 
 - 代码实现 commit 后触发 `jdk8-unit-tests.yml`。
-- `test_classes` 带上相关测试类名，例如 `V2RayUserRuleMatcherTest,RssClientTest`，以实际测试类为准。
+- `test_classes` 带上相关测试类名，例如 `UserRuleMatcherTest,RssClientTest`，以实际测试类为准。
 - 查询 workflow run 必须按当前 agent 分支过滤。
 - 只有 `conclusion=success` 才认为 CI 通过。
 
