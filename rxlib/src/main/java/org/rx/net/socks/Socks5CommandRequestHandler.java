@@ -1,6 +1,8 @@
 package org.rx.net.socks;
 
 import io.netty.channel.*;
+import io.netty.channel.local.LocalAddress;
+import io.netty.channel.local.LocalChannel;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.diagnostic.DiagnosticMetrics;
@@ -256,7 +258,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (effectiveConfig == null) {
             effectiveConfig = config;
         }
-        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), effectiveConfig, e.getUpstream().connectAddressHint(), outbound -> {
+        SocketAddress connectHint = e.getUpstream().connectAddressHint();
+        EventLoopGroup connectGroup = inbound instanceof LocalChannel && !(connectHint instanceof LocalAddress) ? null : inbound.eventLoop();
+        ChannelFuture outboundFuture = Sockets.bootstrap(connectGroup, effectiveConfig, connectHint, outbound -> {
             e.getUpstream().initChannel(outbound);
             ensureFrontendHandlers(inbound, outbound);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {

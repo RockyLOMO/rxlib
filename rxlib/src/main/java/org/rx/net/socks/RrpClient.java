@@ -1,12 +1,10 @@
 package org.rx.net.socks;
 
-import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.local.LocalAddress;
-import io.netty.channel.local.LocalChannel;
 import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -448,16 +446,9 @@ public class RrpClient extends AbstractTcpReconnectClient {
                         conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
                         ChannelFuture connF;
                         if (enableMemoryChannel) {
-                            connF = new Bootstrap()
-                                    .group(Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true))
-                                    .channel(LocalChannel.class)
-                                    .handler(new ChannelInitializer<LocalChannel>() {
-                                        @Override
-                                        protected void initChannel(LocalChannel ch) {
-                                            Sockets.addTcpClientHandler(ch, conf).pipeline()
-                                                    .addLast(SocksClientHandler.DEFAULT);
-                                        }
-                                    }).connect(proxyCtx.localEndpoint);
+                            connF = Sockets.bootstrap(conf, proxyCtx.localEndpoint, ch -> Sockets.addTcpClientHandler(ch, conf).pipeline()
+                                            .addLast(SocksClientHandler.DEFAULT))
+                                    .connect(proxyCtx.localEndpoint);
                         } else {
                             connF = Sockets.bootstrap(conf, ch -> Sockets.addTcpClientHandler(ch, conf).pipeline()
                                             .addLast(SocksClientHandler.DEFAULT))
