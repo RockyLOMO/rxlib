@@ -1553,17 +1553,24 @@ public final class RssClient {
     }
 
     static int sourceSteeringTtl(TrafficUser user) {
+        return sourceSteeringTtl(user, rssConf);
+    }
+
+    static int sourceSteeringTtl(TrafficUser user, RssClientConf conf) {
         if (user instanceof ShadowUser) {
             UserRule route = ((ShadowUser) user).getRoute();
             if (route != null && !Boolean.FALSE.equals(route.getEnabled())) {
                 return Math.max(0, route.getSrcSteeringTTL());
             }
         }
-        return defaultRouteSteeringTtl();
+        return defaultRouteSteeringTtl(conf);
     }
 
     static int defaultRouteSteeringTtl() {
-        RssClientConf conf = rssConf;
+        return defaultRouteSteeringTtl(rssConf);
+    }
+
+    static int defaultRouteSteeringTtl(RssClientConf conf) {
         UserRule route = conf == null ? null : conf.defaultRoute;
         return route == null || Boolean.FALSE.equals(route.getEnabled()) ? 0 : Math.max(0, route.getSrcSteeringTTL());
     }

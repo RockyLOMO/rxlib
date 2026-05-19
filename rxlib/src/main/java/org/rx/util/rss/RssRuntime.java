@@ -477,7 +477,7 @@ final class RssRuntime implements AutoCloseable {
                 ShadowRoutePlan routePlan = resolveShadowRoutePlan(conf, usr, inSvrAddress, inUdp2rawAddress);
                 ShadowServerRef oldRef = shadowServers.get(username);
                 if (oldRef != null && oldRef.matches(usr, routePlan.signature, forceRebuild)) {
-                    oldRef.updateRouteMatcher(usr);
+                    oldRef.updateRouteMatcher(usr, conf);
                     plan.next.put(username, oldRef);
                     continue;
                 }
@@ -593,7 +593,7 @@ final class RssRuntime implements AutoCloseable {
         SocksConfig toInConf = new SocksConfig();
         toInConf.setOptimalSettings(RssSupport.IN_OPS);
         ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(),
-                routePlan, ssSvr, usr.getRouteMatcher(), sourceSteeringTtl(usr));
+                routePlan, ssSvr, usr.getRouteMatcher(), sourceSteeringTtl(usr, conf));
         ssSvr.onTcpRoute.replace((s, e) -> {
             UnresolvedEndpoint dstEp = e.getFirstDestination();
             RssClientConf currentConf = rssConf;
@@ -805,9 +805,9 @@ final class RssRuntime implements AutoCloseable {
             this.srcSteeringTTL = Math.max(0, srcSteeringTTL);
         }
 
-        void updateRouteMatcher(ShadowUser user) {
+        void updateRouteMatcher(ShadowUser user, RssClientConf conf) {
             routeMatcher = user == null ? null : user.getRouteMatcher();
-            srcSteeringTTL = sourceSteeringTtl(user);
+            srcSteeringTTL = sourceSteeringTtl(user, conf);
         }
 
         boolean matches(ShadowUser user, String nextRouteSignature, boolean forceRebuild) {
