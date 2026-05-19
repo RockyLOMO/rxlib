@@ -101,6 +101,29 @@ public class RssClientUserRouteTest {
         }
     }
 
+    @Test
+    public void sourceSteeringTtlCanUseReloadingConfBeforeGlobalSwap() {
+        RssClientConf oldConf = RssClient.rssConf;
+        RssClientConf oldRuntimeConf = new RssClientConf();
+        UserRule oldDefaultRoute = new UserRule();
+        oldDefaultRoute.setSrcSteeringTTL(10);
+        oldRuntimeConf.defaultRoute = oldDefaultRoute;
+        RssClient.rssConf = oldRuntimeConf;
+
+        RssClientConf newReloadingConf = new RssClientConf();
+        UserRule newDefaultRoute = new UserRule();
+        newDefaultRoute.setSrcSteeringTTL(60);
+        newReloadingConf.defaultRoute = newDefaultRoute;
+        ShadowUser user = new ShadowUser();
+
+        try {
+            assertEquals(60, RssClient.sourceSteeringTtl(user, newReloadingConf));
+            assertEquals(10, RssClient.sourceSteeringTtl(user));
+        } finally {
+            RssClient.rssConf = oldConf;
+        }
+    }
+
     private static RssClientConf validRssConf() {
         RssClientConf conf = new RssClientConf();
         ShadowUser user = new ShadowUser();
