@@ -1,12 +1,10 @@
 package org.rx.net.socks;
 
-import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.local.LocalAddress;
-import io.netty.channel.local.LocalChannel;
 import io.netty.util.AttributeKey;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -448,16 +446,9 @@ public class RrpClient extends AbstractTcpReconnectClient {
                         conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
                         ChannelFuture connF;
                         if (enableMemoryChannel) {
-                            connF = new Bootstrap()
-                                    .group(Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true))
-                                    .channel(LocalChannel.class)
-                                    .handler(new ChannelInitializer<LocalChannel>() {
-                                        @Override
-                                        protected void initChannel(LocalChannel ch) {
-                                            Sockets.addTcpClientHandler(ch, conf).pipeline()
-                                                    .addLast(SocksClientHandler.DEFAULT);
-                                        }
-                                    }).connect(proxyCtx.localEndpoint);
+                            connF = Sockets.bootstrap(conf, proxyCtx.localEndpoint, ch -> Sockets.addTcpClientHandler(ch, conf).pipeline()
+                                            .addLast(SocksClientHandler.DEFAULT))
+                                    .connect(proxyCtx.localEndpoint);
                         } else {
                             connF = Sockets.bootstrap(conf, ch -> Sockets.addTcpClientHandler(ch, conf).pipeline()
                                             .addLast(SocksClientHandler.DEFAULT))
@@ -653,17 +644,17 @@ public class RrpClient extends AbstractTcpReconnectClient {
     @Override
     protected void onConnectSuccess(SocketAddress endpoint, boolean reconnect, Channel channel) {
         if (reconnect) {
-            log.debug("{} reconnect {} ok", this, endpoint);
+            Sockets.logReconnectSuccess(log, this, endpoint, false);
         }
     }
 
     @Override
     protected void onConnectFailure(SocketAddress endpoint, boolean reconnect, Throwable cause) {
-        log.debug("{} {} {} fail", this, reconnect ? "reconnect" : "connect", endpoint);
+        Sockets.logConnectFailure(log, this, endpoint, reconnect, cause, false);
     }
 
     @Override
-    protected void onReconnectRetry(SocketAddress endpoint, long delayMs) {
-        log.debug("{} reconnect {} failed will re-attempt in {}ms", this, endpoint, delayMs);
+    protected void onReconnectRetry(SocketAddress endpoint, long delayMs, Throwable cause) {
+        Sockets.logReconnectRetry(log, null, this, endpoint, delayMs, cause, false);
     }
 }

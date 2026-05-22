@@ -11,6 +11,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Constants;
+import org.rx.core.RxConfig;
 import org.rx.util.function.QuadraAction;
 import org.rx.util.function.TripleAction;
 
@@ -19,7 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @RequiredArgsConstructor
-public class BackpressureHandler extends ChannelInboundHandlerAdapter {
+public class TcpBackpressureHandler extends ChannelInboundHandlerAdapter {
     static final int MIN_SPAN_MILLIS = 20;
     // 使用一个抖动阈值，防止高低水位频繁震荡
     static final long COOLDOWN_MILLIS = 50;
@@ -33,18 +34,25 @@ public class BackpressureHandler extends ChannelInboundHandlerAdapter {
     }
 
     public static void install(Channel inbound, Channel outbound, TripleAction<Channel, Channel> onBackpressureStart, QuadraAction<Channel, Channel, Throwable> onBackpressureEnd) {
+        if (outbound == null) {
+            return;
+        }
+        NetworkTrafficConfig config = RxConfig.INSTANCE.getNet().getGlobalTraffic();
+        if (config != null && !config.isTcpBackpressureEnabled()) {
+            return;
+        }
         WriteBufferWaterMark waterMark = outbound.config().getOption(ChannelOption.WRITE_BUFFER_WATER_MARK);
         if (waterMark == null) {
-            log.warn("BackpressureHandler not installed: WriteBufferWaterMark not set");
+            log.warn("TcpBackpressureHandler not installed: WriteBufferWaterMark not set");
             return;
         }
 
         ChannelPipeline p = outbound.pipeline();
-        BackpressureHandler handler = p.get(BackpressureHandler.class);
+        TcpBackpressureHandler handler = p.get(TcpBackpressureHandler.class);
         if (handler != null) {
-            throw new IllegalStateException("BackpressureHandler already installed");
+            throw new IllegalStateException("TcpBackpressureHandler already installed");
         }
-        p.addLast(new BackpressureHandler(inbound, onBackpressureStart, onBackpressureEnd));
+        p.addLast(new TcpBackpressureHandler(inbound, onBackpressureStart, onBackpressureEnd));
     }
 
     final AtomicReference<ScheduledFuture<?>> timer = new AtomicReference<>();

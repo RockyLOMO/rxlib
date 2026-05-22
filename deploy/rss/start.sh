@@ -30,6 +30,12 @@ DEPLOY_ID=${DEPLOY_ID:-$(date +%Y%m%d_%H%M%S)_$$}
 # 明确打开才允许旧式重启；默认绝不因新进程失败而杀掉唯一旧实例。
 REUSEPORT_MIGRATION_FALLBACK=${REUSEPORT_MIGRATION_FALLBACK:-0}
 ROLLBACK_ON_LEGACY_FALLBACK_FAILURE=${ROLLBACK_ON_LEGACY_FALLBACK_FAILURE:-1}
+# RSS client VM 标称 40Mbps 上行 / 200Mbps 下行；默认按 Mbps(bit/s) 转 KiB/s 后取 98%。
+GLOBAL_TRAFFIC_UPLOAD_KBPS=${GLOBAL_TRAFFIC_UPLOAD_KBPS:-4785}
+GLOBAL_TRAFFIC_DOWNLOAD_KBPS=${GLOBAL_TRAFFIC_DOWNLOAD_KBPS:-23926}
+GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS=${GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS:-1000}
+GLOBAL_UDP_MAX_PENDING_BYTES=${GLOBAL_UDP_MAX_PENDING_BYTES:-262144}
+GLOBAL_UDP_MAX_PENDING_PACKETS=${GLOBAL_UDP_MAX_PENDING_PACKETS:-512}
 DEPLOY_SLOTS=(a b)
 if ! [[ "${MAX_LIVE_PROCESSES}" =~ ^[0-9]+$ ]] || [ "${MAX_LIVE_PROCESSES}" -lt 1 ]; then
     MAX_LIVE_PROCESSES=2
@@ -37,7 +43,7 @@ fi
 
 MEM_OPTIONS="-Xms2g -Xmx2g -Xss512k -XX:MaxMetaspaceSize=192m -XX:ReservedCodeCacheSize=160m -XX:MaxDirectMemorySize=3g -XX:+UseCompressedClassPointers"
 GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=30 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=30 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
-APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.reusePortBindCount=${REUSE_PORT_BIND_COUNT} -Dapp.rss.drainMaxWaitMillis=$((DRAIN_TIMEOUT_SECONDS * 1000)) -Dapp.rss.drainTokenDir=${DRAIN_TOKEN_DIR} -Dapp.rss.drainTokenTtlMillis=${DRAIN_TOKEN_TTL_MILLIS} -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.directServers=192.168.31.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=false -Dapp.storage.h2Settings=CACHE_SIZE=16384;MAX_MEMORY_ROWS=4096;MAX_OPERATION_MEMORY=16384;WRITE_DELAY=200;AUTO_SERVER=TRUE -Dapp.storage.h2MaxConnections=6 -Dapp.diagnostic.h2Settings=CACHE_SIZE=4096;MAX_MEMORY_ROWS=1024;MAX_OPERATION_MEMORY=4096;WRITE_DELAY=1000;AUTO_SERVER=TRUE -Dapp.diagnostic.h2MaxConnections=2 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dio.netty.tryReflectionSetAccessible=true"
+APP_OPTIONS="-Dapp.net.reactorThreadAmount=10 -Dapp.net.reusePortBindCount=${REUSE_PORT_BIND_COUNT} -Dapp.rss.drainMaxWaitMillis=$((DRAIN_TIMEOUT_SECONDS * 1000)) -Dapp.rss.drainTokenDir=${DRAIN_TOKEN_DIR} -Dapp.rss.drainTokenTtlMillis=${DRAIN_TOKEN_TTL_MILLIS} -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.dns.directServers=192.168.31.1:53 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=false -Dapp.net.globalTraffic.enabled=true -Dapp.net.globalTraffic.uploadKilobytesPerSecond=${GLOBAL_TRAFFIC_UPLOAD_KBPS} -Dapp.net.globalTraffic.downloadKilobytesPerSecond=${GLOBAL_TRAFFIC_DOWNLOAD_KBPS} -Dapp.net.globalTraffic.checkIntervalMillis=${GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS} -Dapp.net.globalTraffic.tcpBackpressureEnabled=true -Dapp.net.globalTraffic.udpBackpressureEnabled=true -Dapp.net.globalTraffic.udpMaxPendingBytes=${GLOBAL_UDP_MAX_PENDING_BYTES} -Dapp.net.globalTraffic.udpMaxPendingPackets=${GLOBAL_UDP_MAX_PENDING_PACKETS} -Dapp.storage.h2Settings=CACHE_SIZE=16384;MAX_MEMORY_ROWS=4096;MAX_OPERATION_MEMORY=16384;WRITE_DELAY=200;AUTO_SERVER=TRUE -Dapp.storage.h2MaxConnections=6 -Dapp.diagnostic.h2Settings=CACHE_SIZE=4096;MAX_MEMORY_ROWS=1024;MAX_OPERATION_MEMORY=4096;WRITE_DELAY=1000;AUTO_SERVER=TRUE -Dapp.diagnostic.h2MaxConnections=2 -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dio.netty.tryReflectionSetAccessible=true"
 JDK21_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5

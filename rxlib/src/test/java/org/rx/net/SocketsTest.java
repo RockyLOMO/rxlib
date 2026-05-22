@@ -53,6 +53,7 @@ public class SocketsTest {
 
     @AfterEach
     void restoreTcpDnsResolver() throws Exception {
+        Sockets.setInjectedNameServers(Collections.<InetSocketAddress>emptyList());
         RxConfig.INSTANCE.getNet().getDns().getDirectServers().clear();
         RxConfig.INSTANCE.getNet().getDns().getDirectServers().addAll(originalDirectServers);
         RxConfig.INSTANCE.getNet().getDns().getRemoteServers().clear();
@@ -640,6 +641,31 @@ public class SocketsTest {
         Bootstrap bootstrap = Sockets.bootstrap(config, ch -> {
         });
         assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), bootstrap.config().resolver());
+    }
+
+    @Test
+    public void testInjectedNameServersPrependDirectDnsServers() throws Exception {
+        RxConfig.INSTANCE.getNet().getDns().getDirectServers().clear();
+        RxConfig.INSTANCE.getNet().getDns().getDirectServers().add("192.168.31.1:53");
+        Sockets.setInjectedNameServers(Collections.singletonList(Sockets.parseEndpoint("127.0.0.1:753")));
+
+        List<InetSocketAddress> directServers = DnsClient.directNameServers();
+        assertEquals("127.0.0.1", directServers.get(0).getHostString());
+        assertEquals(753, directServers.get(0).getPort());
+        assertEquals("192.168.31.1", directServers.get(1).getHostString());
+        assertEquals(53, directServers.get(1).getPort());
+
+        Object resolverGroup = Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT);
+        Field builderField = resolverGroup.getClass().getDeclaredField("dnsResolverBuilder");
+        builderField.setAccessible(true);
+        Object builder = builderField.get(resolverGroup);
+
+        Field providerField = builder.getClass().getDeclaredField("dnsServerAddressStreamProvider");
+        providerField.setAccessible(true);
+        DnsServerAddressStreamProvider provider = (DnsServerAddressStreamProvider) providerField.get(builder);
+        InetSocketAddress first = provider.nameServerAddressStream("svc-mercury").next();
+        assertEquals("127.0.0.1", first.getHostString());
+        assertEquals(753, first.getPort());
     }
 
     @Test

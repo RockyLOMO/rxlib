@@ -2,6 +2,8 @@ package org.rx.core;
 
 import org.junit.jupiter.api.Test;
 import org.rx.bean.LogStrategy;
+import org.rx.net.NetworkFlowControl;
+import org.rx.net.NetworkTrafficConfig;
 import org.rx.net.http.HttpServer;
 
 import java.net.ServerSocket;
@@ -148,6 +150,45 @@ class RxConfigTest {
             assertEquals(ThreadPoolQueueOfferMode.CALLER_RUNS, conf.threadPool.getQueueOfferMode());
         } finally {
             restoreProperty(propName, oldProp);
+        }
+    }
+
+    @Test
+    void refreshFromSystemProperty_acceptsGlobalTrafficProps() {
+        RxConfig conf = RxConfig.INSTANCE;
+        NetworkTrafficConfig oldConfig = new NetworkTrafficConfig(conf.net.globalTraffic);
+        String enabled = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_ENABLED;
+        String upload = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_UPLOAD_KILOBYTES_PER_SECOND;
+        String download = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_DOWNLOAD_KILOBYTES_PER_SECOND;
+        String checkInterval = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS;
+        String udpPendingPackets = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_UDP_MAX_PENDING_PACKETS;
+        String oldEnabled = System.getProperty(enabled);
+        String oldUpload = System.getProperty(upload);
+        String oldDownload = System.getProperty(download);
+        String oldCheckInterval = System.getProperty(checkInterval);
+        String oldUdpPendingPackets = System.getProperty(udpPendingPackets);
+        try {
+            System.setProperty(enabled, "true");
+            System.setProperty(upload, "2048");
+            System.setProperty(download, "4096");
+            System.setProperty(checkInterval, "50");
+            System.setProperty(udpPendingPackets, "16");
+
+            conf.refreshFromSystemProperty();
+
+            assertTrue(conf.net.globalTraffic.isEnabled());
+            assertEquals(2048L, conf.net.globalTraffic.getUploadKilobytesPerSecond());
+            assertEquals(4096L, conf.net.globalTraffic.getDownloadKilobytesPerSecond());
+            assertEquals(50L, conf.net.globalTraffic.getCheckIntervalMillis());
+            assertEquals(16, conf.net.globalTraffic.getUdpMaxPendingPackets());
+        } finally {
+            restoreProperty(enabled, oldEnabled);
+            restoreProperty(upload, oldUpload);
+            restoreProperty(download, oldDownload);
+            restoreProperty(checkInterval, oldCheckInterval);
+            restoreProperty(udpPendingPackets, oldUdpPendingPackets);
+            conf.net.globalTraffic = new NetworkTrafficConfig(oldConfig);
+            NetworkFlowControl.DEFAULT.refresh(oldConfig);
         }
     }
 

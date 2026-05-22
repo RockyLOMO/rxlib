@@ -110,7 +110,7 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
                 if (!f.isSuccess()) {
                     Throwable cause = f.cause();
                     if (canRetryConnect()) {
-                        scheduleRetry(endpoint);
+                        scheduleRetry(endpoint, cause);
                     } else {
                         Throwable ex = cause == null ? new InvalidException("{} {} {} fail", this, reconnect ? "reconnect" : "connect", endpoint) : cause;
                         onConnectFailure(endpoint, reconnect, ex);
@@ -133,7 +133,7 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
             });
         } catch (Throwable e) {
             if (canRetryConnect()) {
-                scheduleRetry(endpoint);
+                scheduleRetry(endpoint, e);
                 return;
             }
 
@@ -149,11 +149,11 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
         Tasks.setTimeout(() -> doConnect(true), 1000, this, Constants.TIMER_SINGLE_FLAG);
     }
 
-    private void scheduleRetry(SocketAddress endpoint) {
+    private void scheduleRetry(SocketAddress endpoint, Throwable cause) {
         long previous = reconnectDelayMs;
         long delay = previous >= 5000 ? 5000 : Math.max(previous * 2, 100);
         reconnectDelayMs = delay;
-        onReconnectRetry(endpoint, delay);
+        onReconnectRetry(endpoint, delay, cause);
         Tasks.setTimeout(() -> doConnect(true), delay, this, Constants.TIMER_REPLACE_FLAG);
     }
 
@@ -191,5 +191,9 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
     }
 
     protected void onReconnectRetry(SocketAddress endpoint, long delayMs) {
+    }
+
+    protected void onReconnectRetry(SocketAddress endpoint, long delayMs, Throwable cause) {
+        onReconnectRetry(endpoint, delayMs);
     }
 }

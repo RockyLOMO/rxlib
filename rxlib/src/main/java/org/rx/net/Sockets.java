@@ -59,6 +59,7 @@ import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
+import org.slf4j.Logger;
 
 import javax.net.ssl.KeyManagerFactory;
 import java.io.File;
@@ -72,6 +73,7 @@ import java.security.KeyStore;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -83,6 +85,9 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class Sockets {
+    public static final long RECONNECT_WARN_INTERVAL_MILLIS = 30 * 1000L;
+    public static final int RECONNECT_CAUSE_STACK_SAMPLE_RATE = 16;
+
     public enum UdpWriteResult {
         ACCEPTED,
         CHANNEL_INACTIVE,
@@ -90,7 +95,91 @@ public final class Sockets {
         UNRESOLVED_RECIPIENT,
         MTU_EXCEEDED,
         PENDING_OVERLIMIT,
+        PENDING_PACKETS_OVERLIMIT,
         WRITE_THROWN
+    }
+
+    public static final class ReconnectLogState {
+        volatile long lastWarnMillis;
+        volatile long suppressedWarns;
+
+        public void reset() {
+            lastWarnMillis = 0L;
+            suppressedWarns = 0L;
+        }
+    }
+
+    public static String reconnectCauseText(Throwable cause) {
+        return cause == null ? null : cause.toString();
+    }
+
+    public static boolean shouldLogReconnectCauseStack(Throwable cause) {
+        return cause != null && ThreadLocalRandom.current().nextInt(RECONNECT_CAUSE_STACK_SAMPLE_RATE) == 0;
+    }
+
+    public static void logConnectFailure(Logger logger, Object owner, SocketAddress endpoint, boolean reconnect, Throwable cause, boolean warn) {
+        String action = reconnect ? "reconnect" : "connect";
+        if (warn) {
+            if (shouldLogReconnectCauseStack(cause)) {
+                logger.warn("{} {} {} fail", owner, action, endpoint, cause);
+                return;
+            }
+            logger.warn("{} {} {} fail, cause={}", owner, action, endpoint, reconnectCauseText(cause));
+            return;
+        }
+        if (shouldLogReconnectCauseStack(cause)) {
+            logger.debug("{} {} {} fail", owner, action, endpoint, cause);
+            return;
+        }
+        logger.debug("{} {} {} fail, cause={}", owner, action, endpoint, reconnectCauseText(cause));
+    }
+
+    public static void logReconnectSuccess(Logger logger, Object owner, SocketAddress endpoint, boolean warn) {
+        if (warn) {
+            logger.info("{} reconnect {} ok", owner, endpoint);
+            return;
+        }
+        logger.debug("{} reconnect {} ok", owner, endpoint);
+    }
+
+    public static void logReconnectRetry(Logger logger, ReconnectLogState state, Object owner, SocketAddress endpoint, long delayMs, Throwable cause, boolean warn) {
+        if (!warn || delayMs < 5000) {
+            logger.debug("{} reconnect {} failed will re-attempt in {}ms, cause={}", owner, endpoint, delayMs, reconnectCauseText(cause));
+            return;
+        }
+
+        if (state == null) {
+            if (shouldLogReconnectCauseStack(cause)) {
+                logger.warn("{} reconnect {} failed will re-attempt in {}ms", owner, endpoint, delayMs, cause);
+                return;
+            }
+            logger.warn("{} reconnect {} failed will re-attempt in {}ms, cause={}", owner, endpoint, delayMs, reconnectCauseText(cause));
+            return;
+        }
+
+        long now = NtpClock.UTC.millis();
+        if (now - state.lastWarnMillis < RECONNECT_WARN_INTERVAL_MILLIS) {
+            state.suppressedWarns++;
+            logger.debug("{} reconnect {} failed will re-attempt in {}ms, cause={}", owner, endpoint, delayMs, reconnectCauseText(cause));
+            return;
+        }
+
+        state.lastWarnMillis = now;
+        long suppressed = state.suppressedWarns;
+        state.suppressedWarns = 0L;
+        if (suppressed > 0) {
+            if (shouldLogReconnectCauseStack(cause)) {
+                logger.warn("{} reconnect {} failed will re-attempt in {}ms, suppressed={}", owner, endpoint, delayMs, suppressed, cause);
+                return;
+            }
+            logger.warn("{} reconnect {} failed will re-attempt in {}ms, suppressed={}, cause={}", owner, endpoint, delayMs, suppressed, reconnectCauseText(cause));
+            return;
+        }
+        if (shouldLogReconnectCauseStack(cause)) {
+            logger.warn("{} reconnect {} failed will re-attempt in {}ms", owner, endpoint, delayMs, cause);
+            return;
+        }
+        logger.warn("{} reconnect {} failed will re-attempt in {}ms, cause={}", owner, endpoint, delayMs, reconnectCauseText(cause));
     }
 
     /**
@@ -153,29 +242,31 @@ public final class Sockets {
                 return;
             }
 
-            if (!forceBackpressure && udpMtu <= 0) {
+            UdpBackpressurePolicy udpPolicy = NetworkFlowControl.DEFAULT.udpBackpressurePolicy();
+            boolean trackBackpressure = udpPolicy.isEnabled()
+                    && (forceBackpressure || udpMtu > 0 || udpPolicy.hasConfiguredPendingLimit());
+            if (!trackBackpressure) {
                 ctx.write(packet, promise);
                 return;
             }
 
             AtomicInteger pendingBytes = udpPendingWriteBytesState(channel);
-            int queuedBytes = pendingBytes.addAndGet(bytes);
-            if (queuedBytes > limitBytes) {
-                pendingBytes.addAndGet(-bytes);
-                releaseUdpPacket(packet, metricPrefix, tags, "final-pending-overlimit", queuedBytes, limitBytes);
-                completeDroppedWrite(promise);
-                return;
-            }
-            if (!channel.isWritable()) {
-                pendingBytes.addAndGet(-bytes);
-                releaseUdpPacket(packet, metricPrefix, tags, "final-not-writable", queuedBytes, limitBytes);
+            AtomicInteger pendingPackets = udpPendingWritePacketsState(channel);
+            int limitPackets = udpPolicy.writeLimitPackets(channel);
+            UdpBackpressureDecision decision = udpPolicy.reserve(channel, bytes, pendingBytes, pendingPackets,
+                    limitBytes, limitPackets, "final-");
+            if (!decision.accepted) {
+                releaseUdpPacket(packet, metricPrefix, tags, decision.reason, decision.queuedBytes, decision.limitBytes,
+                        decision.queuedPackets, decision.limitPackets);
                 completeDroppedWrite(promise);
                 return;
             }
 
             ChannelPromise writePromise = promise.isVoid() ? ctx.newPromise() : promise;
             writePromise.addListener((ChannelFutureListener) f -> {
-                pendingBytes.addAndGet(-bytes);
+                if (decision.tracked) {
+                    udpPolicy.release(bytes, pendingBytes, pendingPackets, limitPackets);
+                }
                 if (!f.isSuccess()) {
                     recordUdpMetric(metricPrefix, "drop.count",
                             appendUdpMetricTags(tags, "reason=final-write-fail,limitBucket=" + udpLimitBucket(limitBytes)));
@@ -187,7 +278,9 @@ public final class Sockets {
             } catch (Throwable e) {
                 ReferenceCountUtil.release(packet);
                 if (!writePromise.tryFailure(e)) {
-                    pendingBytes.addAndGet(-bytes);
+                    if (decision.tracked) {
+                        udpPolicy.release(bytes, pendingBytes, pendingPackets, limitPackets);
+                    }
                 }
                 recordUdpMetric(metricPrefix, "drop.count",
                         appendUdpMetricTags(tags, "reason=final-write-throw,limitBucket=" + udpLimitBucket(limitBytes)));
@@ -216,6 +309,7 @@ public final class Sockets {
                 p.addLast(DEFAULT_LOG);
             }
             p.addLast(GlobalChannelHandler.DEFAULT);
+            NetworkFlowControl.DEFAULT.install(ch);
             getAttr(ch, SocketConfig.ATTR_INIT_FN).accept(ch);
             ch.attr(SocketConfig.ATTR_INIT_FN).set(null);
         }
@@ -227,7 +321,9 @@ public final class Sockets {
     public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
     public static final AttributeKey<InetSocketAddress> ATTR_ORIGIN_REMOTE_ADDR = AttributeKey.valueOf("originRemoteAddr");
     static final AttributeKey<AtomicInteger> ATTR_UDP_PENDING_WRITE_BYTES = AttributeKey.valueOf("udpPendingWriteBytes");
+    static final AttributeKey<AtomicInteger> ATTR_UDP_PENDING_WRITE_PACKETS = AttributeKey.valueOf("udpPendingWritePackets");
     static final AttributeKey<Integer> ATTR_UDP_WRITE_LIMIT_BYTES = AttributeKey.valueOf("udpWriteLimitBytes");
+    static final AttributeKey<Integer> ATTR_UDP_WRITE_LIMIT_PACKETS = AttributeKey.valueOf("udpWriteLimitPackets");
     static final int DEFAULT_UDP_WRITE_LIMIT_BYTES = 256 * 1024;
     static final Set<Integer> TCP_COMPRESS_BYPASS_PORTS = Collections.unmodifiableSet(new HashSet<>(java.util.Arrays.asList(
             22, 443, 465, 587, 636, 853, 989, 990, 993, 995, 3389, 8443, 9443)));
@@ -240,6 +336,7 @@ public final class Sockets {
     static final Map<String, EventLoopGroup> localReactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
+    static volatile List<InetSocketAddress> injectedNameServers = Collections.emptyList();
     static volatile PublicIpSnapshot publicIpSnapshot = PublicIpSnapshot.empty;
     /** 共享 TCP Bootstrap 解析器：走直连 DNS Client。 */
     static volatile AddressResolverGroup<InetSocketAddress> tcpDirectDnsAddressResolverGroup;
@@ -399,7 +496,35 @@ public final class Sockets {
             }
         }
         nsInterceptor = interceptor;
+        setInjectedNameServers(interceptor instanceof DnsClientNameService
+                ? ((DnsClientNameService) interceptor).nameServers
+                : Collections.<InetSocketAddress>emptyList());
         closeOldNameService(old, interceptor);
+    }
+
+    public static List<InetSocketAddress> injectedNameServers() {
+        return injectedNameServers;
+    }
+
+    static void setInjectedNameServers(Collection<InetSocketAddress> nameServerList) {
+        List<InetSocketAddress> next;
+        if (CollectionUtils.isEmpty(nameServerList)) {
+            next = Collections.emptyList();
+        } else {
+            ArrayList<InetSocketAddress> copy = new ArrayList<InetSocketAddress>(nameServerList.size());
+            for (InetSocketAddress endpoint : nameServerList) {
+                if (endpoint != null) {
+                    copy.add(endpoint);
+                }
+            }
+            next = copy.isEmpty() ? Collections.<InetSocketAddress>emptyList() : Collections.unmodifiableList(copy);
+        }
+        if (injectedNameServers.equals(next)) {
+            return;
+        }
+        injectedNameServers = next;
+        tcpDirectDnsAddressResolverGroup = null;
+        DnsClient.resetDirectClient();
     }
 
     private static void closeOldNameService(DnsServer.ResolveInterceptor old, DnsServer.ResolveInterceptor current) {
@@ -410,9 +535,11 @@ public final class Sockets {
     }
 
     static final class DnsClientNameService implements DnsServer.ResolveInterceptor, AutoCloseable {
+        final List<InetSocketAddress> nameServers;
         final DnsClient client;
 
         DnsClientNameService(List<InetSocketAddress> nameServerList) {
+            nameServers = Collections.unmodifiableList(new ArrayList<InetSocketAddress>(nameServerList));
             client = new DnsClient(nameServerList);
         }
 
@@ -1170,7 +1297,7 @@ public final class Sockets {
     }
 
     private static boolean shouldInstallUdpFinalEgressGuard(SocketConfig config, boolean forceBackpressure) {
-        return config != null && (config.getUdpMtu() > 0 || forceBackpressure);
+        return NetworkFlowControl.DEFAULT.udpBackpressurePolicy().shouldInstallFinalGuard(config, forceBackpressure);
     }
 
     private static boolean isUdpRedundantEnabled(SocksConfig config) {
@@ -1245,7 +1372,10 @@ public final class Sockets {
         }
 
         AtomicInteger pendingBytes = null;
+        AtomicInteger pendingPackets = null;
         int limitBytes = 0;
+        int limitPackets = 0;
+        UdpBackpressureDecision decision = UdpBackpressureDecision.ALLOW_UNTRACKED;
         int queuedBytes = 0;
         if (!finalGuard) {
             int udpMtu = udpMtu(channel, config);
@@ -1255,26 +1385,31 @@ public final class Sockets {
             }
 
             pendingBytes = udpPendingWriteBytesState(channel);
-            queuedBytes = pendingBytes.addAndGet(bytes);
+            pendingPackets = udpPendingWritePacketsState(channel);
             limitBytes = udpWriteLimitBytes(channel);
-            if (queuedBytes > limitBytes) {
-                pendingBytes.addAndGet(-bytes);
-                releaseUdpPacket(packet, metricPrefix, tags, "pending-overlimit", queuedBytes, limitBytes);
-                return UdpWriteResult.PENDING_OVERLIMIT;
+            limitPackets = NetworkFlowControl.DEFAULT.udpBackpressurePolicy().writeLimitPackets(channel);
+            decision = NetworkFlowControl.DEFAULT.udpBackpressurePolicy()
+                    .reserve(channel, bytes, pendingBytes, pendingPackets, limitBytes, limitPackets, "");
+            if (!decision.accepted) {
+                releaseUdpPacket(packet, metricPrefix, tags, decision.reason, decision.queuedBytes, decision.limitBytes,
+                        decision.queuedPackets, decision.limitPackets);
+                return decision.result;
             }
-            if (!channel.isWritable()) {
-                pendingBytes.addAndGet(-bytes);
-                releaseUdpPacket(packet, metricPrefix, tags, "not-writable", queuedBytes, limitBytes);
-                return UdpWriteResult.CHANNEL_UNWRITABLE;
+            if (decision.tracked) {
+                queuedBytes = Math.max(0, pendingBytes.get());
             }
         }
 
         try {
             AtomicInteger finalPendingBytes = pendingBytes;
+            AtomicInteger finalPendingPackets = pendingPackets;
             int finalLimitBytes = limitBytes;
+            int finalLimitPackets = limitPackets;
+            UdpBackpressureDecision finalDecision = decision;
             channel.writeAndFlush(packet).addListener((ChannelFutureListener) f -> {
-                if (finalPendingBytes != null) {
-                    finalPendingBytes.addAndGet(-bytes);
+                if (finalDecision.tracked) {
+                    NetworkFlowControl.DEFAULT.udpBackpressurePolicy().release(bytes,
+                            finalPendingBytes, finalPendingPackets, finalLimitPackets);
                 }
                 if (!f.isSuccess() && !finalGuard) {
                     recordUdpMetric(metricPrefix, "drop.count",
@@ -1291,8 +1426,8 @@ public final class Sockets {
             });
             return UdpWriteResult.ACCEPTED;
         } catch (Throwable e) {
-            if (pendingBytes != null) {
-                pendingBytes.addAndGet(-bytes);
+            if (decision.tracked) {
+                NetworkFlowControl.DEFAULT.udpBackpressurePolicy().release(bytes, pendingBytes, pendingPackets, limitPackets);
             }
             releaseUdpPacket(packet, metricPrefix, tags, "write-throw", queuedBytes, limitBytes);
             log.warn("UDP write throw channel={} recipient={}", channel, packet.recipient(), e);
@@ -1305,16 +1440,17 @@ public final class Sockets {
         return state == null ? 0 : Math.max(0, state.get());
     }
 
-    static int udpWriteLimitBytes(Channel channel) {
-        Integer override = channel.attr(ATTR_UDP_WRITE_LIMIT_BYTES).get();
-        if (override != null && override > 0) {
-            return override;
-        }
+    static int udpPendingWritePackets(Channel channel) {
+        AtomicInteger state = channel.attr(ATTR_UDP_PENDING_WRITE_PACKETS).get();
+        return state == null ? 0 : Math.max(0, state.get());
+    }
 
+    static int udpWriteLimitBytes(Channel channel) {
+        return NetworkFlowControl.DEFAULT.udpBackpressurePolicy().writeLimitBytes(channel);
+    }
+
+    static int udpWriteLimitBytesByWatermark(Channel channel) {
         SocketConfig config = channel.attr(SocketConfig.ATTR_CONF).get();
-        if (config != null && config.getUdpWriteLimitBytes() > 0) {
-            return config.getUdpWriteLimitBytes();
-        }
         OptimalSettings op = config == null ? OptimalSettings.EMPTY : ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         WriteBufferWaterMark waterMark = op.writeBufferWaterMark;
         if (waterMark != null) {
@@ -1357,15 +1493,33 @@ public final class Sockets {
         return oldState != null ? oldState : newState;
     }
 
+    private static AtomicInteger udpPendingWritePacketsState(Channel channel) {
+        AtomicInteger state = channel.attr(ATTR_UDP_PENDING_WRITE_PACKETS).get();
+        if (state != null) {
+            return state;
+        }
+        AtomicInteger newState = new AtomicInteger();
+        AtomicInteger oldState = channel.attr(ATTR_UDP_PENDING_WRITE_PACKETS).setIfAbsent(newState);
+        return oldState != null ? oldState : newState;
+    }
+
     private static void releaseUdpPacket(DatagramPacket packet, String metricPrefix, String tags,
                                          String reason, int queuedBytes, int limitBytes) {
+        releaseUdpPacket(packet, metricPrefix, tags, reason, queuedBytes, limitBytes, 0, 0);
+    }
+
+    private static void releaseUdpPacket(DatagramPacket packet, String metricPrefix, String tags,
+                                         String reason, int queuedBytes, int limitBytes,
+                                         int queuedPackets, int limitPackets) {
         Bytes.release(packet);
-        String metricTags = appendUdpMetricTags(tags,
-                "reason=" + reason + ",limitBucket=" + udpLimitBucket(limitBytes));
+        String metricTags = appendUdpMetricTags(tags, udpDropLimitTags(reason, limitBytes, limitPackets));
         recordUdpMetric(metricPrefix, "drop.count",
                 metricTags);
         if (queuedBytes > 0) {
             recordUdpMetric(metricPrefix, "pending.write.bytes", metricTags, queuedBytes);
+        }
+        if (queuedPackets > 0) {
+            recordUdpMetric(metricPrefix, "pending.write.packets", metricTags, queuedPackets);
         }
     }
 
@@ -1400,6 +1554,14 @@ public final class Sockets {
         return tags + "," + extra;
     }
 
+    private static String udpDropLimitTags(String reason, int limitBytes, int limitPackets) {
+        if (limitPackets <= 0) {
+            return "reason=" + reason + ",limitBucket=" + udpLimitBucket(limitBytes);
+        }
+        return "reason=" + reason + ",limitBucket=" + udpLimitBucket(limitBytes)
+                + ",packetLimitBucket=" + udpPacketLimitBucket(limitPackets);
+    }
+
     public static String udpMetricTags(String component, String path, String flow, String result, String reason) {
         StringBuilder b = new StringBuilder(64);
         appendUdpMetricTag(b, "component", component);
@@ -1431,6 +1593,22 @@ public final class Sockets {
             return "lte1m";
         }
         return "gt1m";
+    }
+
+    private static String udpPacketLimitBucket(int limitPackets) {
+        if (limitPackets <= 0) {
+            return "disabled";
+        }
+        if (limitPackets <= 32) {
+            return "lte32";
+        }
+        if (limitPackets <= 128) {
+            return "lte128";
+        }
+        if (limitPackets <= 512) {
+            return "lte512";
+        }
+        return "gt512";
     }
 
     private static String udpMtuBucket(int udpMtu) {
