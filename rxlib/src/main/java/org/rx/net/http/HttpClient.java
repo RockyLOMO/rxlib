@@ -38,19 +38,23 @@ import org.rx.io.DuplexStream;
 import org.rx.io.Files;
 import org.rx.io.HybridStream;
 import org.rx.diagnostic.DiagnosticMetrics;
+import org.rx.exception.InvalidException;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
+import org.rx.net.dns.DnsClient;
 import org.rx.util.function.BiFunc;
 
 import java.io.File;
 import java.io.InputStream;
 import java.io.Serializable;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.SocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
+import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -916,7 +920,7 @@ public class HttpClient implements AutoCloseable {
                 proxyPassword = null;
             } else {
                 proxyType = proxy.type();
-                proxyAddress = proxy.address();
+                proxyAddress = resolveProxyAddress(proxy.address());
                 if (proxy instanceof AuthenticProxy) {
                     proxyUsername = ((AuthenticProxy) proxy).getUsername();
                     proxyPassword = ((AuthenticProxy) proxy).getPassword();
@@ -933,6 +937,31 @@ public class HttpClient implements AutoCloseable {
 
         InetSocketAddress unresolvedAddress() {
             return InetSocketAddress.createUnresolved(host, port);
+        }
+
+        static SocketAddress resolveProxyAddress(SocketAddress address) {
+            if (!(address instanceof InetSocketAddress)) {
+                return address;
+            }
+
+            InetSocketAddress endpoint = (InetSocketAddress) address;
+            if (!endpoint.isUnresolved()) {
+                return endpoint;
+            }
+
+            String host = endpoint.getHostString();
+            if (Sockets.isValidIp(host)) {
+                return new InetSocketAddress(Sockets.parseIpAddress(host), endpoint.getPort());
+            }
+            try {
+                InetAddress resolved = DnsClient.directClient().resolve(host);
+                if (resolved == null) {
+                    throw new UnknownHostException(host);
+                }
+                return new InetSocketAddress(resolved, endpoint.getPort());
+            } catch (Throwable e) {
+                throw new InvalidException("Resolve proxy address {} fail", Sockets.toString(endpoint), e);
+            }
         }
 
         @Override

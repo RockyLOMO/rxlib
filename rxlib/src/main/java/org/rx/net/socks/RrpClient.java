@@ -644,17 +644,17 @@ public class RrpClient extends AbstractTcpReconnectClient {
     @Override
     protected void onConnectSuccess(SocketAddress endpoint, boolean reconnect, Channel channel) {
         if (reconnect) {
-            log.debug("{} reconnect {} ok", this, endpoint);
+            Sockets.logReconnectSuccess(log, this, endpoint, false);
         }
     }
 
     @Override
     protected void onConnectFailure(SocketAddress endpoint, boolean reconnect, Throwable cause) {
-        log.debug("{} {} {} fail", this, reconnect ? "reconnect" : "connect", endpoint);
+        Sockets.logConnectFailure(log, this, endpoint, reconnect, cause, false);
     }
 
     @Override
-    protected void onReconnectRetry(SocketAddress endpoint, long delayMs) {
-        log.debug("{} reconnect {} failed will re-attempt in {}ms", this, endpoint, delayMs);
+    protected void onReconnectRetry(SocketAddress endpoint, long delayMs, Throwable cause) {
+        Sockets.logReconnectRetry(log, null, this, endpoint, delayMs, cause, false);
     }
 }

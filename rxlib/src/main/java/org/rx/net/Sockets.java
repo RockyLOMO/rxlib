@@ -59,6 +59,7 @@ import org.rx.net.support.EndpointTracer;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
+import org.slf4j.Logger;
 
 import javax.net.ssl.KeyManagerFactory;
 import java.io.File;
@@ -72,6 +73,7 @@ import java.security.KeyStore;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -83,6 +85,9 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public final class Sockets {
+    public static final long RECONNECT_WARN_INTERVAL_MILLIS = 30 * 1000L;
+    public static final int RECONNECT_CAUSE_STACK_SAMPLE_RATE = 16;
+
     public enum UdpWriteResult {
         ACCEPTED,
         CHANNEL_INACTIVE,
@@ -92,6 +97,89 @@ public final class Sockets {
         PENDING_OVERLIMIT,
         PENDING_PACKETS_OVERLIMIT,
         WRITE_THROWN
+    }
+
+    public static final class ReconnectLogState {
+        volatile long lastWarnMillis;
+        volatile long suppressedWarns;
+
+        public void reset() {
+            lastWarnMillis = 0L;
+            suppressedWarns = 0L;
+        }
+    }
+
+    public static String reconnectCauseText(Throwable cause) {
+        return cause == null ? null : cause.toString();
+    }
+
+    public static boolean shouldLogReconnectCauseStack(Throwable cause) {
+        return cause != null && ThreadLocalRandom.current().nextInt(RECONNECT_CAUSE_STACK_SAMPLE_RATE) == 0;
+    }
+
+    public static void logConnectFailure(Logger logger, Object owner, SocketAddress endpoint, boolean reconnect, Throwable cause, boolean warn) {
+        String action = reconnect ? "reconnect" : "connect";
+        if (warn) {
+            if (shouldLogReconnectCauseStack(cause)) {
+                logger.warn("{} {} {} fail", owner, action, endpoint, cause);
+                return;
+            }
+            logger.warn("{} {} {} fail, cause={}", owner, action, endpoint, reconnectCauseText(cause));
+            return;
+        }
+        if (shouldLogReconnectCauseStack(cause)) {
+            logger.debug("{} {} {} fail", owner, action, endpoint, cause);
+            return;
+        }
+        logger.debug("{} {} {} fail, cause={}", owner, action, endpoint, reconnectCauseText(cause));
+    }
+
+    public static void logReconnectSuccess(Logger logger, Object owner, SocketAddress endpoint, boolean warn) {
+        if (warn) {
+            logger.info("{} reconnect {} ok", owner, endpoint);
+            return;
+        }
+        logger.debug("{} reconnect {} ok", owner, endpoint);
+    }
+
+    public static void logReconnectRetry(Logger logger, ReconnectLogState state, Object owner, SocketAddress endpoint, long delayMs, Throwable cause, boolean warn) {
+        if (!warn || delayMs < 5000) {
+            logger.debug("{} reconnect {} failed will re-attempt in {}ms, cause={}", owner, endpoint, delayMs, reconnectCauseText(cause));
+            return;
+        }
+
+        if (state == null) {
+            if (shouldLogReconnectCauseStack(cause)) {
+                logger.warn("{} reconnect {} failed will re-attempt in {}ms", owner, endpoint, delayMs, cause);
+                return;
+            }
+            logger.warn("{} reconnect {} failed will re-attempt in {}ms, cause={}", owner, endpoint, delayMs, reconnectCauseText(cause));
+            return;
+        }
+
+        long now = NtpClock.UTC.millis();
+        if (now - state.lastWarnMillis < RECONNECT_WARN_INTERVAL_MILLIS) {
+            state.suppressedWarns++;
+            logger.debug("{} reconnect {} failed will re-attempt in {}ms, cause={}", owner, endpoint, delayMs, reconnectCauseText(cause));
+            return;
+        }
+
+        state.lastWarnMillis = now;
+        long suppressed = state.suppressedWarns;
+        state.suppressedWarns = 0L;
+        if (suppressed > 0) {
+            if (shouldLogReconnectCauseStack(cause)) {
+                logger.warn("{} reconnect {} failed will re-attempt in {}ms, suppressed={}", owner, endpoint, delayMs, suppressed, cause);
+                return;
+            }
+            logger.warn("{} reconnect {} failed will re-attempt in {}ms, suppressed={}, cause={}", owner, endpoint, delayMs, suppressed, reconnectCauseText(cause));
+            return;
+        }
+        if (shouldLogReconnectCauseStack(cause)) {
+            logger.warn("{} reconnect {} failed will re-attempt in {}ms", owner, endpoint, delayMs, cause);
+            return;
+        }
+        logger.warn("{} reconnect {} failed will re-attempt in {}ms, cause={}", owner, endpoint, delayMs, reconnectCauseText(cause));
     }
 
     /**
@@ -248,6 +336,7 @@ public final class Sockets {
     static final Map<String, EventLoopGroup> localReactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
+    static volatile List<InetSocketAddress> injectedNameServers = Collections.emptyList();
     static volatile PublicIpSnapshot publicIpSnapshot = PublicIpSnapshot.empty;
     /** 共享 TCP Bootstrap 解析器：走直连 DNS Client。 */
     static volatile AddressResolverGroup<InetSocketAddress> tcpDirectDnsAddressResolverGroup;
@@ -407,7 +496,35 @@ public final class Sockets {
             }
         }
         nsInterceptor = interceptor;
+        setInjectedNameServers(interceptor instanceof DnsClientNameService
+                ? ((DnsClientNameService) interceptor).nameServers
+                : Collections.<InetSocketAddress>emptyList());
         closeOldNameService(old, interceptor);
+    }
+
+    public static List<InetSocketAddress> injectedNameServers() {
+        return injectedNameServers;
+    }
+
+    static void setInjectedNameServers(Collection<InetSocketAddress> nameServerList) {
+        List<InetSocketAddress> next;
+        if (CollectionUtils.isEmpty(nameServerList)) {
+            next = Collections.emptyList();
+        } else {
+            ArrayList<InetSocketAddress> copy = new ArrayList<InetSocketAddress>(nameServerList.size());
+            for (InetSocketAddress endpoint : nameServerList) {
+                if (endpoint != null) {
+                    copy.add(endpoint);
+                }
+            }
+            next = copy.isEmpty() ? Collections.<InetSocketAddress>emptyList() : Collections.unmodifiableList(copy);
+        }
+        if (injectedNameServers.equals(next)) {
+            return;
+        }
+        injectedNameServers = next;
+        tcpDirectDnsAddressResolverGroup = null;
+        DnsClient.resetDirectClient();
     }
 
     private static void closeOldNameService(DnsServer.ResolveInterceptor old, DnsServer.ResolveInterceptor current) {
@@ -418,9 +535,11 @@ public final class Sockets {
     }
 
     static final class DnsClientNameService implements DnsServer.ResolveInterceptor, AutoCloseable {
+        final List<InetSocketAddress> nameServers;
         final DnsClient client;
 
         DnsClientNameService(List<InetSocketAddress> nameServerList) {
+            nameServers = Collections.unmodifiableList(new ArrayList<InetSocketAddress>(nameServerList));
             client = new DnsClient(nameServerList);
         }
 

@@ -5,6 +5,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.rx.net.Sockets;
 import org.rx.net.transport.protocol.PingPacket;
 
 import java.net.InetSocketAddress;
@@ -116,6 +117,15 @@ class TcpTransportTest {
         verify(ctx).writeAndFlush(packet);
         assertTrue(client.getLastHeartbeatMillis() >= packet.getTimestamp());
         assertTrue(client.getHeartbeatRttMillis() >= 0);
+    }
+
+    @Test
+    void reconnectCauseSummaryDoesNotRequireStackTrace() {
+        IllegalStateException cause = new IllegalStateException("boom");
+
+        assertEquals(cause.toString(), Sockets.reconnectCauseText(cause));
+        assertNull(Sockets.reconnectCauseText(null));
+        assertFalse(Sockets.shouldLogReconnectCauseStack(null));
     }
 
     static void awaitTrue(BooleanSupplier condition, long timeoutMillis, String message) throws InterruptedException {

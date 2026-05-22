@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.rx.core.Tasks.await;
+import static org.rx.core.Extends.quietly;
 
 @Slf4j
 public class DnsClient extends Disposable {
@@ -68,7 +69,16 @@ public class DnsClient extends Disposable {
     }
 
     public static List<InetSocketAddress> directNameServers() {
-        return parseNameServers(RxConfig.INSTANCE.getNet().getDns().getDirectServers());
+        List<InetSocketAddress> configured = parseNameServers(RxConfig.INSTANCE.getNet().getDns().getDirectServers());
+        List<InetSocketAddress> injected = Sockets.injectedNameServers();
+        if (injected.isEmpty()) {
+            return configured;
+        }
+
+        LinkedHashSet<InetSocketAddress> result = new LinkedHashSet<InetSocketAddress>(injected.size() + configured.size());
+        result.addAll(injected);
+        result.addAll(configured);
+        return new ArrayList<InetSocketAddress>(result);
     }
 
     public static List<InetSocketAddress> remoteNameServers() {
@@ -100,6 +110,17 @@ public class DnsClient extends Disposable {
 
     public static boolean localSystemFallback() {
         return RxConfig.INSTANCE.getNet().getDns().isLocalSystemFallback();
+    }
+
+    public static void resetDirectClient() {
+        DnsClient old;
+        synchronized (DnsClient.class) {
+            old = directClient;
+            directClient = null;
+        }
+        if (old != null) {
+            quietly(old::close);
+        }
     }
 
     static List<InetSocketAddress> sanitizeNameServers(Collection<InetSocketAddress> nameServerList) {

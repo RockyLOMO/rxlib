@@ -25,6 +25,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import java.io.File;
 import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.ServerSocket;
 import java.net.URI;
@@ -488,6 +489,17 @@ public class HttpClientTest {
             channel.close().syncUninterruptibly();
             group.shutdownGracefully(0, 1, TimeUnit.SECONDS).syncUninterruptibly();
         }
+    }
+
+    @Test
+    public void testProxyAddressResolvesLiteralIpBeforeNoopResolver() {
+        InetSocketAddress unresolved = InetSocketAddress.createUnresolved("127.0.0.1", 18888);
+
+        InetSocketAddress resolved = (InetSocketAddress) HttpClient.PoolKey.resolveProxyAddress(unresolved);
+
+        assertFalse(resolved.isUnresolved());
+        assertEquals("127.0.0.1", resolved.getAddress().getHostAddress());
+        assertEquals(18888, resolved.getPort());
     }
 
     @Test
