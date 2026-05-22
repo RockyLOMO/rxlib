@@ -305,8 +305,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         if (inbound.pipeline().get(SocksTcpFrontendRelayHandler.class) == null) {
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         }
-        if (outbound.pipeline().get(BackpressureHandler.class) == null) {
-            TcpBackpressureManager.DEFAULT.install(inbound, outbound);
+        if (outbound.pipeline().get(TcpBackpressureHandler.class) == null) {
+            TcpBackpressureHandler.install(inbound, outbound);
         }
     }
 

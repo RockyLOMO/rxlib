@@ -13,8 +13,8 @@ public class NetworkTrafficConfig implements Serializable {
     private static final long serialVersionUID = 5615815740454781434L;
 
     private boolean enabled;
-    private long uploadBytesPerSecond;
-    private long downloadBytesPerSecond;
+    private long uploadKilobytesPerSecond;
+    private long downloadKilobytesPerSecond;
     private long checkIntervalMillis = 1000L;
     private boolean tcpBackpressureEnabled = true;
     private boolean udpBackpressureEnabled = true;
@@ -27,8 +27,8 @@ public class NetworkTrafficConfig implements Serializable {
     public NetworkTrafficConfig(NetworkTrafficConfig source) {
         if (source != null) {
             enabled = source.enabled;
-            uploadBytesPerSecond = source.uploadBytesPerSecond;
-            downloadBytesPerSecond = source.downloadBytesPerSecond;
+            uploadKilobytesPerSecond = source.uploadKilobytesPerSecond;
+            downloadKilobytesPerSecond = source.downloadKilobytesPerSecond;
             checkIntervalMillis = source.checkIntervalMillis;
             tcpBackpressureEnabled = source.tcpBackpressureEnabled;
             udpBackpressureEnabled = source.udpBackpressureEnabled;
@@ -43,18 +43,34 @@ public class NetworkTrafficConfig implements Serializable {
     }
 
     public boolean isTrafficShapingEnabled() {
-        return enabled && (uploadBytesPerSecond > 0L || downloadBytesPerSecond > 0L);
+        return enabled && (uploadKilobytesPerSecond > 0L || downloadKilobytesPerSecond > 0L);
     }
 
     public boolean isUdpPendingLimitConfigured() {
         return udpBackpressureEnabled && (udpMaxPendingBytes > 0 || udpMaxPendingPackets > 0);
     }
 
+    long uploadBytesPerSecond() {
+        return kilobytesToBytes(uploadKilobytesPerSecond);
+    }
+
+    long downloadBytesPerSecond() {
+        return kilobytesToBytes(downloadKilobytesPerSecond);
+    }
+
     public void normalize() {
-        uploadBytesPerSecond = Math.max(0L, uploadBytesPerSecond);
-        downloadBytesPerSecond = Math.max(0L, downloadBytesPerSecond);
+        uploadKilobytesPerSecond = Math.max(0L, uploadKilobytesPerSecond);
+        downloadKilobytesPerSecond = Math.max(0L, downloadKilobytesPerSecond);
         checkIntervalMillis = checkIntervalMillis > 0L ? checkIntervalMillis : 1000L;
         udpMaxPendingBytes = Math.max(0, udpMaxPendingBytes);
         udpMaxPendingPackets = Math.max(0, udpMaxPendingPackets);
+    }
+
+    private static long kilobytesToBytes(long kilobytes) {
+        if (kilobytes <= 0L) {
+            return 0L;
+        }
+        long maxKilobytes = Long.MAX_VALUE / 1024L;
+        return kilobytes > maxKilobytes ? Long.MAX_VALUE : kilobytes * 1024L;
     }
 }

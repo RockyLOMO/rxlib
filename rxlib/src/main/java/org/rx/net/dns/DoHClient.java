@@ -115,7 +115,7 @@ public class DoHClient implements DnsServer.ResolveInterceptor, AutoCloseable {
         requestCount.incrementAndGet();
         EndpointState state = endpointStates.get(Math.floorMod(nextEndpoint.getAndIncrement(), endpointStates.size()));
         EndpointState.EndpointChannel slot = state.nextChannel();
-        synchronized (slot.lock) {
+        synchronized (slot) {
             DoHEndpoint endpoint = state.endpoint;
             CountDownLatch latch = new CountDownLatch(1);
             AtomicReference<List<InetAddress>> result = new AtomicReference<>();
@@ -265,7 +265,6 @@ public class DoHClient implements DnsServer.ResolveInterceptor, AutoCloseable {
         }
 
         final class EndpointChannel {
-            final Object lock = new Object();
             volatile Channel channel;
 
             Channel channel() {

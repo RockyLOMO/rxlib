@@ -16,7 +16,7 @@ public final class UdpBackpressurePolicy {
     }
 
     public boolean shouldInstallFinalGuard(SocketConfig config, boolean forceBackpressure) {
-        return config != null && config.getUdpMtu() > 0
+        return (config != null && config.getUdpMtu() > 0)
                 || forceBackpressure
                 || owner.config().isUdpPendingLimitConfigured();
     }

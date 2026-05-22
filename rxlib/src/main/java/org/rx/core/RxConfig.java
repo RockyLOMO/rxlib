@@ -147,8 +147,8 @@ public final class RxConfig {
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_REUSE_PORT_BIND_COUNT = "app.net.reusePortBindCount";
         String NET_GLOBAL_TRAFFIC_ENABLED = "app.net.globalTraffic.enabled";
-        String NET_GLOBAL_TRAFFIC_UPLOAD_BYTES_PER_SECOND = "app.net.globalTraffic.uploadBytesPerSecond";
-        String NET_GLOBAL_TRAFFIC_DOWNLOAD_BYTES_PER_SECOND = "app.net.globalTraffic.downloadBytesPerSecond";
+        String NET_GLOBAL_TRAFFIC_UPLOAD_KILOBYTES_PER_SECOND = "app.net.globalTraffic.uploadKilobytesPerSecond";
+        String NET_GLOBAL_TRAFFIC_DOWNLOAD_KILOBYTES_PER_SECOND = "app.net.globalTraffic.downloadKilobytesPerSecond";
         String NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS = "app.net.globalTraffic.checkIntervalMillis";
         String NET_GLOBAL_TRAFFIC_TCP_BACKPRESSURE_ENABLED = "app.net.globalTraffic.tcpBackpressureEnabled";
         String NET_GLOBAL_TRAFFIC_UDP_BACKPRESSURE_ENABLED = "app.net.globalTraffic.udpBackpressureEnabled";
@@ -799,10 +799,10 @@ public final class RxConfig {
             net.globalTraffic = new NetworkTrafficConfig();
         }
         net.globalTraffic.setEnabled(SystemPropertyUtil.getBoolean(ConfigNames.NET_GLOBAL_TRAFFIC_ENABLED, net.globalTraffic.isEnabled()));
-        net.globalTraffic.setUploadBytesPerSecond(SystemPropertyUtil.getLong(
-                ConfigNames.NET_GLOBAL_TRAFFIC_UPLOAD_BYTES_PER_SECOND, net.globalTraffic.getUploadBytesPerSecond()));
-        net.globalTraffic.setDownloadBytesPerSecond(SystemPropertyUtil.getLong(
-                ConfigNames.NET_GLOBAL_TRAFFIC_DOWNLOAD_BYTES_PER_SECOND, net.globalTraffic.getDownloadBytesPerSecond()));
+        net.globalTraffic.setUploadKilobytesPerSecond(SystemPropertyUtil.getLong(
+                ConfigNames.NET_GLOBAL_TRAFFIC_UPLOAD_KILOBYTES_PER_SECOND, net.globalTraffic.getUploadKilobytesPerSecond()));
+        net.globalTraffic.setDownloadKilobytesPerSecond(SystemPropertyUtil.getLong(
+                ConfigNames.NET_GLOBAL_TRAFFIC_DOWNLOAD_KILOBYTES_PER_SECOND, net.globalTraffic.getDownloadKilobytesPerSecond()));
         net.globalTraffic.setCheckIntervalMillis(SystemPropertyUtil.getLong(
                 ConfigNames.NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS, net.globalTraffic.getCheckIntervalMillis()));
         net.globalTraffic.setTcpBackpressureEnabled(SystemPropertyUtil.getBoolean(

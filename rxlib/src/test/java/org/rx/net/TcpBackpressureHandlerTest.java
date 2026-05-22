@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class BackpressureHandlerTest {
+public class TcpBackpressureHandlerTest {
 
     @Test
     public void testInstall() {
@@ -30,9 +30,9 @@ public class BackpressureHandlerTest {
             outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
         }
 
-        BackpressureHandler.install(inbound, outbound);
+        TcpBackpressureHandler.install(inbound, outbound);
 
-        assertNotNull(outbound.pipeline().get(BackpressureHandler.class));
+        assertNotNull(outbound.pipeline().get(TcpBackpressureHandler.class));
     }
 
     @SneakyThrows
@@ -43,8 +43,8 @@ public class BackpressureHandlerTest {
         // Ensure watermark is present so install works
         outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
 
-        BackpressureHandler.install(inbound, outbound);
-        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+        TcpBackpressureHandler.install(inbound, outbound);
+        TcpBackpressureHandler handler = outbound.pipeline().get(TcpBackpressureHandler.class);
         assertNotNull(handler);
 
         // Default state
@@ -60,7 +60,7 @@ public class BackpressureHandlerTest {
         assertFalse(inbound.config().isAutoRead());
 
         // 2. Wait for cooldown
-        Thread.sleep(BackpressureHandler.COOLDOWN_MILLIS + 20);
+        Thread.sleep(TcpBackpressureHandler.COOLDOWN_MILLIS + 20);
 
         // 3. Trigger Writable on Outbound
         outbound.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
@@ -76,8 +76,8 @@ public class BackpressureHandlerTest {
         EmbeddedChannel outbound = new EmbeddedChannel();
         outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
 
-        BackpressureHandler.install(inbound, outbound);
-        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+        TcpBackpressureHandler.install(inbound, outbound);
+        TcpBackpressureHandler handler = outbound.pipeline().get(TcpBackpressureHandler.class);
         AtomicInteger propagated = new AtomicInteger();
         outbound.pipeline().addLast(new ChannelInboundHandlerAdapter() {
             @Override
@@ -104,8 +104,8 @@ public class BackpressureHandlerTest {
         EmbeddedChannel outbound = new EmbeddedChannel();
         outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
 
-        BackpressureHandler.install(inbound, outbound);
-        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+        TcpBackpressureHandler.install(inbound, outbound);
+        TcpBackpressureHandler handler = outbound.pipeline().get(TcpBackpressureHandler.class);
         handler.lastEventTs = System.nanoTime();
         AtomicInteger propagated = new AtomicInteger();
         outbound.pipeline().addLast(new ChannelInboundHandlerAdapter() {
@@ -133,7 +133,7 @@ public class BackpressureHandlerTest {
         inbound.config().setAutoRead(false);
         outbound.config().setAutoRead(false);
 
-        BackpressureHandler.install(inbound, outbound);
+        TcpBackpressureHandler.install(inbound, outbound);
         outbound.pipeline().fireChannelActive();
 
         assertTrue(inbound.config().isAutoRead());
@@ -152,11 +152,11 @@ public class BackpressureHandlerTest {
         AtomicBoolean started = new AtomicBoolean();
         AtomicBoolean ended = new AtomicBoolean();
 
-        BackpressureHandler.install(inbound, outbound,
+        TcpBackpressureHandler.install(inbound, outbound,
                 (in, out) -> started.set(true),
                 (in, out, e) -> ended.set(true));
 
-        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+        TcpBackpressureHandler handler = outbound.pipeline().get(TcpBackpressureHandler.class);
 
         // Trigger Unwritable
         outbound.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
@@ -166,7 +166,7 @@ public class BackpressureHandlerTest {
         assertTrue(started.get());
 
         // Reset
-        Thread.sleep(BackpressureHandler.COOLDOWN_MILLIS + 20);
+        Thread.sleep(TcpBackpressureHandler.COOLDOWN_MILLIS + 20);
 
         // Trigger Writable
         outbound.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
@@ -183,11 +183,11 @@ public class BackpressureHandlerTest {
         outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
 
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
-        BackpressureHandler.install(inbound, outbound,
+        TcpBackpressureHandler.install(inbound, outbound,
                 (in, out) -> {
                 },
                 (in, out, e) -> errorRef.set(e));
-        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+        TcpBackpressureHandler handler = outbound.pipeline().get(TcpBackpressureHandler.class);
 
         // Manually pause
         outbound.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
@@ -210,13 +210,13 @@ public class BackpressureHandlerTest {
         outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
 
         AtomicInteger ended = new AtomicInteger();
-        BackpressureHandler.install(inbound, outbound,
+        TcpBackpressureHandler.install(inbound, outbound,
                 (in, out) -> Sockets.disableAutoRead(in),
                 (in, out, e) -> {
                     ended.incrementAndGet();
                     Sockets.enableAutoRead(in);
                 });
-        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+        TcpBackpressureHandler handler = outbound.pipeline().get(TcpBackpressureHandler.class);
 
         outbound.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
         outbound.pipeline().fireChannelWritabilityChanged();
@@ -240,14 +240,14 @@ public class BackpressureHandlerTest {
 
         AtomicInteger ended = new AtomicInteger();
         AtomicReference<Channel> callbackInbound = new AtomicReference<>();
-        BackpressureHandler.install(inbound, outbound,
+        TcpBackpressureHandler.install(inbound, outbound,
                 (in, out) -> {
                 },
                 (in, out, e) -> {
                     callbackInbound.set(in);
                     ended.incrementAndGet();
                 });
-        BackpressureHandler handler = outbound.pipeline().get(BackpressureHandler.class);
+        TcpBackpressureHandler handler = outbound.pipeline().get(TcpBackpressureHandler.class);
 
         outbound.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
         outbound.pipeline().fireChannelWritabilityChanged();

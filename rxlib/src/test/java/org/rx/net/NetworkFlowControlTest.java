@@ -30,8 +30,8 @@ public class NetworkFlowControlTest {
     public void testDisabledGlobalTrafficDoesNotInstallHandler() {
         NetworkTrafficConfig config = new NetworkTrafficConfig();
         config.setEnabled(false);
-        config.setUploadBytesPerSecond(1024L);
-        config.setDownloadBytesPerSecond(1024L);
+        config.setUploadKilobytesPerSecond(1L);
+        config.setDownloadKilobytesPerSecond(1L);
         NetworkFlowControl.DEFAULT.refresh(config);
 
         EmbeddedChannel channel = new EmbeddedChannel();
@@ -47,8 +47,8 @@ public class NetworkFlowControlTest {
     public void testInstallGlobalTrafficUsesUploadAsWriteLimitAndDownloadAsReadLimit() {
         NetworkTrafficConfig config = new NetworkTrafficConfig();
         config.setEnabled(true);
-        config.setUploadBytesPerSecond(4096L);
-        config.setDownloadBytesPerSecond(8192L);
+        config.setUploadKilobytesPerSecond(4L);
+        config.setDownloadKilobytesPerSecond(8L);
         config.setCheckIntervalMillis(50L);
         NetworkFlowControl.DEFAULT.refresh(config);
 
@@ -70,8 +70,8 @@ public class NetworkFlowControlTest {
     public void testRefreshUpdatesExistingGlobalTrafficHandler() {
         NetworkTrafficConfig config = new NetworkTrafficConfig();
         config.setEnabled(true);
-        config.setUploadBytesPerSecond(1024L);
-        config.setDownloadBytesPerSecond(2048L);
+        config.setUploadKilobytesPerSecond(1L);
+        config.setDownloadKilobytesPerSecond(2L);
         config.setCheckIntervalMillis(100L);
         NetworkFlowControl.DEFAULT.refresh(config);
 
@@ -83,8 +83,8 @@ public class NetworkFlowControlTest {
 
             NetworkTrafficConfig next = new NetworkTrafficConfig();
             next.setEnabled(true);
-            next.setUploadBytesPerSecond(16384L);
-            next.setDownloadBytesPerSecond(32768L);
+            next.setUploadKilobytesPerSecond(16L);
+            next.setDownloadKilobytesPerSecond(32L);
             next.setCheckIntervalMillis(25L);
             NetworkFlowControl.DEFAULT.refresh(next);
 
@@ -142,7 +142,83 @@ public class NetworkFlowControlTest {
     }
 
     @Test
-    public void testTcpBackpressureManagerRespectsDisabledConfig() {
+    public void testUdpBackpressureDisabledBypassesPendingLimits() {
+        NetworkTrafficConfig config = new NetworkTrafficConfig();
+        config.setUdpBackpressureEnabled(false);
+        config.setUdpMaxPendingBytes(4);
+        NetworkFlowControl.DEFAULT.refresh(config);
+
+        EmbeddedChannel channel = new EmbeddedChannel();
+        try {
+            ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4, 5});
+            DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+            assertEquals(Sockets.UdpWriteResult.ACCEPTED,
+                    Sockets.writeUdp(channel, packet, "test.udp", "case=udp-disabled"));
+
+            DatagramPacket outbound = channel.readOutbound();
+            assertNotNull(outbound);
+            assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+            assertEquals(0, Sockets.udpPendingWritePackets(channel));
+            outbound.release();
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void testFinalGuardDropsWhenGlobalPendingBytesExceeded() {
+        NetworkTrafficConfig config = new NetworkTrafficConfig();
+        config.setUdpMaxPendingBytes(4);
+        NetworkFlowControl.DEFAULT.refresh(config);
+
+        EmbeddedChannel channel = new EmbeddedChannel();
+        try {
+            Sockets.addUdpFinalEgressGuard(channel.pipeline(), new SocketConfig());
+            assertNotNull(channel.pipeline().get(Sockets.UDP_FINAL_EGRESS_GUARD));
+
+            ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4, 5});
+            DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+            assertFalse(channel.writeOutbound(packet));
+            assertEquals(0, payload.refCnt());
+            assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+            assertEquals(0, Sockets.udpPendingWritePackets(channel));
+            assertNull(channel.readOutbound());
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void testFinalGuardStillEnforcesMtuWhenUdpBackpressureDisabled() {
+        NetworkTrafficConfig config = new NetworkTrafficConfig();
+        config.setUdpBackpressureEnabled(false);
+        config.setUdpMaxPendingBytes(4);
+        NetworkFlowControl.DEFAULT.refresh(config);
+
+        SocketConfig socketConfig = new SocketConfig();
+        socketConfig.setUdpMtu(4);
+        EmbeddedChannel channel = new EmbeddedChannel();
+        try {
+            Sockets.addUdpFinalEgressGuard(channel.pipeline(), socketConfig);
+            assertNotNull(channel.pipeline().get(Sockets.UDP_FINAL_EGRESS_GUARD));
+
+            ByteBuf payload = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4, 5});
+            DatagramPacket packet = new DatagramPacket(payload, new InetSocketAddress("127.0.0.1", 53));
+
+            assertFalse(channel.writeOutbound(packet));
+            assertEquals(0, payload.refCnt());
+            assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+            assertEquals(0, Sockets.udpPendingWritePackets(channel));
+            assertNull(channel.readOutbound());
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void testTcpBackpressureHandlerRespectsDisabledConfig() {
         NetworkTrafficConfig config = new NetworkTrafficConfig(original);
         config.setTcpBackpressureEnabled(false);
         RxConfig.INSTANCE.getNet().setGlobalTraffic(config);
@@ -152,8 +228,8 @@ public class NetworkFlowControlTest {
         EmbeddedChannel outbound = new EmbeddedChannel();
         outbound.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
         try {
-            assertFalse(TcpBackpressureManager.DEFAULT.install(inbound, outbound));
-            assertNull(outbound.pipeline().get(BackpressureHandler.class));
+            TcpBackpressureHandler.install(inbound, outbound);
+            assertNull(outbound.pipeline().get(TcpBackpressureHandler.class));
         } finally {
             outbound.finishAndReleaseAll();
             inbound.finishAndReleaseAll();

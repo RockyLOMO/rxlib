@@ -10,8 +10,8 @@
 - **`TransportFlags`**:
   网络传输特征的标识枚举（如是否开启加密、压缩、混合传输等）。在 RPC 与代理模块中广泛用于协调客户端与服务端的协商特性。
 
-- **`BackpressureHandler`**:
-   Netty 管道中的背压控制器，通过监听通道的 `channelWritabilityChanged` 事件，在写水位（Write Buffer Watermark）过高时自动挂起读取操作，防止 OOM。这是高性能模式下内存泄漏防护的关键。
+- **`TcpBackpressureHandler`**:
+   TCP relay 管道中的背压控制器，通过监听 outbound 通道的 `channelWritabilityChanged` 事件，在写水位（Write Buffer Watermark）过高时自动挂起 inbound 读取操作，防止 OOM。这是高性能模式下内存泄漏防护的关键。
 
 - **`GlobalChannelHandler`**:
   全局 Channel 处理器，通常用于处理未捕获的异常、拦截连接生命周期并对接指标监控框架。

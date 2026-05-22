@@ -158,8 +158,8 @@ class RxConfigTest {
         RxConfig conf = RxConfig.INSTANCE;
         NetworkTrafficConfig oldConfig = new NetworkTrafficConfig(conf.net.globalTraffic);
         String enabled = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_ENABLED;
-        String upload = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_UPLOAD_BYTES_PER_SECOND;
-        String download = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_DOWNLOAD_BYTES_PER_SECOND;
+        String upload = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_UPLOAD_KILOBYTES_PER_SECOND;
+        String download = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_DOWNLOAD_KILOBYTES_PER_SECOND;
         String checkInterval = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS;
         String udpPendingPackets = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_UDP_MAX_PENDING_PACKETS;
         String oldEnabled = System.getProperty(enabled);
@@ -177,8 +177,8 @@ class RxConfigTest {
             conf.refreshFromSystemProperty();
 
             assertTrue(conf.net.globalTraffic.isEnabled());
-            assertEquals(2048L, conf.net.globalTraffic.getUploadBytesPerSecond());
-            assertEquals(4096L, conf.net.globalTraffic.getDownloadBytesPerSecond());
+            assertEquals(2048L, conf.net.globalTraffic.getUploadKilobytesPerSecond());
+            assertEquals(4096L, conf.net.globalTraffic.getDownloadKilobytesPerSecond());
             assertEquals(50L, conf.net.globalTraffic.getCheckIntervalMillis());
             assertEquals(16, conf.net.globalTraffic.getUdpMaxPendingPackets());
         } finally {

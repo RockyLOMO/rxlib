@@ -36,8 +36,8 @@ public final class NetworkFlowControl {
 
         GlobalTrafficShapingHandler handler = globalTrafficHandler;
         if (handler != null) {
-            handler.configure(snapshot.getUploadBytesPerSecond(),
-                    snapshot.getDownloadBytesPerSecond(),
+            handler.configure(snapshot.uploadBytesPerSecond(),
+                    snapshot.downloadBytesPerSecond(),
                     snapshot.getCheckIntervalMillis());
         }
     }
@@ -83,12 +83,12 @@ public final class NetworkFlowControl {
 
             EventExecutor executor = Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true).next();
             handler = new GlobalTrafficShapingHandler(executor);
-            handler.configure(snapshot.getUploadBytesPerSecond(),
-                    snapshot.getDownloadBytesPerSecond(),
+            handler.configure(snapshot.uploadBytesPerSecond(),
+                    snapshot.downloadBytesPerSecond(),
                     snapshot.getCheckIntervalMillis());
             globalTrafficHandler = handler;
-            log.info("Network global traffic shaping enabled uploadBytesPerSecond={} downloadBytesPerSecond={} checkIntervalMillis={}",
-                    snapshot.getUploadBytesPerSecond(), snapshot.getDownloadBytesPerSecond(), snapshot.getCheckIntervalMillis());
+            log.info("Network global traffic shaping enabled uploadKilobytesPerSecond={} downloadKilobytesPerSecond={} checkIntervalMillis={}",
+                    snapshot.getUploadKilobytesPerSecond(), snapshot.getDownloadKilobytesPerSecond(), snapshot.getCheckIntervalMillis());
             return handler;
         }
     }
