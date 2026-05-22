@@ -11,11 +11,13 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.FileRegion;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.AddressedEnvelope;
+import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
+@Slf4j
 @ChannelHandler.Sharable
 public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
     private static final String HANDLER_NAME = "rx-diagnostic-net-io";
@@ -34,51 +36,76 @@ public final class DiagnosticNetIoHandler extends ChannelDuplexHandler {
 
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
-        Channel channel = ctx.channel();
-        if (channel.isActive()) {
-            DiagnosticNetMetrics.register(channel, component);
+        try {
+            Channel channel = ctx.channel();
+            if (channel.isActive()) {
+                DiagnosticNetMetrics.register(channel, component);
+            }
+        } catch (Throwable e) {
+            log.warn("diagnostic net metrics register failed, component={}", component, e);
+            // Diagnostic failures must never affect Netty channel lifecycle.
         }
         super.handlerAdded(ctx);
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        DiagnosticNetMetrics.register(ctx.channel(), component);
+        try {
+            DiagnosticNetMetrics.register(ctx.channel(), component);
+        } catch (Throwable e) {
+            log.warn("diagnostic net metrics register failed, component={}", component, e);
+            // Diagnostic failures must never affect Netty channel lifecycle.
+        }
         super.channelActive(ctx);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        DiagnosticNetMetrics.unregister(ctx.channel());
+        try {
+            DiagnosticNetMetrics.unregister(ctx.channel());
+        } catch (Throwable e) {
+            log.warn("diagnostic net metrics unregister failed, component={}", component, e);
+            // Diagnostic failures must never affect Netty channel lifecycle.
+        }
         super.channelInactive(ctx);
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        long bytes = readableBytes(msg);
-        if (bytes > 0L && DiagnosticMetrics.isEnabled()) {
-            SocketAddress endpoint = endpointAddress(ctx, msg, true);
-            if (!isLoopback(endpoint)) {
-                DiagnosticNetMetrics.recordInbound(component, bytes);
-                if (DiagnosticNetIo.isEnabled()) {
-                    DiagnosticNetIo.recordInbound(endpoint(ctx, endpoint), bytes);
+        try {
+            long bytes = readableBytes(msg);
+            if (bytes > 0L && DiagnosticMetrics.isEnabled()) {
+                SocketAddress endpoint = endpointAddress(ctx, msg, true);
+                if (!isLoopback(endpoint)) {
+                    DiagnosticNetMetrics.recordInbound(component, bytes);
+                    if (DiagnosticNetIo.isEnabled()) {
+                        DiagnosticNetIo.recordInbound(endpoint(ctx, endpoint), bytes);
+                    }
                 }
             }
+        } catch (Throwable e) {
+            log.warn("diagnostic net inbound record failed, component={}", component, e);
+            // Diagnostic failures must never affect inbound data flow.
         }
         super.channelRead(ctx, msg);
     }
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        long bytes = readableBytes(msg);
-        if (bytes > 0L && DiagnosticMetrics.isEnabled()) {
-            SocketAddress endpoint = endpointAddress(ctx, msg, false);
-            if (!isLoopback(endpoint)) {
-                DiagnosticNetMetrics.recordOutbound(component, bytes);
-                if (DiagnosticNetIo.isEnabled()) {
-                    DiagnosticNetIo.recordOutbound(endpoint(ctx, endpoint), bytes);
+        try {
+            long bytes = readableBytes(msg);
+            if (bytes > 0L && DiagnosticMetrics.isEnabled()) {
+                SocketAddress endpoint = endpointAddress(ctx, msg, false);
+                if (!isLoopback(endpoint)) {
+                    DiagnosticNetMetrics.recordOutbound(component, bytes);
+                    if (DiagnosticNetIo.isEnabled()) {
+                        DiagnosticNetIo.recordOutbound(endpoint(ctx, endpoint), bytes);
+                    }
                 }
             }
+        } catch (Throwable e) {
+            log.warn("diagnostic net outbound record failed, component={}", component, e);
+            // Diagnostic failures must never affect outbound data flow.
         }
         super.write(ctx, msg, promise);
     }

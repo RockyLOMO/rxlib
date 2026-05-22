@@ -162,6 +162,23 @@ public class DiagnosticMonitorTest {
     }
 
     @Test
+    public void diagnosticRecordFailuresDoNotAffectBusinessFlow() {
+        DiagnosticConfig config = memConfig("diag_record_failure_isolation");
+        config.setSampleIntervalMillis(60000L);
+        config.setFileIoSampleRate(1D);
+        config.setNetIoSampleRate(1D);
+        DiagnosticMonitor monitor = new DiagnosticMonitor(config, new ThrowingDiagnosticStore());
+        monitor.start();
+        try {
+            assertDoesNotThrow(() -> DiagnosticMetrics.record("broken.metric", 1D, "k=v"));
+            assertDoesNotThrow(() -> DiagnosticFileIo.recordWrite("target/broken-diag.log", 128L, 1000L));
+            assertDoesNotThrow(() -> DiagnosticNetIo.recordInbound("192.0.2.1:8080", 512L));
+        } finally {
+            monitor.close();
+        }
+    }
+
+    @Test
     public void manualThreadCapturePersistsSamples() throws Exception {
         DiagnosticConfig config = memConfig("diag_manual_thread_capture");
         config.setSampleIntervalMillis(60000L);
@@ -381,6 +398,83 @@ public class DiagnosticMonitorTest {
         long deadline = System.currentTimeMillis() + 2000L;
         while (store.writeFailures() == 0L && System.currentTimeMillis() < deadline) {
             Thread.sleep(10L);
+        }
+    }
+
+    private static final class ThrowingDiagnosticStore implements DiagnosticStore {
+        private boolean running;
+
+        @Override
+        public void start() {
+            running = true;
+        }
+
+        @Override
+        public boolean isRunning() {
+            return running;
+        }
+
+        @Override
+        public void recordMetric(DiagnosticMetric metric) {
+            throw new RuntimeException("recordMetric failed");
+        }
+
+        @Override
+        public void recordStackTrace(long stackHash, String stackTrace, long timestampMillis) {
+            throw new RuntimeException("recordStackTrace failed");
+        }
+
+        @Override
+        public void recordThreadCpu(ThreadCpuSample sample, String incidentId) {
+            throw new RuntimeException("recordThreadCpu failed");
+        }
+
+        @Override
+        public void recordFileIo(long timestampMillis, String path, DiagnosticFileOperation operation, long bytes,
+                                 long elapsedNanos, long stackHash, String incidentId) {
+            throw new RuntimeException("recordFileIo failed");
+        }
+
+        @Override
+        public void recordNetIo(long timestampMillis, String endpoint, DiagnosticNetOperation operation, long bytes,
+                                long stackHash, String incidentId) {
+            throw new RuntimeException("recordNetIo failed");
+        }
+
+        @Override
+        public void recordThreadState(ThreadStateSample sample, String incidentId) {
+            throw new RuntimeException("recordThreadState failed");
+        }
+
+        @Override
+        public void recordFileSize(long timestampMillis, String path, long sizeBytes, long lastModifiedMillis, String incidentId) {
+            throw new RuntimeException("recordFileSize failed");
+        }
+
+        @Override
+        public void recordIncident(String incidentId, DiagnosticIncidentType type, DiagnosticLevel level, long startMillis,
+                                   long endMillis, String summary, String bundlePath) {
+            throw new RuntimeException("recordIncident failed");
+        }
+
+        @Override
+        public boolean flush(long timeoutMillis) {
+            return true;
+        }
+
+        @Override
+        public int pendingRecords() {
+            return 0;
+        }
+
+        @Override
+        public long droppedRecords() {
+            return 0L;
+        }
+
+        @Override
+        public void close() {
+            running = false;
         }
     }
 }
