@@ -13,6 +13,8 @@ import org.rx.bean.IntWaterMark;
 import org.rx.bean.LogStrategy;
 import org.rx.bean.TrieMatcher;
 import org.rx.diagnostic.DiagnosticLevel;
+import org.rx.net.NetworkFlowControl;
+import org.rx.net.NetworkTrafficConfig;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpServer;
 import org.rx.util.function.BiFunc;
@@ -144,6 +146,14 @@ public final class RxConfig {
         String NET_POOL_MAX_SIZE = "app.net.poolMaxSize";
         String NET_POOL_KEEP_ALIVE_SECONDS = "app.net.poolKeepAliveSeconds";
         String NET_REUSE_PORT_BIND_COUNT = "app.net.reusePortBindCount";
+        String NET_GLOBAL_TRAFFIC_ENABLED = "app.net.globalTraffic.enabled";
+        String NET_GLOBAL_TRAFFIC_UPLOAD_BYTES_PER_SECOND = "app.net.globalTraffic.uploadBytesPerSecond";
+        String NET_GLOBAL_TRAFFIC_DOWNLOAD_BYTES_PER_SECOND = "app.net.globalTraffic.downloadBytesPerSecond";
+        String NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS = "app.net.globalTraffic.checkIntervalMillis";
+        String NET_GLOBAL_TRAFFIC_TCP_BACKPRESSURE_ENABLED = "app.net.globalTraffic.tcpBackpressureEnabled";
+        String NET_GLOBAL_TRAFFIC_UDP_BACKPRESSURE_ENABLED = "app.net.globalTraffic.udpBackpressureEnabled";
+        String NET_GLOBAL_TRAFFIC_UDP_MAX_PENDING_BYTES = "app.net.globalTraffic.udpMaxPendingBytes";
+        String NET_GLOBAL_TRAFFIC_UDP_MAX_PENDING_PACKETS = "app.net.globalTraffic.udpMaxPendingPackets";
         String NET_HTTP_SERVER_PORT = "app.net.http.serverPort";
         String NET_HTTP_SERVER_TLS = "app.net.http.serverTls";
         String NET_HTTP_SERVER_CERTIFICATE_PATH = "app.net.http.serverCertificatePath";
@@ -435,6 +445,7 @@ public final class RxConfig {
         int poolMaxSize;
         int poolKeepAliveSeconds;
         int reusePortBindCount = 1;
+        NetworkTrafficConfig globalTraffic = new NetworkTrafficConfig();
         HttpConfig http = new HttpConfig();
 
 
@@ -617,6 +628,11 @@ public final class RxConfig {
         if (net.poolMaxSize <= 0) {
             net.poolMaxSize = Math.max(10, Constants.CPU_THREADS * 2);
         }
+        if (net.globalTraffic == null) {
+            net.globalTraffic = new NetworkTrafficConfig();
+        }
+        net.globalTraffic.normalize();
+        NetworkFlowControl.refresh();
         if (id == null) {
             id = Sockets.getLocalAddress().getHostAddress() + "-" + Strings.randomValue(99);
         }
@@ -779,6 +795,24 @@ public final class RxConfig {
         net.poolMaxSize = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_MAX_SIZE, net.poolMaxSize);
         net.poolKeepAliveSeconds = SystemPropertyUtil.getInt(ConfigNames.NET_POOL_KEEP_ALIVE_SECONDS, net.poolKeepAliveSeconds);
         net.reusePortBindCount = SystemPropertyUtil.getInt(ConfigNames.NET_REUSE_PORT_BIND_COUNT, net.reusePortBindCount);
+        if (net.globalTraffic == null) {
+            net.globalTraffic = new NetworkTrafficConfig();
+        }
+        net.globalTraffic.setEnabled(SystemPropertyUtil.getBoolean(ConfigNames.NET_GLOBAL_TRAFFIC_ENABLED, net.globalTraffic.isEnabled()));
+        net.globalTraffic.setUploadBytesPerSecond(SystemPropertyUtil.getLong(
+                ConfigNames.NET_GLOBAL_TRAFFIC_UPLOAD_BYTES_PER_SECOND, net.globalTraffic.getUploadBytesPerSecond()));
+        net.globalTraffic.setDownloadBytesPerSecond(SystemPropertyUtil.getLong(
+                ConfigNames.NET_GLOBAL_TRAFFIC_DOWNLOAD_BYTES_PER_SECOND, net.globalTraffic.getDownloadBytesPerSecond()));
+        net.globalTraffic.setCheckIntervalMillis(SystemPropertyUtil.getLong(
+                ConfigNames.NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS, net.globalTraffic.getCheckIntervalMillis()));
+        net.globalTraffic.setTcpBackpressureEnabled(SystemPropertyUtil.getBoolean(
+                ConfigNames.NET_GLOBAL_TRAFFIC_TCP_BACKPRESSURE_ENABLED, net.globalTraffic.isTcpBackpressureEnabled()));
+        net.globalTraffic.setUdpBackpressureEnabled(SystemPropertyUtil.getBoolean(
+                ConfigNames.NET_GLOBAL_TRAFFIC_UDP_BACKPRESSURE_ENABLED, net.globalTraffic.isUdpBackpressureEnabled()));
+        net.globalTraffic.setUdpMaxPendingBytes(SystemPropertyUtil.getInt(
+                ConfigNames.NET_GLOBAL_TRAFFIC_UDP_MAX_PENDING_BYTES, net.globalTraffic.getUdpMaxPendingBytes()));
+        net.globalTraffic.setUdpMaxPendingPackets(SystemPropertyUtil.getInt(
+                ConfigNames.NET_GLOBAL_TRAFFIC_UDP_MAX_PENDING_PACKETS, net.globalTraffic.getUdpMaxPendingPackets()));
         net.http.serverPort = SystemPropertyUtil.getInt(ConfigNames.NET_HTTP_SERVER_PORT, net.http.serverPort);
         net.http.serverTls = SystemPropertyUtil.getBoolean(ConfigNames.NET_HTTP_SERVER_TLS, net.http.serverTls);
         net.http.serverCertificatePath = SystemPropertyUtil.get(ConfigNames.NET_HTTP_SERVER_CERTIFICATE_PATH, net.http.serverCertificatePath);
