@@ -15,7 +15,7 @@ import org.rx.net.socks.upstream.Udp2rawUpstream;
 import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -55,18 +55,18 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             AttributeKey.valueOf("udpCtxMap");
 
     /**
-     * Per-relay route cache: UnresolvedEndpoint (dst) → SocksContext.
+     * Per-relay route cache: InetSocketAddress (dst) → SocksContext.
      * Prevents re-evaluating routing rules (publishEvent) for every single UDP packet
      * to the same destination.
      */
-    public static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> ATTR_ROUTE_MAP =
+    public static final AttributeKey<ConcurrentMap<InetSocketAddress, SocksContext>> ATTR_ROUTE_MAP =
             AttributeKey.valueOf("udpRouteMap");
-    static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, RouteInitState>> ATTR_ROUTE_INIT_MAP =
+    static final AttributeKey<ConcurrentMap<InetSocketAddress, RouteInitState>> ATTR_ROUTE_INIT_MAP =
             AttributeKey.valueOf("udpRouteInitMap");
     static final AttributeKey<LastRoute> ATTR_LAST_ROUTE = AttributeKey.valueOf("udpLastRoute");
-    static final AttributeKey<MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate>> ATTR_ROUTE_HEADER_CACHE =
+    static final AttributeKey<MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate>> ATTR_ROUTE_HEADER_CACHE =
             AttributeKey.valueOf("udpRouteHeaderCache");
-    static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, InetSocketAddress>> ATTR_DIRECT_TARGET_MAP =
+    static final AttributeKey<ConcurrentMap<InetSocketAddress, InetSocketAddress>> ATTR_DIRECT_TARGET_MAP =
             AttributeKey.valueOf("udpDirectTargetMap");
     static final AttributeKey<UdpMetricTagCache> ATTR_UDP_METRIC_TAG_CACHE =
             AttributeKey.valueOf("udpMetricTagCache");
@@ -79,9 +79,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         final ByteBuf content;
         final InetSocketAddress sender;
         final InetSocketAddress clientOriginAddr;
-        final UnresolvedEndpoint destination;
+        final InetSocketAddress destination;
 
-        PendingPacket(ByteBuf content, InetSocketAddress sender, InetSocketAddress clientOriginAddr, UnresolvedEndpoint destination) {
+        PendingPacket(ByteBuf content, InetSocketAddress sender, InetSocketAddress clientOriginAddr, InetSocketAddress destination) {
             this.content = content;
             this.sender = sender;
             this.clientOriginAddr = clientOriginAddr;
@@ -303,8 +303,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
 
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = ctxMap(relay);
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = routeMap(relay);
-        ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap = routeInitMap(relay);
+        ConcurrentMap<InetSocketAddress, SocksContext> routeMap = routeMap(relay);
+        ConcurrentMap<InetSocketAddress, RouteInitState> routeInitMap = routeInitMap(relay);
 
         inBuf.markReaderIndex();
         LastRoute lastRoute = relay.attr(ATTR_LAST_ROUTE).get();
@@ -320,7 +320,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             }
             relay.attr(ATTR_LAST_ROUTE).set(null);
         }
-        final UnresolvedEndpoint dstEp = UdpManager.socks5Decode(inBuf);
+        final InetSocketAddress dstEp = UdpManager.socks5Decode(inBuf);
 
         SocksContext e = routeMap.get(dstEp);
         if (e != null && isRouteReady(relay, e)) {
@@ -415,38 +415,38 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         ctxMap(relay).put(relayAddress, context);
     }
 
-    private static ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap(Channel relay) {
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+    private static ConcurrentMap<InetSocketAddress, SocksContext> routeMap(Channel relay) {
+        ConcurrentMap<InetSocketAddress, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
         if (routeMap != null) {
             return routeMap;
         }
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> newMap = MemoryCache.<UnresolvedEndpoint, SocksContext>rootBuilder().maximumSize(256).build().asMap();
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> oldMap = relay.attr(ATTR_ROUTE_MAP).setIfAbsent(newMap);
+        ConcurrentMap<InetSocketAddress, SocksContext> newMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap();
+        ConcurrentMap<InetSocketAddress, SocksContext> oldMap = relay.attr(ATTR_ROUTE_MAP).setIfAbsent(newMap);
         return oldMap != null ? oldMap : newMap;
     }
 
-    private static ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap(Channel relay) {
-        ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap = relay.attr(ATTR_ROUTE_INIT_MAP).get();
+    private static ConcurrentMap<InetSocketAddress, RouteInitState> routeInitMap(Channel relay) {
+        ConcurrentMap<InetSocketAddress, RouteInitState> routeInitMap = relay.attr(ATTR_ROUTE_INIT_MAP).get();
         if (routeInitMap != null) {
             return routeInitMap;
         }
-        ConcurrentMap<UnresolvedEndpoint, RouteInitState> newMap = MemoryCache.<UnresolvedEndpoint, RouteInitState>rootBuilder().maximumSize(256).build().asMap();
-        ConcurrentMap<UnresolvedEndpoint, RouteInitState> oldMap = relay.attr(ATTR_ROUTE_INIT_MAP).setIfAbsent(newMap);
+        ConcurrentMap<InetSocketAddress, RouteInitState> newMap = MemoryCache.<InetSocketAddress, RouteInitState>rootBuilder().maximumSize(256).build().asMap();
+        ConcurrentMap<InetSocketAddress, RouteInitState> oldMap = relay.attr(ATTR_ROUTE_INIT_MAP).setIfAbsent(newMap);
         return oldMap != null ? oldMap : newMap;
     }
 
-    private static MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> routeHeaderCache(Channel relay) {
-        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> cache = relay.attr(ATTR_ROUTE_HEADER_CACHE).get();
+    private static MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> routeHeaderCache(Channel relay) {
+        MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> cache = relay.attr(ATTR_ROUTE_HEADER_CACHE).get();
         if (cache != null) {
             return cache;
         }
-        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> newCache = new MemoryCache<>(b -> b.maximumSize(256));
-        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> oldCache = relay.attr(ATTR_ROUTE_HEADER_CACHE).setIfAbsent(newCache);
+        MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> newCache = new MemoryCache<>(b -> b.maximumSize(256));
+        MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> oldCache = relay.attr(ATTR_ROUTE_HEADER_CACHE).setIfAbsent(newCache);
         return oldCache != null ? oldCache : newCache;
     }
 
-    private static UdpManager.HeaderTemplate routeHeaderTemplate(Channel relay, UnresolvedEndpoint destination) {
-        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> cache = routeHeaderCache(relay);
+    private static UdpManager.HeaderTemplate routeHeaderTemplate(Channel relay, InetSocketAddress destination) {
+        MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> cache = routeHeaderCache(relay);
         UdpManager.HeaderTemplate template = cache.get(destination);
         if (template != null) {
             return template;
@@ -456,13 +456,13 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         return oldTemplate != null ? oldTemplate : newTemplate;
     }
 
-    private static ConcurrentMap<UnresolvedEndpoint, InetSocketAddress> directTargetMap(Channel relay) {
-        ConcurrentMap<UnresolvedEndpoint, InetSocketAddress> map = relay.attr(ATTR_DIRECT_TARGET_MAP).get();
+    private static ConcurrentMap<InetSocketAddress, InetSocketAddress> directTargetMap(Channel relay) {
+        ConcurrentMap<InetSocketAddress, InetSocketAddress> map = relay.attr(ATTR_DIRECT_TARGET_MAP).get();
         if (map != null) {
             return map;
         }
-        ConcurrentMap<UnresolvedEndpoint, InetSocketAddress> newMap = MemoryCache.<UnresolvedEndpoint, InetSocketAddress>rootBuilder().maximumSize(256).build().asMap();
-        ConcurrentMap<UnresolvedEndpoint, InetSocketAddress> oldMap = relay.attr(ATTR_DIRECT_TARGET_MAP).setIfAbsent(newMap);
+        ConcurrentMap<InetSocketAddress, InetSocketAddress> newMap = MemoryCache.<InetSocketAddress, InetSocketAddress>rootBuilder().maximumSize(256).build().asMap();
+        ConcurrentMap<InetSocketAddress, InetSocketAddress> oldMap = relay.attr(ATTR_DIRECT_TARGET_MAP).setIfAbsent(newMap);
         return oldMap != null ? oldMap : newMap;
     }
 
@@ -490,12 +490,12 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         if (upstream instanceof SocksUdpUpstream) {
             return ((SocksUdpUpstream) upstream).getUdpRelayAddress(relay);
         }
-        UnresolvedEndpoint destination = upstream.getDestination();
-        InetSocketAddress target = destination.socketAddress();
+        InetSocketAddress destination = upstream.getDestination();
+        InetSocketAddress target = destination;
         if (!target.isUnresolved()) {
             return target;
         }
-        ConcurrentMap<UnresolvedEndpoint, InetSocketAddress> map = relay.attr(ATTR_DIRECT_TARGET_MAP).get();
+        ConcurrentMap<InetSocketAddress, InetSocketAddress> map = relay.attr(ATTR_DIRECT_TARGET_MAP).get();
         return map == null ? null : map.get(destination);
     }
 
@@ -511,13 +511,13 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             return CompletableFuture.completedFuture(((SocksUdpUpstream) upstream).getUdpRelayAddress(relay));
         }
 
-        UnresolvedEndpoint destination = upstream.getDestination();
-        InetSocketAddress target = destination.socketAddress();
+        InetSocketAddress destination = upstream.getDestination();
+        InetSocketAddress target = destination;
         if (!target.isUnresolved()) {
             return CompletableFuture.completedFuture(target);
         }
 
-        ConcurrentMap<UnresolvedEndpoint, InetSocketAddress> map = directTargetMap(relay);
+        ConcurrentMap<InetSocketAddress, InetSocketAddress> map = directTargetMap(relay);
         InetSocketAddress cached = map.get(destination);
         if (cached != null) {
             return CompletableFuture.completedFuture(cached);
@@ -595,10 +595,10 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private void beginRouteInit(Channel relay, SocksProxyServer server, InetSocketAddress clientOriginAddr,
-            UnresolvedEndpoint dstEp, RouteInitState initState,
+            InetSocketAddress dstEp, RouteInitState initState,
             ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
-            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
-            ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
+            ConcurrentMap<InetSocketAddress, SocksContext> routeMap,
+            ConcurrentMap<InetSocketAddress, RouteInitState> routeInitMap) {
         try {
             SocksContext context = initState.context;
             if (context == null) {
@@ -624,10 +624,10 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
     }
 
-    private void continueRouteInit(Channel relay, UnresolvedEndpoint dstEp, SocksContext context,
+    private void continueRouteInit(Channel relay, InetSocketAddress dstEp, SocksContext context,
             RouteInitState initState, ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
-            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
-            ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
+            ConcurrentMap<InetSocketAddress, SocksContext> routeMap,
+            ConcurrentMap<InetSocketAddress, RouteInitState> routeInitMap) {
         try {
             Upstream upstream = context.getUpstream();
             if (upstream == null) {
@@ -653,11 +653,11 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         }
     }
 
-    private void onRouteInitSuccess(Channel relay, UnresolvedEndpoint dstEp, InetSocketAddress upDstAddr,
+    private void onRouteInitSuccess(Channel relay, InetSocketAddress dstEp, InetSocketAddress upDstAddr,
             SocksContext context, RouteInitState initState,
             ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
-            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
-            ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap) {
+            ConcurrentMap<InetSocketAddress, SocksContext> routeMap,
+            ConcurrentMap<InetSocketAddress, RouteInitState> routeInitMap) {
         if (!routeInitMap.remove(dstEp, initState)) {
             releasePending(initState);
             return;
@@ -690,9 +690,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         flushPending(relay, context, initState);
     }
 
-    private void onRouteInitFailure(Channel relay, UnresolvedEndpoint dstEp, RouteInitState initState,
-            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap,
-            ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap,
+    private void onRouteInitFailure(Channel relay, InetSocketAddress dstEp, RouteInitState initState,
+            ConcurrentMap<InetSocketAddress, SocksContext> routeMap,
+            ConcurrentMap<InetSocketAddress, RouteInitState> routeInitMap,
             Throwable error) {
         routeInitMap.remove(dstEp, initState);
         if (initState.context != null) {
@@ -704,7 +704,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private boolean enqueuePendingPacket(RouteInitState initState, ByteBuf inBuf, InetSocketAddress sender,
-            InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
+            InetSocketAddress clientOriginAddr, InetSocketAddress dstEp,
             SocksConfig config) {
         int bytes = inBuf.readableBytes();
         if (initState.pendingPackets.size() >= MAX_PENDING_ROUTE_PACKETS
@@ -741,18 +741,18 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         if (ctxMap != null) {
             ctxMap.clear();
         }
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        ConcurrentMap<InetSocketAddress, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
         if (routeMap != null) {
             routeMap.clear();
         }
-        ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap = relay.attr(ATTR_ROUTE_INIT_MAP).get();
+        ConcurrentMap<InetSocketAddress, RouteInitState> routeInitMap = relay.attr(ATTR_ROUTE_INIT_MAP).get();
         if (routeInitMap != null) {
             for (RouteInitState state : routeInitMap.values()) {
                 releasePending(state);
             }
             routeInitMap.clear();
         }
-        ConcurrentMap<UnresolvedEndpoint, InetSocketAddress> directTargetMap = relay.attr(ATTR_DIRECT_TARGET_MAP).get();
+        ConcurrentMap<InetSocketAddress, InetSocketAddress> directTargetMap = relay.attr(ATTR_DIRECT_TARGET_MAP).get();
         if (directTargetMap != null) {
             directTargetMap.clear();
         }
@@ -760,7 +760,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private void writeClientPacket(Channel relay, ByteBuf inBuf, InetSocketAddress sender,
-            InetSocketAddress clientOriginAddr, UnresolvedEndpoint dstEp,
+            InetSocketAddress clientOriginAddr, InetSocketAddress dstEp,
             SocksContext context, boolean retained) {
         Upstream upstream = context.getUpstream();
         Udp2rawUpstream udp2rawUpstream = upstream instanceof Udp2rawUpstream ? (Udp2rawUpstream) upstream : null;
@@ -829,9 +829,9 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     private static void cleanupInvalidatedRoute(Channel relay, InetSocketAddress[] relayAddresses, Upstream upstream) {
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
         ConcurrentMap<InetSocketAddress, SocksContext> udp2rawCtxMap = relay.attr(Udp2rawHandler.ATTR_CTX_MAP).get();
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> udp2rawRouteMap = relay.attr(Udp2rawHandler.ATTR_ROUTE_MAP).get();
-        ConcurrentMap<UnresolvedEndpoint, RouteInitState> routeInitMap = relay.attr(ATTR_ROUTE_INIT_MAP).get();
+        ConcurrentMap<InetSocketAddress, SocksContext> routeMap = relay.attr(ATTR_ROUTE_MAP).get();
+        ConcurrentMap<InetSocketAddress, SocksContext> udp2rawRouteMap = relay.attr(Udp2rawHandler.ATTR_ROUTE_MAP).get();
+        ConcurrentMap<InetSocketAddress, RouteInitState> routeInitMap = relay.attr(ATTR_ROUTE_INIT_MAP).get();
         int removedCtx = 0, removedRoute = 0, removedPending = 0;
 
         removedCtx += cleanupCtxMap(ctxMap, relayAddresses, upstream);
@@ -841,7 +841,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         removedRoute += cleanupRouteMap(udp2rawRouteMap, upstream);
 
         if (routeInitMap != null) {
-            for (Map.Entry<UnresolvedEndpoint, RouteInitState> entry : routeInitMap.entrySet()) {
+            for (Map.Entry<InetSocketAddress, RouteInitState> entry : routeInitMap.entrySet()) {
                 RouteInitState state = entry.getValue();
                 SocksContext ctx = state != null ? state.context : null;
                 if (ctx != null && ctx.getUpstream() == upstream && routeInitMap.remove(entry.getKey(), state)) {
@@ -899,12 +899,12 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         return removed;
     }
 
-    private static int cleanupRouteMap(ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap, Upstream upstream) {
+    private static int cleanupRouteMap(ConcurrentMap<InetSocketAddress, SocksContext> routeMap, Upstream upstream) {
         int removed = 0;
         if (routeMap == null) {
             return 0;
         }
-        for (Map.Entry<UnresolvedEndpoint, SocksContext> entry : routeMap.entrySet()) {
+        for (Map.Entry<InetSocketAddress, SocksContext> entry : routeMap.entrySet()) {
             SocksContext ctx = entry.getValue();
             if (ctx != null && ctx.getUpstream() == upstream && routeMap.remove(entry.getKey(), ctx)) {
                 removed++;
@@ -922,8 +922,8 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private static SocksContext findRouteContext(Channel relay,
-            AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> routeMapKey, Upstream upstream) {
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(routeMapKey).get();
+            AttributeKey<ConcurrentMap<InetSocketAddress, SocksContext>> routeMapKey, Upstream upstream) {
+        ConcurrentMap<InetSocketAddress, SocksContext> routeMap = relay.attr(routeMapKey).get();
         if (routeMap == null) {
             return null;
         }
@@ -936,7 +936,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
     }
 
     private static void recordCacheSizes(Channel relay, ConcurrentMap<InetSocketAddress, SocksContext> ctxMap,
-            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap, String action) {
+            ConcurrentMap<InetSocketAddress, SocksContext> routeMap, String action) {
         if (ctxMap != null) {
             DiagnosticMetrics.record("socks.udp.ctx.cache.size", ctxMap.size(), "action=" + action);
         }

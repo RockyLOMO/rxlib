@@ -10,7 +10,7 @@ import org.rx.core.Disposable;
 import org.rx.core.Tasks;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -277,7 +277,7 @@ final class UdpRelayGroupManager extends Disposable {
         // 仅为未来 RXUDP 数据面 header/MAC 预留；RPC 控制面授权统一校验 app.rtoken。
         final String dataPlaneToken;
         final InetSocketAddress clientAddr;
-        final UnresolvedEndpoint firstDestination;
+        final InetSocketAddress firstDestination;
         final int maxRelayCount;
         final long idleTimeoutMillis;
         final long createdAtMillis;
@@ -286,7 +286,7 @@ final class UdpRelayGroupManager extends Disposable {
         volatile boolean closed;
 
         UdpRelayGroup(String groupId, String dataPlaneToken, InetSocketAddress clientAddr,
-                UnresolvedEndpoint firstDestination, int maxRelayCount, long idleTimeoutMillis, long now) {
+                InetSocketAddress firstDestination, int maxRelayCount, long idleTimeoutMillis, long now) {
             this.groupId = groupId;
             this.dataPlaneToken = dataPlaneToken;
             this.clientAddr = clientAddr;

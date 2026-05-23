@@ -9,7 +9,7 @@ import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.*;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.support.EndpointTracer;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -38,11 +38,11 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             return;
         }
 
-        UnresolvedEndpoint dstEp = new UnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
-        String dstEpHost = dstEp.getHost();
+        InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
+        String dstEpHost = dstEp.getHostString();
         if (dstEpHost.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX)) {
             Long hash = SocksRpcContract.parseFakeHostHash(dstEpHost);
-            UnresolvedEndpoint realEp = hash == null ? null : SocksRpcContract.fakeDict().get(hash);
+            InetSocketAddress realEp = hash == null ? null : SocksRpcContract.fakeDict().get(hash);
             if (realEp == null) {
                 log.error("socks5[{}] recover dstEp {} fail", config.getListenPort(), dstEp);
             } else {
@@ -263,7 +263,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         ChannelFuture outboundFuture = Sockets.bootstrap(connectGroup, effectiveConfig, connectHint, outbound -> {
             e.getUpstream().initChannel(outbound);
             ensureFrontendHandlers(inbound, outbound);
-        }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination().socketAddress()).addListener((ChannelFutureListener) f -> {
+        }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 if (server.onReconnecting != null) {
                     server.publishEvent(server.onReconnecting, e);
@@ -326,7 +326,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
     private void relay(Channel inbound, Channel outbound, Socks5AddressType dstAddrType, SocksContext e) {
         // initChannel may change dstEp
-        UnresolvedEndpoint dstEp = e.getUpstream().getDestination();
+        InetSocketAddress dstEp = e.getUpstream().getDestination();
         outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
 
         DefaultSocks5CommandResponse commandResponse;
@@ -366,7 +366,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void maybeBypassTcpCompression(Channel inbound, Channel outbound, SocksContext e, SocksConfig config) {
-        UnresolvedEndpoint dstEp = e.getFirstDestination();
+        InetSocketAddress dstEp = e.getFirstDestination();
         if (!Sockets.shouldBypassTcpCompression(dstEp)) {
             return;
         }

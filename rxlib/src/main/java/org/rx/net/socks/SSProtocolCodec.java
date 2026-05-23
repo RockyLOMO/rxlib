@@ -9,7 +9,7 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.util.List;
 
@@ -55,7 +55,7 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
         boolean isUdp = inbound instanceof DatagramChannel;
 
         if (isUdp || !tcpAddressed) {
-            UnresolvedEndpoint addrRequest;
+            InetSocketAddress addrRequest;
             try {
                 addrRequest = UdpManager.decode(buf);
             } catch (Exception e) {

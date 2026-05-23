@@ -20,7 +20,7 @@ import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
@@ -81,7 +81,7 @@ final class RssRuntime implements AutoCloseable {
         nameserverRef = new NameserverImpl(resolveNameserverConfig(conf), dnsSvr);
         nameserver = nameserverRef;
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(conf.shadowDnsPort);
-        shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+        shadowDnsUpstream = new Upstream(org.rx.net.Sockets.newUnresolvedEndpoint(shadowDnsEp));
         Sockets.injectNameService(java.util.Collections.singletonList(shadowDnsEp));
 
         authenticator = new RssAuthenticator(conf.shadowUsers, conf.socksPwd.trim(), conf.memoryRetentionHours);
@@ -150,7 +150,7 @@ final class RssRuntime implements AutoCloseable {
                 dnsSvr = nextDnsServer;
                 dnsInterceptors = nextDnsInterceptors;
                 InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(newConf.shadowDnsPort);
-                shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+                shadowDnsUpstream = new Upstream(org.rx.net.Sockets.newUnresolvedEndpoint(shadowDnsEp));
                 Sockets.injectNameService(java.util.Collections.singletonList(shadowDnsEp));
                 nextDnsServer = null;
                 nextDnsInterceptors = null;
@@ -446,7 +446,7 @@ final class RssRuntime implements AutoCloseable {
     }
 
     private void firstRoute(SocksProxyServer server, SocksContext e) {
-        UnresolvedEndpoint dstEp = e.getFirstDestination();
+        InetSocketAddress dstEp = e.getFirstDestination();
         if (dstEp.getPort() == SocksRpcContract.DNS_PORT) {
             e.setUpstream(shadowDnsUpstream);
             e.setHandled(true);
@@ -595,13 +595,13 @@ final class RssRuntime implements AutoCloseable {
         ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(),
                 routePlan, ssSvr, usr.getRouteMatcher(), sourceSteeringTtl(usr, conf));
         ssSvr.onTcpRoute.replace((s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             RssClientConf currentConf = rssConf;
             boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
             long userRuleBegin = routeLog ? System.nanoTime() : 0L;
             UserRuleMatcher matcher = ref.routeMatcher;
             boolean userRoute = matcher != null;
-            RouteAction userRuleAction = matchRoute(matcher, dstEp.getHost(), dstEp.getPort(), e.getSource());
+            RouteAction userRuleAction = matchRoute(matcher, dstEp.getHostString(), dstEp.getPort(), e.getSource());
             if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
                     log.info("SS TCP route {} BLOCK <- {} {}",
@@ -632,13 +632,13 @@ final class RssRuntime implements AutoCloseable {
             e.setUpstream(new SocksTcpUpstream(dstEp, toInConf, svrSupport));
         });
         ssSvr.onUdpRoute.replace((s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             RssClientConf currentConf = rssConf;
             boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
             long userRuleBegin = routeLog ? System.nanoTime() : 0L;
             UserRuleMatcher matcher = ref.routeMatcher;
             boolean userRoute = matcher != null;
-            RouteAction userRuleAction = matchRoute(matcher, dstEp.getHost(), dstEp.getPort(), e.getSource());
+            RouteAction userRuleAction = matchRoute(matcher, dstEp.getHostString(), dstEp.getPort(), e.getSource());
             if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
                     log.info("SS UDP route {} BLOCK <- {} {}",
@@ -778,7 +778,7 @@ final class RssRuntime implements AutoCloseable {
             return new ShadowRoutePlan(toJsonString(signatureParts), supports);
         }
 
-        UpstreamSupport nextSupport(InetAddress srcHost, UnresolvedEndpoint dstEp, int steeringTtl) {
+        UpstreamSupport nextSupport(InetAddress srcHost, InetSocketAddress dstEp, int steeringTtl) {
             return srcHost != null && useSourceSteering(steeringTtl, dstEp)
                     ? supports.next(srcHost, steeringTtl, true)
                     : supports.next();

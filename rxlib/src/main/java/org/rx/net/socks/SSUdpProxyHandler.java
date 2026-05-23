@@ -18,7 +18,7 @@ import org.rx.net.socks.upstream.Udp2rawUpstream;
 import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayDeque;
@@ -39,9 +39,9 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     static final AttributeKey<LastRoute> ATTR_LAST_ROUTE = AttributeKey.valueOf("ssUdpLastRoute");
     static final AttributeKey<OutboundBinding> ATTR_OUTBOUND_BINDING =
             AttributeKey.valueOf("ssUdpOutboundBinding");
-    static final AttributeKey<ConcurrentMap<UnresolvedEndpoint, SocksContext>> ATTR_OUTBOUND_ROUTE_MAP =
+    static final AttributeKey<ConcurrentMap<InetSocketAddress, SocksContext>> ATTR_OUTBOUND_ROUTE_MAP =
             AttributeKey.valueOf("ssUdpOutboundRouteMap");
-    static final AttributeKey<MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate>> ATTR_SOCKS5_HEADER_CACHE =
+    static final AttributeKey<MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate>> ATTR_SOCKS5_HEADER_CACHE =
             AttributeKey.valueOf("ssUdpSocks5HeaderCache");
     static final AttributeKey<MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate>> ATTR_ADDRESS_HEADER_CACHE =
             AttributeKey.valueOf("ssUdpAddressHeaderCache");
@@ -67,10 +67,10 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
     static final class RouteKey {
         final InetSocketAddress source;
-        final UnresolvedEndpoint destination;
+        final InetSocketAddress destination;
         final int hash;
 
-        RouteKey(InetSocketAddress source, UnresolvedEndpoint destination) {
+        RouteKey(InetSocketAddress source, InetSocketAddress destination) {
             this.source = source;
             this.destination = destination;
             this.hash = 31 * Objects.hashCode(source) + Objects.hashCode(destination);
@@ -96,16 +96,16 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
     static final class LastRoute {
         final InetSocketAddress source;
-        final UnresolvedEndpoint destination;
+        final InetSocketAddress destination;
         final SocksContext context;
 
-        LastRoute(InetSocketAddress source, UnresolvedEndpoint destination, SocksContext context) {
+        LastRoute(InetSocketAddress source, InetSocketAddress destination, SocksContext context) {
             this.source = source;
             this.destination = destination;
             this.context = context;
         }
 
-        boolean matches(InetSocketAddress source, UnresolvedEndpoint destination) {
+        boolean matches(InetSocketAddress source, InetSocketAddress destination) {
             return Objects.equals(this.source, source) && Objects.equals(this.destination, destination);
         }
     }
@@ -274,7 +274,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private static DatagramPacket buildOutboundPacket(SocksContext sc, Channel outbound,
-            InetSocketAddress srcEp, UnresolvedEndpoint dstEp, ByteBuf payload) {
+            InetSocketAddress srcEp, InetSocketAddress dstEp, ByteBuf payload) {
         Upstream upstream = sc.getUpstream();
         if (upstream instanceof Udp2rawUpstream) {
             return ((Udp2rawUpstream) upstream).buildRequestPacket(outbound, payload, srcEp, dstEp);
@@ -293,7 +293,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             }
             return new DatagramPacket(UdpManager.socks5Encode(payload, headerTemplate), udpRelayAddr);
         }
-        return new DatagramPacket(payload, upstream.getDestination().socketAddress());
+        return new DatagramPacket(payload, upstream.getDestination());
     }
 
     private static boolean isRouteActive(SocksContext context) {
@@ -308,7 +308,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     }
 
     private static SocksContext lookupRoute(Channel inbound, ConcurrentMap<RouteKey, SocksContext> routeMap,
-            InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+            InetSocketAddress srcEp, InetSocketAddress dstEp) {
         LastRoute lastRoute = inbound.attr(ATTR_LAST_ROUTE).get();
         if (lastRoute != null && lastRoute.matches(srcEp, dstEp)) {
             if (isRouteActive(lastRoute.context)) {
@@ -337,7 +337,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         }
     }
 
-    private static void writePacketNow(SocksContext sc, Channel outbound, UnresolvedEndpoint dstEp,
+    private static void writePacketNow(SocksContext sc, Channel outbound, InetSocketAddress dstEp,
             ByteBuf payload, InetSocketAddress srcEp, boolean debug) {
         if (!outbound.isActive()) {
             int bytes = readableBytesOf(payload);
@@ -393,7 +393,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         }
     }
 
-    private static void writeWhenReady(SocksContext sc, UnresolvedEndpoint dstEp, ByteBuf payload,
+    private static void writeWhenReady(SocksContext sc, InetSocketAddress dstEp, ByteBuf payload,
             InetSocketAddress srcEp, boolean debug) {
         Channel outbound = sc.outbound.channel();
         EndpointTracer.UDP.link(srcEp, outbound);
@@ -424,7 +424,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         }));
     }
 
-    private static void writeRoutePacket(SocksContext context, InetSocketAddress srcEp, UnresolvedEndpoint dstEp,
+    private static void writeRoutePacket(SocksContext context, InetSocketAddress srcEp, InetSocketAddress dstEp,
             ByteBuf payload, boolean debug) {
         if (context.isOutboundReady()) {
             writeWhenReady(context, dstEp, payload, srcEp, debug);
@@ -530,47 +530,47 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         outbound.attr(ATTR_OUTBOUND_BINDING).set(new OutboundBinding(inbound, srcEp, upstream));
     }
 
-    private static ConcurrentMap<UnresolvedEndpoint, SocksContext> outboundRouteMap(Channel outbound) {
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
+    private static ConcurrentMap<InetSocketAddress, SocksContext> outboundRouteMap(Channel outbound) {
+        ConcurrentMap<InetSocketAddress, SocksContext> routeMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
         if (routeMap != null) {
             return routeMap;
         }
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> newMap = MemoryCache.<UnresolvedEndpoint, SocksContext>rootBuilder().maximumSize(2048).build().asMap();
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> oldMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).setIfAbsent(newMap);
+        ConcurrentMap<InetSocketAddress, SocksContext> newMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(2048).build().asMap();
+        ConcurrentMap<InetSocketAddress, SocksContext> oldMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).setIfAbsent(newMap);
         return oldMap != null ? oldMap : newMap;
     }
 
-    private static void registerOutboundRoute(Channel outbound, UnresolvedEndpoint destination, SocksContext context) {
+    private static void registerOutboundRoute(Channel outbound, InetSocketAddress destination, SocksContext context) {
         outboundRouteMap(outbound).put(destination, context);
     }
 
-    private static SocksContext lookupOutboundRoute(Channel outbound, UnresolvedEndpoint destination) {
+    private static SocksContext lookupOutboundRoute(Channel outbound, InetSocketAddress destination) {
         if (destination == null) {
             return null;
         }
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
+        ConcurrentMap<InetSocketAddress, SocksContext> routeMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
         return routeMap != null ? routeMap.get(destination) : null;
     }
 
-    private static void unregisterOutboundRoute(Channel outbound, UnresolvedEndpoint destination, SocksContext context) {
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
+    private static void unregisterOutboundRoute(Channel outbound, InetSocketAddress destination, SocksContext context) {
+        ConcurrentMap<InetSocketAddress, SocksContext> routeMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
         if (routeMap != null) {
             routeMap.remove(destination, context);
         }
     }
 
-    private static MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> socks5HeaderCache(Channel inbound) {
-        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> cache = inbound.attr(ATTR_SOCKS5_HEADER_CACHE).get();
+    private static MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> socks5HeaderCache(Channel inbound) {
+        MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> cache = inbound.attr(ATTR_SOCKS5_HEADER_CACHE).get();
         if (cache != null) {
             return cache;
         }
-        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> newCache = new MemoryCache<>(b -> b.maximumSize(2048));
-        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> oldCache = inbound.attr(ATTR_SOCKS5_HEADER_CACHE).setIfAbsent(newCache);
+        MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> newCache = new MemoryCache<>(b -> b.maximumSize(2048));
+        MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> oldCache = inbound.attr(ATTR_SOCKS5_HEADER_CACHE).setIfAbsent(newCache);
         return oldCache != null ? oldCache : newCache;
     }
 
-    private static UdpManager.HeaderTemplate socks5HeaderTemplate(Channel inbound, UnresolvedEndpoint destination) {
-        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> cache = socks5HeaderCache(inbound);
+    private static UdpManager.HeaderTemplate socks5HeaderTemplate(Channel inbound, InetSocketAddress destination) {
+        MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> cache = socks5HeaderCache(inbound);
         UdpManager.HeaderTemplate template = cache.get(destination);
         if (template != null) {
             return template;
@@ -793,7 +793,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             boolean debug = server.config.isDebug();
             InetSocketAddress srcEp = binding.source;
             InetSocketAddress realDstEp;
-            UnresolvedEndpoint responseDst = null;
+            InetSocketAddress responseDst = null;
             ByteBuf outBuf = out.content();
             boolean releaseOutBuf = false;
             Upstream representative = binding.representativeUpstream;
@@ -813,7 +813,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 outBuf = response.getPayload();
                 releaseOutBuf = true;
                 realDstEp = response.getSourceAddress();
-                responseDst = new UnresolvedEndpoint(realDstEp.getHostString(), realDstEp.getPort());
+                responseDst = org.rx.net.Sockets.newUnresolvedEndpoint(realDstEp.getHostString(), realDstEp.getPort());
             } else if (udpRelayAddr != null) {
                 boolean udpClientResponse = representative instanceof UdpClientUpstream;
                 if (!udpClientResponse && !((SocksUdpUpstream) representative).ownsUdpRelayAddress(outbound, out.sender())) {
@@ -838,10 +838,10 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                     ((SocksUdpUpstream) representative).recordUdpTraffic(outbound, outBuf.readableBytes());
                 }
                 responseDst = UdpManager.socks5Decode(outBuf);
-                realDstEp = responseDst.socketAddress();
+                realDstEp = responseDst;
             } else {
                 realDstEp = out.sender();
-                responseDst = new UnresolvedEndpoint(realDstEp.getHostString(), realDstEp.getPort());
+                responseDst = org.rx.net.Sockets.newUnresolvedEndpoint(realDstEp.getHostString(), realDstEp.getPort());
             }
 
             UdpManager.HeaderTemplate responseHeader = addressHeaderTemplate(binding.inbound, realDstEp);
@@ -881,7 +881,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             }
             if (debug) {
                 SocksContext routeContext = lookupOutboundRoute(outbound, responseDst);
-                UnresolvedEndpoint dstEp = routeContext != null ? routeContext.getFirstDestination() : responseDst;
+                InetSocketAddress dstEp = routeContext != null ? routeContext.getFirstDestination() : responseDst;
                 log.info("SS UDP IN {}[{}] => {}", realDstEp, dstEp, srcEp);
             }
         }
@@ -903,7 +903,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
         Channel inbound = ctx.channel();
         InetSocketAddress srcEp = in.sender();
-        UnresolvedEndpoint dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
+        InetSocketAddress dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         ConcurrentMap<RouteKey, SocksContext> routeMap = routeMap(inbound);
         ConcurrentMap<RouteKey, RouteInitState> routeInitMap = routeInitMap(inbound);
@@ -1008,12 +1008,12 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     private static void recordRouteCacheSizes(Channel inbound, ConcurrentMap<RouteKey, SocksContext> routeMap, Channel outbound) {
         DiagnosticMetrics.record("ss.udp.route.cache.size", routeMap.size(),
                 "action=update,scope=inbound");
-        ConcurrentMap<UnresolvedEndpoint, SocksContext> outboundRouteMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
+        ConcurrentMap<InetSocketAddress, SocksContext> outboundRouteMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
         if (outboundRouteMap != null) {
             DiagnosticMetrics.record("ss.udp.outbound.route.cache.size", outboundRouteMap.size(),
                     "action=update,scope=outbound");
         }
-        MemoryCache<UnresolvedEndpoint, UdpManager.HeaderTemplate> socks5Cache = inbound.attr(ATTR_SOCKS5_HEADER_CACHE).get();
+        MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> socks5Cache = inbound.attr(ATTR_SOCKS5_HEADER_CACHE).get();
         if (socks5Cache != null) {
             DiagnosticMetrics.record("ss.udp.header.cache.size", socks5Cache.size(),
                     "kind=socks5,scope=inbound");
@@ -1025,7 +1025,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         }
     }
 
-    private static void recordUdpDrop(String reason, InetSocketAddress srcEp, UnresolvedEndpoint dstEp,
+    private static void recordUdpDrop(String reason, InetSocketAddress srcEp, InetSocketAddress dstEp,
             InetSocketAddress target, int bytes) {
         DiagnosticMetrics.record("ss.udp.drop.count", 1D, "reason=" + reason + ",path=frontend");
     }

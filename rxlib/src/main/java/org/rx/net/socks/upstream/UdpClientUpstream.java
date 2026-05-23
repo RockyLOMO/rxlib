@@ -3,7 +3,7 @@ package org.rx.net.socks.upstream;
 import io.netty.channel.Channel;
 import lombok.NonNull;
 import org.rx.net.SocketConfig;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -18,7 +18,7 @@ import java.net.SocketAddress;
 public final class UdpClientUpstream extends Upstream {
     private final InetSocketAddress udpClientAddress;
 
-    public UdpClientUpstream(UnresolvedEndpoint dstEp, SocketConfig config,
+    public UdpClientUpstream(InetSocketAddress dstEp, SocketConfig config,
                              @NonNull InetSocketAddress udpClientAddress) {
         super(dstEp, config);
         this.udpClientAddress = udpClientAddress;

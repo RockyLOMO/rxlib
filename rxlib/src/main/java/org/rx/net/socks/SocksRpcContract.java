@@ -6,10 +6,9 @@ import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.core.cache.H2StoreCache;
 import org.rx.net.dns.DnsServer;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -22,8 +21,8 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
     int DNS_PORT = 53;
     long ASYNC_TIMEOUT = 4 * 1000;
 
-    static Cache<Long, UnresolvedEndpoint> fakeDict() {
-        return (Cache<Long, UnresolvedEndpoint>) H2StoreCache.DEFAULT;
+    static Cache<Long, InetSocketAddress> fakeDict() {
+        return (Cache<Long, InetSocketAddress>) H2StoreCache.DEFAULT;
     }
 
     static String fakeHost(long hash) {

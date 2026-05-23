@@ -36,7 +36,7 @@ import org.rx.net.udp.UdpRedundantConfig;
 import org.rx.net.udp.UdpRedundantMode;
 import org.rx.net.udp.UdpRedundantMultiplierResolver;
 import org.rx.net.udp.UdpRedundantStats;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetSocketAddress;
@@ -61,7 +61,7 @@ public class Udp2rawUpstream extends Upstream {
     private final UpstreamSupport next;
     private final TunnelKey tunnelKey;
 
-    public Udp2rawUpstream(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
+    public Udp2rawUpstream(InetSocketAddress dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
         this.next = next;
         this.tunnelKey = new TunnelKey(next.getEndpoint());
@@ -109,7 +109,7 @@ public class Udp2rawUpstream extends Upstream {
     }
 
     public boolean writeSocks5Request(Channel relay, ByteBuf payload,
-            InetSocketAddress clientSource, UnresolvedEndpoint dstEp,
+            InetSocketAddress clientSource, InetSocketAddress dstEp,
             SocksContext context, boolean retained) {
         TunnelState state = activeState(relay);
         if (state == null) {
@@ -186,7 +186,7 @@ public class Udp2rawUpstream extends Upstream {
     }
 
     public DatagramPacket buildRequestPacket(Channel relay, ByteBuf payload,
-            InetSocketAddress clientSource, UnresolvedEndpoint dstEp) {
+            InetSocketAddress clientSource, InetSocketAddress dstEp) {
         TunnelState state = activeState(relay);
         if (state == null) {
             DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=tunnel-not-ready");
@@ -250,7 +250,7 @@ public class Udp2rawUpstream extends Upstream {
     }
 
     public boolean writeRequest(Channel relay, ByteBuf payload,
-            InetSocketAddress clientSource, UnresolvedEndpoint dstEp, boolean retained) {
+            InetSocketAddress clientSource, InetSocketAddress dstEp, boolean retained) {
         TunnelState state = activeState(relay);
         if (state == null) {
             if (retained) {
@@ -656,7 +656,7 @@ public class Udp2rawUpstream extends Upstream {
                 if (serverAddress.getAddress() != null) {
                     return new InetSocketAddress(serverAddress.getAddress(), entryAddress.getPort());
                 }
-                return InetSocketAddress.createUnresolved(serverAddress.getHostString(), entryAddress.getPort());
+                return Sockets.newUnresolvedEndpoint(serverAddress.getHostString(), entryAddress.getPort());
             }
         }
         return entryAddress;
@@ -782,7 +782,7 @@ public class Udp2rawUpstream extends Upstream {
                     && (expireAtMillis <= 0L || System.currentTimeMillis() < expireAtMillis);
         }
 
-        ConnState conn(InetSocketAddress clientSource, UnresolvedEndpoint destination) {
+        ConnState conn(InetSocketAddress clientSource, InetSocketAddress destination) {
             RouteKey key = new RouteKey(clientSource, destination);
             ConnState state = routes.get(key);
             if (state != null) {
@@ -874,12 +874,12 @@ public class Udp2rawUpstream extends Upstream {
     static final class ConnState {
         final long connId;
         final InetSocketAddress clientSource;
-        final UnresolvedEndpoint destination;
+        final InetSocketAddress destination;
         final AtomicLong requestSeq = new AtomicLong();
         final Udp2rawSeqWindow responseWindow = new Udp2rawSeqWindow();
         final AtomicBoolean firstPacketSent = new AtomicBoolean();
 
-        ConnState(long connId, InetSocketAddress clientSource, UnresolvedEndpoint destination) {
+        ConnState(long connId, InetSocketAddress clientSource, InetSocketAddress destination) {
             this.connId = connId;
             this.clientSource = clientSource;
             this.destination = destination;
@@ -900,10 +900,10 @@ public class Udp2rawUpstream extends Upstream {
 
     static final class RouteKey {
         final InetSocketAddress clientSource;
-        final UnresolvedEndpoint destination;
+        final InetSocketAddress destination;
         final int hash;
 
-        RouteKey(InetSocketAddress clientSource, UnresolvedEndpoint destination) {
+        RouteKey(InetSocketAddress clientSource, InetSocketAddress destination) {
             this.clientSource = clientSource;
             this.destination = destination;
             int h = clientSource != null ? clientSource.hashCode() : 0;

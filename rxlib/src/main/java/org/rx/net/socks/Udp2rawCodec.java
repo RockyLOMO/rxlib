@@ -4,7 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.CompositeByteBuf;
 import org.rx.io.Bytes;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 
@@ -103,7 +103,7 @@ public final class Udp2rawCodec {
                 UdpManager.encode(header, clientSource);
             }
             if ((flags & FLAG_HAS_DST) != 0) {
-                UnresolvedEndpoint destination = frame.getDestination();
+                InetSocketAddress destination = frame.getDestination();
                 if (destination == null) {
                     throw new IllegalArgumentException("destination is required");
                 }
@@ -144,6 +144,6 @@ public final class Udp2rawCodec {
     }
 
     private static InetSocketAddress decodeAddress(ByteBuf in) {
-        return UdpManager.decode(in).socketAddress();
+        return UdpManager.decode(in);
     }
 }

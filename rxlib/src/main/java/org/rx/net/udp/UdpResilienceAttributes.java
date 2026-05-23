@@ -2,6 +2,7 @@ package org.rx.net.udp;
 
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
+import org.rx.net.Sockets;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -79,7 +80,7 @@ public final class UdpResilienceAttributes {
         if (host != null) {
             host = host.trim().toLowerCase(Locale.ROOT);
         }
-        return InetSocketAddress.createUnresolved(host, address.getPort());
+        return Sockets.newUnresolvedEndpoint(host, address.getPort());
     }
 
     static int addressHash(InetSocketAddress address) {

@@ -7,7 +7,7 @@ import io.netty.channel.Channel;
 import org.rx.io.Bytes;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
@@ -80,7 +80,7 @@ final class Udp2rawTunnelContext {
     }
 
     Udp2rawSession getOrCreateSession(Udp2rawSessionKey key, InetSocketAddress udp2rawPeer,
-            InetSocketAddress clientSource, UnresolvedEndpoint destination, Channel entryChannel) {
+            InetSocketAddress clientSource, InetSocketAddress destination, Channel entryChannel) {
         Udp2rawSession session = sessions.get(key);
         if (session != null) {
             return session;
@@ -197,7 +197,7 @@ final class Udp2rawTunnelContext {
         return accepted;
     }
 
-    SocksContext trafficContext(InetSocketAddress source, UnresolvedEndpoint destination) {
+    SocksContext trafficContext(InetSocketAddress source, InetSocketAddress destination) {
         if (trafficUser == null || trafficUser.isAnonymous() || source == null || source.getAddress() == null) {
             return null;
         }

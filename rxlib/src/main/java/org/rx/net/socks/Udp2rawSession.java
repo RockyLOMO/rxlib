@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.CompletableFuture;
@@ -22,7 +22,7 @@ final class Udp2rawSession {
     final Udp2rawTunnelContext context;
     final Udp2rawSessionKey key;
     final InetSocketAddress clientSource;
-    final UnresolvedEndpoint destination;
+    final InetSocketAddress destination;
     final SocksContext trafficContext;
     final Udp2rawSeqWindow requestWindow = new Udp2rawSeqWindow();
     final AtomicLong responseSeq = new AtomicLong();
@@ -33,7 +33,7 @@ final class Udp2rawSession {
 
     Udp2rawSession(Udp2rawTunnelContext context, Udp2rawSessionKey key,
             InetSocketAddress udp2rawPeer, InetSocketAddress clientSource,
-            UnresolvedEndpoint destination, Channel entryChannel) {
+            InetSocketAddress destination, Channel entryChannel) {
         this.context = context;
         this.key = key;
         this.udp2rawPeer = udp2rawPeer;
@@ -86,7 +86,7 @@ final class Udp2rawSession {
     }
 
     private void writeToDestinationNow(Channel natChannel, ByteBuf payload) {
-        InetSocketAddress target = destination.socketAddress();
+        InetSocketAddress target = destination;
         if (target.isUnresolved()) {
             CompletableFuture<InetSocketAddress> resolveFuture = Sockets.resolveUdpEndpointAsync(target,
                     context.manager.server.getConfig());

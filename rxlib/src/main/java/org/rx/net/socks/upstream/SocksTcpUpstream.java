@@ -16,7 +16,7 @@ import org.rx.net.socks.Socks5ClientHandler;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.TcpWarmPoolKey;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
@@ -34,12 +34,12 @@ public class SocksTcpUpstream extends Upstream {
     private UpstreamSupport next;
     private boolean destinationPrepared;
 
-    public SocksTcpUpstream(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
+    public SocksTcpUpstream(InetSocketAddress dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
         this.next = next;
     }
 
-    public void reuse(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
+    public void reuse(InetSocketAddress dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super.reuse(dstEp, config);
         this.next = next;
     }
@@ -59,21 +59,21 @@ public class SocksTcpUpstream extends Upstream {
         return TcpWarmPoolKey.from(next.getEndpoint(), config, config.getReactorName());
     }
 
-    public UnresolvedEndpoint prepareDestination() {
+    public InetSocketAddress prepareDestination() {
         if (destinationPrepared) {
             return destination;
         }
         destinationPrepared = true;
         SocksRpcContract facade = next.getFacade();
         if (facade == null
-                || (!SocksRpcContract.FAKE_IPS.contains(destination.getHost()) && !SocksRpcContract.FAKE_PORTS.contains(destination.getPort())
-                && Sockets.isValidIp(destination.getHost()))) {
+                || (!SocksRpcContract.FAKE_IPS.contains(destination.getHostString()) && !SocksRpcContract.FAKE_PORTS.contains(destination.getPort())
+                && Sockets.isValidIp(destination.getHostString()))) {
             return destination;
         }
 
-        UnresolvedEndpoint realDestination = destination;
+        InetSocketAddress realDestination = destination;
         long hash = fakeEndpointHash(next, realDestination);
-        destination = new UnresolvedEndpoint(SocksRpcContract.fakeHost(hash), Arrays.randomNext(SocksRpcContract.FAKE_PORT_OBFS));
+        destination = org.rx.net.Sockets.newUnresolvedEndpoint(SocksRpcContract.fakeHost(hash), Arrays.randomNext(SocksRpcContract.FAKE_PORT_OBFS));
 
         Cache<Long, Boolean> cache = Cache.getInstance();
         Long cacheKey = Long.valueOf(hash);
@@ -95,9 +95,9 @@ public class SocksTcpUpstream extends Upstream {
         return destination;
     }
 
-    static long fakeEndpointHash(UpstreamSupport support, UnresolvedEndpoint dstEp) {
+    static long fakeEndpointHash(UpstreamSupport support, InetSocketAddress dstEp) {
         long hash = mixEndpoint(HASH_OFFSET, support == null ? null : support.getEndpoint());
-        hash = mixString(hash, dstEp == null ? null : dstEp.getHost());
+        hash = mixString(hash, dstEp == null ? null : dstEp.getHostString());
         hash = mixInt(hash, dstEp == null ? 0 : dstEp.getPort());
         return hash;
     }
