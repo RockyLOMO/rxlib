@@ -105,6 +105,7 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
         }
 
         try {
+            Sockets.refreshTcpResolver(bootstrap, endpoint);
             connectingFuture = bootstrap.connect(endpoint).addListener((ChannelFutureListener) f -> {
                 connectingFuture = null;
                 if (!f.isSuccess()) {

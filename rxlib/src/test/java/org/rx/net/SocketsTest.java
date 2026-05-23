@@ -700,6 +700,21 @@ public class SocketsTest {
         assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
     }
 
+    @Test
+    public void testRefreshTcpResolverPicksInjectedNameserverAfterBootstrapCreated() {
+        RxConfig.INSTANCE.getNet().getDns().getDirectServers().clear();
+
+        Bootstrap bootstrap = Sockets.bootstrap(new SocketConfig(), ch -> {
+        });
+        assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
+
+        Sockets.setInjectedNameServers(Collections.singletonList(Sockets.parseEndpoint("127.0.0.1:753")));
+        Sockets.refreshTcpResolver(bootstrap, Sockets.newUnresolvedEndpoint("svc-mercury", 1211));
+
+        assertNotSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
+        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), bootstrap.config().resolver());
+    }
+
     private DiagnosticConfig memDiagnosticConfig(String name) {
         DiagnosticConfig config = new DiagnosticConfig();
         config.setH2JdbcUrl("jdbc:h2:mem:" + name + "_" + System.nanoTime()

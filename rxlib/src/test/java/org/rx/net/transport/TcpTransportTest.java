@@ -1,5 +1,9 @@
 package org.rx.net.transport;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
@@ -7,10 +11,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.net.Sockets;
 import org.rx.net.transport.protocol.PingPacket;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -126,6 +132,34 @@ class TcpTransportTest {
         assertEquals(cause.toString(), Sockets.reconnectCauseText(cause));
         assertNull(Sockets.reconnectCauseText(null));
         assertFalse(Sockets.shouldLogReconnectCauseStack(null));
+    }
+
+    @Test
+    void reconnectRetryWarnKeepsCauseSummaryWithoutStack() {
+        Logger logger = (Logger) LoggerFactory.getLogger(Sockets.class);
+        Level oldLevel = logger.getLevel();
+        boolean oldAdditive = logger.isAdditive();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.WARN);
+        logger.setAdditive(false);
+        try {
+            InetSocketAddress endpoint = InetSocketAddress.createUnresolved("svc-mercury", 1211);
+            UnknownHostException cause = new UnknownHostException("svc-mercury");
+
+            Sockets.logReconnectRetry(logger, new Sockets.ReconnectLogState(), "client", endpoint, 5000L, cause, true);
+
+            assertEquals(1, appender.list.size());
+            ILoggingEvent event = appender.list.get(0);
+            assertEquals(Level.WARN, event.getLevel());
+            assertNull(event.getThrowableProxy());
+            assertTrue(event.getFormattedMessage().contains("cause=java.net.UnknownHostException: svc-mercury"));
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(oldLevel);
+            logger.setAdditive(oldAdditive);
+        }
     }
 
     static void awaitTrue(BooleanSupplier condition, long timeoutMillis, String message) throws InterruptedException {

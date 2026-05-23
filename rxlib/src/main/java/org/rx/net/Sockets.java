@@ -788,6 +788,17 @@ public final class Sockets {
         return b;
     }
 
+    public static void refreshTcpResolver(Bootstrap bootstrap, SocketAddress connectHint) {
+        if (bootstrap == null || connectHint instanceof LocalAddress) {
+            return;
+        }
+
+        Object conf = bootstrap.config().attrs().get(SocketConfig.ATTR_CONF);
+        if (conf instanceof SocketConfig) {
+            bootstrap.resolver(tcpDnsAddressResolverGroup((SocketConfig) conf));
+        }
+    }
+
     public static void addBefore(ChannelPipeline pipeline, String baseName, ChannelHandler... handlers) {
         for (int i = 0; i < handlers.length; i++) {
             ChannelHandler handler = handlers[i];
