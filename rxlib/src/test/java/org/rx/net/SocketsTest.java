@@ -678,7 +678,7 @@ public class SocketsTest {
         assertEquals("192.168.31.1", directServers.get(1).getHostString());
         assertEquals(53, directServers.get(1).getPort());
 
-        Object resolverGroup = Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT);
+        Object resolverGroup = Sockets.currentTcpDirectDnsAddressResolverGroup();
         Field builderField = resolverGroup.getClass().getDeclaredField("dnsResolverBuilder");
         builderField.setAccessible(true);
         Object builder = builderField.get(resolverGroup);
@@ -697,7 +697,8 @@ public class SocketsTest {
 
         Bootstrap bootstrap = Sockets.bootstrap(new SocketConfig(), ch -> {
         });
-        assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
+        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), bootstrap.config().resolver());
+        assertSame(DefaultAddressResolverGroup.INSTANCE, Sockets.currentTcpDirectDnsAddressResolverGroup());
     }
 
     @Test
@@ -706,13 +707,15 @@ public class SocketsTest {
 
         Bootstrap bootstrap = Sockets.bootstrap(new SocketConfig(), ch -> {
         });
-        assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
+        Object directResolver = bootstrap.config().resolver();
+        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), directResolver);
+        assertSame(DefaultAddressResolverGroup.INSTANCE, Sockets.currentTcpDirectDnsAddressResolverGroup());
 
         Sockets.setInjectedNameServers(Collections.singletonList(Sockets.parseEndpoint("127.0.0.1:753")));
         Sockets.refreshTcpResolver(bootstrap, Sockets.newUnresolvedEndpoint("svc-mercury", 1211));
 
-        assertNotSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
-        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), bootstrap.config().resolver());
+        assertSame(directResolver, bootstrap.config().resolver());
+        assertNotSame(DefaultAddressResolverGroup.INSTANCE, Sockets.currentTcpDirectDnsAddressResolverGroup());
     }
 
     private DiagnosticConfig memDiagnosticConfig(String name) {

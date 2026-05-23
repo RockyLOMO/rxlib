@@ -27,6 +27,7 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.resolver.AddressResolver;
 import io.netty.resolver.AddressResolverGroup;
 import io.netty.resolver.DefaultAddressResolverGroup;
 import io.netty.resolver.ResolvedAddressTypes;
@@ -35,6 +36,9 @@ import io.netty.resolver.dns.DnsNameResolverBuilder;
 import io.netty.util.AttributeKey;
 import io.netty.util.NetUtil;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.Promise;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -232,6 +236,7 @@ public final class Sockets {
     static volatile DnsServer.ResolveInterceptor nsInterceptor;
     static volatile List<InetSocketAddress> injectedNameServers = Collections.emptyList();
     static volatile PublicIpSnapshot publicIpSnapshot = PublicIpSnapshot.empty;
+    static final AddressResolverGroup<InetSocketAddress> TCP_DIRECT_RESOLVER_GROUP = new DynamicTcpDirectResolverGroup();
     /** 共享 TCP Bootstrap 解析器：走直连 DNS Client。 */
     static volatile AddressResolverGroup<InetSocketAddress> tcpDirectDnsAddressResolverGroup;
     /** 共享 TCP Bootstrap 解析器：走远程 DNS Client。 */
@@ -252,21 +257,7 @@ public final class Sockets {
             return DefaultAddressResolverGroup.INSTANCE;
         }
         if (isDirectDnsMode(mode)) {
-            Collection<InetSocketAddress> nameServerList = DnsClient.directNameServers();
-            if (CollectionUtils.isEmpty(nameServerList)) {
-                return DefaultAddressResolverGroup.INSTANCE;
-            }
-
-            AddressResolverGroup<InetSocketAddress> g = tcpDirectDnsAddressResolverGroup;
-            if (g != null) {
-                return g;
-            }
-            synchronized (Sockets.class) {
-                if (tcpDirectDnsAddressResolverGroup == null) {
-                    tcpDirectDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT, nameServerList);
-                }
-                return tcpDirectDnsAddressResolverGroup;
-            }
+            return TCP_DIRECT_RESOLVER_GROUP;
         }
         if (isRemoteDnsMode(mode)) {
             Collection<InetSocketAddress> nameServerList = DnsClient.remoteNameServers();
@@ -282,6 +273,69 @@ public final class Sockets {
             }
         }
         return DefaultAddressResolverGroup.INSTANCE;
+    }
+
+    static AddressResolverGroup<InetSocketAddress> currentTcpDirectDnsAddressResolverGroup() {
+        Collection<InetSocketAddress> nameServerList = DnsClient.directNameServers();
+        if (CollectionUtils.isEmpty(nameServerList)) {
+            return DefaultAddressResolverGroup.INSTANCE;
+        }
+
+        AddressResolverGroup<InetSocketAddress> g = tcpDirectDnsAddressResolverGroup;
+        if (g != null) {
+            return g;
+        }
+        synchronized (Sockets.class) {
+            if (tcpDirectDnsAddressResolverGroup == null) {
+                tcpDirectDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT, nameServerList);
+            }
+            return tcpDirectDnsAddressResolverGroup;
+        }
+    }
+
+    static final class DynamicTcpDirectResolverGroup extends AddressResolverGroup<InetSocketAddress> {
+        @Override
+        protected AddressResolver<InetSocketAddress> newResolver(EventExecutor executor) {
+            return new AddressResolver<InetSocketAddress>() {
+                AddressResolver<InetSocketAddress> delegate() {
+                    return currentTcpDirectDnsAddressResolverGroup().getResolver(executor);
+                }
+
+                @Override
+                public boolean isSupported(SocketAddress address) {
+                    return delegate().isSupported(address);
+                }
+
+                @Override
+                public boolean isResolved(SocketAddress address) {
+                    return delegate().isResolved(address);
+                }
+
+                @Override
+                public Future<InetSocketAddress> resolve(SocketAddress address) {
+                    return delegate().resolve(address);
+                }
+
+                @Override
+                public Future<InetSocketAddress> resolve(SocketAddress address, Promise<InetSocketAddress> promise) {
+                    return delegate().resolve(address, promise);
+                }
+
+                @Override
+                public Future<List<InetSocketAddress>> resolveAll(SocketAddress address) {
+                    return delegate().resolveAll(address);
+                }
+
+                @Override
+                public Future<List<InetSocketAddress>> resolveAll(SocketAddress address, Promise<List<InetSocketAddress>> promise) {
+                    return delegate().resolveAll(address, promise);
+                }
+
+                @Override
+                public void close() {
+                }
+            };
+        }
     }
 
     private static AddressResolverGroup<InetSocketAddress> buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode mode,
