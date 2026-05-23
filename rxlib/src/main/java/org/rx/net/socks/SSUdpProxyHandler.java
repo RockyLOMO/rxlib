@@ -813,7 +813,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 outBuf = response.getPayload();
                 releaseOutBuf = true;
                 realDstEp = response.getSourceAddress();
-                responseDst = org.rx.net.Sockets.newUnresolvedEndpoint(realDstEp.getHostString(), realDstEp.getPort());
+                responseDst = realDstEp;
             } else if (udpRelayAddr != null) {
                 boolean udpClientResponse = representative instanceof UdpClientUpstream;
                 if (!udpClientResponse && !((SocksUdpUpstream) representative).ownsUdpRelayAddress(outbound, out.sender())) {
@@ -841,7 +841,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 realDstEp = responseDst;
             } else {
                 realDstEp = out.sender();
-                responseDst = org.rx.net.Sockets.newUnresolvedEndpoint(realDstEp.getHostString(), realDstEp.getPort());
+                responseDst = realDstEp;
             }
 
             UdpManager.HeaderTemplate responseHeader = addressHeaderTemplate(binding.inbound, realDstEp);

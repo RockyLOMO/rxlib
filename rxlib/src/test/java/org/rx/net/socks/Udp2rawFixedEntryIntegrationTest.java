@@ -659,7 +659,7 @@ class Udp2rawFixedEntryIntegrationTest {
         frame.setFlags(Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT
                 | Udp2rawCodec.FLAG_HAS_DST | Udp2rawCodec.FLAG_AUTH_TAG);
         frame.setClientSource(clientSource);
-        frame.setDestination(org.rx.net.Sockets.newUnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+        frame.setDestination(destination);
         ByteBuf authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
                 open.getSessionSecret(), frame, payload);
         frame.setAuthTag(authTag);
@@ -690,7 +690,7 @@ class Udp2rawFixedEntryIntegrationTest {
                 frame.setClientSource(clientSource);
             }
             if ((flags & Udp2rawCodec.FLAG_HAS_DST) != 0) {
-                frame.setDestination(org.rx.net.Sockets.newUnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+                frame.setDestination(destination);
             }
             if (sign) {
                 authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
@@ -797,7 +797,7 @@ class Udp2rawFixedEntryIntegrationTest {
             }
             frame.setFlags(flags);
             frame.setClientSource(clientSource);
-            frame.setDestination(org.rx.net.Sockets.newUnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+            frame.setDestination(destination);
             authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
                     open.getSessionSecret(), frame, body);
             frame.setAuthTag(authTag);

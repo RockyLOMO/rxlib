@@ -318,13 +318,12 @@ public final class Sockets {
             return result;
         }
 
-        InetSocketAddress normalized = newUnresolvedEndpoint(endpoint.getHostString(), endpoint.getPort());
-        if (!normalized.isUnresolved()) {
-            result.complete(normalized);
+        String host = endpoint.getHostString().trim();
+        if (isValidIp(host)) {
+            result.complete(new InetSocketAddress(parseIpAddress(host), endpoint.getPort()));
             return result;
         }
 
-        String host = normalized.getHostString();
         io.netty.util.concurrent.Future<InetAddress> resolveFuture = udpDnsClient(config).resolveAsync(host);
         resolveFuture.addListener(f -> {
             if (!f.isSuccess()) {
@@ -336,7 +335,7 @@ public final class Sockets {
                 result.completeExceptionally(new UnknownHostException(host));
                 return;
             }
-            result.complete(new InetSocketAddress(address, normalized.getPort()));
+            result.complete(new InetSocketAddress(address, endpoint.getPort()));
         });
         return result;
     }
@@ -1779,6 +1778,10 @@ public final class Sockets {
     public static InetSocketAddress newEndpoint(@NonNull InetSocketAddress endpoint, int port) {
         if (endpoint.getPort() == port) {
             return endpoint;
+        }
+        InetAddress address = endpoint.getAddress();
+        if (address != null) {
+            return new InetSocketAddress(address, port);
         }
         return newUnresolvedEndpoint(endpoint.getHostString(), port);
     }
