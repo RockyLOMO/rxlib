@@ -17,8 +17,8 @@ import org.rx.net.socks.SocksConnectionTagRegistry;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficUser;
-import org.rx.net.socks.UdpCompressConfig;
-import org.rx.net.socks.UdpCompressStats;
+import org.rx.net.udp.UdpCompressConfig;
+import org.rx.net.udp.UdpCompressStats;
 import org.rx.net.socks.Udp2rawAuthMode;
 import org.rx.net.socks.Udp2rawAuthenticator;
 import org.rx.net.socks.Udp2rawCodec;
@@ -31,11 +31,11 @@ import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.socks.Udp2rawPayloadSupport;
 import org.rx.net.socks.Udp2rawSeqWindow;
 import org.rx.net.socks.UdpManager;
-import org.rx.net.socks.UdpRedundantConfig;
-import org.rx.net.socks.UdpRedundantMode;
-import org.rx.net.socks.UdpRedundantMultiplierResolver;
-import org.rx.net.socks.UdpRedundantSupport;
-import org.rx.net.socks.UdpRedundantStats;
+import org.rx.net.udp.UdpRedundantConfig;
+import org.rx.net.udp.UdpRedundantMode;
+import org.rx.net.udp.UdpRedundantMultiplierResolver;
+import org.rx.net.udp.UdpRedundantSupport;
+import org.rx.net.udp.UdpRedundantStats;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 
@@ -705,7 +705,7 @@ public class Udp2rawUpstream extends Upstream {
             encoded = Udp2rawMtuProbeSupport.encodeProbe(channel.alloc(), state.sessionSecret,
                     state.sessionHi, state.sessionLo, probe.seq, probe.mtu);
             Sockets.UdpWriteResult result = Sockets.writeUdp(channel,
-                    new Sockets.UdpMtuProbeDatagramPacket(encoded, state.udpTransportAddress),
+                    new org.rx.net.udp.UdpMtuProbeDatagramPacket(encoded, state.udpTransportAddress),
                     METRIC_PREFIX, "flow=mtu-probe");
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {

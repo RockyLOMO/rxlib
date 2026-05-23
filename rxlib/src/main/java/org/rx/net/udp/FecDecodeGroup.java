@@ -54,7 +54,7 @@ final class FecDecodeGroup {
         return receivedCount >= effectiveShardK;
     }
 
-    ByteBuf tryRecover(ByteBufAllocator alloc, int maxProtectedPayload) {
+    ByteBuf tryRecover(ByteBufAllocator alloc, int maxResiliencePayload) {
         if (parityBlock == null || missingDataCount() != 1) {
             return null;
         }
@@ -80,7 +80,7 @@ final class FecDecodeGroup {
                 return null;
             }
             int originalLen = recovered.getUnsignedShort(recovered.readerIndex());
-            if (originalLen > maxProtectedPayload || originalLen > recovered.readableBytes() - 2) {
+            if (originalLen > maxResiliencePayload || originalLen > recovered.readableBytes() - 2) {
                 recovered.release();
                 return null;
             }

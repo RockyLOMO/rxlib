@@ -11,12 +11,12 @@
 ```text
 Inbound:
     DatagramPacket
-        -> UdpProtectDecoder
+        -> UdpResilienceDecoder
         -> business handler
 
 Outbound:
     business handler
-        -> UdpProtectEncoder
+        -> UdpResilienceEncoder
         -> DatagramPacket
 ```
 
@@ -165,9 +165,9 @@ rxlib/src/main/java/org/rx/net/socks/UdpRedundantStats.java
 
 ```text
 1. 短期保留 UdpRedundant*，不要删除。
-2. 新 UdpProtectEncoder/Decoder 稳定前，旧类仍可继续服务现有 socks redundant 场景。
+2. 新 UdpResilienceEncoder/Decoder 稳定前，旧类仍可继续服务现有 socks redundant 场景。
 3. 新实现可以抽取它的 DeduplicationWindow、adaptive stats、delayed copy 逻辑。
-4. 最终把 redundant 能力合并到 UdpProtect pipeline，减少双层 header。
+4. 最终把 redundant 能力合并到 UdpResilience pipeline，减少双层 header。
 ```
 
 ## 3. 总体设计
@@ -181,16 +181,16 @@ rxlib/src/main/java/org/rx/net/udp/
 核心类：
 
 ```text
-org.rx.net.udp.UdpProtectConfig
-org.rx.net.udp.UdpProtect
-org.rx.net.udp.UdpProtectEncoder
-org.rx.net.udp.UdpProtectDecoder
-org.rx.net.udp.UdpProtectHeader
-org.rx.net.udp.UdpProtectPacket
-org.rx.net.udp.UdpProtectPolicy
-org.rx.net.udp.UdpProtectStats
-org.rx.net.udp.UdpProtectAttributes
-org.rx.net.udp.UdpProtectFlowIdResolver
+org.rx.net.udp.UdpResilienceConfig
+org.rx.net.udp.UdpResilience
+org.rx.net.udp.UdpResilienceEncoder
+org.rx.net.udp.UdpResilienceDecoder
+org.rx.net.udp.UdpResilienceHeader
+org.rx.net.udp.UdpResiliencePacket
+org.rx.net.udp.UdpResiliencePolicy
+org.rx.net.udp.UdpResilienceStats
+org.rx.net.udp.UdpResilienceAttributes
+org.rx.net.udp.UdpResilienceFlowIdResolver
 org.rx.net.udp.FecGroupKey
 org.rx.net.udp.FecEncodeGroup
 org.rx.net.udp.FecDecodeGroup
@@ -200,23 +200,23 @@ org.rx.net.udp.UdpDedupWindow
 推荐 pipeline：
 
 ```java
-UdpProtectConfig cfg = UdpProtectConfig.gameLowLatency();
-UdpProtect.install(ch.pipeline(), cfg);
+UdpResilienceConfig cfg = UdpResilienceConfig.gameLowLatency();
+UdpResilience.install(ch.pipeline(), cfg);
 ```
 
 安装后 pipeline 形态：
 
 ```text
 Inbound:
-    udpProtectDecoder
+    udpResilienceDecoder
     businessHandler
 
 Outbound:
     businessHandler
-    udpProtectEncoder
+    udpResilienceEncoder
 ```
 
-注意 Netty outbound 是从 tail 往 head 传播，所以安装顺序要统一由 `UdpProtect.install` 控制，避免业务方加错顺序。
+注意 Netty outbound 是从 tail 往 head 传播，所以安装顺序要统一由 `UdpResilience.install` 控制，避免业务方加错顺序。
 
 ## 4. 协议设计
 
@@ -327,7 +327,7 @@ recipient normalized address
 SOCKS UDP / udp2raw 场景可以自定义：
 
 ```java
-public interface UdpProtectFlowIdResolver {
+public interface UdpResilienceFlowIdResolver {
     int resolve(Channel channel, DatagramPacket packet);
 }
 ```
@@ -396,9 +396,9 @@ redundantIntervalMicros = 500
 
 也就是说默认只开 FEC，不默认 2 倍发包；当链路丢包高时再自适应升到 2 倍。
 
-### 6.2 合并到 `UdpProtectEncoder`
+### 6.2 合并到 `UdpResilienceEncoder`
 
-短期可以继续保留 `UdpRedundantEncoder/Decoder`，但新方案里建议把多倍发包合并进 `UdpProtectEncoder/Decoder`。
+短期可以继续保留 `UdpRedundantEncoder/Decoder`，但新方案里建议把多倍发包合并进 `UdpResilienceEncoder/Decoder`。
 
 原因：
 
@@ -442,7 +442,7 @@ write(ctx, msg, promise):
 
     packet = (DatagramPacket) msg
 
-    if !shouldProtect(channel, packet.recipient()):
+    if !shouldApply(channel, packet.recipient()):
         ctx.write(packet, promise)
         return
 
@@ -487,7 +487,7 @@ channelRead(ctx, msg):
         ctx.fireChannelRead(msg)
         return
 
-    if not UdpProtect packet:
+    if not UdpResilience packet:
         ctx.fireChannelRead(msg)
         return
 
@@ -525,7 +525,7 @@ channelRead(ctx, msg):
 
 ```text
 业务 UDP / socks 封装 / 加密
-    -> UdpProtectEncoder
+    -> UdpResilienceEncoder
     -> UdpFinalEgressGuardHandler
     -> socket
 ```
@@ -534,7 +534,7 @@ channelRead(ctx, msg):
 
 ```text
 socket
-    -> UdpProtectDecoder
+    -> UdpResilienceDecoder
     -> 解密 / 解封装
     -> 业务处理
 ```
@@ -567,22 +567,22 @@ socket
 新方案建议新增泛化类：
 
 ```text
-UdpProtectAttributes
+UdpResilienceAttributes
 ```
 
 建议 API：
 
 ```java
-UdpProtectAttributes.addProtectedPeer(channel, remoteAddress);
-UdpProtectAttributes.removeProtectedPeer(channel, remoteAddress);
-UdpProtectAttributes.shouldProtect(channel, remoteAddress);
+UdpResilienceAttributes.addResiliencePeer(channel, remoteAddress);
+UdpResilienceAttributes.removeResiliencePeer(channel, remoteAddress);
+UdpResilienceAttributes.shouldApply(channel, remoteAddress);
 ```
 
 兼容策略：
 
 ```text
 1. 短期不删除 UdpRelayAttributes。
-2. UdpProtectAttributes 可以兼容读取旧 redundant peer 集合。
+2. UdpResilienceAttributes 只维护 resilience peer 集合，不保留 UdpProtect 兼容 API。
 3. 新代码优先使用 protected peer 概念，不再使用 redundant peer 命名。
 ```
 
@@ -591,7 +591,7 @@ UdpProtectAttributes.shouldProtect(channel, remoteAddress);
 ### 11.1 游戏低延迟默认
 
 ```java
-UdpProtectConfig.gameLowLatency() {
+UdpResilienceConfig.gameLowLatency() {
     enabled = true;
 
     fecEnabled = true;
@@ -693,7 +693,7 @@ rxlib/src/main/java/org/rx/net/FecConfig.java
 替换为：
 
 ```text
-rxlib/src/main/java/org/rx/net/udp/UdpProtectConfig.java
+rxlib/src/main/java/org/rx/net/udp/UdpResilienceConfig.java
 ```
 
 ### 12.4 建议保留并逐步迁移
@@ -713,11 +713,11 @@ rxlib/src/main/java/org/rx/net/socks/UdpRedundantStats.java
 新增：
 
 ```text
-UdpProtectConfig
-UdpProtect
-UdpProtectEncoder
-UdpProtectDecoder
-UdpProtectHeader
+UdpResilienceConfig
+UdpResilience
+UdpResilienceEncoder
+UdpResilienceDecoder
+UdpResilienceHeader
 FecGroupKey
 FecEncodeGroup
 FecDecodeGroup
@@ -749,13 +749,13 @@ UdpDedupWindow
 6. per destination policy resolver。
 ```
 
-最终 `UdpProtectEncoder` 内部完成：
+最终 `UdpResilienceEncoder` 内部完成：
 
 ```text
 FEC encode -> redundant duplicate -> write DatagramPacket
 ```
 
-`UdpProtectDecoder` 内部完成：
+`UdpResilienceDecoder` 内部完成：
 
 ```text
 dedup -> FEC decode/recover -> fire original DatagramPacket
@@ -769,14 +769,14 @@ dedup -> FEC decode/recover -> fire original DatagramPacket
 1. 只在自有代理两端公网链路启用。
 2. client -> 本地网关 不启用。
 3. 远端代理 -> 游戏服务器 不启用。
-4. 避免把 UdpProtect header 发给普通目标服务器。
+4. 避免把 UdpResilience header 发给普通目标服务器。
 ```
 
 推荐接入点：
 
 ```java
 Sockets.udpBootstrap(config, ch -> {
-    UdpProtect.install(ch.pipeline(), udpProtectConfig);
+    UdpResilience.install(ch.pipeline(), udpResilienceConfig);
     // existing socks / udp2raw handlers
 });
 ```
@@ -841,7 +841,7 @@ FEC header 会增加包大小，多倍发包会放大发送量。应默认 `maxP
 
 ### 15.5 错误启用范围
 
-UdpProtect 是自定义协议。只能用于自有代理两端之间，不能直接发给普通目标服务器。
+UdpResilience 是自定义协议。只能用于自有代理两端之间，不能直接发给普通目标服务器。
 
 ## 16. 最终结论
 
@@ -851,7 +851,7 @@ UdpProtect 是自定义协议。只能用于自有代理两端之间，不能直
 1. 删除 FecUdpClient。
 2. 废弃旧 FecEncoder/FecDecoder/FecPacket。
 3. 保留 UdpRedundant*，作为多倍发包迁移基础。
-4. 新增 org.rx.net.udp.UdpProtectEncoder/Decoder。
+4. 新增 org.rx.net.udp.UdpResilienceEncoder/Decoder。
 5. 第一版只做 XOR 3:1 FEC + 可选 2x 多倍发包。
 6. 所有能力以 pipeline 方式接入，不做 Client 封装。
 ```
@@ -864,6 +864,6 @@ UdpProtect 是自定义协议。只能用于自有代理两端之间，不能直
 3. 必须支持变长 payload 恢复。
 4. DATA 必须立即透传，恢复包后续补交付。
 5. 多倍发包必须先去重再进入 FEC group。
-6. UdpProtectEncoder 必须在最终 MTU/backpressure guard 前完成编码。
+6. UdpResilienceEncoder 必须在最终 MTU/backpressure guard 前完成编码。
 7. 该协议只用于自有代理链路，不直接暴露给普通 UDP 目标。
 ```

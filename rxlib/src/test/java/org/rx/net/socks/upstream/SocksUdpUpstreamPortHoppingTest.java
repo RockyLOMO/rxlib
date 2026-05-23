@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.net.socks.Socks5Client;
 import org.rx.net.socks.Socks5Client.Socks5UdpLease;
 import org.rx.net.socks.SocksConfig;
-import org.rx.net.socks.UdpPortHoppingMode;
+import org.rx.net.udp.UdpPortHoppingMode;
 
 import java.net.InetSocketAddress;
 

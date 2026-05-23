@@ -8,6 +8,7 @@ import io.netty.util.concurrent.EventExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.RxConfig;
 import org.rx.diagnostic.DiagnosticMetrics;
+import org.rx.net.udp.UdpBackpressurePolicy;
 
 @Slf4j
 public final class NetworkFlowControl {
@@ -22,7 +23,7 @@ public final class NetworkFlowControl {
     private NetworkFlowControl() {
     }
 
-    NetworkTrafficConfig config() {
+    public NetworkTrafficConfig config() {
         return config;
     }
 

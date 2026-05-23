@@ -164,7 +164,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 .addListener(ChannelFutureListener.CLOSE);
     }
 
-    static SocketAddress resolveUdpRelayBindAddress(InetSocketAddress tcpLocalAddr) {
+    public static SocketAddress resolveUdpRelayBindAddress(InetSocketAddress tcpLocalAddr) {
         if (tcpLocalAddr == null) {
             return Sockets.newAnyEndpoint(0);
         }
@@ -177,7 +177,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         return new InetSocketAddress(address, 0);
     }
 
-    static InetSocketAddress resolveUdpRelayAdvertiseAddress(InetSocketAddress tcpLocalAddr, InetSocketAddress udpBindLocalAddr) {
+    public static InetSocketAddress resolveUdpRelayAdvertiseAddress(InetSocketAddress tcpLocalAddr, InetSocketAddress udpBindLocalAddr) {
         if (udpBindLocalAddr == null) {
             return null;
         }
@@ -194,12 +194,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         return udpBindLocalAddr;
     }
 
-    static boolean shouldTrackRedundantClientPeer(SocksConfig config,
+    public static boolean shouldTrackRedundantClientPeer(SocksConfig config,
             InetSocketAddress clientTcpAddr, InetSocketAddress tcpPeerAddr) {
         return shouldTrackRedundantClientPeer(config, clientTcpAddr, tcpPeerAddr, false);
     }
 
-    static boolean shouldTrackRedundantClientPeer(SocksConfig config,
+    public static boolean shouldTrackRedundantClientPeer(SocksConfig config,
             InetSocketAddress clientTcpAddr, InetSocketAddress tcpPeerAddr, boolean udp2raw) {
         return UdpRelayAttributes.shouldTrackClientAsRedundantPeer(config, udp2raw);
     }

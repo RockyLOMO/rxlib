@@ -16,8 +16,8 @@
 - **`GlobalChannelHandler`**:
   全局 Channel 处理器，通常用于处理未捕获的异常、拦截连接生命周期并对接指标监控框架。
 
-- **`org.rx.net.udp.UdpProtect` / `UdpProtectEncoder` / `UdpProtectDecoder`**:
-  可插拔 UDP protect pipeline，提供轻量 XOR FEC、按 peer/session 分组、变长 payload 恢复和可选多倍发包，适用于自有代理公网链路的游戏 UDP 抗丢包优化。
+- **`org.rx.net.udp.UdpResilience` / `UdpResilienceEncoder` / `UdpResilienceDecoder`**:
+  可插拔 UDP resilience pipeline，提供轻量 XOR FEC、按 peer/session 分组、变长 payload 恢复和可选多倍发包，适用于自有代理公网链路的游戏 UDP 抗丢包优化。
 
 - **`CipherEncoder` / `CipherDecoder`**:
   基础的数据加密/解密处理器，用于轻量级自定义协议中的对称加密。

@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import org.rx.net.udp.*;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import org.rx.io.Bytes;
@@ -276,7 +278,7 @@ final class Udp2rawTunnelContext {
             encoded = Udp2rawMtuProbeSupport.encodeProbe(channel.alloc(), sessionSecret,
                     sessionHi, sessionLo, probe.seq, probe.mtu);
             Sockets.UdpWriteResult result = Sockets.writeUdp(channel,
-                    new Sockets.UdpMtuProbeDatagramPacket(encoded, peer),
+                    new org.rx.net.udp.UdpMtuProbeDatagramPacket(encoded, peer),
                     "socks.udp2raw", "flow=mtu-probe,side=server");
             encoded = null;
             if (result == Sockets.UdpWriteResult.ACCEPTED) {

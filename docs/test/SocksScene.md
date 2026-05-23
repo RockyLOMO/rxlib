@@ -43,8 +43,8 @@ ShadowsocksClient(广域网ip c) -> ShadowsocksServer(广域网ip a) -> SocksSer
 
 ## 压缩/多倍发包专项
 - 对应用例：
-  - `org.rx.net.socks.UdpCompressTest`
-  - `org.rx.net.socks.UdpRedundantTest`
+  - `org.rx.net.udp.UdpCompressTest`
+  - `org.rx.net.udp.UdpRedundantTest`
 
 # 缓存
 ## dns

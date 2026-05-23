@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import org.rx.net.udp.*;
+
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
 import lombok.extern.slf4j.Slf4j;

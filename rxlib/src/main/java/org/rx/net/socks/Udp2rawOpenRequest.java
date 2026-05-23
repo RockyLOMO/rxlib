@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import org.rx.net.udp.*;
+
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;

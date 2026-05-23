@@ -1,4 +1,4 @@
-# UDP 打洞模块 (org.rx.net.punch)
+# UDP 打洞模块 (org.rx.net.udp)
 
 专注于在 NAT（网络地址转换）环境下建立端到端（P2P）直接通信的 UDP Hole Punching 框架。
 

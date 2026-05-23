@@ -23,10 +23,10 @@ import org.rx.net.socks.UdpRelayGroupOpenRequest;
 import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.UdpRelayAttributes;
-import org.rx.net.socks.UdpRedundantSupport;
+import org.rx.net.udp.UdpRedundantSupport;
 import org.rx.net.socks.UdpLeasePoolKey;
-import org.rx.net.socks.UdpPortHoppingConfig;
-import org.rx.net.socks.UdpPortHoppingMode;
+import org.rx.net.udp.UdpPortHoppingConfig;
+import org.rx.net.udp.UdpPortHoppingMode;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
 

@@ -4,18 +4,7 @@
 
 ## 命名说明
 
-`UdpProtect` 这个名字是“链路保护层”的临时总称，覆盖 FEC、多倍发包、去重、恢复等能力。但它确实偏泛，容易让人误解成安全加密或防火墙。
-
-更准确的候选名：
-
-| 名称 | 含义 | 建议 |
-|---|---|---|
-| `UdpResilience` | UDP 抗弱网能力，覆盖 FEC/冗余/恢复 | 最推荐 |
-| `UdpLinkGuard` | 公网链路防护层，强调链路质量 | 可接受 |
-| `UdpLossRecovery` | 强调丢包恢复，但覆盖不了压缩/限速 | 偏窄 |
-| `UdpEnhance` | 增强层，语义太宽 | 不推荐 |
-
-短期不建议立刻重命名生产类，避免刚落地的 pipeline API 和测试再大面积 churn。后续如果要统一命名，建议一次性把 `UdpProtect*` 迁移为 `UdpResilience*`，并保留一版兼容 facade。
+UDP 抗弱网新管线统一命名为 `UdpResilience*`，替代原先的 `UdpProtect*`。本次迁移不保留 `UdpProtect*` 兼容类，外部调用需要直接切到 `org.rx.net.udp.UdpResilience*`。
 
 ## 能力总览
 
@@ -24,16 +13,16 @@
 | UDP Bootstrap/写出口保护 | `Sockets.udpBootstrap`，`Sockets.writeUdp`，`UdpBackpressure*` | 所有 DatagramChannel 出入口 | 否 | 统一走 `Sockets.writeUdp` |
 | UDP 可靠消息/RPC | `org.rx.net.transport.UdpClient*` | 内部 UDP 请求响应、ACK、分片重组 | 是，`RXUP` frame | 内部控制消息可用 |
 | SOCKS/SS UDP relay | `SocksUdpRelayHandler`，`SSUdpProxyHandler`，`SocksUdpUpstream` | SOCKS5 UDP ASSOCIATE、Shadowsocks UDP 转发 | SOCKS/SS 标准包 + 内部扩展 | 代理 UDP 主路径 |
-| UDP 压缩 | `org.rx.net.socks.UdpCompress*` | 大包、可压缩 payload、代理链路省带宽 | 是，`UCMP` header | 只在自有代理两端开启 |
-| UDP 多倍发包 | `org.rx.net.socks.UdpRedundant*`，新 pipeline 中为 `UdpProtectEncoder/Decoder` | 短时突发丢包、运营商抖动 | 是，`RDNT` 或 `UdpProtect` header | 默认 1，确认丢包再 2 |
-| UDP FEC | `org.rx.net.udp.UdpProtect*` | 游戏 UDP 轻微随机丢包 | 是，`UdpProtect` header | 3:1 XOR FEC |
-| UDP 端口跳跃 | `org.rx.net.socks.UdpPortHopping*`，`SocksUdpUpstream` | 单端口被限速、端口级抖动 | 控制面依赖 SOCKS/RPC relay | 默认关闭，确认端口限速再开 |
+| UDP 压缩 | `org.rx.net.udp.UdpCompress*` | 大包、可压缩 payload、代理链路省带宽 | 是，`UCMP` header | 只在自有代理两端开启 |
+| UDP 多倍发包 | `org.rx.net.udp.UdpRedundant*`，新 pipeline 中为 `UdpResilienceEncoder/Decoder` | 短时突发丢包、运营商抖动 | 是，`RDNT` 或 `UdpResilience` header | 默认 1，确认丢包再 2 |
+| UDP FEC | `org.rx.net.udp.UdpResilience*` | 游戏 UDP 轻微随机丢包 | 是，`UdpResilience` header | 3:1 XOR FEC |
+| UDP 端口跳跃 | `org.rx.net.udp.UdpPortHopping*`，`SocksUdpUpstream` | 单端口被限速、端口级抖动 | 控制面依赖 SOCKS/RPC relay | 默认关闭，确认端口限速再开 |
 | udp2raw 隧道 | `Udp2rawHandler`，`Udp2rawUpstream`，`Udp2rawCodec` | 把 UDP 代理 payload 包装到自有隧道 | 是，udp2raw frame | 需要 RPC 能力协商 |
 | UDP relay group/lease pool | `UdpRelayGroupManager`，`UdpRelayGroup*`，`UdpLeasePoolKey` | 批量开 relay、端口跳跃、复用 UDP lease | RPC 控制面 | 由 SOCKS upstream 自动使用 |
-| UDP 打洞 | `org.rx.net.punch.UdpHolePunch*` | P2P NAT 穿透 | 使用 `UdpClient` 消息协议 | 适合同 NAT 友好网络 |
+| UDP 打洞 | `org.rx.net.udp.UdpHolePunch*` | P2P NAT 穿透 | 使用 `UdpClient` 消息协议 | 适合同 NAT 友好网络 |
 | Hybrid TCP/UDP | `org.rx.net.transport.hybrid.*` | 小包走 UDP，大包/失败回 TCP | 内部 Hybrid 消息 | 默认 TCP 兜底 |
 | DNS/NTP/Nameserver | `Dns*`，`NtpClient`，`NameserverImpl` | DNS 查询、NTP、名称服务同步 | DNS/NTP 或内部包 | 按具体组件使用 |
-| MTU/背压 | `Sockets.UdpFinalEgressGuardHandler`，`UdpBackpressure*` | 最终出口兜底 | 否 | 必须在所有 UDP header 后执行 |
+| MTU/背压 | `org.rx.net.udp.UdpFinalEgressGuardHandler`，`UdpBackpressure*` | 最终出口兜底 | 否 | 必须在所有 UDP header 后执行 |
 
 ## 包放置建议
 
@@ -41,7 +30,7 @@
 
 ```text
 org.rx.net.udp
-  UdpResilience / UdpProtect
+  UdpResilience
   FEC
   多倍发包去重与统计
   压缩 codec 的通用 handler
@@ -85,15 +74,15 @@ socket
 新 FEC pipeline 使用：
 
 ```java
-UdpProtectConfig cfg = UdpProtectConfig.gameLowLatency();
-UdpProtect.install(ch.pipeline(), cfg);
+UdpResilienceConfig cfg = UdpResilienceConfig.gameLowLatency();
+UdpResilience.install(ch.pipeline(), cfg);
 ```
 
 新 FEC pipeline 目标顺序：
 
 ```text
-出站：业务 handler -> UdpProtectEncoder -> UdpFinalEgressGuardHandler -> socket
-入站：socket -> UdpProtectDecoder -> 业务 handler
+出站：业务 handler -> UdpResilienceEncoder -> UdpFinalEgressGuardHandler -> socket
+入站：socket -> UdpResilienceDecoder -> 业务 handler
 ```
 
 原则：
@@ -102,7 +91,7 @@ UdpProtect.install(ch.pipeline(), cfg);
 1. 自定义 UDP header 必须在 final egress guard 之前完成。
 2. MTU 检查必须看最终真实包大小。
 3. 多倍发包/ FEC 增加的额外流量必须计入限速与统计。
-4. 不要把 UdpProtect/RDNT/UCMP 包直接发给普通游戏服务器，只能用于自有两端。
+4. 不要把 UdpResilience/RDNT/UCMP 包直接发给普通游戏服务器，只能用于自有两端。
 ```
 
 ## 基础 UDP 能力
@@ -113,8 +102,8 @@ UdpProtect.install(ch.pipeline(), cfg);
 org.rx.net.Sockets
 org.rx.net.SocketConfig
 org.rx.net.NetworkTrafficConfig
-org.rx.net.UdpBackpressurePolicy
-org.rx.net.UdpBackpressureDecision
+org.rx.net.udp.UdpBackpressurePolicy
+org.rx.net.udp.UdpBackpressureDecision
 ```
 
 核心能力：
@@ -246,10 +235,10 @@ org.rx.net.socks.upstream.Udp2rawUpstream
 当前类：
 
 ```text
-org.rx.net.socks.UdpCompressConfig
-org.rx.net.socks.UdpCompressEncoder
-org.rx.net.socks.UdpCompressDecoder
-org.rx.net.socks.UdpCompressStats
+org.rx.net.udp.UdpCompressConfig
+org.rx.net.udp.UdpCompressEncoder
+org.rx.net.udp.UdpCompressDecoder
+org.rx.net.udp.UdpCompressStats
 ```
 
 协议头：
@@ -292,18 +281,18 @@ config.setUdpCompressAdaptiveBypassWindowSeconds(30);
 当前旧链路类：
 
 ```text
-org.rx.net.socks.UdpRedundantConfig
-org.rx.net.socks.UdpRedundantEncoder
-org.rx.net.socks.UdpRedundantDecoder
-org.rx.net.socks.UdpRedundantStats
+org.rx.net.udp.UdpRedundantConfig
+org.rx.net.udp.UdpRedundantEncoder
+org.rx.net.udp.UdpRedundantDecoder
+org.rx.net.udp.UdpRedundantStats
 ```
 
 新 pipeline 中的多倍发包能力：
 
 ```text
-org.rx.net.udp.UdpProtectConfig.redundant*
-org.rx.net.udp.UdpProtectEncoder
-org.rx.net.udp.UdpProtectDecoder
+org.rx.net.udp.UdpResilienceConfig.redundant*
+org.rx.net.udp.UdpResilienceEncoder
+org.rx.net.udp.UdpResilienceDecoder
 ```
 
 适用场景：
@@ -359,11 +348,11 @@ FEC 3:1 + 2x: 原始流量 * 4 / 3 * 2，额外约 166%
 当前类：
 
 ```text
-org.rx.net.udp.UdpProtect
-org.rx.net.udp.UdpProtectConfig
-org.rx.net.udp.UdpProtectEncoder
-org.rx.net.udp.UdpProtectDecoder
-org.rx.net.udp.UdpProtectStats
+org.rx.net.udp.UdpResilience
+org.rx.net.udp.UdpResilienceConfig
+org.rx.net.udp.UdpResilienceEncoder
+org.rx.net.udp.UdpResilienceDecoder
+org.rx.net.udp.UdpResilienceStats
 ```
 
 当前实现：
@@ -380,25 +369,25 @@ org.rx.net.udp.UdpProtectStats
 推荐配置：
 
 ```java
-UdpProtectConfig cfg = UdpProtectConfig.gameLowLatency();
-cfg.setProtectAll(false);
+UdpResilienceConfig cfg = UdpResilienceConfig.gameLowLatency();
+cfg.setResilienceAll(false);
 cfg.setFecEnabled(true);
 cfg.setFecDataShards(3);
 cfg.setFecParityShards(1);
 cfg.setFecFlushTimeoutMs(5);
 cfg.setStaleGroupTimeoutMs(300);
-cfg.setMaxProtectedPayload(1200);
+cfg.setMaxResiliencePayload(1200);
 cfg.setRedundantEnabled(true);
 cfg.setRedundantMultiplier(1);
 cfg.setRedundantMaxMultiplier(2);
 cfg.setRedundantIntervalMicros(500);
-UdpProtect.install(ch.pipeline(), cfg);
+UdpResilience.install(ch.pipeline(), cfg);
 ```
 
-登记保护 peer：
+登记 resilience peer：
 
 ```java
-UdpProtectAttributes.addProtectedPeer(channel, remoteAddress);
+UdpResilienceAttributes.addResiliencePeer(channel, remoteAddress);
 ```
 
 自定义 flowId：
@@ -415,7 +404,7 @@ cfg.setFlowIdResolver((channel, packet) -> {
 ```text
 1. FEC 适合轻微随机丢 1 包，不适合连续大段丢包。
 2. 游戏 UDP 通常能接受乱序，DATA 立即透传比等待整组更低延迟。
-3. maxProtectedPayload 默认不要超过 1200，给公网 MTU 和额外 header 留空间。
+3. maxResiliencePayload 默认不要超过 1200，给公网 MTU 和额外 header 留空间。
 4. 如果业务协议不能接受恢复包乱序到达，不要开 FEC。
 5. 该协议只能用于自有两端，不能直接面向普通 UDP 服务端。
 ```
@@ -425,8 +414,8 @@ cfg.setFlowIdResolver((channel, packet) -> {
 当前类：
 
 ```text
-org.rx.net.socks.UdpPortHoppingConfig
-org.rx.net.socks.UdpPortHoppingMode
+org.rx.net.udp.UdpPortHoppingConfig
+org.rx.net.udp.UdpPortHoppingMode
 org.rx.net.socks.upstream.SocksUdpUpstream
 org.rx.net.socks.UdpRelayGroupManager
 ```
@@ -566,10 +555,10 @@ udp2rawPeerRateLimitPerSecond / udp2rawPeerRateLimitBurst: peer 限速。
 当前类：
 
 ```text
-org.rx.net.punch.UdpHolePunchServer
-org.rx.net.punch.UdpHolePunchClient
-org.rx.net.punch.UdpHolePunchSession
-org.rx.net.punch.UdpHolePunchPackets
+org.rx.net.udp.UdpHolePunchServer
+org.rx.net.udp.UdpHolePunchClient
+org.rx.net.udp.UdpHolePunchSession
+org.rx.net.udp.UdpHolePunchPackets
 ```
 
 基本流程：
@@ -692,7 +681,7 @@ org.rx.net.NetEventWait
 使用建议：
 
 ```text
-1. DNS/NTP 属于标准协议，不要叠加 UCMP/RDNT/UdpProtect header。
+1. DNS/NTP 属于标准协议，不要叠加 UCMP/RDNT/UdpResilience header。
 2. 名称服务和 multicast 场景要显式限制 TTL、网卡和监听范围。
 3. DNS 查询链路避免阻塞式 InetAddress 解析进入 I/O 热路径。
 ```
@@ -704,7 +693,7 @@ org.rx.net.NetEventWait
 ```text
 FEC 3:1
 多倍发包 multiplier=1
-maxProtectedPayload=1200
+maxResiliencePayload=1200
 端口跳跃关闭
 压缩关闭或只对大包开启
 ```
@@ -746,7 +735,7 @@ FEC 4:1
 
 ```text
 1. final egress guard 在所有 UDP header 后执行。
-2. maxProtectedPayload 默认 1200。
+2. maxResiliencePayload 默认 1200。
 3. UDP pending bytes / pending packets 要纳入背压。
 4. FEC parity 和 redundant copy 都要计入真实流量。
 5. MTU drop 要反馈给 udp2raw dynamic MTU state。
@@ -779,12 +768,12 @@ MTU/背压: mtu drop、pending packets、pending bytes、egress guard drop。
 已经具备但尚未完全统一的点：
 
 ```text
-1. UdpProtect 新管线还没有接入 SocksConfig / udp2raw 默认链路，当前自动安装的仍是旧 UCMP + RDNT。
-2. UDP 压缩和旧多倍发包仍在 org.rx.net.socks 包下，通用 handler 尚未迁移到 org.rx.net.udp。
-3. UdpProtect 目前覆盖 FEC、固定冗余、去重和基础统计，但还没有旧 UdpRedundant 的自适应丢包调倍率策略。
-4. UdpProtect 还没有和 udp2raw capabilities 做能力协商，也没有配置桥接。
+1. UdpResilience 新管线还没有接入 SocksConfig / udp2raw 默认链路，当前自动安装的仍是 UCMP + RDNT。
+2. UDP 压缩和多倍发包已迁移到 org.rx.net.udp，但还没有合并进 UdpResilience 统一 header。
+3. UdpResilience 目前覆盖 FEC、固定冗余、去重和基础统计，但还没有旧 UdpRedundant 的自适应丢包调倍率策略。
+4. UdpResilience 还没有和 udp2raw capabilities 做能力协商，也没有配置桥接。
 5. 端口跳跃核心策略还绑定在 SocksUdpUpstream / relay group 控制面，尚未抽出通用端口选择策略。
-6. UdpClient 可靠消息、Hybrid UDP、UdpProtect 三套 UDP 协议尚未形成统一组合指南和互斥规则。
+6. UdpClient 可靠消息、Hybrid UDP、UdpResilience 三套 UDP 协议尚未形成统一组合指南和互斥规则。
 7. 缺少统一 UDP metrics facade；目前指标分散在 socks.udp、socks.udp2raw、net.udp 等前缀。
 8. 没有 Reed-Solomon 类多 parity FEC；当前 XOR FEC 只能恢复每组 1 个丢包。
 ```
@@ -792,8 +781,8 @@ MTU/背压: mtu drop、pending packets、pending bytes、egress guard drop。
 建议补齐顺序：
 
 ```text
-1. 先把 UdpProtect 改名或 facade 为 UdpResilience，并接入 SocksConfig 开关。
-2. 再迁移 UdpCompress* / UdpRedundant* 通用部分到 org.rx.net.udp，保留 socks 兼容配置。
+1. 先把 UdpResilience 接入 SocksConfig 开关。
+2. 再把 UdpCompress* / UdpRedundant* 编排进 UdpResilience 能力层，保留 socks 配置入口。
 3. 给 udp2raw open capabilities 增加 FEC/Resilience 协商。
 4. 统一 UDP 指标命名，至少覆盖堆外内存、pending、drop、MTU、FEC、冗余、压缩、端口跳跃。
 5. 最后再考虑多 parity FEC 或 KCP/QUIC 类可靠流；这属于新协议层，不应混进当前轻量 datagram pipeline。

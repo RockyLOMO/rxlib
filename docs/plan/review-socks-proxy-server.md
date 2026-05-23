@@ -120,7 +120,7 @@
    - `org.rx.net.socks.Udp2rawFixedEntryIntegrationTest`
 3. 如果后续补充 udp2raw / redundant / traffic accounting 修改，再补充：
    - `org.rx.net.socks.Udp2rawHandlerTest`
-   - `org.rx.net.socks.UdpRedundantTest`
+   - `org.rx.net.udp.UdpRedundantTest`
 4. 只有 workflow run `conclusion=success` 才认为 CI 通过。
 
 # 当前提交进度

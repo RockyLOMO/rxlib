@@ -14,7 +14,7 @@ public final class FecGroupKey {
     private final int groupId;
 
     public FecGroupKey(InetSocketAddress sender, int sessionId, int groupId) {
-        this.sender = UdpProtectAttributes.normalize(sender);
+        this.sender = UdpResilienceAttributes.normalize(sender);
         this.sessionId = sessionId;
         this.groupId = groupId;
     }

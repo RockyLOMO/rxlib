@@ -6,8 +6,8 @@ import org.rx.diagnostic.DiagnosticMonitor;
 import org.rx.net.OptimalSettings;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksConfig;
-import org.rx.net.socks.UdpCompressCodec;
-import org.rx.net.socks.UdpCompressConfig;
+import org.rx.net.udp.UdpCompressCodec;
+import org.rx.net.udp.UdpCompressConfig;
 
 @Slf4j
 public final class RssSupport {

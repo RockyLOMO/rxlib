@@ -15,8 +15,8 @@ import org.rx.net.socks.Authenticator;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksUser;
-import org.rx.net.socks.UdpPortHoppingMode;
-import org.rx.net.socks.UdpRedundantMode;
+import org.rx.net.udp.UdpPortHoppingMode;
+import org.rx.net.udp.UdpRedundantMode;
 import org.rx.net.transport.TcpServerConfig;
 
 import java.util.Map;
