@@ -1,9 +1,10 @@
-package org.rx.net.udp;
+package org.rx.net.socks;
 
-import org.rx.net.socks.SocksConfig;
+import org.rx.net.udp.UdpRedundantConfig;
+import org.rx.net.udp.UdpRedundantMode;
 
 /**
- * Shared direction checks for SOCKS UDP and udp2raw redundant writes.
+ * SOCKS UDP 与 udp2raw 的 RDNT 方向判定。
  */
 public final class UdpRedundantSupport {
     private UdpRedundantSupport() {

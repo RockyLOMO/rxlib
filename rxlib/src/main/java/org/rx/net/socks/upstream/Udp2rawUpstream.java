@@ -31,10 +31,10 @@ import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.socks.Udp2rawPayloadSupport;
 import org.rx.net.socks.Udp2rawSeqWindow;
 import org.rx.net.socks.UdpManager;
+import org.rx.net.socks.UdpRedundantSupport;
 import org.rx.net.udp.UdpRedundantConfig;
 import org.rx.net.udp.UdpRedundantMode;
 import org.rx.net.udp.UdpRedundantMultiplierResolver;
-import org.rx.net.udp.UdpRedundantSupport;
 import org.rx.net.udp.UdpRedundantStats;
 import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.support.UpstreamSupport;
@@ -502,10 +502,10 @@ public class Udp2rawUpstream extends Upstream {
                 : socksConfig.getUdp2rawAuthMode();
         UdpCompressConfig compressConfig = result.getCapabilities() != null && result.getCapabilities().isCompress()
                 && socksConfig.isUdpCompressEnabled()
-                ? UdpCompressConfig.fromSocksConfig(socksConfig) : null;
+                ? UdpCompressConfig.fromSocketConfig(socksConfig) : null;
         UdpRedundantConfig redundantConfig = result.getCapabilities() != null && result.getCapabilities().isRedundant()
-                && Udp2rawPayloadSupport.isRedundantEnabled(UdpRedundantConfig.fromSocksConfig(socksConfig))
-                ? UdpRedundantConfig.fromSocksConfig(socksConfig) : null;
+                && Udp2rawPayloadSupport.isRedundantEnabled(UdpRedundantConfig.fromSocketConfig(socksConfig))
+                ? UdpRedundantConfig.fromSocketConfig(socksConfig) : null;
         InetSocketAddress transportAddress = next.getUdpClient() != null ? next.getUdpClient() : entryAddress;
         return new TunnelState(facade, result.getTunnelId(), result.getSessionHi(), result.getSessionLo(),
                 result.getSessionSecret(), entryAddress, transportAddress, authMode, compressConfig, redundantConfig,

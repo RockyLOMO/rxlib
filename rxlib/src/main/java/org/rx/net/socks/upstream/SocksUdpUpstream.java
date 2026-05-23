@@ -23,7 +23,7 @@ import org.rx.net.socks.UdpRelayGroupOpenRequest;
 import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.UdpRelayAttributes;
-import org.rx.net.udp.UdpRedundantSupport;
+import org.rx.net.socks.UdpRedundantSupport;
 import org.rx.net.socks.UdpLeasePoolKey;
 import org.rx.net.udp.UdpPortHoppingConfig;
 import org.rx.net.udp.UdpPortHoppingMode;

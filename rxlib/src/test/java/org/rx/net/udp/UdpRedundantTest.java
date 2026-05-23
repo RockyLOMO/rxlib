@@ -5,6 +5,7 @@ import org.rx.net.socks.Socks5CommandRequestHandler;
 import org.rx.net.socks.Udp2rawMtuState;
 import org.rx.net.socks.Udp2rawPayloadSupport;
 import org.rx.net.socks.UdpRelayAttributes;
+import org.rx.net.socks.UdpRedundantSupport;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;

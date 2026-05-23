@@ -1097,13 +1097,8 @@ public final class Sockets {
         }
         final SocketConfig finalConfig = config;
         b.attr(SocketConfig.ATTR_INIT_FN, (BiAction<Channel>) ch -> {
-            if (finalConfig instanceof SocksConfig) {
-                SocksConfig socksConfig = (SocksConfig) finalConfig;
-                addUdpFinalEgressGuard(ch.pipeline(), socksConfig, isUdpRedundantEnabled(socksConfig));
-                addUdpOptimizationHandlers(ch.pipeline(), socksConfig);
-            } else {
-                addUdpFinalEgressGuard(ch.pipeline(), finalConfig, false);
-            }
+            addUdpFinalEgressGuard(ch.pipeline(), finalConfig, isUdpRedundantEnabled(finalConfig));
+            addUdpOptimizationHandlers(ch.pipeline(), finalConfig);
             DiagnosticMetrics.installNetIoHandler(ch.pipeline(), finalConfig instanceof SocksConfig
                     ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT);
             if (initChannel != null) {
@@ -1121,7 +1116,7 @@ public final class Sockets {
      * 通过 {@link #udpBootstrap(SocketConfig, BiAction)} 创建 DatagramChannel 时会自动调用；
      * 仅在自行组装 pipeline 时才需要直接调用本方法。
      */
-    public static void addRedundantHandlers(ChannelPipeline pipeline, SocksConfig config) {
+    public static void addRedundantHandlers(ChannelPipeline pipeline, SocketConfig config) {
         addUdpOptimizationHandlers(pipeline, config);
     }
 
@@ -1131,7 +1126,7 @@ public final class Sockets {
      * 必须在业务/protocol outbound handler 之前安装。最终出站顺序为：
      * 业务写出 -> 压缩 -> 多倍发送 -> final egress guard -> transport。
      */
-    public static void addUdpOptimizationHandlers(ChannelPipeline pipeline, SocksConfig config) {
+    public static void addUdpOptimizationHandlers(ChannelPipeline pipeline, SocketConfig config) {
         boolean compressEnabled = config.isUdpCompressEnabled();
         boolean redundantEnabled = isUdpRedundantEnabled(config);
         addUdpFinalEgressGuard(pipeline, config, redundantEnabled);
@@ -1173,7 +1168,7 @@ public final class Sockets {
 
         if (compressEnabled) {
             pipeline.addLast(org.rx.net.udp.UdpCompressEncoder.class.getSimpleName(),
-                    new org.rx.net.udp.UdpCompressEncoder(org.rx.net.udp.UdpCompressConfig.fromSocksConfig(config)));
+                    new org.rx.net.udp.UdpCompressEncoder(org.rx.net.udp.UdpCompressConfig.fromSocketConfig(config)));
         }
     }
 
@@ -1195,7 +1190,7 @@ public final class Sockets {
         return NetworkFlowControl.DEFAULT.udpBackpressurePolicy().shouldInstallFinalGuard(config, forceBackpressure);
     }
 
-    private static boolean isUdpRedundantEnabled(SocksConfig config) {
+    private static boolean isUdpRedundantEnabled(SocketConfig config) {
         return config != null
                 && (config.getUdpRedundantMultiplier() > 1
                 || config.isUdpRedundantAdaptive()

@@ -3,7 +3,7 @@ package org.rx.net.udp;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.rx.net.socks.SocksConfig;
+import org.rx.net.SocketConfig;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -13,7 +13,7 @@ import java.util.List;
  * UDP 多倍发包配置
  * <p>
  * 支持静态倍率、自适应调整和分目的地规则三种模式。
- * 可独立配置，也可嵌入到 {@link SocksConfig} 中使用。
+ * 可独立配置，也可嵌入到 {@link SocketConfig} 中使用。
  */
 @Getter
 @Setter
@@ -152,35 +152,35 @@ public class UdpRedundantConfig implements Serializable {
     }
 
     /**
-     * 从 SocksConfig 复制 UDP 冗余配置到独立对象。
+     * 从 SocketConfig 复制 UDP 冗余配置到独立对象。
      */
-    public static UdpRedundantConfig fromSocksConfig(SocksConfig socksConfig) {
+    public static UdpRedundantConfig fromSocketConfig(SocketConfig socketConfig) {
         UdpRedundantConfig config = new UdpRedundantConfig();
-        config.setMultiplier(socksConfig.getUdpRedundantMultiplier());
-        config.setIntervalMicros(socksConfig.getUdpRedundantIntervalMicros());
-        config.setAdaptive(socksConfig.isUdpRedundantAdaptive());
-        config.setMinMultiplier(socksConfig.getUdpRedundantMinMultiplier());
-        config.setMaxMultiplier(socksConfig.getUdpRedundantMaxMultiplier());
-        config.setLossThresholdHigh(socksConfig.getUdpRedundantLossThresholdHigh());
-        config.setLossThresholdLow(socksConfig.getUdpRedundantLossThresholdLow());
-        config.setStablePeriods(socksConfig.getUdpRedundantStablePeriods());
-        config.getDestinationRules().addAll(socksConfig.getUdpRedundantDestinationRules());
+        config.setMultiplier(socketConfig.getUdpRedundantMultiplier());
+        config.setIntervalMicros(socketConfig.getUdpRedundantIntervalMicros());
+        config.setAdaptive(socketConfig.isUdpRedundantAdaptive());
+        config.setMinMultiplier(socketConfig.getUdpRedundantMinMultiplier());
+        config.setMaxMultiplier(socketConfig.getUdpRedundantMaxMultiplier());
+        config.setLossThresholdHigh(socketConfig.getUdpRedundantLossThresholdHigh());
+        config.setLossThresholdLow(socketConfig.getUdpRedundantLossThresholdLow());
+        config.setStablePeriods(socketConfig.getUdpRedundantStablePeriods());
+        config.getDestinationRules().addAll(socketConfig.getUdpRedundantDestinationRules());
         return config;
     }
 
     /**
-     * 将配置应用到 SocksConfig（用于向后兼容）。
+     * 将配置应用到 SocketConfig。
      */
-    public void applyToSocksConfig(SocksConfig socksConfig) {
-        socksConfig.setUdpRedundantMultiplier(multiplier);
-        socksConfig.setUdpRedundantIntervalMicros(intervalMicros);
-        socksConfig.setUdpRedundantAdaptive(adaptive);
-        socksConfig.setUdpRedundantMinMultiplier(minMultiplier);
-        socksConfig.setUdpRedundantMaxMultiplier(maxMultiplier);
-        socksConfig.setUdpRedundantLossThresholdHigh(lossThresholdHigh);
-        socksConfig.setUdpRedundantLossThresholdLow(lossThresholdLow);
-        socksConfig.setUdpRedundantStablePeriods(stablePeriods);
-        socksConfig.getUdpRedundantDestinationRules().clear();
-        socksConfig.getUdpRedundantDestinationRules().addAll(destinationRules);
+    public void applyToSocketConfig(SocketConfig socketConfig) {
+        socketConfig.setUdpRedundantMultiplier(multiplier);
+        socketConfig.setUdpRedundantIntervalMicros(intervalMicros);
+        socketConfig.setUdpRedundantAdaptive(adaptive);
+        socketConfig.setUdpRedundantMinMultiplier(minMultiplier);
+        socketConfig.setUdpRedundantMaxMultiplier(maxMultiplier);
+        socketConfig.setUdpRedundantLossThresholdHigh(lossThresholdHigh);
+        socketConfig.setUdpRedundantLossThresholdLow(lossThresholdLow);
+        socketConfig.setUdpRedundantStablePeriods(stablePeriods);
+        socketConfig.getUdpRedundantDestinationRules().clear();
+        socketConfig.getUdpRedundantDestinationRules().addAll(destinationRules);
     }
 }

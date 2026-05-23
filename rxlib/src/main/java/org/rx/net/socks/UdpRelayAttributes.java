@@ -3,7 +3,6 @@ package org.rx.net.socks;
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 import org.rx.net.udp.UdpPeerAttributes;
-import org.rx.net.udp.UdpRedundantSupport;
 import org.rx.net.udp.UdpResilienceAttributes;
 
 import java.net.InetSocketAddress;

@@ -40,17 +40,17 @@ org.rx.net.udp
 保留在 `org.rx.net.socks` 的内容：
 
 ```text
-SocksConfig 字段和兼容 getter/setter
+SocksConfig / udp2raw 的方向控制
 SOCKS UDP relay 接入逻辑
 udp2raw open/capability 协商
 端口跳跃的 SOCKS/RPC relay 控制面
 ```
 
-端口跳跃不是单纯 pipeline handler，它涉及 upstream session 数量、RPC relay group、补充 relay、控制面状态，所以短期继续放 `org.rx.net.socks` 更稳。后续可抽出端口选择策略到 `org.rx.net.udp`，接入层仍由 SOCKS 持有。
+`UdpCompressConfig` 与 `UdpRedundantConfig` 的配置入口已上提到 `SocketConfig`；`SocksConfig` 通过继承继续复用这些开关。端口跳跃不是单纯 pipeline handler，它涉及 upstream session 数量、RPC relay group、补充 relay、控制面状态，所以控制面仍由 SOCKS 持有。
 
 ## Pipeline 顺序
 
-通过 `Sockets.udpBootstrap(config, initChannel)` 创建 UDP channel 时，`SocksConfig` 会自动安装压缩、多倍发包和最终出口 guard。
+通过 `Sockets.udpBootstrap(config, initChannel)` 创建 UDP channel 时，`SocketConfig` 会自动安装压缩、多倍发包和最终出口 guard。裸 UDP 场景需要显式通过 `UdpPeerAttributes` 登记自有链路 peer，避免把 `UCMP` / `RDNT` 包发给普通 UDP 目标。
 
 当前旧优化链路的出站顺序：
 
@@ -123,6 +123,8 @@ SocketConfig.reusePortBindCount: UDP 多 listener 数，-1 表示自动。
 SocketConfig.udpWriteLimitBytes: 单 channel UDP pending bytes 软上限，默认 1MiB。
 SocketConfig.udpWritePerSourceLimitBytes: 单来源 UDP pending bytes 软上限，默认 256KiB。
 SocketConfig.udpMtu: 最终 UDP datagram MTU 上限，0 表示不启用。
+SocketConfig.udpCompress*: UDP 单包压缩配置。
+SocketConfig.udpRedundant*: UDP 多倍发包配置。
 NetworkTrafficConfig.udpBackpressureEnabled: UDP 写侧过载保护开关。
 NetworkTrafficConfig.udpMaxPendingBytes / udpMaxPendingPackets: 全局 UDP pending 限制。
 ```
@@ -219,7 +221,7 @@ org.rx.net.socks.upstream.Udp2rawUpstream
 2. Shadowsocks UDP relay。
 3. direct、SOCKS upstream、UdpClient upstream、udp2raw upstream 多种上游。
 4. 支持客户端地址锁定、relay 地址归属校验和 redundant peer 记录。
-5. 通过 SocksConfig 自动接入 UDP 压缩、多倍发包、MTU 与背压。
+5. 通过继承自 SocketConfig 的 UDP 配置自动接入压缩、多倍发包、MTU 与背压。
 ```
 
 使用建议：
@@ -257,7 +259,7 @@ dictionaryId = 0
 推荐配置：
 
 ```java
-SocksConfig config = new SocksConfig();
+SocketConfig config = new SocketConfig();
 config.setUdpCompressEnabled(true);
 config.setUdpCompressMinPayloadBytes(96);
 config.setUdpCompressMinSavingsBytes(24);
@@ -314,7 +316,7 @@ org.rx.net.udp.UdpResilienceDecoder
 推荐配置：
 
 ```java
-SocksConfig config = new SocksConfig();
+SocketConfig config = new SocketConfig();
 config.setUdpRedundantMultiplier(2);
 config.setUdpRedundantIntervalMicros(500);
 config.setUdpRedundantAdaptive(true);
@@ -768,7 +770,7 @@ MTU/背压: mtu drop、pending packets、pending bytes、egress guard drop。
 已经具备但尚未完全统一的点：
 
 ```text
-1. UdpResilience 新管线还没有接入 SocksConfig / udp2raw 默认链路，当前自动安装的仍是 UCMP + RDNT。
+1. UdpResilience 新管线还没有接入 SocketConfig / udp2raw 默认链路，当前自动安装的仍是 UCMP + RDNT。
 2. UDP 压缩和多倍发包已迁移到 org.rx.net.udp，但还没有合并进 UdpResilience 统一 header。
 3. UdpResilience 目前覆盖 FEC、固定冗余、去重和基础统计，但还没有旧 UdpRedundant 的自适应丢包调倍率策略。
 4. UdpResilience 还没有和 udp2raw capabilities 做能力协商，也没有配置桥接。
@@ -781,8 +783,8 @@ MTU/背压: mtu drop、pending packets、pending bytes、egress guard drop。
 建议补齐顺序：
 
 ```text
-1. 先把 UdpResilience 接入 SocksConfig 开关。
-2. 再把 UdpCompress* / UdpRedundant* 编排进 UdpResilience 能力层，保留 socks 配置入口。
+1. 先把 UdpResilience 接入 SocketConfig 开关。
+2. 再把 UdpCompress* / UdpRedundant* 编排进 UdpResilience 能力层，保留 SocketConfig 配置入口。
 3. 给 udp2raw open capabilities 增加 FEC/Resilience 协商。
 4. 统一 UDP 指标命名，至少覆盖堆外内存、pending、drop、MTU、FEC、冗余、压缩、端口跳跃。
 5. 最后再考虑多 parity FEC 或 KCP/QUIC 类可靠流；这属于新协议层，不应混进当前轻量 datagram pipeline。

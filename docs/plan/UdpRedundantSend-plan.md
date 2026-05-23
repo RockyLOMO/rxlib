@@ -135,16 +135,16 @@ SocksProxyServer server = new SocksProxyServer(socksConfig);
 **配置迁移**：
 
 ```java
-// 从现有SocksConfig提取UDP冗余配置
+// 从现有SocketConfig提取UDP冗余配置
 SocksConfig oldConfig = new SocksConfig(1080);
 oldConfig.setUdpRedundantMultiplier(3);
 // ... 设置其他UDP冗余参数
 
-UdpRedundantConfig udpConfig = UdpRedundantConfig.fromSocksConfig(oldConfig);
+UdpRedundantConfig udpConfig = UdpRedundantConfig.fromSocketConfig(oldConfig);
 
-// 应用到新的SocksConfig
+// 应用到新的SocketConfig / SocksConfig
 SocksConfig newConfig = new SocksConfig(1080);
-newConfig.setUdpRedundantConfig(udpConfig);
+udpConfig.applyToSocketConfig(newConfig);
 ```
 
 默认 `udpRedundantMultiplier = 1` 且 `udpRedundantAdaptive = false` 时不启用冗余，对未配置场景无侵入。

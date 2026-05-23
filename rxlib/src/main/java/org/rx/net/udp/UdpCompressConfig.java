@@ -3,7 +3,7 @@ package org.rx.net.udp;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.rx.net.socks.SocksConfig;
+import org.rx.net.SocketConfig;
 
 import java.io.Serializable;
 
@@ -88,34 +88,34 @@ public class UdpCompressConfig implements Serializable {
     }
 
     /**
-     * 从 SocksConfig 复制 UDP 压缩配置到独立对象。
+     * 从 SocketConfig 复制 UDP 压缩配置到独立对象。
      */
-    public static UdpCompressConfig fromSocksConfig(SocksConfig socksConfig) {
+    public static UdpCompressConfig fromSocketConfig(SocketConfig socketConfig) {
         UdpCompressConfig config = new UdpCompressConfig();
-        config.setEnabled(socksConfig.isUdpCompressEnabled());
-        config.setCodec(socksConfig.getUdpCompressCodec());
-        config.setMinPayloadBytes(socksConfig.getUdpCompressMinPayloadBytes());
-        config.setMinSavingsBytes(socksConfig.getUdpCompressMinSavingsBytes());
-        config.setMinSavingsRatio(socksConfig.getUdpCompressMinSavingsRatio());
-        config.setCompressionLevel(socksConfig.getUdpCompressCompressionLevel());
-        config.setDictionaryId(socksConfig.getUdpCompressDictionaryId());
-        config.setAdaptiveBypass(socksConfig.isUdpCompressAdaptiveBypass());
-        config.setAdaptiveBypassWindowSeconds(socksConfig.getUdpCompressAdaptiveBypassWindowSeconds());
+        config.setEnabled(socketConfig.isUdpCompressEnabled());
+        config.setCodec(socketConfig.getUdpCompressCodec());
+        config.setMinPayloadBytes(socketConfig.getUdpCompressMinPayloadBytes());
+        config.setMinSavingsBytes(socketConfig.getUdpCompressMinSavingsBytes());
+        config.setMinSavingsRatio(socketConfig.getUdpCompressMinSavingsRatio());
+        config.setCompressionLevel(socketConfig.getUdpCompressCompressionLevel());
+        config.setDictionaryId(socketConfig.getUdpCompressDictionaryId());
+        config.setAdaptiveBypass(socketConfig.isUdpCompressAdaptiveBypass());
+        config.setAdaptiveBypassWindowSeconds(socketConfig.getUdpCompressAdaptiveBypassWindowSeconds());
         return config;
     }
 
     /**
-     * 将配置应用到 SocksConfig。
+     * 将配置应用到 SocketConfig。
      */
-    public void applyToSocksConfig(SocksConfig socksConfig) {
-        socksConfig.setUdpCompressEnabled(enabled);
-        socksConfig.setUdpCompressCodec(codec);
-        socksConfig.setUdpCompressMinPayloadBytes(minPayloadBytes);
-        socksConfig.setUdpCompressMinSavingsBytes(minSavingsBytes);
-        socksConfig.setUdpCompressMinSavingsRatio(minSavingsRatio);
-        socksConfig.setUdpCompressCompressionLevel(compressionLevel);
-        socksConfig.setUdpCompressDictionaryId(dictionaryId);
-        socksConfig.setUdpCompressAdaptiveBypass(adaptiveBypass);
-        socksConfig.setUdpCompressAdaptiveBypassWindowSeconds(adaptiveBypassWindowSeconds);
+    public void applyToSocketConfig(SocketConfig socketConfig) {
+        socketConfig.setUdpCompressEnabled(enabled);
+        socketConfig.setUdpCompressCodec(codec);
+        socketConfig.setUdpCompressMinPayloadBytes(minPayloadBytes);
+        socketConfig.setUdpCompressMinSavingsBytes(minSavingsBytes);
+        socketConfig.setUdpCompressMinSavingsRatio(minSavingsRatio);
+        socketConfig.setUdpCompressCompressionLevel(compressionLevel);
+        socketConfig.setUdpCompressDictionaryId(dictionaryId);
+        socketConfig.setUdpCompressAdaptiveBypass(adaptiveBypass);
+        socketConfig.setUdpCompressAdaptiveBypassWindowSeconds(adaptiveBypassWindowSeconds);
     }
 }

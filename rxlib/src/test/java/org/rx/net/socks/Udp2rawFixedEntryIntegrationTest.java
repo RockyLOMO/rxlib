@@ -330,8 +330,8 @@ class Udp2rawFixedEntryIntegrationTest {
             Udp2rawOpenRequest request = new Udp2rawOpenRequest();
             request.setClientId("junit-p6");
             request.setMaxSessions(8);
-            request.setCompress(UdpCompressConfig.fromSocksConfig(config));
-            request.setRedundant(UdpRedundantConfig.fromSocksConfig(config));
+            request.setCompress(UdpCompressConfig.fromSocketConfig(config));
+            request.setRedundant(UdpRedundantConfig.fromSocketConfig(config));
             Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
             assertTrue(open.isSuccess());
             assertTrue(open.getCapabilities().isCompress());

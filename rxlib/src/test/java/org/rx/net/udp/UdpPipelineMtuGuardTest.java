@@ -1,6 +1,5 @@
 package org.rx.net.udp;
 
-import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.UdpRelayAttributes;
 
 import io.netty.buffer.ByteBuf;
@@ -22,7 +21,7 @@ class UdpPipelineMtuGuardTest {
 
     @Test
     void finalGuardIsBeforeOutboundOptimizationEncoders() {
-        SocksConfig config = new SocksConfig();
+        SocketConfig config = new SocketConfig();
         config.setUdpMtu(1300);
         config.setUdpCompressEnabled(true);
         config.setUdpRedundantMultiplier(2);
@@ -46,7 +45,7 @@ class UdpPipelineMtuGuardTest {
 
     @Test
     void finalGuardDropsRedundantPacketAfterHeaderExceedsMtu() {
-        SocksConfig config = new SocksConfig();
+        SocketConfig config = new SocketConfig();
         config.setUdpMtu(1300);
         config.setUdpRedundantMultiplier(2);
 
@@ -67,7 +66,7 @@ class UdpPipelineMtuGuardTest {
 
     @Test
     void finalGuardAllowsMtuProbeAboveCurrentMtu() {
-        SocksConfig config = new SocksConfig();
+        SocketConfig config = new SocketConfig();
         config.setUdpMtu(1300);
 
         EmbeddedChannel channel = newPipeline(config);
@@ -92,7 +91,7 @@ class UdpPipelineMtuGuardTest {
 
     @Test
     void finalGuardAllowsEachRedundantPacketAtMtuBoundary() {
-        SocksConfig config = new SocksConfig();
+        SocketConfig config = new SocketConfig();
         config.setUdpMtu(1300);
         config.setUdpRedundantMultiplier(3);
 
@@ -122,7 +121,7 @@ class UdpPipelineMtuGuardTest {
 
     @Test
     void writeUdpAllowsRawPayloadAboveMtuWhenCompressionShrinksFinalDatagram() {
-        SocksConfig config = compressConfig();
+        SocketConfig config = compressConfig();
         config.setUdpMtu(1300);
 
         EmbeddedChannel channel = newPipeline(config);
@@ -149,15 +148,15 @@ class UdpPipelineMtuGuardTest {
         }
     }
 
-    private static EmbeddedChannel newPipeline(SocksConfig config) {
+    private static EmbeddedChannel newPipeline(SocketConfig config) {
         EmbeddedChannel channel = new EmbeddedChannel();
         channel.attr(SocketConfig.ATTR_CONF).set(config);
         Sockets.addUdpOptimizationHandlers(channel.pipeline(), config);
         return channel;
     }
 
-    private static SocksConfig compressConfig() {
-        SocksConfig config = new SocksConfig();
+    private static SocketConfig compressConfig() {
+        SocketConfig config = new SocketConfig();
         config.setUdpCompressEnabled(true);
         config.setUdpCompressMinPayloadBytes(1);
         config.setUdpCompressMinSavingsBytes(1);
