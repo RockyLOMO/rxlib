@@ -56,7 +56,7 @@ import org.rx.net.socks.upstream.Udp2rawUpstream;
 import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.IpGeolocation;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
@@ -542,16 +542,16 @@ public class RssTest extends AbstractTester {
         };
         SocksConfig config = new SocksConfig();
         String dstHost = "fake-key-" + System.nanoTime() + ".example";
-        UnresolvedEndpoint dstEp = new UnresolvedEndpoint(dstHost, 443);
+        InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(dstHost, 443);
         UpstreamSupport routedA = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.100", 4093)), facade);
         UpstreamSupport routedB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.101", 4093)), facade);
 
-        UnresolvedEndpoint fakeA = new SocksTcpUpstream(dstEp, config, routedA).prepareDestination();
-        UnresolvedEndpoint fakeB = new SocksTcpUpstream(dstEp, config, routedB).prepareDestination();
+        InetSocketAddress fakeA = new SocksTcpUpstream(dstEp, config, routedA).prepareDestination();
+        InetSocketAddress fakeB = new SocksTcpUpstream(dstEp, config, routedB).prepareDestination();
 
-        assertNotEquals(fakeA.getHost(), fakeB.getHost());
-        assertTrue(fakeA.getHost().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
-        assertTrue(fakeB.getHost().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
+        assertNotEquals(fakeA.getHostString(), fakeB.getHostString());
+        assertTrue(fakeA.getHostString().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
+        assertTrue(fakeB.getHostString().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
         assertEquals(2, calls.get());
     }
 
@@ -1487,7 +1487,7 @@ public class RssTest extends AbstractTester {
         RandomList<UpstreamSupport> directServers = RssClient.buildUserTcpClientServers(
                 conf.shadowUsers.get(0), conf.socksServers);
         UpstreamSupport support = directServers.next();
-        Upstream udpRoute = RssClient.createUdpRouteUpstream(new UnresolvedEndpoint("8.8.8.8", 53),
+        Upstream udpRoute = RssClient.createUdpRouteUpstream(org.rx.net.Sockets.newUnresolvedEndpoint("8.8.8.8", 53),
                 new SocksConfig(), support);
 
         assertEquals(new InetSocketAddress("127.0.0.1", 4093), support.getEndpoint().getEndpoint());
@@ -1516,7 +1516,7 @@ public class RssTest extends AbstractTester {
         support.setUdp2raw(true);
         support.setUdpClient(new InetSocketAddress("127.0.0.1", 4094));
 
-        Upstream udpRoute = RssClient.createUdpRouteUpstream(new UnresolvedEndpoint("8.8.8.8", 53),
+        Upstream udpRoute = RssClient.createUdpRouteUpstream(org.rx.net.Sockets.newUnresolvedEndpoint("8.8.8.8", 53),
                 new SocksConfig(), support);
 
         assertTrue(udpRoute instanceof Udp2rawUpstream);
@@ -1628,7 +1628,7 @@ public class RssTest extends AbstractTester {
                 }
                 long[] result = new long[2];
                 result[0] = System.currentTimeMillis();
-                UnresolvedEndpoint dstEp = org.rx.net.socks.UdpManager.socks5Decode(buf);
+                InetSocketAddress dstEp = org.rx.net.socks.UdpManager.socks5Decode(buf);
                 System.out.println("from dstEp: " + dstEp);
 
                 buf.skipBytes(40);
@@ -1704,14 +1704,14 @@ public class RssTest extends AbstractTester {
         inConf.setUdp2rawClient(outSrvEp);
         SocksProxyServer inSvr = new SocksProxyServer(inConf);
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
-        Upstream shadowDnsUpstream = new Upstream(new UnresolvedEndpoint(shadowDnsEp));
+        Upstream shadowDnsUpstream = new Upstream(shadowDnsEp);
         TripleAction<SocksProxyServer, SocksContext> firstRoute = (s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             if (dstEp.getPort() == SocksRpcContract.DNS_PORT) {
                 e.setUpstream(shadowDnsUpstream);
                 return;
             }
-            if (Sockets.isBypass(bypassHosts, dstEp.getHost())) {
+            if (Sockets.isBypass(bypassHosts, dstEp.getHostString())) {
                 e.setUpstream(new Upstream(dstEp));
             }
         };
@@ -1719,14 +1719,14 @@ public class RssTest extends AbstractTester {
             if (e.getUpstream() != null) {
                 return;
             }
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             e.setUpstream(new SocksTcpUpstream(dstEp, inConf, socksServers.next()));
         });
         inSvr.onUdpRoute.replace(firstRoute, (s, e) -> {
             if (e.getUpstream() != null) {
                 return;
             }
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             e.setUpstream(new SocksUdpUpstream(dstEp, inConf, socksServers.next()));
         });
 

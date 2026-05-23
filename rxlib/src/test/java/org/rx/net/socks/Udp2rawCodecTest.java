@@ -4,7 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.buffer.UnpooledByteBufAllocator;
 import org.junit.jupiter.api.Test;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +18,7 @@ class Udp2rawCodecTest {
         Udp2rawFrame frame = Udp2rawFrame.data(1L, 2L, 3L, 4L);
         frame.setFlags(Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT | Udp2rawCodec.FLAG_HAS_DST);
         frame.setClientSource(new InetSocketAddress("127.0.0.1", 31001));
-        frame.setDestination(new UnresolvedEndpoint("example.com", 53));
+        frame.setDestination(org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 53));
 
         ByteBuf encoded = Udp2rawCodec.encode(UnpooledByteBufAllocator.DEFAULT, frame, payload);
         try {

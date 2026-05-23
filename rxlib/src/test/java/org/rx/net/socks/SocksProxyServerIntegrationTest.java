@@ -20,7 +20,7 @@ import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Udp2rawUpstream;
 import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.io.InputStream;
@@ -48,7 +48,7 @@ class SocksProxyServerIntegrationTest {
         @Override
         public void fakeEndpoint(long hash, String realEndpoint, String token) {
             SocksRpcContract.requireValidRpcToken(token);
-            SocksRpcContract.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(realEndpoint));
+            SocksRpcContract.fakeDict().putIfAbsent(hash, org.rx.net.Sockets.parseEndpoint(realEndpoint));
         }
 
         @Override
@@ -415,7 +415,7 @@ class SocksProxyServerIntegrationTest {
         // Setup Upstream for A to forward to B
         UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
         proxyA.onUdpRoute.replace((s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             log.info("ProxyA routing UDP to ProxyB for dst: {}", dstEp);
             e.setUpstream(new SocksUdpUpstream(dstEp, configA, supportB));
         });
@@ -764,7 +764,7 @@ class SocksProxyServerIntegrationTest {
 
         UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
         proxyA.onUdpRoute.replace((s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             log.info("ProxyA routing UDP(udp2raw) to ProxyB for dst {}", dstEp);
             e.setUpstream(new SocksUdpUpstream(dstEp, configA, supportB));
         });
@@ -1054,7 +1054,7 @@ class SocksProxyServerIntegrationTest {
                             if (!UdpManager.isValidSocks5UdpPacket(in)) {
                                 return;
                             }
-                            UnresolvedEndpoint dst = UdpManager.socks5Decode(in);
+                            InetSocketAddress dst = UdpManager.socks5Decode(in);
                             ctx.writeAndFlush(new DatagramPacket(UdpManager.socks5Encode(in.retain(), dst), msg.sender()));
                         }
                     })).bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
@@ -1175,13 +1175,13 @@ class SocksProxyServerIntegrationTest {
         UpstreamSupport supportB = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", proxyBPort), null, null), null);
 
         ssServer.onUdpRoute.replace((s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             SocksConfig aConf = new SocksConfig(proxyAPort);
             e.setUpstream(new SocksUdpUpstream(dstEp, aConf, supportA));
         });
 
         proxyA.onUdpRoute.replace((s, e) -> {
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             SocksConfig bConf = new SocksConfig(proxyBPort);
             e.setUpstream(new SocksUdpUpstream(dstEp, bConf, supportB));
         });
@@ -1222,7 +1222,7 @@ class SocksProxyServerIntegrationTest {
                     System.arraycopy(respBuf, 0, receivedEncrypted, 0, p.getLength());
 
                     ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(receivedEncrypted));
-                    UnresolvedEndpoint srcEp = UdpManager.decode(decBuf); // The real sender!
+                    InetSocketAddress srcEp = UdpManager.decode(decBuf); // The real sender!
 
                     byte[] echoed = new byte[decBuf.readableBytes()];
                     decBuf.readBytes(echoed);
@@ -1408,7 +1408,7 @@ class SocksProxyServerIntegrationTest {
         SocksConfig config = new SocksConfig(proxyPort);
         config.getWhiteList();
         SocksProxyServer proxy = new SocksProxyServer(config, null);
-        proxy.onUdpRoute.replace((s, e) -> e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT))));
+        proxy.onUdpRoute.replace((s, e) -> e.setUpstream(new Upstream(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT))));
 
         try {
             Thread.sleep(1000);
@@ -1525,7 +1525,7 @@ class SocksProxyServerIntegrationTest {
 
                     ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
                     try {
-                        UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+                        InetSocketAddress srcEp = UdpManager.decode(decBuf);
                         byte[] echoed = new byte[decBuf.readableBytes()];
                         decBuf.readBytes(echoed);
                         assertEquals("ss-to-socks-redundant", new String(echoed, StandardCharsets.UTF_8));
@@ -1611,7 +1611,7 @@ class SocksProxyServerIntegrationTest {
 
                     ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
                     try {
-                        UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+                        InetSocketAddress srcEp = UdpManager.decode(decBuf);
                         byte[] echoed = new byte[decBuf.readableBytes()];
                         decBuf.readBytes(echoed);
                         assertArrayEquals(payload, echoed);
@@ -1691,7 +1691,7 @@ class SocksProxyServerIntegrationTest {
 
                     ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
                     try {
-                        UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+                        InetSocketAddress srcEp = UdpManager.decode(decBuf);
                         byte[] echoed = new byte[decBuf.readableBytes()];
                         decBuf.readBytes(echoed);
                         assertEquals("ss-to-socks-pooled", new String(echoed, StandardCharsets.UTF_8));
@@ -1812,7 +1812,7 @@ class SocksProxyServerIntegrationTest {
 
                 ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
                 try {
-                    UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+                    InetSocketAddress srcEp = UdpManager.decode(decBuf);
                     byte[] echoed = new byte[decBuf.readableBytes()];
                     decBuf.readBytes(echoed);
                     assertEquals(UDP_ECHO_PORT, srcEp.getPort());
@@ -1828,9 +1828,9 @@ class SocksProxyServerIntegrationTest {
                 assertEquals(clientSock.getLocalAddress(), originAttr.getAddress());
                 assertEquals(clientSock.getLocalPort(), originAttr.getPort());
 
-                ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(SocksUdpRelayHandler.ATTR_ROUTE_MAP).get();
+                ConcurrentMap<InetSocketAddress, SocksContext> routeMap = relay.attr(SocksUdpRelayHandler.ATTR_ROUTE_MAP).get();
                 assertNotNull(routeMap);
-                SocksContext sc = routeMap.get(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT));
+                SocksContext sc = routeMap.get(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT));
                 assertNotNull(sc);
                 InetSocketAddress captured = sc.getSource();
                 assertNotNull(captured);
@@ -2065,7 +2065,7 @@ class SocksProxyServerIntegrationTest {
                 ByteBuf decBuf = null;
                 try {
                     decBuf = crypto.decrypt(Unpooled.wrappedBuffer(respBuf, 0, p.getLength()));
-                    UnresolvedEndpoint srcEp = UdpManager.decode(decBuf);
+                    InetSocketAddress srcEp = UdpManager.decode(decBuf);
                     byte[] echoed = new byte[decBuf.readableBytes()];
                     decBuf.readBytes(echoed);
                     if (srcEp.getPort() == UDP_ECHO_PORT && Arrays.equals(payload, echoed)) {
@@ -2137,7 +2137,7 @@ class SocksProxyServerIntegrationTest {
 
     @SneakyThrows
     static void waitForLeaseAvailable(SocksConfig config, UpstreamSupport support) {
-        SocksUdpUpstream probe = new SocksUdpUpstream(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT), config, support);
+        SocksUdpUpstream probe = new SocksUdpUpstream(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT), config, support);
         waitForCondition(() -> {
             Socks5UpstreamPoolManager.UdpLeasePool pool = Socks5UpstreamPoolManager.INSTANCE.udpPool(probe);
             if (pool == null) {

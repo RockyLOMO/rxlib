@@ -13,8 +13,8 @@
 - **`PublicSuffixMatcher`**:
   公共后缀列表（Public Suffix List）解析器，可将类似 `www.sub.example.com.cn` 准确提取为根域名 `example.com.cn`，从而提升 DNS 缓存和 Cookie 管理等场景的准确率。
 
-- **`EndpointTracer` / `UnresolvedEndpoint`**:
-  网络连接端点抽象。它不仅包含了 IP 与端口信息，还记录了该端点的解析状态、延迟状态等追踪指标。
+- **`EndpointTracer` / `Sockets.newUnresolvedEndpoint`**:
+  网络连接端点追踪与未解析地址构造入口。未解析地址统一使用 `InetSocketAddress` 表达，字面量 IP 会转为已解析地址，域名保持 unresolved，避免触发本机 DNS。
 
 ---
 

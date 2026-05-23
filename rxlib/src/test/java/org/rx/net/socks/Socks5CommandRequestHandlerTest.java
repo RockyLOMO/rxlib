@@ -120,7 +120,7 @@ class Socks5CommandRequestHandlerTest {
         assertTrue(Sockets.hasTcpCompressionHandlers(inbound));
         assertTrue(Sockets.hasTcpCompressionHandlers(outbound));
 
-        SocksContext e = SocksContext.getCtx(new InetSocketAddress("127.0.0.1", 18080), new org.rx.net.support.UnresolvedEndpoint("example.com", 443));
+        SocksContext e = SocksContext.getCtx(new InetSocketAddress("127.0.0.1", 18080), org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 443));
         Method method = Socks5CommandRequestHandler.class.getDeclaredMethod("maybeBypassTcpCompression",
                 io.netty.channel.Channel.class, io.netty.channel.Channel.class, SocksContext.class, SocksConfig.class);
         method.setAccessible(true);

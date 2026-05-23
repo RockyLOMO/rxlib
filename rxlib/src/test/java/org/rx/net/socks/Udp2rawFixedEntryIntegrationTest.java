@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Timeout;
 import org.rx.bean.DateTime;
 import org.rx.core.RxConfig;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -659,7 +659,7 @@ class Udp2rawFixedEntryIntegrationTest {
         frame.setFlags(Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT
                 | Udp2rawCodec.FLAG_HAS_DST | Udp2rawCodec.FLAG_AUTH_TAG);
         frame.setClientSource(clientSource);
-        frame.setDestination(new UnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+        frame.setDestination(org.rx.net.Sockets.newUnresolvedEndpoint(destination.getHostString(), destination.getPort()));
         ByteBuf authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
                 open.getSessionSecret(), frame, payload);
         frame.setAuthTag(authTag);
@@ -690,7 +690,7 @@ class Udp2rawFixedEntryIntegrationTest {
                 frame.setClientSource(clientSource);
             }
             if ((flags & Udp2rawCodec.FLAG_HAS_DST) != 0) {
-                frame.setDestination(new UnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+                frame.setDestination(org.rx.net.Sockets.newUnresolvedEndpoint(destination.getHostString(), destination.getPort()));
             }
             if (sign) {
                 authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
@@ -797,7 +797,7 @@ class Udp2rawFixedEntryIntegrationTest {
             }
             frame.setFlags(flags);
             frame.setClientSource(clientSource);
-            frame.setDestination(new UnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+            frame.setDestination(org.rx.net.Sockets.newUnresolvedEndpoint(destination.getHostString(), destination.getPort()));
             authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
                     open.getSessionSecret(), frame, body);
             frame.setAuthTag(authTag);

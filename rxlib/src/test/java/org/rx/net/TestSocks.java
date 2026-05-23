@@ -47,7 +47,7 @@ import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.GeoIPSearcher;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.SftpClient;
 import org.rx.net.transport.TcpServer;

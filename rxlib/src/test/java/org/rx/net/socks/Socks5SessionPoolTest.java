@@ -10,7 +10,7 @@ import io.netty.handler.codec.socksx.v5.Socks5CommandStatus;
 import org.junit.jupiter.api.Test;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetSocketAddress;
@@ -54,7 +54,7 @@ class Socks5SessionPoolTest {
         HashMap<String, String> parameters = new HashMap<>();
         parameters.put("udpRelayIdleSeconds", "45");
         AuthenticEndpoint endpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 19080), null, null, parameters);
-        SocksUdpUpstream upstream = new SocksUdpUpstream(new UnresolvedEndpoint("example.com", 53), new SocksConfig(1080),
+        SocksUdpUpstream upstream = new SocksUdpUpstream(org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 53), new SocksConfig(1080),
                 new UpstreamSupport(endpoint, null));
 
         assertEquals(40_000L, upstream.resolveRelayIdleHintMillis());
@@ -70,7 +70,7 @@ class Socks5SessionPoolTest {
 
             List<String> events = new ArrayList<>();
             handler.setConnectedCallback(() -> events.add("callback"));
-            ChannelFuture future = handler.connect(new UnresolvedEndpoint("example.com", 443));
+            ChannelFuture future = handler.connect(org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 443));
             future.addListener(f -> events.add("promise"));
 
             channel.writeInbound(new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.DOMAIN));

@@ -15,7 +15,7 @@ import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.encryption.ICrypto;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.io.InputStream;
@@ -167,7 +167,7 @@ class ShadowsocksServerIntegrationTest {
                 ByteBuf decrypted = crypto.decrypt(backEncrypted);
                 
                 // SSProtocolCodec.encode for UDP adds the address
-                UnresolvedEndpoint addr = UdpManager.decode(decrypted);
+                InetSocketAddress addr = UdpManager.decode(decrypted);
                 assertEquals(UDP_ECHO_PORT, addr.getPort());
                 
                 byte[] echoed = new byte[decrypted.readableBytes()];
@@ -230,7 +230,7 @@ class ShadowsocksServerIntegrationTest {
             } else if (call == 2) {
                 secondRouteEntered.countDown();
             }
-            e.setUpstream(new org.rx.net.socks.upstream.Upstream(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT)));
+            e.setUpstream(new org.rx.net.socks.upstream.Upstream(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT)));
         });
 
         DatagramSocket firstClient = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
@@ -283,16 +283,16 @@ class ShadowsocksServerIntegrationTest {
 
         proxyA.onUdpRoute.replace((s, e) -> {
             if (e.getFirstDestination().getPort() == UDP_ECHO_PORT) {
-                e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT)));
+                e.setUpstream(new Upstream(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT)));
             } else {
-                e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", 9)));
+                e.setUpstream(new Upstream(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", 9)));
             }
         });
         proxyB.onUdpRoute.replace((s, e) -> {
             if (e.getFirstDestination().getPort() == UDP_ALT_ECHO_PORT) {
-                e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", UDP_ALT_ECHO_PORT)));
+                e.setUpstream(new Upstream(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", UDP_ALT_ECHO_PORT)));
             } else {
-                e.setUpstream(new Upstream(new UnresolvedEndpoint("127.0.0.1", 9)));
+                e.setUpstream(new Upstream(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", 9)));
             }
         });
 
@@ -442,7 +442,7 @@ class ShadowsocksServerIntegrationTest {
         socket.receive(packet);
         ByteBuf decrypted = crypto.decrypt(Unpooled.wrappedBuffer(resp, 0, packet.getLength()));
         try {
-            UnresolvedEndpoint addr = UdpManager.decode(decrypted);
+            InetSocketAddress addr = UdpManager.decode(decrypted);
             assertEquals(expectedPort, addr.getPort());
             byte[] echoed = new byte[decrypted.readableBytes()];
             decrypted.readBytes(echoed);

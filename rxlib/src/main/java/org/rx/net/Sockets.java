@@ -56,7 +56,6 @@ import org.rx.net.http.HttpClientConfig;
 import org.rx.net.socks.ShadowsocksConfig;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.support.EndpointTracer;
-import org.rx.net.support.UnresolvedEndpoint;
 import org.rx.net.udp.UdpBackpressureDecision;
 import org.rx.net.udp.UdpFinalEgressGuardHandler;
 import org.rx.net.udp.UdpMtuProbeDatagramPacket;
@@ -319,7 +318,13 @@ public final class Sockets {
             return result;
         }
 
-        String host = endpoint.getHostString();
+        InetSocketAddress normalized = newUnresolvedEndpoint(endpoint.getHostString(), endpoint.getPort());
+        if (!normalized.isUnresolved()) {
+            result.complete(normalized);
+            return result;
+        }
+
+        String host = normalized.getHostString();
         io.netty.util.concurrent.Future<InetAddress> resolveFuture = udpDnsClient(config).resolveAsync(host);
         resolveFuture.addListener(f -> {
             if (!f.isSuccess()) {
@@ -331,7 +336,7 @@ public final class Sockets {
                 result.completeExceptionally(new UnknownHostException(host));
                 return;
             }
-            result.complete(new InetSocketAddress(address, endpoint.getPort()));
+            result.complete(new InetSocketAddress(address, normalized.getPort()));
         });
         return result;
     }
@@ -855,7 +860,7 @@ public final class Sockets {
         return removed;
     }
 
-    public static boolean shouldBypassTcpCompression(UnresolvedEndpoint dstEp) {
+    public static boolean shouldBypassTcpCompression(InetSocketAddress dstEp) {
         return dstEp != null && TCP_COMPRESS_BYPASS_PORTS.contains(dstEp.getPort());
     }
 
@@ -1127,6 +1132,9 @@ public final class Sockets {
      * 业务写出 -> 压缩 -> 多倍发送 -> final egress guard -> transport。
      */
     public static void addUdpOptimizationHandlers(ChannelPipeline pipeline, SocketConfig config) {
+        if (config == null) {
+            config = SocketConfig.EMPTY;
+        }
         boolean compressEnabled = config.isUdpCompressEnabled();
         boolean redundantEnabled = isUdpRedundantEnabled(config);
         addUdpFinalEgressGuard(pipeline, config, redundantEnabled);
@@ -1180,14 +1188,8 @@ public final class Sockets {
         if (pipeline.get(UDP_FINAL_EGRESS_GUARD) != null || pipeline.get(UdpFinalEgressGuardHandler.class) != null) {
             return;
         }
-        if (!shouldInstallUdpFinalEgressGuard(config, forceBackpressure)) {
-            return;
-        }
-        pipeline.addLast(UDP_FINAL_EGRESS_GUARD, new UdpFinalEgressGuardHandler(config, forceBackpressure));
-    }
-
-    private static boolean shouldInstallUdpFinalEgressGuard(SocketConfig config, boolean forceBackpressure) {
-        return NetworkFlowControl.DEFAULT.udpBackpressurePolicy().shouldInstallFinalGuard(config, forceBackpressure);
+        pipeline.addLast(UDP_FINAL_EGRESS_GUARD,
+                new UdpFinalEgressGuardHandler(config == null ? SocketConfig.EMPTY : config, forceBackpressure));
     }
 
     private static boolean isUdpRedundantEnabled(SocketConfig config) {
@@ -1255,7 +1257,7 @@ public final class Sockets {
         }
 
         InetSocketAddress recipient = packet.recipient();
-        if (recipient != null && recipient.isUnresolved()) {
+        if (recipient != null && recipient.isUnresolved() && !finalGuard) {
             releaseUdpPacket(packet, metricPrefix, tags, "unresolved-recipient", 0, udpWriteLimitBytes(channel));
             log.warn("UDP write drop unresolved recipient channel={} recipient={}", channel, recipient);
             return UdpWriteResult.UNRESOLVED_RECIPIENT;

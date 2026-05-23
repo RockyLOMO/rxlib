@@ -344,7 +344,7 @@ public class HttpTunnelServer extends Disposable {
             // 编码: senderAddrLen(4) + senderAddr + data
             InetSocketAddress sender = packet.sender();
             ByteBuf addrBuf = Bytes.heapBuffer();
-            HttpTunnelProtocol.encodeAddress(addrBuf, org.rx.net.Sockets.newUnresolvedEndpoint(sender));
+            HttpTunnelProtocol.encodeAddress(addrBuf, sender);
             byte[] addrBytes = new byte[addrBuf.readableBytes()];
             addrBuf.readBytes(addrBytes);
             addrBuf.release();

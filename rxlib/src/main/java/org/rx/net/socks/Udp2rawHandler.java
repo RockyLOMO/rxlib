@@ -357,7 +357,7 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         ByteBuf outBuf;
         InetSocketAddress upDstEp;
         if (udpRelayAddr != null) {
-            upDstEp = org.rx.net.Sockets.newUnresolvedEndpoint(udpRelayAddr);
+            upDstEp = udpRelayAddr;
             outBuf = UdpManager.socks5Encode(payload, dstEp);
         } else {
             upDstEp = upstream.getDestination();

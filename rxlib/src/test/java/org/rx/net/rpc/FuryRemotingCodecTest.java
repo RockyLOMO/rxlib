@@ -145,7 +145,7 @@ class FuryRemotingCodecTest {
     }
 
     @Test
-    void roundTripUnresolvedInetSocketAddressWithoutLocalDnsResolve() {
+    void roundTripUnresolvedInetSocketAddressWithoutLocalDnsResolve() throws Exception {
         RpcClientConfig<Object> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", 9531), 1);
         FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
         TcpChannelCodec codec = factory.newClientCodec(config);
@@ -160,6 +160,26 @@ class FuryRemotingCodecTest {
         assertEquals("example.com", decodedEndpoint.getHostString());
         assertEquals(443, decodedEndpoint.getPort());
         assertNull(decodedEndpoint.getAddress());
+
+        InetSocketAddress ipLiteralEndpoint = InetSocketAddress.createUnresolved("198.51.100.8", 5300);
+        method = new MethodMessage(18, "connectIp", new Object[]{ipLiteralEndpoint}, "trace-18");
+        decoded = roundTrip(codec, allowedPrefixes, method);
+        pack = assertInstanceOf(MethodMessage.class, decoded);
+        decodedEndpoint = assertInstanceOf(InetSocketAddress.class, pack.parameters[0]);
+        assertEquals("198.51.100.8", decodedEndpoint.getHostString());
+        assertEquals(5300, decodedEndpoint.getPort());
+        assertNotNull(decodedEndpoint.getAddress());
+        assertEquals("198.51.100.8", decodedEndpoint.getAddress().getHostAddress());
+
+        InetSocketAddress resolvedEndpoint = new InetSocketAddress(
+                InetAddress.getByAddress(new byte[]{(byte) 198, 51, 100, 9}), 5301);
+        method = new MethodMessage(19, "connectResolvedIp", new Object[]{resolvedEndpoint}, "trace-19");
+        decoded = roundTrip(codec, allowedPrefixes, method);
+        pack = assertInstanceOf(MethodMessage.class, decoded);
+        decodedEndpoint = assertInstanceOf(InetSocketAddress.class, pack.parameters[0]);
+        assertEquals(5301, decodedEndpoint.getPort());
+        assertNotNull(decodedEndpoint.getAddress());
+        assertEquals("198.51.100.9", decodedEndpoint.getAddress().getHostAddress());
     }
 
     private static Object roundTrip(TcpChannelCodec codec, List<String> allowedPrefixes, Object message) {

@@ -1,9 +1,9 @@
 package org.rx.net.udp;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.ReferenceCountUtil;
@@ -13,13 +13,14 @@ import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * UDP 最终出口 guard，必须位于所有自定义 UDP header handler 之后。
  */
 @Slf4j
-public final class UdpFinalEgressGuardHandler extends ChannelOutboundHandlerAdapter {
+public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
     private final SocketConfig config;
     private final boolean forceBackpressure;
 
@@ -35,8 +36,30 @@ public final class UdpFinalEgressGuardHandler extends ChannelOutboundHandlerAdap
             return;
         }
 
-        Channel channel = ctx.channel();
+        writeDatagram(ctx, (DatagramPacket) msg, promise, false);
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        if (!(msg instanceof DatagramPacket)) {
+            ctx.fireChannelRead(msg);
+            return;
+        }
+
         DatagramPacket packet = (DatagramPacket) msg;
+        InetSocketAddress sender = packet.sender();
+        if (sender == null || !sender.isUnresolved()) {
+            ctx.fireChannelRead(msg);
+            return;
+        }
+
+        SocketConfig effectiveConfig = Sockets.udpEffectiveConfig(ctx.channel(), config);
+        Sockets.resolveUdpEndpointAsync(sender, effectiveConfig)
+                .whenComplete((resolved, error) -> executeResolvedRead(ctx, packet, sender, resolved, error));
+    }
+
+    private void writeDatagram(ChannelHandlerContext ctx, DatagramPacket packet, ChannelPromise promise, boolean forceFlush) {
+        Channel channel = ctx.channel();
         SocketConfig effectiveConfig = Sockets.udpEffectiveConfig(channel, config);
         String metricPrefix = Sockets.udpFinalMetricPrefix(effectiveConfig);
         String tags = "path=final-egress";
@@ -51,8 +74,9 @@ public final class UdpFinalEgressGuardHandler extends ChannelOutboundHandlerAdap
         InetSocketAddress recipient = packet.recipient();
         int limitBytes = Sockets.udpWriteLimitBytes(channel);
         if (recipient != null && recipient.isUnresolved()) {
-            Sockets.releaseUdpPacket(packet, metricPrefix, tags, "final-unresolved-recipient", 0, limitBytes);
-            completeDroppedWrite(promise);
+            Sockets.resolveUdpEndpointAsync(recipient, effectiveConfig)
+                    .whenComplete((resolved, error) -> executeResolvedWrite(ctx, packet,
+                            recipient, resolved, error, promise, metricPrefix, tags, limitBytes));
             return;
         }
 
@@ -67,7 +91,7 @@ public final class UdpFinalEgressGuardHandler extends ChannelOutboundHandlerAdap
         boolean trackBackpressure = udpPolicy.isEnabled()
                 && (forceBackpressure || udpMtu > 0 || udpPolicy.hasConfiguredPendingLimit());
         if (!trackBackpressure) {
-            ctx.write(packet, promise);
+            writeToTransport(ctx, packet, promise, forceFlush);
             return;
         }
 
@@ -96,7 +120,7 @@ public final class UdpFinalEgressGuardHandler extends ChannelOutboundHandlerAdap
             }
         });
         try {
-            ctx.write(packet, writePromise);
+            writeToTransport(ctx, packet, writePromise, forceFlush);
         } catch (Throwable e) {
             ReferenceCountUtil.release(packet);
             if (!writePromise.tryFailure(e) && decision.tracked) {
@@ -106,6 +130,87 @@ public final class UdpFinalEgressGuardHandler extends ChannelOutboundHandlerAdap
                     Sockets.appendUdpMetricTags(tags,
                             "reason=final-write-throw,limitBucket=" + Sockets.udpLimitBucket(limitBytes)));
             log.warn("UDP final write throw channel={} recipient={}", channel, packet.recipient(), e);
+        }
+    }
+
+    private void executeResolvedWrite(ChannelHandlerContext ctx, DatagramPacket packet,
+                                      InetSocketAddress originalRecipient, InetSocketAddress resolved,
+                                      Throwable error, ChannelPromise promise,
+                                      String metricPrefix, String tags, int limitBytes) {
+        try {
+            ctx.executor().execute(() -> completeResolvedWrite(ctx, packet, originalRecipient, resolved, error,
+                    promise, metricPrefix, tags, limitBytes));
+        } catch (Throwable e) {
+            Sockets.releaseUdpPacket(packet, metricPrefix, tags, "final-unresolved-recipient", 0, limitBytes);
+            failPromise(promise, e);
+        }
+    }
+
+    private void completeResolvedWrite(ChannelHandlerContext ctx, DatagramPacket packet,
+                                       InetSocketAddress originalRecipient, InetSocketAddress resolved,
+                                       Throwable error, ChannelPromise promise,
+                                       String metricPrefix, String tags, int limitBytes) {
+        if (error != null || resolved == null || resolved.isUnresolved()) {
+            Sockets.releaseUdpPacket(packet, metricPrefix, tags, "final-unresolved-recipient", 0, limitBytes);
+            log.warn("UDP final resolve recipient fail channel={} recipient={}",
+                    ctx.channel(), originalRecipient, resolveError(originalRecipient, error));
+            completeDroppedWrite(promise);
+            return;
+        }
+
+        DatagramPacket next = packet.sender() == null
+                ? new DatagramPacket(packet.content().retain(), resolved)
+                : new DatagramPacket(packet.content().retain(), resolved, packet.sender());
+        ReferenceCountUtil.release(packet);
+        writeDatagram(ctx, next, promise, true);
+    }
+
+    private void executeResolvedRead(ChannelHandlerContext ctx, DatagramPacket packet,
+                                     InetSocketAddress originalSender, InetSocketAddress resolved,
+                                     Throwable error) {
+        try {
+            ctx.executor().execute(() -> completeResolvedRead(ctx, packet, originalSender, resolved, error));
+        } catch (Throwable e) {
+            ReferenceCountUtil.release(packet);
+            ctx.fireExceptionCaught(e);
+        }
+    }
+
+    private void completeResolvedRead(ChannelHandlerContext ctx, DatagramPacket packet,
+                                      InetSocketAddress originalSender, InetSocketAddress resolved,
+                                      Throwable error) {
+        if (error != null || resolved == null || resolved.isUnresolved()) {
+            ReferenceCountUtil.release(packet);
+            ctx.fireExceptionCaught(resolveError(originalSender, error));
+            return;
+        }
+
+        DatagramPacket next = packet.recipient() == null
+                ? new DatagramPacket(packet.content().retain(), resolved)
+                : new DatagramPacket(packet.content().retain(), packet.recipient(), resolved);
+        ReferenceCountUtil.release(packet);
+        ctx.fireChannelRead(next);
+    }
+
+    private static void writeToTransport(ChannelHandlerContext ctx, DatagramPacket packet,
+                                         ChannelPromise promise, boolean forceFlush) {
+        if (forceFlush) {
+            ctx.writeAndFlush(packet, promise);
+        } else {
+            ctx.write(packet, promise);
+        }
+    }
+
+    private static Throwable resolveError(InetSocketAddress endpoint, Throwable error) {
+        if (error != null) {
+            return error;
+        }
+        return new UnknownHostException(endpoint == null ? null : endpoint.getHostString());
+    }
+
+    private static void failPromise(ChannelPromise promise, Throwable error) {
+        if (promise != null && !promise.isVoid()) {
+            promise.tryFailure(error);
         }
     }
 

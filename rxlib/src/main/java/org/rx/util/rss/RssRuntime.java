@@ -81,7 +81,7 @@ final class RssRuntime implements AutoCloseable {
         nameserverRef = new NameserverImpl(resolveNameserverConfig(conf), dnsSvr);
         nameserver = nameserverRef;
         InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(conf.shadowDnsPort);
-        shadowDnsUpstream = new Upstream(org.rx.net.Sockets.newUnresolvedEndpoint(shadowDnsEp));
+        shadowDnsUpstream = new Upstream(shadowDnsEp);
         Sockets.injectNameService(java.util.Collections.singletonList(shadowDnsEp));
 
         authenticator = new RssAuthenticator(conf.shadowUsers, conf.socksPwd.trim(), conf.memoryRetentionHours);
@@ -150,7 +150,7 @@ final class RssRuntime implements AutoCloseable {
                 dnsSvr = nextDnsServer;
                 dnsInterceptors = nextDnsInterceptors;
                 InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(newConf.shadowDnsPort);
-                shadowDnsUpstream = new Upstream(org.rx.net.Sockets.newUnresolvedEndpoint(shadowDnsEp));
+                shadowDnsUpstream = new Upstream(shadowDnsEp);
                 Sockets.injectNameService(java.util.Collections.singletonList(shadowDnsEp));
                 nextDnsServer = null;
                 nextDnsInterceptors = null;
