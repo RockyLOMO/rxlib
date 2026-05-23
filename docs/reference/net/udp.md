@@ -467,6 +467,100 @@ config.setUdpPortHoppingMode(UdpPortHoppingMode.ROUND_ROBIN);
 5. 第一版不建议同一冗余组跨端口分散，避免远端重复转发。
 ```
 
+## UDP Relay Group / Lease Pool
+
+当前类：
+
+```text
+org.rx.net.socks.UdpRelayGroupManager
+org.rx.net.socks.UdpRelayGroupOpenRequest
+org.rx.net.socks.UdpRelayGroupOpenResult
+org.rx.net.socks.UdpRelayGroupUpdateResult
+org.rx.net.socks.UdpRelayEndpoint
+org.rx.net.socks.UdpRelayControlMode
+org.rx.net.socks.UdpLeasePoolKey
+org.rx.net.socks.upstream.SocksUdpUpstream
+```
+
+能力：
+
+```text
+1. 通过 RPC 一次打开一组 UDP relay。
+2. 支持 relay group heartbeat、idle timeout、add/remove relay。
+3. 支持 RSS_RPC、RX_SOCKS5_BATCH、SOCKS5_COMPAT、AUTO 控制模式。
+4. 支持控制面失败熔断和 fallback 到 SOCKS5 兼容方式。
+5. 支持 UDP lease pool 复用 relay，减少高频开关 relay 的控制面成本。
+```
+
+关键配置：
+
+```text
+udpRelayControlMode: relay 控制模式，默认 AUTO。
+udpRelayControlFallbackToSocks5: RPC 控制失败是否回退。
+udpRelayControlMaxRelaysPerGroup: 单组最大 relay 数。
+udpRelayGroupIdleMillis: group 空闲回收时间。
+udpRelayGroupHeartbeatMillis: heartbeat 间隔。
+udpRelayControlFailureThreshold / udpRelayControlBreakerOpenMillis: 控制面熔断。
+udpLeasePoolEnabled: 是否启用 UDP lease pool。
+udpLeasePoolMinSize / udpLeasePoolMaxSize / udpLeasePoolMaxIdleMillis: lease pool 规模和空闲回收。
+```
+
+使用建议：
+
+```text
+1. 端口跳跃需要多个 relay 时优先用 relay group，减少逐个 SOCKS5 UDP ASSOCIATE 的往返。
+2. lease pool 适合短会话很多的 UDP 代理，不适合长期固定少量会话。
+3. group token 和 relay ownership 必须校验，避免跨客户端复用。
+```
+
+## udp2raw 隧道
+
+当前类：
+
+```text
+org.rx.net.socks.Udp2rawHandler
+org.rx.net.socks.Udp2rawCodec
+org.rx.net.socks.Udp2rawFrame
+org.rx.net.socks.Udp2rawPayloadSupport
+org.rx.net.socks.Udp2rawAuthenticator
+org.rx.net.socks.Udp2rawCapabilities
+org.rx.net.socks.Udp2rawMtuState
+org.rx.net.socks.Udp2rawMtuProbeSupport
+org.rx.net.socks.upstream.Udp2rawUpstream
+```
+
+能力：
+
+```text
+1. RPC open tunnel，协商 entry address、session secret、capabilities。
+2. FIRST_PACKET_MAC 鉴权模式。
+3. bad auth fuse 和 peer rate limit。
+4. 支持 udp2raw payload 上的 RDNT 方向控制。
+5. 支持 MTU probe / ACK / 自适应降 MTU。
+6. 可和 UDP 压缩、冗余能力协商组合。
+```
+
+关键配置：
+
+```text
+udp2rawClient / udp2rawListenAddress: 客户端与监听地址。
+udp2rawSessionIdleSeconds: 隧道空闲回收。
+udp2rawMaxSessions: 最大 session 数。
+udp2rawAuthMode: 鉴权模式。
+udp2rawRedundantMode: udp2raw payload 冗余方向。
+udp2rawRequireRpc: 是否要求 RPC 能力。
+udp2rawBadAuthThreshold / udp2rawBadAuthFuseSeconds: 错误鉴权熔断。
+udp2rawPeerRateLimitPerSecond / udp2rawPeerRateLimitBurst: peer 限速。
+```
+
+使用建议：
+
+```text
+1. udp2raw 属于自有代理链路协议，不能对普通 UDP 目标开放。
+2. MTU 自适应下降要和 Sockets.writeUdp 的 MTU_EXCEEDED 结果联动。
+3. 鉴权失败、rate limit、session 上限都必须打指标，避免被放大攻击拖垮。
+```
+
 ## UDP 打洞
 
 当前类：
@@ -523,6 +617,84 @@ rendezvousRequestTimeoutMillis: 默认 1500。
 2. 必须复用同一个本地 UDP 端口。
 3. 打洞探测不能在 I/O 线程里做阻塞等待。
 4. 需要 session TTL 和 registry cleanup，避免房间状态泄漏。
+```
+
+## Hybrid TCP/UDP 传输
+
+当前类：
+
+```text
+org.rx.net.transport.hybrid.HybridClient
+org.rx.net.transport.hybrid.HybridServer
+org.rx.net.transport.hybrid.HybridConfig
+org.rx.net.transport.hybrid.HybridRoutePolicy
+org.rx.net.transport.hybrid.HybridUdpProbe
+org.rx.net.transport.hybrid.HybridUdpData
+org.rx.net.transport.hybrid.HybridRouteState
+org.rx.net.transport.hybrid.HybridSendOptions
+```
+
+能力：
+
+```text
+1. TCP 作为基础控制/兜底通道。
+2. UDP probe 建立直连可用性。
+3. UDP_READY 且 encodedBytes <= udpSmallPacketThresholdBytes 时小包走 UDP。
+4. 支持 forceTcp 发送选项。
+5. UDP 失败超过阈值后回退 TCP。
+6. 可结合 rendezvousEndpoint 做 UDP hole punch。
+```
+
+关键配置：
+
+```text
+udpBindPort: UDP 本地绑定端口。
+udpSmallPacketThresholdBytes: UDP 小包阈值，默认 8KiB。
+udpProbeTimeoutMillis / udpProbeIntervalMillis / udpProbeCount: UDP 探测参数。
+udpAckTimeoutMillis: UDP ACK 超时。
+maxUdpFailuresBeforeFallback: UDP 失败转 TCP 阈值。
+maxUdpInflightMessagesPerSession: 单 session UDP 在途限制。
+enableUdpDirect / enableUdpHolePunch: UDP 直连和打洞开关。
+rendezvousEndpoint: 打洞 rendezvous 地址。
+```
+
+使用建议：
+
+```text
+1. Hybrid 适合“控制可靠、数据低延迟”的内部传输。
+2. 大包默认走 TCP，避免 UDP 分片和重组压力。
+3. UDP in-flight 上限必须按 session 控制，避免弱网下无限堆积。
+```
+
+## DNS、NTP 与名称服务
+
+当前类：
+
+```text
+org.rx.net.dns.DnsClient
+org.rx.net.dns.DnsServer
+org.rx.net.dns.DnsDatagramSourceHandler
+org.rx.net.NtpClient
+org.rx.net.NtpPacket
+org.rx.net.nameserver.NameserverImpl
+org.rx.net.NetEventWait
+```
+
+能力：
+
+```text
+1. DNS client/server 使用 UDP datagram。
+2. NtpClient 使用 UDP 查询时间。
+3. NameserverImpl 使用 UDP 做局域网发现/同步类能力。
+4. NetEventWait 使用 UDP multicast 做事件等待。
+```
+
+使用建议：
+
+```text
+1. DNS/NTP 属于标准协议，不要叠加 UCMP/RDNT/UdpProtect header。
+2. 名称服务和 multicast 场景要显式限制 TTL、网卡和监听范围。
+3. DNS 查询链路避免阻塞式 InetAddress 解析进入 I/O 热路径。
 ```
 
 ## 推荐组合
@@ -600,6 +772,31 @@ FEC: protected data、parity、recovered、decode drop、stale group、group lim
 端口跳跃: active hops、relay replenish、relay group idle、control RPC failure。
 MTU/背压: mtu drop、pending packets、pending bytes、egress guard drop。
 吞吐与延迟: p50/p95/p99 send latency、recv latency、恢复包乱序延迟。
+```
+
+## 当前缺口
+
+已经具备但尚未完全统一的点：
+
+```text
+1. UdpProtect 新管线还没有接入 SocksConfig / udp2raw 默认链路，当前自动安装的仍是旧 UCMP + RDNT。
+2. UDP 压缩和旧多倍发包仍在 org.rx.net.socks 包下，通用 handler 尚未迁移到 org.rx.net.udp。
+3. UdpProtect 目前覆盖 FEC、固定冗余、去重和基础统计，但还没有旧 UdpRedundant 的自适应丢包调倍率策略。
+4. UdpProtect 还没有和 udp2raw capabilities 做能力协商，也没有配置桥接。
+5. 端口跳跃核心策略还绑定在 SocksUdpUpstream / relay group 控制面，尚未抽出通用端口选择策略。
+6. UdpClient 可靠消息、Hybrid UDP、UdpProtect 三套 UDP 协议尚未形成统一组合指南和互斥规则。
+7. 缺少统一 UDP metrics facade；目前指标分散在 socks.udp、socks.udp2raw、net.udp 等前缀。
+8. 没有 Reed-Solomon 类多 parity FEC；当前 XOR FEC 只能恢复每组 1 个丢包。
+```
+
+建议补齐顺序：
+
+```text
+1. 先把 UdpProtect 改名或 facade 为 UdpResilience，并接入 SocksConfig 开关。
+2. 再迁移 UdpCompress* / UdpRedundant* 通用部分到 org.rx.net.udp，保留 socks 兼容配置。
+3. 给 udp2raw open capabilities 增加 FEC/Resilience 协商。
+4. 统一 UDP 指标命名，至少覆盖堆外内存、pending、drop、MTU、FEC、冗余、压缩、端口跳跃。
+5. 最后再考虑多 parity FEC 或 KCP/QUIC 类可靠流；这属于新协议层，不应混进当前轻量 datagram pipeline。
 ```
 
 ## 上线检查清单
