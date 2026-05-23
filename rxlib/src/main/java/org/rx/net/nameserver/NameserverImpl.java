@@ -142,7 +142,7 @@ public class NameserverImpl implements Nameserver {
         ss = new UdpClient(getSyncPort(), syncConfig);
         ss.onReceive.add((s, e) -> {
             Object packet = e.getValue().packet;
-            log.info("[{}] Replica {}", getSyncPort(), packet);
+            log.info("ns: [{}] Replica {}", getSyncPort(), packet);
             if (tryAs(packet, ReplicaFullSync.class, this::applyFullSync)) {
                 return;
             }
@@ -174,7 +174,7 @@ public class NameserverImpl implements Nameserver {
             HttpServer server = HttpServer.getDefault();
             if (server != null) {
                 server.requestAsync(NameserverHttpHandler.PAGE_PATH, new NameserverHttpHandler(this));
-                log.info("Nameserver http page registered on {}", NameserverHttpHandler.PAGE_PATH);
+                log.info("ns: http page registered on {}", NameserverHttpHandler.PAGE_PATH);
             }
         });
     }
@@ -236,7 +236,7 @@ public class NameserverImpl implements Nameserver {
                     result.add(new InetSocketAddress(address, endpoint.getPort()));
                 }
             } catch (Throwable e) {
-                log.warn("Ignore unresolved nameserver replica endpoint {}, UDP sync requires resolved recipient", endpoint, e);
+                log.warn("ns: Ignore unresolved replica endpoint {}, UDP sync requires resolved recipient", endpoint, e);
             }
         }
         return result;
@@ -294,7 +294,7 @@ public class NameserverImpl implements Nameserver {
         //Multiple instances of same app and same ip, such as k8s rolling updates.
         int c = Linq.from(rs.sessions().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.tcpRemoteEndpoint().getAddress().equals(addr));
         if (c == (isDisconnected ? 0 : 1)) {
-            log.info("deregister {}", appName);
+            log.info("ns: deregister {}", appName);
             if (dnsServer.removeHosts(appName, Collections.singletonList(addr))) {
                 publishEventAsync(EVENT_APP_ADDRESS_CHANGED, new AppChangedEventArgs(appName, addr, false, instanceAttrs(appName, addr)));
             }
@@ -403,7 +403,7 @@ public class NameserverImpl implements Nameserver {
         }
         Long last = lastAppliedReplicaVersions.get(sourceId);
         if (last != null && version <= last) {
-            log.debug("ignore stale replica {} version {} <= {}", sourceId, version, last);
+            log.debug("ns: ignore stale replica {} version {} <= {}", sourceId, version, last);
             return false;
         }
         lastAppliedReplicaVersions.put(sourceId, version);
@@ -440,7 +440,7 @@ public class NameserverImpl implements Nameserver {
     void sendReplicaPacket(InetSocketAddress endpoint, Object packet) throws TimeoutException {
         InetSocketAddress syncEndpoint = Sockets.newEndpoint(endpoint, getSyncPort());
         if (isLocalSyncEndpoint(syncEndpoint)) {
-            log.debug("Skip nameserver replica self sync {}", Sockets.toString(syncEndpoint));
+            log.debug("ns: skip replica self sync {}", Sockets.toString(syncEndpoint));
             return;
         }
         ss.sendAsync(syncEndpoint, packet);
@@ -460,7 +460,7 @@ public class NameserverImpl implements Nameserver {
         try {
             return NetworkInterface.getByInetAddress(address) != null;
         } catch (Throwable e) {
-            log.debug("Check local sync endpoint failed {}", endpoint, e);
+            log.debug("ns: check local sync endpoint failed {}", endpoint, e);
             return false;
         }
     }
